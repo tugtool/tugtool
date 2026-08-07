@@ -111,8 +111,10 @@ describe("link kinds leave the standard menu block alone", () => {
   });
 });
 
-describe("a file offers both ways into the composer", () => {
-  test("its path as text, and itself as an atom", () => {
+describe("a file offers one way into the composer", () => {
+  // Whether the composer receives a chip or characters is the handler's
+  // call, not a second menu item's — at0346 is where that lands.
+  test("open, reveal, copy, insert — and no second insert beside it", () => {
     expect(
       annotationEntryFor("file-path")
         ?.menuEntries({ kind: "file-path", path: "/repo/a.ts" })
@@ -122,29 +124,7 @@ describe("a file offers both ways into the composer", () => {
       "Show in Finder",
       "Copy Path",
       "Insert into Composer",
-      "Insert as Atom",
     ]);
-  });
-
-  test("and only a file does — the other kinds have no atom to mint", () => {
-    for (const kind of ["url", "email", "directory", "commit-sha"] as const) {
-      const sample = {
-        url: { kind: "url", url: "https://x.y" },
-        email: { kind: "email", address: "a@b.com" },
-        directory: { kind: "directory", path: "/repo/src" },
-        "commit-sha": {
-          kind: "commit-sha",
-          sha: "b089d34a8",
-          root: "/repo",
-          paths: ["a.ts"],
-        },
-      }[kind] as Parameters<
-        NonNullable<ReturnType<typeof annotationEntryFor>>["menuEntries"]
-      >[0];
-      expect(
-        annotationEntryFor(kind)?.menuEntries(sample).map((e) => e.action),
-      ).not.toContain(TUG_ACTIONS.INSERT_AS_ATOM);
-    }
   });
 });
 

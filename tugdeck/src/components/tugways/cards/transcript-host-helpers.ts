@@ -496,42 +496,40 @@ export function useTranscriptCellMenu({
     writeCopyClipboard(value, null);
   }, []);
 
-  // Send the right-clicked annotation's value back into the conversation.
-  // Brings the card forward first, so the composer the text lands in is the
-  // one the user is looking at. Returns a continuation so the insert
-  // happens after the menu's activation blink, like Select All — the
-  // composer takes the caret, and doing that mid-blink fights the menu's
-  // own teardown.
+  // Send the right-clicked annotation back into the conversation. Brings
+  // the card forward first, so the composer it lands in is the one the user
+  // is looking at. Returns a continuation so the insert happens after the
+  // menu's activation blink, like Select All — the composer takes the
+  // caret, and doing that mid-blink fights the menu's own teardown.
+  //
+  // A file goes in as an object: the same chip an `@` mention mints,
+  // carrying the canonical path as its value, so the composer treats it as
+  // one thing to move, delete, or send rather than as a run of path
+  // characters. A cited line is deliberately dropped — an atom names a
+  // file, and `path:line` is not one. Every other kind goes in as its text.
   const handleInsertIntoComposer = useCallback((): ActionHandlerResult => {
-    const value = sampledAnnotationValue(contextAnnotationRef.current);
-    if (value === null || codeSessionStore === undefined) return;
+    const payload = contextAnnotationRef.current;
+    if (payload === null || codeSessionStore === undefined) return;
+    if (payload.kind === "file-path") {
+      const segment: AtomSegment = {
+        kind: "atom",
+        type: "file",
+        // The chip reads as a filename and carries the whole path
+        // underneath — the same split every other file chip in the app
+        // makes, and the reason one fits on a composer line at all.
+        label: formatAtomLabel(payload.path, "filename"),
+        value: payload.path,
+      };
+      return () => {
+        if (cardId !== null) deck.activateCard(cardId);
+        codeSessionStore.insertAtomDraft(segment);
+      };
+    }
+    const value = sampledAnnotationValue(payload);
+    if (value === null) return;
     return () => {
       if (cardId !== null) deck.activateCard(cardId);
       codeSessionStore.insertSnippet(value, null);
-    };
-  }, [cardId, codeSessionStore, deck]);
-
-  // Send the right-clicked file into the composer as an object: the same
-  // chip an `@` mention mints, carrying the canonical path as its value, so
-  // the composer treats it as one thing to move, delete, or send rather than
-  // as a run of path characters. A cited line is deliberately dropped — an
-  // atom names a file, and `path:line` is not one.
-  const handleInsertAsAtom = useCallback((): ActionHandlerResult => {
-    const payload = contextAnnotationRef.current;
-    if (payload === null || codeSessionStore === undefined) return;
-    if (payload.kind !== "file-path") return;
-    const segment: AtomSegment = {
-      kind: "atom",
-      type: "file",
-      // The chip reads as a filename and carries the whole path underneath —
-      // the same split every other file chip in the app makes, and the
-      // reason one fits on a composer line at all.
-      label: formatAtomLabel(payload.path, "filename"),
-      value: payload.path,
-    };
-    return () => {
-      if (cardId !== null) deck.activateCard(cardId);
-      codeSessionStore.insertAtomDraft(segment);
     };
   }, [cardId, codeSessionStore, deck]);
 
@@ -578,7 +576,6 @@ export function useTranscriptCellMenu({
       [TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT]: handleCopyCommandPlain,
       [TUG_ACTIONS.COPY_ANNOTATION_VALUE]: handleCopyAnnotationValue,
       [TUG_ACTIONS.INSERT_INTO_COMPOSER]: handleInsertIntoComposer,
-      [TUG_ACTIONS.INSERT_AS_ATOM]: handleInsertAsAtom,
       [TUG_ACTIONS.REVEAL_IN_FINDER]: handleRevealAnnotatedFile,
       [TUG_ACTIONS.OPEN_IMAGE_PREVIEW]: handleOpenImagePreview,
       [TUG_ACTIONS.OPEN_DIFF]: handleOpenAnnotatedDiff,
@@ -603,11 +600,7 @@ export function useTranscriptCellMenu({
       // A surface with no live session can't seed a composer, so it doesn't
       // offer to.
       return codeSessionStore === undefined
-        ? entries.filter(
-            (e) =>
-              e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER &&
-              e.action !== TUG_ACTIONS.INSERT_AS_ATOM,
-          )
+        ? entries.filter((e) => e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER)
         : entries;
     },
     [codeSessionStore],

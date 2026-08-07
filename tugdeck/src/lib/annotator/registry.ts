@@ -134,9 +134,11 @@ function seedCommand(
 }
 
 /**
- * Send this annotation's value back into the conversation. Every kind
- * offers it — that is the point of having one vocabulary: whatever the
- * transcript mentions, the user can pick it up and talk about it.
+ * Send this annotation back into the conversation. Every kind offers it —
+ * that is the point of having one vocabulary: whatever the transcript
+ * mentions, the user can pick it up and talk about it. What lands in the
+ * composer is the handler's call, not a second menu item's: a file arrives
+ * as the chip an `@` mention mints, everything else as its text.
  */
 const INSERT_ENTRY: AnnotationMenuEntry = {
   action: TUG_ACTIONS.INSERT_INTO_COMPOSER,
@@ -178,16 +180,6 @@ const EMAIL_MENU_ENTRIES: AnnotationMenuEntry[] = [
 ];
 
 /**
- * Send this annotation into the composer as an object rather than as its
- * text — the same chip an `@` mention mints. Offered by the kinds an atom
- * can actually carry, which today means the ones with a path.
- */
-const INSERT_ATOM_ENTRY: AnnotationMenuEntry = {
-  action: TUG_ACTIONS.INSERT_AS_ATOM,
-  label: "Insert as Atom",
-};
-
-/**
  * The `{ path, line?, endLine? }` an open carries. A cited range wins
  * over a bare line, so both the click and the menu item land on (and
  * flash) exactly the lines the reference names.
@@ -217,7 +209,6 @@ registerAnnotationKind("file-path", {
     { action: TUG_ACTIONS.REVEAL_IN_FINDER, label: "Show in Finder" },
     { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Path" },
     INSERT_ENTRY,
-    INSERT_ATOM_ENTRY,
   ],
   suppressStandardItems: false,
 });

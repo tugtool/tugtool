@@ -7,10 +7,11 @@
  * object-shaped acts and should not narrow it to whatever run of characters
  * the browser thinks a word is.
  *
- *  1. **Insert as Atom** — a verified file path offers a second way into the
- *     composer beside Insert into Composer: the file arrives as the chip an
- *     `@` mention mints, carrying the canonical path as its value, instead
- *     of as a run of path characters. The assertion is the chip's own
+ *  1. **A file inserts as an atom** — a verified file path offers exactly one
+ *     way into the composer, Insert into Composer, and it mints the chip an
+ *     `@` mention does: the file arrives carrying the canonical path as its
+ *     value rather than as a run of path characters. The assertions are that
+ *     the menu offers one insert item and not two, the chip's own
  *     `data-atom-value`, and that the path never landed as literal text.
  *  2. **A command is one entity** — right-clicking a command span leaves no
  *     selection behind. The control is the span beside it: an inline-code
@@ -188,20 +189,29 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
         expect(stampedPath?.startsWith("/")).toBe(true);
         expect(stampedPath?.endsWith(`/${FILE_NAME}`)).toBe(true);
 
-        // --- the menu offers both ways into the composer ---------------
+        // --- one insert item, and it mints the chip --------------------
         await app.evalJS<boolean>(revealJS(SPAN));
         await app.nativeRightClickAtElement(SPAN);
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-item-action="insert-as-atom"]') !== null`,
+          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
           { timeoutMs: 4000 },
         );
-        const bothOffered = await app.evalJS<boolean>(
-          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
+        // Exactly one — a file's way into the composer is the chip, and the
+        // path as characters is what Copy Path is for.
+        const insertItems = await app.evalJS<number>(
+          `document.querySelectorAll('[data-item-action="insert-into-composer"]').length`,
         );
-        expect(bothOffered).toBe(true);
+        expect(insertItems).toBe(1);
+        const insertLabel = await app.evalJS<string | null>(
+          `(function(){
+            var el = document.querySelector('[data-item-action="insert-into-composer"]');
+            return el === null ? null : (el.textContent || '').trim();
+          })()`,
+        );
+        expect(insertLabel).toBe("Insert into Composer");
 
         const itemPoint = await app.evalJS<{ x: number; y: number } | null>(
-          menuItemPointJS("insert-as-atom"),
+          menuItemPointJS("insert-into-composer"),
         );
         expect(itemPoint).not.toBeNull();
         await app.nativeClick(itemPoint as { x: number; y: number });

@@ -155,7 +155,8 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // The composer: every test that types into a Session card goes through it.
     // Crossed the budget with the arrow-exit handoff (at0343), which is the
     // prompt entry's own prop and has no smaller home. 21 → 22 with the
-    // Insert as Atom slot (at0346): the composer is where the parked atom is
+    // Insert into Composer's atom slot (at0346): the composer is where the
+    // parked atom is
     // consumed, so a test of that gesture has nowhere smaller to point.
     // 22 → 23 with Insert File… (at0354): the composer is the responder that
     // answers the command, which is also what gates its menu item.
