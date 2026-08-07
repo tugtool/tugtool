@@ -217,7 +217,8 @@ export interface CardRegistration {
   /**
    * True when this card opens at the deck's content-width default rather than
    * at a width of its own: the reading cards — Session, Text, File, Diff,
-   * DevTools — whose `preferred.width` only ever meant "the width content cards
+   * DevTools — and the full-surface configurators, Settings and Keyboard
+   * Shortcuts, whose `preferred.width` only ever meant "the width content cards
    * share". A new pane for one of them resolves its width from
    * `imposition.contentWidth` and is stamped with that preset, so the first card
    * of a session opens at the width the deck is set to rather than at a number
@@ -225,10 +226,10 @@ export interface CardRegistration {
    *
    * The registered `preferred.width` stays as the fallback for any path with no
    * deck to ask (and `min`/`max` still bound the resolved width, which is what
-   * keeps Settings' 720 floor and About's 320 lock true).
+   * keeps About's 320 lock true).
    *
-   * Cards with a width of their own — Settings' master/detail measure, About's
-   * fixed card, the gallery demos — declare nothing and keep it.
+   * Cards with a width of their own — About's fixed card, the gallery demos —
+   * declare nothing and keep it.
    */
   takesContentWidth?: boolean;
 }

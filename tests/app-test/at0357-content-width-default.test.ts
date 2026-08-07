@@ -35,6 +35,8 @@
  * @covers tugdeck/src/action-dispatch.ts
  * @covers tugdeck/src/lib/layout-imposer.ts
  * @covers tugdeck/src/card-registry.ts
+ * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/keyboard-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -111,6 +113,18 @@ async function paneWidth(app: App, paneId: string): Promise<number> {
   return app.evalJS<number>(PANE_WIDTH_JS(paneId));
 }
 
+/** The width of the pane hosting a card, addressed by the card's own testid —
+ *  the singleton configurators land on panes with generated ids. */
+async function cardPaneWidth(app: App, testid: string): Promise<number> {
+  return app.evalJS<number>(
+    `Math.round(
+       document.querySelector('[data-testid="${testid}"]')
+         .closest('.tug-pane')
+         .getBoundingClientRect().width
+     )`,
+  );
+}
+
 describe.skipIf(!SHOULD_RUN)(
   "at0357 — the deck's content width reaches every content pane",
   () => {
@@ -184,6 +198,59 @@ describe.skipIf(!SHOULD_RUN)(
                 })`,
             ),
           ).toEqual([COMFY, COMFY, COMFY, COMFY, COMFY]);
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the configurators are content cards: Settings and Keyboard Shortcuts open at the deck's width and follow it",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0357-content-width-configurators",
+        });
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(WIDTH_TILE("slim"))}) !== null`,
+            { timeoutMs: 8_000 },
+          );
+
+          await app.nativeClickAtElement(WIDTH_TILE("slim"));
+          await app.waitForCondition<boolean>(
+            `(${PANE_WIDTH_JS("p1")}) === ${SLIM}`,
+            { timeoutMs: 8_000 },
+          );
+
+          // Both configurators are reached the way the app menu reaches them.
+          await app.evalJS(
+            `window.__tug.dispatchControlAction("show-card", { component: "settings" })`,
+          );
+          await app.evalJS(
+            `window.__tug.dispatchControlAction("show-keyboard-shortcuts", {})`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector('[data-testid="settings-card"]') !== null
+             && document.querySelector('[data-testid="keyboard-card"]') !== null`,
+            { timeoutMs: 8_000 },
+          );
+
+          // They arrive at the deck's width rather than at the number their
+          // registrations used to freeze in (900 and 800).
+          expect(await cardPaneWidth(app, "settings-card")).toBe(SLIM);
+          expect(await cardPaneWidth(app, "keyboard-card")).toBe(SLIM);
+
+          // And a later Card Width click reaches them like any other content
+          // pane.
+          await app.nativeClickAtElement(WIDTH_TILE("comfy"));
+          await app.waitForCondition<boolean>(
+            `(${PANE_WIDTH_JS("p1")}) === ${COMFY}`,
+            { timeoutMs: 8_000 },
+          );
+          expect(await cardPaneWidth(app, "settings-card")).toBe(COMFY);
+          expect(await cardPaneWidth(app, "keyboard-card")).toBe(COMFY);
         } finally {
           await app.close();
         }

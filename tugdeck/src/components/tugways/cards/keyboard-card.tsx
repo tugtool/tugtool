@@ -23,6 +23,7 @@
 
 import React from "react";
 import { registerCard } from "@/card-registry";
+import { CONTENT_WIDTH_SLIM_PX } from "@/lib/layout-imposer";
 import { SettingsKeymapBody } from "./settings-keymap-body";
 import "./keyboard-card.css";
 
@@ -51,8 +52,10 @@ export function registerKeyboardCard(): void {
     defaultMeta: { title: "Keyboard Shortcuts", icon: "Keyboard", closable: true },
     hidden: true,
     sizePolicy: {
-      min: { width: 800, height: 600 },
+      // The floor is the slim preset, so every content width is reachable here.
+      min: { width: CONTENT_WIDTH_SLIM_PX, height: 600 },
       preferred: { width: 800, height: 1200 },
     },
+    takesContentWidth: true,
   });
 }

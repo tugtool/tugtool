@@ -40,6 +40,7 @@
 import React, { useCallback, useId, useLayoutEffect, useState } from "react";
 import { FileText, MessageSquareText, Settings2 } from "lucide-react";
 import { registerCard } from "@/card-registry";
+import { CONTENT_WIDTH_SLIM_PX } from "@/lib/layout-imposer";
 import { TugTabView, TugTabViewItem } from "@/components/tugways/tug-tab-view";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
@@ -174,8 +175,10 @@ export function registerSettingsCard(): void {
     sizePolicy: {
       // Master/detail wants width more than height: room for the sidebar plus
       // a comfortable panel measure. A long panel scrolls in the detail area.
-      min: { width: 720, height: 520 },
+      // The floor is the slim preset, so every content width is reachable here.
+      min: { width: CONTENT_WIDTH_SLIM_PX, height: 520 },
       preferred: { width: 900, height: 760 },
     },
+    takesContentWidth: true,
   });
 }
