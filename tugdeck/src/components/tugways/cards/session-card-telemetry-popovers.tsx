@@ -109,6 +109,7 @@ import {
 import {
   formatDurationMs,
   formatTimeAlwaysHours,
+  formatTokenCap,
   formatTokensCaps,
   useLiveTick,
 } from "./session-card-telemetry-renderers";
@@ -703,7 +704,7 @@ function ContextBreakdownBody({
         <span className="session-context-popover-summary-label">max</span>
         <span />
         <span className="session-context-popover-summary-value">
-          {formatTokensCaps(contextMax)}
+          {formatTokenCap(contextMax)}
         </span>
       </div>
     </div>

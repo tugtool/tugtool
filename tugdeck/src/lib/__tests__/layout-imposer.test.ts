@@ -5,23 +5,71 @@ import {
   IMPOSITION_GAP_PX,
   IMPOSITION_KINDS,
   clampSlot,
-  allocateLensWidth,
-  solveLensWidth,
+  allocateSidebarWidths,
+  solveSidebarWidths,
+  sidebarStackOrder,
   LENS_FLEX_GROW_FRACTION,
   LENS_FLEX_SHRINK_FRACTION,
   imposeRect,
   imposeStyle,
-  imposeLensStyle,
+  imposeSidebarStyle,
   isImpositionKind,
+  resolveContentWidthPx,
   resolvePlacement,
   resolveSpan,
+  CONTENT_WIDTH_SLIM_PX,
+  CONTENT_WIDTH_COMFY_PX,
+  CONTENT_WIDTH_WIDE_PX,
+  CONTENT_WIDTH_PRESETS,
   slotCount,
   travelFraction,
+  type DeckImposition,
   type ImposerSpan,
   type ImposedPlacement,
+  type ImpositionKind,
 } from "@/lib/layout-imposer";
 
 const GAP = IMPOSITION_GAP_PX;
+
+/** The allocator's one-rail reading: a single right-side rail, answered as a
+ *  plain width. Every number the allocator describes assert is the number the
+ *  single-Lens solve produced before the rails generalized — this wrapper is
+ *  what makes them a regression guard rather than a rewrite. */
+function allocateOneRail(input: {
+  canvasWidth: number;
+  kind: ImpositionKind;
+  occupied: readonly { slot: number; width: number }[];
+  preferredWidth: number;
+  minWidth: number;
+}): number | null {
+  const widths = allocateSidebarWidths({
+    canvasWidth: input.canvasWidth,
+    kind: input.kind,
+    occupied: input.occupied,
+    rails: {
+      right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
+    },
+  });
+  return widths?.right ?? null;
+}
+
+/** @see allocateOneRail */
+function solveOneRail(input: {
+  canvasWidth: number;
+  kind: ImpositionKind;
+  occupied: readonly { slot: number; width: number }[];
+  preferredWidth: number;
+  minWidth: number;
+}): number | null {
+  return solveSidebarWidths({
+    canvasWidth: input.canvasWidth,
+    kind: input.kind,
+    occupied: input.occupied,
+    rails: {
+      right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
+    },
+  });
+}
 
 /** A 1000×800 canvas with no rail — the simplest span to hand-compute against. */
 const FULL: ImposerSpan = { x: 0, width: 1000, height: 800 };
@@ -99,15 +147,48 @@ describe("resolveSpan", () => {
   const canvas = { width: 1000, height: 800 };
 
   test("no rail spans the whole canvas", () => {
-    expect(resolveSpan(canvas, null)).toEqual(FULL);
+    expect(resolveSpan(canvas, [])).toEqual(FULL);
   });
 
   test("a left-side Lens insets the span's origin by its width plus a gap", () => {
-    expect(resolveSpan(canvas, { side: "left", width: 260 })).toEqual(LENS_LEFT);
+    expect(resolveSpan(canvas, [{ side: "left", width: 260 }])).toEqual(LENS_LEFT);
   });
 
   test("a right-side Lens insets the span's width only", () => {
-    expect(resolveSpan(canvas, { side: "right", width: 260 })).toEqual(LENS_RIGHT);
+    expect(resolveSpan(canvas, [{ side: "right", width: 260 }])).toEqual(LENS_RIGHT);
+  });
+
+  test("rails on both sides inset the band from both", () => {
+    expect(
+      resolveSpan(canvas, [
+        { side: "left", width: 260 },
+        { side: "right", width: 300 },
+      ]),
+    ).toEqual({ x: 265, width: 1000 - 265 - 305, height: 800 });
+  });
+
+  // The gap count is not a constant: it is one gap per STANDING rail. This is
+  // the identity the allocator's band solve reads off rather than writing its
+  // own, so a closed rail can never leave a phantom gap in the arithmetic.
+  test("each standing rail contributes exactly one gap", () => {
+    const bandOf = (rails: Parameters<typeof resolveSpan>[1]): number =>
+      resolveSpan(canvas, rails).width - GAP * 2;
+    expect(bandOf([])).toBe(1000 - GAP * 2);
+    expect(bandOf([{ side: "right", width: 260 }])).toBe(1000 - 260 - GAP * 3);
+    expect(
+      bandOf([
+        { side: "left", width: 260 },
+        { side: "right", width: 300 },
+      ]),
+    ).toBe(1000 - 560 - GAP * 4);
+  });
+
+  test("same-side cards share one rail, so a side is passed once", () => {
+    // Two cards stacked on the right stand in ONE rail at one width — the
+    // caller folds them, and passing the side twice would inset the band twice
+    // for a picture with one edge in it.
+    const stacked = resolveSpan(canvas, [{ side: "right", width: 300 }]);
+    expect(stacked.width).toBe(1000 - 305);
   });
 });
 
@@ -291,7 +372,7 @@ describe("imposeStyle", () => {
     " - var(--tug-imposer-inset-right, 0px) - 5px * 2)";
 
   test("a left-numbered pane pins its left edge against the left inset", () => {
-    expect(imposeStyle(at(1, 2), 300, false)).toEqual({
+    expect(imposeStyle(at(1, 2), 300)).toEqual({
       width: "300px",
       height: "auto",
       top: "5px",
@@ -303,7 +384,7 @@ describe("imposeStyle", () => {
   });
 
   test("slot 0 has travelled nothing, so it carries no max() at all", () => {
-    const style = imposeStyle(at(0, 3), 400, false);
+    const style = imposeStyle(at(0, 3), 400);
     expect(style.left).toBe("calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px)");
     expect(style.left).not.toContain("max(");
   });
@@ -314,7 +395,7 @@ describe("imposeStyle", () => {
   // swapping a percentage for a bare length, which has nothing to cross.
   test("every pin has the same shape: `left`, from the left inset", () => {
     for (const slot of [0, 1, 2]) {
-      const style = imposeStyle(at(slot, 3), 400, false);
+      const style = imposeStyle(at(slot, 3), 400);
       expect(style.transform).toBeUndefined();
       expect(style.right).toBeUndefined();
       expect(String(style.left)).toStartWith(
@@ -323,50 +404,43 @@ describe("imposeStyle", () => {
     }
   });
 
-  test("collapsed releases the bottom pin and nothing else", () => {
-    const collapsed = imposeStyle(at(0, 2), 640, true);
-    expect(collapsed).toEqual({
-      width: "640px",
-      height: "auto",
-      top: "5px",
-      left: "calc(0% + var(--tug-imposer-inset-left, 0px) + 5px + 0px)",
-    });
-    expect(collapsed.bottom).toBeUndefined();
-  });
-
   test("the width is always the pane's own, verbatim", () => {
-    expect(imposeStyle(at(0, 2), 987, false).width).toBe("987px");
+    expect(imposeStyle(at(0, 2), 987).width).toBe("987px");
   });
 });
 
-describe("imposeLensStyle", () => {
-  const WIDTH = "var(--tug-lens-width, 420px)";
-  const PIN =
-    `calc(var(--tugx-lens-rail) * (100% - ${WIDTH} - 5px)` +
+describe("imposeSidebarStyle", () => {
+  /** A side's width expression: its own rail property, with the React-known
+   *  width as the fallback. Same shape on both sides, different property —
+   *  two rails standing at once need two numbers. */
+  const widthOf = (side: "left" | "right", px = 420): string =>
+    `var(--tug-sidebar-width-${side}, ${px}px)`;
+  const pinOf = (side: "left" | "right", px = 420): string =>
+    `calc(var(--tugx-lens-rail) * (100% - ${widthOf(side, px)} - 5px)` +
     " + (1 - var(--tugx-lens-rail)) * 5px)";
 
   test("pins the Lens to its side, a gap in on three edges and deeper below", () => {
-    expect(imposeLensStyle("left", 420, false) as Record<string, unknown>).toEqual({
-      width: WIDTH,
+    expect(imposeSidebarStyle("left", 420) as Record<string, unknown>).toEqual({
+      width: widthOf("left"),
       height: "auto",
       top: "5px",
       "--tugx-lens-rail": 0,
-      left: PIN,
+      left: pinOf("left"),
       bottom: "32px",
     });
-    expect(imposeLensStyle("right", 420, false) as Record<string, unknown>).toEqual({
-      width: WIDTH,
+    expect(imposeSidebarStyle("right", 420) as Record<string, unknown>).toEqual({
+      width: widthOf("right"),
       height: "auto",
       top: "5px",
       "--tugx-lens-rail": 1,
-      left: PIN,
+      left: pinOf("right"),
       bottom: "32px",
     });
   });
 
   test("both sides pin with `left`, so the flip is one property's value", () => {
     for (const side of ["left", "right"] as const) {
-      const style = imposeLensStyle(side, 420, false);
+      const style = imposeSidebarStyle(side, 420);
       expect(style.right).toBeUndefined();
       expect(typeof style.left).toBe("string");
     }
@@ -377,9 +451,12 @@ describe("imposeLensStyle", () => {
   // values of `left` instead gives a bare length against a percentage, which
   // has nothing to interpolate, so the flip cuts.
   test("the flip changes only the rail number, never the pin's shape", () => {
-    const left = imposeLensStyle("left", 420, false);
-    const right = imposeLensStyle("right", 420, false);
-    expect(left.left).toBe(right.left);
+    const left = imposeSidebarStyle("left", 420);
+    const right = imposeSidebarStyle("right", 420);
+    // Same expression, differing only in which side's width property it reads.
+    expect(String(left.left).replace("-left,", "-right,")).toBe(
+      String(right.left),
+    );
     expect(String(left.left)).toContain("var(--tugx-lens-rail)");
     expect(
       (left as Record<string, unknown>)["--tugx-lens-rail"],
@@ -389,29 +466,101 @@ describe("imposeLensStyle", () => {
     ).toBe(1);
   });
 
-  test("a collapsed Lens keeps its side and top pins and releases the bottom", () => {
-    const collapsed = imposeLensStyle("right", 420, true);
-    expect(collapsed.top).toBe("5px");
-    expect(collapsed.left).toBe(PIN);
-    expect(collapsed.bottom).toBeUndefined();
-  });
-
   // The width a drag rewrites is a property, and the pin is written over the
   // SAME expression: on the right rail the pin is `100% - width - gap`, so a
   // width that moved without the pin moving would move the pinned edge — the
   // one edge the Lens holds. One property feeding both makes that impossible.
   test("the width is a property the pin reads, over the pane's own as fallback", () => {
-    const style = imposeLensStyle("left", 987, false);
-    expect(style.width).toBe("var(--tug-lens-width, 987px)");
-    expect(String(style.left)).toContain("var(--tug-lens-width, 987px)");
+    const style = imposeSidebarStyle("left", 987);
+    expect(style.width).toBe(widthOf("left", 987));
+    expect(String(style.left)).toContain(widthOf("left", 987));
   });
 
   test("the fallback is the pane's own width, so an unwritten property changes nothing", () => {
     for (const w of [260, 420, 987]) {
-      expect(imposeLensStyle("right", w, false).width).toBe(
-        `var(--tug-lens-width, ${w}px)`,
+      expect(imposeSidebarStyle("right", w).width).toBe(
+        widthOf("right", w),
       );
     }
+  });
+
+  test("each side reads its own width property, so two rails cannot share one", () => {
+    expect(imposeSidebarStyle("left", 420).width).toBe(widthOf("left"));
+    expect(imposeSidebarStyle("right", 420).width).toBe(widthOf("right"));
+  });
+});
+
+describe("a shared rail is a stack, not a split", () => {
+  test("every member takes the same pins — the whole run, each", () => {
+    // The pins are the ones a lone rail has always had, and a second card on
+    // the side does not change them. This is the whole geometry of the change
+    // from the split design: same pin, same width, same run, and z-order
+    // decides which of the two you are looking at.
+    for (const side of ["left", "right"] as const) {
+      const style = imposeSidebarStyle(side, 420);
+      expect(style.top).toBe("5px");
+      expect(style.bottom).toBe("32px");
+    }
+  });
+
+  test("two members on one side are geometrically identical", () => {
+    // A stack of two is two frames the browser cannot tell apart except by
+    // z-order — which is exactly what makes the title bar's stack badge the
+    // only way to reach the one behind.
+    const first = imposeSidebarStyle("right", 420);
+    const second = imposeSidebarStyle("right", 420);
+    expect(first).toEqual(second);
+  });
+
+  test("the style carries no vertical term a stack could vary", () => {
+    // A regression guard with a shape rather than a number: if a future change
+    // reintroduces per-member vertical math, these stop being bare lengths.
+    const style = imposeSidebarStyle("right", 420);
+    expect(style.top).not.toContain("calc");
+    expect(style.bottom).not.toContain("calc");
+  });
+});
+
+describe("sidebarStackOrder", () => {
+  const imposition = (
+    sidebars: DeckImposition["sidebars"],
+  ): DeckImposition => ({ sidebars });
+
+  test("returns the side's members in registration order", () => {
+    // There is no vertical order to record any more: the members stand
+    // front-to-back, so the only order this reports is the one the caller
+    // handed it, filtered to the side.
+    const state = imposition({
+      lens: { side: "right" },
+      jots: { side: "right" },
+    });
+    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual([
+      "lens",
+      "jots",
+    ]);
+    expect(sidebarStackOrder(state, "right", ["jots", "lens"])).toEqual([
+      "jots",
+      "lens",
+    ]);
+    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual([]);
+  });
+
+  test("a card on the other side is not in this side's stack", () => {
+    const state = imposition({
+      lens: { side: "left" },
+      jots: { side: "right" },
+    });
+    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual(["lens"]);
+    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual(["jots"]);
+  });
+
+  test("cards default to the right, so an empty map stacks them there", () => {
+    const state = imposition({});
+    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual([
+      "lens",
+      "jots",
+    ]);
+    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual([]);
   });
 });
 
@@ -423,14 +572,14 @@ describe("the arrangement clears the Lens by exactly one gap", () => {
 
   for (const W of [260, 420, 500]) {
     test(`a ${W}px right-side Lens leaves the last slot one gap off it`, () => {
-      const span = resolveSpan(CANVAS, { side: "right", width: W });
+      const span = resolveSpan(CANVAS, [{ side: "right", width: W }]);
       const rect = imposeRect(at(1, 2), 240, span);
       expect(rect.position.x + rect.size.width).toBe(CANVAS.width - GAP - W - GAP);
       expect(imposeRect(at(0, 2), 240, span).position.x).toBe(GAP);
     });
 
     test(`a ${W}px left-side Lens leaves slot 1 one gap off it`, () => {
-      const span = resolveSpan(CANVAS, { side: "left", width: W });
+      const span = resolveSpan(CANVAS, [{ side: "left", width: W }]);
       // Slot 1 is the leftmost position, so on this deck it is the one against
       // the Lens; the last slot runs to the canvas's right edge.
       expect(imposeRect(at(0, 2), 240, span).position.x).toBe(GAP + W + GAP);
@@ -503,10 +652,9 @@ describe("the space allocator", () => {
     occupied: readonly { slot: number; width: number }[],
     kind: "five-up",
   ): number[] {
-    const span = resolveSpan(
-      { width: canvasWidth, height: 800 },
+    const span = resolveSpan({ width: canvasWidth, height: 800 }, [
       { side: "right", width: lensWidth },
-    );
+    ]);
     const rects = occupied.map((o) =>
       imposeRect(resolvePlacement(kind, o.slot), o.width, span),
     );
@@ -521,7 +669,7 @@ describe("the space allocator", () => {
 
   test("the exact-tiling case lands every seam on the gap", () => {
     const canvasWidth = 2845;
-    const width = allocateLensWidth({
+    const width = allocateOneRail({
       canvasWidth,
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
@@ -540,7 +688,7 @@ describe("the space allocator", () => {
     // the surplus.
     const roomy = 2865;
     expect(seamsAt(roomy, preferredWidth, FIVE_UP_THIRDS, "five-up")[0]).toBeGreaterThan(GAP);
-    const grown = allocateLensWidth({
+    const grown = allocateOneRail({
       canvasWidth: roomy,
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
@@ -553,7 +701,7 @@ describe("the space allocator", () => {
     // And 20px narrower overlaps them: the Lens gives the difference back.
     const crowded = 2825;
     expect(seamsAt(crowded, preferredWidth, FIVE_UP_THIRDS, "five-up")[0]).toBeLessThan(GAP);
-    const shrunk = allocateLensWidth({
+    const shrunk = allocateOneRail({
       canvasWidth: crowded,
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
@@ -582,12 +730,12 @@ describe("the space allocator", () => {
     };
 
     // The geometry still answers: this is the best band there is.
-    expect(solveLensWidth(input)).toBe(canvasWidth - GAP * 3 - 2088);
+    expect(solveOneRail(input)).toBe(canvasWidth - GAP * 3 - 2088);
 
     // And standing there the cards overlap by 478 at one seam and stand 166
     // apart at the other — the best band there is, is not a tiled one. The
     // Lens's width buys nothing here, so it is not spent.
-    expect(allocateLensWidth(input)).toBeNull();
+    expect(allocateOneRail(input)).toBeNull();
   });
 
   test("the allowance is asymmetric: a third up, a fifth down", () => {
@@ -603,7 +751,7 @@ describe("the space allocator", () => {
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
     const solve = (canvasWidth: number): number | null =>
-      allocateLensWidth({
+      allocateOneRail({
         canvasWidth,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
@@ -639,7 +787,7 @@ describe("the space allocator", () => {
     // the width the allowance permits leaves the seams as ragged as they were.
     // The Lens is the user's; there is nothing to be gained by moving it.
     expect(
-      allocateLensWidth({
+      allocateOneRail({
         canvasWidth: 4000,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
@@ -655,7 +803,7 @@ describe("the space allocator", () => {
     // is the nearest the Lens may stand, and standing there still leaves the
     // seams 5px off, so it does not move at all.
     expect(
-      allocateLensWidth({
+      allocateOneRail({
         canvasWidth: 2735,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
@@ -665,7 +813,7 @@ describe("the space allocator", () => {
     ).toBeNull();
     // 330 clears the floor and is taken.
     expect(
-      allocateLensWidth({
+      allocateOneRail({
         canvasWidth: 2755,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
@@ -677,7 +825,7 @@ describe("the space allocator", () => {
 
   test("duplicate slots fold to the widest pane standing there", () => {
     const canvasWidth = 2845;
-    const stacked = allocateLensWidth({
+    const stacked = allocateOneRail({
       canvasWidth,
       kind: "five-up",
       occupied: [
@@ -694,7 +842,7 @@ describe("the space allocator", () => {
 
   test("the order of the occupied list does not matter", () => {
     const canvasWidth = 2845;
-    const shuffled = allocateLensWidth({
+    const shuffled = allocateOneRail({
       canvasWidth,
       kind: "five-up",
       occupied: [FIVE_UP_THIRDS[2], FIVE_UP_THIRDS[0], FIVE_UP_THIRDS[1]],
@@ -713,10 +861,10 @@ describe("the space allocator", () => {
     };
     // One card, no cards, and one-up (whose every slot clamps to the same
     // anchor) all leave the chain without a pair of neighbours.
-    expect(allocateLensWidth({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBeNull();
-    expect(allocateLensWidth({ ...base, occupied: [] })).toBeNull();
+    expect(allocateOneRail({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBeNull();
+    expect(allocateOneRail({ ...base, occupied: [] })).toBeNull();
     expect(
-      allocateLensWidth({
+      allocateOneRail({
         ...base,
         kind: "one-up",
         occupied: FIVE_UP_THIRDS,
@@ -732,13 +880,205 @@ describe("the space allocator", () => {
       preferredWidth: 400,
       minWidth: 320,
     };
-    expect(allocateLensWidth({ ...base, canvasWidth: Number.NaN })).toBeNull();
-    expect(allocateLensWidth({ ...base, minWidth: Number.NaN })).toBeNull();
+    expect(allocateOneRail({ ...base, canvasWidth: Number.NaN })).toBeNull();
+    expect(allocateOneRail({ ...base, minWidth: Number.NaN })).toBeNull();
     expect(
-      allocateLensWidth({
+      allocateOneRail({
         ...base,
         occupied: [{ slot: 0, width: Number.NaN }, { slot: 2, width: 800 }],
       }),
     ).toBeNull();
+  });
+
+  test("with no rail standing there is nothing to allocate", () => {
+    expect(
+      allocateSidebarWidths({
+        canvasWidth: 2845,
+        kind: "five-up",
+        occupied: FIVE_UP_THIRDS,
+        rails: {},
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("two rails move by one shared delta", () => {
+  const FIVE_UP_THIRDS = [
+    { slot: 0, width: 800 },
+    { slot: 2, width: 800 },
+    { slot: 4, width: 800 },
+  ] as const;
+  /** The band the fixture tiles at, exactly — the same one the one-rail
+   *  describes are built on. */
+  const EXACT_BAND = 3 * 800 + 2 * GAP;
+
+  const solve = (
+    canvasWidth: number,
+    left: { preferredWidth: number; minWidth: number },
+    right: { preferredWidth: number; minWidth: number },
+  ) =>
+    allocateSidebarWidths({
+      canvasWidth,
+      kind: "five-up",
+      occupied: FIVE_UP_THIRDS,
+      rails: { left, right },
+    });
+
+  /** The canvas that wants the two rails to total `total`: four gaps now, one
+   *  per rail plus one at each end of the band. */
+  const canvasFor = (total: number): number => total + GAP * 4 + EXACT_BAND;
+
+  test("the surplus is split evenly, not handed to one rail", () => {
+    // Both rails prefer 400 and the deck wants 840 of rail: +20 each.
+    const widths = solve(
+      canvasFor(840),
+      { preferredWidth: 400, minWidth: 320 },
+      { preferredWidth: 400, minWidth: 320 },
+    );
+    expect(widths).toEqual({ left: 420, right: 420 });
+  });
+
+  test("unequal preferred widths keep their difference — the DELTA is shared", () => {
+    // 400 and 500 want 900 between them; a deck wanting 980 gives each +40, so
+    // the rails stay exactly 100 apart. A per-rail solve would have no reason
+    // to preserve that.
+    const widths = solve(
+      canvasFor(980),
+      { preferredWidth: 400, minWidth: 320 },
+      { preferredWidth: 500, minWidth: 320 },
+    );
+    expect(widths).toEqual({ left: 440, right: 540 });
+    expect((widths?.right ?? 0) - (widths?.left ?? 0)).toBe(100);
+  });
+
+  test("a clamp binding on one rail bounds the shared delta, not just that rail", () => {
+    // The right rail's floor of 480 lets it shrink only 20 below its preferred
+    // 500. The deck wants the pair 44 narrower — 22 each — so the shared delta
+    // is bounded at −20 and BOTH rails give up exactly 20. Clamping the rails
+    // independently would take 22 from the left and 20 from the right, which is
+    // two different gestures wearing one name.
+    const widths = solve(
+      canvasFor(856),
+      { preferredWidth: 400, minWidth: 320 },
+      { preferredWidth: 500, minWidth: 480 },
+    );
+    expect(widths).toEqual({ left: 380, right: 480 });
+  });
+
+  test("a clamp that leaves the chain ragged moves neither rail", () => {
+    // The same floor, but the deck wants the pair 100 narrower. Bounded at −20
+    // the seams are still visibly off, so the gesture buys nothing and is not
+    // made — the rails do not half-move.
+    expect(
+      solve(
+        canvasFor(800),
+        { preferredWidth: 400, minWidth: 320 },
+        { preferredWidth: 500, minWidth: 480 },
+      ),
+    ).toBeNull();
+  });
+
+  test("a residual the rails cannot close moves neither of them", () => {
+    // The fit wants far more rail than either allowance permits, and the
+    // clamped widths leave the seams visibly ragged. Half a gesture is not a
+    // picture anyone asked for, so nothing moves.
+    expect(
+      solve(
+        canvasFor(2000),
+        { preferredWidth: 400, minWidth: 320 },
+        { preferredWidth: 400, minWidth: 320 },
+      ),
+    ).toBeNull();
+  });
+
+  test("a left-only rail is solved with the left-only gap count", () => {
+    // One rail, so three gaps — not the four a bilateral deck spends.
+    const widths = allocateSidebarWidths({
+      canvasWidth: 420 + GAP * 3 + EXACT_BAND,
+      kind: "five-up",
+      occupied: FIVE_UP_THIRDS,
+      rails: { left: { preferredWidth: 400, minWidth: 320 } },
+    });
+    expect(widths).toEqual({ left: 420 });
+  });
+
+  test("the seam test is asked of the two-rail picture, not a one-rail one", () => {
+    // The answer tiles: measured through `resolveSpan` with BOTH rails, every
+    // seam lands on the gap. A test built from a single-rail span would be
+    // reading a band one rail too wide and would accept a ragged chain.
+    const widths = solve(
+      canvasFor(840),
+      { preferredWidth: 400, minWidth: 320 },
+      { preferredWidth: 400, minWidth: 320 },
+    );
+    const span = resolveSpan({ width: canvasFor(840), height: 800 }, [
+      { side: "left", width: widths?.left ?? 0 },
+      { side: "right", width: widths?.right ?? 0 },
+    ]);
+    const rects = FIVE_UP_THIRDS.map((o) =>
+      imposeRect(resolvePlacement("five-up", o.slot), o.width, span),
+    );
+    for (let i = 0; i < rects.length - 1; i += 1) {
+      const seam =
+        rects[i + 1].position.x - (rects[i].position.x + rects[i].size.width);
+      expect(seam).toBeCloseTo(GAP, 9);
+    }
+  });
+});
+
+describe("content width presets", () => {
+  test("the three widths are the values the brief fixed", () => {
+    // Pinned as numbers, not as an alias of the constants: `wide` is the one
+    // the brief marks adjustable, so a retune should be a deliberate edit here
+    // rather than something a refactor can slide past.
+    expect(CONTENT_WIDTH_SLIM_PX).toBe(675);
+    expect(CONTENT_WIDTH_COMFY_PX).toBe(800);
+    expect(CONTENT_WIDTH_WIDE_PX).toBe(1230);
+  });
+
+  test("the pickers' order is narrow to wide", () => {
+    expect(CONTENT_WIDTH_PRESETS).toEqual(["slim", "comfy", "wide"]);
+  });
+
+  test("a preset resolves to its own pixels when the pane's floor is below it", () => {
+    expect(resolveContentWidthPx("slim", 320)).toBe(675);
+    expect(resolveContentWidthPx("comfy", 675)).toBe(800);
+    expect(resolveContentWidthPx("wide", 800)).toBe(1230);
+  });
+
+  test("a floor above the preset wins — Settings' 720 beats slim", () => {
+    // `movePane` writes the rect it is handed without clamping, so a preset
+    // narrower than the pane's own minimum has to be lifted here or the stored
+    // geometry and the painted frame would disagree.
+    expect(resolveContentWidthPx("slim", 720)).toBe(720);
+    // …and only where it actually binds: the same floor is under comfy.
+    expect(resolveContentWidthPx("comfy", 720)).toBe(800);
+  });
+
+  test("the floor never widens a pane past the preset it was given", () => {
+    for (const preset of CONTENT_WIDTH_PRESETS) {
+      expect(resolveContentWidthPx(preset, 0)).toBe(
+        resolveContentWidthPx(preset, 1),
+      );
+    }
+  });
+
+  test("a ceiling below the preset wins — About is locked at 320", () => {
+    // The deck-wide default reaches every content pane, size-locked cards
+    // included, so the ceiling has to bind for the same reason the floor does.
+    for (const preset of CONTENT_WIDTH_PRESETS) {
+      expect(resolveContentWidthPx(preset, 320, 320)).toBe(320);
+    }
+  });
+
+  test("a ceiling above the preset does not bind", () => {
+    expect(resolveContentWidthPx("slim", 480, 1600)).toBe(675);
+    expect(resolveContentWidthPx("wide", 480, 1600)).toBe(1230);
+  });
+
+  test("an impossible policy resolves to the floor, never below it", () => {
+    // A registration whose max is under its min is malformed; the floor is the
+    // one bound a pane can never paint below, so it is the one that survives.
+    expect(resolveContentWidthPx("slim", 720, 400)).toBe(720);
   });
 });

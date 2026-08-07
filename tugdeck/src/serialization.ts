@@ -36,13 +36,16 @@ import {
 import {
   clampSlot,
   isImpositionKind,
-  isLensPinned,
-  isLensSide,
+  isSidebarPinned,
+  isSidebarSide,
   DEFAULT_IMPOSITION_KIND,
-  DEFAULT_LENS_SIDE,
+  DEFAULT_CONTENT_WIDTH,
+  DEFAULT_SIDEBAR_SIDE,
+  isContentWidth,
   type DeckImposition,
   type ImpositionKind,
-  type LensSide,
+  type SidebarEntry,
+  type SidebarSide,
 } from "@/lib/layout-imposer";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 
@@ -158,7 +161,7 @@ export function serialize(deckState: DeckState): object {
  * so neither it nor its contents overhang the visible bounds. See
  * {@link fitPaneGeometry}.
  *
- * `fallbackLensSide` is the last resort for the Lens's side when the blob
+ * `fallbackSidebarSide` is the last resort for the Lens's side when the blob
  * carries neither the `imposition.lens` record field nor a legacy anchored
  * Lens pane — `DeckManager` passes the value migrated out of the retired
  * app-wide preference. Callers with nothing to offer omit it and get the
@@ -168,13 +171,13 @@ export function deserialize(
   json: string,
   canvasWidth: number,
   canvasHeight: number,
-  fallbackLensSide: LensSide = DEFAULT_LENS_SIDE,
+  fallbackSidebarSide: SidebarSide = DEFAULT_SIDEBAR_SIDE,
 ): DeckState {
   try {
     const raw = JSON.parse(json) as Record<string, unknown>;
 
     if (raw["version"] === 4) {
-      return parseV4(raw, canvasWidth, canvasHeight, fallbackLensSide);
+      return parseV4(raw, canvasWidth, canvasHeight, fallbackSidebarSide);
     }
 
     if (raw["version"] === 3) {
@@ -182,12 +185,12 @@ export function deserialize(
         migrateV3ToV4(raw),
         canvasWidth,
         canvasHeight,
-        fallbackLensSide,
+        fallbackSidebarSide,
       );
     }
 
     if (raw["version"] === 2) {
-      return migrateV2ToV4(raw, canvasWidth, canvasHeight, fallbackLensSide);
+      return migrateV2ToV4(raw, canvasWidth, canvasHeight, fallbackSidebarSide);
     }
 
     // Legacy shape: missing version or any non-2/3/4 version. The historical v5
@@ -200,13 +203,13 @@ export function deserialize(
         raw,
         canvasWidth,
         canvasHeight,
-        fallbackLensSide,
+        fallbackSidebarSide,
       );
     }
 
-    return buildDefaultLayout(fallbackLensSide);
+    return buildDefaultLayout(fallbackSidebarSide);
   } catch {
-    return buildDefaultLayout(fallbackLensSide);
+    return buildDefaultLayout(fallbackSidebarSide);
   }
 }
 
@@ -245,7 +248,7 @@ function migrateV3ToV4(raw: Record<string, unknown>): Record<string, unknown> {
 function readLegacyLensAnchor(
   rawPanes: readonly unknown[],
   lensCardIds: ReadonlySet<string>,
-): LensSide | undefined {
+): SidebarSide | undefined {
   for (const w of rawPanes) {
     if (!w || typeof w !== "object") continue;
     const win = w as Record<string, unknown>;
@@ -255,9 +258,41 @@ function readLegacyLensAnchor(
       continue;
     }
     const anchor = win["anchor"];
-    if (isLensSide(anchor)) return anchor;
+    if (isSidebarSide(anchor)) return anchor;
   }
   return undefined;
+}
+
+/**
+ * The `sidebars` map from an imposition record, keeping only entries that
+ * actually name a side. Entries whose `side` is missing or unreadable are
+ * dropped rather than defaulted: an unplaced sidebar card takes
+ * {@link DEFAULT_SIDEBAR_SIDE} at the moment it opens, and inventing an entry
+ * here would record that default as though the user had chosen it.
+ */
+function parseSidebars(
+  impositionRecord: Record<string, unknown> | undefined,
+): Record<string, SidebarEntry> {
+  const raw = impositionRecord?.["sidebars"];
+  const out: Record<string, SidebarEntry> = {};
+  if (raw === null || typeof raw !== "object") return out;
+  for (const [componentId, value] of Object.entries(
+    raw as Record<string, unknown>,
+  )) {
+    if (value === null || typeof value !== "object") continue;
+    const entry = value as Record<string, unknown>;
+    if (!isSidebarSide(entry["side"])) continue;
+    // Built field by field rather than spread, so a blob carrying something
+    // this build does not know about cannot smuggle it into the record. The
+    // split build wrote an `order` here (a member's position in a rail that
+    // divided vertically); same-side sidebars stand front-to-back now, so
+    // there is no such position and the field is dropped on read.
+    out[componentId] = {
+      side: entry["side"],
+      ...(entry["pinned"] === false ? { pinned: false } : {}),
+    };
+  }
+  return out;
 }
 
 // ---- Internal: v4 parser ----
@@ -270,12 +305,12 @@ function parseV4(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
-  fallbackLensSide: LensSide = DEFAULT_LENS_SIDE,
+  fallbackSidebarSide: SidebarSide = DEFAULT_SIDEBAR_SIDE,
 ): DeckState {
   const rawCards = raw["cards"];
   const rawPanes = raw["panes"];
   if (!Array.isArray(rawCards) || !Array.isArray(rawPanes)) {
-    return buildDefaultLayout(fallbackLensSide);
+    return buildDefaultLayout(fallbackSidebarSide);
   }
 
   const cards: CardState[] = [];
@@ -311,10 +346,12 @@ function parseV4(
   // until one is assigned a slot — the deck looks exactly as it did, and the
   // slot pickers on the Lens rows are live from the first frame.
   //
-  // `imposition` widened from a bare kind string to a `{ kind?, lens }` record
-  // without a version bump, so both shapes parse. The Lens's side comes from
-  // the first source that has one: the record, then the legacy anchored Lens
-  // pane, then the caller's fallback.
+  // `imposition` has widened twice without a version bump, so three shapes
+  // parse: a bare kind string, a `{ kind?, lens, lensPinned? }` record, and the
+  // current `{ kind?, contentWidth?, sidebars }`. The Lens's side comes from the
+  // first source that has one: the sidebars map, the legacy `lens` field, the
+  // legacy anchored Lens pane, then the caller's fallback. The writer emits only
+  // the current shape, so a blob converts on its first save.
   const rawImposition = raw["imposition"];
   const impositionRecord =
     rawImposition !== null && typeof rawImposition === "object"
@@ -330,16 +367,26 @@ function parseV4(
     cards.filter((c) => c.componentId === LENS_CARD_ID).map((c) => c.id),
   );
   const legacyLensAnchor = readLegacyLensAnchor(rawPanes, lensCardIds);
-  const lens: LensSide = isLensSide(impositionRecord?.["lens"])
-    ? (impositionRecord["lens"] as LensSide)
-    : (legacyLensAnchor ?? fallbackLensSide);
-  // `lensPinned` is additive-optional too: absent — every blob written before
-  // the Lens could be dragged off its pin — reads as pinned.
-  const lensPinned = impositionRecord?.["lensPinned"];
+  const sidebars = parseSidebars(impositionRecord);
+  if (sidebars[LENS_CARD_ID] === undefined) {
+    // No current-shape entry: fold the legacy `{lens, lensPinned}` pair into
+    // one. `lensPinned` was additive-optional too, so absent — every blob
+    // written before the Lens could be dragged off its pin — reads as pinned.
+    const side = isSidebarSide(impositionRecord?.["lens"])
+      ? (impositionRecord["lens"] as SidebarSide)
+      : (legacyLensAnchor ?? fallbackSidebarSide);
+    sidebars[LENS_CARD_ID] = {
+      side,
+      ...(impositionRecord?.["lensPinned"] === false ? { pinned: false } : {}),
+    };
+  }
+  const rawContentWidth = impositionRecord?.["contentWidth"];
   const imposition: DeckImposition = {
     kind,
-    lens,
-    ...(lensPinned === false ? { lensPinned: false } : {}),
+    contentWidth: isContentWidth(rawContentWidth)
+      ? rawContentWidth
+      : DEFAULT_CONTENT_WIDTH,
+    sidebars,
   };
 
   const panes: TugPaneState[] = [];
@@ -384,7 +431,8 @@ function parseV4(
     // A Lens dragged off its pin is an ordinary free pane, so it takes the fit
     // clamp like any other; only a Lens standing at its pin derives its frame.
     const derived =
-      (isLensPane && isLensPinned(imposition)) || slot !== undefined;
+      (isLensPane && isSidebarPinned(imposition, LENS_CARD_ID)) ||
+      slot !== undefined;
     const { x, y, width, height } = derived
       ? { x: pos.x, y: pos.y, width: sz.width, height: sz.height }
       : fitPaneGeometry(pos, sz, canvasWidth, canvasHeight);
@@ -400,9 +448,13 @@ function parseV4(
 
     const acceptsFamilies = parseAcceptsFamilies(win["acceptsFamilies"]);
 
-    const rawCollapsed = win["collapsed"];
-    const collapsed =
-      typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
+    // `collapsed` is deliberately not read. Window-shade collapse is gone, and
+    // an old blob's `collapsed: true` deserializes to a pane that comes back
+    // expanded — which is the whole of what dropping it costs.
+    const rawWidthPreset = win["widthPreset"];
+    const widthPreset = isContentWidth(rawWidthPreset)
+      ? rawWidthPreset
+      : undefined;
 
     panes.push({
       id,
@@ -412,7 +464,7 @@ function parseV4(
       activeCardId,
       title,
       acceptsFamilies,
-      ...(collapsed === true ? { collapsed } : {}),
+      ...(widthPreset !== undefined ? { widthPreset } : {}),
       ...(slot !== undefined ? { slot } : {}),
     });
   }
@@ -452,7 +504,7 @@ function migrateV2ToV4(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
-  fallbackLensSide: LensSide,
+  fallbackSidebarSide: SidebarSide,
 ): DeckState {
   const bridged: Record<string, unknown> = {
     version: 3,
@@ -467,7 +519,7 @@ function migrateV2ToV4(
     migrateV3ToV4(bridged),
     canvasWidth,
     canvasHeight,
-    fallbackLensSide,
+    fallbackSidebarSide,
   );
 }
 
@@ -480,7 +532,7 @@ function migrateV2ToV4(
  * Legacy shape per card:
  * ```
  * { id, position, size, tabs: [{ id, componentId, title, closable }],
- *   activeTabId, collapsed?, acceptsFamilies?, title? }
+ *   activeTabId, acceptsFamilies?, title? }
  * ```
  * Migration: each legacy card becomes a pane (same id); each legacy tab
  * becomes a card (same id). Pane `cardIds` = ordered legacy tab ids;
@@ -492,11 +544,11 @@ function migrateV1ToDeckState(
   raw: Record<string, unknown>,
   canvasWidth: number,
   canvasHeight: number,
-  fallbackLensSide: LensSide,
+  fallbackSidebarSide: SidebarSide,
 ): DeckState {
   const rawCards = raw["cards"];
   if (!Array.isArray(rawCards)) {
-    return buildDefaultLayout(fallbackLensSide);
+    return buildDefaultLayout(fallbackSidebarSide);
   }
 
   const cards: CardState[] = [];
@@ -554,10 +606,6 @@ function migrateV1ToDeckState(
 
     const acceptsFamilies = parseAcceptsFamilies(legacy["acceptsFamilies"]);
 
-    const rawCollapsed = legacy["collapsed"];
-    const collapsed =
-      typeof rawCollapsed === "boolean" ? rawCollapsed : undefined;
-
     panes.push({
       id: paneId,
       position: { x, y },
@@ -566,14 +614,13 @@ function migrateV1ToDeckState(
       activeCardId,
       title,
       acceptsFamilies,
-      ...(collapsed === true ? { collapsed } : {}),
     });
   }
 
   return {
     cards,
     panes,
-    imposition: { lens: fallbackLensSide },
+    imposition: { sidebars: { [LENS_CARD_ID]: { side: fallbackSidebarSide } } },
     hasFocus: true,
   };
 }
@@ -592,12 +639,16 @@ function migrateV1ToDeckState(
  * constructor with the live `document.hasFocus()` reading.
  */
 export function buildDefaultLayout(
-  lensSide: LensSide = DEFAULT_LENS_SIDE,
+  sidebarSide: SidebarSide = DEFAULT_SIDEBAR_SIDE,
 ): DeckState {
   return {
     cards: [],
     panes: [],
-    imposition: { kind: DEFAULT_IMPOSITION_KIND, lens: lensSide },
+    imposition: {
+      kind: DEFAULT_IMPOSITION_KIND,
+      contentWidth: DEFAULT_CONTENT_WIDTH,
+      sidebars: { [LENS_CARD_ID]: { side: sidebarSide } },
+    },
     hasFocus: true,
   };
 }

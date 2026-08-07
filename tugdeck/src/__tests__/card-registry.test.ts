@@ -16,6 +16,8 @@ import {
   getAllRegistrations,
   getStackSizePolicy,
   DEFAULT_SIZE_POLICY,
+  getLayoutRole,
+  isSidebarCard,
   _resetForTest,
 } from "../card-registry";
 import type { CardRegistration, CardSizePolicy } from "../card-registry";
@@ -265,5 +267,26 @@ describe("getStackSizePolicy", () => {
       width: 800,
       height: 600,
     });
+  });
+});
+
+describe("layoutRole", () => {
+  it("resolves to content when a registration declares nothing", () => {
+    registerCard(makeRegistration("plain"));
+    expect(getLayoutRole("plain")).toBe("content");
+    expect(isSidebarCard("plain")).toBe(false);
+  });
+
+  it("resolves what the registration declares", () => {
+    registerCard({ ...makeRegistration("rail"), layoutRole: "sidebar" });
+    expect(getLayoutRole("rail")).toBe("sidebar");
+    expect(isSidebarCard("rail")).toBe(true);
+  });
+
+  it("treats an unregistered componentId as content, not as a sidebar", () => {
+    // A card seeded before its registration lands must be arranged, never
+    // silently pinned to a deck edge.
+    expect(getLayoutRole("never-registered")).toBe("content");
+    expect(isSidebarCard("never-registered")).toBe(false);
   });
 });

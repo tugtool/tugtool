@@ -157,7 +157,7 @@ function snapshotWith(args: {
     activeTurn: args.activeTurn ?? null,
     pendingDraftRestore: null,
     pendingCommandInsert: null,
-    pendingSnippetInsert: null,
+    pendingJotInsert: null,
     pendingAtomInsert: null,
     lastCost: null,
     apiRetry: null,

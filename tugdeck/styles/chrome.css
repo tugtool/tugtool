@@ -81,6 +81,12 @@
 .tug-pane-resize-sw { bottom: -4px; left: -4px; width: 12px; height: 12px; cursor: nesw-resize; }
 .tug-pane-resize-se { bottom: -4px; right: -4px; width: 12px; height: 12px; cursor: nwse-resize; }
 
+/* The seam between two cards sharing a sidebar rail. It runs the rail's full
+ * width rather than stopping 8px short at each end: the corners it would leave
+ * clear belong to a corner resize the rail does not offer, so nothing is being
+ * made room for. */
+.tug-pane-seam { left: 0; right: 0; }
+
 /* ---- Card frame: height transition for window-shade collapse [D07] ----
  *
  * When a card collapses or expands, the frame height animates smoothly.

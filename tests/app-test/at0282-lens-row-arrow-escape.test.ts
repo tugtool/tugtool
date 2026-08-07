@@ -8,13 +8,13 @@
  * WebKit and macOS beeped. The user's read of that is "the arrows lock me into
  * a row and beep."
  *
- * Drives the real Lens Snippets list (each row carries a Copy and a Delete, so
+ * Drives the real Lens Jots list (each row carries a Copy and a Delete, so
  * the ordinal is observable) with real native keystrokes. The assertion is on
  * the ENGINE key view (`data-key-view-kbd`), not on a mock: after each arrow
  * the ring must be on the expected accessory of the expected row.
  *
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -32,8 +32,8 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
+const JOTS_LIST = ".jots-card .jots-list";
+const JOTS_KBD = `${JOTS_LIST}[data-key-view-kbd]`;
 
 const ROWS = 5;
 
@@ -83,21 +83,21 @@ async function ringAddress(app: App): Promise<{ label: string; row: string } | n
 }
 
 /**
- * Walk the keyboard from wherever ⌘L seeds it to the Snippets list. The seed
+ * Walk the keyboard from wherever ⌘L seeds it to the Jots list. The seed
  * lands on the first expanded section that has navigable content — the Cards
- * section, since this test opens a card — so getting to Snippets is a Tab walk,
+ * section, since this test opens a card — so getting to Jots is a Tab walk,
  * not an assumption. Tab is used deliberately: it is orthogonal to the arrow
  * behavior under test here.
  */
-async function tabToSnippetsList(app: App): Promise<void> {
+async function tabToJotsList(app: App): Promise<void> {
   for (let i = 0; i < 12; i += 1) {
     const there = await app.evalJS<boolean>(
-      `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+      `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
     );
     if (there) return;
     await app.nativeKey("Tab");
   }
-  throw new Error("the Tab walk never reached the Lens Snippets list");
+  throw new Error("the Tab walk never reached the Lens Jots list");
 }
 
 async function waitRing(
@@ -124,20 +124,20 @@ describe.skipIf(!SHOULD_RUN)("at0282 — Lens row arrows never dead-end", () => 
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0282-"));
-      const snippetsPath = join(filesDir, "snippets.json");
-      const snippets = Array.from({ length: ROWS }, (_, i) => ({
+      const jotsPath = join(filesDir, "jots.json");
+      const jots = Array.from({ length: ROWS }, (_, i) => ({
         id: `s${i}`,
-        text: `row-${i} snippet handle`,
+        text: `row-${i} jot handle`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0282-lens-row-arrow-escape",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -145,45 +145,53 @@ describe.skipIf(!SHOULD_RUN)("at0282 — Lens row arrows never dead-end", () => 
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.dispatchControlAction("focus-lens");
-          await tabToSnippetsList(app);
+          await app.dispatchControlAction("toggle-jots");
+          // Opening the card is not a keyboard entry: click the first row to
+          // put the movement cursor on it, which is what the Lens band click
+          // used to do here.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(".jots-card .jots-list .jot-row-label") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeClickAtElement(".jots-card .jots-list .jot-row-label");
+          await tabToJotsList(app);
 
           // Right descends onto the row's first accessory; Right again walks to
           // the second. This is the pre-existing horizontal contract — it is
           // the starting position for what follows.
           await app.nativeKey("ArrowRight");
-          await waitRing(app, "Copy snippet", "row-0");
+          await waitRing(app, "Copy jot", "row-0");
           await app.nativeKey("ArrowRight");
-          await waitRing(app, "Delete snippet", "row-0");
+          await waitRing(app, "Delete jot", "row-0");
 
           // Down from inside the row: the SAME accessory, one row on. The
           // keyboard is not ejected to the container and nothing beeps.
           await app.nativeKey("ArrowDown");
-          await waitRing(app, "Delete snippet", "row-1");
+          await waitRing(app, "Delete jot", "row-1");
           await app.nativeKey("ArrowDown");
-          await waitRing(app, "Delete snippet", "row-2");
+          await waitRing(app, "Delete jot", "row-2");
 
           // Up walks back the same way.
           await app.nativeKey("ArrowUp");
-          await waitRing(app, "Delete snippet", "row-1");
+          await waitRing(app, "Delete jot", "row-1");
 
           // A ragged neighbour never refuses the move: Left back to Copy, then
           // Down keeps the ordinal it can honour.
           await app.nativeKey("ArrowLeft");
-          await waitRing(app, "Copy snippet", "row-1");
+          await waitRing(app, "Copy jot", "row-1");
           await app.nativeKey("ArrowDown");
-          await waitRing(app, "Copy snippet", "row-2");
+          await waitRing(app, "Copy jot", "row-2");
 
           // End is a LIST gesture from inside a row: it ascends and jumps.
           await app.nativeKey("End");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             { timeoutMs: 3_000 },
           );
           expect(await ringAddress(app)).toBeNull();
           expect(
             await app.evalJS<string>(
-              `(document.querySelector('${SNIPPETS_LIST} [data-key-cursor]')?.textContent || "")`,
+              `(document.querySelector('${JOTS_LIST} [data-key-cursor]')?.textContent || "")`,
             ),
           ).toContain(`row-${ROWS - 1}`);
 

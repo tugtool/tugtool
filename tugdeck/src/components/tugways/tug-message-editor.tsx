@@ -77,7 +77,7 @@ export interface TugMessageEditorHandle {
   /**
    * Bring the caret into view in every enclosing scroller, the outer ones
    * included. A consumer that lets the field grow uncapped inside its own
-   * scroller (the Lens snippet editor: the list scrolls, not the field) calls
+   * scroller (the Jots editor: the list scrolls, not the field) calls
    * this on each edit — see the substrate's `revealCaret` for the scheduling.
    */
   revealCaret(): void;
@@ -165,7 +165,7 @@ export interface TugMessageEditorProps {
    */
   onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
   /**
-   * Forwarded to the substrate: a transient, in-list editor (the Lens snippet
+   * Forwarded to the substrate: a transient, in-list editor (the Jots
    * editor) that is not its card's primary text surface should NOT register
    * card engine hooks, whose mount/unmount churn re-fires the card's focus
    * restore and steals the keyboard key view. @default false

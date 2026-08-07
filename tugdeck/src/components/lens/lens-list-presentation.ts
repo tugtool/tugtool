@@ -1,10 +1,10 @@
 /**
  * lens-list-presentation.ts — the Lens's one-line lists, tuned in one place.
  *
- * The Snippets and Text Files sections are the same kind of surface: a dense
- * index of one-line handles, stacked in a narrow column, read by scanning
+ * The Lens's own lists and the Jots card's are the same kind of surface: a
+ * dense index of one-line handles, stacked in a narrow column, read by scanning
  * rather than by dwelling. They must therefore agree on how a row is separated
- * from its neighbour and how big its text is — two lists in one column that
+ * from its neighbour and how big its text is — two lists in one rail that
  * disagree on either read as a layout accident.
  *
  * Everything below is live under HMR: change a number, look at the Lens.

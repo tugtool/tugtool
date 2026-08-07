@@ -3,7 +3,7 @@
  * Lens keyboard pin.
  *
  * Pins the relaunch-with-Lens-focus case (#57/#51): quit the app with
- * keyboard focus on the Lens snippets list, relaunch, and the restored
+ * keyboard focus on the Lens jots list, relaunch, and the restored
  * ring must be a keyboard the user can actually drive — zero invariant
  * violations, and a NATIVE ArrowDown moves `data-key-cursor`.
  *
@@ -21,8 +21,8 @@
  * |-------|-------------------------|-------------------------------|-------------------------------|
  * | A     | empty (fresh temp DB)   | seed session deck → bind real | tugbank disk holds the Lens   |
  * |       |                         | session → ⌘L + Tab to the     | card's `bag.focus` with       |
- * |       |                         | snippets list → quitGracefully| `keyboard: true`              |
- * | B     | populated (from A)      | relaunch with                 | ring on the snippets list,    |
+ * |       |                         | jots list → quitGracefully| `keyboard: true`              |
+ * | B     | populated (from A)      | relaunch with                 | ring on the jots list,    |
  * |       |                         | `restoreInTestMode` — NO      | zero invariant violations,    |
  * |       |                         | seeding, NO clicks — then a   | native ArrowDown moves        |
  * |       |                         | LATE session bind (the thief) | `data-key-cursor`             |
@@ -41,9 +41,9 @@
  * The plan for this pin (`roadmap/keyboard-as-engine-state.md` [P11])
  * expected it to FAIL against the shipped focus-by-construction
  * engine. It does not: driven exactly as above, Phase B settles with
- * the ring on the snippets list, `violations: 0`, ArrowDown moving the
+ * the ring on the jots list, `violations: 0`, ArrowDown moving the
  * cursor, and the late-bound editor NOT holding `document.activeElement`
- * (post-bind probe: `activeElement` = the snippets list itself — the
+ * (post-bind probe: `activeElement` = the jots list itself — the
  * bind-path focus claim is gated on card activation, so no steal fires
  * while the Lens is the active card). The user-reported failure
  * evidently needs an ingredient the harness cannot recreate (real OS
@@ -74,10 +74,8 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
-const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
-const SNIPPETS_BAND_KBD = `${SNIPPETS_SECTION} > .tool-call-header[data-key-view-kbd]`;
+const JOTS_LIST = ".jots-card .jots-list";
+const JOTS_KBD = `${JOTS_LIST}[data-key-view-kbd]`;
 
 const SESSION_DECK_STATE = {
   cards: [
@@ -106,7 +104,7 @@ async function dispatch(app: App, action: string): Promise<void> {
 async function cursorRowText(app: App): Promise<string | null> {
   return app.evalJS<string | null>(
     `(function(){
-      var el = document.querySelector(${JSON.stringify(`${SNIPPETS_LIST} [data-key-cursor]`)});
+      var el = document.querySelector(${JSON.stringify(`${JOTS_LIST} [data-key-cursor]`)});
       return el === null ? null : (el.textContent || "");
     })()`,
   );
@@ -118,17 +116,17 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0247-"));
-      const snippetsPath = join(filesDir, "snippets.json");
-      const snippets = Array.from({ length: 8 }, (_, i) => ({
+      const jotsPath = join(filesDir, "jots.json");
+      const jots = Array.from({ length: 8 }, (_, i) => ({
         id: `s${i}`,
-        text: `snippet number ${i} — a one-line handle`,
+        text: `jot number ${i} — a one-line handle`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
 
-      let lensCardId: string | null = null;
+      let jotsCardId: string | null = null;
 
       try {
         seedTugbankForLaunch(tugbankPath);
@@ -137,7 +135,7 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
         {
           const app = await launchTugApp({
             testName: "at0247-relaunch-lens-keyboard-A",
-            env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+            env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
             persistInTestMode: true,
           });
           try {
@@ -158,37 +156,28 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
               `document.querySelector('[data-card-id="A"] .cm-content') !== null`,
               { timeoutMs: 6_000 },
             );
-            // The product ⌘L path: focus the Lens. With a real session
-            // card open the Cards section is non-empty, so the ⌘L
-            // seed lands there first; Tab — the product walk — moves
-            // the key view on to the Snippets section. The band is a
-            // stop, and so is everything on it (the filter field, the
-            // `+`, the fold chevron), so the walk crosses the whole
-            // band before it reaches the rows — walked rather than
-            // counted, since what is pinned here is where it ENDS.
-            await dispatch(app, "focus-lens");
+            // The product path: open the Jots card and walk into its rows.
+            // The card's chrome (the filter field, the `+`) leads its focus
+            // group, so the walk crosses it before it reaches the rows —
+            // walked rather than counted, since what is pinned here is where
+            // it ENDS.
+            await dispatch(app, "toggle-jots");
             await app.waitForCondition<boolean>(
               `window.__tug.getActiveCardId() !== "A"`,
               { timeoutMs: 5_000 },
             );
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_LIST)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_LIST)}) !== null`,
               { timeoutMs: 5_000 },
             );
             await app.waitForCondition<boolean>(
               `document.querySelector("[data-key-view-kbd]") !== null`,
               { timeoutMs: 8_000 },
             );
-            // The band leads the section, so the first press lands there.
-            await app.nativeKey("Tab");
-            await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_BAND_KBD)}) !== null`,
-              { timeoutMs: 5_000 },
-            );
             for (let i = 0; i < 8; i += 1) {
               if (
                 await app.evalJS<boolean>(
-                  `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+                  `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
                 )
               ) {
                 break;
@@ -196,12 +185,12 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
               await app.nativeKey("Tab");
             }
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
               { timeoutMs: 5_000 },
             );
-            lensCardId = await app.getActiveCardId();
-            expect(lensCardId).not.toBeNull();
-            expect(lensCardId).not.toBe("A");
+            jotsCardId = await app.getActiveCardId();
+            expect(jotsCardId).not.toBeNull();
+            expect(jotsCardId).not.toBe("A");
 
             // Let the focus write settle into the bag, then quit
             // through the real termination path (saveAndFlushSync →
@@ -215,14 +204,14 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
         }
 
         // ── Phase A disk assertion: the Lens bag persisted a keyboard
-        //    focus on the snippets section. ──
+        //    focus on the jots section. ──
         const onDisk = tugbankRead<{
           focus?: { kind?: string; focusKey?: string; keyboard?: boolean } | null;
-        }>(tugbankPath, "dev.tugtool.deck.cardstate", lensCardId!);
+        }>(tugbankPath, "dev.tugtool.deck.cardstate", jotsCardId!);
         expect(onDisk).not.toBeNull();
         const savedFocus = onDisk?.value?.focus;
         expect(savedFocus?.keyboard).toBe(true);
-        expect(savedFocus?.focusKey ?? "").toStartWith("lens-section-snippets");
+        expect(savedFocus?.focusKey ?? "").toStartWith("jots-card");
 
         // ── Phase B: relaunch against the same tugbank. NO seeding,
         //    NO clicks — the constructor restore is the code under
@@ -230,20 +219,20 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
         {
           const app = await launchTugApp({
             testName: "at0247-relaunch-lens-keyboard-B",
-            env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+            env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
             persistInTestMode: true,
             restoreInTestMode: true,
           });
           try {
-            // The restored deck mounts on its own: the snippets list
-            // arrives when the snippets feed lands.
+            // The restored deck mounts on its own: the jots list
+            // arrives when the jots feed lands.
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_LIST)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_LIST)}) !== null`,
               { timeoutMs: 10_000 },
             );
-            // 1. The ring restored onto the snippets list.
+            // 1. The ring restored onto the jots list.
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
               { timeoutMs: 8_000 },
             );
 
@@ -270,7 +259,7 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             // 2. The ring survived the late bind.
             expect(
               await app.evalJS<boolean>(
-                `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+                `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
               ),
             ).toBe(true);
 
@@ -287,7 +276,7 @@ describe.skipIf(!SHOULD_RUN)("at0247 — true relaunch Lens keyboard pin", () =>
             await app.nativeKey("ArrowDown");
             await app.waitForCondition<boolean>(
               `(function(){
-                var el = document.querySelector(${JSON.stringify(`${SNIPPETS_LIST} [data-key-cursor]`)});
+                var el = document.querySelector(${JSON.stringify(`${JOTS_LIST} [data-key-cursor]`)});
                 return el !== null && (el.textContent || "") !== ${JSON.stringify(before ?? "")};
               })()`,
               { timeoutMs: 4_000 },

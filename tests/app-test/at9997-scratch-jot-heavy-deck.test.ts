@@ -1,6 +1,6 @@
 /**
- * at9997-scratch-snippet-heavy-deck.test.ts — SCRATCH probe. What does a
- * discrete mutation cost on a loaded deck, and how much of the snippet-open
+ * at9997-scratch-jot-heavy-deck.test.ts — SCRATCH probe. What does a
+ * discrete mutation cost on a loaded deck, and how much of the jot-open
  * bill is the stylesheet's `:has()` rules?
  *
  * Rebuilds the release deck shape (three transcript-bearing session cards,
@@ -9,14 +9,14 @@
  *   1. Bare-mutation pricing — a plain div into the Lens, a plain div into a
  *      transcript, a junk attribute on <html>, each followed by a forced
  *      read. Distinguishes "any mutation pays" from "this gesture pays".
- *   2. A `div.snippet-editor` decoy — flips the `.lens-sections:has(...)`
+ *   2. A `div.jot-editor` decoy — flips the `.lens-sections:has(...)`
  *      anchors with no React, no CodeMirror, no focus machinery.
  *   3. The real Return gesture, timed ×3, before and after scrubbing `:has()`
  *      rules from the live stylesheets (AT9997_SCRUB=all|md|lens).
  *
  * Not a regression test — a stopwatch. Delete when the question is answered.
  *
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -39,8 +39,8 @@ const SCRUB = process.env.AT9997_SCRUB ?? "all";
 /** Session cards on the deck. */
 const SESSIONS = ["A", "B", "C"] as const;
 
-const SNIPPETS_KBD = `.lens-content .lens-snippets-list[data-key-view-kbd]`;
-const EDITOR = `.lens-snippets-list .snippet-editor`;
+const JOTS_KBD = `.jots-card .jots-list[data-key-view-kbd]`;
+const EDITOR = `.jots-list .jot-editor`;
 
 const TEXTS = [
   "walk me through whether 2027 is a prime number or not",
@@ -148,7 +148,7 @@ const MUTATION_PROBES = `(function () {
     out[name] = reps;
   }
   var lens = document.querySelector(".lens-content");
-  var list = document.querySelector(".lens-snippets-list");
+  var list = document.querySelector(".jots-list");
   var entry = document.querySelector(".tug-transcript-entry");
   var transcriptHost = entry === null ? null : entry.parentElement;
   var el = null;
@@ -162,7 +162,7 @@ const MUTATION_PROBES = `(function () {
   if (list !== null) {
     price("editorClassDecoy", function () {
       el = document.createElement("div");
-      el.className = "snippet-editor";
+      el.className = "jot-editor";
       el.textContent = "probe";
       list.appendChild(el);
     }, function () { el.remove(); });
@@ -398,7 +398,7 @@ async function closeEditor(app: App): Promise<void> {
     { timeoutMs: 10_000 },
   );
   await app.waitForCondition<boolean>(
-    `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+    `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
     { timeoutMs: 10_000 },
   );
 }
@@ -418,24 +418,24 @@ async function openPass(app: App, tag: string): Promise<Timing[]> {
   return runs;
 }
 
-describe.skipIf(!SHOULD_RUN)("at9997 — snippet open under a heavy deck", () => {
+describe.skipIf(!SHOULD_RUN)("at9997 — jot open under a heavy deck", () => {
   test(
     "mutation pricing + :has() ablation on the loaded deck",
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at9997-"));
-      const snippetsPath = join(dir, "snippets.json");
+      const jotsPath = join(dir, "jots.json");
       writeFileSync(
-        snippetsPath,
+        jotsPath,
         `${JSON.stringify({
           version: 1,
-          snippets: TEXTS.map((text, i) => ({ id: `s${i}`, text })),
+          jots: TEXTS.map((text, i) => ({ id: `s${i}`, text })),
         })}\n`,
       );
       seedTugbankForLaunch(tugbankPath);
       const app = await launchTugApp({
-        testName: "at9997-scratch-snippet-heavy-deck",
-        env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+        testName: "at9997-scratch-jot-heavy-deck",
+        env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         persistInTestMode: true,
       });
       try {
@@ -486,16 +486,15 @@ describe.skipIf(!SHOULD_RUN)("at9997 — snippet open under a heavy deck", () =>
         );
         console.log(`[at9997] mutation probes → ${JSON.stringify(probes)}`);
 
-        // Land the key view on the snippets list.
+        // Open the Jots card and land the key view on its list.
+        await app.dispatchControlAction("toggle-jots");
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll('.snippet-row-label').length === ${TEXTS.length}`,
+          `document.querySelectorAll('.jot-row-label').length === ${TEXTS.length}`,
           { timeoutMs: 10_000 },
         );
-        await app.nativeClickAtElement(
-          `.lens-section[data-lens-section="snippets"] [data-testid="lens-section-band"] .tool-call-header-name`,
-        );
+        await app.nativeClickAtElement(".jots-card .jot-row-label");
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+          `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
           { timeoutMs: 8_000 },
         );
 

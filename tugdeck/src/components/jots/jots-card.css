@@ -1,30 +1,58 @@
-/* Snippets Lens section. Tokens only — no literal colors. */
+/* The Jots card. Tokens only — no literal colors. */
 
-.snippets-section {
+.jots-card {
   display: flex;
   flex-direction: column;
-  /* No inline padding — the list's own equal margin is the only inset, so the
-     Snippets list is the SAME width as the Sessions / Text Files lists (extra
-     section padding here used to make it narrower). */
+  block-size: 100%;
+  /* No inline padding — the list's own equal margin is the only inset, so a
+     jot's incipit starts where the toolbar's controls do. */
   padding: 0;
-  /* Fills the section body; the list inside is the scroller. */
-  flex: 1 1 auto;
-  /* Snippet editor font size — TUNE HERE. Passed to the open editor as
+  outline: none;
+  /* Jot editor font size — TUNE HERE. Passed to the open editor as
      `--tug-font-size-editor`; smaller than the substrate's 14px default so the
      in-place editor reads at the row's density. */
-  --tugx-snippet-editor-font-size: 12px;
+  --tugx-jot-editor-font-size: 12px;
+  /* The empty label stands at exactly one row's height, so a card with nothing
+     in it shows one row's worth of nothing rather than a taller box. */
+  --tugx-jots-empty-block-size: 28px;
 }
 
-/* When the list is present, flatten the section-root's min-content so it can
+/* When the list is present, flatten the card root's min-content so it can
    shrink and let the list scroll; empty keeps `auto` to hold its label. */
-.snippets-section:has(.tug-list-view) {
+.jots-card:has(.tug-list-view) {
   min-block-size: 0;
+}
+
+/* The card's own chrome, where the Lens band used to be: the filter field
+   takes the width and the `+` sits at its trailing end. */
+.jots-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  flex: 0 0 auto;
+}
+
+.jots-toolbar > [data-slot="tug-filter-field"] {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* Stands in for the list's first row, at that row's height. */
+.jots-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--tugx-jots-empty-block-size);
+  padding-inline: 10px;
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 /* Positioning context for the reorder drop caret ([Q02]); the list view owns
    the row hover/cursor, this wrap owns only the caret overlay. Sizes to content
    (no internal scroll). */
-.snippets-list-wrap {
+.jots-list-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -33,20 +61,23 @@
 }
 
 /* Doubled selector so these overrides beat the base `.tug-list-view`
-   rules regardless of bundle order. The list is this section's scroller: it
-   fills the section's flex share and scrolls its rows internally. Edge-to-edge:
-   no margin, no frame, no radius — see the Sessions list for the reasoning. */
-.tug-list-view.lens-snippets-list {
+   rules regardless of bundle order. The list is the card's scroller: it fills
+   what the toolbar leaves and scrolls its rows internally. Edge-to-edge: no
+   margin, no frame, no radius — see the Cards list for the reasoning. */
+.tug-list-view.jots-list {
   flex: 1 1 auto;
   min-block-size: 0;
   height: auto;
   --tugx-list-view-padding-inline: 0;
   --tugx-list-view-padding-block: 0;
-  /* Row height comes from `.lens-oneline-list` in `lens-content.css`, shared
-     with the Text Files list so the two agree. */
-  /* One step in from the band header's own inline padding, so the incipits read
-     as sitting UNDER the section's icon and title rather than starting at the
-     same hard edge the header does. */
+  /* Row height. The Lens's one-line lists carry the same number on
+     `.lens-oneline-list`, so a jot row and a Lens row read as one measure —
+     they are the same kind of surface (see `lens-list-presentation.ts`, whose
+     props these rows also take). */
+  --tugx-list-row-padding-block: 2px;
+  /* One step in from the toolbar's own inline padding, so the incipits read as
+     sitting UNDER the card's controls rather than starting at the same hard
+     edge they do. */
   --tugx-list-row-padding-inline: var(--tug-space-lg);
   --tugx-list-row-indicator-gutter: 0px;
 }
@@ -54,14 +85,14 @@
 /* If this list is ever tuned back to hairlines (`rowStriping: "none"` in
    `lens-list-presentation.ts`), they show on EVERY row — re-assert the divider
    the list-view's "clean selected block" rule drops around a selected / cursor
-   row, exactly as the Sessions list does. Inert while the list is striped,
+   row, exactly as the Cards list does. Inert while the list is striped,
    which draws no hairlines at all. */
-.tug-list-view.lens-snippets-list[data-row-layout="flush"]
+.tug-list-view.jots-list[data-row-layout="flush"]
   .tug-list-view-cell:not(:last-child) {
   border-bottom-color: var(--tugx-list-view-divider-color) !important;
 }
 
-.snippets-error {
+.jots-error {
   padding: 6px 10px;
   font-size: 12px;
   border-radius: var(--tug-radius-sm, 6px);
@@ -69,28 +100,25 @@
   background: var(--tug7-element-global-surface-raised-rest, rgba(127, 127, 127, 0.08));
 }
 
-/* The empty label's size, tone and row-height box are `.lens-section-empty`'s
-   (`lens-content.css`) — shared by all three sections. */
-
 /* The reorder-drag lift on the TugListRow root while it is being dragged. The
    row layout itself (content / copy / delete) comes from TugListRow. */
-.snippet-row-content[data-dragging="true"] {
+.jot-row-content[data-dragging="true"] {
   opacity: 0.6;
   z-index: 2;
 }
 
-/* The OPEN CARD — the editing snippet's row stays as the card HEADER (the
+/* The OPEN CARD — the editing jot's row stays as the card HEADER (the
    selection fill, rendered by `TugListRow` inside the editor cell) and the
    editor is the WELL beneath it. The card spans the full list width and draws
-   NO frame of its own: its side edges are the Lens rail's, its top and bottom
+   NO frame of its own: its side edges are the card's, its top and bottom
    edges are the list's existing dividers — nested rectangles are impossible by
    construction.
 
-   The keyboard-focus CARRIER rule (ratified): while the Lens is keyboard-active
+   The keyboard-focus CARRIER rule (ratified): while the card is keyboard-active
    exactly ONE carrier shows — the list's ring language (perimeter ring + cursor
    bar) while navigating, the caret (with the substrate's field wash) while
    editing. Never both, never neither. */
-.snippet-editor {
+.jot-editor {
   padding: 0;
   outline: none;
 }
@@ -99,8 +127,8 @@
    its own focus affordance (the caret), so the global leaf ring never paints on
    either (the same suppression prompt entry's shell carries,
    `tug-entry-shell.css`). */
-.snippet-editor[data-key-view-kbd],
-.snippet-editor-well
+.jot-editor[data-key-view-kbd],
+.jot-editor-well
   .tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
   outline: none;
 }
@@ -117,19 +145,19 @@
    descend that does not want the list's cursor bar up; every other descend
    lands on an accessory the row owns, where the bar says which row it belongs
    to. */
-.lens-content:has(.snippet-editor:focus-within) [data-key-within] {
+.jots-card:has(.jot-editor:focus-within) [data-key-within] {
   outline: none;
 }
-.lens-snippets-list:has(.snippet-editor:focus-within)
+.jots-list:has(.jot-editor:focus-within)
   .tug-list-view-cell[data-key-cursor]::before {
   background: transparent;
 }
 
-/* The card HEADER pins while a long snippet scrolls under it: it stays at the
-   top of the list scroller as the well's body scrolls, so the snippet's name
+/* The card HEADER pins while a long jot scrolls under it: it stays at the
+   top of the list scroller as the well's body scrolls, so the jot's name
    (the live incipit + copy / close) is always in reach. Sticky sticks within
    the list's scrollport while the editing cell is in view — and the editing
-   cell IS the whole tall snippet, so the header holds the top throughout the
+   cell IS the whole tall jot, so the header holds the top throughout the
    scroll.
 
    Opacity is no longer this rule's problem. A selected `TugListRow` paints its
@@ -140,7 +168,7 @@
    base + wash pair itself, against the pane's content surface rather than the
    well the row actually rests on; the primitive now does it, and does it
    against the right surface. */
-.snippet-editor .snippet-editor-header[data-selected="true"] {
+.jot-editor .jot-editor-header[data-selected="true"] {
   position: sticky;
   top: 0;
   z-index: 2;
@@ -153,11 +181,11 @@
    with the field background over the row; with the radii zeroed here the field
    background is safe to keep.) Only the host border stays transparent — the
    card's edges are the list's lines, never the field's own frame. */
-.snippet-editor-well .tug-text-editor {
+.jot-editor-well .tug-text-editor {
   border-color: transparent !important;
   border-radius: 0 !important;
 }
-.snippet-editor-well .tug-text-editor > .cm-editor {
+.jot-editor-well .tug-text-editor > .cm-editor {
   border-radius: 0 !important;
 }
 
@@ -165,19 +193,19 @@
    substrate's row formula, `N * 1lh` + the `.cm-content` block padding) — a
    place to write, with room for a paste to land — instead of one cramped line.
    Content past the floor grows the well line-by-line, extending the stack
-   downward into the Lens's free space. Overrides `TugMessageEditor`'s 3-row
+   downward into the card's free space. Overrides `TugMessageEditor`'s 3-row
    composer floor at the same element it is set on. */
-.snippet-editor-well .tug-message-editor {
+.jot-editor-well .tug-message-editor {
   --tug-text-editor-min-height: calc(6 * 1lh + 16px);
 }
 
 /* The well never scrolls on its own — it grows with its content, and the
-   section (content-sized, top-anchored) grows with it into the Lens's slack.
-   Under real pressure the LIST is the single scroller, and SnippetsBody reveals
+   card (content-sized, top-anchored) grows with it into its own slack.
+   Under real pressure the LIST is the single scroller, and JotsBody reveals
    the caret into the list on each edit so it never scrolls off. Lift the base
    `maxRows` cap so the well keeps growing rather than switching the CM6
    scroller to its own internal scroll. */
-.snippet-editor-well .tug-text-editor > .cm-editor > .cm-scroller {
+.jot-editor-well .tug-text-editor > .cm-editor > .cm-scroller {
   max-height: none;
 }
 
@@ -192,19 +220,19 @@
    the text from starting a native text-selection, which WebKit then swallows the
    click for (so a click on the incipit never reached the row's select handler;
    the non-text gap, with nothing to select, always did). */
-.snippet-row-label {
+.jot-row-label {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   /* Size comes from the list's `rowTextSize` — inherited, not restated, so the
-     Snippets incipit and the Text Files filename are one measure. */
+     Jots incipit and the Text Files filename are one measure. */
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.snippet-row-label-empty {
+.jot-row-label-empty {
   color: var(--tug7-element-global-text-normal-subtle-rest);
   font-style: italic;
 }
@@ -216,7 +244,7 @@
    row. `pointer-events: none` sends the pointer straight to the label, which
    bubbles the click to the list cell (select + focus, the Things model). The
    label itself keeps pointer events for the drag handle. */
-.snippet-row-incipit {
+.jot-row-incipit {
   pointer-events: none;
 }
 

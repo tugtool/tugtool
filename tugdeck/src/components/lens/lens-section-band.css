@@ -74,19 +74,19 @@
   min-block-size: 0;
 }
 
-/* While a snippet editor is open, the EDITING section is the sole giver of
+/* While a jot editor is open, the EDITING section is the sole giver of
    space. Its siblings hold their content size (`flex-shrink: 0`) and the
    editing section keeps `flex-shrink: 1`, so a long paste that overflows the
    Lens is absorbed by the editing section shrinking — its own list scrolls
    under the pinned card header — instead of the flex shrink distributing
    across every band and squeezing the Sessions / Text Files bands (or nudging
-   the pinned header up into them). At rest, or editing a short snippet, no
+   the pinned header up into them). At rest, or editing a short jot, no
    section overflows, so nothing shrinks and the top-anchored content sizing is
    unchanged. */
-.lens-sections:has(.snippet-editor) > .lens-section {
+.lens-sections:has(.jot-editor) > .lens-section {
   flex-shrink: 0;
 }
-.lens-sections:has(.snippet-editor) > .lens-section:has(.snippet-editor) {
+.lens-sections:has(.jot-editor) > .lens-section:has(.jot-editor) {
   flex-shrink: 1;
 }
 
@@ -148,7 +148,7 @@
 }
 
 /* Everything in the cluster except the field holds its size — the section's
-   own controls (Snippets' `+`, Sessions' expand/collapse pair) and the fold
+   own controls (Jots' `+`, Sessions' expand/collapse pair) and the fold
    chevron are glyph-sized already and have nothing to give. */
 .lens-section > .tool-call-header .tool-call-header-actions > :not(.tug-filter-field) {
   flex: 0 0 auto;

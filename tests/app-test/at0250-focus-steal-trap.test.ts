@@ -3,12 +3,12 @@
  * Spec S03 of the keyboard-as-engine-state plan).
  *
  * The at0247 Phase-B shape, reachable via the activation channel: the Lens
- * holds the keyboard target (ring on the snippets list, engine-routed) while
+ * holds the keyboard target (ring on the jots list, engine-routed) while
  * a session editor card is present. A RAW `.focus()` on the editor's
  * contenteditable — the exact write class behind the historical
  * relaunch-with-Lens-focus failure — must:
  *
- *   1. steal nothing: the ring stays on the snippets list, `violations`
+ *   1. steal nothing: the ring stays on the jots list, `violations`
  *      stays 0 (keys never routed through the stolen register);
  *   2. be corrected: the watchdog re-parks `document.activeElement`;
  *   3. be ATTRIBUTED: the `steals` ledger names the offender — a raw write
@@ -43,11 +43,11 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const LENS_CARD_ID = "lens-card";
-const SNIPPETS_KBD = ".lens-content .lens-snippets-list[data-key-view-kbd]";
-const CURSOR = ".lens-content .lens-snippets-list [data-key-cursor]";
+const JOTS_CARD_ID = "jots-card";
+const JOTS_KBD = ".jots-card .jots-list[data-key-view-kbd]";
+const CURSOR = ".jots-card .jots-list [data-key-cursor]";
 
-function deckWithLensAndEditor() {
+function deckWithJotsAndEditor() {
   return {
     cards: [
       {
@@ -56,7 +56,7 @@ function deckWithLensAndEditor() {
         title: "TugPromptEntry",
         closable: true,
       },
-      { id: LENS_CARD_ID, componentId: "lens", title: "Lens", closable: true },
+      { id: JOTS_CARD_ID, componentId: "jots", title: "Jots", closable: true },
     ],
     panes: [
       {
@@ -69,17 +69,17 @@ function deckWithLensAndEditor() {
         acceptsFamilies: ["maker"],
       },
       {
-        id: "lens-pane",
+        id: "jots-pane",
         position: { x: 0, y: 0 },
         size: { width: 320, height: 600 },
-        cardIds: [LENS_CARD_ID],
-        activeCardId: LENS_CARD_ID,
-        title: "Lens",
+        cardIds: [JOTS_CARD_ID],
+        activeCardId: JOTS_CARD_ID,
+        title: "Jots",
         acceptsFamilies: [],
 
       },
     ],
-    activePaneId: "lens-pane",
+    activePaneId: "jots-pane",
     hasFocus: true,
   };
 }
@@ -89,39 +89,39 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
     "a raw editor focus write is corrected, attributed, and steals nothing",
     async () => {
       const tugbankPath = mkTempTugbank();
-      const snippetsDir = mkdtempSync(join(tmpdir(), "tug-at0250-"));
-      const snippetsPath = join(snippetsDir, "snippets.json");
-      const snippets = Array.from({ length: 6 }, (_, i) => ({
+      const jotsDir = mkdtempSync(join(tmpdir(), "tug-at0250-"));
+      const jotsPath = join(jotsDir, "jots.json");
+      const jots = Array.from({ length: 6 }, (_, i) => ({
         id: `s${i}`,
         text: `steal-trap row ${i}`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0250-focus-steal-trap",
           foreground: true,
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({
-            state: deckWithLensAndEditor(),
+            state: deckWithJotsAndEditor(),
             cardStates: {
-              [LENS_CARD_ID]: {
+              [JOTS_CARD_ID]: {
                 focus: {
                   kind: "dom",
-                  focusKey: "lens-section-snippets:0",
+                  focusKey: "jots-card:0",
                   keyboard: true,
                 },
               },
             },
-            focusCardId: LENS_CARD_ID,
+            focusCardId: JOTS_CARD_ID,
           });
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list') !== null`,
+            `document.querySelector('.jots-list') !== null`,
             { timeoutMs: 6_000 },
           );
           await app.waitForCondition<boolean>(
@@ -132,7 +132,7 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
             timeoutMs: 10_000,
           });
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             { timeoutMs: 6_000 },
           );
 
@@ -153,7 +153,7 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
             const report = window.__tug.getFocusInvariantReport();
             const active = document.activeElement;
             return {
-              ringOnList: document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null,
+              ringOnList: document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null,
               activeIsEditor: active !== null && active.closest('[data-card-id="A"]') !== null,
               violations: report === null ? -1 : report.violations,
               reasserted: report === null ? -1 : report.reasserted,
@@ -181,7 +181,7 @@ describe.skipIf(!SHOULD_RUN)("at0250 — the watchdog's steal trap", () => {
           await app.close();
         }
       } finally {
-        rmSync(snippetsDir, { recursive: true, force: true });
+        rmSync(jotsDir, { recursive: true, force: true });
         rmTempTugbank(tugbankPath);
       }
     },

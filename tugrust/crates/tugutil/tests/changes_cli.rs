@@ -730,9 +730,9 @@ fn draft_set_preserves_the_users_project_spelling() {
         "draft",
         "set",
         "--owner",
-        "dash:snippets",
+        "dash:widgets",
         "--message",
-        "Join the snippets work",
+        "Join the widgets work",
         "--project",
     ]);
     set.arg(&link);
@@ -758,15 +758,15 @@ fn draft_set_preserves_the_users_project_spelling() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(owner_id, "tugdash/snippets");
+    assert_eq!(owner_id, "tugdash/widgets");
 
     // Show through the raw symlink spelling still finds it.
     let mut show = tug(ledger.path());
-    show.args(["draft", "show", "--owner", "dash:snippets", "--project"]);
+    show.args(["draft", "show", "--owner", "dash:widgets", "--project"]);
     show.arg(&link);
     let (code, stdout, _) = run(show);
     assert_eq!(code, 0);
-    assert!(stdout.contains("Join the snippets work"), "{stdout}");
+    assert!(stdout.contains("Join the widgets work"), "{stdout}");
 }
 
 /// Read one column off the single draft row on file.

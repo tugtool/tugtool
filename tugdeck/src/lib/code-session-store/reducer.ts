@@ -43,7 +43,7 @@ import type {
   AssistantTextEvent,
   CancelQueuedSendActionEvent,
   InsertCommandDraftActionEvent,
-  InsertSnippetActionEvent,
+  InsertJotActionEvent,
   InsertAtomDraftActionEvent,
   CodeSessionEvent,
   ContentBlockStartEvent,
@@ -432,12 +432,12 @@ export interface CodeSessionState {
     args: string;
   } | null;
   /**
-   * A snippet dragged/clicked into the prompt entry, parked by
-   * `insert_snippet` and cleared by `consume_snippet_insert`. Mirrored onto
-   * `CodeSessionSnapshot.pendingSnippetInsert` with a shared reference so the
+   * A jot dragged/clicked into the prompt entry, parked by
+   * `insert_jot` and cleared by `consume_jot_insert`. Mirrored onto
+   * `CodeSessionSnapshot.pendingJotInsert` with a shared reference so the
    * seeding `useLayoutEffect` fires once per gesture.
    */
-  pendingSnippetInsert: {
+  pendingJotInsert: {
     text: string;
     at: { x: number; y: number } | null;
   } | null;
@@ -895,7 +895,7 @@ export function createInitialState(
     pendingTurn: null,
     pendingDraftRestore: null,
     pendingCommandInsert: null,
-    pendingSnippetInsert: null,
+    pendingJotInsert: null,
     pendingAtomInsert: null,
     pendingCaseAEchoes: 0,
     queuedSends: [],
@@ -1391,28 +1391,28 @@ function handleConsumeCommandInsert(
   };
 }
 
-function handleInsertSnippet(
+function handleInsertJot(
   state: CodeSessionState,
-  event: InsertSnippetActionEvent,
+  event: InsertJotActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   return {
     state: {
       ...state,
-      pendingSnippetInsert: { text: event.text, at: event.at },
+      pendingJotInsert: { text: event.text, at: event.at },
     },
     effects: [],
   };
 }
 
-function handleConsumeSnippetInsert(
+function handleConsumeJotInsert(
   state: CodeSessionState,
 ): { state: CodeSessionState; effects: Effect[] } {
   // Idempotent — ref-stable no-op when the slot is already null.
-  if (state.pendingSnippetInsert === null) {
+  if (state.pendingJotInsert === null) {
     return { state, effects: [] };
   }
   return {
-    state: { ...state, pendingSnippetInsert: null },
+    state: { ...state, pendingJotInsert: null },
     effects: [],
   };
 }
@@ -5729,10 +5729,10 @@ export function reduce(
       return handleInsertCommandDraft(state, event);
     case "consume_command_insert":
       return handleConsumeCommandInsert(state);
-    case "insert_snippet":
-      return handleInsertSnippet(state, event);
-    case "consume_snippet_insert":
-      return handleConsumeSnippetInsert(state);
+    case "insert_jot":
+      return handleInsertJot(state, event);
+    case "consume_jot_insert":
+      return handleConsumeJotInsert(state);
     case "insert_atom_draft":
       return handleInsertAtomDraft(state, event);
     case "consume_atom_insert":

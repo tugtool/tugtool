@@ -276,14 +276,18 @@ describe.skipIf(!SHOULD_RUN)(
 
           expect(await count(app, `${frame("p2")} ${BADGE}`), "a pane alone in its slot has no badge").toBe(0);
           expect(await count(app, `${frame("pFree")} ${BADGE}`), "a free pane holds no slot, so no badge").toBe(0);
-          expect(await count(app, `${frame("pLens")} ${BADGE}`), "the Lens never carries a slot").toBe(0);
+          expect(await count(app, `${frame("pLens")} ${BADGE}`), "a lone rail is a stack of one, and a stack of one shows no badge").toBe(0);
 
           // --- data-stack-depth says the same thing on the frame. ----------
           expect(await stackDepthAttr(app, "p1")).toBe("2");
           expect(await stackDepthAttr(app, "p0")).toBe("2");
           expect(await stackDepthAttr(app, "p2")).toBe("1");
           expect(await stackDepthAttr(app, "pFree")).toBe("0");
-          expect(await stackDepthAttr(app, "pLens")).toBe("0");
+          // A rail is a PLACE two cards can share, the same as a slot, so the
+          // Lens standing alone on one reads 1 — exactly as `p2` alone in its
+          // slot does. It read 0 back when the Lens was the only rail there
+          // could be and a rail was not somewhere a second card could stand.
+          expect(await stackDepthAttr(app, "pLens")).toBe("1");
 
           // --- The badge is unlit at rest. ---------------------------------
           expect(

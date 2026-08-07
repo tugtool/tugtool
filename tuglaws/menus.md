@@ -166,7 +166,9 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
 | ⌃⌘H | `toggle-history-view` | Show History | JS, global |
 | ⌃⌘I | `insert-file` | Insert File… | menu bar (swept) |
+| ⌃⌘J | `toggle-jots` | Show Jots | menu bar (swept) |
 | ⌃⌘K | `show-keyboard-shortcuts` | Keyboard Shortcuts… | menu bar (swept) |
+| ⌃⌘L | `toggle-lens` | Show Lens | menu bar (swept) |
 | ⌃⌘M | `commit-auto-message` | Generate a Commit Message | JS, responder |
 | ⌃⌘P | `select-composer-route:prompt` | Prompt Route | JS, global |
 | ⌃⌘T | `next-theme` | Next Theme | menu bar (swept) |
@@ -192,6 +194,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌘F | `find` | Find… | JS, global |
 | ⌘G | `find-next` | Find Next | JS, global |
 | ⌘H | `hide-application` | Hide Tug | menu bar (AppKit's own) |
+| ⌘J | `new-jot` | New Jot | menu bar (swept) |
 | ⌘K | `focus-prompt` | Focus Prompt | JS, global |
 | ⌘L | `focus-lens` | Focus Lens | JS, global |
 | ⌘M | `minimize` | Minimize | menu bar (AppKit's own) |
@@ -212,7 +215,6 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌥⇧⌘↓ | `last-turn` | Last Turn | menu bar (swept) |
 | ⌥⌘/ | `show-devtools` | Show DevTools | menu bar (swept) |
 | ⌥⌘H | `hide-others` | Hide Others | menu bar (AppKit's own) |
-| ⌥⌘L | `toggle-lens` | Show Lens | JS, global |
 | ⌥⌘V | `paste-as-quote` | Paste as Quote | JS, global |
 | ⌥⌘W | `close-all` | Close All Tabs | JS, global |
 | ⌥⌘↑ | `previous-turn` | Previous Turn | menu bar (swept) |
@@ -255,6 +257,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `file.closeAllCardTabs` | `close-all` | first responder | registry gate |
 | `file.closeCard` | `close` | first responder | registry gate |
 | `file.exportTranscript` | `run-slash-command:export` | key card | registry gate |
+| `file.newJot` | `new-jot` | first responder | host tier |
 | `file.newTextCard` | `new-text-card` | first responder | host tier |
 | `file.openFile` | `open-file` | first responder | host tier |
 | `file.openQuickly` | `open-quickly` | first responder | registry gate |
@@ -268,6 +271,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `maker.devTools` | `show-devtools` | first responder | registry gate |
 | `maker.focusLens` | `focus-lens` | first responder | host tier |
 | `maker.galleryCard` | `show-component-gallery` | first responder | host tier |
+| `maker.jots` | `toggle-jots` | registered handler | host tier |
 | `maker.lens` | `toggle-lens` | registered handler | host tier |
 | `maker.newCardInPane` | `add-card-to-active-pane` | first responder | registry gate |
 | `maker.reload` | `reload` | registered handler | host tier |

@@ -1,10 +1,8 @@
 /**
  * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
- * Shows a CardTitleBar in isolation (outside a real deck window frame) with interactive
- * controls for toggling the collapsed state and selecting the icon.
- *
- * [D07] Window-shade collapse
+ * Shows a CardTitleBar in isolation (outside a real deck window frame) with
+ * interactive controls for the width popup, the close button, and the icon.
  *
  * @module components/tugways/cards/gallery-title-bar
  */
@@ -19,6 +17,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
+import type { ContentWidth } from "@/lib/layout-imposer";
 
 // ---------------------------------------------------------------------------
 // GalleryTitleBar
@@ -27,20 +26,21 @@ import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 /**
  * GalleryTitleBar -- interactive demo of CardTitleBar controls.
  *
- * Shows a CardTitleBar in isolation (outside a real deck window frame) with interactive
- * controls for toggling the collapsed state and selecting the icon.
- *
- * [D07] Window-shade collapse
+ * Shows a CardTitleBar in isolation (outside a real deck window frame) with
+ * interactive controls for the width popup, the close button, and the icon.
  */
 export function GalleryTitleBar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [widthPreset, setWidthPreset] = useState<ContentWidth | null>("comfy");
   const [iconName, setIconName] = useState<string>("Layout");
   const [closable, setClosable] = useState(true);
   const [lastEvent, setLastEvent] = useState<string | null>(null);
 
-  const handleCollapse = () => {
-    setCollapsed((c) => !c);
-    setLastEvent(collapsed ? "expanded" : "collapsed");
+  // The real applier goes through the `set-card-width` command and a pane id;
+  // outside a deck there is no pane, so the demo just holds the stamp — which
+  // is the whole of what the control shows.
+  const handleSetWidth = (preset: ContentWidth) => {
+    setWidthPreset(preset);
+    setLastEvent(`width → ${preset}`);
   };
 
   const handleClose = () => {
@@ -68,8 +68,8 @@ export function GalleryTitleBar() {
       ref={responderRef as (el: HTMLDivElement | null) => void}
     >
       <div className="cg-section">
-        <TugLabel className="cg-section-title">Title Bar Demo (Step 3)</TugLabel>
-        <TugLabel size="2xs" emphasis="calm">CardTitleBar in isolation: collapse/expand toggle (chevron) and close buttons.</TugLabel>
+        <TugLabel className="cg-section-title">Title Bar Demo</TugLabel>
+        <TugLabel size="2xs" emphasis="calm">CardTitleBar in isolation: the width popup and the close button.</TugLabel>
       </div>
 
       <TugSeparator />
@@ -118,23 +118,21 @@ export function GalleryTitleBar() {
             title="Demo Card"
             icon={iconName || undefined}
             closable={closable}
-            collapsed={collapsed}
-            onCollapse={handleCollapse}
+            widthPreset={widthPreset}
+            onSetWidth={handleSetWidth}
             onClose={handleClose}
           />
-          {!collapsed && (
-            <div
-              style={{
-                padding: "12px",
-                background: "var(--tug7-surface-global-primary-normal-default-rest)",
-                fontSize: "12px",
-                color: "var(--tug7-element-global-text-normal-muted-rest)",
-                minHeight: "48px",
-              }}
-            >
-              Card content area (visible when expanded)
-            </div>
-          )}
+          <div
+            style={{
+              padding: "12px",
+              background: "var(--tug7-surface-global-primary-normal-default-rest)",
+              fontSize: "12px",
+              color: "var(--tug7-element-global-text-normal-muted-rest)",
+              minHeight: "48px",
+            }}
+          >
+            Card content area
+          </div>
         </div>
 
         {lastEvent !== null && (
@@ -142,11 +140,13 @@ export function GalleryTitleBar() {
         )}
 
         <div style={{ marginTop: "8px" }}>
-          <TugPushButton
-            size="sm"
-            onClick={handleCollapse}
-          >
-            {collapsed ? "Expand" : "Collapse"}
+          {/* A hand resize clears the stamp, so the popup shows no check — the
+              control's third state, and the one a demo has to be able to reach. */}
+          <TugPushButton size="sm" onClick={() => {
+            setWidthPreset(null);
+            setLastEvent("resized by hand — no preset");
+          }}>
+            Clear preset
           </TugPushButton>
         </div>
       </div>

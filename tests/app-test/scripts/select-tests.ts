@@ -174,7 +174,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // The deck's own store: every test that seeds a deck, opens or closes a card,
     // or asserts pane geometry goes through it. Same structural coupling as the
     // pane frame below.
-    "tugdeck/src/deck-manager.ts": 21,
+    // 21 → 22 with the deck-wide content width (at0357): the width default is
+    // applied by this module — `setContentWidth` and `addCard`'s opening width
+    // both live here — and none of the other 21 asserts a pane's width, so
+    // narrowing the line would leave the applier selected by nothing.
+    "tugdeck/src/deck-manager.ts": 22,
     // The pane frame itself: every test that drives a card through its title bar,
     // its handles, its close control, or its geometry names it, because there is no
     // smaller surface those gestures live on. The coupling is structural rather than

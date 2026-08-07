@@ -529,7 +529,7 @@ export function useTranscriptCellMenu({
     if (value === null) return;
     return () => {
       if (cardId !== null) deck.activateCard(cardId);
-      codeSessionStore.insertSnippet(value, null);
+      codeSessionStore.insertJot(value, null);
     };
   }, [cardId, codeSessionStore, deck]);
 

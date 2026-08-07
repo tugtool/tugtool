@@ -3,7 +3,7 @@
  *
  * ## What this gates (failure modes, not busywork)
  *
- *   - **Live narrowing + highlight (A):** typing into the Snippets band's
+ *   - **Live narrowing + highlight (A):** typing into the Jots band's
  *     filter field drops the non-matching rows and paints
  *     `<mark class="tug-filter-mark">` on what matched. Fails if the band's
  *     delegate never reaches the body's data source (they are siblings — the
@@ -30,7 +30,7 @@
  *     at all disables its field and registers no focus stop for it. The pair
  *     with (B) is the point: emptiness disables, filtered-emptiness never does.
  *
- * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`), so the rows are
+ * Runs against an isolated jots file (`TUG_JOTS_PATH`), so the rows are
  * real and deterministic.
  *
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
@@ -57,8 +57,8 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-/** Seeded snippets — two share a word, the third has none of it. */
-const SNIPPETS = [
+/** Seeded jots — two share a word, the third has none of it. */
+const JOTS = [
   { id: "s-zebra", text: "zebra harmonica calibration" },
   { id: "s-quokka", text: "quokka telemetry sweep" },
   { id: "s-zebra2", text: "zebra ledger reconciliation" },
@@ -66,22 +66,22 @@ const SNIPPETS = [
 const MATCHING_FRAGMENT = "zebra";
 const ABSENT_FRAGMENT = "qqzzxx";
 
-const SNIPPETS_SECTION = '.lens-section[data-lens-section="snippets"]';
+const JOTS_CARD = '.jots-card';
 /** The Cards band. It starts populated (this run seeds one card), and closing
  *  that card is what empties it — the transition scenario (F) rides. */
 const CARDS_SECTION = '.lens-section[data-lens-section="cards"]';
 const CARDS_FILTER_INPUT = `${CARDS_SECTION} [data-testid="lens-section-filter"] input`;
 const CARDS_ROW_CLOSE = ".lens-cards-list .lens-cards-row-close";
-const FILTER_INPUT = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] input`;
-const FILTER_CLEAR = `${SNIPPETS_SECTION} [data-testid="lens-section-filter"] button`;
-const ROW = ".lens-snippets-list .snippet-row-content[data-snippet-id]";
-const NO_MATCHES = '[data-testid="lens-snippets-no-matches"]';
+const FILTER_INPUT = `${JOTS_CARD} [data-testid="jots-filter"] input`;
+const FILTER_CLEAR = `${JOTS_CARD} [data-testid="jots-filter"] button`;
+const ROW = ".jots-list .jot-row-content[data-jot-id]";
+const NO_MATCHES = '[data-testid="jots-no-matches"]';
 
 const ROW_COUNT = `document.querySelectorAll(${JSON.stringify(ROW)}).length`;
-const MARK_COUNT = `document.querySelectorAll('.lens-snippets-list mark.tug-filter-mark').length`;
+const MARK_COUNT = `document.querySelectorAll('.jots-list mark.tug-filter-mark').length`;
 const ROW_IDS = `Array.prototype.map.call(
   document.querySelectorAll(${JSON.stringify(ROW)}),
-  function (row) { return row.getAttribute('data-snippet-id'); }
+  function (row) { return row.getAttribute('data-jot-id'); }
 )`;
 
 /** Type into the filter field the way a keystroke does (React sees a change). */
@@ -127,10 +127,10 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0266-"));
-      const snippetsPath = join(dir, "snippets.json");
+      const jotsPath = join(dir, "jots.json");
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: JOTS }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
@@ -139,7 +139,7 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
         tugbankWrite(tugbankPath, "dev.tugtool.lens", "widthPx", "int", "320");
         const app = await launchTugApp({
           testName: "at0266-lens-filter",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
           persistInTestMode: true,
         });
         try {
@@ -149,8 +149,9 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             { timeoutMs: 5_000 },
           );
           await app.dispatchControlAction("toggle-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
-            `${ROW_COUNT} === ${SNIPPETS.length}`,
+            `${ROW_COUNT} === ${JOTS.length}`,
             { timeoutMs: 5_000 },
           );
           await app.waitForCondition<boolean>(
@@ -208,20 +209,14 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             return null;
           })()`);
           await app.waitForCondition<boolean>(
-            `${ROW_COUNT} === ${SNIPPETS.length}`,
+            `${ROW_COUNT} === ${JOTS.length}`,
             { timeoutMs: 5_000 },
           );
-          expect(
-            await app.evalJS<string | null>(
-              `(function(){
-                var el = document.querySelector(${JSON.stringify(SNIPPETS_SECTION)});
-                return el ? el.getAttribute('data-collapsed') : null;
-              })()`,
-            ),
-          ).toBe("false");
+          // The card is still standing — a filter narrowing to nothing must
+          // never read as the card having gone away.
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.lens-sections') !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_CARD)}) !== null`,
             ),
           ).toBe(true);
 
@@ -237,7 +232,7 @@ describe.skipIf(!SHOULD_RUN)("at0266 — the Lens section filter field", () => {
             return null;
           })()`);
           await app.waitForCondition<boolean>(
-            `${ROW_COUNT} === ${SNIPPETS.length}`,
+            `${ROW_COUNT} === ${JOTS.length}`,
             { timeoutMs: 5_000 },
           );
           expect(await app.evalJS<number>(MARK_COUNT)).toBe(0);

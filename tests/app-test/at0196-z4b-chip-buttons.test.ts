@@ -1,36 +1,34 @@
 /**
- * at0196-z4b-chip-buttons.test.ts — the Z4B "Claude Code" and "Session"
- * chips are interactive buttons with their assigned click behaviors
- * ([AT0196]).
+ * at0196-z4b-chip-buttons.test.ts — the Z4B "Claude Code" chip is an
+ * interactive button with its assigned click behaviors ([AT0196]).
  *
  * ## Why this exists
  *
- * The Z4B indicator cluster used to render its two left chips as display
- * `TugBadge`s. They are now `TugPushButton`s, joining the Project / Mode /
- * Model / Effort controls beside them ([D13]):
+ * The Z4B indicator cluster used to render its left chips as display
+ * `TugBadge`s. They are `TugPushButton`s now, joining the Mode / Model /
+ * Effort controls beside them ([D13]):
  *
  *   - **Claude Code** (`session-route-indicator-badge`): a left click opens
  *     Anthropic's Claude Code changelog in the system browser
  *     (`openUrlInOS` → `window.open`); a right click opens the version /
  *     drift report popover (`session-route-indicator-badge-report`).
- *   - **Session** (`session-id-badge`): a click opens the session's
- *     on-disk JSONL directory in Finder (`openPathInOS` →
- *     `webkit.messageHandlers.openPath`, a `~/.claude/projects/…` folder).
  *
  * The changelog click is driven for real with `window.open` stubbed to
- * capture the URL (no browser tab spawned). The Session chip is verified
- * by its derived `title` — the real `~/.claude/projects/<encode(cwd)>`
- * folder computed from the live binding — rather than by clicking, since
- * the native `openPath` host bridge can't be stubbed from JS and a real
- * click would spawn a Finder window mid-test. Both chips are asserted to
- * be real, enabled `<button>` elements.
+ * capture the URL (no browser tab spawned).
+ *
+ * The **Session** chip this file also used to cover is gone: the Z4B diet
+ * unmounted it (and the Project chip) from the code route, because both names
+ * already read in the pane title bar and they were the cluster's two most
+ * expensive variable faces. Its absence is asserted here rather than merely
+ * un-tested — a chip that comes back silently is exactly what would undo the
+ * diet — while the Project chip's continued presence on the shell and commit
+ * routes stays at0215's business.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  * @covers tugdeck/src/lib/session-metadata-store.ts
- * @covers tugdeck/src/components/tugways/chrome/session-id-badge.tsx
  * @covers tugdeck/src/components/tugways/chrome/session-route-indicator-badge.css
  * @covers tugdeck/src/components/tugways/chrome/session-route-indicator-badge.tsx
  */
@@ -43,8 +41,11 @@ const TEST_TIMEOUT_MS = 90_000;
 
 const CLAUDE_CHIP =
   '[data-card-id="A"] [data-slot="session-route-indicator-badge"]';
+/** Retired by the Z4B diet — asserted absent, never expected to mount. */
 const SESSION_CHIP =
   '[data-card-id="A"] [data-slot="session-id-badge"]';
+/** Also off the code route by the same diet; still on shell / commit (at0215). */
+const PROJECT_CHIP = '[data-card-id="A"] [data-slot="project-chip"]';
 const REPORT_SELECTOR = '[data-slot="session-route-indicator-badge-report"]';
 
 const CHANGELOG_URL =
@@ -79,20 +80,6 @@ async function tagOf(app: App, selector: string): Promise<string | null> {
   );
 }
 
-/** Read an attribute off the matched element, or null. */
-async function attrOf(
-  app: App,
-  selector: string,
-  attr: string,
-): Promise<string | null> {
-  return await app.evalJS<string | null>(
-    `(function(){
-      var el = document.querySelector(${JSON.stringify(selector)});
-      return el ? el.getAttribute(${JSON.stringify(attr)}) : null;
-    })()`,
-  );
-}
-
 /**
  * Replace `window.open` with a capturing stub so the real changelog
  * onClick path runs to its boundary without spawning a browser tab.
@@ -108,10 +95,10 @@ async function stubWindowOpen(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0196: Z4B Claude Code + Session chips are interactive buttons",
+  "AT0196: the Z4B Claude Code chip is an interactive button",
   () => {
     test(
-      "both chips are buttons; clicks drive changelog / Finder; right-click opens the report",
+      "the chip is a button, its click opens the changelog, its right-click the report — and the dieted chips are absent",
       async () => {
         const app = await launchTugApp({ testName: "at0196-z4b-chip-buttons" });
         try {
@@ -123,14 +110,17 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindSession("A");
           await app.awaitEngineReady("A");
 
-          // Both chips render and have mounted as real <button> elements.
+          // The Claude Code chip renders as a real <button>…
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CLAUDE_CHIP)}) !== null
-              && document.querySelector(${JSON.stringify(SESSION_CHIP)}) !== null`,
+            `document.querySelector(${JSON.stringify(CLAUDE_CHIP)}) !== null`,
             { timeoutMs: 4000 },
           );
           expect(await tagOf(app, CLAUDE_CHIP)).toBe("BUTTON");
-          expect(await tagOf(app, SESSION_CHIP)).toBe("BUTTON");
+
+          // …and the two chips the Z4B diet removed do not render at all on
+          // this route. Both names are in the pane title bar instead.
+          expect(await tagOf(app, SESSION_CHIP)).toBeNull();
+          expect(await tagOf(app, PROJECT_CHIP)).toBeNull();
 
           await stubWindowOpen(app);
 
@@ -144,19 +134,6 @@ describe.skipIf(!SHOULD_RUN)(
             `window.__z4b.openUrls[0]`,
           );
           expect(openedUrl).toBe(CHANGELOG_URL);
-
-          // The Session chip is enabled and its title carries the
-          // `~/.claude/projects/<encode(cwd)>` folder it opens — derived
-          // from the live binding's project dir (`/tmp/test-project` in
-          // the synthetic harness binding → `-tmp-test-project`).
-          expect(
-            await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(SESSION_CHIP)}).disabled === true`,
-            ),
-          ).toBe(false);
-          const sessionTitle = await attrOf(app, SESSION_CHIP, "title");
-          expect(sessionTitle).not.toBeNull();
-          expect(sessionTitle!).toContain("~/.claude/projects/-tmp-test-project");
 
           // Right click on Claude Code → opens the version/drift report.
           await app.nativeRightClickAtElement(CLAUDE_CHIP);

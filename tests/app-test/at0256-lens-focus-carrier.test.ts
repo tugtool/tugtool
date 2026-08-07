@@ -1,5 +1,5 @@
 /**
- * at0256-lens-focus-carrier.test.ts — the Snippets list never loses its focus
+ * at0256-lens-focus-carrier.test.ts — the Jots list never loses its focus
  * carrier to a keyboard gesture.
  *
  * The invariant ([P02], the carrier rule): while the Lens is keyboard-active,
@@ -12,7 +12,7 @@
  * transition), so it does not depend on the engine ascend, the editor's
  * blur-commit, and any row-discard re-render all converging.
  *
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
@@ -53,8 +53,8 @@ function priorCardDeck() {
   };
 }
 
-const KBD = `document.querySelector('.lens-snippets-list')?.hasAttribute('data-key-view-kbd') === true`;
-const EDITOR = `document.querySelector('.snippet-editor .cm-content') !== null`;
+const KBD = `document.querySelector('.jots-list')?.hasAttribute('data-key-view-kbd') === true`;
+const EDITOR = `document.querySelector('.jot-editor .cm-content') !== null`;
 // The carrier invariant: the list holds the ring XOR an editor holds the caret.
 const HAS_CARRIER = `((${KBD}) !== (${EDITOR}))`;
 
@@ -64,20 +64,20 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0256-"));
-      const snippetsPath = join(dir, "snippets.json");
-      const snippets = Array.from({ length: 8 }, (_, i) => ({
+      const jotsPath = join(dir, "jots.json");
+      const jots = Array.from({ length: 8 }, (_, i) => ({
         id: `s${i}`,
-        text: `short snippet number ${i}`,
+        text: `short jot number ${i}`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0256-lens-focus-carrier",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
           persistInTestMode: true,
         });
         try {
@@ -87,38 +87,38 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.dispatchControlAction("toggle-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s2"]') !== null`,
+            `document.querySelector('.jots-list .jot-row-content[data-jot-id="s2"]') !== null`,
             { timeoutMs: 5_000 },
           );
 
-          // Click a snippet (first click activates the Lens, second lands kbd) —
+          // Click a jot (first click activates the Lens, second lands kbd) —
           // the list wears the ring.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s0"] .jot-row-label`,
           );
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s2"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s2"] .jot-row-label`,
           );
           expect(await app.evalJS<boolean>(KBD)).toBe(true);
 
-          // Space → a new snippet editor opens (the CARET is now the carrier; the
-          // list gives up the ring). Escape → cancels the empty snippet, and the
+          // Space → a new jot editor opens (the CARET is now the carrier; the
+          // list gives up the ring). Escape → cancels the empty jot, and the
           // list RECLAIMS the ring. Neither step leaves the list carrier-less.
           await app.nativeKey(" ");
           await app.waitForCondition<boolean>(EDITOR, { timeoutMs: 4_000 });
-          // The snippet editor is a dom-granted text surface — containment of
+          // The jot editor is a dom-granted text surface — containment of
           // `document.activeElement` is the correct read for the grant.
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true`,
+            `document.querySelector('.jot-editor')?.contains(document.activeElement) === true`,
             { timeoutMs: 3_000 },
           );
           expect(await app.evalJS<boolean>(HAS_CARRIER)).toBe(true);
 
           await app.nativeKey("Escape", []);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor') === null`,
+            `document.querySelector('.jot-editor') === null`,
             { timeoutMs: 4_000 },
           );
           // The ring is back on the list — focus was NOT lost.
@@ -142,7 +142,7 @@ describe.skipIf(!SHOULD_RUN)("at0256 — Lens focus carrier is never lost", () =
           expect(await app.evalJS<boolean>(HAS_CARRIER)).toBe(true);
           await app.nativeKey("Escape", []);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor') === null`,
+            `document.querySelector('.jot-editor') === null`,
             { timeoutMs: 4_000 },
           );
           expect(

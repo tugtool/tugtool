@@ -3,11 +3,11 @@
  * at cold-boot restore.
  *
  * Scenario: the deck restores with the Lens holding a saved *keyboard* focus
- * (`bag.focus = { kind: "dom", focusKey: "lens-section-snippets:0",
+ * (`bag.focus = { kind: "dom", focusKey: "jots-card:0",
  * keyboard: true }`) while a focus-claiming editor card (the
  * `gallery-prompt-entry` session stand-in) is also present. Historically this
  * is the "ring lies" boot race: the Lens restore paints `data-key-view-kbd`
- * on the snippets list while the editor's late mount steals
+ * on the jots list while the editor's late mount steals
  * `document.activeElement` — the ring promises keystrokes that actually go to
  * the editor, and the keyboard reads as dead.
  *
@@ -19,8 +19,8 @@
  * ArrowDown must move the Lens cursor (`data-key-cursor`), proving the
  * keydown path reaches the ringed list.
  *
- * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`) so the
- * snippets list has real rows and the `lens-section-snippets:0` focusable
+ * Runs against an isolated jots file (`TUG_JOTS_PATH`) so the
+ * jots list has real rows and the `jots-card:0` focusable
  * registers.
  *
  * @covers tugdeck/src/components/tugways/focus-manager.ts
@@ -43,15 +43,15 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const LENS_CARD_ID = "lens-card";
-const SNIPPETS_FOCUS_KEY = "lens-section-snippets:0";
+const JOTS_CARD_ID = "jots-card";
+const JOTS_FOCUS_KEY = "jots-card:0";
 
 /**
  * A deck with a free pane hosting the prompt-entry editor card (the
  * focus-claiming session stand-in) and the anchored Lens rail at a FIXED
  * card id, so the seeded `bag.focus` and `focusCardId` name it.
  */
-function deckWithLensAndEditor() {
+function deckWithJotsAndEditor() {
   return {
     cards: [
       {
@@ -60,7 +60,7 @@ function deckWithLensAndEditor() {
         title: "TugPromptEntry",
         closable: true,
       },
-      { id: LENS_CARD_ID, componentId: "lens", title: "Lens", closable: true },
+      { id: JOTS_CARD_ID, componentId: "jots", title: "Jots", closable: true },
     ],
     panes: [
       {
@@ -73,17 +73,17 @@ function deckWithLensAndEditor() {
         acceptsFamilies: ["maker"],
       },
       {
-        id: "lens-pane",
+        id: "jots-pane",
         position: { x: 0, y: 0 },
         size: { width: 320, height: 600 },
-        cardIds: [LENS_CARD_ID],
-        activeCardId: LENS_CARD_ID,
-        title: "Lens",
+        cardIds: [JOTS_CARD_ID],
+        activeCardId: JOTS_CARD_ID,
+        title: "Jots",
         acceptsFamilies: [],
 
       },
     ],
-    activePaneId: "lens-pane",
+    activePaneId: "jots-pane",
     hasFocus: true,
   };
 }
@@ -93,42 +93,42 @@ describe.skipIf(!SHOULD_RUN)("at0246 — focus boot invariant", () => {
     "boot restore with a saved Lens keyboard target: ring/DOM-focus drift is impossible or loudly detected",
     async () => {
       const tugbankPath = mkTempTugbank();
-      const snippetsDir = mkdtempSync(join(tmpdir(), "tug-at0246-"));
-      const snippetsPath = join(snippetsDir, "snippets.json");
-      const snippets = Array.from({ length: 8 }, (_, i) => ({
+      const jotsDir = mkdtempSync(join(tmpdir(), "tug-at0246-"));
+      const jotsPath = join(jotsDir, "jots.json");
+      const jots = Array.from({ length: 8 }, (_, i) => ({
         id: `s${i}`,
-        text: `snippet number ${i} — a one-line handle`,
+        text: `jot number ${i} — a one-line handle`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0246-focus-boot-invariant",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
           persistInTestMode: true,
         });
         try {
           await app.seedDeckState({
-            state: deckWithLensAndEditor(),
+            state: deckWithJotsAndEditor(),
             cardStates: {
-              [LENS_CARD_ID]: {
+              [JOTS_CARD_ID]: {
                 focus: {
                   kind: "dom",
-                  focusKey: SNIPPETS_FOCUS_KEY,
+                  focusKey: JOTS_FOCUS_KEY,
                   keyboard: true,
                 },
               },
             },
-            focusCardId: LENS_CARD_ID,
+            focusCardId: JOTS_CARD_ID,
           });
 
-          // Both surfaces mounted: the snippets list with rows, and the
+          // Both surfaces mounted: the jots list with rows, and the
           // editor stand-in whose CM6 mount is the historical focus thief.
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list') !== null`,
+            `document.querySelector('.jots-list') !== null`,
             { timeoutMs: 6_000 },
           );
           await app.waitForCondition<boolean>(
@@ -189,17 +189,17 @@ describe.skipIf(!SHOULD_RUN)("at0246 — focus boot invariant", () => {
           expect(verdict.violations).toBe(0);
 
           // The keydown path reaches the ringed list: ArrowDown moves the
-          // engine cursor onto a snippets row.
+          // engine cursor onto a jots row.
           await app.nativeKey("ArrowDown");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list [data-key-cursor]') !== null`,
+            `document.querySelector('.jots-list [data-key-cursor]') !== null`,
             { timeoutMs: 3_000 },
           );
         } finally {
           await app.close();
         }
       } finally {
-        rmSync(snippetsDir, { recursive: true, force: true });
+        rmSync(jotsDir, { recursive: true, force: true });
         rmTempTugbank(tugbankPath);
       }
     },

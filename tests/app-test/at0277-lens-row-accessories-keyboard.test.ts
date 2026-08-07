@@ -7,7 +7,7 @@
  * Three surfaces in the Lens were reachable only by pointer, which under the
  * focus language means they did not exist at all for a keyboard user:
  *
- *  - **A snippet row's copy / delete buttons.** They render inside the list's
+ *  - **A jot row's copy / delete buttons.** They render inside the list's
  *    per-row focus mode, so authoring them into a focus group is what makes
  *    ArrowRight on the cursor row descend onto them. The row's trailing cluster
  *    already reveals itself for the keyboard cursor, so the affordance is on
@@ -19,20 +19,20 @@
  *    A group whose cursor is a 1D run walks them in DOM order, so Down from
  *    "One Up" landed on "Two Up" — the tile to its RIGHT. Down must mean down.
  *
- * The first two also pin a boundary the accessories created: the snippets list
- * declares `commitOnEnter="act"` (Enter opens the snippet), and a row that
+ * The first two also pin a boundary the accessories created: the jots list
+ * declares `commitOnEnter="act"` (Enter opens the jot), and a row that
  * gains a focusable must not let the generic Enter-descends-a-navigable-row
  * default quietly take Enter over. Right descends; Enter still opens.
  *
  * Two more rules ride the same drive, both about the marks staying honest:
- * the snippets list's SELECTION follows its cursor (`selectionFollowsCursor`),
+ * the jots list's SELECTION follows its cursor (`selectionFollowsCursor`),
  * so the fill and the cursor bar are never on two different rows; and once the
  * key view has descended into a row, Right / Left walk the row's accessories
  * and Left off the first one ascends — the arrow that entered walks.
  *
  * @covers tugdeck/src/components/lens/slot-picker.tsx
  * @covers tugdeck/src/components/lens/sections/layouts-section.tsx
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/spatial-order.ts
  * @covers tugdeck/src/components/tugways/tug-slot-layout.tsx
@@ -55,14 +55,14 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
-const CURSOR_ROW = `${SNIPPETS_LIST} [data-key-cursor]`;
+const JOTS_LIST = ".jots-card .jots-list";
+const JOTS_KBD = `${JOTS_LIST}[data-key-view-kbd]`;
+const CURSOR_ROW = `${JOTS_LIST} [data-key-cursor]`;
 const KIND_GROUP = '[data-testid="lens-layouts-kind"]';
 
-const SNIPPETS = Array.from({ length: 4 }, (_, i) => ({
+const JOTS = Array.from({ length: 4 }, (_, i) => ({
   id: `s${i}`,
-  text: `row-${i} snippet handle`,
+  text: `row-${i} jot handle`,
 }));
 
 function priorCardDeck() {
@@ -95,7 +95,7 @@ function priorCardDeck() {
 async function kbdLabel(app: App): Promise<string | null> {
   return app.evalJS<string | null>(
     `(function(){
-      var el = document.querySelector('.lens-content [data-key-view-kbd]');
+      var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
       return el === null ? null : el.getAttribute('aria-label');
     })()`,
   );
@@ -116,22 +116,22 @@ async function tabUntilKbd(app: App, selector: string): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboard", () => {
   test(
-    "Right descends onto a snippet row's buttons and onto a slot, and the Layouts tiles walk as a grid",
+    "Right descends onto a jot row's buttons and onto a slot, and the Layouts tiles walk as a grid",
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0277-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       const filePath = join(filesDir, "fixture.txt");
       writeFileSync(filePath, "alpha meridian\n");
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: JOTS }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0277-lens-row-accessories-keyboard",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({
@@ -145,11 +145,17 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.dispatchControlAction("focus-lens");
-          // ⌘L seeds the first expanded section with navigable content — the
-          // Cards section, since this test opens a card — so Tab the rest of the
-          // way to Snippets rather than assuming the seed lands there.
-          await tabUntilKbd(app, SNIPPETS_LIST);
+          // This test spans two surfaces: the Jots card's rows and the Lens's
+          // Layouts tiles. Open both, and start on a jot row — opening a card
+          // is not a keyboard entry, so the click is what puts the movement
+          // cursor on the row (the Lens band click used to do that here).
+          await app.dispatchControlAction("toggle-lens");
+          await app.dispatchControlAction("toggle-jots");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(".jots-card .jots-list .jot-row-label") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeClickAtElement(".jots-card .jots-list .jot-row-label");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(CURSOR_ROW)}) !== null`,
             { timeoutMs: 3_000 },
@@ -161,7 +167,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowDown");
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(
-              `${SNIPPETS_LIST} [data-key-cursor][data-selected="true"]`,
+              `${JOTS_LIST} [data-key-cursor][data-selected="true"]`,
             )}) !== null`,
             { timeoutMs: 3_000 },
           );
@@ -170,7 +176,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           expect(
             await app.evalJS<number>(
               `document.querySelectorAll(${JSON.stringify(
-                `${SNIPPETS_LIST} .tug-list-view-cell[data-selected="true"]`,
+                `${JOTS_LIST} .tug-list-view-cell[data-selected="true"]`,
               )}).length`,
             ),
           ).toBe(1);
@@ -179,8 +185,8 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
-              return el !== null && el.getAttribute('aria-label') === 'Copy snippet';
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Copy jot';
             })()`,
             { timeoutMs: 3_000 },
           );
@@ -189,7 +195,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           // zero-width slot — the descend has to land somewhere the eye can see.
           expect(
             await app.evalJS<number>(
-              `Math.round(document.querySelector('.lens-content [data-key-view-kbd]').getBoundingClientRect().width)`,
+              `Math.round(document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]').getBoundingClientRect().width)`,
             ),
           ).toBeGreaterThan(0);
 
@@ -208,7 +214,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             cursorRows: number;
           }>(
             `(function(){
-              var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+              var list = document.querySelector(${JSON.stringify(JOTS_LIST)});
               var cs = list === null ? null : getComputedStyle(list);
               return {
                 within: list !== null && list.hasAttribute('data-key-within'),
@@ -230,52 +236,55 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
-              return el !== null && el.getAttribute('aria-label') === 'Delete snippet';
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Delete jot';
             })()`,
             { timeoutMs: 3_000 },
           );
           await app.nativeKey("ArrowLeft");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
-              return el !== null && el.getAttribute('aria-label') === 'Copy snippet';
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Copy jot';
             })()`,
             { timeoutMs: 3_000 },
           );
           await app.nativeKey("ArrowLeft");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             { timeoutMs: 3_000 },
           );
 
-          // ---- B. Escape also ascends, and Enter still OPENS the snippet
+          // ---- B. Escape also ascends, and Enter still OPENS the jot
           // rather than descending onto the accessory.
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
-              return el !== null && el.getAttribute('aria-label') === 'Copy snippet';
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
+              return el !== null && el.getAttribute('aria-label') === 'Copy jot';
             })()`,
             { timeoutMs: 3_000 },
           );
           await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             { timeoutMs: 3_000 },
           );
           await app.nativeKey("Enter");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor .cm-content') !== null`,
+            `document.querySelector('.jot-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
           await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor .cm-content') === null`,
+            `document.querySelector('.jot-editor .cm-content') === null`,
             { timeoutMs: 4_000 },
           );
 
           // ---- C. The Layouts CARDS axis walks as the grid it is drawn as.
+          // The tiles live in the LENS, a different card: Tab walks within a
+          // card, so crossing takes a focus gesture, not more Tabs.
+          await app.dispatchControlAction("focus-lens");
           await tabUntilKbd(app, KIND_GROUP);
           const cursorValue = `(function(){
             var el = document.querySelector('${KIND_GROUP} [data-key-cursor]');
@@ -329,7 +338,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
               return el !== null && (el.getAttribute('aria-label') || '').indexOf('Close ') === 0;
             })()`,
             { timeoutMs: 3_000 },
@@ -337,7 +346,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
               return el !== null && el.getAttribute('aria-label') === 'Put at position 1';
             })()`,
             { timeoutMs: 3_000 },
@@ -348,7 +357,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector('.lens-content [data-key-view-kbd]');
+              var el = document.querySelector('.jots-card [data-key-view-kbd], .lens-content [data-key-view-kbd]');
               return el !== null && el.getAttribute('aria-label') === 'Put at position 2';
             })()`,
             { timeoutMs: 3_000 },

@@ -19,23 +19,23 @@ afterEach(() => {
 
 describe("lens-filter-store", () => {
   test("an unset section reads as no filter", () => {
-    expect(getFilterQuery("snippets")).toBe("");
+    expect(getFilterQuery("layouts")).toBe("");
   });
 
   test("set / get round-trips per section kind", () => {
-    setFilterQuery("snippets", "tug");
+    setFilterQuery("layouts", "tug");
     setFilterQuery("files", "css");
-    expect(getFilterQuery("snippets")).toBe("tug");
+    expect(getFilterQuery("layouts")).toBe("tug");
     expect(getFilterQuery("files")).toBe("css");
     expect(getFilterQuery("sessions")).toBe("");
   });
 
   test("the version bumps on a real change and holds on a no-op", () => {
     const before = getFilterVersion();
-    setFilterQuery("snippets", "tug");
+    setFilterQuery("layouts", "tug");
     const afterSet = getFilterVersion();
     expect(afterSet).toBeGreaterThan(before);
-    setFilterQuery("snippets", "tug");
+    setFilterQuery("layouts", "tug");
     expect(getFilterVersion()).toBe(afterSet);
   });
 
@@ -57,9 +57,9 @@ describe("lens-filter-store", () => {
 
   test("the query survives a collapse — no subscribers, value retained", () => {
     const unsubscribe = subscribeFilterQuery(() => {});
-    setFilterQuery("snippets", "incipit");
+    setFilterQuery("layouts", "incipit");
     // A collapse unmounts the band (and the body): every subscriber goes away.
     unsubscribe();
-    expect(getFilterQuery("snippets")).toBe("incipit");
+    expect(getFilterQuery("layouts")).toBe("incipit");
   });
 });

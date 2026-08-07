@@ -1,9 +1,9 @@
 /**
- * at0245-lens-snippet-click-scroll.test.ts — two Lens Snippets invariants that
+ * at0245-jots-click-scroll.test.ts — two Lens Jots invariants that
  * regressed together and were hard to see without measuring the live DOM:
  *
  *  1. **Click-to-select through a rendered-markdown incipit (Things model).**
- *     A snippet incipit renders inline markdown in a `dangerouslySetInnerHTML`
+ *     A jot incipit renders inline markdown in a `dangerouslySetInnerHTML`
  *     span. That span used to SWALLOW the row-select click — mousedown/up landed
  *     on it and WebKit synthesized no `click` on the list cell, so clicking the
  *     incipit text never moved the selection (clicking the bare row gap did).
@@ -11,16 +11,16 @@
  *     drag-handle label and the click bubbles to the cell: a click SELECTS the
  *     row (moves `data-selected`) and NEVER opens it — only Return opens.
  *
- *  2. **Per-section scroller.** With enough snippets to overflow the rail, the
- *     snippets LIST must scroll internally within its section's flex share and
+ *  2. **Per-section scroller.** With enough jots to overflow the rail, the
+ *     jots LIST must scroll internally within its section's flex share and
  *     the `.lens-sections` stack must NOT scroll — a section scrolls its own
  *     rows under its own header, and can never push another section's header
  *     out of view (Cards stays pinned at the bottom).
  *
- * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
+ * Runs against an isolated jots file (`TUG_JOTS_PATH`).
  *
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
- * @covers tugdeck/src/lib/snippets-store.ts
+ * @covers tugdeck/src/components/jots/jots-card.tsx
+ * @covers tugdeck/src/lib/jots-store.ts
  * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
@@ -65,33 +65,33 @@ function priorCardDeck() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section scroll", () => {
+describe.skipIf(!SHOULD_RUN)("at0245 — Lens jot click-select + per-section scroll", () => {
   test(
     "clicking a markdown incipit selects the row; overflow scrolls the section's list",
     async () => {
       const tugbankPath = mkTempTugbank();
-      const snippetsDir = mkdtempSync(join(tmpdir(), "tug-at0245-"));
-      const snippetsPath = join(snippetsDir, "snippets.json");
+      const jotsDir = mkdtempSync(join(tmpdir(), "tug-at0245-"));
+      const jotsPath = join(jotsDir, "jots.json");
       // Row 3 carries markdown so the incipit renders through the
       // `dangerouslySetInnerHTML` path (the click-swallowing span). Enough rows
       // to overflow the section so the per-section scroll assertion has real
       // overflow.
-      const snippets = Array.from({ length: 60 }, (_, i) => ({
+      const jots = Array.from({ length: 60 }, (_, i) => ({
         id: `s${i}`,
         text:
           i === 3
-            ? "*emphatic* snippet number 3 — a one-line handle"
-            : `snippet number ${i} — a one-line handle to fill the rail`,
+            ? "*emphatic* jot number 3 — a one-line handle"
+            : `jot number ${i} — a one-line handle to fill the rail`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
-          testName: "at0245-lens-snippet-click-scroll",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          testName: "at0245-jots-click-scroll",
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
           persistInTestMode: true,
         });
         try {
@@ -101,9 +101,9 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await dispatch(app, "toggle-lens");
+          await dispatch(app, "toggle-jots");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit') !== null`,
+            `document.querySelector('.jots-list .jot-row-content[data-jot-id="s3"] .jot-row-incipit') !== null`,
             { timeoutMs: 5_000 },
           );
 
@@ -111,55 +111,56 @@ describe.skipIf(!SHOULD_RUN)("at0245 — Lens snippet click-select + per-section
           // are exercising the `dangerouslySetInnerHTML` incipit path.
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit em') !== null`,
+              `document.querySelector('.jots-list .jot-row-content[data-jot-id="s3"] .jot-row-incipit em') !== null`,
             ),
           ).toBe(true);
 
           // Click squarely on the rendered-markdown incipit of row 3.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit`,
+            `.jots-list .jot-row-content[data-jot-id="s3"] .jot-row-incipit`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list [data-selected="true"]')?.getAttribute('data-tug-list-cell-index') === '3'`,
+            `document.querySelector('.jots-list [data-selected="true"]')?.getAttribute('data-tug-list-cell-index') === '3'`,
             { timeoutMs: 3_000 },
           );
           // A click SELECTS — it must NOT open the editor (Things model).
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.lens-snippets-list .snippet-editor') === null`,
+              `document.querySelector('.jots-list .jot-editor') === null`,
             ),
           ).toBe(true);
 
           // Double-click OPENS the row's editor (the pointer equivalent of
           // Enter): the first click selects, the second activates.
           await app.nativeDoubleClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s3"] .snippet-row-incipit`,
+            `.jots-list .jot-row-content[data-jot-id="s3"] .jot-row-incipit`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list .snippet-editor') !== null`,
+            `document.querySelector('.jots-list .jot-editor') !== null`,
             { timeoutMs: 3_000 },
           );
 
-          // Per-section scroller: the snippets list scrolls internally within
-          // its section's flex share; `.lens-sections` itself never scrolls.
+          // The list is the card's ONE scroller: it scrolls internally within
+          // the share the toolbar leaves it, and the card root never scrolls —
+          // so the toolbar can never be scrolled away from the rows it acts on.
           const scroll = await app.evalJS<{
             listScrolls: boolean;
-            sectionsScrolls: boolean;
+            cardScrolls: boolean;
           }>(`(() => {
-            const list = document.querySelector('.lens-snippets-list');
-            const sections = document.querySelector('.lens-sections');
+            const list = document.querySelector('.jots-list');
+            const card = document.querySelector('.jots-card');
             return {
               listScrolls: list.scrollHeight > list.clientHeight + 1,
-              sectionsScrolls: sections.scrollHeight > sections.clientHeight + 1,
+              cardScrolls: card.scrollHeight > card.clientHeight + 1,
             };
           })()`);
           expect(scroll.listScrolls).toBe(true);
-          expect(scroll.sectionsScrolls).toBe(false);
+          expect(scroll.cardScrolls).toBe(false);
         } finally {
           await app.close();
         }
       } finally {
-        rmSync(snippetsDir, { recursive: true, force: true });
+        rmSync(jotsDir, { recursive: true, force: true });
         rmTempTugbank(tugbankPath);
       }
     },

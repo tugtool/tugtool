@@ -5,7 +5,7 @@
  * TugListView's movement keys (arrows, Home/End, PageUp/PageDown) now ride
  * `KeyViewBehavior.onKey` (the keyboard-as-engine-state delegation channel)
  * instead of an element keydown listener. This pins the full movement set on
- * a real Lens snippets list with the ring held by keyboard: the cursor
+ * a real Lens jots list with the ring held by keyboard: the cursor
  * (`data-key-cursor`) must move row-by-row on arrows, jump on Home/End, and
  * page on PageDown/PageUp — proving delegated delivery end-to-end.
  *
@@ -29,9 +29,9 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
-const CURSOR = `${SNIPPETS_LIST} [data-key-cursor]`;
+const JOTS_LIST = ".jots-card .jots-list";
+const JOTS_KBD = `${JOTS_LIST}[data-key-view-kbd]`;
+const CURSOR = `${JOTS_LIST} [data-key-cursor]`;
 
 const ROWS = 8;
 
@@ -57,21 +57,21 @@ function priorCardDeck() {
 }
 
 /**
- * Walk the keyboard from wherever ⌘L seeds it to the Snippets list. The seed
+ * Walk the keyboard from wherever ⌘L seeds it to the Jots list. The seed
  * lands on the first expanded section that has navigable content — the Cards
- * section, since this test opens a card — so getting to Snippets is a Tab walk,
+ * section, since this test opens a card — so getting to Jots is a Tab walk,
  * not an assumption. Tab is used deliberately: it is orthogonal to the arrow
  * behavior under test here.
  */
-async function tabToSnippetsList(app: App): Promise<void> {
+async function tabToJotsList(app: App): Promise<void> {
   for (let i = 0; i < 12; i += 1) {
     const there = await app.evalJS<boolean>(
-      `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+      `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
     );
     if (there) return;
     await app.nativeKey("Tab");
   }
-  throw new Error("the Tab walk never reached the Lens Snippets list");
+  throw new Error("the Tab walk never reached the Lens Jots list");
 }
 
 async function cursorText(app: App): Promise<string | null> {
@@ -100,24 +100,24 @@ async function waitCursorText(
 
 describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey delegation", () => {
   test(
-    "arrows / Home / End / Page keys move the cursor on the ringed snippets list",
+    "arrows / Home / End / Page keys move the cursor on the ringed jots list",
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0248-"));
-      const snippetsPath = join(filesDir, "snippets.json");
-      const snippets = Array.from({ length: ROWS }, (_, i) => ({
+      const jotsPath = join(filesDir, "jots.json");
+      const jots = Array.from({ length: ROWS }, (_, i) => ({
         id: `s${i}`,
-        text: `row-${i} snippet handle`,
+        text: `row-${i} jot handle`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0248-lens-list-cursor-keys",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -125,8 +125,16 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.dispatchControlAction("focus-lens");
-          await tabToSnippetsList(app);
+          await app.dispatchControlAction("toggle-jots");
+          // Opening the card is not a keyboard entry: click the first row to
+          // put the movement cursor on it, which is what the Lens band click
+          // used to do here.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(".jots-card .jots-list .jot-row-label") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeClickAtElement(".jots-card .jots-list .jot-row-label");
+          await tabToJotsList(app);
           // The keyboard entry seeds the cursor on the first row.
           await waitCursorText(app, `function(t){ return t.indexOf("row-0") !== -1; }`);
 
@@ -165,7 +173,7 @@ describe.skipIf(!SHOULD_RUN)("at0248 — Lens list movement keys via onKey deleg
           // The ring stayed on the list the whole tour.
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             ),
           ).toBe(true);
 

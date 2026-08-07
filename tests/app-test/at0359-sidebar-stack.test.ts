@@ -1,0 +1,226 @@
+/**
+ * at0359-sidebar-stack.test.ts — two sidebar cards on one side are a stack,
+ * not a split.
+ *
+ * The deck ships with both sidebars defaulting to the right, so "what happens
+ * when the Lens and Jots share a side" is the out-of-the-box picture rather than
+ * a corner case. The answer is the one the deck already gives for two panes
+ * sharing a slot: they stand **front-to-back**, same pin and same full height,
+ * and z-order decides which you see. An earlier design divided the rail's height
+ * between them, which spent a rail to show two half-cards — the arrangement
+ * lifting Jots out of the Lens existed to escape.
+ *
+ * What that claim decomposes into, and what this test asserts:
+ *
+ *  1. **Same geometry.** Both frames occupy the same rect: same left edge, same
+ *     width, same top, same bottom. Not "similar" — the same, to the pixel,
+ *     because the pin is one expression and neither member varies a term of it.
+ *  2. **The full run, each.** That shared rect is as tall as a lone rail's — the
+ *     card behind is not paying for the card in front.
+ *  3. **A stack badge, and it reaches the card behind.** Both panes render the
+ *     title bar's stack badge reading 2 — the same control a slot's stack gets
+ *     ([AT0347]) — and choosing the other row raises it. Raising is what makes
+ *     the arrangement usable at all: with identical rects, the badge is the ONLY
+ *     way to the card underneath.
+ *
+ * Read from `getBoundingClientRect` rather than from the style expressions,
+ * because what is being claimed is about the picture the browser paints, and
+ * `imposeSidebarStyle` writes `calc()` over custom properties that only the
+ * browser resolves.
+ *
+ * @covers tugdeck/src/lib/layout-imposer.ts
+ * @covers tugdeck/src/components/chrome/deck-canvas.tsx
+ * @covers tugdeck/src/components/lens/layout-miniature.tsx
+ * @covers tugdeck/src/serialization.ts
+ */
+
+import { describe, expect, test } from "bun:test";
+
+import { launchTugApp, note, type App } from "./_harness";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 120_000;
+
+const LENS_PANE = '.tug-pane[data-lens-pane]';
+const JOTS_CARD = '[data-card-id] .jots-card';
+const STACK_BADGE = '[data-testid="tug-pane-title-bar-stack-badge"]';
+const STACK_MENU = '[data-testid="tug-pane-title-bar-stack-menu"]';
+
+
+/**
+ * True when the Jots card is the front member of the rail.
+ *
+ * Decided by `z-index`, which is where the deck expresses stacking: the canvas
+ * renders panes in a stable id-sorted DOM order precisely so that raising one
+ * changes only its z-index and never re-parents a frame, so DOM order says
+ * nothing about what you can see.
+ */
+const FRONT_IS_JOTS_JS = `(function () {
+  var rail = Array.from(document.querySelectorAll(".tug-pane")).filter(function (p) {
+    return p.querySelector(".jots-card") !== null || p.querySelector(".lens-content") !== null;
+  });
+  if (rail.length < 2) return false;
+  var zOf = function (el) {
+    var z = parseInt(window.getComputedStyle(el).zIndex, 10);
+    return Number.isNaN(z) ? 0 : z;
+  };
+  var front = rail.slice().sort(function (a, b) { return zOf(a) - zOf(b); }).pop();
+  return front.querySelector(".jots-card") !== null;
+})()`;
+
+/** Each rail member's card and z-index, for a failure to be read from. */
+const RAIL_Z_JS = `Array.from(document.querySelectorAll(".tug-pane")).filter(function (p) {
+  return p.querySelector(".jots-card") !== null || p.querySelector(".lens-content") !== null;
+}).map(function (p) {
+  var kind = p.querySelector(".jots-card") !== null ? "jots" : "lens";
+  return kind + "=" + window.getComputedStyle(p).zIndex;
+}).join(" ")`;
+
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/** The rect of the pane hosting a card matching `selector`. */
+const PANE_RECT_JS = (selector: string): string => `(function () {
+  var el = document.querySelector(${JSON.stringify(selector)});
+  var pane = el === null ? null : el.closest(".tug-pane");
+  if (pane === null) return null;
+  var r = pane.getBoundingClientRect();
+  return {
+    left: Math.round(r.left), right: Math.round(r.right),
+    top: Math.round(r.top), bottom: Math.round(r.bottom),
+    width: Math.round(r.width), height: Math.round(r.height),
+  };
+})()`;
+
+async function paneRect(app: App, selector: string): Promise<Rect | null> {
+  return app.evalJS<Rect | null>(PANE_RECT_JS(selector));
+}
+
+describe.skipIf(!SHOULD_RUN)(
+  "at0359 — same-side sidebars stand front-to-back",
+  () => {
+    test(
+      "the Lens and Jots share one rail, at one rect, reachable by the stack badge",
+      async () => {
+        const app = await launchTugApp({ testName: "at0359-sidebar-stack" });
+        try {
+          // A content card for the rail to stand beside, then the Lens. Opened
+          // by its own toggle rather than left to the factory default, so this
+          // test asserts the stack and not the stand-up (at0276 owns that).
+          await app.dispatchControlAction("show-component-gallery");
+          await app.dispatchControlAction("toggle-lens");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(LENS_PANE)}) !== null`,
+            { timeoutMs: 10_000 },
+          );
+          const lensAlone = await paneRect(app, ".lens-content");
+          expect(lensAlone).not.toBeNull();
+
+          // ── Jots joins it. Both default to the right, so this is the stack. ──
+          await app.dispatchControlAction("toggle-jots");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(JOTS_CARD)}) !== null`,
+            { timeoutMs: 10_000 },
+          );
+
+          const lens = await paneRect(app, ".lens-content");
+          const jots = await paneRect(app, JOTS_CARD);
+          expect(lens).not.toBeNull();
+          expect(jots).not.toBeNull();
+          note(
+            "rail rects",
+            `lens=${JSON.stringify(lens)} jots=${JSON.stringify(jots)}`,
+          );
+
+          // 1. The same rect, not merely the same side.
+          expect(jots, "the two members occupy one rail").toEqual(lens as Rect);
+
+          // 2. The full run each — the rail did not divide to make room.
+          expect(
+            lens!.height,
+            "the rail is as tall as it was before the second card joined",
+          ).toBe(lensAlone!.height);
+
+          // 3. The badge, on both, reading the stack's depth.
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(STACK_BADGE)}).length >= 1`,
+            { timeoutMs: 8_000 },
+          );
+          const badges = await app.evalJS<string[]>(
+            `Array.from(document.querySelectorAll(${JSON.stringify(STACK_BADGE)}))
+              .map(function (el) { return (el.textContent || "").trim(); })`,
+          );
+          note("stack badges", badges.join(" · "));
+          expect(
+            badges.length,
+            "every member of the rail carries the badge — a covered pane hides it along with everything else",
+          ).toBeGreaterThanOrEqual(1);
+          for (const text of badges) expect(text).toBe("2");
+
+          // Which card is in FRONT. Read off z-order rather than off DOM order:
+          // the canvas renders panes in a stable, id-sorted order and expresses
+          // the stack as `z-index`, so "the first pane in the DOM" and "the one
+          // you can see" are different questions — and with two identical rects
+          // only the second one means anything.
+          const frontIsJots = await app.evalJS<boolean>(FRONT_IS_JOTS_JS);
+          note("rail z-order before", await app.evalJS<string>(RAIL_Z_JS));
+
+          // Opening the picker and choosing the OTHER row raises it. With two
+          // identical rects this is the only way to the card underneath, which
+          // is why it is the assertion that matters most here.
+          await app.nativeClickAtElement(STACK_BADGE);
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(STACK_MENU)}) !== null`,
+            { timeoutMs: 8_000 },
+          );
+          const rows = await app.evalJS<string[]>(
+            `Array.from(document.querySelectorAll(${JSON.stringify(STACK_MENU)} + ' [role="menuitem"], ' + ${JSON.stringify(STACK_MENU)} + ' [role="menuitemradio"]'))
+              .map(function (el) { return (el.textContent || "").trim(); })`,
+          );
+          note("picker rows", rows.join(" · "));
+          expect(
+            rows.length,
+            "the picker lists both members of the rail",
+          ).toBe(2);
+          expect(
+            rows.some((r) => r.includes("Lens")) &&
+              rows.some((r) => r.includes("Jots")),
+            "the rows name the two cards",
+          ).toBe(true);
+
+          // Choose the one that is NOT in front, and it comes forward.
+          const wanted = frontIsJots ? "Lens" : "Jots";
+          await app.evalJS<null>(
+            `(function () {
+              var rows = Array.from(document.querySelectorAll(${JSON.stringify(STACK_MENU)} + ' [role="menuitem"], ' + ${JSON.stringify(STACK_MENU)} + ' [role="menuitemradio"]'));
+              var row = rows.filter(function (el) {
+                return (el.textContent || "").indexOf(${JSON.stringify(wanted)}) !== -1;
+              })[0];
+              if (row) row.click();
+              return null;
+            })()`,
+          );
+          await new Promise<void>((r) => setTimeout(r, 600));
+          note("rail z-order after", await app.evalJS<string>(RAIL_Z_JS));
+          await app.waitForCondition<boolean>(
+            `(${FRONT_IS_JOTS_JS}) === ${wanted === "Jots" ? "true" : "false"}`,
+            { timeoutMs: 8_000 },
+          );
+          expect(
+            await app.evalJS<boolean>(FRONT_IS_JOTS_JS),
+            `choosing ${wanted} in the picker brought it to the front of the rail`,
+          ).toBe(wanted === "Jots");
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+  },
+);

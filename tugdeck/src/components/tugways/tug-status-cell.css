@@ -52,32 +52,63 @@
    `.session-telemetry-status-value-wrap` and `.session-telemetry-endcap-rule`
    (so apparatus and value-wrap share one width). Each cell is sized to
    clear its widest realistic content; within a cell the width never
-   changes as live values tick (no jitter). */
+   changes as live values tick (no jitter).
+
+   These are stated in `ch` against the ROW's font (10px), while the value
+   inside renders at 12px in a different face — two fonts at two sizes, so a
+   budget cannot be derived by scaling the other. Every number below was
+   measured in the built app: the widest face rendered into the cell's own
+   value element, against the endcap label beside it, whichever is wider. The
+   surplus over that is the endcap "wings" — the hairline rules flanking the
+   label — so a budget trimmed to the content exactly would erase the
+   apparatus that makes the row read as an instrument.
+
+   Widest face → measured need, at 1ch ≈ 6.8px:
+     STATE    "Disconnected"   61px  (value wins)
+     TIME     "4h 30m 00s"     54px  (value wins)
+     TOKENS   "−208.3K"        50px  (the TOKENS label wins, at 50px)
+     CONTEXT  "999.9K / 1M"    58px  (value wins; the denominator is a round
+                                      ceiling, so it renders without decimals —
+                                      `formatTokenCap`, not `formatTokensCaps`)
+     WORK     the dot + "00"   36px  (the WORK label wins)
+
+   **The budgets are not those needs.** A row of cells trimmed to their content
+   is a row of five labels huddled in the middle of an empty strip — which is
+   what the first pass at the diet produced, and it read as damage rather than as
+   an instrument. The surplus over the need IS the design: it becomes the endcap
+   wings, and the wings are what make five readings look like one panel. So the
+   budgets below are sized to SPEND the row: five cells plus four gaps plus the
+   row's small inline padding come to ~649px, which fills the slim card with a
+   hair of slack and no more. The smaller type from the diet stays — this buys
+   the space back in width, where there was space to buy, rather than in point
+   size, where there was not.
+
+   **The width they are sized against is the strip's CONTENT box, not the card.**
+   A slim (675) card gives a ~673px strip, but the strip carries 8px of padding
+   on each side and `container-type: inline-size` measures what is inside it — so
+   the row has ~657px to spend and the `@container` rungs below are asked against
+   that same ~657px. Sizing to the 673 is how the first attempt at these budgets
+   overshot by ~19px and quietly tripped its own first rung, hiding TIME on a card
+   that was supposed to show everything.
+
+   Their proportions are the pre-diet row's, so the shape a reader knows survives
+   the resize: STATE and CONTEXT are the wide pair, TIME and WORK the middle,
+   TOKENS the narrowest. */
 .session-telemetry-status-cell[data-priority="state"] {
-  --tugx-session-status-cell-width: 20ch;
+  --tugx-session-status-cell-width: 18ch;
 }
-/* Merging TASKS + JOBS into the single WORK cell returned width to
-   TIME / TOKENS (they were narrowed when JOBS landed). TIME clears the
-   width-stabilized hour-plus format (`4h 30m 00s` = 10ch) comfortably;
-   TOKENS' worst content (`−208.3K` = 8ch) likewise. */
 .session-telemetry-status-cell[data-priority="time"] {
-  --tugx-session-status-cell-width: 16ch;
+  --tugx-session-status-cell-width: 15ch;
 }
 .session-telemetry-status-cell[data-priority="tokens"] {
   --tugx-session-status-cell-width: 14ch;
 }
 .session-telemetry-status-cell[data-priority="context"] {
-  --tugx-session-status-cell-width: 20ch;
+  --tugx-session-status-cell-width: 19ch;
 }
 .session-telemetry-status-cell[data-priority="work"] {
-  --tugx-session-status-cell-width: 16ch;
+  --tugx-session-status-cell-width: 14ch;
 }
-/* BTW holds a small side-question count (1–2 digits) or the em-dash
-   placeholder — a narrow cell. */
-.session-telemetry-status-cell[data-priority="btw"] {
-  --tugx-session-status-cell-width: 10ch;
-}
-
 .session-telemetry-status-value-wrap {
   /* Wrap centers its single child value within the static cell width —
      so values can change character count freely and remain centered on
@@ -121,7 +152,7 @@
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .session-telemetry-status-cell[data-priority="work"]
   .tug-progress-indicator-label-active {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: var(--tug-font-weight-bold);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -140,7 +171,7 @@
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .session-telemetry-status-value {
   color: var(--tug7-element-global-text-normal-default-rest);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: var(--tug-font-weight-bold);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -305,31 +336,34 @@
 /* Container-query collapse rules. The Z2 host (`.session-card-status-bar`)
    declares `container-type: inline-size` + `container-name: session-status`
    so these `@container` rules can target it. As the host narrows, whole
-   cells (label apparatus + value together) hide in priority order —
-   BTW first (a quiet supplementary counter), then TIME, then TOKENS,
-   with WORK the last collapsible: a running job / live goal is live
-   "something is happening" signal. STATE / CONTEXT stay as the
-   most-persistent set. */
+   cells (label apparatus + value together) hide in priority order — TIME
+   first, then TOKENS, with WORK the last collapsible: a running job / live
+   goal is live "something is happening" signal. STATE / CONTEXT stay as the
+   most-persistent set.
 
-@container session-status (max-width: 520px) {
-  .session-telemetry-status-cell[data-priority="btw"] {
-    display: none;
-  }
-}
+   The rungs are placed against the post-diet row's measured intrinsic width,
+   not inherited from the pre-diet one. Five cells at the budgets above are
+   ~649px including the 24px gaps and the row's inline padding, so the full set
+   holds down to a ~645px query width — which slim clears by only ~8px,
+   deliberately: the budgets were sized to spend the slim row rather than to
+   leave headroom in it. The query width is the strip's CONTENT box (~657px at
+   slim), not the card and not the strip's border box. Each rung then fires just under what the
+   remaining set needs. Degradation is therefore something the slim preset never
+   reaches: it is there for a card dragged narrower than any preset offers. */
 
-@container session-status (max-width: 460px) {
+@container session-status (max-width: 645px) {
   .session-telemetry-status-cell[data-priority="time"] {
     display: none;
   }
 }
 
-@container session-status (max-width: 290px) {
+@container session-status (max-width: 520px) {
   .session-telemetry-status-cell[data-priority="tokens"] {
     display: none;
   }
 }
 
-@container session-status (max-width: 200px) {
+@container session-status (max-width: 405px) {
   .session-telemetry-status-cell[data-priority="work"] {
     display: none;
   }

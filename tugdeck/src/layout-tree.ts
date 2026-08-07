@@ -5,7 +5,7 @@
  *   - `cards`: the content identities — id, componentId, title, closable,
  *     plus an optional persistence bag.
  *   - `panes`: the visual frames — position, size, ordered cardIds, the
- *     active card in the pane, collapsed, acceptsFamilies, title.
+ *     active card in the pane, width preset, acceptsFamilies, title.
  *
  * Invariants:
  *   1. Every `cardIds` entry in every pane references a real card (by id) in
@@ -16,15 +16,15 @@
  *      pane closes the pane.
  *   4. Each pane's `activeCardId` is a member of that pane's `cardIds`.
  *   5. `activePaneId`, when set, references a real pane in `panes`.
- *   6. At most one pane hosts the Lens card, and that pane carries no
- *      `slot` — the Lens is the imposition's fixed end, not a link in
+ *   6. At most one pane hosts each sidebar card type, and that pane carries no
+ *      `slot` — a sidebar card is the imposition's fixed end, not a link in
  *      its chain.
  *
  *: Canvas Data Model Types
  */
 
-import type { DeckImposition } from "@/lib/layout-imposer";
-import { LENS_CARD_ID } from "@/lib/lens-card-id";
+import type { ContentWidth, DeckImposition } from "@/lib/layout-imposer";
+import { isSidebarCard } from "@/card-registry";
 
 // ---- Types () ----
 
@@ -268,7 +268,7 @@ export interface CardState {
 /**
  * A pane — the visual frame containing one or more cards.
  *
- * Panes own position, size, collapsed, acceptsFamilies, and the ordered list
+ * Panes own position, size, width preset, acceptsFamilies, and the ordered list
  * of cardIds they contain. Exactly one of the cardIds is the pane's
  * `activeCardId`, which is the card whose content is visible in the pane.
  */
@@ -285,10 +285,15 @@ export interface TugPaneState {
   /** Families of card types this pane can host in its type picker. Defaults to ["standard"]. */
   acceptsFamilies: readonly string[];
   /**
-   * Whether the pane is collapsed (title bar only, content hidden).
-   * Missing/undefined is treated as false. ([D04])
+   * The width preset this pane was last *set* to, if any.
+   *
+   * A stamp, not a constraint: the width itself lives in `size.width`, and this
+   * records which named width put it there so a picker can show a check. Any
+   * manual resize clears it — a pane the user dragged to 912px is at no preset,
+   * and claiming the nearest one would be a resting lie. Absent means "a width
+   * nobody named". Additive-optional like `slot?` — no version bump.
    */
-  collapsed?: boolean;
+  widthPreset?: ContentWidth;
   /**
    * The numbered position this pane is imposed at, 0-based, within the
    * deck's active `imposition.kind`. Missing/undefined is a pane the
@@ -298,7 +303,7 @@ export interface TugPaneState {
    * touched by the imposer. The Lens pane is imposed too but never
    * slotted — it is the strip's fixed end, pinned from
    * `imposition.lens`, and {@link validateDeckState} rejects a Lens pane
-   * carrying a slot. Additive-optional like `collapsed?` — no
+   * carrying a slot. Additive-optional like `widthPreset?` — no
    * serialization version bump.
    */
   slot?: number;
@@ -413,7 +418,8 @@ export function clampPanesToDeck(state: DeckState): DeckState {
  */
 export function validateDeckState(state: DeckState): void {
   const cardIds = new Set<string>();
-  const lensCardIds = new Set<string>();
+  /** Which sidebar card type each sidebar card id belongs to. */
+  const sidebarComponentByCardId = new Map<string, string>();
   for (const card of state.cards) {
     if (cardIds.has(card.id)) {
       throw new DeckStateInvariantError(
@@ -421,10 +427,13 @@ export function validateDeckState(state: DeckState): void {
       );
     }
     cardIds.add(card.id);
-    if (card.componentId === LENS_CARD_ID) lensCardIds.add(card.id);
+    if (isSidebarCard(card.componentId)) {
+      sidebarComponentByCardId.set(card.id, card.componentId);
+    }
   }
 
-  let lensPaneId: string | undefined;
+  /** Which pane holds each sidebar card type — at most one apiece. */
+  const sidebarPaneByComponentId = new Map<string, string>();
 
   const paneIds = new Set<string>();
   const cardToPane = new Map<string, string>();
@@ -461,16 +470,19 @@ export function validateDeckState(state: DeckState): void {
     }
 
     // Invariant 6
-    if (pane.cardIds.some((cid) => lensCardIds.has(cid))) {
-      if (lensPaneId !== undefined) {
+    for (const cid of pane.cardIds) {
+      const componentId = sidebarComponentByCardId.get(cid);
+      if (componentId === undefined) continue;
+      const held = sidebarPaneByComponentId.get(componentId);
+      if (held !== undefined) {
         throw new DeckStateInvariantError(
-          `panes "${lensPaneId}" and "${pane.id}" both host the Lens card`,
+          `panes "${held}" and "${pane.id}" both host the "${componentId}" sidebar card`,
         );
       }
-      lensPaneId = pane.id;
+      sidebarPaneByComponentId.set(componentId, pane.id);
       if (pane.slot !== undefined) {
         throw new DeckStateInvariantError(
-          `Lens pane "${pane.id}" carries slot ${pane.slot}; the Lens is the imposition's fixed end, not a link in its chain`,
+          `sidebar pane "${pane.id}" carries slot ${pane.slot}; a sidebar card is the imposition's fixed end, not a link in its chain`,
         );
       }
     }

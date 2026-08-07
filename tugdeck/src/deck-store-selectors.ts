@@ -27,6 +27,7 @@
 
 import type { DeckState, TugPaneState } from "./layout-tree";
 import { LENS_CARD_ID } from "./lib/lens-card-id";
+import { isSidebarCard } from "./card-registry";
 
 /**
  * `isFocusDestination(cardId, state)` — returns true iff `cardId`
@@ -62,21 +63,57 @@ export function isFocusDestination(
 }
 
 /**
- * `findLensPane(state)` — the pane hosting the Lens, or `undefined` when the
- * Lens is closed.
+ * `findSidebarPane(state, componentId)` — the pane hosting a sidebar card, or
+ * `undefined` when that card is closed.
  *
- * The Lens pane carries no marker of its own: it is the pane holding the card
- * registered as {@link LENS_CARD_ID}. That card is a singleton and its pane
- * hosts nothing else (`acceptsFamilies: []` and an un-mergeable family), so
- * the derivation is single-valued. This is the one predicate every consumer
- * that needs "which pane is the Lens" goes through.
+ * A sidebar pane carries no marker of its own: it is the pane holding the card
+ * registered under `componentId`. A sidebar card is a singleton and its pane
+ * hosts nothing else (`acceptsFamilies: []` and an un-mergeable family), so the
+ * derivation is single-valued. This is the one predicate every consumer that
+ * needs "which pane is the Lens / the Jots card" goes through.
  */
-export function findLensPane(state: DeckState): TugPaneState | undefined {
-  const lensCardIds = new Set(
-    state.cards.filter((c) => c.componentId === LENS_CARD_ID).map((c) => c.id),
+export function findSidebarPane(
+  state: DeckState,
+  componentId: string,
+): TugPaneState | undefined {
+  const cardIds = new Set(
+    state.cards.filter((c) => c.componentId === componentId).map((c) => c.id),
   );
-  if (lensCardIds.size === 0) return undefined;
-  return state.panes.find((p) => p.cardIds.some((cid) => lensCardIds.has(cid)));
+  if (cardIds.size === 0) return undefined;
+  return state.panes.find((p) => p.cardIds.some((cid) => cardIds.has(cid)));
+}
+
+/**
+ * Every pane hosting a sidebar-role card, paired with the componentId it hosts.
+ * The order is the panes array's own (z-order); callers that need a spatial
+ * order sort by the side each card holds.
+ */
+export function findSidebarPanes(
+  state: DeckState,
+): readonly { componentId: string; pane: TugPaneState }[] {
+  const byCardId = new Map<string, string>();
+  for (const card of state.cards) {
+    if (isSidebarCard(card.componentId)) byCardId.set(card.id, card.componentId);
+  }
+  if (byCardId.size === 0) return [];
+  const out: { componentId: string; pane: TugPaneState }[] = [];
+  for (const pane of state.panes) {
+    for (const cid of pane.cardIds) {
+      const componentId = byCardId.get(cid);
+      if (componentId !== undefined) {
+        out.push({ componentId, pane });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** `findLensPane(state)` — the pane hosting the Lens, or `undefined` when the
+ *  Lens is closed. The Lens-shaped reading of {@link findSidebarPane}, kept
+ *  because most call sites want exactly this one. */
+export function findLensPane(state: DeckState): TugPaneState | undefined {
+  return findSidebarPane(state, LENS_CARD_ID);
 }
 
 /**

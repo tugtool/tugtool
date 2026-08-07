@@ -64,6 +64,16 @@ export const DEFAULT_SIZE_POLICY: CardSizePolicy = {
 };
 
 /**
+ * How the layout system treats a card type: an arranged content card, or a
+ * card that pins to a deck edge and insets the band the content cards live in.
+ * See {@link CardRegistration.layoutRole}.
+ */
+export type LayoutRole = "content" | "sidebar";
+
+/** The role a registration gets when it declares none. */
+export const DEFAULT_LAYOUT_ROLE: LayoutRole = "content";
+
+/**
  * Metadata describing a card's default appearance and behavior.
  *
  * **Authoritative reference:** CardMeta.
@@ -187,6 +197,40 @@ export interface CardRegistration {
    * {@link DEFAULT_FOCUS_SELECTORS} fallback chain.
    */
   engineKind?: "em";
+  /**
+   * How the layout system treats this card type.
+   *
+   * `"content"` (the default) is a card the deck arranges: it takes an N-Up
+   * slot, answers ⌘1..⌘N, and follows the content width presets.
+   *
+   * `"sidebar"` is a card that pins to a deck edge and insets the imposition
+   * band instead of living inside it — the Lens and Jots. Sidebar cards take no
+   * slot, are skipped by `arrangeCards`, are refused by `assignCardToSlot`, and
+   * carry a `{ side, pinned }` entry in the deck's imposition record rather
+   * than a position in the N-Up.
+   *
+   * The taxonomy constrains the layout system; it does not sort every card into
+   * two boxes. Utility cards — settings, keyboard, devtools, gallery, about —
+   * are ordinary content cards and declare nothing.
+   */
+  layoutRole?: LayoutRole;
+  /**
+   * True when this card opens at the deck's content-width default rather than
+   * at a width of its own: the reading cards — Session, Text, File, Diff,
+   * DevTools — whose `preferred.width` only ever meant "the width content cards
+   * share". A new pane for one of them resolves its width from
+   * `imposition.contentWidth` and is stamped with that preset, so the first card
+   * of a session opens at the width the deck is set to rather than at a number
+   * frozen into a registration.
+   *
+   * The registered `preferred.width` stays as the fallback for any path with no
+   * deck to ask (and `min`/`max` still bound the resolved width, which is what
+   * keeps Settings' 720 floor and About's 320 lock true).
+   *
+   * Cards with a width of their own — Settings' master/detail measure, About's
+   * fixed card, the gallery demos — declare nothing and keep it.
+   */
+  takesContentWidth?: boolean;
 }
 
 /** Module-level registry map. Keyed by componentId. */
@@ -306,6 +350,31 @@ export function getStackSizePolicy(
  */
 export function isEngineManagedCard(componentId: string): boolean {
   return registry.get(componentId)?.engineKind === "em";
+}
+
+/**
+ * The resolved layout role for a card type: what the registration declares, or
+ * `"content"` when it declares nothing. An unregistered componentId resolves to
+ * `"content"` as well — the layout system's default treatment, not a special
+ * case, so a card seeded before its registration lands is arranged rather than
+ * silently pinned to an edge.
+ */
+export function getLayoutRole(componentId: string): LayoutRole {
+  return registry.get(componentId)?.layoutRole ?? DEFAULT_LAYOUT_ROLE;
+}
+
+/** True when the card type pins to a deck edge instead of taking a slot. */
+export function isSidebarCard(componentId: string): boolean {
+  return getLayoutRole(componentId) === "sidebar";
+}
+
+/**
+ * True when a new card of this type opens at the deck's content-width default.
+ * See {@link CardRegistration.takesContentWidth}. Unregistered ids are `false`
+ * — an unknown card keeps whatever width the caller sizes it to.
+ */
+export function takesContentWidth(componentId: string): boolean {
+  return registry.get(componentId)?.takesContentWidth === true;
 }
 
 /**

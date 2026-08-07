@@ -73,7 +73,7 @@ Plain ⌘, for future grants under R3.
 | Slot | Standing |
 |---|---|
 | ⌘D, ⌘Y | Safest — weak conventions elsewhere. |
-| ⌘J, ⌘E | Claimable with honest use: ⌘J for jump/go-to, ⌘E as Find-adjacent. |
+| ⌘E | Claimable with honest use: Find-adjacent. |
 | ⌘B, ⌘U | Hold in reserve — bold/underline, and Tug renders markdown. |
 | ⌘P | Hold in reserve — the print reflex is strong. The only accepted repurposing is a command palette. |
 | ⌘' ⌘; ⌘\ | Free punctuation. |
@@ -110,6 +110,20 @@ The algebra's first application. Each row's rationale is a derivation, not a pre
 **⌃⌘A and ⌃⇧⌘A are not an inverse on one set.** ⌃⌘A acts on what is *not yet* this session's — the unattributed and orphaned buckets together — and ⌃⇧⌘A on what *is*. ⇧-as-counterpart is carrying "the opposite bulk verb of this shade", not "the same set, reversed". R1 promises a shared key and an opposite sense; it does not promise set inversion, and this pair is the reason to say so out loud.
 
 **Ratified unchanged:** ⌥⌘/ Show DevTools against ⌘/ Command Picker; the ⌥⌘↑/↓ + ⌥⇧⌘↑/↓ turn family (R2).
+
+---
+
+## The sidebar-toggle grammar
+
+⌃⌘⟨letter⟩ names a sidebar card, and toggling one shows or hides its rail. Two residents:
+
+| Command | Was | Is | Derivation |
+|---|---|---|---|
+| `toggle-lens` | ⌥⌘L | **⌃⌘L** | A rail toggle is Tug machinery — Tug tier. ⌥ was carrying nothing: ⌘L is Focus Lens, and showing a rail is not a *variant* of moving focus into it, so R1 gave the composed chord no base to twist. |
+| `toggle-jots` | — | **⌃⌘J** | New, by the grammar above: the sidebar's letter on the Tug tier. |
+| `new-jot` | — | **⌘J** | Plain-⌘ under R3: capture is reached mid-thought, many times a day, and a jot you must open a card to write is a jot you don't write. Claims ⌘J out of the free pool — an honest use, though not the jump/go-to one the pool's annotation anticipated. |
+
+The grammar is the point. One toggle would not have justified moving Show Lens; a *pair* makes each chord teach the other, and it leaves room for a third sidebar card to arrive already knowing its chord. All three are `menuEligible` with **empty** Swift key equivalents, so `applyCommandChords` writes them and every one stays rebindable — see the shade-toggle anomaly below for what the alternative costs.
 
 ---
 

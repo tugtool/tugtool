@@ -83,7 +83,7 @@ import {
   type DownsampleResult,
 } from "@/lib/image-downsample";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
-import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
+import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -120,13 +120,13 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
 
 /**
  * Drags the editor claims: a file drag (images → atoms, everything else →
- * filename text) and a Lens snippet drag ([P05]), which lands its text at the
+ * filename text) and a Lens jot drag ([P05]), which lands its text at the
  * drop point. Both paint the same ring + drop caret. Keyboard-driven or
  * application-specific drags pass through untouched.
  */
 function acceptsDrag(dataTransfer: DataTransfer | null): boolean {
   if (dataTransfer === null) return false;
-  return dataTransfer.types.includes("Files") || hasSnippetDrag(dataTransfer);
+  return dataTransfer.types.includes("Files") || hasJotDrag(dataTransfer);
 }
 
 /** CSS class applied to the drop caret indicator element. */
@@ -969,7 +969,7 @@ export function tugDropExtension(
         clearDropCaret(view);
       };
       /**
-       * Snippet drops ([P05]) are claimed in the CAPTURE phase, before
+       * Jot drops ([P05]) are claimed in the CAPTURE phase, before
        * CM6's own text-drop handler on `contentDOM` can take them. CM6
        * would insert at its unbiased `posAtCoords`, which is the position
        * hidden under the drag image — a line off from where the drop caret
@@ -984,7 +984,7 @@ export function tugDropExtension(
        * granted focus legitimately.
        */
       const onDropCapture = (event: DragEvent): void => {
-        const text = readSnippetDrag(event.dataTransfer);
+        const text = readJotDrag(event.dataTransfer);
         if (text === null) return;
         event.preventDefault();
         event.stopPropagation();

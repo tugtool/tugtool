@@ -21,7 +21,7 @@ import {
 } from "../lens-spatial-order";
 
 const CARDS = "lens-section-cards";
-const SNIPPETS = "lens-section-snippets";
+const LAYOUTS = "lens-section-layouts";
 
 const BAND = -2;
 const FILTER = -1;
@@ -37,7 +37,7 @@ function key(group: string, order: number): string {
 function twoSections(): LensSectionSpatialShape[] {
   return [
     { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
-    { group: SNIPPETS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
+    { group: LAYOUTS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
   ];
 }
 
@@ -92,36 +92,36 @@ describe("lensSpatialOrder — vertical arrows move down the column", () => {
     expect(arrow(shapes, key(CARDS, 0), "down", { at: 1, ...list })).toBe("cursor");
     // …and at its last row.
     expect(arrow(shapes, key(CARDS, 0), "down", { at: 2, ...list })).toBe(
-      key(SNIPPETS, BAND),
+      key(LAYOUTS, BAND),
     );
   });
 
   test("Up off the top of a body returns to its own band", () => {
-    expect(arrow(twoSections(), key(SNIPPETS, 0), "up")).toBe(key(SNIPPETS, BAND));
+    expect(arrow(twoSections(), key(LAYOUTS, 0), "up")).toBe(key(LAYOUTS, BAND));
   });
 
   test("Up on a band reaches the previous section's body", () => {
-    expect(arrow(twoSections(), key(SNIPPETS, BAND), "up")).toBe(key(CARDS, 0));
+    expect(arrow(twoSections(), key(LAYOUTS, BAND), "up")).toBe(key(CARDS, 0));
   });
 
   test("the column closes into a ring — Down off the last body wraps to the top", () => {
-    expect(arrow(twoSections(), key(SNIPPETS, 0), "down")).toBe(key(CARDS, BAND));
+    expect(arrow(twoSections(), key(LAYOUTS, 0), "down")).toBe(key(CARDS, BAND));
   });
 });
 
 describe("lensSpatialOrder — horizontal arrows run along a band", () => {
   test("Right walks the band in the order it reads", () => {
     const shapes = twoSections();
-    expect(arrow(shapes, key(SNIPPETS, BAND), "right")).toBe(key(SNIPPETS, FILTER));
-    expect(arrow(shapes, key(SNIPPETS, FILTER), "right")).toBe(key(SNIPPETS, ACTION));
-    expect(arrow(shapes, key(SNIPPETS, ACTION), "right")).toBe(key(SNIPPETS, FOLD));
+    expect(arrow(shapes, key(LAYOUTS, BAND), "right")).toBe(key(LAYOUTS, FILTER));
+    expect(arrow(shapes, key(LAYOUTS, FILTER), "right")).toBe(key(LAYOUTS, ACTION));
+    expect(arrow(shapes, key(LAYOUTS, ACTION), "right")).toBe(key(LAYOUTS, FOLD));
   });
 
   test("Left retraces it, and the band's ends wrap rather than dead-end", () => {
     const shapes = twoSections();
-    expect(arrow(shapes, key(SNIPPETS, FOLD), "left")).toBe(key(SNIPPETS, ACTION));
-    expect(arrow(shapes, key(SNIPPETS, BAND), "left")).toBe(key(SNIPPETS, FOLD));
-    expect(arrow(shapes, key(SNIPPETS, FOLD), "right")).toBe(key(SNIPPETS, BAND));
+    expect(arrow(shapes, key(LAYOUTS, FOLD), "left")).toBe(key(LAYOUTS, ACTION));
+    expect(arrow(shapes, key(LAYOUTS, BAND), "left")).toBe(key(LAYOUTS, FOLD));
+    expect(arrow(shapes, key(LAYOUTS, FOLD), "right")).toBe(key(LAYOUTS, BAND));
   });
 
   test("a band holds only the controls that registered on it", () => {
@@ -148,13 +148,13 @@ describe("lensSpatialOrder — the plane describes what is on screen", () => {
     // that is left, which is what the engine reports.
     const shapes: LensSectionSpatialShape[] = [
       { group: CARDS, orders: [BAND, FOLD] },
-      { group: SNIPPETS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
+      { group: LAYOUTS, orders: [BAND, FILTER, ACTION, FOLD, 0] },
     ];
-    expect(arrow(shapes, key(CARDS, BAND), "down")).toBe(key(SNIPPETS, BAND));
-    expect(arrow(shapes, key(CARDS, FOLD), "down")).toBe(key(SNIPPETS, BAND));
+    expect(arrow(shapes, key(CARDS, BAND), "down")).toBe(key(LAYOUTS, BAND));
+    expect(arrow(shapes, key(CARDS, FOLD), "down")).toBe(key(LAYOUTS, BAND));
     // And back: Up on the next band reaches the folded band, not a body that
     // is not rendered.
-    expect(arrow(shapes, key(SNIPPETS, BAND), "up")).toBe(key(CARDS, BAND));
+    expect(arrow(shapes, key(LAYOUTS, BAND), "up")).toBe(key(CARDS, BAND));
   });
 
   test("one section alone still names both directions on its band", () => {
@@ -172,10 +172,10 @@ describe("lensSpatialOrder — the plane describes what is on screen", () => {
     // that is not there. The plane never invents a destination.
     const shapes: LensSectionSpatialShape[] = [
       { group: CARDS, orders: [BAND, FOLD] },
-      { group: SNIPPETS, orders: [] },
+      { group: LAYOUTS, orders: [] },
     ];
     expect(arrow(shapes, key(CARDS, BAND), "down")).toBe("none");
-    expect(arrow(shapes, key(SNIPPETS, BAND), "down")).toBe("none");
+    expect(arrow(shapes, key(LAYOUTS, BAND), "down")).toBe("none");
     // The one row it does have is still a row: Right runs it.
     expect(arrow(shapes, key(CARDS, BAND), "right")).toBe(key(CARDS, FOLD));
   });
@@ -203,23 +203,23 @@ describe("lensSpatialOrder — new controls join the plane by registering", () =
     // The Layouts section's shape: two stacked radio groups.
     const shapes: LensSectionSpatialShape[] = [
       { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
-      { group: SNIPPETS, orders: [BAND, FOLD, 0, 1] },
+      { group: LAYOUTS, orders: [BAND, FOLD, 0, 1] },
     ];
-    expect(arrow(shapes, key(SNIPPETS, BAND), "down")).toBe(key(SNIPPETS, 0));
-    expect(arrow(shapes, key(SNIPPETS, 0), "down")).toBe(key(SNIPPETS, 1));
-    expect(arrow(shapes, key(SNIPPETS, 1), "up")).toBe(key(SNIPPETS, 0));
+    expect(arrow(shapes, key(LAYOUTS, BAND), "down")).toBe(key(LAYOUTS, 0));
+    expect(arrow(shapes, key(LAYOUTS, 0), "down")).toBe(key(LAYOUTS, 1));
+    expect(arrow(shapes, key(LAYOUTS, 1), "up")).toBe(key(LAYOUTS, 0));
     // Each body row's Left goes to the section's band, not to the row above it.
-    expect(arrow(shapes, key(SNIPPETS, 1), "left")).toBe(key(SNIPPETS, BAND));
+    expect(arrow(shapes, key(LAYOUTS, 1), "left")).toBe(key(LAYOUTS, BAND));
     // And the last body row is what the next section's Up reaches — a new
     // control at the bottom of a body does not get skipped on the way back.
-    expect(arrow(shapes, key(CARDS, BAND), "up")).toBe(key(SNIPPETS, 1));
+    expect(arrow(shapes, key(CARDS, BAND), "up")).toBe(key(LAYOUTS, 1));
   });
 
   test("a whole new section joins the column with no edit anywhere", () => {
     const shapes: LensSectionSpatialShape[] = [
       { group: CARDS, orders: [BAND, FILTER, FOLD, 0] },
       { group: "lens-section-brand-new", orders: [BAND, FOLD, 0] },
-      { group: SNIPPETS, orders: [BAND, FOLD, 0] },
+      { group: LAYOUTS, orders: [BAND, FOLD, 0] },
     ];
     expect(arrow(shapes, key(CARDS, 0), "down")).toBe(
       key("lens-section-brand-new", BAND),
@@ -228,7 +228,7 @@ describe("lensSpatialOrder — new controls join the plane by registering", () =
       key("lens-section-brand-new", 0),
     );
     expect(arrow(shapes, key("lens-section-brand-new", 0), "down")).toBe(
-      key(SNIPPETS, BAND),
+      key(LAYOUTS, BAND),
     );
   });
 

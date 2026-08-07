@@ -24,7 +24,7 @@
      matches the header strip (`--tug-space-md`) so the body's left edge
      lines up under the header's dot. */
   padding: var(--tug-space-sm) var(--tug-space-md);
-  font-family: var(--tug-font-family-base);
+  font-family: var(--tug-font-family-sans);
   color: var(--tugx-block-text-color);
 }
 

@@ -39,11 +39,18 @@ import {
   clampPanesToDeck,
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
-import { getRegistration, getSizePolicy, getStackSizePolicy } from "./card-registry";
+import {
+  getRegistration,
+  getSizePolicy,
+  getStackSizePolicy,
+  isSidebarCard,
+  takesContentWidth,
+} from "./card-registry";
 import { LENS_CARD_ID } from "./lib/lens-card-id";
-import { findLensPane } from "./deck-store-selectors";
+import { findLensPane, findSidebarPanes } from "./deck-store-selectors";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import { lensStore } from "./lib/lens-store/lens-store";
+import { sidebarWidthStore } from "./lib/sidebar-width-store";
 import { MIN_LENS_WIDTH_PX } from "./lib/lens-store/types";
 import { TugConnection } from "./connection";
 import React from "react";
@@ -74,16 +81,24 @@ import type {
   MovePaneOptions,
 } from "./deck-manager-store";
 import {
-  allocateLensWidth,
+  allocateSidebarWidths,
   clampSlot,
   slotCount,
-  isLensPinned,
-  isLensSide,
+  isSidebarPinned,
+  sidebarSide,
+  isSidebarSide,
+  DEFAULT_CONTENT_WIDTH,
   DEFAULT_IMPOSITION_KIND,
-  DEFAULT_LENS_SIDE,
+  DEFAULT_SIDEBAR_SIDE,
+  withSidebarPinned,
+  withSidebarSide,
+  resolveContentWidthPx,
+  type ContentWidth,
   type DeckImposition,
   type ImpositionKind,
-  type LensSide,
+  type RailPolicy,
+  type RailWidths,
+  type SidebarSide,
 } from "./lib/layout-imposer";
 import { getTugZoom } from "./components/tugways/scale-timing";
 import { DeckManagerContext } from "./deck-manager-context";
@@ -530,7 +545,7 @@ export class DeckManager implements IDeckManagerStore {
 
   public moveCardToPane: (sourcePaneId: string, cardId: string, targetPaneId: string, insertAtIndex: number) => void;
 
-  public togglePaneCollapse: (paneId: string) => void;
+  public setPaneWidth: (paneId: string, preset: ContentWidth) => void;
 
   // ---- useSyncExternalStore arrow properties (stable identity, auto-bound this) ----
 
@@ -735,7 +750,7 @@ export class DeckManager implements IDeckManagerStore {
     this.reorderCardInPane = this._reorderCardInPane.bind(this);
     this.detachCard = this._detachCard.bind(this);
     this.moveCardToPane = this._moveCardToPane.bind(this);
-    this.togglePaneCollapse = this._togglePaneCollapse.bind(this);
+    this.setPaneWidth = this._setPaneWidth.bind(this);
 
     this.deckState = {
       ...this.loadLayout(),
@@ -953,8 +968,24 @@ export class DeckManager implements IDeckManagerStore {
     // plus a 0.9-canvas card always lands inside the canvas.
     const canvasWidthForCap = this.container.clientWidth || 800;
     const canvasHeightForCap = this.container.clientHeight || 600;
+    // A reading card opens at the width the deck is set to rather than at a
+    // number frozen into its registration, so the first card of a session
+    // arrives at the width the user last chose for content
+    // (`takesContentWidth`). The registered preferred width is what a card that
+    // declares nothing keeps.
+    const openingPreset = takesContentWidth(componentId)
+      ? this.deckState.imposition.contentWidth ?? DEFAULT_CONTENT_WIDTH
+      : undefined;
+    const openingWidth =
+      openingPreset === undefined
+        ? sizePolicy.preferred.width
+        : resolveContentWidthPx(
+            openingPreset,
+            sizePolicy.min.width,
+            sizePolicy.max?.width,
+          );
     const cappedPreferredWidth = Math.min(
-      sizePolicy.preferred.width,
+      openingWidth,
       Math.max(sizePolicy.min.width, Math.floor(canvasWidthForCap * 0.9)),
     );
     const cappedPreferredHeight = Math.min(
@@ -1005,6 +1036,12 @@ export class DeckManager implements IDeckManagerStore {
       activeCardId: firstCardId,
       title: registration.defaultTitle ?? "",
       acceptsFamilies: registration.acceptsFamilies ?? ["standard"],
+      // The stamp records the preset the card actually opened at, so the width
+      // popup's check is true from the first frame. A card the canvas cap pulled
+      // in off its preset gets no stamp — it is at a width no row names.
+      ...(openingPreset !== undefined && cappedPreferredWidth === openingWidth
+        ? { widthPreset: openingPreset }
+        : {}),
       // Under a multi-slot arrangement a new card joins it at the first slot
       // rather than walking the cascade — the arrangement is the user's stated
       // intent for the whole deck, and a fresh card landing askew across it
@@ -1116,61 +1153,87 @@ export class DeckManager implements IDeckManagerStore {
    * unregistered.
    */
   showLensPane(): string | null {
-    // Asking for the Lens settles the factory deck's held-back one.
-    this.factoryLensPending = false;
-    const existing = this.deckState.cards.find(
-      (c) => c.componentId === LENS_CARD_ID,
-    );
-    if (existing) {
-      this.activateCard(existing.id);
-      return existing.id;
-    }
-    return this._createLensPane();
+    return this.showSidebarPane(LENS_CARD_ID);
   }
 
   /** Hide the Lens by closing its pane (the presence-is-open
    *  model, [P02]). No-op when the Lens is not open. */
   hideLensPane(): void {
-    // Dismissing the Lens settles it too — the factory default must not
-    // reinstate what the user just closed.
+    this.hideSidebarPane(LENS_CARD_ID);
+  }
+
+  /** Toggle the Lens open/closed. */
+  toggleLensPane(): void {
+    this.toggleSidebarPane(LENS_CARD_ID);
+  }
+
+  /**
+   * Show a sidebar card: if it already exists, raise/activate it; otherwise
+   * create its pinned rail pane at the width it reopens at. The pinned
+   * analogue of {@link showSingletonCard}/{@link addCard} (which only make
+   * free panes). Returns the card id, or `null` if the card type is
+   * unregistered.
+   */
+  showSidebarPane(componentId: string): string | null {
+    // Asking for a sidebar settles the factory deck's held-back Lens.
+    this.factoryLensPending = false;
+    const existing = this.deckState.cards.find(
+      (c) => c.componentId === componentId,
+    );
+    if (existing) {
+      this.activateCard(existing.id);
+      return existing.id;
+    }
+    return this._createSidebarPane(componentId);
+  }
+
+  /** Hide a sidebar card by closing its pane. No-op when it is not open. */
+  hideSidebarPane(componentId: string): void {
+    // Dismissing a sidebar settles the factory Lens too — the factory default
+    // must not reinstate what the user just closed.
     this.factoryLensPending = false;
     const card = this.deckState.cards.find(
-      (c) => c.componentId === LENS_CARD_ID,
+      (c) => c.componentId === componentId,
     );
     if (!card) return;
     const pane = this.deckState.panes.find((p) => p.cardIds.includes(card.id));
     if (pane) this.handlePaneClosed(pane.id);
   }
 
-  /** Toggle the Lens open/closed. */
-  toggleLensPane(): void {
+  /** Toggle a sidebar card open/closed. */
+  toggleSidebarPane(componentId: string): void {
     const exists = this.deckState.cards.some(
-      (c) => c.componentId === LENS_CARD_ID,
+      (c) => c.componentId === componentId,
     );
     if (exists) {
-      this.hideLensPane();
+      this.hideSidebarPane(componentId);
     } else {
-      this.showLensPane();
+      this.showSidebarPane(componentId);
     }
   }
 
   /**
-   * Set the side of the deck the Lens holds.
+   * Set the side of the deck a sidebar card holds.
    *
-   * The side is one of the two axes of the deck's imposition, so this writes
-   * `imposition.lens`. Flipping it flips which edge the arrangement is
-   * numbered from, so every slotted pane moves along with the Lens — the
-   * ledger below covers them all, not just the Lens.
+   * A sidebar's side is one axis of the deck's imposition, so this writes its
+   * entry in `imposition.sidebars`. Moving one rail moves the band's edge, so
+   * every slotted pane moves along with it — the ledger below covers them all,
+   * not just the sidebar named.
    *
-   * Choosing a side also RE-PINS a Lens that had been dragged loose: naming the
-   * side the Lens holds is the gesture that says it holds one. This is why the
-   * call is not short-circuited on an unchanged side — picking "right" while
-   * a floating Lens already records "right" is a request to put it back.
+   * Choosing a side also RE-PINS a sidebar that had been dragged loose: naming
+   * the side a card holds is the gesture that says it holds one. This is why the
+   * call is not short-circuited on an unchanged side — picking "right" while a
+   * floating Lens already records "right" is a request to put it back.
    */
-  setImpositionLens(side: LensSide): void {
+  setSidebarSide(componentId: string, side: SidebarSide): void {
     const imposition = this.deckState.imposition;
-    if (imposition.lens === side && isLensPinned(imposition)) return;
-    this._reimpose({ ...imposition, lens: side, lensPinned: true });
+    if (
+      sidebarSide(imposition, componentId) === side &&
+      isSidebarPinned(imposition, componentId)
+    ) {
+      return;
+    }
+    this._reimpose(withSidebarSide(imposition, componentId, side));
   }
 
   /**
@@ -1179,30 +1242,91 @@ export class DeckManager implements IDeckManagerStore {
    * of. No-op when it is already pinned.
    */
   pinLens(): void {
-    if (isLensPinned(this.deckState.imposition)) return;
-    this._reimpose({ ...this.deckState.imposition, lensPinned: true });
+    if (isSidebarPinned(this.deckState.imposition, LENS_CARD_ID)) return;
+    this._reimpose(
+      withSidebarPinned(this.deckState.imposition, LENS_CARD_ID, true),
+    );
   }
 
   /**
-   * The width the pinned Lens should stand at for a given arrangement — the
-   * space allocator's answer — or `null` when the allocator does not apply.
+   * The pinned sidebar panes standing on each side, with the side's rail
+   * policy — the width the user chose for it and the floor it may not cross.
    *
-   * It does not apply unless the Lens is open, pinned, and there is an
-   * arrangement for it to stand at the end of: a floating or closed Lens is not
-   * the band's other end, and with no kind there is no chain to tile.
+   * Same-side cards share ONE rail, so the side's policy folds its members:
+   * the preferred width is the widest chosen width (a rail must be able to show
+   * the card its owner sized widest) and the floor is the tightest member floor
+   * (a rail is one width, so any member's floor binds it).
+   */
+  private _sidebarRails(
+    panes: readonly TugPaneState[],
+    imposition: DeckImposition,
+  ): {
+    rails: { left?: RailPolicy; right?: RailPolicy };
+    panesBySide: Map<SidebarSide, TugPaneState[]>;
+  } {
+    const rails: { left?: RailPolicy; right?: RailPolicy } = {};
+    const panesBySide = new Map<SidebarSide, TugPaneState[]>();
+    const state = { ...this.deckState, panes: [...panes] };
+    for (const { componentId, pane } of findSidebarPanes(state)) {
+      if (!isSidebarPinned(imposition, componentId)) continue;
+      const side = sidebarSide(imposition, componentId);
+      const held = panesBySide.get(side) ?? [];
+      held.push(pane);
+      panesBySide.set(side, held);
+      const policy: RailPolicy = {
+        preferredWidth: this._sidebarPreferredWidth(componentId, pane),
+        minWidth: getSizePolicy(componentId).min.width,
+      };
+      const standing = rails[side];
+      rails[side] =
+        standing === undefined
+          ? policy
+          : {
+              preferredWidth: Math.max(
+                standing.preferredWidth,
+                policy.preferredWidth,
+              ),
+              minWidth: Math.max(standing.minWidth, policy.minWidth),
+            };
+    }
+    return { rails, panesBySide };
+  }
+
+  /**
+   * The width a sidebar card was last sized to — the number its rail's
+   * allowance is centred on. The Lens keeps it in its own store so a closed
+   * Lens reopens where it stood; a sidebar card with no such store stands at
+   * the width its pane already carries.
+   */
+  private _sidebarPreferredWidth(
+    componentId: string,
+    pane: TugPaneState,
+  ): number {
+    if (componentId === LENS_CARD_ID) return lensStore.getSnapshot().widthPx;
+    return pane.size.width;
+  }
+
+  /**
+   * The width each pinned sidebar rail should stand at for a given
+   * arrangement — the space allocator's answer, keyed by side — or `null` when
+   * the allocator does not apply.
+   *
+   * It does not apply unless a sidebar card is open, pinned, and there is an
+   * arrangement for it to stand at the end of: a floating or closed sidebar is
+   * not the band's other end, and with no kind there is no chain to tile.
    *
    * The widths handed to the solver are RENDER widths, raised to each stack's
    * size floor exactly as `TugPane` and `DeckCanvas` raise them. A chain solved
    * on stored widths below the floor would tile a picture the deck never paints.
    */
-  private _allocatedLensWidth(
+  private _allocatedRailWidths(
     panes: readonly TugPaneState[],
     imposition: DeckImposition,
-  ): number | null {
+  ): RailWidths | null {
     const kind = imposition.kind;
-    if (kind === undefined || !isLensPinned(imposition)) return null;
-    const lensPaneId = findLensPane({ ...this.deckState, panes: [...panes] })?.id;
-    if (lensPaneId === undefined) return null;
+    if (kind === undefined) return null;
+    const { rails } = this._sidebarRails(panes, imposition);
+    if (rails.left === undefined && rails.right === undefined) return null;
     const canvasWidth = this.container.clientWidth;
     if (!canvasWidth) return null;
 
@@ -1222,73 +1346,83 @@ export class DeckManager implements IDeckManagerStore {
       .filter((pane) => pane.slot !== undefined)
       .map((pane) => ({ slot: pane.slot as number, width: renderWidth(pane) }));
 
-    return allocateLensWidth({
-      canvasWidth,
-      kind,
-      occupied,
-      preferredWidth: lensStore.getSnapshot().widthPx,
-      minWidth: MIN_LENS_WIDTH_PX,
-    });
+    return allocateSidebarWidths({ canvasWidth, kind, occupied, rails });
   }
 
   /**
    * Commit an imposition record and the panes it derives geometry for,
    * bracketing both with the lifecycle ledger. Every slotted pane's frame moves
-   * — the imposition record is what places them — and the Lens moves with them,
-   * so the ledger is built from the fact of the chain rather than from a diff of
-   * stored positions, which imposition never writes.
+   * — the imposition record is what places them — and the sidebars move with
+   * them, so the ledger is built from the fact of the chain rather than from a
+   * diff of stored positions, which imposition never writes.
    *
    * The space allocator runs here, on the panes and imposition being committed
    * rather than on the ones being replaced, so a kind change is solved against
-   * the arrangement it is turning into. Its answer is written into the Lens
+   * the arrangement it is turning into. Its answer is written into each sidebar
    * pane's `size.width` — the live width — and deliberately NOT through
    * `movePane`, whose Lens mirror is what makes `lensStore.widthPx` mean "the
    * width the user chose". An allocation routed through that mirror would
    * quietly overwrite the preference it is supposed to flex around.
+   *
+   * Every pane sharing a side takes that side's one width: a rail is one width
+   * whoever stands in it.
    */
   private _commitImposition(
     imposition: DeckImposition,
     panes: readonly TugPaneState[],
   ): void {
-    const lensPane = findLensPane({ ...this.deckState, panes: [...panes] });
-    const allocated = this._allocatedLensWidth(panes, imposition);
-    const lensResized =
-      lensPane !== undefined &&
-      allocated !== null &&
-      Math.abs(allocated - lensPane.size.width) >= 1;
-    const nextPanes = lensResized
-      ? panes.map((pane) =>
-          pane.id === lensPane.id
-            ? { ...pane, size: { ...pane.size, width: allocated } }
-            : pane,
-        )
-      : [...panes];
+    const { panesBySide } = this._sidebarRails(panes, imposition);
+    const allocated = this._allocatedRailWidths(panes, imposition);
+    const widthByPaneId = new Map<string, number>();
+    if (allocated !== null) {
+      for (const [side, sidePanes] of panesBySide) {
+        const width = allocated[side];
+        if (width === undefined) continue;
+        for (const pane of sidePanes) {
+          if (Math.abs(width - pane.size.width) >= 1) {
+            widthByPaneId.set(pane.id, width);
+          }
+        }
+      }
+    }
+    const nextPanes = panes.map((pane) => {
+      const width = widthByPaneId.get(pane.id);
+      return width === undefined
+        ? pane
+        : { ...pane, size: { ...pane.size, width } };
+    });
 
+    const sidebarPaneIds = new Set(
+      [...panesBySide.values()].flat().map((pane) => pane.id),
+    );
     const moved = nextPanes
-      .filter((pane) => pane.slot !== undefined || pane.id === lensPane?.id)
+      .filter((pane) => pane.slot !== undefined || sidebarPaneIds.has(pane.id))
+      .map((pane) => pane.activeCardId);
+    const resized = nextPanes
+      .filter((pane) => widthByPaneId.has(pane.id))
       .map((pane) => pane.activeCardId);
 
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
-    if (lensResized) this.cardLifecycle.notifyCardWillResize(lensPane.activeCardId);
+    for (const cardId of resized) this.cardLifecycle.notifyCardWillResize(cardId);
     this.deckState = { ...this.deckState, panes: nextPanes, imposition };
     this.notify();
-    if (lensResized) this.cardLifecycle.notifyCardDidResize(lensPane.activeCardId);
+    for (const cardId of resized) this.cardLifecycle.notifyCardDidResize(cardId);
     for (const cardId of moved) this.cardLifecycle.notifyCardDidMove(cardId);
     this.scheduleSave();
   }
 
   /**
-   * Re-solve the pinned Lens's width for the arrangement as it stands, and
-   * commit it if it changed. A no-op when the allocator does not apply or its
-   * answer is the width already showing.
+   * Re-solve every pinned sidebar rail's width for the arrangement as it
+   * stands, and commit if any of them changed. A no-op when the allocator does
+   * not apply or its answer is the widths already showing.
    *
-   * THE TWO MOMENTS. The Lens's width belongs to the user, and the deck may
-   * spend it only when the user has just asked the deck to arrange itself: a
-   * click in the Layouts section, and a canvas that came to rest at a new size
+   * THE TWO MOMENTS. A rail's width belongs to the user, and the deck may spend
+   * it only when the user has just asked the deck to arrange itself: a click in
+   * the Layouts section, and a canvas that came to rest at a new size
    * (`deck-canvas.tsx`'s settled-resize observer — the window edge, a display
    * change, a space move). Nothing else re-solves. Slotting a card, dragging
    * one out of the chain, closing one: all of those change what the chain is,
-   * and all of them leave the Lens exactly where it stands, because the user
+   * and all of them leave the rails exactly where they stand, because the user
    * was moving a CARD and did not ask for their rail to be resized.
    *
    * This is that second moment; the first commits through
@@ -1296,14 +1430,21 @@ export class DeckManager implements IDeckManagerStore {
    * lands here too — re-asserting the arrangement is a request for the seams,
    * and it is the only way to ask for them without changing anything else.
    */
-  retuneLensAllocation(): void {
+  retuneSidebarAllocation(): void {
     const imposition = this.deckState.imposition;
     const panes = this.deckState.panes;
-    const lensPane = findLensPane(this.deckState);
-    if (lensPane === undefined) return;
-    const allocated = this._allocatedLensWidth(panes, imposition);
+    const { panesBySide } = this._sidebarRails(panes, imposition);
+    if (panesBySide.size === 0) return;
+    const allocated = this._allocatedRailWidths(panes, imposition);
     if (allocated === null) return;
-    if (Math.abs(allocated - lensPane.size.width) < 1) return;
+    const moves = [...panesBySide].some(([side, sidePanes]) => {
+      const width = allocated[side];
+      return (
+        width !== undefined &&
+        sidePanes.some((pane) => Math.abs(width - pane.size.width) >= 1)
+      );
+    });
+    if (!moves) return;
     this._commitImposition(imposition, panes);
   }
 
@@ -1316,14 +1457,22 @@ export class DeckManager implements IDeckManagerStore {
     this._commitImposition(imposition, this.deckState.panes);
   }
 
+  /** The sidebar componentId this pane hosts, or `undefined` when it hosts no
+   *  sidebar card. */
+  private _sidebarComponentIdOfPane(paneId: string): string | undefined {
+    return findSidebarPanes(this.deckState).find(
+      (entry) => entry.pane.id === paneId,
+    )?.componentId;
+  }
+
   /**
-   * Release the Lens from its pin: it becomes an ordinary free pane at
-   * `rect`, and the arrangement spans the whole canvas as it does when the Lens
-   * is closed. Called from the pane's move commit — dragging the Lens by its
-   * title bar is the only way out of the pin, and the Layouts section is the
-   * only way back in.
+   * Release a sidebar from its pin: it becomes an ordinary free pane at
+   * `rect`, and the arrangement spans the canvas its rail was taking. Called
+   * from the pane's move commit — dragging a sidebar by its title bar is the
+   * only way out of the pin, and the Layouts section is the only way back in.
    */
-  private _unpinLens(
+  private _unpinSidebar(
+    componentId: string,
     paneId: string,
     rect: { position: { x: number; y: number }; size: { width: number; height: number } },
   ): void {
@@ -1333,7 +1482,11 @@ export class DeckManager implements IDeckManagerStore {
     for (const cardId of stillSlotted) this.cardLifecycle.notifyCardWillMove(cardId);
     this.deckState = {
       ...this.deckState,
-      imposition: { ...this.deckState.imposition, lensPinned: false },
+      imposition: withSidebarPinned(
+        this.deckState.imposition,
+        componentId,
+        false,
+      ),
       panes: this.deckState.panes.map((p) =>
         p.id === paneId ? { ...p, position: rect.position, size: rect.size } : p,
       ),
@@ -1353,42 +1506,43 @@ export class DeckManager implements IDeckManagerStore {
     if (!this.factoryLensPending) return;
     if (componentId === LENS_CARD_ID) return;
     this.factoryLensPending = false;
-    this._createLensPane();
+    this._createSidebarPane(LENS_CARD_ID);
   }
 
   /**
-   * Create the Lens rail — mirrors {@link addCard} but pins the pane to the
-   * side the imposition records (`imposition.lens`), spans full height, takes
-   * its width from the persisted reopen width, and hosts nothing else
-   * (`acceptsFamilies: []`).
+   * Create a sidebar rail — mirrors {@link addCard} but pins the pane to the
+   * side the imposition records, spans full height, takes its width from the
+   * card's reopen width, and hosts nothing else (`acceptsFamilies: []`).
    */
-  private _createLensPane(): string | null {
-    const registration = getRegistration(LENS_CARD_ID);
+  private _createSidebarPane(componentId: string): string | null {
+    const registration = getRegistration(componentId);
     if (!registration) {
       console.warn(
-        `[DeckManager] showLensPane: no registration for "${LENS_CARD_ID}". ` +
-          `Call registerLensCard() before showLensPane().`,
+        `[DeckManager] showSidebarPane: no registration for "${componentId}". ` +
+          `Register the card before showing it.`,
       );
       return null;
     }
 
-    const sizePolicy = getSizePolicy(LENS_CARD_ID);
-    const lensSnapshot = lensStore.getSnapshot();
-    const width = Math.max(sizePolicy.min.width, lensSnapshot.widthPx);
+    const sizePolicy = getSizePolicy(componentId);
+    const width = Math.max(
+      sizePolicy.min.width,
+      this._sidebarReopenWidth(componentId) ?? sizePolicy.preferred.width,
+    );
     const canvasHeight = this.container.clientHeight || 600;
 
     const paneId = crypto.randomUUID();
     const cardId = crypto.randomUUID();
     const card: CardState = {
       id: cardId,
-      componentId: LENS_CARD_ID,
+      componentId,
       title: registration.defaultMeta.title,
       closable: registration.defaultMeta.closable !== false,
     };
     const pane: TugPaneState = {
       id: paneId,
-      // Position/height are nominal — the pane render layer pins the Lens
-      // from `imposition.lens`. Width is the live Lens width.
+      // Position/height are nominal — the pane render layer pins a sidebar
+      // from `imposition.sidebars`. Width is the live rail width.
       position: { x: 0, y: 0 },
       size: { width, height: canvasHeight },
       cardIds: [cardId],
@@ -1405,21 +1559,37 @@ export class DeckManager implements IDeckManagerStore {
           cards: [...this.deckState.cards, card],
           panes: [...this.deckState.panes, pane],
           activePaneId: paneId,
-          // A Lens that was dragged loose and then closed comes back at its
-          // pin. Only a drag takes it off the pin, and closing the Lens is not
-          // one — reopening it into the middle of the deck at a nominal (0, 0)
-          // would be the deck inventing a position nobody asked for.
-          imposition: { ...this.deckState.imposition, lensPinned: true },
+          // A sidebar that was dragged loose and then closed comes back at its
+          // pin. Only a drag takes it off the pin, and closing it is not one —
+          // reopening it into the middle of the deck at a nominal (0, 0) would
+          // be the deck inventing a position nobody asked for.
+          imposition: withSidebarPinned(
+            this.deckState.imposition,
+            componentId,
+            true,
+          ),
         };
         this.notify();
         this.scheduleSave();
         this.cardLifecycle.notifyCardDidFinishConstruction(cardId);
         this.putFocusedCardIdGuarded(cardId);
       },
-      "showLensPane",
+      "showSidebarPane",
     );
 
     return cardId;
+  }
+
+  /**
+   * The width `componentId` reopens at, or `undefined` when the user has never
+   * sized it. The Lens keeps its own in `lensStore` (which predates the
+   * per-card store and writes the same domain and key); every other sidebar
+   * card reads {@link sidebarWidthStore}.
+   */
+  private _sidebarReopenWidth(componentId: string): number | undefined {
+    return componentId === LENS_CARD_ID
+      ? lensStore.getSnapshot().widthPx
+      : sidebarWidthStore.widthFor(componentId);
   }
 
   /**
@@ -1653,13 +1823,18 @@ export class DeckManager implements IDeckManagerStore {
    * the observable subject).
    *
    * `opts.evictSlot` releases a pane whose geometry was DERIVED back to free
-   * pixels in the same commit — a slotted pane leaves its slot, and the Lens
-   * leaves its pin. The title-bar drag path passes it, the resize paths do
-   * not. It is an explicit option rather than a "position changed" heuristic
-   * because a west-edge resize also moves `position.x`, and a resize must
-   * never knock a pane out of its place: width is the user's either way. That
-   * is what makes widening the Lens by its deck-facing edge keep the
-   * arrangement laid out against it.
+   * pixels in the same commit — a slotted pane leaves its slot, and a pinned
+   * sidebar leaves its pin. **Both manual geometry gestures pass it**: the
+   * title-bar drag and the edge resize alike, because either one is the user
+   * placing the pane by hand and a hand-placed pane is not in an arrangement.
+   *
+   * It stays an explicit option rather than a "geometry changed" heuristic
+   * because plenty of commits change geometry without being that gesture — the
+   * space allocator's rail solve, the width-preset applier, the imposition
+   * freeze — and each of those must leave the pane exactly where the structure
+   * put it. The sidebar's deck-facing edge is the one resize that does NOT
+   * evict, and it does not because it has its own handler
+   * (`handleSidebarResizeStart`) that never passes this.
    */
   movePane(
     paneId: string,
@@ -1669,13 +1844,14 @@ export class DeckManager implements IDeckManagerStore {
   ): void {
     const existing = this.deckState.panes.find((s) => s.id === paneId);
     if (!existing) return;
-    // The Lens has no slot to evict; the same gesture releases its pin instead.
+    const sidebarComponentId = this._sidebarComponentIdOfPane(paneId);
+    // A sidebar has no slot to evict; the same gesture releases its pin.
     if (
       opts?.evictSlot === true &&
-      findLensPane(this.deckState)?.id === paneId &&
-      isLensPinned(this.deckState.imposition)
+      sidebarComponentId !== undefined &&
+      isSidebarPinned(this.deckState.imposition, sidebarComponentId)
     ) {
-      this._unpinLens(paneId, { position, size });
+      this._unpinSidebar(sidebarComponentId, paneId, { position, size });
       return;
     }
     const evictSlot = opts?.evictSlot === true && existing.slot !== undefined;
@@ -1695,6 +1871,12 @@ export class DeckManager implements IDeckManagerStore {
         if (s.id !== paneId) return s;
         const moved: TugPaneState = { ...s, position, size };
         if (evictSlot) delete moved.slot;
+        // The width stamp follows the width, in one place: a move that names a
+        // preset records it, and any OTHER move that changes the width clears
+        // it. That is what keeps a hand-dragged edge from leaving a card
+        // claiming a preset it no longer sits at.
+        if (opts?.widthPreset !== undefined) moved.widthPreset = opts.widthPreset;
+        else if (s.size.width !== size.width) delete moved.widthPreset;
         return moved;
       }),
     };
@@ -1703,11 +1885,12 @@ export class DeckManager implements IDeckManagerStore {
     if (positionChanged) this.cardLifecycle.notifyCardDidMove(activeCardId);
     if (sizeChanged) this.cardLifecycle.notifyCardDidResize(activeCardId);
 
-    // The Lens: its live width lives on the pane (persisted in the layout
-    // blob), but a hide→show cycle removes the pane, so mirror the committed
-    // width to the lens store as the preferred *reopen* width ([P02]).
-    if (sizeChanged && findLensPane(this.deckState)?.id === paneId) {
-      lensStore.setWidth(size.width);
+    // A sidebar's live width lives on the pane (persisted in the layout blob),
+    // but a hide→show cycle removes the pane, so mirror the committed width to
+    // the card's own store as the preferred *reopen* width ([P02]).
+    if (sizeChanged && sidebarComponentId !== undefined) {
+      if (sidebarComponentId === LENS_CARD_ID) lensStore.setWidth(size.width);
+      else sidebarWidthStore.setWidth(sidebarComponentId, size.width);
     }
 
     this.scheduleSave();
@@ -1769,7 +1952,7 @@ export class DeckManager implements IDeckManagerStore {
     // A Lens standing at its pin is not the arrangement's to move — its frame
     // is derived, so a stored rect written here would be a number nothing
     // reads. A Lens dragged loose is an ordinary pane and tiles with the rest.
-    const skipPaneId = isLensPinned(this.deckState.imposition)
+    const skipPaneId = isSidebarPinned(this.deckState.imposition, LENS_CARD_ID)
       ? findLensPane(this.deckState)?.id
       : undefined;
     const stacks = this.deckState.panes.filter((s) => s.id !== skipPaneId);
@@ -1900,10 +2083,7 @@ export class DeckManager implements IDeckManagerStore {
    * Clearing freezes each imposed pane where the user last saw it — the live
    * frame rect is written into `position`/`size` before `slot` goes away, so
    * turning the structure off does not scatter panes back to stale
-   * pre-imposition coordinates. A collapsed pane keeps its stored
-   * `size.height`: its frame is a window-shade stub, and committing that stub
-   * height would leave the card unrestorable (the same rule the drag commit
-   * follows in `tug-pane.tsx`).
+   * pre-imposition coordinates.
    *
    * Either way the Lens returns to its pin: choosing an arrangement is choosing
    * one the Lens stands at the end of. A Lens dragged loose and left there is
@@ -1914,7 +2094,7 @@ export class DeckManager implements IDeckManagerStore {
     const current = this.deckState.imposition.kind;
     if (current === (kind ?? undefined)) {
       this.pinLens();
-      this.retuneLensAllocation();
+      this.retuneSidebarAllocation();
       return;
     }
     const lensCardId = findLensPane(this.deckState)?.activeCardId;
@@ -1927,10 +2107,7 @@ export class DeckManager implements IDeckManagerStore {
         const rect = this._readPaneFrameRect(pane.id);
         if (rect !== null) {
           next.position = { x: rect.x, y: rect.y };
-          next.size = {
-            width: rect.width,
-            height: pane.collapsed === true ? pane.size.height : rect.height,
-          };
+          next.size = { width: rect.width, height: rect.height };
         }
         return next;
       });
@@ -1939,10 +2116,11 @@ export class DeckManager implements IDeckManagerStore {
         if (ch.positionChanged) this.cardLifecycle.notifyCardWillMove(ch.id);
         if (ch.sizeChanged) this.cardLifecycle.notifyCardWillResize(ch.id);
       }
-      const imposition: DeckImposition = {
-        ...this.deckState.imposition,
-        lensPinned: true,
-      };
+      const imposition: DeckImposition = withSidebarPinned(
+        this.deckState.imposition,
+        LENS_CARD_ID,
+        true,
+      );
       delete imposition.kind;
       if (lensCardId !== undefined) this.cardLifecycle.notifyCardWillMove(lensCardId);
       this.deckState = { ...this.deckState, panes: frozen, imposition };
@@ -1962,7 +2140,10 @@ export class DeckManager implements IDeckManagerStore {
       return clamped === pane.slot ? pane : { ...pane, slot: clamped };
     });
     this._commitImposition(
-      { ...this.deckState.imposition, kind, lensPinned: true },
+      {
+        ...withSidebarPinned(this.deckState.imposition, LENS_CARD_ID, true),
+        kind,
+      },
       panes,
     );
   }
@@ -1978,8 +2159,7 @@ export class DeckManager implements IDeckManagerStore {
    * clicking a number that another pane already holds puts this one on top of
    * it rather than doing nothing — and the raise lands in its own commit ahead
    * of the geometry, so the frame crosses to its slot over the arrangement
-   * rather than under it. An imposed pane runs the canvas height, so a
-   * collapsed one expands.
+   * rather than under it.
    *
    * Because the chain packs tight, a card joining it moves every pane after it
    * as well — the lifecycle ledger below covers the whole chain, not just the
@@ -1998,11 +2178,14 @@ export class DeckManager implements IDeckManagerStore {
       console.warn(`assignCardToSlot: no pane holds card "${cardId}"`);
       return;
     }
-    if (findLensPane(this.deckState)?.id === host.id) {
-      // The Lens is the imposition's fixed end, pinned from `imposition.lens`
-      // — it is not the chain's to place.
+    const hostsSidebar = this.deckState.cards.some(
+      (c) => host.cardIds.includes(c.id) && isSidebarCard(c.componentId),
+    );
+    if (hostsSidebar) {
+      // A sidebar card pins to a deck edge and insets the band — it is the
+      // imposition's fixed end, not the chain's to place.
       console.warn(
-        `assignCardToSlot: card "${cardId}" is hosted in the Lens pane "${host.id}"`,
+        `assignCardToSlot: card "${cardId}" is hosted in the sidebar pane "${host.id}"`,
       );
       return;
     }
@@ -2045,7 +2228,6 @@ export class DeckManager implements IDeckManagerStore {
 
     const clamped = clampSlot(kind, slot);
     const updated: TugPaneState = { ...target, slot: clamped };
-    delete updated.collapsed;
 
     const panes = this.deckState.panes.map((p) =>
       p.id === targetPaneId ? updated : p,
@@ -2945,7 +3127,7 @@ export class DeckManager implements IDeckManagerStore {
       ...args.state,
       imposition: args.state.imposition ?? {
         kind: DEFAULT_IMPOSITION_KIND,
-        lens: DEFAULT_LENS_SIDE,
+        sidebars: { [LENS_CARD_ID]: { side: DEFAULT_SIDEBAR_SIDE } },
       },
     };
 
@@ -3502,42 +3684,89 @@ export class DeckManager implements IDeckManagerStore {
     transferFocusAfterMove({ sourceCardId: cardId, store: this });
   }
 
-  // ---- Collapse management ----
+  // ---- Content width ----
 
   /**
-   * Flip the stack's `collapsed` flag and notify subscribers (H-A8).
+   * Set one content pane's width to a named preset, and stamp which preset put
+   * it there.
    *
-   * Collapse/expand is an **appearance-zone** transition per [L06]:
-   * `TugPane` reads `CardState.collapsed` and overrides the rendered
-   * height to `CARD_TITLE_BAR_HEIGHT` via CSS/DOM when collapsed.
-   * `CardState.size` (the stored geometry) is not touched — restoring
-   * the full height on expand is a pure re-read of the original value.
+   * Width goes through `movePane` like any other resize — the pane's geometry
+   * is the pane's, and a preset is a *source* for a width rather than a second
+   * kind of width. Two consequences follow from that, and both are deliberate:
    *
-   * Because no data-zone geometry changed, the move/resize lifecycle
-   * events stay silent: `cardWillResize` / `cardDidResize` do NOT fire
-   * on collapse or expand. Subscribers that care about collapse
-   * specifically should subscribe to the deck-manager store directly —
-   * `CardState.collapsed` flips on each toggle and store subscribers
-   * see the transition in their snapshot. Bolting collapse onto the
-   * resize event channel would make `cardDidResize` a false positive
-   * for every card that ever collapsed, which defeats the point of
-   * the delegate.
+   *  - **The move keeps the pane's slot.** `movePane` is called with no opts,
+   *    which is the shape that leaves `slot` alone; a preset is not a gesture
+   *    that means "leave the arrangement".
+   *  - **The preset is held between the pane's bounds.** `movePane` does not
+   *    clamp, and a stack's policy can beat a preset in either direction
+   *    (Settings' 720 floor beats slim; About is locked at 320), so the clamp
+   *    happens here. The stamp still records what the user chose: the check
+   *    belongs on the row they picked, and the width they got is as close to it
+   *    as the card allows.
+   *
+   * A sidebar pane is refused outright — a rail's width is the allocator's
+   * unknown, and a preset there would be overwritten by the next solve.
    */
-  private _togglePaneCollapse(paneId: string): void {
-    const win = this.deckState.panes.find((s) => s.id === paneId);
-    if (!win) return;
+  private _setPaneWidth(paneId: string, preset: ContentWidth): void {
+    const pane = this.deckState.panes.find((p) => p.id === paneId);
+    if (!pane) return;
+    if (this._sidebarComponentIdOfPane(paneId) !== undefined) {
+      console.warn(
+        `setPaneWidth: pane "${paneId}" hosts a sidebar card; rails take their width from the allocator`,
+      );
+      return;
+    }
 
-    const nowCollapsed = !win.collapsed;
-    const updatedStack: TugPaneState = nowCollapsed
-      ? { ...win, collapsed: true as const }
-      : { ...win, collapsed: undefined };
+    const policy = getStackSizePolicy(this._componentIdsOfPane(pane));
+    const width = resolveContentWidthPx(
+      preset,
+      policy.min.width,
+      policy.max?.width,
+    );
+    this.movePane(
+      paneId,
+      pane.position,
+      { width, height: pane.size.height },
+      { widthPreset: preset },
+    );
+  }
 
+  /** The componentIds a pane's stack is made of, in card order. */
+  private _componentIdsOfPane(pane: TugPaneState): string[] {
+    const cardsById = new Map(this.deckState.cards.map((c) => [c.id, c]));
+    return pane.cardIds
+      .map((cid) => cardsById.get(cid)?.componentId)
+      .filter((id): id is string => id !== undefined);
+  }
+
+  /**
+   * Set the deck's default content width and put every content pane on it.
+   *
+   * The default is a deck-wide statement rather than a seed for the next card:
+   * choosing a width in the Layouts section is saying "this is how wide content
+   * reads here", so it reaches the panes already open and overwrites whatever
+   * per-pane widths the title-bar popup had set. Dissent runs the other way —
+   * you pick the deck's width first, then narrow the one card you want narrow.
+   *
+   * Choosing the width the deck is already at is therefore not a no-op: it is
+   * the gesture that puts a deviating pane back, the same reasoning that keeps
+   * `setSidebarSide` from short-circuiting on an unchanged side.
+   *
+   * Sidebar panes are not content and are skipped — a rail's width belongs to
+   * the allocator ([P04]).
+   */
+  setContentWidth(preset: ContentWidth): void {
     this.deckState = {
       ...this.deckState,
-      panes: this.deckState.panes.map((s) => (s.id === paneId ? updatedStack : s)),
+      imposition: { ...this.deckState.imposition, contentWidth: preset },
     };
     this.notify();
     this.scheduleSave();
+
+    const contentPaneIds = this.deckState.panes
+      .filter((pane) => this._sidebarComponentIdOfPane(pane.id) === undefined)
+      .map((pane) => pane.id);
+    for (const paneId of contentPaneIds) this._setPaneWidth(paneId, preset);
   }
 
   // ---- Cascade positioning ----
@@ -3638,18 +3867,18 @@ export class DeckManager implements IDeckManagerStore {
    * the last-resort fallback. Nothing writes this key any more, and the value
    * persists into the layout blob on the next save.
    */
-  private readLegacyLensSide(): LensSide | undefined {
+  private readLegacyLensSide(): SidebarSide | undefined {
     const client = getTugbankClient();
     if (!client) return undefined;
     const entry = client.get("dev.tugtool.lens", "anchorSide");
     if (!entry || entry.kind !== "string") return undefined;
-    return isLensSide(entry.value) ? entry.value : undefined;
+    return isSidebarSide(entry.value) ? entry.value : undefined;
   }
 
   private loadLayout(): DeckState {
     const canvasWidth = this.container.clientWidth || 800;
     const canvasHeight = this.container.clientHeight || 600;
-    const lensSide = this.readLegacyLensSide() ?? DEFAULT_LENS_SIDE;
+    const lensSide = this.readLegacyLensSide() ?? DEFAULT_SIDEBAR_SIDE;
 
     let state: DeckState | null = null;
 

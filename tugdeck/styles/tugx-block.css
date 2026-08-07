@@ -189,7 +189,7 @@ body {
   --tugx-block-strip-border:  var(--tugx-block-hairline);
   --tugx-block-strip-color:   var(--tug7-element-global-text-normal-muted-rest);
   --tugx-block-strip-size:    var(--tug-font-size-2xs);
-  --tugx-block-strip-font:    var(--tug-font-family-base);
+  --tugx-block-strip-font:    var(--tug-font-family-sans);
 
   /* ------------------------------------------------------------------ *
    * Body row interaction. Hover overlay sits above whatever the row    *

@@ -12,18 +12,27 @@
  */
 
 import type { DeckState, CardStateBag } from "./layout-tree";
+import type { ContentWidth, SidebarSide } from "./lib/layout-imposer";
 import type { CardLifecycleObserver } from "./lib/card-lifecycle";
 import type { ComponentStatePreservationRegistry } from "./components/tugways/component-state-preservation-registry";
 import type { CardAssembler } from "./card-state-orchestrator";
 import type { SaveCallbackSource } from "./deck-trace";
 
 /**
- * Options on a pane-geometry commit. `evictSlot` releases an imposed pane
- * back to free geometry as part of the same commit — set by the title-bar
- * drag path only, never by resize.
+ * Options on a pane-geometry commit. `evictSlot` releases an imposed pane back
+ * to free geometry as part of the same commit — set by both manual geometry
+ * gestures, the title-bar drag and the edge resize, and by neither of the
+ * structural width writers (the allocator, the width-preset applier).
  */
 export interface MovePaneOptions {
   evictSlot?: boolean;
+  /**
+   * The named width this move is applying. Set only by the width-preset
+   * applier; every hand resize omits it, which is what makes the pane's
+   * `widthPreset` stamp clear itself when the width changes by any other
+   * route. A pane at a width nobody named is at no preset.
+   */
+  widthPreset?: ContentWidth;
 }
 
 /**
@@ -191,12 +200,24 @@ export interface IDeckManagerStore {
   toggleLensPane: () => void;
 
   /**
-   * Re-solve the pinned Lens's width so the imposed chain tiles evenly, and
-   * commit it if it changed (the space allocator, `lib/layout-imposer.ts`).
-   * A no-op when the Lens is closed or floating, when no arrangement is
-   * active, or when the answer is the width already showing.
+   * Show a sidebar card by componentId — the generalization the Lens trio
+   * above now delegates to. Activates the card if its rail is already open,
+   * else creates the pinned pane at the width it reopens at. Returns the card
+   * id, or null when the card type is unregistered.
    */
-  retuneLensAllocation: () => void;
+  showSidebarPane: (componentId: string) => string | null;
+
+  /** Toggle a sidebar card open/closed (presence is the open state). */
+  toggleSidebarPane: (componentId: string) => void;
+
+  /**
+   * Re-solve every pinned sidebar rail's width so the imposed chain tiles
+   * evenly, and commit if any changed (the space allocator,
+   * `lib/layout-imposer.ts`). A no-op when no sidebar is pinned and open, when
+   * no arrangement is active, or when the answer is the widths already showing.
+   */
+  retuneSidebarAllocation: () => void;
+
 
   /**
    * Add a new card to an existing pane. Returns the new card id, or
@@ -340,14 +361,18 @@ export interface IDeckManagerStore {
   invokeSaveCallback: (id: string, source?: SaveCallbackSource) => void;
 
   /**
-   * Toggle the collapsed state of a pane. When collapsing, sets
-   * `collapsed: true`; `TugPane` renders the pane at
-   * CARD_TITLE_BAR_HEIGHT. When expanding, restores the full height.
-   * Notifies subscribers and schedules a save so collapsed state is
-   * persisted. (Renamed from `toggleCardCollapse` — position/size and
-   * collapse are pane-level concerns.)
+   * Set one content pane's width to a named preset and stamp it, clamped up to
+   * the pane's stack floor. Refuses a sidebar pane — a rail's width belongs to
+   * the allocator.
    */
-  togglePaneCollapse: (paneId: string) => void;
+  setPaneWidth: (paneId: string, preset: ContentWidth) => void;
+
+  /**
+   * Set the deck's default content width and put every content pane on it.
+   * Overwrites per-pane deviations — the default is a statement about how wide
+   * content reads on this deck, not a seed for the next card.
+   */
+  setContentWidth: (preset: ContentWidth) => void;
 
   /**
    * Return the per-card Component State Preservation Protocol registry

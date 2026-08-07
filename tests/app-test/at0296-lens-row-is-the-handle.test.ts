@@ -6,8 +6,8 @@
  *
  * There is no reorder grip anywhere in the Lens. A press on a row that is not
  * one of its controls arms a carry, and travel past the threshold engages it
- * (`block-reorder`). That makes the Snippets row the hard case, because its
- * incipit is ALSO a native HTML5 drag source — a snippet is dragged out into a
+ * (`block-reorder`). That makes the Jots row the hard case, because its
+ * incipit is ALSO a native HTML5 drag source — a jot is dragged out into a
  * session prompt — so ONE surface has to answer to two different drags. The
  * axis is what tells them apart: the list is a column, so a vertical act is the
  * carry and a horizontal one is the drag-out.
@@ -23,7 +23,7 @@
  *    handed to the drag-out rather than swallowed by the carry.
  *
  * @covers tugdeck/src/components/lens/block-reorder.ts
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  * @covers tugdeck/src/components/lens/lens-section-band.tsx
  */
 
@@ -42,14 +42,14 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const LIST = ".lens-content .lens-snippets-list";
-const ROWS = `${LIST} .snippet-row-content[data-snippet-id]`;
+const LIST = ".jots-card .jots-list";
+const ROWS = `${LIST} .jot-row-content[data-jot-id]`;
 const rowSel = (id: string): string =>
-  `${LIST} .snippet-row-content[data-snippet-id="${id}"] .snippet-row-label`;
+  `${LIST} .jot-row-content[data-jot-id="${id}"] .jot-row-label`;
 
-const SNIPPETS = Array.from({ length: 6 }, (_, i) => ({
+const JOTS = Array.from({ length: 6 }, (_, i) => ({
   id: `s${i}`,
-  text: `row-${i} snippet handle`,
+  text: `row-${i} jot handle`,
 }));
 
 /** The row that gets carried — far enough down to have room above it. */
@@ -85,40 +85,40 @@ function priorCardDeck() {
 async function domOrder(app: App): Promise<string[]> {
   return app.evalJS<string[]>(
     `Array.from(document.querySelectorAll(${JSON.stringify(ROWS)}))
-      .map(function(el){ return el.getAttribute("data-snippet-id"); })`,
+      .map(function(el){ return el.getAttribute("data-jot-id"); })`,
   );
 }
 
-/** The snippets document's own order, read off the file the store writes. */
+/** The jots document's own order, read off the file the store writes. */
 function docOrder(path: string): string[] {
   const doc = JSON.parse(readFileSync(path, "utf8")) as {
-    snippets: { id: string }[];
+    jots: { id: string }[];
   };
-  return doc.snippets.map((s) => s.id);
+  return doc.jots.map((s) => s.id);
 }
 
 describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
   test(
-    "no grips; a vertical drag carries a snippet, a horizontal one does not",
+    "no grips; a vertical drag carries a jot, a horizontal one does not",
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0296-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: JOTS }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0296-lens-row-is-the-handle",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
-          await app.dispatchControlAction("focus-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(ROWS)}).length === ${SNIPPETS.length}`,
+            `document.querySelectorAll(${JSON.stringify(ROWS)}).length === ${JOTS.length}`,
             { timeoutMs: 8_000 },
           );
 
@@ -131,7 +131,7 @@ describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
             ),
           ).toBe(0);
 
-          expect(await domOrder(app)).toEqual(SNIPPETS.map((s) => s.id));
+          expect(await domOrder(app)).toEqual(JOTS.map((s) => s.id));
 
           // (1) VERTICAL — the carry. Grab the row's own text (no handle) and
           // drag it up to the top row's upper edge.
@@ -143,15 +143,15 @@ describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
           await app.waitForCondition<boolean>(
             `(function(){
                var els = Array.from(document.querySelectorAll(${JSON.stringify(ROWS)}));
-               return els.length === ${SNIPPETS.length} &&
-                 els[0].getAttribute("data-snippet-id") === ${JSON.stringify(TARGET)};
+               return els.length === ${JOTS.length} &&
+                 els[0].getAttribute("data-jot-id") === ${JSON.stringify(TARGET)};
              })()`,
             { timeoutMs: 5_000 },
           );
           const carried = await domOrder(app);
           expect(carried.indexOf(TARGET)).toBeLessThan(carried.indexOf("s0"));
           // …and it is the document that moved, not just the view.
-          expect(docOrder(snippetsPath)).toEqual(carried);
+          expect(docOrder(jotsPath)).toEqual(carried);
 
           // (2) HORIZONTAL — not the carry. The same grab, dragged sideways
           // well past the threshold, leaves the order untouched: that gesture
@@ -162,7 +162,7 @@ describe.skipIf(!SHOULD_RUN)("at0296 — the Lens row is the handle", () => {
             y: Math.round(row.y + row.height / 2),
           });
           expect(await domOrder(app)).toEqual(carried);
-          expect(docOrder(snippetsPath)).toEqual(carried);
+          expect(docOrder(jotsPath)).toEqual(carried);
         } finally {
           await app.close();
         }

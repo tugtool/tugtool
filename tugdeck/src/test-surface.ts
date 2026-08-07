@@ -37,7 +37,7 @@
 
 import type { DeckManager } from "./deck-manager";
 import type { DeckState, CardStateBag } from "./layout-tree";
-import { DEFAULT_LENS_SIDE } from "./lib/layout-imposer";
+import { DEFAULT_SIDEBAR_SIDE } from "./lib/layout-imposer";
 import { deckTrace, type DeckTraceEvent } from "./deck-trace";
 import { labFlags } from "./lib/lab-flags";
 import { listViewProbeForScroller } from "./components/tugways/tug-list-view";
@@ -1153,7 +1153,7 @@ function makeEmptyDeckState(): DeckState {
   return {
     cards: [],
     panes: [],
-    imposition: { lens: DEFAULT_LENS_SIDE },
+    imposition: { sidebars: { lens: { side: DEFAULT_SIDEBAR_SIDE } } },
     hasFocus: typeof document !== "undefined" ? document.hasFocus() : false,
   };
 }

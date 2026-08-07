@@ -48,9 +48,19 @@
   border-color: var(--tug7-surface-global-primary-normal-default-rest);
 }
 
+/* One side's rail. It holds its members rather than being one itself: two
+   sidebar cards sharing a side share the rail's width and split its run, so the
+   strip is a container and each member is a block inside it. */
 .layout-mini-rail {
+  position: relative;
   flex: 0 0 18%;
+}
+
+.layout-mini-rail-member {
+  position: absolute;
+  inset-inline: 0;
   border-radius: 1px;
   background-color: var(--tug7-surface-global-secondary-normal-default-rest);
   border: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+  box-sizing: border-box;
 }

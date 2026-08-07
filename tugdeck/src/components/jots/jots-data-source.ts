@@ -1,17 +1,17 @@
 /**
- * snippets-data-source.ts — the `TugListView` data source for the Lens
- * **Snippets** section: one row per snippet, in document order.
+ * jots-data-source.ts — the `TugListView` data source for the **Jots** card:
+ * one row per jot, in document order.
  *
- * Rows come straight from `snippetsStore`'s `doc.snippets`, narrowed by the
- * band's filter query; the source recomputes when that array reference, the
- * query, or the editing id changes. There is ONE cell kind (`"snippet"`) — the
+ * Rows come straight from `jotsStore`'s `doc.jots`, narrowed by the
+ * card's filter query; the source recomputes when that array reference, the
+ * query, or the editing id changes. There is ONE cell kind (`"jot"`) — the
  * same row switches between its incipit-display and its in-place editor by
  * branching on the store's `editingId` inside the cell, never by changing kinds
  * (a kind change is a remount in disguise, [L26]).
  *
  * **The projection is the coordinate space.** Under a filter the row at index
- * `i` is NOT `doc.snippets[i]`, so every consumer that turns a list index into
- * a snippet must go through `rowAt` / `indexForId` here — never index the doc
+ * `i` is NOT `doc.jots[i]`, so every consumer that turns a list index into
+ * a jot must go through `rowAt` / `indexForId` here — never index the doc
  * array by a list index.
  *
  * The row being EDITED is exempt from the filter: an open editor whose text
@@ -23,46 +23,46 @@
  *    ([L03]).
  *  - [L19] component authoring — module docstring, exported types.
  *
- * @module components/lens/sections/snippets-data-source
+ * @module components/jots/jots-data-source
  */
 
 import { useLayoutEffect, useRef } from "react";
 
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 import { filterAndRank } from "@/lib/text-match";
-import type { Snippet } from "@/lib/snippets-doc";
+import type { Jot } from "@/lib/jots-doc";
 
-export interface LensSnippetsInputs {
-  readonly snippets: readonly Snippet[];
-  /** The band's filter query. Empty / whitespace → every snippet. */
+export interface JotsInputs {
+  readonly jots: readonly Jot[];
+  /** The card's filter query. Empty / whitespace → every jot. */
   readonly filterQuery: string;
-  /** The snippet currently open in its editor, exempt from the filter. */
+  /** The jot currently open in its editor, exempt from the filter. */
   readonly editingId: string | null;
 }
 
-export class LensSnippetsDataSource implements TugListViewDataSource {
-  private inputs: LensSnippetsInputs;
-  private rows: readonly Snippet[];
+export class JotsDataSource implements TugListViewDataSource {
+  private inputs: JotsInputs;
+  private rows: readonly Jot[];
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
-  constructor(inputs: LensSnippetsInputs) {
+  constructor(inputs: JotsInputs) {
     this.inputs = inputs;
-    this.rows = LensSnippetsDataSource.project(inputs);
+    this.rows = JotsDataSource.project(inputs);
   }
 
-  private static project(inputs: LensSnippetsInputs): readonly Snippet[] {
-    const { snippets, filterQuery, editingId } = inputs;
-    if (filterQuery.trim().length === 0) return snippets;
+  private static project(inputs: JotsInputs): readonly Jot[] {
+    const { jots, filterQuery, editingId } = inputs;
+    if (filterQuery.trim().length === 0) return jots;
     // Ranked best-first while filtering; the document's drag order returns the
     // moment the query clears (and reorder is disabled meanwhile, so the two
     // orders never fight).
-    const ranked = filterAndRank(snippets, filterQuery, (snippet) => [snippet.text]);
+    const ranked = filterAndRank(jots, filterQuery, (jot) => [jot.text]);
     if (editingId === null || ranked.some((s) => s.id === editingId)) return ranked;
     // The row being edited is exempt from the filter, so an open editor never
     // vanishes mid-keystroke. Unranked, it leads: it is the row the user is
     // working in, and a fixed position beats being shuffled by every keystroke.
-    const editing = snippets.find((s) => s.id === editingId);
+    const editing = jots.find((s) => s.id === editingId);
     return editing === undefined ? ranked : [editing, ...ranked];
   }
 
@@ -75,7 +75,7 @@ export class LensSnippetsDataSource implements TugListViewDataSource {
   }
 
   kindForIndex(): string {
-    return "snippet";
+    return "jot";
   }
 
   subscribe(listener: () => void): () => void {
@@ -90,11 +90,11 @@ export class LensSnippetsDataSource implements TugListViewDataSource {
   }
 
   /** Typed row access for the cell renderer — in FILTERED coordinates. */
-  rowAt(index: number): Snippet {
+  rowAt(index: number): Jot {
     return this.rows[index];
   }
 
-  /** Index of the snippet with this id in the projection, or -1 when absent. */
+  /** Index of the jot with this id in the projection, or -1 when absent. */
   indexForId(id: string): number {
     return this.rows.findIndex((s) => s.id === id);
   }
@@ -104,21 +104,21 @@ export class LensSnippetsDataSource implements TugListViewDataSource {
     return this.inputs.filterQuery.trim().length > 0;
   }
 
-  /** How many snippets the document holds, filter or no filter. */
+  /** How many jots the document holds, filter or no filter. */
   unfilteredCount(): number {
-    return this.inputs.snippets.length;
+    return this.inputs.jots.length;
   }
 
-  setInputsWithoutNotify(next: LensSnippetsInputs): boolean {
+  setInputsWithoutNotify(next: JotsInputs): boolean {
     if (
-      this.inputs.snippets === next.snippets &&
+      this.inputs.jots === next.jots &&
       this.inputs.filterQuery === next.filterQuery &&
       this.inputs.editingId === next.editingId
     ) {
       return false;
     }
     this.inputs = next;
-    this.rows = LensSnippetsDataSource.project(next);
+    this.rows = JotsDataSource.project(next);
     this.version += 1;
     return true;
   }
@@ -129,19 +129,19 @@ export class LensSnippetsDataSource implements TugListViewDataSource {
 }
 
 /**
- * Hook — mint a stable `LensSnippetsDataSource` and feed it the latest
- * `(snippets, filterQuery, editingId)` triple each render, notifying
+ * Hook — mint a stable `JotsDataSource` and feed it the latest
+ * `(jots, filterQuery, editingId)` triple each render, notifying
  * subscribers from a layout effect.
  */
-export function useLensSnippetsDataSource(
-  snippets: readonly Snippet[],
+export function useJotsDataSource(
+  jots: readonly Jot[],
   filterQuery: string,
   editingId: string | null,
-): LensSnippetsDataSource {
-  const ref = useRef<LensSnippetsDataSource | null>(null);
-  const inputs = { snippets, filterQuery, editingId };
+): JotsDataSource {
+  const ref = useRef<JotsDataSource | null>(null);
+  const inputs = { jots, filterQuery, editingId };
   if (ref.current === null) {
-    ref.current = new LensSnippetsDataSource(inputs);
+    ref.current = new JotsDataSource(inputs);
   }
   const ds = ref.current;
   const didChange = ds.setInputsWithoutNotify(inputs);

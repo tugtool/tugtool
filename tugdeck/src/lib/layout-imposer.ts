@@ -51,7 +51,7 @@
  * the whole band has no travel at all (`max(0, …)`) and sits on the far edge in
  * every slot.
  *
- * The Lens is imposed too, by {@link imposeLensStyle}, but it is the strip's
+ * The Lens is imposed too, by {@link imposeSidebarStyle}, but it is the strip's
  * fixed end rather than a link in the chain: it holds its pin and its width
  * while the cards absorb the crowding.
  *
@@ -76,9 +76,9 @@
  * the rule can absorb that — card widths belong to the panes, and an offset is a
  * pure function of the band.
  *
- * One number can. The pinned Lens is the band's other end, so its width and the
- * band's are the same quantity read from opposite sides. The **space allocator**
- * ({@link allocateLensWidth}) flexes it within
+ * One number can. The pinned sidebar rails are the band's other ends, so their
+ * total width and the band's are the same quantity read from opposite sides.
+ * The **space allocator** ({@link allocateSidebarWidths}) flexes them within
  * {@link LENS_FLEX_GROW_FRACTION} / {@link LENS_FLEX_SHRINK_FRACTION} of the
  * width the user chose, and picks the value that puts every seam in the chain
  * on one imposition gap — a closed-form least-squares fit, since each seam is
@@ -111,48 +111,141 @@ export type ImpositionKind =
   | "five-up"
   | "six-up";
 
-/** Which side of the deck the Lens holds. */
-export type LensSide = "left" | "right";
+/** Which side of the deck a sidebar card holds. */
+export type SidebarSide = "left" | "right";
 
 /**
- * The deck's layout imposition: the N-up rule the chain of cards is packed
- * under, and the side the Lens holds.
+ * The deck-wide content width, as one of three named presets. Absent reads as
+ * `"comfy"`, which is the width content cards have always opened at — so a blob
+ * written before the presets existed migrates to exactly its own behavior.
+ */
+export type ContentWidth = "slim" | "comfy" | "wide";
+
+/** One sidebar card's standing in the deck: which edge it holds, and whether it
+ *  is standing at that pin. */
+export interface SidebarEntry {
+  /** The side this card holds; the arrangement is numbered away from it. */
+  side: SidebarSide;
+  /**
+   * Whether the card is standing at its pin. Absent reads as pinned.
+   *
+   * Dragging the card by its title bar sets this false: it becomes an ordinary
+   * free pane, and the arrangement then spans the whole canvas exactly as it
+   * does when the card is closed. Choosing anything in the Layouts section puts
+   * it back — that is the gesture that means "this card belongs on this side".
+   *
+   * The side survives the float, so re-pinning returns the card to the edge it
+   * came from rather than to a default.
+   */
+  pinned?: boolean;
+}
+
+/**
+ * The deck's layout imposition: the N-up rule the chain of content cards is
+ * packed under, the width those cards open at, and where each sidebar card
+ * stands.
  *
- * The two axes are independent. `kind` absent means no card is imposed — the
- * deck is free — while `lens` still says which end of the strip the Lens is,
- * because the Lens has a side whether or not anything is arranged against it.
+ * The axes are independent. `kind` absent means no card is imposed — the deck
+ * is free — while the sidebars still hold their sides, because a sidebar has a
+ * side whether or not anything is arranged against it.
  */
 export interface DeckImposition {
   /** The N-up rule, or absent when nothing is imposed. */
   kind?: ImpositionKind;
-  /** The side the Lens holds; the arrangement is numbered away from it. */
-  lens: LensSide;
+  /** The deck-wide content width; absent reads as {@link DEFAULT_CONTENT_WIDTH}. */
+  contentWidth?: ContentWidth;
   /**
-   * Whether the Lens is standing at its pin. Absent reads as pinned.
+   * Where each sidebar card stands, keyed by its registered `componentId`.
    *
-   * Dragging the Lens by its title bar sets this false: it becomes an ordinary
-   * free pane, and the arrangement then spans the whole canvas exactly as it
-   * does when the Lens is closed. Choosing anything in the Layouts section puts
-   * it back — that is the gesture that means "the Lens belongs on this side".
-   *
-   * The side survives the float, so re-pinning returns the Lens to the edge it
-   * came from rather than to a default.
+   * A card absent from the map has never been placed and takes
+   * {@link DEFAULT_SIDEBAR_SIDE} when it first opens. The map is keyed by
+   * componentId rather than by card id because a sidebar card is a singleton:
+   * its side is a property of the card *type*, and survives the pane being
+   * closed and reopened.
    */
-  lensPinned?: boolean;
+  sidebars: Record<string, SidebarEntry>;
 }
 
-/** Whether the Lens stands at its pin. An absent flag reads as pinned — a Lens
+/** Where a sidebar card stands when nothing has ever said otherwise. */
+export const DEFAULT_SIDEBAR_SIDE: SidebarSide = "right";
+
+/** The width content cards open at when the deck has never said otherwise. */
+export const DEFAULT_CONTENT_WIDTH: ContentWidth = "comfy";
+
+/**
+ * The side `componentId` holds, or the default when it has never been placed.
+ *
+ * Total by construction, including on an imposition carrying no `sidebars` map
+ * at all: the record arrives from JSON blobs and from seeded test decks as well
+ * as from the store, and an unplaced sidebar and an absent map mean the same
+ * thing — nobody has said where this card goes.
+ */
+export function sidebarSide(
+  imposition: DeckImposition,
+  componentId: string,
+): SidebarSide {
+  return imposition.sidebars?.[componentId]?.side ?? DEFAULT_SIDEBAR_SIDE;
+}
+
+/** Whether `componentId` stands at its pin. Absent reads as pinned — a sidebar
  *  that has never been dragged has never left its side. */
-export function isLensPinned(imposition: DeckImposition): boolean {
-  return imposition.lensPinned !== false;
+export function isSidebarPinned(
+  imposition: DeckImposition,
+  componentId: string,
+): boolean {
+  return imposition.sidebars?.[componentId]?.pinned !== false;
 }
 
-/** The side the Lens opens on when nothing has ever said otherwise. */
-export const DEFAULT_LENS_SIDE: LensSide = "right";
+/** The imposition with `componentId` standing on `side`, at its pin. */
+export function withSidebarSide(
+  imposition: DeckImposition,
+  componentId: string,
+  side: SidebarSide,
+): DeckImposition {
+  return {
+    ...imposition,
+    sidebars: { ...imposition.sidebars, [componentId]: { side, pinned: true } },
+  };
+}
+
+/** The imposition with `componentId` pinned or unpinned, keeping its side. */
+export function withSidebarPinned(
+  imposition: DeckImposition,
+  componentId: string,
+  pinned: boolean,
+): DeckImposition {
+  const side = sidebarSide(imposition, componentId);
+  return {
+    ...imposition,
+    sidebars: { ...imposition.sidebars, [componentId]: { side, pinned } },
+  };
+}
+
+/**
+ * The sidebar componentIds standing on `side`, in the map's own key order —
+ * which is registration order.
+ *
+ * There is no *vertical* order to record: same-side sidebar cards stand
+ * front-to-back in one rail, exactly as two panes sharing a slot do, so which
+ * one you see is the deck's z-order and raising one is the ordinary act of
+ * activating it. Nothing about that is the imposition's to store.
+ */
+export function sidebarStackOrder(
+  imposition: DeckImposition,
+  side: SidebarSide,
+  componentIds: readonly string[],
+): readonly string[] {
+  return componentIds.filter((id) => sidebarSide(imposition, id) === side);
+}
 
 /** Narrow an unknown (a parsed blob field, an action payload) to a side. */
-export function isLensSide(value: unknown): value is LensSide {
+export function isSidebarSide(value: unknown): value is SidebarSide {
   return value === "left" || value === "right";
+}
+
+/** Narrow an unknown (a parsed blob field, an action payload) to a width. */
+export function isContentWidth(value: unknown): value is ContentWidth {
+  return value === "slim" || value === "comfy" || value === "wide";
 }
 
 /** Every imposition kind, in ascending slot count — the Lens picker's order. */
@@ -197,6 +290,75 @@ export const IMPOSITION_GAP_PX = 5;
  */
 export const IMPOSITION_GAP_BOTTOM_PX = 32;
 
+/* ---------------------------------------------------------------------------
+ * Content width presets
+ * ---------------------------------------------------------------------------*/
+
+/**
+ * What each {@link ContentWidth} is, in pixels.
+ *
+ * **Slim (675)** is the narrow reading width the Session card's chrome was put
+ * on a diet to reach; **comfy (800)** is what every content card shipped at
+ * before the presets existed, which is why a record with no `contentWidth`
+ * reads as comfy; **wide (1230)** is comfy scaled by that same ratio again,
+ * for a card holding code and prose at once.
+ *
+ * A width is applied by a *command*, through `movePane` — the imposer still
+ * passes width through untouched, so [D121]'s "a slot is a position anchor,
+ * not a rect" is unaffected. Each is one named constant, so retuning `wide`
+ * (the one the brief marks as taste) stays a one-line change.
+ */
+export const CONTENT_WIDTH_SLIM_PX = 675;
+export const CONTENT_WIDTH_COMFY_PX = 800;
+export const CONTENT_WIDTH_WIDE_PX = 1230;
+
+/** The widths in the order every picker offers them: narrow to wide. */
+export const CONTENT_WIDTH_PRESETS: readonly ContentWidth[] = [
+  "slim",
+  "comfy",
+  "wide",
+];
+
+/** Pixels per width. */
+export const CONTENT_WIDTH_PX: Readonly<Record<ContentWidth, number>> = {
+  slim: CONTENT_WIDTH_SLIM_PX,
+  comfy: CONTENT_WIDTH_COMFY_PX,
+  wide: CONTENT_WIDTH_WIDE_PX,
+};
+
+/** How each width is named in the UI — one spelling, every surface. */
+export const CONTENT_WIDTH_LABELS: Readonly<Record<ContentWidth, string>> = {
+  slim: "Slim",
+  comfy: "Comfy",
+  wide: "Wide",
+};
+
+/**
+ * The width a pane actually lands on when `preset` is applied to it: the
+ * preset's pixels, held between the pane's own minimum and maximum.
+ *
+ * Neither bound is decoration. `movePane` does not clamp — it writes the rect it
+ * is handed — so a preset resolved outside the stack's policy would be stored at
+ * one width and painted at another until the next resize. The floor matters
+ * because a stack's `sizePolicy.min.width` can be wider than a preset (Settings'
+ * 720 beats slim's 675); the ceiling matters because a card can be size-locked
+ * (About is 320 wide, min and max both), and the deck-wide default reaches every
+ * content pane, including those.
+ *
+ * A card whose bounds beat the preset still gets the *stamp*: the user picked
+ * that row, and the width they got is as close to it as the card allows. Pure so
+ * both appliers — the per-pane popup and the deck-wide default — resolve
+ * identically, and so the arithmetic is testable without a deck.
+ */
+export function resolveContentWidthPx(
+  preset: ContentWidth,
+  minWidth: number,
+  maxWidth?: number,
+): number {
+  const width = Math.max(CONTENT_WIDTH_PX[preset], minWidth);
+  return maxWidth === undefined ? width : Math.min(width, Math.max(maxWidth, minWidth));
+}
+
 /**
  * How long the deck takes to settle into a new arrangement, in milliseconds.
  *
@@ -212,21 +374,25 @@ export const IMPOSITION_SETTLE_MS = 300;
 /**
  * Which side the pinned Lens holds, as a number: 0 is the left edge, 1 the
  * right. Registered as a `<number>` custom property in `tug-pane.css` so the
- * expression that reads it can compute with it — see {@link imposeLensStyle}.
+ * expression that reads it can compute with it — see {@link imposeSidebarStyle}.
  */
 export const LENS_RAIL_PROPERTY = "--tugx-lens-rail";
 
 /**
- * The pinned Lens's live width, as a CSS length on the frames' containing
- * block (`deck-canvas.tsx` writes it).
+ * A side's live rail width, as a CSS length on the frames' containing block
+ * (`deck-canvas.tsx` writes it).
  *
- * The width is the one number a Lens edge drag changes, and it is an input to
- * three expressions at once: the Lens's own pin on a right-side deck (`100% -
- * width - gap`), the band the chain is imposed across, and the frame's own
+ * The width is the one number a rail edge drag changes, and it is an input to
+ * three expressions at once: the sidebar's own pin on a right-side deck (`100%
+ * - width - gap`), the band the chain is imposed across, and the frame's own
  * `width`. Carried as a property rather than baked into each of them, the drag
  * writes it once and the browser re-resolves all three in the same reflow — so
  * the pinned edge holds and the cards re-impose live, with no measurement and
  * no per-frame JavaScript ([L06]).
+ *
+ * One property per SIDE, not per card: same-side sidebar cards share a rail, so
+ * they share a width, and a stacked pair reading one property cannot drift
+ * apart mid-drag.
  *
  * Deliberately unregistered: every expression reading it supplies the
  * React-known width as the `var()` fallback, so a frame that renders before the
@@ -234,7 +400,11 @@ export const LENS_RAIL_PROPERTY = "--tugx-lens-rail";
  * registered property has an initial value instead of an absence, and the
  * fallback would never be reached.
  */
-export const LENS_WIDTH_PROPERTY = "--tug-lens-width";
+export function sidebarWidthProperty(side: SidebarSide): string {
+  return side === "left"
+    ? "--tug-sidebar-width-left"
+    : "--tug-sidebar-width-right";
+}
 
 /** The gaps as CSS lengths, for the calc expressions below. */
 const GAP = `${IMPOSITION_GAP_PX}px`;
@@ -356,28 +526,45 @@ export interface ImposerSpan {
   height: number;
 }
 
+/** One side's rail: the width the cards stacked on that side share. A side
+ *  with no open, pinned sidebar card has no rail and is absent. */
+export interface SidebarRail {
+  side: SidebarSide;
+  width: number;
+}
+
 /**
- * Resolve the span from the canvas box and the open Lens, if any. A closed Lens
- * means `lens === null` and the span is the whole canvas.
+ * Resolve the span from the canvas box and the rails standing on its edges. No
+ * rails means the span is the whole canvas; one or two inset it from that side.
  *
- * The Lens is itself imposed — it stands one gap off the canvas edge — so its
- * near edge sits `width + gap` in, and that is the inset the band takes. The
- * chain's own gap then lands its far card exactly one gap off the Lens. This is
- * the numeric twin of the `--tug-imposer-inset-*` custom properties
- * `deck-canvas.tsx` writes; both add the same gap, so they agree by
- * construction.
+ * A rail is itself imposed — it stands one gap off the canvas edge — so its
+ * near edge sits `width + gap` in, and that is the inset the band takes on that
+ * side. The chain's own gap then lands its far card exactly one gap off the
+ * rail. This is the numeric twin of the `--tug-imposer-inset-*` custom
+ * properties `deck-canvas.tsx` writes; both add the same gap per occupied side,
+ * so they agree by construction.
+ *
+ * **This function is the gap count.** A closed rail contributes neither width
+ * nor gap, so the band a solve must reproduce is `span.width − 2 × gap` for
+ * whatever rails stand — never a constant number of gaps written out by hand.
+ * {@link solveSidebarWidths} derives its band identity from here rather than
+ * carrying its own arithmetic, which is what keeps the numeric twin and the CSS
+ * from parting company as rails come and go.
  */
 export function resolveSpan(
   canvas: { width: number; height: number },
-  lens: { side: LensSide; width: number } | null,
+  rails: readonly SidebarRail[],
 ): ImposerSpan {
-  if (lens === null) {
-    return { x: 0, width: canvas.width, height: canvas.height };
+  let left = 0;
+  let right = 0;
+  for (const rail of rails) {
+    const inset = rail.width + IMPOSITION_GAP_PX;
+    if (rail.side === "left") left += inset;
+    else right += inset;
   }
-  const inset = lens.width + IMPOSITION_GAP_PX;
   return {
-    x: lens.side === "left" ? inset : 0,
-    width: canvas.width - inset,
+    x: left,
+    width: canvas.width - left - right,
     height: canvas.height,
   };
 }
@@ -429,21 +616,18 @@ export function imposeRect(
  * swapping a bare length for a percentage, which is not the same kind of value
  * and cuts instead of crossing.)
  *
- * The vertical run is the top gap down to the deeper bottom gap. A collapsed
- * pane keeps its horizontal pin and its top pin but releases the bottom one, so
- * the window-shade bar sits a gap below the canvas top at its slot's anchor.
+ * The vertical run is the top gap down to the deeper bottom gap.
  */
 export function imposeStyle(
   placement: ImposedPlacement,
   paneWidth: number,
-  collapsed: boolean,
 ): React.CSSProperties {
   const style: React.CSSProperties = {
     width: `${paneWidth}px`,
     height: "auto",
     top: GAP,
+    bottom: GAP_BOTTOM,
   };
-  if (!collapsed) style.bottom = GAP_BOTTOM;
 
   const band = `(100% - ${INSET_LEFT} - ${INSET_RIGHT} - ${GAP} * 2)`;
   const fraction = travelFraction(placement);
@@ -473,8 +657,8 @@ export function imposeStyle(
  * deck can absorb — the whole travel between the two ends is the budget the
  * solve has to work in — so it is a bigger number than a "nudge" would want.
  *
- * {@link AllocatorInput.minWidth} clips the low end independently, so widening
- * this cannot push the Lens under its floor.
+ * {@link RailPolicy.minWidth} clips the low end independently, so widening this
+ * cannot push a rail under its floor.
  */
 export const LENS_FLEX_GROW_FRACTION = 0.35;
 
@@ -500,7 +684,25 @@ export const RESIZE_RETUNE_QUIET_MS = 200;
  */
 export const ALLOCATOR_RESIDUAL_TOLERANCE_PX = 2;
 
-/** Everything {@link allocateLensWidth} reads. All lengths in layout px. */
+/**
+ * One rail's flex policy: the width the user chose, which its allowance is
+ * centred on, and the hard floor it may not cross.
+ *
+ * A rail shared by a stack carries the TIGHTEST floor among its members — a
+ * rail is one width, so a floor binding on either card binds the rail.
+ */
+export interface RailPolicy {
+  /** The width the user chose, which the flex range is centred on. */
+  preferredWidth: number;
+  /** The hard floor this rail may not go below. */
+  minWidth: number;
+}
+
+/** A width per occupied side — the allocator's answer, and the shape a rail's
+ *  policies arrive in. A side with no rail is absent from both. */
+export type RailWidths = { left?: number; right?: number };
+
+/** Everything {@link allocateSidebarWidths} reads. All lengths in layout px. */
 export interface AllocatorInput {
   /** The canvas (frames' container) client width. */
   canvasWidth: number;
@@ -512,14 +714,33 @@ export interface AllocatorInput {
    * actually paints. Duplicates are folded by taking the widest.
    */
   occupied: readonly { slot: number; width: number }[];
-  /** The width the user chose, which the flex range is centred on. */
-  preferredWidth: number;
-  /** The hard floor the Lens may not go below. */
-  minWidth: number;
+  /** The rails standing on the deck's edges, at most one per side. */
+  rails: { left?: RailPolicy; right?: RailPolicy };
+}
+
+/** The sides carrying a rail, left before right — the order every per-rail sum
+ *  in the solve runs in. */
+function railSidesOf(rails: AllocatorInput["rails"]): readonly SidebarSide[] {
+  const sides: SidebarSide[] = [];
+  if (rails.left !== undefined) sides.push("left");
+  if (rails.right !== undefined) sides.push("right");
+  return sides;
+}
+
+/** The widths as rails, for {@link resolveSpan}. */
+function railsOf(widths: RailWidths): readonly SidebarRail[] {
+  const rails: SidebarRail[] = [];
+  if (widths.left !== undefined) rails.push({ side: "left", width: widths.left });
+  if (widths.right !== undefined) {
+    rails.push({ side: "right", width: widths.right });
+  }
+  return rails;
 }
 
 /**
- * The width the pinned Lens should render at so the imposed chain tiles evenly.
+ * The width each pinned sidebar rail should render at so the imposed chain
+ * tiles evenly — one width per occupied side, or `null` when the rails do not
+ * move.
  *
  * ## What is being solved
  *
@@ -531,10 +752,12 @@ export interface AllocatorInput {
  * placement rule can fix it: card widths belong to the panes ([L09]) and the
  * offsets are pure functions of the band.
  *
- * The Lens's width is the one quantity that can absorb the residual, because it
- * *is* the band's other end: `band = canvasWidth − lensWidth − 3 × gap` (the
- * Lens stands a gap off the canvas edge, and the chain is inset one gap at each
- * end of what is left). Flexing the Lens a little moves every seam at once.
+ * The rails' width is the one quantity that can absorb the residual, because it
+ * *is* the band's other end: `band = canvasWidth − Σ rail − (R + 2) × gap` for
+ * `R` standing rails (each stands a gap off its canvas edge, and the chain is
+ * inset one gap at each end of what is left). Flexing the rails a little moves
+ * every seam at once. The gap count is read off {@link resolveSpan} rather than
+ * written down, since a closed rail contributes neither width nor gap.
  *
  * ## The solve
  *
@@ -549,8 +772,13 @@ export interface AllocatorInput {
  * a plain least-squares fit with a closed form — no iteration, no measurement:
  *
  * ```
- *   B* = Σ aⱼ(gap − cⱼ) / Σ aⱼ²        L* = canvasWidth − 3·gap − B*
+ *   B* = Σ aⱼ(gap − cⱼ) / Σ aⱼ²        T* = canvasWidth − (R + 2)·gap − B*
  * ```
+ *
+ * `T*` is the rails' TOTAL. With more than one rail standing, that total is
+ * shared out as **one delta applied equally to every rail** rather than as a
+ * per-rail solve: the rails move together or not at all, and each rail's
+ * allowance becomes a bound on the single shared delta.
  *
  * For the common case — uniform card widths at an even stride, e.g. five-up
  * with slots 1, 3 and 5 — the fit is exact and every seam lands on the gap.
@@ -558,27 +786,29 @@ export interface AllocatorInput {
  * fit spreads the error rather than removing it, and the answer is that there
  * is no answer.
  *
- * ## `null` — the Lens does not move
+ * ## `null` — the rails do not move
  *
- * **The Lens's width is the user's**, and it is taken from them for exactly one
+ * **A rail's width is the user's**, and it is taken from them for exactly one
  * reason: to close the gaps. So the whole of the decision is one question asked
  * of the RESULT — *standing there, does the chain tile?* — and the three steps
  * are:
  *
- *   1. solve for the width the seams want,
- *   2. clamp it to what the allowance permits,
- *   3. keep it only if every seam at that width lands within
+ *   1. solve for the total the seams want,
+ *   2. share it out as one delta, clamped to what every allowance permits,
+ *   3. keep it only if every seam at those widths lands within
  *      {@link ALLOCATOR_RESIDUAL_TOLERANCE_PX} of the gap; otherwise `null`.
  *
- * `null` means *leave the Lens exactly where it is*. There is no fallback
- * width. Answering `preferredWidth` when the solve is unusable reads like a
- * safe default but is a MOVE: it drags a Lens the user sized by hand back to a
- * remembered number and closes no gap doing it.
+ * `null` means *leave every rail exactly where it is*. There is no fallback
+ * width. Answering with the preferred widths when the solve is unusable reads
+ * like a safe default but is a MOVE: it drags a rail the user sized by hand
+ * back to a remembered number and closes no gap doing it. The move is all-or-
+ * nothing across the rails too — half a gesture is not a picture anyone asked
+ * for.
  *
  * Step 3 is asked of every answer, not only clamped ones, because a solve can
  * sit comfortably inside the allowance and still not tile — the least-squares
  * fit always returns its best band, and on an arrangement with no tiling band
- * its best is still ragged. Moving the Lens there would spend the user's width
+ * its best is still ragged. Moving the rails there would spend the user's width
  * on nothing.
  *
  * And it is asked of the picture, never of how far the solve missed by. A hard
@@ -588,35 +818,70 @@ export interface AllocatorInput {
  *
  * Total by construction: never throws.
  */
-export function allocateLensWidth(input: AllocatorInput): number | null {
-  const solved = solveLensWidth(input);
-  if (solved === null) return null;
-  const { preferredWidth, minWidth } = input;
-  const low = Math.max(
-    minWidth,
-    Math.round(preferredWidth * (1 - LENS_FLEX_SHRINK_FRACTION)),
-  );
-  const high = Math.round(preferredWidth * (1 + LENS_FLEX_GROW_FRACTION));
-  const width = Math.min(Math.max(low, high), Math.max(low, solved));
-  return worstSeamError(input, width) <= ALLOCATOR_RESIDUAL_TOLERANCE_PX
-    ? width
+export function allocateSidebarWidths(input: AllocatorInput): RailWidths | null {
+  const sides = railSidesOf(input.rails);
+  if (sides.length === 0) return null;
+  const total = solveSidebarWidths(input);
+  if (total === null) return null;
+
+  // ONE delta, shared. Each rail's allowance becomes a bound on that one
+  // number, so the interval the delta must land in is the intersection of them
+  // all. Clamping the rails independently would satisfy every allowance and
+  // still break the rule: it hands out unequal deltas, which is the per-card
+  // solve this rule exists to refuse.
+  let preferredTotal = 0;
+  let lowBound = Number.NEGATIVE_INFINITY;
+  let highBound = Number.POSITIVE_INFINITY;
+  for (const side of sides) {
+    const rail = input.rails[side] as RailPolicy;
+    const { preferredWidth, minWidth } = rail;
+    preferredTotal += preferredWidth;
+    const low = Math.max(
+      minWidth,
+      Math.round(preferredWidth * (1 - LENS_FLEX_SHRINK_FRACTION)),
+    );
+    const high = Math.round(preferredWidth * (1 + LENS_FLEX_GROW_FRACTION));
+    lowBound = Math.max(lowBound, low - preferredWidth);
+    highBound = Math.min(highBound, high - preferredWidth);
+  }
+
+  // An empty interval means a floor sits above an allowance — a rail whose
+  // preferred width is under its own minimum. The floor wins: it is a width
+  // below which the rail cannot paint its contents at all, while the allowance
+  // is only a policy about how far the deck may move under the user.
+  const wanted = (total - preferredTotal) / sides.length;
+  const delta =
+    lowBound > highBound
+      ? lowBound
+      : Math.min(highBound, Math.max(lowBound, wanted));
+
+  const widths: RailWidths = {};
+  for (const side of sides) {
+    const rail = input.rails[side] as RailPolicy;
+    widths[side] = Math.round(rail.preferredWidth + delta);
+  }
+  return worstSeamError(input, widths) <= ALLOCATOR_RESIDUAL_TOLERANCE_PX
+    ? widths
     : null;
 }
 
 /**
- * The raw closed-form solve — the width that would put every seam on one
- * imposition gap, with no flex range applied — or `null` when there is nothing
- * to solve for (fewer than two occupied slots, a degenerate chain, a
+ * The raw closed-form solve — the rails' TOTAL width that would put every seam
+ * on one imposition gap, with no flex range applied and nothing said about how
+ * the total is shared out — or `null` when there is nothing to solve for (no
+ * rail standing, fewer than two occupied slots, a degenerate chain, a
  * non-finite input).
  *
- * Split out from {@link allocateLensWidth} so the number the fit actually wants
+ * Split out from {@link allocateSidebarWidths} so the number the fit actually wants
  * is inspectable on its own. The range check is a policy about how far the deck
  * may move under the user; the solve is the geometry, and the two answer
  * different questions.
  */
-export function solveLensWidth(input: AllocatorInput): number | null {
+export function solveSidebarWidths(input: AllocatorInput): number | null {
   const chain = chainOf(input);
   if (chain === null) return null;
+  const railCount = railSidesOf(input.rails).length;
+  if (railCount === 0) return null;
 
   const count = slotCount(input.kind);
   let numerator = 0;
@@ -633,8 +898,16 @@ export function solveLensWidth(input: AllocatorInput): number | null {
   }
   if (denominator <= 0) return null;
 
+  // The band identity, read off {@link resolveSpan} rather than written out:
+  // `band = span.width − 2 × gap` and `span.width = canvasWidth − Σ(rail + gap)`,
+  // so the rails' total is `canvasWidth − (R + 2)·gap − band`. At one rail that
+  // is today's `3 × gap`, which is why the constant was safe to write down and
+  // is not safe to carry forward — the gap count is a function of how many
+  // rails stand, and a closed rail contributes neither width nor gap.
   const band = numerator / denominator;
-  const solved = Math.round(input.canvasWidth - IMPOSITION_GAP_PX * 3 - band);
+  const solved = Math.round(
+    input.canvasWidth - IMPOSITION_GAP_PX * (railCount + 2) - band,
+  );
   return Number.isFinite(solved) ? solved : null;
 }
 
@@ -647,9 +920,13 @@ export function solveLensWidth(input: AllocatorInput): number | null {
 function chainOf(
   input: AllocatorInput,
 ): readonly { slot: number; width: number }[] | null {
-  const { canvasWidth, kind, occupied, preferredWidth, minWidth } = input;
-  if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return null;
-  if (!Number.isFinite(canvasWidth) || !Number.isFinite(minWidth)) return null;
+  const { canvasWidth, kind, occupied, rails } = input;
+  if (!Number.isFinite(canvasWidth)) return null;
+  for (const side of railSidesOf(rails)) {
+    const { preferredWidth, minWidth } = rails[side] as RailPolicy;
+    if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return null;
+    if (!Number.isFinite(minWidth)) return null;
+  }
 
   const widest = new Map<number, number>();
   for (const entry of occupied) {
@@ -665,8 +942,8 @@ function chainOf(
 }
 
 /**
- * The widest any seam misses {@link IMPOSITION_GAP_PX} by when the Lens stands
- * at `lensWidth` — how ragged the chain reads, in pixels, at that width.
+ * The widest any seam misses {@link IMPOSITION_GAP_PX} by when the rails stand
+ * at `widths` — how ragged the chain reads, in pixels, at those widths.
  *
  * Measured from {@link imposeRect}'s actual rule rather than from the linear
  * form the fit is built on. The two agree while every pane still has travel
@@ -676,14 +953,17 @@ function chainOf(
  * the test that decides whether the Lens is allowed to move at all, it has to
  * be asked of the picture that will actually be on screen.
  */
-function worstSeamError(input: AllocatorInput, lensWidth: number): number {
+function worstSeamError(input: AllocatorInput, widths: RailWidths): number {
   const chain = chainOf(input);
   if (chain === null) return 0;
-  const span = {
-    x: 0,
-    width: input.canvasWidth - (lensWidth + IMPOSITION_GAP_PX),
-    height: 0,
-  };
+  // The span comes from `resolveSpan`, not from an inline single-rail
+  // expression: with rails on both edges the band is inset twice, and a span
+  // built for one of them describes a picture the browser never paints — which
+  // is the one thing this test may not do.
+  const span = resolveSpan(
+    { width: input.canvasWidth, height: 0 },
+    railsOf(widths),
+  );
   const count = slotCount(input.kind);
   let worst = 0;
   for (let j = 0; j < chain.length - 1; j += 1) {
@@ -727,35 +1007,43 @@ function worstSeamError(input: AllocatorInput, lensWidth: number): number {
  * carries the frame across. Interpolating the rail instead would re-resolve
  * `left` — and re-run layout — on every frame of the crossing.
  *
- * The width is read from {@link LENS_WIDTH_PROPERTY} rather than written as a
- * length, and the pin is written in terms of the same expression. On a
- * right-side deck the pin IS the width (`100% - width - gap`), so a width that
- * changes without the pin changing means the pinned edge is the one that moves
- * — which is precisely backwards: the deck edge is what the Lens holds, and the
- * dragged edge is the only one a resize may move. One property feeding both
- * makes that true by construction rather than by the drag remembering to
- * update two numbers.
+ * The width is read from {@link sidebarWidthProperty}'s property rather than
+ * written as a length, and the pin is written in terms of the same expression.
+ * On a right-side deck the pin IS the width (`100% - width - gap`), so a width
+ * that changes without the pin changing means the pinned edge is the one that
+ * moves — which is precisely backwards: the deck edge is what the sidebar
+ * holds, and the dragged edge is the only one a resize may move. One property
+ * feeding both makes that true by construction rather than by the drag
+ * remembering to update two numbers.
  *
- * A collapsed Lens keeps its side and top pins and releases the bottom one, so
- * the window-shade bar sits a gap below the canvas top — the same treatment
- * {@link imposeStyle} gives a collapsed chain link.
+ * **A shared rail is a stack, not a split.** Two sidebar cards on one side get
+ * the *same* geometry — same pin, same width property, same full vertical run —
+ * and stand front-to-back, exactly as two panes sharing a slot do. Which one you
+ * see is the deck's z-order, and the title bar's stack badge is how you reach
+ * the one behind. Dividing the run between them instead was tried first and was
+ * a worse Lens: it spends a rail's height to show two half-cards, which is what
+ * the Jots section was already doing inside the Lens, only less space-efficient
+ * — the whole point of lifting Jots out was to give it a full rail when it is
+ * the one you are looking at.
  */
-export function imposeLensStyle(
-  side: LensSide,
+export function imposeSidebarStyle(
+  side: SidebarSide,
   paneWidth: number,
-  collapsed: boolean,
+  options: { widthProperty?: string } = {},
 ): React.CSSProperties {
   const rail = side === "right" ? 1 : 0;
-  const width = `var(${LENS_WIDTH_PROPERTY}, ${paneWidth}px)`;
+  const widthProperty = options.widthProperty ?? sidebarWidthProperty(side);
+  const width = `var(${widthProperty}, ${paneWidth}px)`;
   const style: Record<string, string | number> = {
     width,
     height: "auto",
     top: GAP,
+    bottom: GAP_BOTTOM,
     [LENS_RAIL_PROPERTY]: rail,
     left:
       `calc(var(${LENS_RAIL_PROPERTY}) * (100% - ${width} - ${GAP})` +
       ` + (1 - var(${LENS_RAIL_PROPERTY})) * ${GAP})`,
   };
-  if (!collapsed) style.bottom = GAP_BOTTOM;
   return style as React.CSSProperties;
 }
+

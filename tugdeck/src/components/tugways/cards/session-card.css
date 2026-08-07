@@ -251,9 +251,11 @@
    off the card's right edge — and expands the stack on pointer interaction;
    without containment that transient spill grew the card's scroll size, so
    clicking the bulletin flashed a horizontal scrollbar and hopped the whole
-   card. The resting toast is unaffected: at the 800px card-width floor it sits
-   ~380px from the right edge (356px Sonner width + 24px offset), never near the
-   clip box, so only the off-card enter transform is clipped (the toast now
+   card. The resting toast is unaffected: even at the 675px card-width floor —
+   the slim preset, which is as narrow as this card goes — it reaches ~380px
+   from the right edge (356px Sonner width + 24px offset) with ~295px of card
+   still to its left, so it is never near the clip box and only the off-card
+   enter transform is clipped (the toast now
    slides in from the card edge rather than from beyond the window). `clip`
    over `hidden` so this wrapper never becomes a scroll container. */
 .session-card-notice-host {

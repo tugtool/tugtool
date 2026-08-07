@@ -45,6 +45,10 @@ export function registerLensCard(): void {
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
     defaultMeta: { title: "Lens", closable: true },
     hidden: true,
+    // Pins to a deck edge and insets the imposition band rather than taking a
+    // slot inside it — the machinery the anchored rail has always used, now
+    // declared rather than matched on `componentId`.
+    layoutRole: "sidebar",
     // The mirror does not reflect itself.
     lensGroup: "none",
     sizePolicy: {

@@ -1,11 +1,11 @@
 /**
- * at0156-title-bar-controls.test.ts — pane title bar carries only the
- * window-shade and close controls ([AT0156]).
+ * at0156-title-bar-controls.test.ts — pane title bar carries only the width
+ * and close controls ([AT0156]).
  *
  * The per-pane `…` (card settings) button is retired — settings live
  * in the app-level Settings card. This pins the title-bar control set:
- * exactly two buttons (collapse chevron + close X) for a closable
- * card, and no settings button anywhere in the deck.
+ * exactly two buttons (the width popup's trigger + close X) for a closable
+ * content card, and no settings button anywhere in the deck.
  *
  * Drives no native CGEvents — DOM assertions only — so the AX
  * preflight is skipped.
@@ -29,8 +29,8 @@ const NO_AX = { skipAccessibilityPreflight: true } as const;
 
 const CONTROLS = '[data-testid="tug-pane-title-bar-controls"]';
 
-describe.skipIf(!SHOULD_RUN)("at0156: title bar is shade + close only", () => {
-  test("controls hold exactly collapse and close; no settings button", async () => {
+describe.skipIf(!SHOULD_RUN)("at0156: title bar is width + close only", () => {
+  test("controls hold exactly width and close; no settings button", async () => {
     const app = await launchTugApp({ ...NO_AX, testName: "at0156-title-bar-controls" });
     try {
       await app.seedDeckState({
@@ -65,14 +65,14 @@ describe.skipIf(!SHOULD_RUN)("at0156: title bar is shade + close only", () => {
         ),
       ).toBe(0);
 
-      // Exactly two buttons in the controls cluster: collapse, then close.
+      // Exactly two buttons in the controls cluster: width, then close.
       const testids = await app.evalJS<string[]>(
         `Array.from(
           document.querySelector(${JSON.stringify(CONTROLS)}).querySelectorAll("button"),
         ).map((b) => b.getAttribute("data-testid"))`,
       );
       expect(testids).toEqual([
-        "tug-pane-title-bar-collapse-button",
+        "tug-pane-title-bar-width-button",
         "tug-pane-close-button",
       ]);
     } finally {

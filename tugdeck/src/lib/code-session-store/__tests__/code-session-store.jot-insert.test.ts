@@ -1,5 +1,5 @@
 /**
- * `pendingSnippetInsert` slot — the store side of dragging a Lens snippet
+ * `pendingJotInsert` slot — the store side of dragging a Lens jot
  * into the prompt entry. A drag/drop parks `{ text, at }` here for the entry
  * to insert (at the drop point when `at` is present, else appended); the entry
  * clears it once inserted.
@@ -27,41 +27,41 @@ function constructStore(): CodeSessionStore {
   });
 }
 
-describe("CodeSessionStore — pendingSnippetInsert slot", () => {
+describe("CodeSessionStore — pendingJotInsert slot", () => {
   it("starts null", () => {
     const store = constructStore();
-    expect(store.getSnapshot().pendingSnippetInsert).toBeNull();
+    expect(store.getSnapshot().pendingJotInsert).toBeNull();
   });
 
-  it("insertSnippet parks text with a drop point", () => {
+  it("insertJot parks text with a drop point", () => {
     const store = constructStore();
-    store.insertSnippet("reusable text", { x: 120, y: 340 });
-    expect(store.getSnapshot().pendingSnippetInsert).toEqual({
+    store.insertJot("reusable text", { x: 120, y: 340 });
+    expect(store.getSnapshot().pendingJotInsert).toEqual({
       text: "reusable text",
       at: { x: 120, y: 340 },
     });
   });
 
-  it("insertSnippet parks text with a null point (append semantics)", () => {
+  it("insertJot parks text with a null point (append semantics)", () => {
     const store = constructStore();
-    store.insertSnippet("appended text", null);
-    expect(store.getSnapshot().pendingSnippetInsert).toEqual({
+    store.insertJot("appended text", null);
+    expect(store.getSnapshot().pendingJotInsert).toEqual({
       text: "appended text",
       at: null,
     });
   });
 
-  it("consumePendingSnippetInsert clears the slot back to null", () => {
+  it("consumePendingJotInsert clears the slot back to null", () => {
     const store = constructStore();
-    store.insertSnippet("x", { x: 1, y: 2 });
-    store.consumePendingSnippetInsert();
-    expect(store.getSnapshot().pendingSnippetInsert).toBeNull();
+    store.insertJot("x", { x: 1, y: 2 });
+    store.consumePendingJotInsert();
+    expect(store.getSnapshot().pendingJotInsert).toBeNull();
   });
 
   it("consume while already null is a snapshot-ref-stable no-op", () => {
     const store = constructStore();
     const before = store.getSnapshot();
-    store.consumePendingSnippetInsert();
+    store.consumePendingJotInsert();
     expect(store.getSnapshot()).toBe(before);
   });
 });

@@ -19,7 +19,7 @@
  * @covers tugdeck/src/components/lens/lens-content.css
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/sections/cards-section.css
- * @covers tugdeck/src/components/lens/sections/snippets-section.css
+ * @covers tugdeck/src/components/jots/jots-card.css
  */
 
 import { describe, expect, test } from "bun:test";

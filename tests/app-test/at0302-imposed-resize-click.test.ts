@@ -99,7 +99,7 @@ const wait = (ms: number): Promise<void> =>
 
 async function setLensSide(app: App, side: "left" | "right"): Promise<void> {
   await app.evalJS<null>(
-    `(window.__tug.dispatchControlAction("set-imposition-lens", { side: ${JSON.stringify(
+    `(window.__tug.dispatchControlAction("set-sidebar-side", { componentId: "lens", side: ${JSON.stringify(
       side,
     )} }), null)`,
   );

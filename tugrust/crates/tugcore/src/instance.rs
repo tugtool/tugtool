@@ -250,23 +250,23 @@ pub fn changes_db_path() -> PathBuf {
     guard_isolated(base_data_dir().join("changes.db"))
 }
 
-/// Environment variable overriding the shared snippets-file path.
+/// Environment variable overriding the shared jots-file path.
 /// Set by test harnesses so isolated runs never touch the user's real
-/// snippets file.
-pub const ENV_SNIPPETS_PATH: &str = "TUG_SNIPPETS_PATH";
+/// jots file.
+pub const ENV_JOTS_PATH: &str = "TUG_JOTS_PATH";
 
-/// The **machine-global** snippets file path: one `snippets.json` for
+/// The **machine-global** jots file path: one `jots.json` for
 /// every app instance, holding the user's reusable prompt fragments.
-/// Deliberately independent of `TUG_INSTANCE_ID` — snippets are the
+/// Deliberately independent of `TUG_INSTANCE_ID` — jots are the
 /// user's phrasebook, the same across every build (debug, release, any
 /// branch), so partitioning per instance would split the truth (a second
-/// instance would see an empty list while the first holds the snippets).
-/// Honors the [`ENV_SNIPPETS_PATH`] override for isolated test runs.
-pub fn snippets_path() -> PathBuf {
-    if let Some(p) = env::var_os(ENV_SNIPPETS_PATH).filter(|v| !v.is_empty()) {
+/// instance would see an empty list while the first holds the jots).
+/// Honors the [`ENV_JOTS_PATH`] override for isolated test runs.
+pub fn jots_path() -> PathBuf {
+    if let Some(p) = env::var_os(ENV_JOTS_PATH).filter(|v| !v.is_empty()) {
         return guard_isolated(PathBuf::from(p));
     }
-    guard_isolated(base_data_dir().join("snippets.json"))
+    guard_isolated(base_data_dir().join("jots.json"))
 }
 
 /// Per-instance tugbank notify socket path.
@@ -628,7 +628,7 @@ mod tests {
         // `Tug` is still appended, so an override of `/x` yields `/x/Tug` —
         // the same contract tugcode's `tugDataRoot()` implements.
         assert_eq!(base_data_dir(), tmp.path().join("Tug"));
-        for p in [data_dir(), changes_db_path(), snippets_path()] {
+        for p in [data_dir(), changes_db_path(), jots_path()] {
             assert!(p.starts_with(tmp.path()), "{} escaped", p.display());
         }
         assert!(
@@ -683,19 +683,19 @@ mod tests {
         assert!(legacy.ends_with("sessions.db"));
     }
 
-    /// Snapshot/restore for `TUG_SNIPPETS_PATH` (not covered by `EnvGuard`).
-    struct SnippetsEnvGuard(Option<OsString>);
-    impl SnippetsEnvGuard {
+    /// Snapshot/restore for `TUG_JOTS_PATH` (not covered by `EnvGuard`).
+    struct JotsEnvGuard(Option<OsString>);
+    impl JotsEnvGuard {
         fn snapshot() -> Self {
-            Self(env::var_os(ENV_SNIPPETS_PATH))
+            Self(env::var_os(ENV_JOTS_PATH))
         }
     }
-    impl Drop for SnippetsEnvGuard {
+    impl Drop for JotsEnvGuard {
         fn drop(&mut self) {
             unsafe {
                 match &self.0 {
-                    Some(v) => env::set_var(ENV_SNIPPETS_PATH, v),
-                    None => env::remove_var(ENV_SNIPPETS_PATH),
+                    Some(v) => env::set_var(ENV_JOTS_PATH, v),
+                    None => env::remove_var(ENV_JOTS_PATH),
                 }
             }
         }
@@ -703,33 +703,33 @@ mod tests {
 
     #[test]
     #[serial]
-    fn snippets_path_default_is_machine_global_and_instance_independent() {
+    fn jots_path_default_is_machine_global_and_instance_independent() {
         let _g = EnvGuard::snapshot();
-        let _s = SnippetsEnvGuard::snapshot();
-        unsafe { env::remove_var(ENV_SNIPPETS_PATH) };
+        let _s = JotsEnvGuard::snapshot();
+        unsafe { env::remove_var(ENV_JOTS_PATH) };
         // Independent of TUG_INSTANCE_ID: same path with the ID set or unset.
         set_instance(None);
-        let unset = snippets_path();
+        let unset = jots_path();
         set_instance(Some("debug-foo"));
-        let set = snippets_path();
+        let set = jots_path();
         assert_eq!(unset, set);
-        assert!(set.ends_with("Tug/snippets.json"));
+        assert!(set.ends_with("Tug/jots.json"));
     }
 
     #[test]
     #[serial]
-    fn snippets_path_env_override_wins() {
-        let _s = SnippetsEnvGuard::snapshot();
-        unsafe { env::set_var(ENV_SNIPPETS_PATH, "/tmp/custom-snippets.json") };
-        assert_eq!(snippets_path(), PathBuf::from("/tmp/custom-snippets.json"));
+    fn jots_path_env_override_wins() {
+        let _s = JotsEnvGuard::snapshot();
+        unsafe { env::set_var(ENV_JOTS_PATH, "/tmp/custom-jots.json") };
+        assert_eq!(jots_path(), PathBuf::from("/tmp/custom-jots.json"));
     }
 
     #[test]
     #[serial]
-    fn snippets_path_ignores_empty_env() {
-        let _s = SnippetsEnvGuard::snapshot();
-        unsafe { env::set_var(ENV_SNIPPETS_PATH, "") };
-        assert!(snippets_path().ends_with("Tug/snippets.json"));
+    fn jots_path_ignores_empty_env() {
+        let _s = JotsEnvGuard::snapshot();
+        unsafe { env::set_var(ENV_JOTS_PATH, "") };
+        assert!(jots_path().ends_with("Tug/jots.json"));
     }
 
     #[test]

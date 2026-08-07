@@ -1194,20 +1194,20 @@ async fn test_defaults_all_seven_variants_roundtrip() {
     }
 }
 
-// ── Snippets API integration tests ────────────────────────────────────────
+// ── Jots API integration tests ────────────────────────────────────────
 
-/// Build a test app wired to a temp `snippets.json` path (the file itself is
+/// Build a test app wired to a temp `jots.json` path (the file itself is
 /// not created — a missing file reads as the empty document). Returns the
 /// router (loopback `MockConnectInfo` applied) and the `TempDir` backing it,
 /// which the caller must keep alive.
-fn build_snippets_test_app() -> (axum::Router, tempfile::TempDir, std::path::PathBuf) {
+fn build_jots_test_app() -> (axum::Router, tempfile::TempDir, std::path::PathBuf) {
     use axum::extract::connect_info::MockConnectInfo;
     use std::net::{IpAddr, Ipv4Addr};
 
     let dir = tempfile::TempDir::new().expect("temp dir");
-    let path = dir.path().join("snippets.json");
+    let path = dir.path().join("jots.json");
     let state =
-        crate::snippets::SnippetsState::new(path.clone(), Arc::new(tokio::sync::Notify::new()));
+        crate::jots::JotsState::new(path.clone(), Arc::new(tokio::sync::Notify::new()));
 
     let auth = auth::new_shared_auth_state(7893);
     let (terminal_tx, _) = broadcast::channel(BROADCAST_CAPACITY);
@@ -1238,14 +1238,14 @@ fn build_snippets_test_app() -> (axum::Router, tempfile::TempDir, std::path::Pat
 
 /// GET on a missing file returns 200 with the empty document, a hash, no error.
 #[tokio::test]
-async fn test_snippets_get_missing_returns_empty() {
-    let (app, _dir, _path) = build_snippets_test_app();
+async fn test_jots_get_missing_returns_empty() {
+    let (app, _dir, _path) = build_jots_test_app();
 
     let resp = app
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/snippets")
+                .uri("/api/jots")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1255,7 +1255,7 @@ async fn test_snippets_get_missing_returns_empty() {
     assert_eq!(resp.status(), StatusCode::OK);
     let json = json_body(resp).await;
     assert_eq!(json["doc"]["version"], 1);
-    assert_eq!(json["doc"]["snippets"], serde_json::json!([]));
+    assert_eq!(json["doc"]["jots"], serde_json::json!([]));
     assert!(json["hash"].is_string());
     assert!(json["error"].is_null());
 }
@@ -1263,16 +1263,16 @@ async fn test_snippets_get_missing_returns_empty() {
 /// PUT a document, then GET it back — round-trip, and the PUT hash matches the
 /// GET hash (the echo-suppression contract).
 #[tokio::test]
-async fn test_snippets_put_then_get_round_trip() {
-    let (app, _dir, _path) = build_snippets_test_app();
+async fn test_jots_put_then_get_round_trip() {
+    let (app, _dir, _path) = build_jots_test_app();
 
-    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"sn_a","text":"body"}]}}"#;
+    let doc = r#"{"doc":{"version":1,"jots":[{"id":"sn_a","text":"body"}]}}"#;
     let put_resp = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/snippets")
+                .uri("/api/jots")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(doc))
                 .unwrap(),
@@ -1287,7 +1287,7 @@ async fn test_snippets_put_then_get_round_trip() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/snippets")
+                .uri("/api/jots")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1295,21 +1295,21 @@ async fn test_snippets_put_then_get_round_trip() {
         .unwrap();
     assert_eq!(get_resp.status(), StatusCode::OK);
     let get_json = json_body(get_resp).await;
-    assert_eq!(get_json["doc"]["snippets"][0]["id"], "sn_a");
+    assert_eq!(get_json["doc"]["jots"][0]["id"], "sn_a");
     assert_eq!(get_json["hash"].as_str(), Some(put_hash.as_str()));
 }
 
 /// PUT with duplicate ids is rejected at the boundary with 400.
 #[tokio::test]
-async fn test_snippets_put_duplicate_ids_rejected() {
-    let (app, _dir, _path) = build_snippets_test_app();
+async fn test_jots_put_duplicate_ids_rejected() {
+    let (app, _dir, _path) = build_jots_test_app();
 
-    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"x"},{"id":"x"}]}}"#;
+    let doc = r#"{"doc":{"version":1,"jots":[{"id":"x"},{"id":"x"}]}}"#;
     let resp = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/snippets")
+                .uri("/api/jots")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(doc))
                 .unwrap(),
@@ -1321,16 +1321,16 @@ async fn test_snippets_put_duplicate_ids_rejected() {
 
 /// PUT refuses (409) to clobber an on-disk file that is corrupt.
 #[tokio::test]
-async fn test_snippets_put_refuses_to_clobber_corrupt_file() {
-    let (app, _dir, path) = build_snippets_test_app();
+async fn test_jots_put_refuses_to_clobber_corrupt_file() {
+    let (app, _dir, path) = build_jots_test_app();
     std::fs::write(&path, b"{ not valid json").unwrap();
 
-    let doc = r#"{"doc":{"version":1,"snippets":[{"id":"sn_a"}]}}"#;
+    let doc = r#"{"doc":{"version":1,"jots":[{"id":"sn_a"}]}}"#;
     let resp = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/snippets")
+                .uri("/api/jots")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(doc))
                 .unwrap(),

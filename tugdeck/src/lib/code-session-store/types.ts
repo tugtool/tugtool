@@ -961,15 +961,15 @@ export interface CodeSessionSnapshot {
   } | null;
 
   /**
-   * A snippet dragged from the Lens onto (or double-clicked into) the prompt
+   * A jot dragged from the Lens onto (or double-clicked into) the prompt
    * entry parks its text here for the entry to insert. `at` is the drop point
    * in client coordinates (resolved to a document offset), or `null` for
-   * append semantics. Set by {@link CodeSessionStore.insertSnippet}, cleared
-   * by {@link CodeSessionStore.consumePendingSnippetInsert} once inserted.
+   * append semantics. Set by {@link CodeSessionStore.insertJot}, cleared
+   * by {@link CodeSessionStore.consumePendingJotInsert} once inserted.
    * Survives snapshot rebuilds until consumed so a re-mounted entry still
    * picks it up.
    */
-  pendingSnippetInsert: {
+  pendingJotInsert: {
     text: string;
     at: { x: number; y: number } | null;
   } | null;

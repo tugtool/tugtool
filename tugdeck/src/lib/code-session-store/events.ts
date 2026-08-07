@@ -434,28 +434,28 @@ export interface ConsumeCommandInsertActionEvent {
 }
 
 /**
- * Internal action injected by `CodeSessionStore.insertSnippet`. Not a wire
- * event. Parks a snippet's `{ text, at }` on `pendingSnippetInsert` when a
- * Lens snippet is dragged onto (or double-clicked into) the prompt entry;
+ * Internal action injected by `CodeSessionStore.insertJot`. Not a wire
+ * event. Parks a jot's `{ text, at }` on `pendingJotInsert` when a
+ * Lens jot is dragged onto (or double-clicked into) the prompt entry;
  * the entry observes the slot via `useSyncExternalStore`, inserts the text
- * inside a `useLayoutEffect`, and dispatches `consume_snippet_insert`. `at`
+ * inside a `useLayoutEffect`, and dispatches `consume_jot_insert`. `at`
  * is the drop point in client coordinates (resolved to a document offset) or
  * `null` for append semantics (click / no coordinates).
  */
-export interface InsertSnippetActionEvent {
-  type: "insert_snippet";
+export interface InsertJotActionEvent {
+  type: "insert_jot";
   text: string;
   at: { x: number; y: number } | null;
 }
 
 /**
- * Internal action injected by `CodeSessionStore.consumePendingSnippetInsert`.
- * Clears `pendingSnippetInsert` to `null` once the prompt entry has inserted
+ * Internal action injected by `CodeSessionStore.consumePendingJotInsert`.
+ * Clears `pendingJotInsert` to `null` once the prompt entry has inserted
  * the text. Idempotent — a consume while already `null` is a state-ref-stable
  * no-op, so the seeding `useLayoutEffect` can fire it without a storm.
  */
-export interface ConsumeSnippetInsertActionEvent {
-  type: "consume_snippet_insert";
+export interface ConsumeJotInsertActionEvent {
+  type: "consume_jot_insert";
 }
 
 /**
@@ -1298,8 +1298,8 @@ export type CodeSessionEvent =
   | ConsumeDraftRestoreActionEvent
   | InsertCommandDraftActionEvent
   | ConsumeCommandInsertActionEvent
-  | InsertSnippetActionEvent
-  | ConsumeSnippetInsertActionEvent
+  | InsertJotActionEvent
+  | ConsumeJotInsertActionEvent
   | InsertAtomDraftActionEvent
   | ConsumeAtomInsertActionEvent
   | CancelQueuedSendActionEvent

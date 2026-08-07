@@ -33,9 +33,11 @@ import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { usePaneOcclusionController } from "./pane-occlusion-controller";
-import { getRegistration, getStackSizePolicy } from "@/card-registry";
+import { getRegistration, getStackSizePolicy, isSidebarCard } from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
-import { findLensPane } from "@/deck-store-selectors";
+import { JOTS_CARD_ID } from "@/lib/jots-card-id";
+import { getJotsStore } from "@/lib/jots-store";
+import { findLensPane, findSidebarPanes } from "@/deck-store-selectors";
 import type { SlotStackEntry } from "@/deck-store-selectors";
 import { cardTitleStore } from "@/lib/card-title-store";
 import { paneTitleBarTextFor } from "@/lib/pane-title";
@@ -53,13 +55,16 @@ import { cardServicesStore } from "@/lib/card-services-store";
 import { flipDelta, springKeyframes } from "@/lib/pane-flip";
 import { dispatchCommand } from "@/command-dispatch";
 import {
-  isLensPinned,
+  isSidebarPinned,
+  sidebarSide,
   resolvePlacement,
   slotCount,
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
-  LENS_WIDTH_PROPERTY,
   RESIZE_RETUNE_QUIET_MS,
+  sidebarStackOrder,
+  sidebarWidthProperty,
+  type SidebarSide,
 } from "@/lib/layout-imposer";
 
 // ---- DeckCanvasProps ----
@@ -82,33 +87,100 @@ export interface DeckCanvasProps {}
 const CARD_ZINDEX_BASE = 1;
 
 /**
- * Z-index for the Lens pane. It must sit ABOVE every free pane (tiny
- * array-order z, 1..N) so the Lens is never occluded by a card, yet
- * strictly BELOW the canvas-overlay base (`--tug-z-overlay-base` = 9000)
- * into which every popup/menu/tooltip — including the Lens's own `…` menu
- * and section popovers — portals. A naive "always on top" z above 9000
- * would bury those popups behind the Lens. 8999 is the tier the former
- * dev-panel overlay used.
+ * Z-index BAND for sidebar panes — the rails. A rail must sit ABOVE every free
+ * pane (tiny array-order z, 1..N) so it is never occluded by a card, yet
+ * strictly BELOW the canvas-overlay base (`--tug-z-overlay-base` = 9000) into
+ * which every popup/menu/tooltip — including the Lens's own `…` menu and
+ * section popovers — portals. A naive "always on top" z above 9000 would bury
+ * those popups behind the rail. 8999 is the tier the former dev-panel overlay
+ * used, and the band is the nine values below it.
+ *
+ * It has to be a band rather than the single value it was when the Lens was the
+ * only rail: **same-side sidebars stand front-to-back**, so the two of them have
+ * to be orderable against each other. Within the band they take the deck's own
+ * z-order — array position, the thing `activateCard` moves — which is what makes
+ * the title bar's stack picker able to bring the covered one forward. One fixed
+ * value for every rail would have pinned whichever card happened to hold it on
+ * top forever, and with two identical rects that is a card you can never reach.
  */
-const LENS_PANE_ZINDEX = 8999;
+const SIDEBAR_PANE_ZINDEX_BASE = 8990;
+
+/** The most rails the band can order before it would collide with the overlay
+ *  base. Far past any real deck; the clamp is here so it cannot ever collide. */
+const SIDEBAR_PANE_ZINDEX_MAX_RANK = 9;
+
+/** One member of a side's rail. Order here is registration order, not depth:
+ *  the members stand front-to-back and z-order decides which is in front. */
+interface SidebarRailMember {
+  componentId: string;
+  paneId: string;
+}
+
+/** A side's rail: the pinned sidebar panes standing on it and the width they
+ *  share. They share the vertical run too — all of it, each — because a shared
+ *  rail is a stack rather than a split. */
+interface SidebarRail {
+  side: SidebarSide;
+  width: number;
+  members: readonly SidebarRailMember[];
+}
 
 /**
- * The width the pinned Lens PAINTS at: its stored width raised to its stack's
+ * The width a sidebar pane PAINTS at: its stored width raised to its stack's
  * size floor. A stored width below the floor is a number the frame never shows,
- * so packing the band on it would run the chain under the Lens's real edge.
- * Zero when there is no pinned Lens to inset the band.
+ * so packing the band on it would run the chain under the rail's real edge.
  */
-function lensRenderWidthOf(state: DeckState): number {
-  const lensPane = findLensPane(state);
-  if (lensPane === undefined || !isLensPinned(state.imposition)) return 0;
+function paneRenderWidthOf(state: DeckState, pane: TugPaneState): number {
   return Math.max(
-    lensPane.size.width,
+    pane.size.width,
     getStackSizePolicy(
       state.cards
-        .filter((card) => lensPane.cardIds.includes(card.id))
+        .filter((card) => pane.cardIds.includes(card.id))
         .map((card) => card.componentId),
     ).min.width,
   );
+}
+
+/**
+ * The rails standing on the deck's edges, at most one per side — the picture
+ * the band is inset from.
+ *
+ * Same-side cards share ONE rail, so a side contributes one width however many
+ * cards stand on it: the widest member's render width, since a rail narrower
+ * than a member would run the chain under the edge that member paints.
+ */
+function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
+  const pinned = findSidebarPanes(state).filter(({ componentId }) =>
+    isSidebarPinned(state.imposition, componentId),
+  );
+  if (pinned.length === 0) return [];
+  const paneByComponentId = new Map(
+    pinned.map(({ componentId, pane }) => [componentId, pane]),
+  );
+  const rails: SidebarRail[] = [];
+  for (const side of ["left", "right"] as const) {
+    const order = sidebarStackOrder(
+      state.imposition,
+      side,
+      pinned.map(({ componentId }) => componentId),
+    );
+    if (order.length === 0) continue;
+    let width = 0;
+    const members: SidebarRailMember[] = [];
+    for (const componentId of order) {
+      const pane = paneByComponentId.get(componentId);
+      if (pane === undefined) continue;
+      width = Math.max(width, paneRenderWidthOf(state, pane));
+      members.push({ componentId, paneId: pane.id });
+    }
+    if (members.length === 0) continue;
+    rails.push({
+      side,
+      width,
+      members,
+    });
+  }
+  return rails;
 }
 
 /**
@@ -125,20 +197,26 @@ function lensRenderWidthOf(state: DeckState): number {
  * arm a settle window with no frame to move in it, holding session
  * notifications for the length of a motion that never happens.
  *
- * The Lens width is a term because the space allocator can change it with the
- * arrangement otherwise untouched — a settled window resize re-solves the width
- * and nothing else — and every imposed frame moves when it does. Without the
- * term that motion would cut. It changes on a Lens edge drag too, which arms a
- * window whose tweens are all no-ops: the drag wrote the width live, so each
+ * The rail widths are terms because the space allocator can change them with
+ * the arrangement otherwise untouched — a settled window resize re-solves them
+ * and nothing else — and every imposed frame moves when they do. Without the
+ * terms that motion would cut. They change on a rail edge drag too, which arms
+ * a window whose tweens are all no-ops: the drag wrote the width live, so each
  * frame's first and last rects are the same one.
  */
 function arrangementSignature(state: DeckState): string {
   const panes = state.panes
     .map((pane) => `${pane.id}:${pane.slot ?? ""}`)
     .sort();
-  return `${state.imposition.kind ?? ""}|${state.imposition.lens}|${
-    isLensPinned(state.imposition) ? "pinned" : "free"
-  }|${lensRenderWidthOf(state)}|${panes.join(",")}`;
+  const rails = sidebarRailsOf(state)
+    .map(
+      (rail) =>
+        `${rail.side}:${rail.width}:${rail.members
+          .map((m) => m.componentId)
+          .join("+")}`,
+    )
+    .join(";");
+  return `${state.imposition.kind ?? ""}|${rails}|${panes.join(",")}`;
 }
 
 /**
@@ -183,6 +261,8 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.SHOW_DEVTOOLS,
   TUG_ACTIONS.FOCUS_LENS,
   TUG_ACTIONS.TOGGLE_LENS,
+  TUG_ACTIONS.TOGGLE_JOTS,
+  TUG_ACTIONS.NEW_JOT,
   TUG_ACTIONS.SHOW_COMPONENT_GALLERY,
   TUG_ACTIONS.ADD_CARD_TO_ACTIVE_PANE,
   TUG_ACTIONS.CLOSE,
@@ -214,6 +294,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const deckState = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const panes = deckState.panes;
   const cards = deckState.cards;
+  const imposition = deckState.imposition;
   // Per-card title overrides are not deck state, so the deck subscription
   // above cannot see one land. The slot-stack picker names its rows with the
   // title bar's own text, which folds an override in, so it needs this too.
@@ -222,18 +303,33 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     cardTitleStore.version,
   );
   // The Lens pane carries no marker of its own — it is the pane hosting the
-  // Lens card ([P04]). Resolved once here and reused by the z-order, the band
-  // insets, the placements memo, and the `lensSide` prop below.
+  // Lens card ([P04]). Resolved once here and reused by the z-order and the
+  // placements memo.
   const lensPane = findLensPane(deckState);
   const lensPaneId = lensPane?.id;
-  // The side the Lens is HOLDING, or null when there is none to hold it —
-  // because the Lens is closed, or because it has been dragged off its pin and
-  // is standing in the deck as an ordinary free pane. Either way the
-  // arrangement spans the whole canvas.
-  const lensSide =
-    lensPane === undefined || !isLensPinned(deckState.imposition)
-      ? null
-      : deckState.imposition.lens;
+  // Every pane hosting a sidebar card, pinned or dragged loose. They share the
+  // z-band above the free panes: a rail must never be occluded by a card, and
+  // that is a property of being a rail rather than of being the Lens.
+  const sidebarPaneIds = useMemo(
+    () => new Set(findSidebarPanes(deckState).map(({ pane }) => pane.id)),
+    [deckState],
+  );
+  // The rails standing on the deck's edges, and the stack membership each
+  // sidebar pane derives its frame from. A closed or unpinned sidebar card
+  // holds no side and is absent: the arrangement spans what its rail is not
+  // taking, which when nothing is pinned is the whole canvas.
+  const sidebarRails = sidebarRailsOf(deckState);
+  const railWidthOf = (side: SidebarSide): number =>
+    sidebarRails.find((rail) => rail.side === side)?.width ?? 0;
+  const stackByPaneId = new Map<string, { side: SidebarSide; count: number }>();
+  for (const rail of sidebarRails) {
+    for (const member of rail.members) {
+      stackByPaneId.set(member.paneId, {
+        side: rail.side,
+        count: rail.members.length,
+      });
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Stable render order
@@ -249,16 +345,26 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // order), not from the stable render order.
 
   const { sortedStacks, zIndexMap } = useMemo(() => {
+    // Rails are ranked among themselves, in the deck's own array order, so a
+    // raise inside the band actually moves one in front of the other.
+    const railRank = new Map<string, number>();
+    for (const pane of panes) {
+      if (sidebarPaneIds.has(pane.id)) railRank.set(pane.id, railRank.size);
+    }
     const map = new Map<string, number>();
-    panes.forEach((pane, i) =>
+    panes.forEach((pane, i) => {
+      const rank = railRank.get(pane.id);
       map.set(
         pane.id,
-        pane.id === lensPaneId ? LENS_PANE_ZINDEX : CARD_ZINDEX_BASE + i,
-      ),
-    );
+        rank === undefined
+          ? CARD_ZINDEX_BASE + i
+          : SIDEBAR_PANE_ZINDEX_BASE +
+            Math.min(rank, SIDEBAR_PANE_ZINDEX_MAX_RANK),
+      );
+    });
     const sorted = [...panes].sort((a, b) => a.id.localeCompare(b.id));
     return { sortedStacks: sorted, zIndexMap: map };
-  }, [panes, lensPaneId]);
+  }, [panes, sidebarPaneIds]);
 
   // A slot is a stack: every pane holding it, the last one topmost ([D121]).
   // The membership is derived here rather than stored, and here rather than in
@@ -277,15 +383,32 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     // project rename its row as well as its title bar. [L02]
     void cardTitleVersion;
     const cardsForTitles = new Map(cards.map((c) => [c.id, c]));
-    const bySlot = new Map<number, TugPaneState[]>();
+    // A pane stands in a stack when it shares a PLACE with other panes, and the
+    // deck has two kinds of place: a numbered slot, and a side's rail. Both are
+    // front-to-back stacks of full-size panes, so both get the same badge and
+    // the same picker — the rail was the one that had to be taught, because a
+    // rail's members are found through the imposition rather than off the pane.
+    const railSideOf = new Map<string, SidebarSide>();
+    for (const { componentId, pane } of findSidebarPanes(deckState)) {
+      if (!isSidebarPinned(imposition, componentId)) continue;
+      railSideOf.set(pane.id, sidebarSide(imposition, componentId));
+    }
+    const byPlace = new Map<string, TugPaneState[]>();
     for (const pane of panes) {
-      if (pane.slot === undefined) continue;
-      const members = bySlot.get(pane.slot);
+      const railSide = railSideOf.get(pane.id);
+      const place =
+        railSide !== undefined
+          ? `rail:${railSide}`
+          : pane.slot === undefined
+            ? undefined
+            : `slot:${pane.slot}`;
+      if (place === undefined) continue;
+      const members = byPlace.get(place);
       if (members) members.push(pane);
-      else bySlot.set(pane.slot, [pane]);
+      else byPlace.set(place, [pane]);
     }
     const map = new Map<string, readonly SlotStackEntry[]>();
-    for (const members of bySlot.values()) {
+    for (const members of byPlace.values()) {
       // Topmost first, matching the host menu-state convention.
       const entries: SlotStackEntry[] = [...members].reverse().map((pane, i) => {
         // A row is a miniature of the title bar it stands for, so it takes
@@ -309,7 +432,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       for (const pane of members) map.set(pane.id, entries);
     }
     return map;
-  }, [panes, cards, cardTitleVersion]);
+  }, [panes, cards, cardTitleVersion, deckState, imposition]);
 
   // Build a cardId → hostStackId map so `CardHost` can look up its
   // host stack without re-scanning the stacks array on every render.
@@ -481,7 +604,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const cardId = store.getFirstResponderCardId();
         if (cardId === null) return;
         const card = deck.cards.find((c) => c.id === cardId);
-        if (!card || card.componentId === LENS_CARD_ID) return;
+        if (!card || isSidebarCard(card.componentId)) return;
         dispatchCommand("assign-slot", { cardId, slot: event.value - 1 });
       },
       // open-file / reveal-in-finder — deck-level file-reference
@@ -637,10 +760,33 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           commitMutation: () => store.activateCard(incomingCardId),
         });
       },
-      // ⌥⌘L — toggle the Lens rail's visibility (presence = open, [P02]).
+      // ⌃⌘L — toggle the Lens rail's visibility (presence = open, [P02]).
       // Pure visibility; focus semantics belong to FOCUS_LENS.
       [TUG_ACTIONS.TOGGLE_LENS]: (_event: ActionEvent) => {
         store.toggleLensPane();
+      },
+      // ⌃⌘J — the same presence-is-open toggle for the Jots rail. Pure
+      // visibility, like its Lens sibling; NEW_JOT is the one that focuses.
+      [TUG_ACTIONS.TOGGLE_JOTS]: (_event: ActionEvent) => {
+        store.toggleSidebarPane(JOTS_CARD_ID);
+      },
+      // ⌘J — capture in one gesture: reveal the Jots rail if it is hidden,
+      // then open a fresh jot's editor. The reveal takes the same
+      // show-then-activate transfer FOCUS_LENS uses, with keyboard modality so
+      // the landing is visibly ringed; `createJot` runs after the transfer so
+      // the row it opens mounts into a card that already holds focus, and the
+      // editor's own descend claim lands the caret ([L03] registration order).
+      [TUG_ACTIONS.NEW_JOT]: (_event: ActionEvent) => {
+        const incomingCardId = store.showSidebarPane(JOTS_CARD_ID);
+        if (incomingCardId === null) return;
+        transferFocusForActivation({
+          outgoingCardId: store.getFirstResponderCardId(),
+          incomingCardId,
+          store,
+          commitMutation: () => store.activateCard(incomingCardId),
+          modality: "keyboard",
+        });
+        getJotsStore().createJot(null);
       },
       // ⌘L — move focus INTO the Lens through the normal activation path
       // (opening it if hidden); a second ⌘L while the Lens is the key card
@@ -876,39 +1022,41 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // path stays pure CSS, and it must stay that way — nothing else may be hung
   // off that observer.
   //
-  // The inset is the Lens's width plus one gap, because the Lens is itself
-  // imposed a gap off the canvas edge — its near edge is that far in. The
-  // width is the one the frame will actually PAINT at, raised to the stack's
-  // size floor exactly as `TugPane`'s `renderWidth` and the placements memo
-  // below do; packing on a stored width below the floor would run the chain
-  // under the Lens's real edge. `resolveSpan` adds the identical gap, so the
+  // A side's inset is its rail's width plus one gap, because a rail is itself
+  // imposed a gap off the canvas edge — its near edge is that far in. Both
+  // sides are written on every pass, so a side that loses its rail is reset to
+  // zero rather than left carrying the inset it had. The width is the one the
+  // frame will actually PAINT at, raised to the stack's size floor exactly as
+  // `TugPane`'s `renderWidth` and the placements memo below do; packing on a
+  // stored width below the floor would run the chain under the rail's real
+  // edge. `resolveSpan` adds the identical gap per occupied side, so the
   // numeric twin and the CSS agree by construction ([P05]).
   //
-  // The width itself is published as `LENS_WIDTH_PROPERTY` and the insets are
-  // written as expressions over it, so the Lens frame's own pin and the band
+  // Each width is published as its side's `sidebarWidthProperty` and the insets
+  // are written as expressions over it, so a rail frame's own pin and the band
   // the chain rides read ONE number. A width drag rewrites that one property
-  // (`TugPane`'s `handleLensResizeStart`) and the whole arrangement re-resolves
-  // in the browser's next reflow: the Lens grows off its own pinned edge and
-  // the cards re-impose live under the moving edge, which is the same response
-  // the deck already gives a window resize.
-  const lensRenderWidth = lensRenderWidthOf(deckState);
-  const lensInset =
-    lensRenderWidth === 0
-      ? "0px"
-      : `calc(var(${LENS_WIDTH_PROPERTY}) + ${IMPOSITION_GAP_PX}px)`;
+  // (`TugPane`'s `handleSidebarResizeStart`) and the whole arrangement
+  // re-resolves in the browser's next reflow: the rail grows off its own pinned
+  // edge and the cards re-impose live under the moving edge, which is the same
+  // response the deck already gives a window resize.
+  const railWidths = `${railWidthOf("left")}|${railWidthOf("right")}`;
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    el.style.setProperty(LENS_WIDTH_PROPERTY, `${lensRenderWidth}px`);
-    el.style.setProperty(
-      "--tug-imposer-inset-left",
-      lensSide === "left" ? lensInset : "0px",
-    );
-    el.style.setProperty(
-      "--tug-imposer-inset-right",
-      lensSide === "right" ? lensInset : "0px",
-    );
-  }, [lensSide, lensInset, lensRenderWidth]);
+    for (const side of ["left", "right"] as const) {
+      const width = railWidthOf(side);
+      el.style.setProperty(sidebarWidthProperty(side), `${width}px`);
+      el.style.setProperty(
+        `--tug-imposer-inset-${side}`,
+        width === 0
+          ? "0px"
+          : `calc(var(${sidebarWidthProperty(side)}) + ${IMPOSITION_GAP_PX}px)`,
+      );
+    }
+    // `railWidthOf` reads `sidebarRails`, which `railWidths` summarises — the
+    // widths are the only thing in it this effect writes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [railWidths]);
 
   // ---------------------------------------------------------------------------
   // Settled-resize re-tune
@@ -946,7 +1094,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       }
       retuneTimerRef.current = window.setTimeout(() => {
         retuneTimerRef.current = null;
-        store.retuneLensAllocation();
+        store.retuneSidebarAllocation();
       }, RESIZE_RETUNE_QUIET_MS);
     });
     observer.observe(el);
@@ -1363,15 +1511,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             placement={placementFor(stackState)}
             slotStack={slotStackByPaneId.get(stackState.id)}
             onRevealPane={handleRevealPane}
-            lensSide={
-              stackState.id === lensPaneId && lensSide !== null
-                ? lensSide
-                : undefined
-            }
+            sidebarStack={stackByPaneId.get(stackState.id)}
             isLensPane={stackState.id === lensPaneId}
             onCardMoved={store.handlePaneMoved}
             onClose={handleClose}
-            onCardCollapsed={(id) => store.togglePaneCollapse(id)}
             onCardMerged={(sourceStackId, targetStackId, insertIndex) => {
               // Resolve the active card id from the source stack at commit time.
               const snapshot = store.getSnapshot();

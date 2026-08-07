@@ -62,7 +62,7 @@ const LENS_SELECTOR = `.tug-pane[data-pane-id="pLens"]`;
 const LENS_TITLE_BAR = `${LENS_SELECTOR} .tug-pane-title-bar`;
 /** The Lens's own Layouts section — the only way back onto the pin. */
 const SIDE_RIGHT =
-  '[data-testid="lens-layouts-side"] [data-radio-value="right"]';
+  '[data-testid="lens-layouts-side-lens"] [data-radio-value="right"]';
 
 function deckShape() {
   return {

@@ -2997,7 +2997,7 @@ export class FocusManager {
    * corrects on its next pass. That correction is browser churn from a
    * gesture the engine chose to let through, not a raw focus write by our
    * code, so it is corrected QUIETLY: same class as the browser focusing the
-   * engine's own stop. Attributing it as a steal would mean every snippet
+   * engine's own stop. Attributing it as a steal would mean every jot
    * drag ledgered a warn that no writer could ever fix.
    */
   private deferredGestureActive = false;
@@ -3187,7 +3187,7 @@ export class FocusManager {
     //  - The mousedown default of a DEFERRED drag gesture. A prevented
     //    mousedown never begins a native drag, so the engine deliberately lets
     //    the default through and accepts the focus it lands; attributing that
-    //    as a steal would ledger a warn on every snippet drag that no writer
+    //    as a steal would ledger a warn on every jot drag that no writer
     //    could fix. The window is opened and closed explicitly by the gesture
     //    owner (`beginDeferredGesture` / `endDeferredGesture`).
     const keyViewEl = p.keyViewEl;

@@ -1236,7 +1236,7 @@ export interface TugListViewProps<
    * the key view, the engine's act-dispatch treats a listed key as captured —
    * it does NOT resolve it to select/act, so the key bubbles to the consumer's
    * own keydown handler. Use for a list that repurposes a normally-committing
-   * key: the Snippets list reserves Space to mean "new snippet below the
+   * key: the Jots list reserves Space to mean "new jot below the
    * cursor" instead of the default item-container select.
    *
    * @default undefined (no keys reserved)
@@ -5037,8 +5037,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // Keys the consumer reserves for its own handling ([P04] captures). While
     // the container holds the key view, the engine's act-dispatch yields these
     // to the DOM (they bubble to the consumer's own keydown) instead of
-    // resolving them to select/act. The Snippets list reserves Space so it can
-    // mean "new snippet below the cursor" (a Things-style gesture) rather than
+    // resolving them to select/act. The Jots list reserves Space so it can
+    // mean "new jot below the cursor" (a Things-style gesture) rather than
     // the default item-container select.
     const captureKeySet = React.useMemo(
       () => (captureKeys !== undefined ? new Set(captureKeys) : null),
@@ -5075,8 +5075,8 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         // descends a navigable row, else (when `commitOnEnter: "act"`) acts on the
         // cursor row via `onAct`, else bubbles to the scope default ([P24]).
         // `commitOnEnter: "act"` is the author saying what Enter means on THIS
-        // list, so it outranks the descend default: the Lens snippets list opens
-        // the snippet on Enter, and adding a focusable accessory to its rows
+        // list, so it outranks the descend default: the Jotss list opens
+        // the jot on Enter, and adding a focusable accessory to its rows
         // must not quietly turn Enter into "descend onto the copy button".
         // Right still descends (the movement-key listener and the cursor
         // handle's `tryDescendRight` read the row's focusables directly), so the

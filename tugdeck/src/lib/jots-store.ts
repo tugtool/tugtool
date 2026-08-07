@@ -1,8 +1,8 @@
 /**
- * `snippetsStore` — the [L02] store surface for the Snippets Lens section.
+ * `jotsStore` — the [L02] store surface for the Jots Lens section.
  *
- * Composes the pure logic in `snippets-doc.ts` with the live SNIPPETS feed,
- * optimistic mutations, debounced autosave (`PUT /api/snippets`), a bounded
+ * Composes the pure logic in `jots-doc.ts` with the live JOTS feed,
+ * optimistic mutations, debounced autosave (`PUT /api/jots`), a bounded
  * undo/redo stack, and hash-gated echo suppression. The React surface is
  * `subscribe` / `getSnapshot`, returning `{ doc, error }`.
  *
@@ -18,7 +18,7 @@ import type { TugConnection } from "../connection";
 import { getConnection } from "./connection-singleton";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import {
-  type SnippetsDoc,
+  type JotsDoc,
   type UndoStack,
   applyCreate,
   applyDelete,
@@ -27,22 +27,22 @@ import {
   emptyDoc,
   emptyUndo,
   mergeForeignDoc,
-  newSnippetId,
-  parseSnippetsFrame,
+  newJotId,
+  parseJotsFrame,
   pushUndo,
   redo,
   shouldIgnoreFrame,
   undo,
-} from "./snippets-doc";
+} from "./jots-doc";
 
 /** The React-visible snapshot. */
-export interface SnippetsSnapshot {
-  doc: SnippetsDoc;
+export interface JotsSnapshot {
+  doc: JotsDoc;
   /** Non-null when the on-disk file is unreadable or a save was rejected. */
   error: string | null;
   /**
    * The id of the row currently open for editing, or null when none is open.
-   * Set by `beginEdit` and by `createSnippet` (create-and-open); cleared by
+   * Set by `beginEdit` and by `createJot` (create-and-open); cleared by
    * `commitEdit`. The section body mounts the editor for this row and descends
    * into it; a header `+` opens the freshly-created row through this field.
    */
@@ -52,19 +52,19 @@ export interface SnippetsSnapshot {
 /** Debounce for text edits; structural mutations save immediately. */
 const SAVE_DEBOUNCE_MS = 500;
 
-function docsEqual(a: SnippetsDoc, b: SnippetsDoc): boolean {
+function docsEqual(a: JotsDoc, b: JotsDoc): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export class SnippetsStore {
-  private doc: SnippetsDoc = emptyDoc();
+export class JotsStore {
+  private doc: JotsDoc = emptyDoc();
   private undoStack: UndoStack = emptyUndo();
-  private editBaseline: SnippetsDoc | null = null;
+  private editBaseline: JotsDoc | null = null;
   private editingId: string | null = null;
   private error: string | null = null;
   private lastWrittenHash: string | null = null;
 
-  private snapshot: SnippetsSnapshot = Object.freeze({
+  private snapshot: JotsSnapshot = Object.freeze({
     doc: this.doc,
     error: null,
     editingId: null,
@@ -75,12 +75,12 @@ export class SnippetsStore {
 
   constructor(conn: TugConnection | null) {
     if (conn === null) {
-      tugDevLogStore.warn("snippets-store", "no connection at construction; feed inactive");
+      tugDevLogStore.warn("jots-store", "no connection at construction; feed inactive");
       return;
     }
     // Late subscription still replays the cached connect-time frame (see
     // `TugConnection.onFrame`), so eager subscription here is safe.
-    this.unsubFeed = conn.onFrame(FeedId.SNIPPETS, (payload) => this.onFrame(payload));
+    this.unsubFeed = conn.onFrame(FeedId.JOTS, (payload) => this.onFrame(payload));
   }
 
   dispose(): void {
@@ -98,12 +98,12 @@ export class SnippetsStore {
     return () => this.listeners.delete(listener);
   };
 
-  getSnapshot = (): SnippetsSnapshot => this.snapshot;
+  getSnapshot = (): JotsSnapshot => this.snapshot;
 
   // ── Feed ingestion ─────────────────────────────────────────────────────
 
   private onFrame(payload: Uint8Array): void {
-    const frame = parseSnippetsFrame(payload);
+    const frame = parseJotsFrame(payload);
     if (frame === null) return;
 
     // Our own write echoing back — ignore so it can't disturb an open edit.
@@ -148,14 +148,14 @@ export class SnippetsStore {
   // ── Mutations ──────────────────────────────────────────────────────────
 
   /**
-   * Insert a blank snippet after `afterId` (or at end) and open it for editing;
+   * Insert a blank jot after `afterId` (or at end) and open it for editing;
    * returns its id. Opening it here (setting `editingId` + the coalescing
    * baseline) is what lets a header `+` or a ⌘Return chain create-and-open in
    * one call — the section's descend effect reacts to `editingId`.
    */
-  createSnippet(afterId: string | null = null): string {
+  createJot(afterId: string | null = null): string {
     this.undoStack = pushUndo(this.undoStack, this.doc);
-    const result = applyCreate(this.doc, afterId, newSnippetId());
+    const result = applyCreate(this.doc, afterId, newJotId());
     this.doc = result.doc;
     this.editingId = result.id;
     if (this.editBaseline === null) {
@@ -166,8 +166,8 @@ export class SnippetsStore {
     return result.id;
   }
 
-  /** Set a snippet's text. Debounced save; coalesced undo while editing. */
-  updateSnippet(id: string, text: string): void {
+  /** Set a jot's text. Debounced save; coalesced undo while editing. */
+  updateJot(id: string, text: string): void {
     // When not inside a begin/commit bracket, each update is its own undo
     // entry; while bracketed, a typing burst coalesces to one entry at commit.
     if (this.editBaseline === null) {
@@ -178,8 +178,8 @@ export class SnippetsStore {
     this.save(false);
   }
 
-  /** Remove a snippet; returns the id that should take selection next. */
-  deleteSnippet(id: string): string | null {
+  /** Remove a jot; returns the id that should take selection next. */
+  deleteJot(id: string): string | null {
     this.undoStack = pushUndo(this.undoStack, this.doc);
     const result = applyDelete(this.doc, id);
     this.doc = result.doc;
@@ -207,7 +207,7 @@ export class SnippetsStore {
 
   /** Close the open row: push one coalesced undo entry and flush the save.
    *  A row left EMPTY on close is discarded rather than persisted — creating a
-   *  snippet (via `+` / ⌘N / Space / ⌘Return) then leaving without typing must
+   *  jot (via `+` / ⌘N / Space / ⌘Return) then leaving without typing must
    *  not leave a blank row behind. */
   commitEdit(): void {
     const editingId = this.editingId;
@@ -215,9 +215,9 @@ export class SnippetsStore {
     this.editBaseline = null;
     this.editingId = null;
     if (editingId !== null) {
-      const snippet = this.doc.snippets.find((s) => s.id === editingId);
-      if (snippet !== undefined && snippet.text.trim() === "") {
-        // Undo restores the pre-edit doc (so clearing an existing snippet to
+      const jot = this.doc.jots.find((s) => s.id === editingId);
+      if (jot !== undefined && jot.text.trim() === "") {
+        // Undo restores the pre-edit doc (so clearing an existing jot to
         // empty is undoable); a never-populated new row leaves no trace.
         if (baseline !== null && !docsEqual(baseline, this.doc)) {
           this.undoStack = pushUndo(this.undoStack, baseline);
@@ -283,7 +283,7 @@ export class SnippetsStore {
   private async flushSave(): Promise<void> {
     const doc = this.doc;
     try {
-      const resp = await fetch("/api/snippets", {
+      const resp = await fetch("/api/jots", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ doc }),
@@ -299,25 +299,25 @@ export class SnippetsStore {
       }
       const json = (await resp.json().catch(() => ({}))) as { message?: unknown };
       const msg =
-        typeof json.message === "string" ? json.message : `snippets save failed (${resp.status})`;
+        typeof json.message === "string" ? json.message : `jots save failed (${resp.status})`;
       if (this.error !== msg) {
         this.error = msg;
         this.commit();
       }
     } catch (e) {
-      tugDevLogStore.error("snippets-store", `save request failed: ${String(e)}`);
+      tugDevLogStore.error("jots-store", `save request failed: ${String(e)}`);
     }
   }
 }
 
 // ── Module singleton ───────────────────────────────────────────────────────
 
-let instance: SnippetsStore | null = null;
+let instance: JotsStore | null = null;
 
-/** The lazily-constructed process-wide snippets store. */
-export function getSnippetsStore(): SnippetsStore {
+/** The lazily-constructed process-wide jots store. */
+export function getJotsStore(): JotsStore {
   if (instance === null) {
-    instance = new SnippetsStore(getConnection());
+    instance = new JotsStore(getConnection());
   }
   return instance;
 }

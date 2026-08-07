@@ -144,6 +144,27 @@ export function formatTokensCaps(n: number): string {
   return `${(n / 1_000_000_000).toFixed(2)}G`;
 }
 
+/**
+ * A **ceiling** in the same uppercase shorthand — `200K`, `1M`, `128K`.
+ *
+ * Deliberately not {@link formatTokensCaps}. That one formats a *measurement*,
+ * where a tenth is information: `11.5K` of context used is a different reading
+ * from `11.4K`. A context window is a *round number the model was shipped with*,
+ * so its decimals are always zeros — `200.0K`, `1.00M` — and they cost four
+ * characters of a status row that has none to spare while communicating nothing.
+ * Any real fraction is kept (a `1.5M` cap would render as `1.5M`); it is only
+ * the trailing zeros that go.
+ */
+export function formatTokenCap(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  const trim = (value: number): string =>
+    value.toFixed(1).replace(/\.0$/, "");
+  if (n < 1_000) return String(Math.round(n));
+  if (n < 1_000_000) return `${trim(n / 1_000)}K`;
+  if (n < 1_000_000_000) return `${trim(n / 1_000_000)}M`;
+  return `${trim(n / 1_000_000_000)}G`;
+}
+
 /** Format milliseconds as `1.2s` / `34s` / `2m 03s` / `1h 04m`. */
 export function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "0s";
@@ -300,16 +321,16 @@ export interface SessionTelemetryStatusRowProps extends SessionTelemetryProps {
   /**
    * Order of the FIRST cell (STATE) within {@link focusGroup}; the cells
    * take consecutive orders left→right (STATE, TIME, TOKENS, CONTEXT,
-   * WORK, BTW = base + 0…5).
+   * WORK = base + 0…4).
    */
   focusOrderBase?: number;
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
   focusPolicy?: FocusPolicy;
   /**
-   * Side-question store for the BTW cell. When set, the row renders a BTW
-   * cell showing the number of `/btw` exchanges (or an em-dash when none) and
-   * the BTW cell toggles the shared placard open on the `/btw` body; omitted
-   * in the gallery / fixtures (the BTW cell is then inert).
+   * Side-question store behind the `/btw` placard. There is no BTW cell — the
+   * placard is reached by asking (`/btw`, via `openSideQuestions`), not by
+   * clicking the strip — so this store feeds the placard body alone. Omitted in
+   * the gallery / fixtures, where the placard has nothing to show.
    */
   sideQuestionStore?: SideQuestionStore;
   /**
@@ -615,22 +636,32 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   // command gate the main transcript passes to its `TugMarkdownBlock`.
   const annotation = useAnnotationContext(sessionMetadataStore);
 
-  // On-trigger anchoring: the cell's CENTER within the placard's positioned
-  // container — the `.session-card-status-bar` padding box (the placard's
-  // offsetParent; the row itself is unpositioned, [P06]). The placard centers
-  // itself on this x (clamped in-card). `clientLeft` is the container's left
-  // border width, so `barRect.left + clientLeft` is the padding-box edge the
-  // placard's `left` is measured from.
+  // On-trigger anchoring: the x the placard centers itself on, in the
+  // coordinates of its positioned container — the `.session-card-status-bar`
+  // padding box (the placard's offsetParent; the row itself is unpositioned,
+  // [P06]). `clientLeft` is the container's left border width, so
+  // `barRect.left + clientLeft` is the padding-box edge the placard's `left` is
+  // measured from.
+  //
+  // Two anchors, because two kinds of surface open here. A cell placard is a
+  // detail view OF that cell and centers under it. The `/btw` placard is not:
+  // BTW has no cell any more, and `/btw` is a conversation the user had with
+  // the session rather than a reading off the strip — so it opens from the
+  // strip's own trailing edge, right-aligned to the card. `TugPlacard` centers
+  // on the x it is given and clamps in-card, so a right-edge anchor is stated
+  // as the strip's own right edge; the clamp does the rest.
   const measureAnchorCenter = useCallback((key: PlacardKind): number => {
     const row = rowRef.current;
     if (row === null) return 0;
-    const cell = row.querySelector<HTMLElement>(
-      `[data-slot="tug-status-cell"][data-priority="${key}"]`,
-    );
     const statusBar = row.closest<HTMLElement>(
       '[data-slot="session-card-status-bar"]',
     );
-    if (cell === null || statusBar === null) return 0;
+    if (statusBar === null) return 0;
+    if (key === "btw") return statusBar.clientWidth;
+    const cell = row.querySelector<HTMLElement>(
+      `[data-slot="tug-status-cell"][data-priority="${key}"]`,
+    );
+    if (cell === null) return 0;
     const cellRect = cell.getBoundingClientRect();
     const barRect = statusBar.getBoundingClientRect();
     return cellRect.left + cellRect.width / 2 - (barRect.left + statusBar.clientLeft);
@@ -699,21 +730,6 @@ export const SessionTelemetryStatusRow = React.forwardRef<
   // can't drift.
   const cellOrder = (offset: number): number | undefined =>
     focusOrderBase === undefined ? undefined : focusOrderBase + offset;
-
-  // BTW count — the number of `/btw` exchanges, live via useSyncExternalStore
-  // ([L02]). The snapshot is a primitive (the count), so no render loop; the
-  // store is absent in the gallery / fixtures, where the count reads 0.
-  const btwCount = useSyncExternalStore(
-    useCallback(
-      (cb: () => void) =>
-        sideQuestionStore ? sideQuestionStore.subscribe(cb) : () => {},
-      [sideQuestionStore],
-    ),
-    useCallback(
-      () => (sideQuestionStore ? sideQuestionStore.getSnapshot().exchanges.length : 0),
-      [sideQuestionStore],
-    ),
-  );
 
   const snap = useSyncExternalStore(
     codeSessionStore.subscribe,
@@ -1127,7 +1143,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
             {inertValue(formatTokensCaps(contextTotal))}
           </span>
           <span className="session-telemetry-status-context-denominator">
-            {`/ ${formatTokensCaps(contextMax)}`}
+            {`/ ${formatTokenCap(contextMax)}`}
           </span>
         </span>
       </TugStatusCell>
@@ -1157,25 +1173,6 @@ export const SessionTelemetryStatusRow = React.forwardRef<
             aria-label={workSummary}
           />
         )}
-      </TugStatusCell>
-      <TugStatusCell
-        priority="btw"
-        label="BTW"
-        onActivate={
-          sideQuestionStore !== undefined
-            ? () => togglePlacard("btw")
-            : undefined
-        }
-        valueEmpty={btwCount === 0}
-        focusGroup={focusGroup}
-        focusOrder={cellOrder(5)}
-        focusPolicy={focusPolicy}
-        aria-label="Side questions"
-        title="Side questions (/btw)"
-      >
-        <span className="session-telemetry-status-value">
-          {btwCount > 0 ? String(btwCount) : "—"}
-        </span>
       </TugStatusCell>
     </div>
   );

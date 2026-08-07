@@ -1,10 +1,14 @@
 /**
- * snippets-section.tsx — the Lens **Snippets** section: a keyboard-navigable
- * `TugListView` of reusable prompt fragments backed by the machine-global
- * `snippets.json` (`snippetsStore`).
+ * jots-card.tsx — the **Jots** card: a keyboard-navigable `TugListView` of
+ * reusable prompt fragments backed by the machine-global `jots.json`
+ * (`jotsStore`).
  *
- * The list is authored into the section's focus group (`host.focusGroup`), so
- * it is one Tab stop in the Lens. The grammar (Spec S01):
+ * Jots is a capture surface, not a lens onto the deck, so it stands as its own
+ * sidebar card rather than as a band inside the Lens. It brings its own chrome
+ * — filter field, `+`, focus group — where it used to rent the Lens band's.
+ *
+ * The list is authored into the card's focus group, so it is one Tab stop.
+ * The grammar:
  *  - **Arrows** rove the cursor and carry the selection with it
  *    (`selectionFollowsCursor`) — the green fill is always on the row the
  *    keyboard is on, which is also the row the section verbs act on;
@@ -16,8 +20,8 @@
  *    caret itself (the engine's ladder yields keys to a focused editor).
  *    **Escape** ascends the row scope (the wrapper's handler — the surface
  *    owns its Escape) and the resulting **blur** commits; **⌘Return**
- *    commits and chains a new snippet. **Space** selects only.
- *  - Section verbs while the list holds the key view (delivered via the
+ *    commits and chains a new jot. **Space** selects only.
+ *  - Card verbs while the list holds the key view (delivered via the
  *    list's `onKeyViewKey` delegate — the [P05] channel): **Space** creates
  *    below the cursor, **Delete** removes the cursor row (read from the
  *    projected `data-key-cursor`) and lands the cursor on the surviving
@@ -25,17 +29,17 @@
  *    in list mode so the editor's CM6 undo wins while typing). Each display
  *    row also carries a hover-reveal delete button for the pointer.
  *  - A row's incipit is draggable into a session prompt (native HTML5 drag,
- *    `snippetDragStart`); dragging the row VERTICALLY reorders instead
+ *    `jotDragStart`); dragging the row VERTICALLY reorders instead
  *    (commit on drop, [Q02]). One surface, two drags, told apart by axis in
  *    `block-reorder`.
  *
- * One cell kind (`"snippet"`) branches display/editor on `editingId` — never
+ * One cell kind (`"jot"`) branches display/editor on `editingId` — never
  * two kinds for one row ([L26]). Laws: [L02] store via `useSyncExternalStore`;
  * [L06] cursor/selection appearance is CSS on engine attributes; [L22] the
  * FocusManager owns the cursor and the descend scope; [L11] the editor's
  * CUT/COPY/PASTE/SELECT_ALL/UNDO/REDO responders ride the composed substrate.
  *
- * @module components/lens/sections/snippets-section
+ * @module components/jots/jots-card
  */
 
 import React, {
@@ -47,12 +51,12 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Copy, Plus, TextQuote, X } from "lucide-react";
+import { Copy, Plus, X } from "lucide-react";
 
 import { PLACEMENT_POLICY_ATTRIBUTE } from "@/gesture-interpreter";
-import { getSnippetsStore } from "@/lib/snippets-store";
-import { snippetIncipit, type Snippet } from "@/lib/snippets-doc";
-import { snippetDragStart } from "@/lib/snippet-drag";
+import { getJotsStore } from "@/lib/jots-store";
+import { jotIncipit, type Jot } from "@/lib/jots-doc";
+import { jotDragStart } from "@/lib/jot-drag";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import {
   hasNativeClipboardBridge,
@@ -73,49 +77,51 @@ import {
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
+// The Lens's one-line lists and this one are the same kind of surface — a dense
+// index of one-line handles read by scanning — so they keep sharing one
+// presentation. The constant is the Lens's to tune; a second copy here would be
+// two lists disagreeing about what a row looks like.
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { BlockDropCaret } from "@/components/lens/block-drop-caret";
 import { useBlockReorder } from "@/components/lens/block-reorder";
 import {
   useFocusable,
   useFocusManager,
+  useSeedKeyView,
 } from "@/components/tugways/use-focusable";
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
-import { setSectionContent } from "@/components/lens/lens-section-content";
-import {
-  getFilterQuery,
-  getFilterVersion,
-  subscribeFilterQuery,
-} from "@/components/lens/lens-filter-store";
-import {
-  LENS_BAND_ACTION_FOCUS_ORDER,
-  registerLensSection,
-} from "../lens-section-registry";
-import type { LensSectionHost } from "../lens-section-registry";
-import {
-  LensSnippetsDataSource,
-  useLensSnippetsDataSource,
-} from "./snippets-data-source";
-import "./snippets-section.css";
+import { JotsDataSource, useJotsDataSource } from "./jots-data-source";
+import "./jots-card.css";
 
-const ROW_SELECTOR = ".snippet-row-content[data-snippet-id]";
-const ROW_KIND_ATTR = "data-snippet-id";
+/** The card's focus group — every stop it offers lives here, so the Tab walk
+ *  runs the card's chrome and then its rows. */
+const JOTS_FOCUS_GROUP = "jots-card";
 
-// Space is reserved so the section's key-view delegate can create a new
-// snippet below the cursor (Things-style) rather than the engine's default
-// item-container select.
-const SNIPPETS_CAPTURE_KEYS: readonly string[] = [" "];
+/** Chrome stands ahead of the list, which registers at 0: the walk reads the
+ *  card the way it looks — filter, `+`, then the rows. */
+const JOTS_FILTER_FOCUS_ORDER = -1;
 
-// The section's remembered selection — the last-touched snippet id, mapped to
-// a cursor seed on the next Cmd-L / Tab into the section ([P10]). Module-level
-// so it outlives the section body's unmount across a collapse toggle; valid
-// while the Lens is a singleton card.
-let lastSelectedSnippetId: string | null = null;
+/** @see JOTS_FILTER_FOCUS_ORDER */
+const JOTS_ADD_FOCUS_ORDER = -0.75;
+
+const ROW_SELECTOR = ".jot-row-content[data-jot-id]";
+const ROW_KIND_ATTR = "data-jot-id";
+
+// Space is reserved so the card's key-view delegate can create a new jot below
+// the cursor (Things-style) rather than the engine's default item-container
+// select.
+const JOTS_CAPTURE_KEYS: readonly string[] = [" "];
+
+// The card's remembered selection — the last-touched jot id, mapped to a cursor
+// seed on the next entry into the card. Module-level so it outlives the body's
+// unmount across a hide/show; valid while Jots is a singleton card.
+let lastSelectedJotId: string | null = null;
 
 /** Unwrap the single enclosing `<p>…</p>` the block markdown renderer wraps a
- *  one-line string in, so a snippet incipit renders as INLINE markdown (its text
+ *  one-line string in, so a jot incipit renders as INLINE markdown (its text
  *  reads on the row's baseline, not as a block paragraph). A multi-block or
  *  non-paragraph render is left as-is. */
 function inlineMarkdownHtml(html: string): string {
@@ -123,9 +129,9 @@ function inlineMarkdownHtml(html: string): string {
   return match !== null ? match[1] : html;
 }
 
-/** Copy a snippet's raw text to the clipboard — native bridge in Tug.app (no
+/** Copy a jot's raw text to the clipboard — native bridge in Tug.app (no
  *  permission popup), the async Clipboard API in browser-dev. */
-function copySnippetText(text: string): void {
+function copyJotText(text: string): void {
   if (text === "") return;
   if (hasNativeClipboardBridge()) {
     writeClipboardViaNative(text, "");
@@ -136,58 +142,78 @@ function copySnippetText(text: string): void {
   }
 }
 
-/** Row verbs provided by the section body to the module-level cell. */
-interface SnippetsCellContextValue {
+/** Row verbs and the live filter, provided by the card body to the
+ *  module-level cell. */
+interface JotsCellContextValue {
   onRowPointerDown: (id: string, event: React.PointerEvent) => void;
   /** Open the destructive-delete confirm popover anchored to the row. */
   onRequestDelete: (id: string, anchorEl: HTMLElement) => void;
+  /** The query the rows mark their matches against. */
+  filterQuery: string;
 }
-const SnippetsCellContext =
-  React.createContext<SnippetsCellContextValue | null>(null);
+const JotsCellContext =
+  React.createContext<JotsCellContextValue | null>(null);
 
-function useSnippets() {
-  const store = getSnippetsStore();
+function useJots() {
+  const store = getJotsStore();
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   return { store, snapshot };
 }
 
-/** This section's kind — the key its filter query lives under. */
-const SECTION_KIND = "snippets";
-
-/** The band's live filter query, read straight from the store ([L02]). */
-function useSnippetsFilterQuery(): string {
-  useSyncExternalStore(subscribeFilterQuery, getFilterVersion);
-  return getFilterQuery(SECTION_KIND);
-}
-
-/** Live one-line summary: the snippet count. */
-function SnippetsCollapsedSummary(): React.ReactElement {
-  const { snapshot } = useSnippets();
-  const n = snapshot.doc.snippets.length;
-  return <>{n === 0 ? "No snippets" : `${n} snippet${n === 1 ? "" : "s"}`}</>;
-}
-
-/** The header `+`: create a snippet and open it (the store sets `editingId`,
- *  the body's descend effect focuses it). `TugIconButton` carries the standard
- *  ghost hover / focus / active treatment the fold chevron wears, and is
- *  authored into the band's walk beside it — a control on the band is reachable
- *  by arrow like every other one there. */
-function SnippetsHeaderActions({
-  host,
+/**
+ * The card's toolbar: the filter field and the `+`.
+ *
+ * The Lens hands its sections a band to hang these on; a card has to bring its
+ * own. Both stops are authored into the card's focus group ahead of the list,
+ * so arrowing up out of the rows reaches them.
+ *
+ * The field is disabled while the card holds no jots at all — nothing to
+ * filter, so no caret and no Tab stop. The gate is the UNFILTERED count and
+ * only ever that: a query that narrows to zero must leave the field live,
+ * because there it is the only way back.
+ */
+function JotsToolbar({
+  query,
+  onQueryChange,
+  populated,
+  onAdvance,
 }: {
-  host: LensSectionHost;
+  query: string;
+  onQueryChange: (next: string) => void;
+  populated: boolean;
+  onAdvance: () => void;
 }): React.ReactElement {
-  const store = getSnippetsStore();
+  const store = getJotsStore();
+  const delegate = useMemo(
+    () => ({
+      filterFieldDidChangeQuery: onQueryChange,
+      filterFieldDidRequestAdvance: onAdvance,
+    }),
+    [onQueryChange, onAdvance],
+  );
   return (
-    <TugIconButton
-      icon={<Plus size={14} />}
-      size="xs"
-      aria-label="New snippet"
-      title="New snippet"
-      focusGroup={host.focusGroup}
-      focusOrder={LENS_BAND_ACTION_FOCUS_ORDER}
-      onClick={() => store.createSnippet(null)}
-    />
+    <div className="jots-toolbar" data-testid="jots-toolbar">
+      <TugFilterField
+        key={populated ? "live" : "inert"}
+        delegate={delegate}
+        placeholder="Filter Jots"
+        defaultValue={query}
+        disabled={!populated}
+        data-testid="jots-filter"
+        focusGroup={JOTS_FOCUS_GROUP}
+        focusOrder={JOTS_FILTER_FOCUS_ORDER}
+      />
+      <TugIconButton
+        icon={<Plus size={14} />}
+        size="xs"
+        aria-label="New jot"
+        title="New jot"
+        data-testid="jots-add-button"
+        focusGroup={JOTS_FOCUS_GROUP}
+        focusOrder={JOTS_ADD_FOCUS_ORDER}
+        onClick={() => store.createJot(null)}
+      />
+    </div>
   );
 }
 
@@ -200,22 +226,22 @@ function SnippetsHeaderActions({
  * affordance is on screen before the descend reaches it. Same authoring as the
  * session picker's row trash button.
  */
-const ROW_ACTION_FOCUS_GROUP = "lens-snippet-row-actions";
+const ROW_ACTION_FOCUS_GROUP = "lens-jot-row-actions";
 
 /** The display row on the shared `TugListRow` chrome: the draggable incipit is
  *  the content column and a hover-reveal copy / delete pair is the trailing
  *  accessory. The row is also its own reorder handle. Row padding / hover /
  *  divider / caret come from the row + the enclosing flush `TugListView`. */
-function SnippetDisplayRow({
-  snippet,
+function JotDisplayRow({
+  jot,
   selected,
 }: {
-  snippet: Snippet;
+  jot: Jot;
   selected: boolean;
 }): React.ReactElement {
-  const ctx = React.useContext(SnippetsCellContext);
-  const filterQuery = useSnippetsFilterQuery();
-  const incipit = snippetIncipit(snippet);
+  const ctx = React.useContext(JotsCellContext);
+  const filterQuery = ctx?.filterQuery ?? "";
+  const incipit = jotIncipit(jot);
   const empty = incipit.length === 0;
   // The incipit renders INLINE markdown (`*hello*` → italic) via the same
   // sanitized one-line renderer the pulse strip uses, unwrapped to inline. An
@@ -230,36 +256,36 @@ function SnippetDisplayRow({
       : null;
   return (
     <TugListRow
-      className="snippet-row-content"
-      data-snippet-id={snippet.id}
+      className="jot-row-content"
+      data-jot-id={jot.id}
       selected={selected}
       // The row is its own reorder handle. A VERTICAL drag carries it; a
       // horizontal one is left to the incipit's native drag-out below, which
       // is why the two can share the same surface ([P08]).
-      onPointerDown={(e) => ctx?.onRowPointerDown(snippet.id, e)}
+      onPointerDown={(e) => ctx?.onRowPointerDown(jot.id, e)}
       trailing={
         ctx !== null ? (
           <>
             <TugIconButton
               icon={<Copy size={12} />}
               size="xs"
-              aria-label="Copy snippet"
-              title="Copy snippet"
+              aria-label="Copy jot"
+              title="Copy jot"
               focusGroup={ROW_ACTION_FOCUS_GROUP}
               focusOrder={0}
               onClick={(e) => {
                 // A copy is not a row activation — stop it reaching the cell.
                 e?.stopPropagation();
-                copySnippetText(snippet.text);
+                copyJotText(jot.text);
               }}
             />
             <TugIconButton
-              className="snippet-row-delete"
+              className="jot-row-delete"
               icon={<X size={12} />}
               size="xs"
               tone="danger"
-              aria-label="Delete snippet"
-              title="Delete snippet"
+              aria-label="Delete jot"
+              title="Delete jot"
               focusGroup={ROW_ACTION_FOCUS_GROUP}
               focusOrder={1}
               onClick={(e) => {
@@ -274,7 +300,7 @@ function SnippetDisplayRow({
                 // it is asking about.
                 const cell = e?.currentTarget?.closest?.(".tug-list-view-cell");
                 if (cell instanceof HTMLElement) {
-                  ctx.onRequestDelete(snippet.id, cell);
+                  ctx.onRequestDelete(jot.id, cell);
                 }
               }}
             />
@@ -285,17 +311,17 @@ function SnippetDisplayRow({
     >
       <span
         className={
-          empty ? "snippet-row-label snippet-row-label-empty" : "snippet-row-label"
+          empty ? "jot-row-label jot-row-label-empty" : "jot-row-label"
         }
-        // An empty snippet has nothing to carry, so it isn't a drag source.
+        // An empty jot has nothing to carry, so it isn't a drag source.
         draggable={!empty}
-        onDragStart={(e) => snippetDragStart(e, snippet.text)}
+        onDragStart={(e) => jotDragStart(e, jot.text)}
       >
         {empty ? (
-          "New snippet"
+          "New jot"
         ) : incipitHtml !== null ? (
           <span
-            className="snippet-row-incipit"
+            className="jot-row-incipit"
             dangerouslySetInnerHTML={{ __html: incipitHtml }}
           />
         ) : (
@@ -311,21 +337,21 @@ function SnippetDisplayRow({
  * inside a wrapper registered as the row's descend-scope focusable. The engine
  * lands DOM focus on the wrapper (`tabIndex={-1}`); the wrapper forwards it
  * into the CM6 caret. Escape ascends (engine) and the resulting blur commits;
- * ⌘Return (the substrate's `onSubmit`) commits + chains a new snippet.
+ * ⌘Return (the substrate's `onSubmit`) commits + chains a new jot.
  */
 /**
  * One animator slot for the editor well's open AND close. Sharing the slot is
  * what makes the two loops exclusive: whichever starts second cancels the first
  * on the same element rather than compositing against it.
  */
-const SNIPPET_WELL_MOTION_SLOT = "snippet-editor-well";
+const JOT_WELL_MOTION_SLOT = "jot-editor-well";
 
-function SnippetEditorRow({
-  snippet,
+function JotEditorRow({
+  jot,
   store,
 }: {
-  snippet: Snippet;
-  store: ReturnType<typeof getSnippetsStore>;
+  jot: Jot;
+  store: ReturnType<typeof getJotsStore>;
 }): React.ReactElement {
   const manager = useFocusManager();
   const editorRef = useRef<TugMessageEditorHandle | null>(null);
@@ -336,7 +362,7 @@ function SnippetEditorRow({
   // Slide the editor OPEN — the WELL grows from zero to its natural height so
   // the card visibly opens rather than snapping ([L06] via WAAPI, not React
   // state; reduced-motion honored by the animator). The clip + grow ride the
-  // WELL, never the `.snippet-editor` wrapper: the wrapper must stay
+  // WELL, never the `.jot-editor` wrapper: the wrapper must stay
   // `overflow: visible` so the sticky header can pin against the LIST scroller
   // (an `overflow: hidden` ancestor would capture the sticky as its own scroll
   // context and the header would scroll away with the body). The header shows
@@ -352,7 +378,7 @@ function SnippetEditorRow({
       el.style.overflow = prevOverflow;
       // The animator commits the final keyframe as inline styles (`height`,
       // `opacity`). Release them so the well returns to auto height and keeps
-      // growing line-by-line as the snippet is typed — a committed `height`
+      // growing line-by-line as the jot is typed — a committed `height`
       // would clamp the well at its open size.
       el.style.height = "";
       el.style.opacity = "";
@@ -366,7 +392,7 @@ function SnippetEditorRow({
       {
         duration: "--tug-motion-duration-moderate",
         easing: "cubic-bezier(0.2, 0, 0, 1)",
-        key: SNIPPET_WELL_MOTION_SLOT,
+        key: JOT_WELL_MOTION_SLOT,
       },
     ).finished.then(restore, restore);
   }, []);
@@ -390,11 +416,11 @@ function SnippetEditorRow({
     closingRef.current = true;
     const el = wellRef.current;
     const commit = (): void => {
-      if (store.getSnapshot().editingId === snippet.id) {
+      if (store.getSnapshot().editingId === jot.id) {
         store.commitEdit();
         return;
       }
-      // Editing moved on without us (a second snippet opened mid-collapse) —
+      // Editing moved on without us (a second jot opened mid-collapse) —
       // this row is staying, so hand its well back its natural height.
       if (el !== null) {
         el.style.overflow = "";
@@ -420,17 +446,17 @@ function SnippetEditorRow({
         // Accelerating out, against the open's decelerating in: a card settles
         // into place when it arrives and leaves briskly when dismissed.
         easing: "cubic-bezier(0.4, 0, 1, 1)",
-        key: SNIPPET_WELL_MOTION_SLOT,
+        key: JOT_WELL_MOTION_SLOT,
       },
     ).finished.then(commit, commit);
-  }, [store, snippet.id]);
+  }, [store, jot.id]);
   // Registers into the cell's per-row FocusModeContext, so `descendIntoRow`
   // finds this wrapper as the row's inner focusable. No key-view behavior:
   // a behavior-less leaf keeps Enter as a newline in the editor and leaves
   // Escape to the engine's ascend.
   const { focusableRef } = useFocusable({
     id: focusableId,
-    group: "snippet-row-editor",
+    group: "jot-row-editor",
     order: 0,
   });
 
@@ -460,7 +486,7 @@ function SnippetEditorRow({
   // a departure from the editor. Left alone, the engine's pointer placement
   // resolves such a click to the row's plain wrapper focusable, which is
   // engine-routed: it parks focus at the key sink, blurring the caret and
-  // committing (closing) the snippet. The wrapper declares itself
+  // committing (closing) the jot. The wrapper declares itself
   // placement-suppressing and the editor re-declares itself placeable
   // (`PLACEMENT_POLICY_ATTRIBUTE`, nearest marker wins), so the gesture
   // interpreter classifies a chrome click as `placement: "suppressed"` and the
@@ -559,30 +585,30 @@ function SnippetEditorRow({
     [closeWithCollapse],
   );
 
-  // ⌘Return commits and chains a new snippet; the new row's editor opens via
+  // ⌘Return commits and chains a new jot; the new row's editor opens via
   // the store's `editingId` + the descend effect. Deliberately NOT routed
   // through `closeWithCollapse`: this is a typing gesture, and the caret has to
-  // land in the next snippet on the same beat the key is pressed — a collapse
+  // land in the next jot on the same beat the key is pressed — a collapse
   // would hold it for the duration first. Closing is what animates; chaining is
   // what stays instant.
   const onSubmit = useCallback((): void => {
     manager?.ascend();
     store.commitEdit();
-    store.createSnippet(snippet.id);
-  }, [manager, store, snippet.id]);
+    store.createJot(jot.id);
+  }, [manager, store, jot.id]);
 
-  // Keep the caret in view as the snippet is edited. The editor grows uncapped
-  // and the Lens list is the single scroller (see `snippets-section.css`), so a
-  // snippet taller than the Lens makes the LIST scroll — nothing auto-follows
+  // Keep the caret in view as the jot is edited. The editor grows uncapped
+  // and the Lens list is the single scroller (see `jots-section.css`), so a
+  // jot taller than the Lens makes the LIST scroll — nothing auto-follows
   // the caret there. The substrate owns the reveal (it owns the caret): it
   // schedules on CM6's measure cycle and clears the card's pinned header. This
   // is why the edit can never scroll off, even when the content dwarfs the Lens.
   const onChange = useCallback(
     (text: string): void => {
-      store.updateSnippet(snippet.id, text);
+      store.updateJot(jot.id, text);
       editorRef.current?.revealCaret();
     },
-    [store, snippet.id],
+    [store, jot.id],
   );
 
   // Escape closes the editor. The engine's Escape ladder yields to a focused
@@ -611,12 +637,12 @@ function SnippetEditorRow({
     [manager, closeWithCollapse],
   );
 
-  // The card header's title is the snippet's LIVE incipit — it re-renders with
+  // The card header's title is the jot's LIVE incipit — it re-renders with
   // every keystroke (the store update round-trips through the list), so the
   // header always names what the first line currently says. Same inline-
   // markdown rendering as the display row.
-  const ctx = React.useContext(SnippetsCellContext);
-  const incipit = snippetIncipit(snippet);
+  const ctx = React.useContext(JotsCellContext);
+  const incipit = jotIncipit(jot);
   const empty = incipit.length === 0;
   const rendered = empty ? null : renderPulseLine(incipit);
   const incipitHtml =
@@ -624,13 +650,13 @@ function SnippetEditorRow({
       ? inlineMarkdownHtml(rendered.html)
       : null;
 
-  // The open card: the snippet's own row stays as the card HEADER (selection
+  // The open card: the jot's own row stays as the card HEADER (selection
   // fill, copy / close), and the editor is the WELL beneath it. The two
   // compose as one full-width card whose edges are the list's existing lines —
   // no border of its own, so no nested rectangles are possible.
   return (
     <div
-      className="snippet-editor"
+      className="jot-editor"
       ref={(el) => {
         wrapRef.current = el;
         focusableRef(el);
@@ -642,20 +668,20 @@ function SnippetEditorRow({
       onKeyDown={onKeyDown}
     >
       <TugListRow
-        className="snippet-editor-header"
-        data-snippet-id={snippet.id}
+        className="jot-editor-header"
+        data-jot-id={jot.id}
         selected
-        onPointerDown={(e) => ctx?.onRowPointerDown(snippet.id, e)}
+        onPointerDown={(e) => ctx?.onRowPointerDown(jot.id, e)}
         trailing={
           <>
             <TugIconButton
               icon={<Copy size={12} />}
               size="xs"
-              aria-label="Copy snippet"
-              title="Copy snippet"
+              aria-label="Copy jot"
+              title="Copy jot"
               onClick={(e) => {
                 e?.stopPropagation();
-                copySnippetText(snippet.text);
+                copyJotText(jot.text);
               }}
             />
             <TugIconButton
@@ -671,15 +697,15 @@ function SnippetEditorRow({
         <span
           className={
             empty
-              ? "snippet-row-label snippet-row-label-empty"
-              : "snippet-row-label"
+              ? "jot-row-label jot-row-label-empty"
+              : "jot-row-label"
           }
         >
           {empty ? (
-            "New snippet"
+            "New jot"
           ) : incipitHtml !== null ? (
             <span
-              className="snippet-row-incipit"
+              className="jot-row-incipit"
               dangerouslySetInnerHTML={{ __html: incipitHtml }}
             />
           ) : (
@@ -687,91 +713,105 @@ function SnippetEditorRow({
           )}
         </span>
       </TugListRow>
-      <div className="snippet-editor-well" ref={wellRef}>
+      <div className="jot-editor-well" ref={wellRef}>
         <TugMessageEditor
           ref={editorRef}
-          value={snippet.text}
-          placeholder="Type a snippet…"
+          value={jot.text}
+          placeholder="Type a jot…"
           // A transient, in-list editor — NOT the card's primary text surface.
           // Registering the card's engine hooks as it mounts / unmounts churns
           // the card's hooks set, which re-fires the card's `applyBagFocus`
-          // restore and yanks the keyboard key view off the Snippets list to the
+          // restore and yanks the keyboard key view off the Jots list to the
           // Lens's default section on close. Opt out.
           suppressCardEngineHooks
           markdownTextStyling
           lineWrap
-          fontSize="var(--tugx-snippet-editor-font-size)"
+          fontSize="var(--tugx-jot-editor-font-size)"
           maxRows={120}
           onChange={onChange}
           onSubmit={onSubmit}
-          aria-label="Snippet text"
-          data-testid="snippet-editor-field"
+          aria-label="Jot text"
+          data-testid="jot-editor-field"
         />
       </div>
     </div>
   );
 }
 
-/** The `"snippet"` cell — one kind, branching display/editor on `editingId`.
+/** The `"jot"` cell — one kind, branching display/editor on `editingId`.
  *  `selected` is the list-view-owned selection state; thread it to the display
  *  row so `TugListRow` paints its real selection fill (the picker look). */
-const SnippetCell: TugListViewCellRenderer<LensSnippetsDataSource> = ({
+const JotCell: TugListViewCellRenderer<JotsDataSource> = ({
   index,
   dataSource,
   selected,
-}: TugListViewCellProps<LensSnippetsDataSource>) => {
-  const snippet = dataSource.rowAt(index);
-  const store = getSnippetsStore();
+}: TugListViewCellProps<JotsDataSource>) => {
+  const jot = dataSource.rowAt(index);
+  const store = getJotsStore();
   const editingId = useSyncExternalStore(
     store.subscribe,
     () => store.getSnapshot().editingId,
   );
-  return editingId === snippet.id ? (
-    <SnippetEditorRow snippet={snippet} store={store} />
+  return editingId === jot.id ? (
+    <JotEditorRow jot={jot} store={store} />
   ) : (
-    <SnippetDisplayRow snippet={snippet} selected={selected} />
+    <JotDisplayRow jot={jot} selected={selected} />
   );
 };
 
-const SNIPPETS_CELL_RENDERERS: Record<
+const JOTS_CELL_RENDERERS: Record<
   string,
-  TugListViewCellRenderer<LensSnippetsDataSource>
-> = { snippet: SnippetCell };
+  TugListViewCellRenderer<JotsDataSource>
+> = { jot: JotCell };
 
-function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
-  const { store, snapshot } = useSnippets();
-  const snippets = snapshot.doc.snippets;
+/**
+ * The Jots card's content ([L25]: the pane owns geometry and chrome; this owns
+ * the surface inside it).
+ */
+export function JotsContent({ cardId }: { cardId: string }): React.ReactElement {
+  const { store, snapshot } = useJots();
+  const jots = snapshot.doc.jots;
   const editingId = snapshot.editingId;
-  const filterQuery = useSnippetsFilterQuery();
-  const dataSource = useLensSnippetsDataSource(snippets, filterQuery, editingId);
+  // The filter is card-local and ephemeral ([L24]): it is a way of looking at
+  // the list right now, not a preference the card should still be wearing the
+  // next time it opens.
+  const [filterQuery, setFilterQuery] = useState("");
+  const dataSource = useJotsDataSource(jots, filterQuery, editingId);
   const filtering = filterQuery.trim().length > 0;
-  // Content is what the list actually SHOWS: a section filtered to zero is not
-  // a focus stop and drops out of the ⌘L seed, exactly like an empty one. The
-  // band's filter field registers independently, so it stays reachable.
+  // Content is what the list actually SHOWS — a card filtered to zero seeds no
+  // cursor, exactly like an empty one. The filter field registers
+  // independently, so it stays reachable.
   const hasContent = dataSource.numberOfItems() > 0;
-  // …and what it holds BEFORE the filter, the separate question the band's
-  // filter field turns on: a section filtered to zero still has items.
+  // …and what it holds BEFORE the filter, the separate question the filter
+  // field's enablement turns on: a card filtered to zero still has items.
   const hasItems = dataSource.unfilteredCount() > 0;
 
-  // Publish both: `navigable` so the Lens skips this band for the Cmd-L seed /
-  // Tab walk when the list shows nothing, `populated` so the band knows
-  // whether there is anything to filter at all.
+  // A card with nothing in it holds no query either — otherwise the disabled
+  // field's text and the list's actual filter drift apart while items are away.
   useLayoutEffect(() => {
-    setSectionContent(host.focusGroup, {
-      navigable: hasContent,
-      populated: hasItems,
-    });
-    return () =>
-      setSectionContent(host.focusGroup, {
-        navigable: false,
-        populated: false,
-      });
-  }, [host.focusGroup, hasContent, hasItems]);
+    if (!hasItems) setFilterQuery("");
+  }, [hasItems]);
+
+  // Seed the opening key view onto the list, so the first arrival lands the
+  // movement cursor on a real jot rather than on the card's chrome. Nothing to
+  // seed while the list shows nothing: an empty list is not a focus stop, and
+  // `useSeedKeyView` re-arms when one appears.
+  useSeedKeyView(hasContent ? `${JOTS_FOCUS_GROUP}:0` : null);
 
   const listRef = useRef<TugListViewHandle>(null);
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
   const focusManager = useFocusManager();
+
+  // ArrowDown out of the filter field hands the key view to the list — the
+  // field's advance contract, routed through the FocusManager ([L22]).
+  const advanceToList = useCallback((): void => {
+    focusManager?.place(
+      cardId,
+      { kind: "focus-key", focusKey: `${JOTS_FOCUS_GROUP}:0` },
+      { modality: "keyboard" },
+    );
+  }, [focusManager, cardId]);
 
   // Descend into a row when it opens for editing ([P06]/[R01]): the editor cell
   // mounts in the same commit that set `editingId`; this parent layout effect
@@ -787,12 +827,12 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   }, [editingId, dataSource]);
 
   const initialSelectedIndex = useMemo(() => {
-    if (lastSelectedSnippetId === null) return undefined;
-    const i = dataSource.indexForId(lastSelectedSnippetId);
+    if (lastSelectedJotId === null) return undefined;
+    const i = dataSource.indexForId(lastSelectedJotId);
     return i >= 0 ? i : undefined;
     // Recompute when membership changes (the version bump re-runs on length).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataSource, snippets.length]);
+  }, [dataSource, jots.length]);
 
   // The Things model on the list view's own `selectionRequired` shape: the list
   // owns a never-null selected row and stamps `data-selected`, so the REAL
@@ -800,28 +840,28 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // styling). A single click (`onSelect`) SELECTS + focuses the row but NEVER
   // opens it; the row OPENS only on Enter (`onActivate`, via `commitOnEnter`) or
   // a double-click (`onActivate`, via `activateOnDoubleClick`) — the first click
-  // of the pair selects, the second opens. Both remember the snippet for the
+  // of the pair selects, the second opens. Both remember the jot for the
   // next Cmd-L / Tab seed ([P10]).
   const delegate = useMemo<TugListViewDelegate>(() => {
     const remember = (index: number): void => {
       const row = dataSource.rowAt(index);
-      if (row !== undefined) lastSelectedSnippetId = row.id;
+      if (row !== undefined) lastSelectedJotId = row.id;
     };
     const open = (index: number): void => {
       const row = dataSource.rowAt(index);
       if (row === undefined) return;
-      lastSelectedSnippetId = row.id;
+      lastSelectedJotId = row.id;
       store.beginEdit(row.id);
     };
     return { onSelect: remember, onActivate: open };
   }, [dataSource, store]);
 
   // State-mirror for the list-view-owned selection ([L24]) — keep the remembered
-  // snippet id in step with the selection as it moves (seed, click).
+  // jot id in step with the selection as it moves (seed, click).
   const onSelectionChange = useCallback(
     (index: number): void => {
       const row = dataSource.rowAt(index);
-      if (row !== undefined) lastSelectedSnippetId = row.id;
+      if (row !== undefined) lastSelectedJotId = row.id;
     },
     [dataSource],
   );
@@ -837,31 +877,31 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // Delete `id` and land the cursor on the surviving neighbor (same index,
   // clamped) so the keyboard position never vanishes with the row. Shared by
   // the keyboard Delete verb and the row's pointer delete button.
-  const deleteSnippetKeepingCursor = useCallback(
+  const deleteJotKeepingCursor = useCallback(
     (id: string): void => {
       const index = dataSource.indexForId(id);
       if (index < 0) return;
       const survivorCount = dataSource.numberOfItems() - 1;
       // The survivor is read from the PROJECTION before the delete — under a
       // filter the doc's neighbor is not the list's neighbor, and indexing the
-      // doc by a list index would remember the wrong snippet.
+      // doc by a list index would remember the wrong jot.
       const survivor = dataSource.rowAt(index + 1) ?? dataSource.rowAt(index - 1);
-      store.deleteSnippet(id);
+      store.deleteJot(id);
       if (survivorCount <= 0) return;
       const landing = Math.min(index, survivorCount - 1);
-      if (survivor !== undefined) lastSelectedSnippetId = survivor.id;
+      if (survivor !== undefined) lastSelectedJotId = survivor.id;
       listRef.current?.moveCursorTo(landing);
     },
     [dataSource, store],
   );
 
   // Reorder by carrying the row: commit on drop ([Q02]). Rows are matched by
-  // their stable `data-snippet-id`; the FLIP animates the row content, the
+  // their stable `data-jot-id`; the FLIP animates the row content, the
   // store commit reorders the document.
   const { onRowPointerDown: beginRowReorder } = useBlockReorder({
     containerRef: listWrapRef,
     caretRef,
-    getVisibleOrder: () => snapshot.doc.snippets.map((s) => s.id),
+    getVisibleOrder: () => snapshot.doc.jots.map((s) => s.id),
     commit: (order) => store.setOrder([...order]),
     selector: ROW_SELECTOR,
     kindAttr: ROW_KIND_ATTR,
@@ -873,15 +913,15 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     // never reads as an activation, and this is that landing handed back.
     // Both registers move — the list takes the key view through `place()`
     // ([L22]), the movement cursor parks on the row — and the remembered
-    // selection follows, so a later Cmd-L returns to the row the user moved
-    // rather than to whatever it was before the drag.
+    // selection follows, so a later return to the card lands on the row the
+    // user moved rather than on whatever it was before the drag.
     landKeyboard: (id) => {
       const index = dataSource.indexForId(id);
       if (index < 0) return;
-      lastSelectedSnippetId = id;
+      lastSelectedJotId = id;
       focusManager?.place(
-        host.lensCardId,
-        { kind: "focus-key", focusKey: `${host.focusGroup}:0` },
+        cardId,
+        { kind: "focus-key", focusKey: `${JOTS_FOCUS_GROUP}:0` },
         { modality: "keyboard" },
       );
       listRef.current?.moveCursorTo(index);
@@ -898,12 +938,13 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     },
     [filtering, beginRowReorder],
   );
-  const cellContext = useMemo<SnippetsCellContextValue>(
+  const cellContext = useMemo<JotsCellContextValue>(
     () => ({
       onRowPointerDown,
       onRequestDelete: (id, anchorEl) => setPendingDelete({ id, anchorEl }),
+      filterQuery,
     }),
-    [onRowPointerDown],
+    [onRowPointerDown, filterQuery],
   );
 
   // The keyboard's current row — the movement cursor's cell (`data-key-cursor`),
@@ -916,7 +957,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       listWrapRef.current?.querySelector<HTMLElement>("[data-key-cursor]") ?? null,
     [],
   );
-  const cursorSnippetId = useCallback((): string | null => {
+  const cursorJotId = useCallback((): string | null => {
     const idxAttr = cursorCell()?.getAttribute("data-tug-list-cell-index");
     if (idxAttr === null || idxAttr === undefined) return null;
     const idx = Number.parseInt(idxAttr, 10);
@@ -924,7 +965,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     return dataSource.rowAt(idx)?.id ?? null;
   }, [cursorCell, dataSource]);
 
-  // Section verbs — Space / ⌘N create a new snippet below the cursor (the
+  // Section verbs — Space / ⌘N create a new jot below the cursor (the
   // Things-style gesture), Delete removes the cursor row. Delivered through
   // the list's key-view delegate (`onKeyViewKey` — the [P05] channel): in
   // engine-routed mode keydown lands on the key sink, never in this
@@ -934,18 +975,18 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
   // list mode; the editor owns keys while open (dom-granted — the delegate
   // never fires — plus the `editingId` guard for the descended-scope
   // fallback delivery).
-  const onSectionKeyViewKey = useCallback(
+  const onCardKeyViewKey = useCallback(
     (e: KeyboardEvent): boolean => {
       if (editingId !== null) return false; // the editor owns keys while open
       if (e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        // `createSnippet(afterId)` inserts after `afterId` and opens the new
+        // `createJot(afterId)` inserts after `afterId` and opens the new
         // row for editing (its descend effect focuses the caret). A null
         // cursor (empty list / no landing) appends at the end.
-        store.createSnippet(cursorSnippetId());
+        store.createJot(cursorJotId());
         return true;
       }
       if (e.key === "Backspace" || e.key === "Delete") {
-        const id = cursorSnippetId();
+        const id = cursorJotId();
         const anchor = cursorCell();
         if (id === null || anchor === null) return false;
         // Destructive — raise the SAME confirm popover the mouse ✕ does, anchored
@@ -955,7 +996,7 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       }
       return false;
     },
-    [editingId, store, cursorSnippetId, cursorCell],
+    [editingId, store, cursorJotId, cursorCell],
   );
   // ⌘/⌃ chords never reach the key-view delegate (they belong to the
   // bindings tier), so the old ⌘N-in-list-mode alias does not ride it;
@@ -984,54 +1025,62 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
     <ResponderScope>
       <div
         ref={responderRef as (el: HTMLDivElement | null) => void}
-        className="snippets-section"
+        className="jots-card"
+        data-testid="jots-card"
+        data-jots-card-id={cardId}
+        // Focusable root so `transferFocusForActivation` → `applyBagFocus` has
+        // a target to land the ring on when the card is focused.
+        tabIndex={-1}
       >
+        <JotsToolbar
+          query={filterQuery}
+          onQueryChange={setFilterQuery}
+          populated={hasItems}
+          onAdvance={advanceToList}
+        />
         {snapshot.error !== null ? (
-          <div className="snippets-error" role="status">
-            Snippets are read-only: {snapshot.error}
+          <div className="jots-error" role="status">
+            Jots are read-only: {snapshot.error}
           </div>
         ) : null}
-        {snippets.length === 0 ? (
-          // Empty label instead of the list — an empty `flex: 1` list would grow
-          // and open a gap under the band (see the Sessions section).
-          <div className="lens-section-empty snippets-empty">None</div>
+        {jots.length === 0 ? (
+          // Empty label instead of the list — an empty `flex: 1` list would
+          // grow and open a gap under the toolbar.
+          <div className="jots-empty">None</div>
         ) : dataSource.numberOfItems() === 0 ? (
-          // Distinct from "None": there ARE snippets, the filter is hiding them.
-          <div
-            className="lens-section-empty snippets-empty"
-            data-testid="lens-snippets-no-matches"
-          >
+          // Distinct from "None": there ARE jots, the filter is hiding them.
+          <div className="jots-empty" data-testid="jots-no-matches">
             No matches
           </div>
         ) : (
           <div
-            className="snippets-list-wrap"
+            className="jots-list-wrap"
             ref={listWrapRef}
             data-filter-active={filtering ? "true" : undefined}
           >
             <BlockDropCaret ref={caretRef} />
-            <SnippetsCellContext value={cellContext}>
-              <TugListView<LensSnippetsDataSource>
+            <JotsCellContext value={cellContext}>
+              <TugListView<JotsDataSource>
                 ref={listRef}
                 dataSource={dataSource}
                 delegate={delegate}
-                cellRenderers={SNIPPETS_CELL_RENDERERS}
-                scrollKey="lens-snippets"
+                cellRenderers={JOTS_CELL_RENDERERS}
+                scrollKey="jots-card"
                 inline
                 rowLayout="flush"
-                focusGroup={hasContent ? host.focusGroup : undefined}
+                focusGroup={hasContent ? JOTS_FOCUS_GROUP : undefined}
                 commitOnEnter="act"
                 activateOnDoubleClick
                 selectionRequired
                 selectionFollowsCursor
-                captureKeys={SNIPPETS_CAPTURE_KEYS}
-                onKeyViewKey={onSectionKeyViewKey}
+                captureKeys={JOTS_CAPTURE_KEYS}
+                onKeyViewKey={onCardKeyViewKey}
                 onSelectionChange={onSelectionChange}
                 initialSelectedIndex={initialSelectedIndex}
                 {...LENS_LIST_PRESENTATION}
-                className="lens-oneline-list lens-snippets-list"
+                className="jots-list"
               />
-            </SnippetsCellContext>
+            </JotsCellContext>
           </div>
         )}
         {/* One controlled confirm popover serves every row — it anchors to the
@@ -1042,14 +1091,14 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
         <TugConfirmPopover
           open={pendingDelete !== null}
           anchorEl={pendingDelete?.anchorEl ?? null}
-          message="Delete this snippet?"
+          message="Delete this jot?"
           confirmLabel="Delete"
           confirmRole="danger"
           side="top"
           align="center"
           arrow
           onConfirm={() => {
-            if (pendingDelete !== null) deleteSnippetKeepingCursor(pendingDelete.id);
+            if (pendingDelete !== null) deleteJotKeepingCursor(pendingDelete.id);
             setPendingDelete(null);
           }}
           onCancel={() => setPendingDelete(null)}
@@ -1057,17 +1106,4 @@ function SnippetsBody({ host }: { host: LensSectionHost }): React.ReactElement {
       </div>
     </ResponderScope>
   );
-}
-
-/** Register the Snippets section. Called once at boot from `main.tsx`. */
-export function registerSnippetsSection(): void {
-  registerLensSection({
-    kind: SECTION_KIND,
-    title: "Snippets",
-    filterable: true,
-    glyph: <TextQuote size={14} />,
-    collapsedSummary: () => <SnippetsCollapsedSummary />,
-    headerActions: (host) => <SnippetsHeaderActions host={host} />,
-    body: (host) => <SnippetsBody host={host} />,
-  });
 }

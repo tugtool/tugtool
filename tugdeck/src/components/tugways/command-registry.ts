@@ -1062,14 +1062,18 @@ export const COMMANDS: readonly CommandEntry[] = [
     ],
   },
   {
+    // ⌃⌘L — a sidebar toggle, so it takes the ⌃⌘⟨letter⟩ grammar the Jots
+    // toggle below shares. Menu-eligible: the item's key equivalent is left
+    // empty in Swift and supplied by `applyCommandChords`, which is what
+    // keeps the chord rebindable.
     id: TUG_ACTIONS.TOGGLE_LENS,
     title: "Show Lens",
     routing: "registry",
     menuItemId: "maker.lens",
     bindings: [
       chord(
-        { key: "KeyL", meta: true, alt: true, label: "l" },
-        { preventDefault: true },
+        { key: "KeyL", ctrl: true, meta: true, label: "l" },
+        { preventDefault: true, menuEligible: true },
       ),
     ],
   },
@@ -1081,9 +1085,24 @@ export const COMMANDS: readonly CommandEntry[] = [
     internal: true,
   },
   {
-    // Its door is the Lens Layouts section's side picker.
-    id: "set-imposition-lens",
-    title: "Set Lens Side",
+    // Its door is the Lens Layouts section's sidebar positions group — one
+    // control per registered sidebar card, so the payload set is runtime.
+    id: TUG_ACTIONS.SET_SIDEBAR_SIDE,
+    title: "Set Sidebar Side",
+    routing: "registry",
+    internal: true,
+  },
+  {
+    // Its door is the pane title bar's width popup.
+    id: TUG_ACTIONS.SET_CARD_WIDTH,
+    title: "Set Card Width",
+    routing: "registry",
+    internal: true,
+  },
+  {
+    // Its door is the Lens Layouts section's Card Width group.
+    id: TUG_ACTIONS.SET_CONTENT_WIDTH,
+    title: "Set Content Width",
     routing: "registry",
     internal: true,
   },
@@ -1101,6 +1120,37 @@ export const COMMANDS: readonly CommandEntry[] = [
     title: "Focus Session Card",
     routing: "registry",
     internal: true,
+  },
+
+  // ---- Jots ----
+  {
+    // ⌘J — plain-⌘ tier, earned by frequency: capture is something you reach
+    // for mid-thought, and a jot you have to open a card to write is a jot you
+    // don't write. Menu-eligible so the chord fires even when the native title
+    // bar holds focus.
+    id: TUG_ACTIONS.NEW_JOT,
+    title: "New Jot",
+    routing: "first-responder",
+    menuItemId: "file.newJot",
+    bindings: [
+      chord(
+        { key: "KeyJ", meta: true, label: "j" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+  },
+  {
+    // ⌃⌘J — the sidebar-toggle grammar's other half (⌃⌘L shows the Lens).
+    id: TUG_ACTIONS.TOGGLE_JOTS,
+    title: "Show Jots",
+    routing: "registry",
+    menuItemId: "maker.jots",
+    bindings: [
+      chord(
+        { key: "KeyJ", ctrl: true, meta: true, label: "j" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
   },
 
   // ---- App level ----

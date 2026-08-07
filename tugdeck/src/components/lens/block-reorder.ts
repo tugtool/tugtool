@@ -17,7 +17,7 @@
  * is what makes a group draggable without the list needing a wrapper element to
  * hang the group off.
  *
- * Where a row's surface is ALSO a native drag source (a snippet's incipit,
+ * Where a row's surface is ALSO a native drag source (a jot's incipit,
  * dragged into a session prompt) the axis arbitrates as well: the list is a
  * column, so a vertical act is the carry and a horizontal one is the drag-out
  * (see `nativeDragSource`).
@@ -122,20 +122,20 @@ export interface UseBlockReorderOptions {
   commit: (newVisibleOrder: readonly string[]) => void;
   /**
    * CSS selector matching each reorderable child within the container.
-   * Defaults to the Lens-section selector; other clients (e.g. the Snippets
+   * Defaults to the Lens-section selector; other clients (e.g. the Jots
    * section's rows) pass their own so the same FLIP reorder drives any list.
    */
   selector?: string;
   /** Attribute on each child holding its stable key. Defaults to the Lens one. */
   kindAttr?: string;
   /**
-   * The row's content is ALSO a native HTML5 drag source (a snippet's incipit,
+   * The row's content is ALSO a native HTML5 drag source (a jot's incipit,
    * dragged into a session prompt). Canceling a pointerdown suppresses the
    * mousedown the browser starts that drag from, so an arm on such a row must
    * leave the browser's defaults alone and arbitrate at `dragstart` instead.
    *
    * The cost of not claiming the press is that the enclosing list commits its
-   * selection immediately rather than on the click — which is what a snippet
+   * selection immediately rather than on the click — which is what a jot
    * row wants anyway, since selecting one costs nothing. A row whose selection
    * is expensive (a Sessions row fronts its card) leaves this off, and its
    * selection waits to find out whether the press was a click.
@@ -557,7 +557,7 @@ export function useBlockReorder({
         }
       }
 
-      // A Snippets row's incipit is ALSO a native drag source (drop the text
+      // A Jots row's incipit is ALSO a native drag source (drop the text
       // into a session prompt), and the browser decides to start that drag on
       // its own few pixels of movement — which can land before this arm has
       // seen enough to engage. So the two gestures are arbitrated here, on the

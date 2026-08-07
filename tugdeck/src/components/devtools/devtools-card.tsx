@@ -22,6 +22,7 @@
 import React, { useContext, useId, useState } from "react";
 
 import { registerCard } from "@/card-registry";
+import { CONTENT_WIDTH_COMFY_PX } from "@/lib/layout-imposer";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { CardIdContext } from "@/lib/card-id-context";
@@ -100,11 +101,12 @@ export function registerDevtoolsCard(): void {
     defaultMeta: { title: "DevTools", closable: true },
     hidden: true,
     sizePolicy: {
-      // Opens at the 800 default width the Session, Text, and File cards
-      // share — inspector rows are wide. The width floor stays below that so
-      // the card can still be tucked into a narrow column.
+      // Opens at the deck's content width, the one the Session, Text, and File
+      // cards open at — inspector rows are wide. The width floor stays below
+      // every preset so the card can still be tucked into a narrow column.
       min: { width: 420, height: 360 },
-      preferred: { width: 800, height: 720 },
+      preferred: { width: CONTENT_WIDTH_COMFY_PX, height: 720 },
     },
+    takesContentWidth: true,
   });
 }

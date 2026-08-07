@@ -4,8 +4,8 @@
  *
  * The side used to live in an app-wide preference of its own
  * (`dev.tugtool.lens/anchorSide`); it now rides the deck's layout blob as
- * `imposition.lens`. That move puts the durability of the user's choice on a
- * new path — `setImpositionLens` → `scheduleSave` → `serialize` → tugbank →
+ * `imposition.sidebars.lens`. That move puts the durability of the choice on a
+ * new path — `setSidebarSide` → `scheduleSave` → `serialize` → tugbank →
  * `deserialize` → `_createLensPane` — and a serialize/parse asymmetry
  * anywhere along it would lose the choice silently on the next launch.
  *
@@ -52,7 +52,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const SECTION = '[data-testid="lens-layouts-section"]';
-const LEFT_SEGMENT = `${SECTION} [data-testid="lens-layouts-side"] [data-radio-value="left"]`;
+const LEFT_SEGMENT = `${SECTION} [data-testid="lens-layouts-side-lens"] [data-radio-value="left"]`;
 
 /** `scheduleSave`'s debounce, with room for the PUT to reach tugbank. */
 const SAVE_SETTLE_MS = 1_500;
@@ -143,11 +143,14 @@ describe.skipIf(!SHOULD_RUN)("at0276 — the Lens side survives a relaunch", () 
         // ── Phase A disk assertion: the choice is in the layout blob, and
         //    in the record rather than a stray pane field. ──
         const onDisk = tugbankRead<{
-          imposition?: { lens?: string; kind?: string };
+          imposition?: {
+            sidebars?: Record<string, { side?: string; pinned?: boolean }>;
+            kind?: string;
+          };
           panes?: Array<Record<string, unknown>>;
         }>(tugbankPath, "dev.tugtool.deck.layout", "layout");
         expect(onDisk).not.toBeNull();
-        expect(onDisk!.value.imposition?.lens).toBe("left");
+        expect(onDisk!.value.imposition?.sidebars?.["lens"]?.side).toBe("left");
         // The retired pane field is not written back — a build that still
         // emitted it would keep working while quietly re-arming the
         // two-sources-of-truth problem the record replaced.

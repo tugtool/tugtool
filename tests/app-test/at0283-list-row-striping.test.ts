@@ -5,7 +5,7 @@
  * ## What this gates
  *
  * Two `TugListView` presentation contracts, on the real Lens lists that use
- * them (Snippets and Cards, both configured from
+ * them (Jots and Cards, both configured from
  * `lens-list-presentation.ts`):
  *
  *  - **The band follows the row's absolute index, not its position in the
@@ -60,13 +60,13 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const ROWS = `${SNIPPETS_LIST} .tug-list-view-cell`;
+const JOTS_LIST = ".jots-card .jots-list";
+const ROWS = `${JOTS_LIST} .tug-list-view-cell`;
 
 /** Enough rows that the bands are a pattern rather than a coincidence. */
-const SNIPPETS = Array.from({ length: 8 }, (_, i) => ({
+const JOTS = Array.from({ length: 8 }, (_, i) => ({
   id: `s${i}`,
-  text: `row-${i} snippet handle`,
+  text: `row-${i} jot handle`,
 }));
 
 function priorCardDeck() {
@@ -110,16 +110,16 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0283-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: JOTS }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0283-list-row-striping",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -130,9 +130,17 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
           await app.waitForCondition<boolean>(appIsActive(), {
             timeoutMs: 6_000,
           });
-          await app.dispatchControlAction("focus-lens");
+          await app.dispatchControlAction("toggle-jots");
+          // Opening the card is not a keyboard entry: click the first row to
+          // put the movement cursor on it, which is what the Lens band click
+          // used to do here.
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(ROWS)}).length >= ${SNIPPETS.length}`,
+            `document.querySelector(".jots-card .jots-list .jot-row-label") !== null`,
+            { timeoutMs: 5_000 },
+          );
+          await app.nativeClickAtElement(".jots-card .jots-list .jot-row-label");
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(ROWS)}).length >= ${JOTS.length}`,
             { timeoutMs: 8_000 },
           );
 
@@ -140,7 +148,7 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
           // the list's own mode and assert the contract that applies — the
           // test pins the BEHAVIOR of each mode, not the current choice.
           const striping = await app.evalJS<string | null>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_LIST)})
+            `document.querySelector(${JSON.stringify(JOTS_LIST)})
                .getAttribute("data-row-striping")`,
           );
 
@@ -156,7 +164,7 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
                };
              })`,
           );
-          expect(rows.length).toBeGreaterThanOrEqual(SNIPPETS.length);
+          expect(rows.length).toBeGreaterThanOrEqual(JOTS.length);
           // Parity is the DATA index's parity — the property an `:nth-child`
           // rule cannot hold once the rendered window starts past row 0.
           for (const row of rows) {
@@ -191,13 +199,13 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
             }
 
             // ---- C. A selected row drops its band. Move the cursor onto an
-            // ODD row — the Snippets list carries selection with the cursor —
+            // ODD row — the Jots list carries selection with the cursor —
             // and the band under the selection fill goes away.
             const firstOdd = rows.find((r) => r.parity === "odd")!.index;
             // ⌘L seeds the band that leads the section, and every control on
             // the band is a stop of its own, so walk the keyboard onto the
             // list before driving its cursor with arrows.
-            const listHasKbd = `document.querySelector(${JSON.stringify(`${SNIPPETS_LIST}[data-key-view-kbd]`)}) !== null`;
+            const listHasKbd = `document.querySelector(${JSON.stringify(`${JOTS_LIST}[data-key-view-kbd]`)}) !== null`;
             for (let i = 0; i < 8; i += 1) {
               if (await app.evalJS<boolean>(listHasKbd)) break;
               await app.nativeKey("Tab");
@@ -209,14 +217,14 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
             await app.waitForCondition<boolean>(
               `(function(){
                  var el = document.querySelector(
-                   '${SNIPPETS_LIST} .tug-list-view-cell[data-tug-list-cell-index="${firstOdd}"]');
+                   '${JOTS_LIST} .tug-list-view-cell[data-tug-list-cell-index="${firstOdd}"]');
                  return el !== null && el.querySelector('.tug-list-row[data-selected="true"]') !== null;
                })()`,
               { timeoutMs: 3_000 },
             );
             const selectedBg = await app.evalJS<string>(
               `getComputedStyle(document.querySelector(
-                 '${SNIPPETS_LIST} .tug-list-view-cell[data-tug-list-cell-index="${firstOdd}"]'
+                 '${JOTS_LIST} .tug-list-view-cell[data-tug-list-cell-index="${firstOdd}"]'
                )).backgroundColor`,
             );
             expect(isPainted(selectedBg)).toBe(false);
@@ -233,13 +241,13 @@ describe.skipIf(!SHOULD_RUN)("at0283 — list row striping + text measure", () =
           // ---- D. One measure per list: every row's text reads at the size
           // the LIST set, not at whatever size its own label asked for.
           const measure = await app.evalJS<string>(
-            `getComputedStyle(document.querySelector(${JSON.stringify(SNIPPETS_LIST)}))
+            `getComputedStyle(document.querySelector(${JSON.stringify(JOTS_LIST)}))
                .getPropertyValue("--tugx-list-row-font-size").trim()`,
           );
           expect(measure).not.toBe("");
           const sizes = await app.evalJS<string[]>(
             `Array.from(document.querySelectorAll(
-               '${SNIPPETS_LIST} .tug-list-row-content'
+               '${JOTS_LIST} .tug-list-row-content'
              )).map(function(el){ return getComputedStyle(el).fontSize; })`,
           );
           expect(sizes.length).toBeGreaterThan(0);

@@ -16,7 +16,10 @@
  * Four boundaries, in one drive:
  *
  *  - **Exact restore.** A keyboard-placed cursor row survives a ⌘L
- *    out-and-back untouched — same row, ring visible, no Tab.
+ *    out-and-back untouched — same row, ring visible, no Tab. The row is
+ *    chosen to be one the Cards list's own gain-seed would *not* pick (the
+ *    group header, which the seed steps past), so "restored" cannot be
+ *    confused with "re-seeded".
  *  - **Pointer interactions stay visible.** After a pointer click on a
  *    Layouts tile, the ⌘L return re-asserts the tile group as a KEYBOARD
  *    destination: `data-key-view-kbd` paints without any key press.
@@ -39,6 +42,7 @@
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/deck-manager.ts
  * @covers tugdeck/src/components/lens/lens-content.tsx
+ * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/slot-picker.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  */
@@ -58,16 +62,11 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
-const CURSOR_ROW = `${SNIPPETS_LIST} [data-key-cursor]`;
+const CARDS_LIST = ".lens-cards-list";
+const CARDS_KBD = `${CARDS_LIST}[data-key-view-kbd]`;
+const CURSOR_ROW = `${CARDS_LIST} [data-key-cursor]`;
 const KIND_GROUP = '[data-testid="lens-layouts-kind"]';
 const LENS_KBD = ".lens-content [data-key-view-kbd]";
-
-const SNIPPETS = Array.from({ length: 4 }, (_, i) => ({
-  id: `s${i}`,
-  text: `row-${i} snippet handle`,
-}));
 
 function priorCardDeck() {
   return {
@@ -103,18 +102,13 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0278-"));
-      const snippetsPath = join(filesDir, "snippets.json");
       const filePath = join(filesDir, "fixture.txt");
       writeFileSync(filePath, "alpha meridian\n");
-      writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
-      );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0278-lens-cmdl-focus-stability",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath },
         });
         try {
           await app.seedDeckState({
@@ -143,7 +137,7 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
           for (let i = 0; i < 8; i += 1) {
             if (
               await app.evalJS<boolean>(
-                `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+                `document.querySelector(${JSON.stringify(CARDS_KBD)}) !== null`,
               )
             ) {
               break;
@@ -151,12 +145,17 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             await app.nativeKey("Tab");
           }
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(CARDS_KBD)}) !== null`,
             { timeoutMs: 5_000 },
           );
-          await app.nativeKey("ArrowDown");
+          // The Cards list is pane-first and two-level, and its gain seeds the
+          // cursor onto a CARD row rather than the group header above it
+          // (at0312 §D). So the keyboard is moved UP onto the header: a
+          // position the seed would never produce, which is what makes the
+          // restore below a statement about memory rather than about seeding.
+          await app.nativeKey("ArrowUp");
           await app.waitForCondition<boolean>(
-            `(function(){ var c = document.querySelector(${JSON.stringify(CURSOR_ROW)}); return c !== null && (c.textContent || '').indexOf('row-1') >= 0; })()`,
+            `(function(){ var c = document.querySelector(${JSON.stringify(CURSOR_ROW)}); return c !== null && (c.matches('.lens-cards-header') || c.querySelector('.lens-cards-header') !== null); })()`,
             { timeoutMs: 3_000 },
           );
           await app.dispatchControlAction("focus-lens"); // out
@@ -166,14 +165,16 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
           );
           await app.dispatchControlAction("focus-lens"); // back in
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(CARDS_KBD)}) !== null`,
             { timeoutMs: 3_000 },
           );
-          // Same row, ring on, without a single key press since the return.
-          const restoredRow = await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(CURSOR_ROW)})?.textContent) || ''`,
-          );
-          expect(restoredRow).toContain("row-1");
+          // Same row, ring on, without a single key press since the return —
+          // the header the arrow chose, not the card row a fresh seed prefers.
+          expect(
+            await app.evalJS<boolean>(
+              `(function(){ var c = document.querySelector(${JSON.stringify(CURSOR_ROW)}); return c !== null && (c.matches('.lens-cards-header') || c.querySelector('.lens-cards-header') !== null); })()`,
+            ),
+          ).toBe(true);
 
           // ---- B. A pointer click on a Layouts tile leaves the key view on
           // the tile group with pointer modality; the ⌘L return must re-assert
@@ -211,6 +212,16 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             await app.nativeKey("Tab");
             await new Promise<void>((r) => setTimeout(r, 200));
           }
+          // Regaining the list restores the cursor boundary A left on the
+          // header, and a header has no accessories to descend into — so step
+          // back down onto the card row this section descends from. Stated as
+          // a step rather than assumed, because the descend below is only
+          // meaningful over a row that has slots.
+          await app.nativeKey("ArrowDown");
+          await app.waitForCondition<boolean>(
+            `(function(){ var c = document.querySelector(${JSON.stringify(CURSOR_ROW)}); return c !== null && (c.matches('.lens-cards-row') || c.querySelector('.lens-cards-row') !== null); })()`,
+            { timeoutMs: 3_000 },
+          );
           // Right descends onto the row's FIRST accessory — the leading close
           // box — and the next Right walks on to the slots.
           await app.nativeKey("ArrowRight");

@@ -8,13 +8,29 @@ import {
   DeckStateInvariantError,
 } from "../layout-tree";
 import { serialize, deserialize, buildDefaultLayout } from "../serialization";
-import { DEFAULT_IMPOSITION_KIND, slotCount } from "../lib/layout-imposer";
+import {
+  DEFAULT_IMPOSITION_KIND,
+  isSidebarPinned,
+  sidebarSide,
+  slotCount,
+  withSidebarPinned,
+} from "../lib/layout-imposer";
+import { registerCard } from "../card-registry";
+
+// The deck invariants read `layoutRole` off the registry, so the Lens has to be
+// registered for a Lens pane to be a SIDEBAR pane rather than an ordinary one.
+registerCard({
+  componentId: "lens",
+  contentFactory: () => null,
+  defaultMeta: { title: "Lens", closable: true },
+  layoutRole: "sidebar",
+});
 
 // ---- DeckState / CardState / TugPaneState type tests ----
 
 describe("DeckState", () => {
   test("DeckState with empty cards and panes is valid", () => {
-    const state: DeckState = { cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true };
+    const state: DeckState = { cards: [], panes: [], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true };
     expect(state.cards.length).toBe(0);
     expect(state.panes.length).toBe(0);
   });
@@ -107,7 +123,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards: [card], panes: [stack], imposition: { lens: "right" }, hasFocus: true };
+    const state: DeckState = { cards: [card], panes: [stack], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true };
 
     const serialized = serialize(state);
     const json = JSON.stringify(serialized);
@@ -140,7 +156,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const state: DeckState = { cards, panes: [stack], imposition: { lens: "right" }, hasFocus: true };
+    const state: DeckState = { cards, panes: [stack], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true };
 
     const json = JSON.stringify(serialize(state));
     const restored = deserialize(json, 1920, 1080);
@@ -177,7 +193,7 @@ describe("serialize and deserialize (v4 wire)", () => {
   });
 
   test("serialize emits version: 4", () => {
-    const out = serialize({ cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true }) as { version: number };
+    const out = serialize({ cards: [], panes: [], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true }) as { version: number };
     expect(out.version).toBe(4);
   });
 
@@ -203,7 +219,15 @@ describe("serialize and deserialize (v4 wire)", () => {
       cards: [card],
       panes: [pane],
       activePaneId: "w1",
-      imposition: { kind: "one-up", lens: "right" },
+      // `contentWidth` spelled out because stability is a property of a state
+      // that has BEEN through the reader: the reader fills an absent width with
+      // its default, so a hand-built state omitting it gains a field on the
+      // first pass and is stable only from the second.
+      imposition: {
+        kind: "one-up",
+        contentWidth: "comfy",
+        sidebars: { lens: { side: "right" } },
+      },
       hasFocus: true,
     };
     const first = serialize(state);
@@ -238,7 +262,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { lens: "right" }, hasFocus: true }));
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true }));
     const restored = deserialize(json, 1280, 800);
     const r = restored.panes[0];
     // Width (900) already fits the 1280 canvas; height (1200) is capped to the
@@ -278,7 +302,7 @@ describe("serialize and deserialize (v4 wire)", () => {
     return {
       cards: [card],
       panes: [pane],
-      imposition: { lens: side },
+      imposition: { sidebars: { lens: { side } } },
       hasFocus: true,
     };
   }
@@ -289,31 +313,59 @@ describe("serialize and deserialize (v4 wire)", () => {
         serialize(lensDeck(side, { width: 420, height: 1080 })),
       );
       const restored = deserialize(json, 1920, 1080);
-      expect(restored.imposition.lens).toBe(side);
+      expect(sidebarSide(restored.imposition, "lens")).toBe(side);
       expect(restored.panes[0].acceptsFamilies).toEqual([]);
     }
   });
 
-  test("a blob with no `lensPinned` reads as pinned", () => {
+  test("a legacy blob's stack fields are dropped, not honored", () => {
+    // Same-side sidebars stand front-to-back now, so there is no vertical
+    // order and no seam to restore. A blob written by the split build carries
+    // both; reading them back would reinstate a geometry this build cannot
+    // paint, so they come back as what they now are — nothing.
+    const deck = lensDeck("right", { width: 420, height: 1080 });
+    const blob = serialize(deck) as Record<string, unknown>;
+    const imposition = blob["imposition"] as Record<string, unknown>;
+    imposition["sidebarSplit"] = { right: 0.72 };
+    (imposition["sidebars"] as Record<string, Record<string, unknown>>)["lens"][
+      "order"
+    ] = 1;
+    const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+    expect(
+      (restored.imposition as Record<string, unknown>)["sidebarSplit"],
+    ).toBeUndefined();
+    expect(
+      (restored.imposition.sidebars["lens"] as Record<string, unknown>)["order"],
+    ).toBeUndefined();
+    // The side, which still means something, survives.
+    expect(restored.imposition.sidebars["lens"]?.side).toBe("right");
+  });
+
+  test("a blob with no `pinned` flag reads as pinned", () => {
     // Every blob written before the Lens could be dragged off its pin. Absent
     // must not mean floating, or an upgrade would scatter every deck's Lens.
     const json = JSON.stringify(
       serialize(lensDeck("right", { width: 420, height: 1080 })),
     );
-    expect(JSON.parse(json).imposition.lensPinned).toBeUndefined();
-    expect(deserialize(json, 1920, 1080).imposition.lensPinned).toBeUndefined();
+    expect(JSON.parse(json).imposition.sidebars.lens.pinned).toBeUndefined();
+    expect(
+      deserialize(json, 1920, 1080).imposition.sidebars["lens"]?.pinned,
+    ).toBeUndefined();
+    expect(
+      isSidebarPinned(deserialize(json, 1920, 1080).imposition, "lens"),
+    ).toBe(true);
   });
 
   test("round-trips a Lens that has been dragged off its pin", () => {
     const deck = lensDeck("left", { width: 420, height: 1080 });
     const floating = {
       ...deck,
-      imposition: { ...deck.imposition, lensPinned: false },
+      imposition: withSidebarPinned(deck.imposition, "lens", false),
     };
     const restored = deserialize(JSON.stringify(serialize(floating)), 1920, 1080);
-    expect(restored.imposition.lensPinned).toBe(false);
+    expect(restored.imposition.sidebars["lens"]?.pinned).toBe(false);
     // The side survives the float, so re-pinning returns it to the same edge.
-    expect(restored.imposition.lens).toBe("left");
+    expect(sidebarSide(restored.imposition, "lens")).toBe("left");
   });
 
   test("a floating Lens takes the canvas fit like any other free pane", () => {
@@ -323,7 +375,7 @@ describe("serialize and deserialize (v4 wire)", () => {
     const deck = lensDeck("right", { width: 500, height: 2000 });
     const floating = {
       ...deck,
-      imposition: { ...deck.imposition, lensPinned: false },
+      imposition: withSidebarPinned(deck.imposition, "lens", false),
     };
     const r = deserialize(JSON.stringify(serialize(floating)), 1280, 800).panes[0];
     expect(r.size.height).toBeLessThanOrEqual(800);
@@ -359,7 +411,7 @@ describe("serialize and deserialize (v4 wire)", () => {
       title: "",
       acceptsFamilies: ["standard"],
     };
-    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { lens: "right" }, hasFocus: true }));
+    const json = JSON.stringify(serialize({ cards: [card], panes: [pane], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true }));
     const restored = deserialize(json, 1280, 800);
     const r = restored.panes[0];
     expect(r.size.width).toBe(400);
@@ -556,24 +608,46 @@ describe("v1 → two-table migration", () => {
 
 // ---- CardStateBag + focusedCardId / CollapsedState ----
 
-describe("TugPaneState collapsed field", () => {
-  test("serialize -> deserialize round-trip preserves collapsed:true", () => {
+describe("TugPaneState widthPreset field", () => {
+  test("serialize -> deserialize round-trip preserves widthPreset", () => {
     const card: CardState = { id: "c", componentId: "hello", title: "H", closable: true };
     const stack: TugPaneState = {
       id: "s",
       position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
+      size: { width: 675, height: 300 },
       cardIds: ["c"],
       activeCardId: "c",
       title: "",
       acceptsFamilies: ["standard"],
-      collapsed: true,
+      widthPreset: "slim",
     };
     const json = JSON.stringify(
-      serialize({ cards: [card], panes: [stack], imposition: { lens: "right" }, hasFocus: true }),
+      serialize({ cards: [card], panes: [stack], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true }),
     );
     const restored = deserialize(json, 1920, 1080);
-    expect(restored.panes[0].collapsed).toBe(true);
+    expect(restored.panes[0].widthPreset).toBe("slim");
+  });
+
+  test("a garbage widthPreset is dropped rather than restored", () => {
+    // The stamp drives a check mark; a value outside the three would show a
+    // check on no row and read as a control that lost track of itself.
+    const blob = {
+      version: 4,
+      cards: [{ id: "c", componentId: "hello", title: "H", closable: true }],
+      panes: [
+        {
+          id: "s",
+          position: { x: 0, y: 0 },
+          size: { width: 400, height: 300 },
+          cardIds: ["c"],
+          activeCardId: "c",
+          widthPreset: "roomy",
+        },
+      ],
+      imposition: { sidebars: { lens: { side: "right" } } },
+    };
+    const restored = deserialize(JSON.stringify(blob), 1920, 1080);
+    expect(restored.panes[0].widthPreset).toBeUndefined();
   });
 });
 
@@ -591,7 +665,7 @@ describe("CardStateBag type", () => {
 
 describe("DeckState focusedCardId persistence", () => {
   test("serialize does not emit focusedCardId in the layout blob", () => {
-    const state: DeckState = { cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true };
+    const state: DeckState = { cards: [], panes: [], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true };
     const blob = serialize(state) as Record<string, unknown>;
     expect("focusedCardId" in blob).toBe(false);
   });
@@ -693,7 +767,7 @@ describe("deserialize edge cases", () => {
       },
     ];
     const json = JSON.stringify(
-      serialize({ cards, panes: paneList, imposition: { lens: "right" }, hasFocus: true }),
+      serialize({ cards, panes: paneList, imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true }),
     );
     const restored = deserialize(json, 1920, 1080);
     expect(restored.panes.length).toBe(2);
@@ -758,65 +832,43 @@ describe("deserialize edge cases", () => {
   });
 });
 
-describe("collapsed field serialization", () => {
-  test("deserialize of v2 JSON with collapsed:true produces collapsed === true", () => {
+describe("a retired collapsed flag deserializes to an expanded pane", () => {
+  // Window-shade collapse is gone. What an old blob's `collapsed: true` costs
+  // is exactly one thing — the pane comes back expanded — and these pin that it
+  // costs nothing else: the pane still loads, with its geometry intact and no
+  // stray field riding along.
+  const collapsedPane = {
+    id: "s1",
+    position: { x: 12, y: 34 },
+    size: { width: 400, height: 300 },
+    cardIds: ["c1"],
+    activeCardId: "c1",
+    collapsed: true,
+  };
+
+  test("a v2 blob's collapsed pane loads with its geometry and no collapsed field", () => {
     const v2 = {
       version: 2,
       cards: [{ id: "c1", componentId: "hello", title: "C", closable: true }],
-      stacks: [
-        {
-          id: "s1",
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["c1"],
-          activeCardId: "c1",
-          collapsed: true,
-        },
-      ],
+      stacks: [collapsedPane],
     };
     const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.panes[0].collapsed).toBe(true);
+    expect(restored.panes.length).toBe(1);
+    expect(restored.panes[0].size).toEqual({ width: 400, height: 300 });
+    expect("collapsed" in restored.panes[0]).toBe(false);
   });
 
-  test("deserialize of v2 JSON without collapsed produces collapsed === undefined", () => {
-    const v2 = {
-      version: 2,
+  test("a v4 blob's collapsed pane does the same", () => {
+    const v4 = {
+      version: 4,
       cards: [{ id: "c1", componentId: "hello", title: "C", closable: true }],
-      stacks: [
-        {
-          id: "s1",
-          position: { x: 0, y: 0 },
-          size: { width: 400, height: 300 },
-          cardIds: ["c1"],
-          activeCardId: "c1",
-        },
-      ],
+      panes: [collapsedPane],
+      imposition: { sidebars: { lens: { side: "right" } } },
     };
-    const restored = deserialize(JSON.stringify(v2), 1920, 1080);
-    expect(restored.panes[0].collapsed).toBeUndefined();
-  });
-
-  test("serialize of DeckState with collapsed:true stack includes collapsed field", () => {
-    const card: CardState = { id: "c", componentId: "hello", title: "H", closable: true };
-    const stack: TugPaneState = {
-      id: "s",
-      position: { x: 0, y: 0 },
-      size: { width: 400, height: 300 },
-      cardIds: ["c"],
-      activeCardId: "c",
-      title: "",
-      acceptsFamilies: ["standard"],
-      collapsed: true,
-    };
-    const serialized = serialize({
-      cards: [card],
-      panes: [stack],
-      imposition: { lens: "right" },
-      hasFocus: true,
-    }) as {
-      panes: Array<{ collapsed?: boolean }>;
-    };
-    expect(serialized.panes[0].collapsed).toBe(true);
+    const restored = deserialize(JSON.stringify(v4), 1920, 1080);
+    expect(restored.panes.length).toBe(1);
+    expect(restored.panes[0].size).toEqual({ width: 400, height: 300 });
+    expect("collapsed" in restored.panes[0]).toBe(false);
   });
 });
 
@@ -1004,14 +1056,14 @@ describe("validateDeckState", () => {
   }
 
   test("accepts the empty deck", () => {
-    expect(() => validateDeckState({ cards: [], panes: [], imposition: { lens: "right" }, hasFocus: true })).not.toThrow();
+    expect(() => validateDeckState({ cards: [], panes: [], imposition: { sidebars: { lens: { side: "right" } } }, hasFocus: true })).not.toThrow();
   });
 
   test("accepts a well-formed single-card, single-pane deck", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
@@ -1025,7 +1077,7 @@ describe("validateDeckState", () => {
         makeStack("s2", ["c3"], "c3"),
       ],
       activePaneId: "s2",
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
@@ -1035,7 +1087,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1", "ghost"], "c1")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1049,7 +1101,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1", "c2"], "c1"),
         makeStack("s2", ["c2"], "c2"),
       ],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1060,7 +1112,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("orphan")],
       panes: [makeStack("s1", ["c1"], "c1")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1074,7 +1126,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s-empty", [], "x"),
       ],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1085,7 +1137,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c2")],
       panes: [makeStack("s1", ["c1", "c2"], "ghost")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1099,7 +1151,7 @@ describe("validateDeckState", () => {
       cards: [makeCard("c1")],
       panes: [makeStack("s1", ["c1"], "c1")],
       activePaneId: "no-such-stack",
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
@@ -1112,7 +1164,7 @@ describe("validateDeckState", () => {
     const state: DeckState = {
       cards: [makeCard("c1"), makeCard("c1", "terminal")],
       panes: [makeStack("s1", ["c1"], "c1")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate card id "c1"/);
@@ -1125,7 +1177,7 @@ describe("validateDeckState", () => {
         makeStack("s1", ["c1"], "c1"),
         makeStack("s1", ["c2"], "c2"),
       ],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
@@ -1164,11 +1216,15 @@ describe("imposition wire format", () => {
         impositionPane("p2", "c2", { slot: 1 }),
         impositionPane("p3", "c3", { slot: 2 }),
       ],
-      imposition: { kind: "three-up", lens: "right" },
+      imposition: { kind: "three-up", sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     const restored = deserialize(JSON.stringify(serialize(state)), 1920, 1080);
-    expect(restored.imposition).toEqual({ kind: "three-up", lens: "right" });
+    expect(restored.imposition).toEqual({
+      kind: "three-up",
+      contentWidth: "comfy",
+      sidebars: { lens: { side: "right" } },
+    });
     expect(restored.panes.map((p) => p.slot)).toEqual([0, 1, 2]);
   });
 
@@ -1185,7 +1241,7 @@ describe("imposition wire format", () => {
           size: { width: 800, height: 2000 },
         }),
       ],
-      imposition: { kind: "three-up", lens: "right" },
+      imposition: { kind: "three-up", sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     const r = deserialize(JSON.stringify(serialize(state)), 1280, 800).panes[0];
@@ -1197,11 +1253,13 @@ describe("imposition wire format", () => {
     const state: DeckState = {
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1")],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     const blob = serialize(state) as Record<string, unknown>;
-    expect(blob["imposition"]).toEqual({ lens: "right" });
+    expect(blob["imposition"]).toEqual({
+      sidebars: { lens: { side: "right" } },
+    });
     const restored = deserialize(JSON.stringify(blob), 1920, 1080);
     expect(restored.imposition.kind).toBe(DEFAULT_IMPOSITION_KIND);
     expect(restored.panes[0].slot).toBeUndefined();
@@ -1267,12 +1325,12 @@ describe("imposition wire format", () => {
         { id: "lens", componentId: "lens", title: "Lens", closable: true },
       ],
       panes: [impositionPane("p1", "lens", { slot: 1 })],
-      imposition: { kind: "three-up", lens: "right" },
+      imposition: { kind: "three-up", sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
     expect(() => validateDeckState(state)).toThrow(
-      /Lens pane "p1" carries slot 1/,
+      /sidebar pane "p1" carries slot 1/,
     );
   });
 
@@ -1286,11 +1344,11 @@ describe("imposition wire format", () => {
         impositionPane("p1", "lens-a"),
         impositionPane("p2", "lens-b"),
       ],
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(
-      /panes "p1" and "p2" both host the Lens card/,
+      /panes "p1" and "p2" both host the "lens" sidebar card/,
     );
   });
 
@@ -1298,7 +1356,7 @@ describe("imposition wire format", () => {
     const state: DeckState = {
       cards: [impositionCard("c1")],
       panes: [impositionPane("p1", "c1", { slot: 2 })],
-      imposition: { kind: "three-up", lens: "right" },
+      imposition: { kind: "three-up", sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).not.toThrow();
@@ -1337,20 +1395,57 @@ describe("imposition lens side", () => {
     });
   }
 
-  test("the record's own side wins", () => {
+  test("the legacy record's own side wins", () => {
     const json = blobWith({ kind: "two-up", lens: "left" }, [lensPane()]);
-    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("left");
+    expect(sidebarSide(deserialize(json, 1920, 1080).imposition, "lens")).toBe(
+      "left",
+    );
   });
 
   test("a legacy anchored Lens pane supplies the side", () => {
     const json = blobWith("two-up", [lensPane({ anchor: "left" })]);
     const restored = deserialize(json, 1920, 1080);
-    expect(restored.imposition).toEqual({ kind: "two-up", lens: "left" });
+    expect(restored.imposition).toEqual({
+      kind: "two-up",
+      contentWidth: "comfy",
+      sidebars: { lens: { side: "left" } },
+    });
   });
 
-  test("the record shadows a legacy anchor that disagrees", () => {
+  test("the legacy record shadows a legacy anchor that disagrees", () => {
     const json = blobWith({ lens: "right" }, [lensPane({ anchor: "left" })]);
-    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("right");
+    expect(sidebarSide(deserialize(json, 1920, 1080).imposition, "lens")).toBe(
+      "right",
+    );
+  });
+
+  test("a current-shape sidebars map shadows the legacy pair", () => {
+    // Both shapes in one blob is what a downgrade-then-upgrade leaves behind.
+    // The map is the current truth; the legacy pair is what it replaced.
+    const json = blobWith({ lens: "left", sidebars: { lens: { side: "right" } } }, [
+      lensPane(),
+    ]);
+    expect(sidebarSide(deserialize(json, 1920, 1080).imposition, "lens")).toBe(
+      "right",
+    );
+  });
+
+  test("an absent contentWidth reads as comfy", () => {
+    // Comfy IS the width content cards have always opened at, so a blob written
+    // before the presets existed migrates to exactly its own behavior.
+    const json = blobWith({ kind: "two-up", lens: "left" }, [lensPane()]);
+    expect(deserialize(json, 1920, 1080).imposition.contentWidth).toBe("comfy");
+  });
+
+  test("a sidebars entry with no readable side is dropped, not defaulted", () => {
+    // An unplaced sidebar takes its default at the moment it opens; inventing
+    // an entry here would record that default as though the user chose it.
+    const json = blobWith({ sidebars: { jots: { side: "sideways" } } }, [
+      lensPane(),
+    ]);
+    expect(
+      deserialize(json, 1920, 1080).imposition.sidebars["jots"],
+    ).toBeUndefined();
   });
 
   test("a non-Lens pane's anchor is not mistaken for the Lens's side", () => {
@@ -1372,28 +1467,38 @@ describe("imposition lens side", () => {
         },
       ],
     });
-    expect(deserialize(json, 1920, 1080, "right").imposition.lens).toBe("right");
+    expect(
+      sidebarSide(deserialize(json, 1920, 1080, "right").imposition, "lens"),
+    ).toBe("right");
   });
 
   test("with no source in the blob, the caller's fallback supplies the side", () => {
     const json = blobWith(undefined, [lensPane()]);
-    expect(deserialize(json, 1920, 1080, "left").imposition.lens).toBe("left");
+    expect(
+      sidebarSide(deserialize(json, 1920, 1080, "left").imposition, "lens"),
+    ).toBe("left");
   });
 
   test("with no source and no fallback, the side defaults to the right", () => {
     const json = blobWith(undefined, [lensPane()]);
-    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("right");
+    expect(sidebarSide(deserialize(json, 1920, 1080).imposition, "lens")).toBe(
+      "right",
+    );
   });
 
   test("an unparseable blob still carries the fallback side", () => {
-    expect(deserialize("{{{", 1920, 1080, "left").imposition.lens).toBe("left");
+    expect(
+      sidebarSide(deserialize("{{{", 1920, 1080, "left").imposition, "lens"),
+    ).toBe("left");
   });
 
   test("a malformed record side falls through to the next source", () => {
     const json = blobWith({ kind: "two-up", lens: "sideways" }, [
       lensPane({ anchor: "left" }),
     ]);
-    expect(deserialize(json, 1920, 1080).imposition.lens).toBe("left");
+    expect(sidebarSide(deserialize(json, 1920, 1080).imposition, "lens")).toBe(
+      "left",
+    );
   });
 
   test("a whole pre-record blob migrates: side kept, slots kept, anchor gone", () => {
@@ -1435,7 +1540,11 @@ describe("imposition lens side", () => {
     const restored = deserialize(legacy, 1920, 1080);
     // The user's Lens stays on the side they left it, and the arrangement
     // survives intact.
-    expect(restored.imposition).toEqual({ kind: "three-up", lens: "left" });
+    expect(restored.imposition).toEqual({
+      kind: "three-up",
+      contentWidth: "comfy",
+      sidebars: { lens: { side: "left" } },
+    });
     expect(restored.panes.map((p) => p.slot)).toEqual([undefined, 0, 2]);
 
     // The next save writes the record form and no pane carries `anchor` —
@@ -1444,7 +1553,11 @@ describe("imposition lens side", () => {
       imposition: unknown;
       panes: Record<string, unknown>[];
     };
-    expect(saved.imposition).toEqual({ kind: "three-up", lens: "left" });
+    expect(saved.imposition).toEqual({
+      kind: "three-up",
+      contentWidth: "comfy",
+      sidebars: { lens: { side: "left" } },
+    });
     for (const pane of saved.panes) expect("anchor" in pane).toBe(false);
 
     // And that blob round-trips to the same state, so the migration is a

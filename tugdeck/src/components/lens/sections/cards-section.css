@@ -81,8 +81,8 @@
 
 /* THE DENSE ROW METRIC. A one-line row bottoms out on its 24px close box, so
    the block padding is the only thing that sets its height — the same 2px the
-   Snippets list takes from `.lens-oneline-list`, which is what makes a file row
-   and a snippet row the same height down the rail. Scoped to the one-line rows
+   Jots list takes from `.lens-oneline-list`, which is what makes a file row
+   and a jot row the same height down the rail. Scoped to the one-line rows
    on purpose: the session monitor rows are three lines and keep the row
    default's air, and the group headers keep theirs so a group reads as
    separated from the one above it. */
@@ -296,7 +296,7 @@ body {
 
 /* The empty label's size, tone and row-height box are `.lens-section-empty`'s
    (`lens-content.css`) — shared by every section, so an empty Cards section
-   reads exactly like an empty Snippets one. */
+   reads exactly like an empty Jots one. */
 
 /* How the session monitor row divides its width — which line the dot, the
    slots, and the sparkline ride, and what each costs the text beside it — is

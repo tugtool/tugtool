@@ -55,11 +55,12 @@ const FIND_CLUSTER = `${CARD} [data-slot="find-cluster"]`;
 const SIDE_Q_ASK = ".side-question-question";
 const SIDE_Q_ANSWER = ".side-question-answer";
 
-// The static Code chip set — no route varies it any more.
+// The static Code chip set. The Z4B diet took Session and Project off this
+// route — both names already read in the pane title bar, and they were the
+// cluster's two most expensive variable faces on the one route whose width is
+// tight. Their absence is pinned in at0196.
 const STATIC_CHIPS = [
   "session-route-indicator-badge",
-  "session-id-badge",
-  "project-chip",
   "permission-mode-chip",
   "model-chip",
   "effort-chip",

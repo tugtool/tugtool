@@ -1,9 +1,9 @@
 /**
- * at0290-snippet-delete-confirm-anchor.test.ts — the delete confirm holds still.
+ * at0290-jot-delete-confirm-anchor.test.ts — the delete confirm holds still.
  *
  * ## What this gates
  *
- * The Snippets row ✕ is a hover reveal, and the confirm popover it raises
+ * The Jots row ✕ is a hover reveal, and the confirm popover it raises
  * covers the row it came from — so the pointer leaves, the ✕ unmounts, and a
  * popover anchored to that ✕ loses its anchor while it is open. It then
  * re-resolves against whatever remains and visibly HOPS, which reads as the
@@ -21,7 +21,7 @@
  *    (anchor-to-any-element) API drops the trigger-width floor, which would
  *    otherwise stretch the box to the full width of the row.
  *
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
+ * @covers tugdeck/src/components/jots/jots-card.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.tsx
  * @covers tugdeck/src/components/tugways/tug-confirm-popover.css
  */
@@ -41,13 +41,13 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
-const LIST = ".lens-content .lens-snippets-list";
+const LIST = ".jots-card .jots-list";
 const POPOVER = ".tug-confirm-popover";
 
 /** Enough rows that a row in the MIDDLE has room above and below it. */
-const SNIPPETS = Array.from({ length: 8 }, (_, i) => ({
+const JOTS = Array.from({ length: 8 }, (_, i) => ({
   id: `s${i}`,
-  text: `row-${i} snippet handle`,
+  text: `row-${i} jot handle`,
 }));
 
 const TARGET = "s4";
@@ -88,28 +88,28 @@ const POPOVER_RECT = `(function(){
            w: Math.round(r.width), h: Math.round(r.height) };
 })()`;
 
-describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
+describe.skipIf(!SHOULD_RUN)("at0290 — jot delete confirm anchor", () => {
   test(
     "the confirm popover is anchored to the row and never hops",
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0290-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets: SNIPPETS }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: JOTS }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
-          testName: "at0290-snippet-delete-confirm-anchor",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          testName: "at0290-jot-delete-confirm-anchor",
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
-          await app.dispatchControlAction("focus-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll('${LIST} .tug-list-view-cell').length >= ${SNIPPETS.length}`,
+            `document.querySelectorAll('${LIST} .tug-list-view-cell').length >= ${JOTS.length}`,
             { timeoutMs: 8_000 },
           );
 
@@ -117,10 +117,10 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
           // then click its ✕ for real — the reveal collapsing is the whole
           // mechanism under test, so a synthetic `click()` would prove nothing.
           await app.nativeClickAtElement(
-            `${LIST} .snippet-row-content[data-snippet-id="${TARGET}"] .snippet-row-label`,
+            `${LIST} .jot-row-content[data-jot-id="${TARGET}"] .jot-row-label`,
           );
           await app.nativeClickAtElement(
-            `${LIST} .snippet-row-content[data-snippet-id="${TARGET}"] .snippet-row-delete`,
+            `${LIST} .jot-row-content[data-jot-id="${TARGET}"] .jot-row-delete`,
           );
           await app.waitForCondition<boolean>(
             `document.querySelector('${POPOVER}') !== null`,
@@ -169,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
           }>(
             `(function(){
                var row = document.querySelector(
-                 '${LIST} .snippet-row-content[data-snippet-id="${TARGET}"]'
+                 '${LIST} .jot-row-content[data-jot-id="${TARGET}"]'
                ).closest('.tug-list-view-cell');
                var pop = document.querySelector(${JSON.stringify(POPOVER)});
                var rr = row.getBoundingClientRect(), pr = pop.getBoundingClientRect();
@@ -200,7 +200,7 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
           const closeCenter = await app.evalJS<number>(
             `(function(){
                var b = document.querySelector(
-                 '${LIST} .snippet-row-content[data-snippet-id="${TARGET}"] .snippet-row-delete');
+                 '${LIST} .jot-row-content[data-jot-id="${TARGET}"] .jot-row-delete');
                var r = b.getBoundingClientRect();
                return r.left + r.width / 2;
              })()`,
@@ -211,7 +211,7 @@ describe.skipIf(!SHOULD_RUN)("at0290 — snippet delete confirm anchor", () => {
           expect(first!.w).toBeLessThan(
             await app.evalJS<number>(
               `Math.round(document.querySelector(
-                 '${LIST} .snippet-row-content[data-snippet-id="${TARGET}"]'
+                 '${LIST} .jot-row-content[data-jot-id="${TARGET}"]'
                ).closest('.tug-list-view-cell').getBoundingClientRect().width)`,
             ),
           );

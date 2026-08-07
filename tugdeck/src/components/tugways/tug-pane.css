@@ -54,7 +54,6 @@ body {
   /* --- Pane title bar --- */
   --tugx-pane-title-bar-bg-active: var(--tug7-surface-card-primary-normal-titlebar-active);
   --tugx-pane-title-bar-bg-inactive: var(--tug7-surface-card-primary-normal-titlebar-inactive);
-  --tugx-pane-title-bar-bg-collapsed: var(--tug7-surface-card-primary-normal-titlebar-collapsed);
   --tugx-pane-title-bar-divider: var(--tug7-element-global-divider-normal-default-rest);
 
   /* --- Pane title bar — title text --- */
@@ -171,8 +170,7 @@ body {
    * border-box, INCLUDING the 1px border. Under the default content-box,
    * `height: 100%` sizes the content area and the 1px border is added on
    * top, so the chrome paints 2px taller/wider than the frame and its
-   * bottom border + rounded corner protrude below the title bar — the
-   * "turd" visible under a window-shade-collapsed card. [D07] */
+   * bottom border + rounded corner protrude past the frame's own. */
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -221,33 +219,6 @@ body {
 }
 
 /* ============================================================================
-   Collapsed state -- title bar only, content CSS-hidden [D07]
-   ========================================================================= */
-
-/*
- * When collapsed (.tug-pane-chrome--collapsed), the .tug-pane-body collapses to
- * height:0. The React tree stays mounted -- only the CSS box disappears.
- * TugPane sets the frame height to CARD_TITLE_BAR_HEIGHT + 2px border
- * via inline style when cardState.collapsed is true.
- */
-.tug-pane-chrome--collapsed .tug-pane-body {
-  height: 0;
-  flex: none;
-}
-
-/* No content sits below the title bar when collapsed, so its bottom divider
- * is a line to nowhere — drop it so the title bar fills the collapsed chrome
- * exactly (CARD_TITLE_BAR_HEIGHT) instead of overflowing its slot by 1px. */
-.tug-pane-chrome--collapsed .tug-pane-title-bar {
-  border-bottom-color: transparent;
-}
-
-.tug-pane-chrome--collapsed {
-  overflow: hidden;
-  background-color: var(--tugx-pane-title-bar-bg-inactive);
-}
-
-/* ============================================================================
    Occluded pane — paint suspended, everything else preserved
    ========================================================================= */
 
@@ -268,10 +239,6 @@ body {
 .tug-pane[data-occluded="true"],
 .tug-pane[data-occluded="true"] * {
   visibility: hidden !important;
-}
-
-.tug-pane[data-focused="true"] .tug-pane-chrome--collapsed {
-  background-color: var(--tugx-pane-title-bar-bg-active);
 }
 
 /* ---- Card shadow: active when focused ---- */

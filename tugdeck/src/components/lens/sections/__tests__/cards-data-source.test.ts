@@ -58,7 +58,7 @@ function pane(id: string, cardIds: string[], activeCardId?: string): TugPaneStat
 }
 
 function deck(cards: CardState[], panes: TugPaneState[]): DeckState {
-  return { cards, panes, imposition: { lens: "left" }, hasFocus: true };
+  return { cards, panes, imposition: { sidebars: { lens: { side: "left" } } }, hasFocus: true };
 }
 
 function binding(

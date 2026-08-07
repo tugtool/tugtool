@@ -146,6 +146,31 @@
   }
 }
 
+/* Compact header, second rung — the slim card (675). With the control words
+   already gone, the two runs that shrink are the label and the summary, and
+   below this width they are both down to a few characters each: "UNCOMMITTED
+   CHANGES (GIT)" clipped to "UNCOM" beside a "+12" is two fragments where one
+   readable phrase would do. So the summary goes and the label keeps the room.
+   It is the right one to drop: the file rows below carry per-file +N −M stats,
+   so the count is still on screen, while the label is the only thing naming
+   what the document IS.
+
+   Hidden the same way as the rung above — clipped, not `display: none`, so a
+   screen reader still hears the totals. */
+@container (max-width: 700px) {
+  .tug-diff-document-summary {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 .tug-diff-document-binary-note {
   margin: 0;
   padding: 0.5rem 0;

@@ -133,14 +133,18 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
         ).toBe(COMMAND | OPTION);
 
         // Rebind again to a different key entirely, so the assertion is about
-        // the chord and not about one modifier flag.
+        // the chord and not about one modifier flag. ⌘Y is chosen because the
+        // free pool says it is unclaimed: a rebind onto a chord some other
+        // command's menu item already states is a different question than the
+        // one this test asks, and answering it here would make the assertion
+        // about collision policy rather than about propagation.
         await writeOverride(app, "zoom-out", [
-          { chord: { key: "KeyJ", meta: true, label: "j" }, scope: { kind: "global" } },
+          { chord: { key: "KeyY", meta: true, label: "y" }, scope: { kind: "global" } },
         ]);
         expect(
-          await waitKeyEquivalent(app, "view.zoomOut", "j"),
+          await waitKeyEquivalent(app, "view.zoomOut", "y"),
           "the whole chord moved",
-        ).toBe("j");
+        ).toBe("y");
 
         // Explicitly unbound: an empty list is a real answer, and the item
         // ends up with no key equivalent at all rather than its default back.
@@ -233,18 +237,19 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
         );
         expect(recorded, "the bound chord was read, not dispatched").toContain("-");
 
-        // Overwrite the pending chord with the one this test commits.
-        await app.nativeKey("j", ["cmd", "ctrl"]);
+        // Overwrite the pending chord with the one this test commits — an
+        // unclaimed chord, for the reason the first test states.
+        await app.nativeKey("y", ["cmd", "ctrl"]);
         await app.waitForCondition<boolean>(
-          `(document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]')?.textContent ?? "").includes("J")`,
+          `(document.querySelector('[data-testid="keymap-capture"] [data-pending="true"]')?.textContent ?? "").includes("Y")`,
           { timeoutMs: 6000 },
         );
         await app.click('[data-testid="keymap-capture-use"]');
 
         expect(
-          await waitKeyEquivalent(app, "view.zoomOut", "j"),
+          await waitKeyEquivalent(app, "view.zoomOut", "y"),
           "the menu bar took the chord the pane recorded",
-        ).toBe("j");
+        ).toBe("y");
         const rebound = await app.menuItemState("view.zoomOut");
         expect(rebound.found ? rebound.modifierMask : undefined).toBe(COMMAND | CONTROL);
 
@@ -375,7 +380,7 @@ describe.skipIf(!SHOULD_RUN)("AT0182: a user keymap override moves the native ch
         // read as well as on write, so a value written from a shell — which
         // is exactly what this is — cannot get around it.
         await writeOverride(app, "select-all", [
-          { chord: { key: "KeyJ", meta: true, label: "j" }, scope: { kind: "global" } },
+          { chord: { key: "KeyY", meta: true, label: "y" }, scope: { kind: "global" } },
         ]);
         // Give the push a beat to be ignored, then assert nothing moved.
         await new Promise((r) => setTimeout(r, 500));

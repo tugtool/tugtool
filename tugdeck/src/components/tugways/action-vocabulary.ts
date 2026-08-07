@@ -578,6 +578,13 @@ export const TUG_ACTIONS = {
   // FOCUS_LENS:             payload — none. Move focus into the Lens (opening it
   //                         if hidden); a second dispatch focuses back out.
   // TOGGLE_LENS:            payload — none. Show/hide the Lens rail.
+  // TOGGLE_JOTS:            payload — none. Show/hide the Jots rail. The
+  //                         sibling of TOGGLE_LENS: ⌃⌘⟨letter⟩ is the
+  //                         sidebar-toggle grammar, so the pair is
+  //                         self-teaching.
+  // NEW_JOT:                payload — none. Capture a jot in one gesture:
+  //                         reveal the Jots card if it is hidden, create an
+  //                         empty jot, and land the caret in its editor.
   // RESET_LAYOUT:           payload — none. Reset card positions.
   // ADD_CARD_TO_ACTIVE_PANE: payload — none. Add a new card to the active pane
   //                         via the global menu / ⌘T (canvas targets the first responder).
@@ -717,6 +724,25 @@ export const TUG_ACTIONS = {
   SHOW_DEVTOOLS:          "show-devtools",
   FOCUS_LENS:             "focus-lens",
   TOGGLE_LENS:            "toggle-lens",
+  TOGGLE_JOTS:            "toggle-jots",
+  NEW_JOT:                "new-jot",
+  // SET_CARD_WIDTH: payload — `{ paneId, preset }`. Set one content pane's
+  //                 width to a named preset (slim / comfy / wide), clamped up
+  //                 to the pane's stack floor and stamped so a picker can show
+  //                 which one it is at. Its door is the pane title bar's width
+  //                 popup.
+  SET_CARD_WIDTH:         "set-card-width",
+  // SET_CONTENT_WIDTH: payload — `{ preset }`. Set the deck's default content
+  //                    width and put every content pane on it, overwriting the
+  //                    per-pane widths the title-bar popup had set. Its door is
+  //                    the Lens Layouts section's Card Width group.
+  SET_CONTENT_WIDTH:      "set-content-width",
+  // SET_SIDEBAR_SIDE: payload — `{ componentId, side }`. Move a sidebar card to
+  //                   a deck edge, re-pinning it if it had been dragged loose.
+  //                   Its door is the Lens Layouts section's sidebar positions
+  //                   group, which draws one control per registered sidebar
+  //                   card.
+  SET_SIDEBAR_SIDE:       "set-sidebar-side",
   RESET_LAYOUT:           "reset-layout",
   ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   FIND:                   "find",

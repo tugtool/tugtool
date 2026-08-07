@@ -874,6 +874,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // exists until the first Save.
         fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextCard"))
 
+        // New Jot (⌘J): capture a thought into the Jots rail, revealing it if
+        // hidden. Built with no key equivalent so `applyCommandChords` writes
+        // the registry's chord onto the item — a Swift literal here would make
+        // the chord unrebindable, which is the anomaly the sweep exists to
+        // avoid.
+        fileMenu.addItem(NSMenuItem(title: "New Jot", action: #selector(newJot(_:)), keyEquivalent: "").identified("file.newJot"))
+
         // Open File… (⌘O): NSOpenPanel → `open-file` Control frame. The
         // web layer reuses an existing Text card bound to the chosen
         // path or opens a new one (action-dispatch.ts `open-file`).
@@ -1224,7 +1231,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // through to the web view.
         mMenu.addItem(NSMenuItem(title: "Show DevTools", action: #selector(showDevTools(_:)), keyEquivalent: "").identified("maker.devTools"))
         mMenu.addItem(NSMenuItem(title: "Focus Lens", action: #selector(focusLens(_:)), keyEquivalent: "l").identified("maker.focusLens"))
-        mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "l", modifierMask: [.command, .option]).identified("maker.lens"))
+        // Show Lens (⌃⌘L) and Show Jots (⌃⌘J) — the two sidebar toggles, built
+        // without key equivalents so the registry's sweep supplies them and
+        // either stays rebindable. Same Maker-menu placement reasoning as Show
+        // DevTools above: hidden outside maker mode, so the chords fall through
+        // to the web view there.
+        mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "").identified("maker.lens"))
+        mMenu.addItem(NSMenuItem(title: "Show Jots", action: #selector(showJots(_:)), keyEquivalent: "").identified("maker.jots"))
         if BuildInfo.profile == "debug" {
             // Debug-only card creators, relocated from the flattened
             // File ▸ New submenu. Compile-time gated so release bundles
@@ -1353,6 +1366,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// action-dispatch picks it up the same way other menu-driven RPCs do.
     @objc private func showLens(_ sender: Any) {
         sendControl("toggle-lens")
+    }
+
+    /// Show or hide the Jots rail — the Lens toggle's sibling.
+    @objc private func showJots(_ sender: Any) {
+        sendControl("toggle-jots")
+    }
+
+    /// Create a jot and land the caret in it, revealing the Jots rail if it is
+    /// hidden. Focus goes to the web view first: ⌘J fires as a menu key
+    /// equivalent even when the native title bar holds focus, where the new
+    /// row's caret claim would otherwise be invisible.
+    @objc private func newJot(_ sender: Any) {
+        window.focusWebView()
+        sendControl("new-jot")
     }
 
     /// Move keyboard focus into the Lens (opening it if hidden), or back out

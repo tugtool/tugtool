@@ -31,7 +31,7 @@ mod session_ledger;
 mod session_metadata_merge;
 mod shared_agent;
 mod shell_ledger;
-mod snippets;
+mod jots;
 mod terminal_registry;
 mod turn_engine;
 mod workspace_api;
@@ -1572,15 +1572,14 @@ async fn main() {
     // it sees every recompute the router does.
     supervisor.start_draft_engine(changeset_all_rx.clone(), cancel.clone());
 
-    // SNIPPETS feed — watches the machine-global `snippets.json` and pushes
-    // the whole document to every client. The nudge lets `PUT /api/snippets`
-    // force an immediate rebuild.
-    let snippets_file_path = tug_instance::snippets_path();
-    let (snippets_rx, snippets_nudge) = feeds::snippets::snippets_feed(snippets_file_path.clone());
-    let snippets_state = Some(snippets::SnippetsState::new(
-        snippets_file_path,
-        snippets_nudge,
-    ));
+    // JOTS feed — watches the machine-global `jots.json` and pushes the whole
+    // document to every client. The nudge lets `PUT /api/jots` force an
+    // immediate rebuild. The migration runs first so a user arriving from a
+    // pre-rename build sees their phrasebook in the very first frame.
+    let jots_file_path = tug_instance::jots_path();
+    jots::migrate_from_snippets(&jots_file_path);
+    let (jots_rx, jots_nudge) = feeds::jots::jots_feed(jots_file_path.clone());
+    let jots_state = Some(jots::JotsState::new(jots_file_path, jots_nudge));
 
     let mut snapshot_watches = vec![
         bootstrap.fs_watch_rx.clone(),
@@ -1591,7 +1590,7 @@ async fn main() {
     if let Some(rx) = defaults_rx {
         snapshot_watches.push(rx);
     }
-    snapshot_watches.push(snippets_rx);
+    snapshot_watches.push(jots_rx);
     // SESSION_SIDEBAND and session_init snapshots moved to supervisor (Step 8).
     feed_router.add_snapshot_watches(snapshot_watches);
     // Multi-workspace FILETREE response stream — registered once. Every
@@ -1681,7 +1680,7 @@ async fn main() {
         feed_router,
         shared_dev_state,
         bank_client,
-        snippets_state,
+        jots_state,
     );
 
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())

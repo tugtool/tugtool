@@ -156,7 +156,7 @@ import { useSharedAgentReady } from "@/lib/shared-agent-store";
 import type { ShellClassifyStore } from "@/lib/shell-classify-store";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
-import { hasSnippetDrag, readSnippetDrag } from "@/lib/snippet-drag";
+import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -616,7 +616,7 @@ export interface AppendInsertion {
 
 /**
  * Compute the end-of-doc insertion for text arriving from outside the
- * editor — today a snippet dropped from the Lens with no resolvable drop
+ * editor — today a jot dropped from the Lens with no resolvable drop
  * offset. An effectively empty editor takes the text as-is; a mid-compose
  * draft gets it appended on its own line, never clobbered.
  *
@@ -1252,14 +1252,14 @@ export const TugPromptEntry = React.forwardRef<
   // row. All DOM writes, no React state ([L06]).
   //
   // Two payloads land here: a file drag (images become atoms, other files
-  // their basename) and a Lens snippet drag ([P05]) — the same accept ring
-  // and drop caret for both, so a snippet reads exactly like an image over
+  // their basename) and a Lens jot drag ([P05]) — the same accept ring
+  // and drop caret for both, so a jot reads exactly like an image over
   // the entry.
   const handleEntryDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
       if (event.defaultPrevented) return;
       const dt = event.dataTransfer;
-      if (!dt.types.includes("Files") && !hasSnippetDrag(dt)) return;
+      if (!dt.types.includes("Files") && !hasJotDrag(dt)) return;
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
@@ -1290,19 +1290,19 @@ export const TugPromptEntry = React.forwardRef<
   const handleEntryDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>): void => {
       if (event.defaultPrevented) return;
-      const snippetText = readSnippetDrag(event.dataTransfer);
+      const jotText = readJotDrag(event.dataTransfer);
       const files = Array.from(event.dataTransfer.files);
-      if (snippetText === null && files.length === 0) return;
+      if (jotText === null && files.length === 0) return;
       const view = textEditorRef.current?.view();
       if (view === null || view === undefined) return;
       event.preventDefault();
-      if (snippetText !== null) {
-        // Park the text on the store's slot; the `pendingSnippetInsert`
+      if (jotText !== null) {
+        // Park the text on the store's slot; the `pendingJotInsert`
         // effect below owns the insertion (drop offset, else the
         // `applyAppendInsertion` append) for both this drag and the
-        // double-click-a-snippet path.
+        // double-click-a-jot path.
         clearEntryDropState();
-        codeSessionStore.insertSnippet(snippetText, {
+        codeSessionStore.insertJot(jotText, {
           x: event.clientX,
           y: event.clientY,
         });
@@ -1718,7 +1718,7 @@ export const TugPromptEntry = React.forwardRef<
     codeSessionStore.consumePendingCommandInsert();
   }, [pendingCommandInsert, codeSessionStore]);
 
-  // Snippet insert ([P05]). A snippet dragged from the Lens onto the prompt
+  // Jot insert ([P05]). A jot dragged from the Lens onto the prompt
   // entry (or double-clicked) parks `{ text, at }` here; this effect inserts
   // the text — at the drop offset when `at` resolves, else appended (empty
   // editor takes it as-is, non-empty on a new line, the
@@ -1731,13 +1731,13 @@ export const TugPromptEntry = React.forwardRef<
   // where the user left them (focus-language.md § Drag and the keyboard).
   // The dispatched `selection` records the insertion point; it becomes the
   // visible caret when the editor is next granted focus legitimately.
-  const pendingSnippetInsert = snap.pendingSnippetInsert;
+  const pendingJotInsert = snap.pendingJotInsert;
   useLayoutEffect(() => {
-    if (pendingSnippetInsert === null) return;
+    if (pendingJotInsert === null) return;
     const editor = textEditorRef.current;
     const view = editor?.view() ?? null;
     if (editor === null || view === null) return;
-    const { text, at } = pendingSnippetInsert;
+    const { text, at } = pendingJotInsert;
     const offset = at !== null ? dropOffsetAtCoords(view, at.x, at.y) : null;
     let from: number;
     let insert: string;
@@ -1757,8 +1757,8 @@ export const TugPromptEntry = React.forwardRef<
       selection: { anchor: from + insert.length },
       scrollIntoView: true,
     });
-    codeSessionStore.consumePendingSnippetInsert();
-  }, [pendingSnippetInsert, codeSessionStore]);
+    codeSessionStore.consumePendingJotInsert();
+  }, [pendingJotInsert, codeSessionStore]);
 
   // Atom insert. A transcript annotation inserted as an atom parks its
   // segment here; this effect drops the atom at the caret and consumes.

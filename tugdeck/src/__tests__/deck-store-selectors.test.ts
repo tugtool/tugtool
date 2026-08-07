@@ -40,7 +40,7 @@ function baseState(): DeckState {
       makePane("pane-2", ["card-c"], "card-c"),
     ],
     activePaneId: "pane-1",
-    imposition: { lens: "right" },
+    imposition: { sidebars: { lens: { side: "right" } } },
     hasFocus: true,
   };
 }

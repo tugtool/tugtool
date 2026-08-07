@@ -1,27 +1,27 @@
 /**
- * at0255-lens-snippet-followons.test.ts — the three follow-on Lens notes,
- * measured on the live DOM against a real snippets file:
+ * at0255-jots-followons.test.ts — the three follow-on Lens notes,
+ * measured on the live DOM against a real jots file:
  *
- *  1. **The editing header pins.** While a snippet taller than the Lens is
+ *  1. **The editing header pins.** While a jot taller than the Lens is
  *     edited, the open card's header row is `position: sticky` and holds the
- *     top of the list scroller as the body scrolls under it — the snippet's
+ *     top of the list scroller as the body scrolls under it — the jot's
  *     name and its copy / close stay in reach.
  *
- *  2. **Exactly one selection green.** Opening a snippet for editing MOVES the
+ *  2. **Exactly one selection green.** Opening a jot for editing MOVES the
  *     list's owned selection onto the edited row, so a create-and-open path
  *     (the header +) can't leave the previously-selected row painting its fill
  *     while a different row is open. One row wears the picker green, ever.
  *
- *  3. **A click lands the keyboard.** Single-clicking a snippet promotes the
+ *  3. **A click lands the keyboard.** Single-clicking a jot promotes the
  *     list to the KEYBOARD key view (ring lit, cursor on the clicked row), so
  *     the section's Delete verb fires (its confirm popover opens) instead of
  *     beeping.
  *
- * Runs against an isolated snippets file (`TUG_SNIPPETS_PATH`).
+ * Runs against an isolated jots file (`TUG_JOTS_PATH`).
  *
- * @covers tugdeck/src/components/lens/sections/snippets-section.tsx
- * @covers tugdeck/src/lib/snippets-store.ts
- * @covers tugdeck/src/lib/snippet-drag.ts
+ * @covers tugdeck/src/components/jots/jots-card.tsx
+ * @covers tugdeck/src/lib/jots-store.ts
+ * @covers tugdeck/src/lib/jot-drag.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -60,33 +60,33 @@ function priorCardDeck() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
+describe.skipIf(!SHOULD_RUN)("at0255 — Lens jot follow-ons", () => {
   test(
     "the header pins, one row is green, and a click lands the keyboard",
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0255-"));
-      const snippetsPath = join(dir, "snippets.json");
+      const jotsPath = join(dir, "jots.json");
       const longText = Array.from(
         { length: 80 },
-        (_, i) => `line ${i} of the pasted multi-line snippet body`,
+        (_, i) => `line ${i} of the pasted multi-line jot body`,
       ).join("\n");
-      const snippets = [
+      const jots = [
         ...Array.from({ length: 5 }, (_, i) => ({
           id: `s${i}`,
-          text: `short snippet ${i}`,
+          text: `short jot ${i}`,
         })),
         { id: "long", text: longText },
       ];
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
-          testName: "at0255-lens-snippet-followons",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          testName: "at0255-jots-followons",
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
           persistInTestMode: true,
         });
         try {
@@ -96,57 +96,56 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             `window.__tug.assertHostRootRegistered("A")`,
             { timeoutMs: 5_000 },
           );
-          await app.dispatchControlAction("toggle-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list .snippet-row-content[data-snippet-id="s2"]') !== null`,
+            `document.querySelector('.jots-list .jot-row-content[data-jot-id="s2"]') !== null`,
             { timeoutMs: 5_000 },
           );
 
-          // The Sessions band's natural height at rest — captured so we can later
-          // prove a long snippet edit never squeezes it (note C below).
-          const sessionsRestH = await app.evalJS<number>(
-            `Math.round(document.querySelector('.lens-sections > .lens-section').getBoundingClientRect().height)`,
+          // The toolbar's natural height at rest — captured so we can later
+          // prove a long jot edit never squeezes it (note C below).
+          const toolbarRestH = await app.evalJS<number>(
+            `Math.round(document.querySelector('.jots-toolbar').getBoundingClientRect().height)`,
           );
 
           // ---- 3. A click lands the KEYBOARD key view + ring, so Delete fires.
           // First click activates the Lens card; the second (same-card) click is
           // the one under test — it must light the ring and land the cursor.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s0"] .jot-row-label`,
           );
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s2"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s2"] .jot-row-label`,
           );
           const click = await app.evalJS<{
             listHasKbd: boolean;
             wash: string;
             outlineWidth: string;
-            cursorSnippetId: string | null;
+            cursorJotId: string | null;
             selectedCount: number;
           }>(
             `(() => {
-              const list = document.querySelector('.lens-snippets-list');
+              const list = document.querySelector('.jots-list');
               const cs = list ? getComputedStyle(list) : null;
-              const cursor = document.querySelector('.lens-snippets-list [data-key-cursor]');
+              const cursor = document.querySelector('.jots-list [data-key-cursor]');
               return {
                 listHasKbd: list?.hasAttribute('data-key-view-kbd') ?? false,
                 wash: cs ? cs.backgroundImage : 'none',
                 outlineWidth: cs ? cs.outlineWidth : '0px',
-                cursorSnippetId: cursor?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null,
-                selectedCount: document.querySelectorAll('.lens-snippets-list .tug-list-view-cell[data-selected="true"]').length,
+                cursorJotId: cursor?.querySelector('[data-jot-id]')?.getAttribute('data-jot-id') ?? null,
+                selectedCount: document.querySelectorAll('.jots-list .tug-list-view-cell[data-selected="true"]').length,
               };
             })()`,
           );
-          // The list wears the container WASH, and the cursor sits on the clicked
-          // row. Rings mark elements, washes mark containers: the container's
-          // answer to "the keyboard is in here" is a background layer, and the
-          // single stroke-or-bar belongs to the cursor row inside it. Asserting
-          // the outline is 0 is half the point — a container that both washed
-          // and ringed would be the nested-marks conflation this design retired.
+          // The cursor sits on the clicked row, and the row's mark is the only
+          // one: the container marks nothing ([D122]) — neither an outline nor a
+          // background layer — even though it is the key view. The list is still
+          // `data-key-view-kbd`, so this is the suppression holding, not the
+          // attribute being absent.
           expect(click.listHasKbd).toBe(true);
-          expect(click.wash).not.toBe("none");
+          expect(click.wash).toBe("none");
           expect(click.outlineWidth).toBe("0px");
-          expect(click.cursorSnippetId).toBe("s2");
+          expect(click.cursorJotId).toBe("s2");
           expect(click.selectedCount).toBe(1);
 
           // Re-click a DIFFERENT row while the list already holds the keyboard:
@@ -154,15 +153,15 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // same event as the capture-phase pointer placement, so kbd never
           // blinks off-then-on) and the cursor follows to the new row.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s0"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s0"] .jot-row-label`,
           );
           const reclick = await app.evalJS<{ kbd: boolean; cursor: string | null }>(
             `(() => {
-              const list = document.querySelector('.lens-snippets-list');
-              const cursor = document.querySelector('.lens-snippets-list [data-key-cursor]');
+              const list = document.querySelector('.jots-list');
+              const cursor = document.querySelector('.jots-list [data-key-cursor]');
               return {
                 kbd: list?.hasAttribute('data-key-view-kbd') ?? false,
-                cursor: cursor?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null,
+                cursor: cursor?.querySelector('[data-jot-id]')?.getAttribute('data-jot-id') ?? null,
               };
             })()`,
           );
@@ -170,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           expect(reclick.cursor).toBe("s0");
           // Re-select s2 so the Delete probe below acts on a known row.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s2"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s2"] .jot-row-label`,
           );
 
           // Delete now fires the section verb: the destructive confirm popover
@@ -189,14 +188,14 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           );
 
           // ---- 2. Create-and-open moves selection: exactly one green.
-          // Select s1, then press the header + (creates a new snippet and opens
+          // Select s1, then press the header + (creates a new jot and opens
           // it). The new row is the only selected cell; the old selection cleared.
           await app.nativeClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="s1"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="s1"] .jot-row-label`,
           );
-          await app.nativeClickAtElement(`.lens-section [aria-label="New snippet"]`);
+          await app.nativeClickAtElement(`.jots-toolbar [aria-label="New jot"]`);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor .cm-content') !== null`,
+            `document.querySelector('.jot-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
           const green = await app.evalJS<{
@@ -204,8 +203,8 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             editingHeaderIsSelected: boolean;
           }>(
             `(() => {
-              const cells = [...document.querySelectorAll('.lens-snippets-list .tug-list-view-cell[data-selected="true"]')];
-              const header = document.querySelector('.snippet-editor-header[data-snippet-id]');
+              const cells = [...document.querySelectorAll('.jots-list .tug-list-view-cell[data-selected="true"]')];
+              const header = document.querySelector('.jot-editor-header[data-jot-id]');
               const headerCell = header?.closest('.tug-list-view-cell') ?? null;
               return {
                 selectedCount: cells.length,
@@ -219,19 +218,19 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // Close the create editor.
           await app.nativeKey("Escape", []);
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor') === null`,
+            `document.querySelector('.jot-editor') === null`,
             { timeoutMs: 3_000 },
           );
 
-          // ---- 1. The header pins while a taller-than-Lens snippet scrolls.
-          // Open the long snippet, move the caret to the document end and type —
+          // ---- 1. The header pins while a taller-than-Lens jot scrolls.
+          // Open the long jot, move the caret to the document end and type —
           // the reveal scrolls the list to the tail. The header must stay stuck
           // at the top of the scroller (sticky), not scroll away with the body.
           await app.nativeDoubleClickAtElement(
-            `.lens-snippets-list .snippet-row-content[data-snippet-id="long"] .snippet-row-label`,
+            `.jots-list .jot-row-content[data-jot-id="long"] .jot-row-label`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector('.snippet-editor .cm-content') !== null`,
+            `document.querySelector('.jot-editor .cm-content') !== null`,
             { timeoutMs: 4_000 },
           );
 
@@ -240,18 +239,18 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // until the editor has fully claimed focus and the descend has settled
           // (the editor holds the active element AND the list is no longer the
           // keyboard key view) before each in-card click.
-          const editorSettled = `document.querySelector('.snippet-editor')?.contains(document.activeElement) === true
-             && document.querySelector('.lens-snippets-list')?.hasAttribute('data-key-view-kbd') === false`;
+          const editorSettled = `document.querySelector('.jot-editor')?.contains(document.activeElement) === true
+             && document.querySelector('.jots-list')?.hasAttribute('data-key-view-kbd') === false`;
 
           // (a) A click on the card's CHROME — the sticky header, which is NOT
           // the contenteditable — keeps the editor open.
           await app.waitForCondition<boolean>(editorSettled, { timeoutMs: 3_000 });
           await app.nativeClickAtElement(
-            `.snippet-editor-header .snippet-row-label`,
+            `.jot-editor-header .jot-row-label`,
           );
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.snippet-editor .cm-content') !== null`,
+              `document.querySelector('.jot-editor .cm-content') !== null`,
             ),
           ).toBe(true);
 
@@ -264,9 +263,9 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           // first line that actually intersects the scroller’s visible box.
           const visibleLine = await app.evalJS<number>(
             `(() => {
-              const list = document.querySelector(".lens-snippets-list");
+              const list = document.querySelector(".jots-list");
               const box = list.getBoundingClientRect();
-              const lines = [...document.querySelectorAll(".snippet-editor .cm-content .cm-line")];
+              const lines = [...document.querySelectorAll(".jot-editor .cm-content .cm-line")];
               return lines.findIndex((el) => {
                 const b = el.getBoundingClientRect();
                 return b.top >= box.top + 4 && b.bottom <= box.bottom - 4;
@@ -275,11 +274,11 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           );
           expect(visibleLine).toBeGreaterThan(0);
           await app.nativeClickAtElement(
-            `.snippet-editor .cm-content .cm-line:nth-of-type(${visibleLine})`,
+            `.jot-editor .cm-content .cm-line:nth-of-type(${visibleLine})`,
           );
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector('.snippet-editor .cm-content') !== null`,
+              `document.querySelector('.jot-editor .cm-content') !== null`,
             ),
           ).toBe(true);
 
@@ -287,7 +286,7 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           await app.nativeType(" EDITED");
           // The list genuinely scrolled to follow the caret to the tail.
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-snippets-list').scrollTop > 200`,
+            `document.querySelector('.jots-list').scrollTop > 200`,
             { timeoutMs: 3_000 },
           );
           const pin = await app.evalJS<{
@@ -298,9 +297,9 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
             scrollTop: number;
           }>(
             `(() => {
-              const l = document.querySelector('.lens-snippets-list');
+              const l = document.querySelector('.jots-list');
               const list = l.getBoundingClientRect();
-              const headerEl = document.querySelector('.snippet-editor-header');
+              const headerEl = document.querySelector('.jot-editor-header');
               const header = headerEl.getBoundingClientRect();
               return {
                 position: getComputedStyle(headerEl).position,
@@ -316,15 +315,15 @@ describe.skipIf(!SHOULD_RUN)("at0255 — Lens snippet follow-ons", () => {
           expect(pin.scrollTop).toBeGreaterThan(200);
           expect(pin.pinnedToTop).toBe(true);
 
-          // ---- C. The editing section scrolls; it never eats its neighbors.
-          // With a snippet far taller than the Lens open, the Sessions band still
-          // shows its full content — the editing section absorbed the overflow by
-          // scrolling, rather than the flex shrink squeezing Sessions to nothing
-          // (which would nudge the pinned header up into it).
-          const sessionsEditH = await app.evalJS<number>(
-            `Math.round(document.querySelector('.lens-sections > .lens-section').getBoundingClientRect().height)`,
+          // ---- C. The list absorbs the overflow; the card's chrome is never
+          // eaten. With a jot far taller than the card open, the toolbar still
+          // stands at its full height — the list took the overflow by scrolling,
+          // rather than the flex shrink squeezing the toolbar to nothing (which
+          // would nudge the pinned header up into it).
+          const toolbarEditH = await app.evalJS<number>(
+            `Math.round(document.querySelector('.jots-toolbar').getBoundingClientRect().height)`,
           );
-          expect(sessionsEditH).toBeGreaterThanOrEqual(sessionsRestH - 2);
+          expect(toolbarEditH).toBeGreaterThanOrEqual(toolbarRestH - 2);
         } finally {
           await app.close();
         }

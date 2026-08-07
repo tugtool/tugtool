@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  type SnippetsDoc,
-  type SnippetsFrame,
+  type JotsDoc,
+  type JotsFrame,
   applyCreate,
   applyDelete,
   applyOrder,
@@ -9,46 +9,46 @@ import {
   emptyDoc,
   emptyUndo,
   mergeForeignDoc,
-  newSnippetId,
-  parseSnippetsFrame,
+  newJotId,
+  parseJotsFrame,
   pushUndo,
   redo,
   shouldIgnoreFrame,
-  snippetIncipit,
+  jotIncipit,
   undo,
-} from "../lib/snippets-doc";
+} from "../lib/jots-doc";
 
-function doc(...ids: string[]): SnippetsDoc {
+function doc(...ids: string[]): JotsDoc {
   return {
     version: 1,
-    snippets: ids.map((id) => ({ id, text: `body of ${id}` })),
+    jots: ids.map((id) => ({ id, text: `body of ${id}` })),
   };
 }
 
-function encodeFrame(frame: SnippetsFrame): Uint8Array {
+function encodeFrame(frame: JotsFrame): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(frame));
 }
 
 describe("document transforms", () => {
   test("applyCreate inserts after the given id", () => {
-    const { doc: next, id } = applyCreate(doc("a", "b"), "a", "sn_new");
-    expect(next.snippets.map((s) => s.id)).toEqual(["a", "sn_new", "b"]);
-    expect(id).toBe("sn_new");
+    const { doc: next, id } = applyCreate(doc("a", "b"), "a", "jt_new");
+    expect(next.jots.map((s) => s.id)).toEqual(["a", "jt_new", "b"]);
+    expect(id).toBe("jt_new");
   });
 
   test("applyCreate with null afterId appends", () => {
-    const { doc: next } = applyCreate(doc("a"), null, "sn_new");
-    expect(next.snippets.map((s) => s.id)).toEqual(["a", "sn_new"]);
+    const { doc: next } = applyCreate(doc("a"), null, "jt_new");
+    expect(next.jots.map((s) => s.id)).toEqual(["a", "jt_new"]);
   });
 
   test("applyUpdate sets text", () => {
     const next = applyUpdate(doc("a"), "a", "X");
-    expect(next.snippets[0]).toEqual({ id: "a", text: "X" });
+    expect(next.jots[0]).toEqual({ id: "a", text: "X" });
   });
 
   test("applyDelete returns successor selection", () => {
     const { doc: next, nextSelected } = applyDelete(doc("a", "b", "c"), "b");
-    expect(next.snippets.map((s) => s.id)).toEqual(["a", "c"]);
+    expect(next.jots.map((s) => s.id)).toEqual(["a", "c"]);
     expect(nextSelected).toBe("c");
   });
 
@@ -59,21 +59,21 @@ describe("document transforms", () => {
 
   test("applyOrder is a splice to the given permutation", () => {
     const next = applyOrder(doc("a", "b", "c"), ["c", "a", "b"]);
-    expect(next.snippets.map((s) => s.id)).toEqual(["c", "a", "b"]);
+    expect(next.jots.map((s) => s.id)).toEqual(["c", "a", "b"]);
   });
 });
 
 describe("undo/redo", () => {
-  test("delete then undo restores the snippet", () => {
+  test("delete then undo restores the jot", () => {
     const original = doc("a", "b");
     let stack = pushUndo(emptyUndo(), original);
     const afterDelete = applyDelete(original, "a").doc;
     const undone = undo(stack, afterDelete);
     expect(undone).not.toBeNull();
-    expect(undone!.doc.snippets.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(undone!.doc.jots.map((s) => s.id)).toEqual(["a", "b"]);
     // redo returns to the deleted state.
     const redone = redo(undone!.stack, undone!.doc);
-    expect(redone!.doc.snippets.map((s) => s.id)).toEqual(["b"]);
+    expect(redone!.doc.jots.map((s) => s.id)).toEqual(["b"]);
   });
 
   test("a typing burst coalesces to one undo entry at commit", () => {
@@ -88,7 +88,7 @@ describe("undo/redo", () => {
     const stack = pushUndo(emptyUndo(), baseline);
     expect(stack.past.length).toBe(1);
     const undone = undo(stack, live);
-    expect(undone!.doc.snippets[0].text).toBe("body of a");
+    expect(undone!.doc.jots[0].text).toBe("body of a");
   });
 
   test("undo returns null when there is nothing to undo", () => {
@@ -98,83 +98,83 @@ describe("undo/redo", () => {
 
 describe("frame decisions", () => {
   test("shouldIgnoreFrame suppresses the echo of our own write", () => {
-    const frame: SnippetsFrame = { doc: doc("a"), hash: "abc", error: null };
+    const frame: JotsFrame = { doc: doc("a"), hash: "abc", error: null };
     expect(shouldIgnoreFrame(frame, "abc")).toBe(true);
     expect(shouldIgnoreFrame(frame, "def")).toBe(false);
     expect(shouldIgnoreFrame(frame, null)).toBe(false);
   });
 
   test("mergeForeignDoc preserves the open row's local content", () => {
-    const local: SnippetsDoc = {
+    const local: JotsDoc = {
       version: 1,
-      snippets: [
+      jots: [
         { id: "a", text: "local editing" },
         { id: "b", text: "local-b" },
       ],
     };
-    const foreign: SnippetsDoc = {
+    const foreign: JotsDoc = {
       version: 1,
-      snippets: [
+      jots: [
         { id: "a", text: "foreign-a" },
         { id: "b", text: "foreign-b" },
       ],
     };
     const merged = mergeForeignDoc(local, foreign, "a");
     // Open row 'a' keeps local content; row 'b' takes foreign.
-    expect(merged.snippets.find((s) => s.id === "a")).toEqual({
+    expect(merged.jots.find((s) => s.id === "a")).toEqual({
       id: "a",
       text: "local editing",
     });
-    expect(merged.snippets.find((s) => s.id === "b")!.text).toBe("foreign-b");
+    expect(merged.jots.find((s) => s.id === "b")!.text).toBe("foreign-b");
   });
 
   test("mergeForeignDoc with no open row takes foreign wholesale", () => {
     const merged = mergeForeignDoc(doc("a"), doc("a", "b"), null);
-    expect(merged.snippets.map((s) => s.id)).toEqual(["a", "b"]);
+    expect(merged.jots.map((s) => s.id)).toEqual(["a", "b"]);
   });
 
   test("mergeForeignDoc re-appends an open row the foreign doc dropped", () => {
-    const local: SnippetsDoc = {
+    const local: JotsDoc = {
       version: 1,
-      snippets: [{ id: "a", text: "mine" }],
+      jots: [{ id: "a", text: "mine" }],
     };
     const merged = mergeForeignDoc(local, doc("b"), "a");
-    expect(merged.snippets.map((s) => s.id)).toEqual(["b", "a"]);
+    expect(merged.jots.map((s) => s.id)).toEqual(["b", "a"]);
   });
 });
 
-describe("parseSnippetsFrame", () => {
+describe("parseJotsFrame", () => {
   test("round-trips a valid frame", () => {
-    const frame: SnippetsFrame = { doc: doc("a"), hash: "h", error: null };
-    const parsed = parseSnippetsFrame(encodeFrame(frame));
+    const frame: JotsFrame = { doc: doc("a"), hash: "h", error: null };
+    const parsed = parseJotsFrame(encodeFrame(frame));
     expect(parsed).not.toBeNull();
-    expect(parsed!.doc.snippets[0].id).toBe("a");
+    expect(parsed!.doc.jots[0].id).toBe("a");
     expect(parsed!.hash).toBe("h");
   });
 
   test("returns null for malformed payloads", () => {
-    expect(parseSnippetsFrame(new TextEncoder().encode("not json"))).toBeNull();
-    expect(parseSnippetsFrame(new TextEncoder().encode("{}"))).toBeNull();
+    expect(parseJotsFrame(new TextEncoder().encode("not json"))).toBeNull();
+    expect(parseJotsFrame(new TextEncoder().encode("{}"))).toBeNull();
     expect(
-      parseSnippetsFrame(new TextEncoder().encode('{"doc":{"version":1}}')),
+      parseJotsFrame(new TextEncoder().encode('{"doc":{"version":1}}')),
     ).toBeNull();
   });
 });
 
 describe("helpers", () => {
-  test("snippetIncipit is the opening line of the text", () => {
-    expect(snippetIncipit({ id: "a", text: "first\nsecond" })).toBe("first");
-    expect(snippetIncipit({ id: "a", text: "  padded opening  \nmore" })).toBe("padded opening");
-    expect(snippetIncipit({ id: "a", text: "" })).toBe("");
+  test("jotIncipit is the opening line of the text", () => {
+    expect(jotIncipit({ id: "a", text: "first\nsecond" })).toBe("first");
+    expect(jotIncipit({ id: "a", text: "  padded opening  \nmore" })).toBe("padded opening");
+    expect(jotIncipit({ id: "a", text: "" })).toBe("");
   });
 
-  test("newSnippetId is sn_ + 12 hex chars", () => {
-    const id = newSnippetId();
-    expect(id).toMatch(/^sn_[0-9a-f]{12}$/);
-    expect(newSnippetId()).not.toBe(id);
+  test("newJotId is jt_ + 12 hex chars", () => {
+    const id = newJotId();
+    expect(id).toMatch(/^jt_[0-9a-f]{12}$/);
+    expect(newJotId()).not.toBe(id);
   });
 
-  test("emptyDoc is version 1 with no snippets", () => {
-    expect(emptyDoc()).toEqual({ version: 1, snippets: [] });
+  test("emptyDoc is version 1 with no jots", () => {
+    expect(emptyDoc()).toEqual({ version: 1, jots: [] });
   });
 });

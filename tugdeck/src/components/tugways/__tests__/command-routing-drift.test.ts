@@ -97,7 +97,9 @@ const PRE_MIGRATION_MECHANISM: Readonly<Record<string, CommandRouting>> = {
   // sends it, so the entry claims no menu item.
   "source-tree": "registry",
   "set-imposition": "registry",
-  "set-imposition-lens": "registry",
+  // Was `set-imposition-lens` before sidebars became a taxonomy: same command,
+  // same routing, a payload that now names which sidebar card it moves.
+  "set-sidebar-side": "registry",
   "assign-slot": "registry",
   "focus-session-card": "registry",
 };
@@ -192,6 +194,8 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "set-theme": "command",
   reload: "command",
   "toggle-lens": "command",
+  "toggle-jots": "command",
+  "new-jot": "command",
   "focus-lens": "command",
   "arrange-cards": "command",
   "zoom-actual": "command",
@@ -353,6 +357,39 @@ const SHIPPED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]>
   ),
 ];
 
+/**
+ * Chords that have moved since the map was transcribed, keyed by command.
+ *
+ * Declared here rather than edited into `SHIPPED_CHORDS`, for the same reason
+ * `RE_HOMED_ONTO_THE_CHAIN` is declared rather than back-written: the
+ * historical column is only worth having while it stays historical, and a move
+ * nobody declared should still fail.
+ *
+ * Show Lens moved off ⌥⌘L so the two sidebar toggles could share one grammar —
+ * ⌃⌘⟨letter⟩ — which is what makes ⌃⌘L and ⌃⌘J teach each other.
+ */
+const MOVED_SINCE_THE_MAP: ReadonlyMap<string, string> = new Map([
+  [TUG_ACTIONS.TOGGLE_LENS, "⌃⌘L"],
+]);
+
+/**
+ * Chords added after the map, which by construction it cannot record: their
+ * commands did not exist when it was written.
+ */
+const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: string]> = [
+  ["⌘J", TUG_ACTIONS.NEW_JOT],
+  ["⌃⌘J", TUG_ACTIONS.TOGGLE_JOTS],
+];
+
+/** The map as it reads today: transcription, plus moves, plus additions. */
+const EXPECTED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]> = [
+  ...SHIPPED_CHORDS.map(
+    ([rendering, commandId]) =>
+      [MOVED_SINCE_THE_MAP.get(commandId) ?? rendering, commandId] as const,
+  ),
+  ...ADDED_SINCE_THE_MAP,
+];
+
 describe("every chord the static map held reaches the same command", () => {
   // Keyed by the rendered chord rather than by a modifier record, so the
   // expectation reads the way the keymap pane will show it and a wrong
@@ -368,7 +405,7 @@ describe("every chord the static map held reaches the same command", () => {
     }
   }
 
-  for (const [rendering, commandId] of SHIPPED_CHORDS) {
+  for (const [rendering, commandId] of EXPECTED_CHORDS) {
     test(`${rendering} fires ${commandId}`, () => {
       const found = byRendering.get(rendering);
       expect(found, `${rendering} is bound`).toBeDefined();
@@ -410,7 +447,7 @@ describe("every chord the static map held reaches the same command", () => {
     // The table also names Quit, Hide, Minimize and Full Screen so the keymap
     // UI can show them. They are `native`: represented, never JS-routed.
     const extra = [...byRendering.entries()].filter(
-      ([rendering]) => !SHIPPED_CHORDS.some(([r]) => r === rendering),
+      ([rendering]) => !EXPECTED_CHORDS.some(([r]) => r === rendering),
     );
     for (const [rendering, { commandId }] of extra) {
       const derived = HOST_DERIVED_CHORDS.get(rendering);

@@ -198,6 +198,8 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Rationale:** Post-diet intrinsic ≈ 590px (with gap cut; ~625px without) vs ~659px available at slim — the gap cut is comfort margin, kept unless the tighter rhythm reads badly.
 
+**Amended at implementation (the gap cut is reverted, and the ch budgets grow):** built and looked at, the tighter rhythm *did* read badly — five readings clustered in the middle of a strip with ~110px of unspent width on either side, which reads as damage rather than as an instrument. The gap goes back to `--tug-space-2xl` (24px) and the per-cell ch budgets are raised (17/14/13/18/14, the pre-diet row's proportions) so the row **spends** the slim width: ~644px of a ~673px strip. The type stays at the diet's 12px/10px — the space was bought back in width, where slim had room, rather than in point size, where it did not. The container-query ladder moves with it (645/525/415), and the numbers are pinned by `at0358`.
+
 **Implications:** [D122] amended: the placard is where BTW lives; `/btw` is merely how you ask. The session registration's width-floor rationale comment (which describes four 21ch cells plus sash grips that no longer exist — fiction) is rewritten against the post-diet row.
 
 #### [P08] Z4B diet, code route only (DECIDED) {#p08-z4b-diet}
@@ -216,9 +218,13 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Implications:** Registration follows `show-keyboard-shortcuts` ⌃⌘K exactly: `chord({...}, { preventDefault: true, menuEligible: true })`, Swift menu item constructed with an **empty** key equivalent so the `applyCommandChords` sweep supplies it (avoids the recorded shade-toggle anomaly where a Swift literal makes rebinding silently fail). `chord-tiers.md`'s ⌘J free-pool annotation ("for jump/go-to") is updated in the same change — never silently diverge. `new-jot` reveals the card if hidden and focuses the new row's editor (capture in one gesture), following the ⌃⌘K find-or-create-then-focus shape and joining `DECK_CANVAS_VALIDATED_ACTIONS`.
 
-#### [P10] Same-side stacking shares a rail (DECIDED) {#p10-stacking}
+#### [P10] Same-side stacking shares a rail (DECIDED — amended at implementation) {#p10-stacking}
 
-**Decision:** Two sidebar cards on one side share a rail: one shared width, stacked vertically, a draggable seam between them. The existing full-height pin (`top: 5px / bottom: 32px`) generalizes to per-stack-member vertical spans.
+> **Amended after review of the built app: a shared rail is a stack, not a split.** Two sidebar cards on one side stand **front-to-back**, exactly as two panes sharing a slot do — same pin, same width, same *full* vertical run — and the title bar's stack badge and picker ([D123]) are how you reach the covered one. The split design below shipped first and was wrong in the way that only shows when you look at it: dividing the rail spends a whole rail to show two half-cards, which is what the Snippets section was already doing inside the Lens, only less space-efficient. Lifting Jots out was supposed to give it a full rail when it is the one you are looking at.
+>
+> What that changes from the text below: `sidebarSplit`, `sidebars[id].order`, the seam and its drag, and `sidebarStackShares` / per-member spans are all **removed, not adjusted** — front-to-back has nothing to remember but each card's side, so the persistent state Spec S01 argued for is gone with it. A legacy blob's `sidebarSplit` and `order` are dropped on read. What survives unchanged: the shared rail width, the allocator's equal-Δ rule ([P04]) and its tightest-member clamp, and the rule that a rail never writes its own width. One thing had to be *added*: rails now hold a z-**band** rather than the single fixed z-index the Lens had, because two rails standing in one place have to be orderable against each other — with one fixed value the covered card is unreachable. Pinned by `at0359`.
+
+**Decision (superseded, kept for the record):** Two sidebar cards on one side share a rail: one shared width, stacked vertically, a draggable seam between them. The existing full-height pin (`top: 5px / bottom: 32px`) generalizes to per-stack-member vertical spans.
 
 **Rationale:** Bilateral simultaneous sidebars are supported; same-side is the *default* configuration (Lens and Jots both default right), so stacking must be first-class, not an edge case.
 
@@ -488,20 +494,20 @@ Key app-test impact (from the brief, Part I): rename sweep re-targets `at0241`, 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Wire-layer rename: Rust, routes, feed, file, migration | pending | — |
-| #step-2 | TS-internal rename: files, symbols, MIME | pending | — |
-| #step-3 | `layoutRole` taxonomy on CardRegistration | pending | — |
-| #step-4 | Imposition record generalization (Lens parity) | pending | — |
-| #step-5 | Bilateral sidebars, stacking, equal-resize allocator | pending | — |
-| #step-6 | The Jots card; Lens shrinks to two sections | pending | — |
-| #step-7 | Commands: ⌘J, ⌃⌘J, ⌃⌘L move | pending | — |
-| #step-8 | Collapse removal + width popup + `widthPreset` | pending | — |
-| #step-9 | Z2 diet + strip-anchored `/btw` placard | pending | — |
-| #step-10 | Z4B diet (code route) | pending | — |
-| #step-11 | Slim floors, deck default width, Layouts section | pending | — |
-| #step-12 | Doctrine updates + font-family-base fix | pending | — |
-| #step-13 | Width regression test + slim collateral sweep | pending | — |
-| #step-14 | Integration checkpoint | pending | — |
+| #step-1 | Wire-layer rename: Rust, routes, feed, file, migration | done | `2af21235e` |
+| #step-2 | TS-internal rename: files, symbols, MIME | done | `14254bcd6` |
+| #step-3 | `layoutRole` taxonomy on CardRegistration | done | `e726e5eef` |
+| #step-4 | Imposition record generalization (Lens parity) | done | `ce7743530` |
+| #step-5 | Bilateral sidebars, stacking, equal-resize allocator | done | `fdabb0613` |
+| #step-6 | The Jots card; Lens shrinks to two sections | done | `c55b253be` |
+| #step-7 | Commands: ⌘J, ⌃⌘J, ⌃⌘L move | done | `66ecd1fc1` (landed with the at0278 repair round) |
+| #step-8 | Collapse removal + width popup + `widthPreset` | done | `346145e58` |
+| #step-9 | Z2 diet + strip-anchored `/btw` placard | done | `a5f8a3c7b` |
+| #step-10 | Z4B diet (code route) | done | `0eb7c8429` |
+| #step-11 | Slim floors, deck default width, Layouts section | done | `572260369` |
+| #step-12 | Doctrine updates + font-family-base fix | done | `d76499ff3` |
+| #step-13 | Width regression test + slim collateral sweep | done | `9333c88e3` |
+| #step-14 | Integration checkpoint | done | verification only (no commit); see #step-14-record |
 
 #### Step 1: Wire-layer rename — Rust, routes, feed, file, migration {#step-1}
 
@@ -884,12 +890,27 @@ Key app-test impact (from the brief, Part I): rename sweep re-targets `at0241`, 
 - [ ] Manual pass on the default configuration: Lens + Jots both visible on the right (the stacked default), seam drag, ⌘J capture from a content card.
 
 **Tests:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `bun test` && `bunx vite build`
+- [x] `cd tugrust && cargo nextest run` — 2000 passed, 6 skipped.
+- [x] `bun test` (7433) && `bunx vite build`.
 
 **Checkpoint:**
-- [ ] `just app-test-changed` (and `just app-test` core tier if harness-adjacent files were touched — the CORE TIER ADVISED rule)
-- [ ] All Success Criteria bullets individually verified
+- [x] `just app-test` core tier — 20/20 files, 39/39 tests. The phase's diff is far past the 20-file selection budget, so `app-test-changed` refuses by design and the core tier is the answer to that; the layout, sidebar, Z2/Z4B, and stack families were each run directly as their steps landed.
+- [x] `just app-test-covers-check` — 318 files, every `@covers` resolving and in budget.
+- [x] Success Criteria walked; the record is below.
+
+#### Step 14 record — what was verified, and how {#step-14-record}
+
+| Criterion | Verdict |
+|---|---|
+| No `snippet` outside the migration path | Greps clean across `tugdeck/src`, `tugrust/`, `tugcode/`, `tests/`, `tuglaws/`. Four leftovers the sweep had missed were fixed here (a motion-slot constant, a focus-key fixture, the model-eval vocabulary, and a `changes_cli` fixture that used "snippets" as a sample dash name and would have left the grep gate reading dirty forever). What remains is `jots::migrate_from_snippets` and its tests, plus captured Claude transcripts under `tugcode/src/__tests__/fixtures` where the word is ordinary English. |
+| `snippets.json` → `jots.json` migration | Rust integration tests (9) covering copy, idempotence, and the absent/present matrix. |
+| Bilateral + stacked sidebars, equal allocation | `at0359` (new), `at0230`, `at0299`, `at0303`; imposer unit describes for R=0/1/2 and the equal-Δ solve. |
+| Slim Session card, Z2 + Z4B intact | `at0358` (new), and it was checked against a real regression rather than assumed. |
+| The three chords | `at0231`, `command-registry.test.ts`, `command-routing-drift.test.ts`, `menus-doc.test.ts`. |
+| Collapse gone; old blobs migrate | Grep clean of pane-collapse; `layout-tree.test.ts` round-trips a `collapsed: true` blob to an expanded pane, and a split-era blob to a stack. |
+| Toolchain green at each boundary | Recorded per step above. |
+
+**Left to the user, deliberately:** the manual pass — living with the stacked default, the ⌘J capture gesture, and the Layouts miniatures. Those are judgments about how it reads, and this phase has twice been corrected by exactly that kind of look (the Z2 diet, and the split rail).
 
 ---
 

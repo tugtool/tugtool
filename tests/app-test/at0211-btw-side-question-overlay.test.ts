@@ -12,13 +12,14 @@
  *
  * This standard-tier test drives one committed turn (so the transcript has
  * entries to count), types `/btw <question>` and submits, and asserts:
- *   1. the placard opens (a side-question row appears), above Z2 and within the
- *      card;
+ *   1. the placard opens (a side-question row appears), above Z2, within the
+ *      card, and right-aligned to the strip rather than centred under a cell;
  *   2. the transcript entry count is UNCHANGED across the whole `/btw`
  *      exchange — the ask, and the settled answer (injected as a
  *      `side_question_answer` frame);
  *   3. the placard AUTO-DISMISSES — a click away closes it (there is no `×`);
- *      it reopens on a BTW-cell click; and
+ *      a bare `/btw` reopens it onto the same history (the only door back, now
+ *      that the BTW cell is gone); and
  *   4. it is ONE-AT-A-TIME — opening a log cell (TIME) while `/btw` is open
  *      swaps the placard rather than stacking a second one.
  *
@@ -53,7 +54,8 @@ const SIDE_Q_ANSWER = '.side-question-answer';
 // The `/btw` body inside the shared Z2 placard — its presence means the btw
 // placard is open.
 const SIDE_Q_BODY = '[data-card-id="A"] [data-slot="side-question-body"]';
-const BTW_CELL = '[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"]';
+/** One answered ask inside the placard body — the history it reopens onto. */
+const SIDE_Q_ROW = '[data-card-id="A"] .side-question-exchange';
 const TIME_CELL = '[data-card-id="A"] .session-telemetry-status-cell[data-priority="time"]';
 const POPUP_LIST = '[data-card-id="A"] [data-slot="tug-popup-list"]';
 
@@ -142,12 +144,13 @@ describe.skipIf(!SHOULD_RUN)(
           const baseline = await countEntries();
           expect(baseline).toBeGreaterThan(0); // the committed turn rendered
 
-          // The Z2 BTW cell reads the `/btw` count — an em-dash before any ask.
-          const btwCellValue = () =>
-            app.evalJS<string | null>(
-              `(() => { const el = document.querySelector('[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"] .session-telemetry-status-value'); return el ? el.textContent : null; })()`,
-            );
-          expect(await btwCellValue()).toBe("—");
+          // There is no BTW cell: the Z2 diet removed it, and `/btw` reaches
+          // its placard by being asked rather than by a stop on the strip.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll('[data-card-id="A"] .session-telemetry-status-cell[data-priority="btw"]').length`,
+            ),
+          ).toBe(0);
 
           // Type `/btw <question>` and submit. Escape first dismisses any
           // open completion menu; Cmd+Return is the editor's forced submit.
@@ -169,10 +172,12 @@ describe.skipIf(!SHOULD_RUN)(
           expect(afterAsk).toBe(baseline);
 
           // Positioning ([P02]/[P06]): the placard floats ABOVE the Z2 status
-          // row (never overlapping it) and stays WITHIN the card's horizontal
-          // bounds (anchored under the BTW cell, clamped inside the card).
-          // Measured against the live layout so a regression (an in-flow anchor
-          // that displaces the status cells, or a placard escaping the card)
+          // row (never overlapping it), stays WITHIN the card's horizontal
+          // bounds, and is RIGHT-ALIGNED to the strip rather than centred under
+          // a cell — the re-anchor the Z2 diet forced, since the BTW cell it
+          // used to hang from no longer exists. Measured against the live layout
+          // so a regression (an in-flow anchor that displaces the status cells,
+          // a placard escaping the card, or a silent slide back to centring)
           // fails here rather than only in the eye. The Z2 status bar spans the
           // card's content width, so it is the reliable reference.
           const geom = await app.evalJS<{
@@ -199,6 +204,14 @@ describe.skipIf(!SHOULD_RUN)(
           // Within the card horizontally (never escaping left or right).
           expect(geom!.paneLeft).toBeGreaterThanOrEqual(geom!.z2Left - 1);
           expect(geom!.paneRight).toBeLessThanOrEqual(geom!.z2Right + 1);
+          // Right-aligned to the strip: its right edge sits at the strip's own,
+          // less the placard's inset from it. Stated as "much nearer the right
+          // edge than the left" rather than an exact offset, so the inset stays
+          // a styling detail — what is pinned is the anchor's SIDE, which is
+          // what the re-anchor changed.
+          expect(geom!.z2Right - geom!.paneRight).toBeLessThan(
+            geom!.paneLeft - geom!.z2Left,
+          );
           // Z2 is intact — the status row spans a real card width, proving the
           // placard did not collapse or displace the status cells.
           expect(geom!.z2Width).toBeGreaterThan(600);
@@ -234,15 +247,27 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
 
-          // The exchange survives the dismiss (the store is untouched), so the
-          // BTW cell still shows the count, and a click on the cell reopens the
-          // placard onto that same history — exactly like the other Z2 cells.
-          expect(await btwCellValue()).toBe("1");
-          await app.nativeClickAtElement(BTW_CELL);
+          // The exchange survives the dismiss (the store is untouched), and a
+          // BARE `/btw` reopens the placard onto that same history. With the
+          // cell gone this is the only door back, so it is the one the test
+          // drives.
+          await app.nativeClickAtElement(PROMPT);
+          await app.nativeType("/btw");
+          await new Promise((r) => setTimeout(r, 200));
+          await app.nativeKey("Escape");
+          await new Promise((r) => setTimeout(r, 200));
+          await app.nativeKey("Enter", ["cmd"]);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(SIDE_Q_BODY)}) !== null`,
             { timeoutMs: 4000 },
           );
+          // …onto the history, not a blank placard: the earlier exchange is
+          // still the thing being shown.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(SIDE_Q_ROW)}).length`,
+            ),
+          ).toBeGreaterThan(0);
 
           // One-at-a-time ([P05]): opening the TIME cell while `/btw` is open
           // SWAPS the placard — the `/btw` body is gone, the TIME log popup is

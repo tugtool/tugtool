@@ -561,7 +561,7 @@ body {
 
    The `:has()` guard keeps the press on the ROW's own hit area. `:active`
    matches every ancestor of the pressed element, so without it a click on a
-   row's trailing button (a snippet's Copy or ✕) or a drag from its grip would
+   row's trailing button (a jot's Copy or ✕) or a drag from its grip would
    flash the whole row as though the row itself had been pressed — two signals
    for one gesture, and the wrong one is the loud one.
 

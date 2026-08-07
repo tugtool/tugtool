@@ -31,7 +31,7 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { ChevronDown, ChevronUp, Layers, MoreHorizontal, X, icons } from "lucide-react";
+import { Layers, MoreHorizontal, MoveHorizontal, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
 import type { SlotStackEntry } from "@/deck-store-selectors";
 import type { CardMeta, CardSizePolicy } from "@/card-registry";
@@ -45,14 +45,20 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useRequiredResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugTabBar } from "@/components/tugways/tug-tab-bar";
 import { useDeckManager } from "@/deck-manager-context";
+import { dispatchCommand } from "@/command-dispatch";
 import type { MovePaneOptions } from "@/deck-manager-store";
 import {
   imposeStyle,
-  imposeLensStyle,
-  type LensSide,
+  imposeSidebarStyle,
+  clampSidebarSplit,
+  sidebarWidthProperty,
+  type SidebarSide,
   IMPOSITION_GAP_PX,
-  LENS_WIDTH_PROPERTY,
+  IMPOSITION_GAP_BOTTOM_PX,
   type ImposedPlacement,
+  CONTENT_WIDTH_PRESETS,
+  CONTENT_WIDTH_LABELS,
+  type ContentWidth,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
@@ -79,7 +85,6 @@ import { paneOcclusionGesture } from "@/components/chrome/pane-occlusion-control
 
 /**
  * Height of the card title bar in pixels. Must match --tug-chrome-height.
- * Used for collapsed-height calculation on the window frame.
  */
 export const CARD_TITLE_BAR_HEIGHT = 36;
 
@@ -139,7 +144,15 @@ export interface CardTitleBarProps {
   title: string;
   icon?: string;
   closable?: boolean;
-  collapsed: boolean;
+  /**
+   * The width preset this pane is currently stamped with, or `null` at a width
+   * the user chose by hand. Drives the check in the width popup, and nothing
+   * else — a custom width shows no check rather than a false one.
+   *
+   * Omitted → the pane has no width control (a sidebar-role pane: rails take
+   * their width from the allocator, not from a preset).
+   */
+  widthPreset?: ContentWidth | null;
   /**
    * Number of cards in this pane. Drives only the *wording* of the
    * close-confirmation popover the title-bar X button opens:
@@ -193,7 +206,13 @@ export interface CardTitleBarProps {
   slotStack?: readonly SlotStackEntry[];
   /** Raise the pane a picker row names. Wired in `DeckCanvas`. */
   onRevealPane?: (entry: SlotStackEntry) => void;
-  onCollapse: () => void;
+  /**
+   * Apply a width preset to this pane. Present exactly when
+   * {@link widthPreset} is — together they are "this pane has a width
+   * control" — and wired to the `set-card-width` command, never to a store
+   * method ([L30]).
+   */
+  onSetWidth?: (preset: ContentWidth) => void;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
 }
@@ -203,14 +222,14 @@ function CardTitleBar({
   title,
   icon,
   closable = true,
-  collapsed,
+  widthPreset,
   cardCount = 1,
   resolveCloseGuard,
   confirmClose = false,
   activeCardId,
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
-  onCollapse,
+  onSetWidth,
   onClose,
   onDragStart,
 }: CardTitleBarProps, ref) {
@@ -436,23 +455,6 @@ function CardTitleBar({
     },
   }), [confirmClose, onClose, openCloseConfirm, paneCloseIntent, withCloseDecision, slotStack.length]);
 
-  const handleCollapsePointerDown = useCallback(
-    (event: React.PointerEvent<HTMLButtonElement>) => {
-      event.stopPropagation();
-    },
-    [],
-  );
-
-  const handleCollapseClick = useCallback(() => {
-    // While the close-confirm popover is showing, the chevron just dismisses
-    // it (same as a title-bar click) rather than collapsing the card.
-    if (closeOpen) {
-      setCloseOpen(false);
-      return;
-    }
-    onCollapse();
-  }, [closeOpen, onCollapse]);
-
   const IconComponent =
     icon && icons[icon as keyof typeof icons]
       ? icons[icon as keyof typeof icons]
@@ -563,18 +565,37 @@ function CardTitleBar({
             }}
           />
         )}
-        <TugButton
-          subtype="icon"
-          emphasis="ghost"
-          role="action"
-          size="sm"
-          icon={collapsed ? <ChevronUp /> : <ChevronDown />}
-          onPointerDown={handleCollapsePointerDown}
-          onClick={handleCollapseClick}
-          aria-label={collapsed ? "Expand card" : "Collapse card"}
-          aria-expanded={!collapsed}
-          data-testid="tug-pane-title-bar-collapse-button"
-        />
+        {/* Card width. A dedicated, persistent trigger rather than a row in
+            the `…` overflow above: width is reached often and carries state,
+            and a control whose current value is invisible until you open it
+            is the wrong shape for both. Composed as `TugPopupMenu` + a ghost
+            `TugButton`, matching the stack badge and section menu beside it —
+            pane chrome is one of that component's sanctioned composers. */}
+        {onSetWidth !== undefined && (
+          <TugPopupMenu
+            trigger={
+              <TugButton
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<MoveHorizontal />}
+                aria-label="Card width"
+                data-testid="tug-pane-title-bar-width-button"
+              />
+            }
+            align="end"
+            items={CONTENT_WIDTH_PRESETS.map((preset) => ({
+              id: preset,
+              label: CONTENT_WIDTH_LABELS[preset],
+              // No check at a custom width: `widthPreset` is null then, and
+              // claiming the nearest preset would be a resting lie.
+              selected: widthPreset === preset,
+            }))}
+            onSelect={(id) => onSetWidth(id as ContentWidth)}
+            data-testid="tug-pane-title-bar-width-menu"
+          />
+        )}
 
         {closable && (
           // Pane-level close confirmation: every pane's X button —
@@ -862,7 +883,7 @@ const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, hei
  * Props for the TugPane component (frame + pane chrome).
  */
 export interface TugPaneProps {
-  /** Window position, size, id, and collapsed state from DeckState. */
+  /** Window position, size, id, and width preset from DeckState. */
   stackState: TugPaneState;
   /** Default metadata for the window (from card registration). */
   meta: CardMeta;
@@ -917,17 +938,25 @@ export interface TugPaneProps {
    */
   onRevealPane?: (entry: SlotStackEntry) => void;
   /**
-   * Set only on the pane hosting the Lens, to the side the Lens holds
-   * (`imposition.lens`). The Lens is imposed as the strip's fixed end rather
-   * than a link in its chain, so it takes a pin instead of a `placement`: it
-   * is non-draggable, resizable only on its deck-facing edge, and excluded
-   * from snap and merge. Resolved by `DeckCanvas` — the pane carries no
-   * marker of its own ([P04]).
+   * Set only on a pane standing in a rail: the side that rail holds and how
+   * many cards stand on it. A rail is imposed as the strip's fixed end rather
+   * than a link in its chain, so its panes take a pin instead of a `placement`:
+   * resizable only on the deck-facing edge, and excluded from snap and merge.
+   * Resolved by `DeckCanvas` — the pane carries no marker of its own ([P04]).
+   *
+   * Every member takes the SAME geometry — one gap below the canvas top, the
+   * deeper gap above its bottom — because a shared rail is a stack, not a
+   * split: the cards stand front-to-back and z-order decides which you see.
+   * `count` is therefore not geometry; it is what tells the title bar it is
+   * standing in a stack worth offering a picker for.
    */
-  lensSide?: LensSide;
+  sidebarStack?: {
+    side: SidebarSide;
+    count: number;
+  };
   /**
    * Set on the pane hosting the Lens card, pinned or not. Separate from
-   * {@link lensSide}, which says only where a PINNED Lens stands: a Lens
+   * {@link sidebarStack}, which says only where a PINNED rail stands: a Lens
    * dragged off its pin is an ordinary free pane for geometry purposes but is
    * still the Lens, and the one thing that stays true either way is that it
    * hosts a singleton card and never accepts a merge.
@@ -946,11 +975,6 @@ export interface TugPaneProps {
   onCardMerged?: (sourceCardId: string, targetCardId: string, insertIndex: number) => void;
   /** CSS z-index for stacking order. */
   zIndex: number;
-  /**
-   * Called when the user toggles collapse on the card header.
-   * DeckCanvas wires this to `store.togglePaneCollapse(id)`.
-   */
-  onCardCollapsed?: (id: string) => void;
   /**
    * Size policy for this card type. Enforces min as a floor (content-reported
    * min cannot go below this) and max as a ceiling during resize.
@@ -996,21 +1020,20 @@ export function TugPane({
   sizePolicy: sizePolicyProp,
   onCardMerged,
   zIndex,
-  onCardCollapsed,
   placement,
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
-  lensSide,
+  sidebarStack,
   isLensPane = false,
 }: TugPaneProps) {
+  const sidebarSide = sidebarStack?.side;
   const { id, position, size } = stackState;
-  const collapsed = stackState.collapsed === true;
   // Two derived geometry modes, both placed by `lib/layout-imposer.ts`.
   //
   // Pinned — the Lens, while it is standing at its side. It holds that side
   // at a fixed pin and keeps its own width, so it exposes only its deck-facing
   // resize edge and is excluded from merge. It is DRAGGABLE, and dragging it
-  // is exactly how it stops being pinned: the commit releases it, `lensSide`
+  // is exactly how it stops being pinned: the commit releases it, `sidebarSide`
   // arrives undefined on the next render, and it becomes a free pane in the
   // deck like any other.
   //
@@ -1022,7 +1045,7 @@ export function TugPane({
   // guarantees (the Lens pane never carries a slot); the check here keeps the
   // render honest against a hand-built state. A free pane is neither and uses
   // its stored `position`/`size`. Every mode still owns its geometry [L09].
-  const pinned = lensSide !== undefined;
+  const pinned = sidebarSide !== undefined;
   const imposed = !pinned && placement !== undefined;
   // Both modes place the frame by CSS pins rather than by stored pixels, so
   // both need the same two things at gesture time: a freeze of the live rect
@@ -1926,18 +1949,12 @@ export function TugPane({
         frame.style.left = `${finalPos.x}px`;
         frame.style.top = `${finalPos.y}px`;
 
-        // While collapsed, the frame's live height is the window-shade height
-        // (CARD_TITLE_BAR_HEIGHT + border), not the card's real height. Committing
-        // `frame.offsetHeight` here would overwrite the stored expanded height with
-        // the collapsed stub, so the card could never be restored. Preserve the
-        // stored `size.height` for a collapsed drag; only the position changes.
-        const committedHeight = collapsed ? size.height : frame.offsetHeight;
         // A dragged pane leaves its slot: the explicit gesture wins, and the
         // dropped rect becomes its free geometry. Resize never passes this.
         onCardMoved(
           id,
           finalPos,
-          { width: frame.offsetWidth, height: committedHeight },
+          { width: frame.offsetWidth, height: frame.offsetHeight },
           derivedRef.current ? { evictSlot: true } : undefined,
         );
 
@@ -1952,10 +1969,8 @@ export function TugPane({
     },
     // position.x/y captured into dragStartPosition at drag-start; id, onCardMoved,
     // onCardMerged, activeCardId, and store are stable or handled via closure capture.
-    // `collapsed`/`size.height` are read at commit to preserve the stored height
-    // across a collapsed-card drag.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y, store, collapsed, size.height],
+    [id, onCardMoved, onCardMerged, activeCardId, position.x, position.y, store],
   );
 
   // ---------------------------------------------------------------------------
@@ -2207,15 +2222,17 @@ export function TugPane({
   // start — under live re-imposition a card's edge moves as the Lens grows, and
   // a guide drawn from a start-of-gesture rect would mark an alignment that is
   // no longer there. [D01, D03, D04]
-  const handleLensResizeStart = useCallback(
+  const handleSidebarResizeStart = useCallback(
     (event: React.PointerEvent) => {
       event.preventDefault();
       event.stopPropagation();
       if (!frameRef.current) return;
+      if (sidebarSide === undefined) return;
       const frame: HTMLDivElement = frameRef.current;
       const container = frame.parentElement;
       if (!container) return;
 
+      const widthProperty = sidebarWidthProperty(sidebarSide);
       const zoom = getTugZoom() || 1;
       const startClientX = event.clientX;
       const startWidth = size.width;
@@ -2227,7 +2244,7 @@ export function TugPane({
       // A left rail's deck edge faces right (east): rightward motion
       // grows it. A right rail's deck edge faces left (west): leftward
       // motion grows it.
-      const growSign = lensSide === "left" ? 1 : -1;
+      const growSign = sidebarSide === "left" ? 1 : -1;
 
       // The pinned edge is measured rather than derived from `position`, which
       // the pinned Lens does not use. It is a fixed number for the gesture:
@@ -2237,7 +2254,7 @@ export function TugPane({
       const frameRect = frame.getBoundingClientRect();
       const canvasLeft = canvasBounds.left;
       const pinnedEdge =
-        lensSide === "left"
+        sidebarSide === "left"
           ? (frameRect.left - canvasLeft) / zoom
           : (frameRect.right - canvasLeft) / zoom;
 
@@ -2253,7 +2270,7 @@ export function TugPane({
       // The deck-facing edge is a handle like any other: under the move
       // threshold the press is a click, which states no width and commits
       // nothing.
-      const latchLensResizeMove = (clientX: number): boolean => {
+      const latchSidebarResizeMove = (clientX: number): boolean => {
         if (lensResizeMoved) return true;
         if (Math.abs(clientX - startClientX) < DRAG_MOVE_THRESHOLD_PX) return false;
         lensResizeMoved = true;
@@ -2281,11 +2298,11 @@ export function TugPane({
         // never moves, so width follows directly from the snapped edge.
         const exposedEdge = pinnedEdge + growSign * next;
         const snapResult = computeResizeSnap(
-          lensSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
+          sidebarSide === "left" ? { right: exposedEdge } : { left: exposedEdge },
           snapshotCardRects(canvasBounds, id, zoom).map((r) => r.rect),
           -IMPOSITION_GAP_PX,
         );
-        const snapped = lensSide === "left" ? snapResult.right : snapResult.left;
+        const snapped = sidebarSide === "left" ? snapResult.right : snapResult.left;
         if (snapped !== undefined) {
           next = Math.min(
             maxWidth,
@@ -2299,9 +2316,9 @@ export function TugPane({
 
       const apply = (): void => {
         rafId = null;
-        if (!latchLensResizeMove(latestX)) return;
+        if (!latchSidebarResizeMove(latestX)) return;
         width = computeWidth();
-        container.style.setProperty(LENS_WIDTH_PROPERTY, `${width}px`);
+        container.style.setProperty(widthProperty, `${width}px`);
       };
 
       const onPointerMove = (e: PointerEvent): void => {
@@ -2321,7 +2338,7 @@ export function TugPane({
         frame.removeAttribute("data-gesture");
         latestX = e.clientX;
         latestAlt = e.altKey;
-        if (!latchLensResizeMove(latestX)) {
+        if (!latchSidebarResizeMove(latestX)) {
           clearGuideElements(resizeGuideEls);
           return;
         }
@@ -2333,7 +2350,7 @@ export function TugPane({
         // The property stays as the gesture left it. The commit re-renders the
         // Lens at this width and `DeckCanvas` writes the same number back, so
         // there is no frame where the deck reads the pre-gesture width.
-        container.style.setProperty(LENS_WIDTH_PROPERTY, `${width}px`);
+        container.style.setProperty(widthProperty, `${width}px`);
         onCardMoved(id, position, { width, height: size.height });
       };
 
@@ -2347,18 +2364,14 @@ export function TugPane({
       size.width,
       size.height,
       sizePolicy.min.width,
-      lensSide,
+      sidebarSide,
     ],
   );
+
 
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-
-  // When collapsed, the frame height is locked to CARD_TITLE_BAR_HEIGHT + 2px border.
-  // The card retains its full width for dragging. The stored `size.height` is preserved
-  // and restored when the card expands.
-  const COLLAPSED_FRAME_HEIGHT = CARD_TITLE_BAR_HEIGHT + 2;
 
   // Persisted size can predate the current floor — a card kind
   // raised its policy `min`, or a wider sibling joined the stack, so
@@ -2367,13 +2380,17 @@ export function TugPane({
   // minimum immediately, and the next move or resize commits the
   // corrected size back to the store.
   const renderWidth = Math.max(size.width, minSize.width);
-  const frameHeight = collapsed
-    ? COLLAPSED_FRAME_HEIGHT
-    : Math.max(size.height, minSize.height);
+  const frameHeight = Math.max(size.height, minSize.height);
 
-  const handleFrameCollapseToggle = useCallback(() => {
-    onCardCollapsed?.(id);
-  }, [id, onCardCollapsed]);
+  // The width control, on content-role panes only: a rail takes its width from
+  // the allocator, so a preset there would be overwritten by the next solve.
+  // Dispatched as a command rather than called on the store ([L30]).
+  const handleSetWidth = useCallback(
+    (preset: ContentWidth) => {
+      dispatchCommand(TUG_ACTIONS.SET_CARD_WIDTH, { paneId: id, preset });
+    },
+    [id],
+  );
 
   const closable = effectiveMeta.closable !== false;
 
@@ -2399,33 +2416,26 @@ export function TugPane({
       className="tug-pane"
       data-testid="tug-pane"
       data-pane-id={id}
-      data-collapsed={collapsed ? "true" : "false"}
       {...(isLensPane ? { "data-lens-pane": "" } : {})}
-      {...(lensSide !== undefined ? { "data-lens": lensSide } : {})}
+      {...(sidebarSide !== undefined ? { "data-lens": sidebarSide } : {})}
       {...(imposed && placement !== undefined
         ? { "data-imposed": String(placement.slot) }
         : {})}
       data-stack-depth={String(slotStack.length)}
       style={{
         position: "absolute",
-        // Three geometry modes. The pinned Lens holds one side of the canvas
+        // Three geometry modes. A pinned sidebar holds one side of the canvas
         // a gap in, runs the canvas height less a gap top and the deeper gap
         // at the bottom, and takes only its width from the store. An imposed
         // pane pins to its place in the imposition chain over the same
-        // vertical run, also taking only its width from the store — a
-        // collapsed one keeps the window-shade stub height in place of the
-        // released bottom pin. A free pane uses its stored
-        // left/top/width/height. [L06]/[L09]
-        ...(lensSide !== undefined
-          ? {
-              ...imposeLensStyle(lensSide, renderWidth, collapsed),
-              ...(collapsed ? { height: frameHeight } : {}),
-            }
+        // vertical run, also taking only its width from the store. A free pane
+        // uses its stored left/top/width/height. [L06]/[L09]
+        ...(sidebarSide !== undefined
+          ? imposeSidebarStyle(sidebarSide, renderWidth, {
+              stack: sidebarStack,
+            })
           : imposed && placement !== undefined
-            ? {
-                ...imposeStyle(placement, renderWidth, collapsed),
-                ...(collapsed ? { height: frameHeight } : {}),
-              }
+            ? imposeStyle(placement, renderWidth)
             : {
                 left: position.x,
                 top: position.y,
@@ -2442,49 +2452,53 @@ export function TugPane({
         ["--tug-pane-min-width" as string]: `${sizePolicy.min.width}px`,
       }}
     >
-      {/* Resize handles -- hidden when collapsed; drag remains active [D07].
-          The pinned Lens exposes only its deck-facing edge (west for a
-          right-side Lens, east for a left-side one). Everything else exposes
-          all eight, imposed or not: resizing an imposed pane releases it from
-          its slot, so there is no edge it needs to be protected from. */}
-      {!collapsed &&
-        (lensSide !== undefined ? (
+      {/* Resize handles. A pinned sidebar exposes only its deck-facing edge
+          (west for a right-side rail, east for a left-side one).
+          Everything else exposes all eight, imposed or not: resizing an imposed
+          pane releases it from its slot, so there is no edge it needs to be
+          protected from. */}
+      {sidebarSide !== undefined ? (
+        <>
           <div
-            className={`tug-pane-resize tug-pane-resize-${lensSide === "left" ? "e" : "w"}`}
-            onPointerDown={handleLensResizeStart}
+            className={`tug-pane-resize tug-pane-resize-${sidebarSide === "left" ? "e" : "w"}`}
+            onPointerDown={handleSidebarResizeStart}
           />
-        ) : (
-          RESIZE_EDGES.map((edge) => (
-            <div
-              key={edge}
-              className={`tug-pane-resize tug-pane-resize-${edge}`}
-              onPointerDown={(e) => handleResizeStart(edge, e)}
-            />
-          ))
-        ))}
+        </>
+      ) : (
+        RESIZE_EDGES.map((edge) => (
+          <div
+            key={edge}
+            className={`tug-pane-resize tug-pane-resize-${edge}`}
+            onPointerDown={(e) => handleResizeStart(edge, e)}
+          />
+        ))
+      )}
 
       <TugPaneFrameContext value={frameEl}>
       <TugPanePortalContext value={cardEl}>
         <div
           ref={rootRefCallback}
-          className={collapsed ? "tug-pane-chrome tug-pane-chrome--collapsed" : "tug-pane-chrome"}
+          className="tug-pane-chrome"
           data-slot="tug-pane"
           data-pane-id={stackId}
-          data-collapsed={collapsed ? "true" : "false"}
         >
           <CardTitleBar
             ref={titleBarRef}
             title={displayTitle}
             icon={effectiveMeta.icon}
             closable={closable}
-            collapsed={collapsed}
+            {...(sidebarSide === undefined
+              ? {
+                  widthPreset: stackState.widthPreset ?? null,
+                  onSetWidth: handleSetWidth,
+                }
+              : {})}
             cardCount={cards?.length ?? 1}
             resolveCloseGuard={resolveCloseGuard}
             confirmClose={paneConfirmClose}
             activeCardId={activeCardId}
             slotStack={slotStack}
             onRevealPane={onRevealPane}
-            onCollapse={handleFrameCollapseToggle}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
           />

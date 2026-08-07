@@ -69,6 +69,9 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "file.newSessionCard", key: "n", mods: MOD.command },
   { id: "file.closeCard", key: "w", mods: MOD.command },
   { id: "file.closeAllCardTabs", key: "w", mods: MOD.command | MOD.option },
+  // ⌘J, stamped by the sweep — the item is built with no key equivalent so
+  // the chord stays rebindable.
+  { id: "file.newJot", key: "j", mods: MOD.command },
   { id: "file.exportTranscript", key: "" },
   // Edit
   { id: "edit.undo", key: "z", mods: MOD.command },
@@ -130,7 +133,9 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // the app-test bundle's profile is "apptest", so they are absent here
   // and not asserted.
   { id: "maker.reload", key: "r", mods: MOD.command | MOD.shift },
-  { id: "maker.lens", key: "l", mods: MOD.command | MOD.option },
+  // The two sidebar toggles, both swept: ⌃⌘L and ⌃⌘J.
+  { id: "maker.lens", key: "l", mods: MOD.command | MOD.control },
+  { id: "maker.jots", key: "j", mods: MOD.command | MOD.control },
   { id: "maker.sourceTree" },
   // Help
   { id: "help.shortcuts", key: "" },

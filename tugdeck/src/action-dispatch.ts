@@ -31,7 +31,8 @@ import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-regist
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
-import { isImpositionKind, isLensSide } from "@/lib/layout-imposer";
+import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
+import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -481,10 +482,17 @@ export function initActionDispatch(
   });
 
   // toggle-lens: Show/hide the Lens rail. Fired by the Swift menu's
-  // "Show Lens" item (⌥⌘L) and the browser-dev keybinding. Presence of
+  // "Show Lens" item (⌃⌘L) and the browser-dev keybinding. Presence of
   // the Lens pane's presence is the open state ([P02]).
   registerAction("toggle-lens", () => {
     deckManager.toggleLensPane();
+  });
+
+  // toggle-jots: Show/hide the Jots rail, the same presence-is-open model the
+  // Lens uses. Fired by the Swift menu's "Show Jots" item (⌃⌘J) and the
+  // browser-dev keybinding — the sidebar-toggle grammar's other half.
+  registerAction("toggle-jots", () => {
+    deckManager.toggleSidebarPane(JOTS_CARD_ID);
   });
 
   // set-imposition: choose the deck's N-up arrangement, or turn it off.
@@ -499,15 +507,47 @@ export function initActionDispatch(
     deckManager.setImposition(kind);
   });
 
-  // set-imposition-lens: choose the side of the deck the Lens holds — the
-  // other axis of the imposition. Dispatched by the Lens Layouts section.
-  registerAction("set-imposition-lens", (payload) => {
-    const side = payload.side;
-    if (!isLensSide(side)) {
-      console.warn("set-imposition-lens: missing or invalid side", payload);
+  // set-card-width: set one content pane's width to a named preset. Dispatched
+  // by the pane title bar's width popup, which addresses the pane by id rather
+  // than relying on which card is focused — the popup you opened is the pane
+  // you meant.
+  registerAction(TUG_ACTIONS.SET_CARD_WIDTH, (payload) => {
+    const paneId = payload.paneId;
+    const preset = payload.preset;
+    if (typeof paneId !== "string" || !isContentWidth(preset)) {
+      console.warn("set-card-width: missing or invalid paneId/preset", payload);
       return;
     }
-    deckManager.setImpositionLens(side);
+    deckManager.setPaneWidth(paneId, preset);
+  });
+
+  // set-content-width: choose the width content cards read at across the whole
+  // deck. Dispatched by the Lens Layouts section's width picker. It lands on
+  // every content pane at once, which is what makes it the deck's width rather
+  // than a seed for the next card the user opens.
+  registerAction(TUG_ACTIONS.SET_CONTENT_WIDTH, (payload) => {
+    const preset = payload.preset;
+    if (!isContentWidth(preset)) {
+      console.warn("set-content-width: missing or invalid preset", payload);
+      return;
+    }
+    deckManager.setContentWidth(preset);
+  });
+
+  // set-sidebar-side: choose the side of the deck a sidebar card holds — the
+  // other axis of the imposition. Dispatched by the Lens Layouts section, one
+  // control per registered sidebar card.
+  registerAction(TUG_ACTIONS.SET_SIDEBAR_SIDE, (payload) => {
+    const componentId = payload.componentId;
+    const side = payload.side;
+    if (typeof componentId !== "string" || !isSidebarSide(side)) {
+      console.warn(
+        "set-sidebar-side: missing or invalid componentId/side",
+        payload,
+      );
+      return;
+    }
+    deckManager.setSidebarSide(componentId, side);
   });
 
   // assign-slot: put a card's pane at a numbered position in the active

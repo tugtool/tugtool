@@ -11,6 +11,7 @@ import { describe, expect, it } from "bun:test";
 import {
   formatDurationMs,
   formatTimeMinutesSeconds,
+  formatTokenCap,
   formatTokens,
   formatUsd,
 } from "@/components/tugways/cards/session-card-telemetry-renderers";
@@ -36,6 +37,35 @@ describe("formatTokens", () => {
   it("guards against NaN / negatives", () => {
     expect(formatTokens(Number.NaN)).toBe("0");
     expect(formatTokens(-1)).toBe("0");
+  });
+});
+
+describe("formatTokenCap", () => {
+  it("drops the decimals a round ceiling never needs", () => {
+    // The whole point: a context window is a number the model shipped with, so
+    // its tenths and hundredths are always zeros. `200.0K` and `1.00M` spend
+    // four characters of a status row that has none to spare saying nothing.
+    expect(formatTokenCap(200_000)).toBe("200K");
+    expect(formatTokenCap(1_000_000)).toBe("1M");
+    expect(formatTokenCap(128_000)).toBe("128K");
+  });
+
+  it("keeps a fraction that is real", () => {
+    // Only the trailing zeros go. A cap that genuinely falls between the round
+    // numbers still reads as itself.
+    expect(formatTokenCap(1_500_000)).toBe("1.5M");
+    expect(formatTokenCap(1_048_576)).toBe("1M");
+    expect(formatTokenCap(32_768)).toBe("32.8K");
+  });
+
+  it("returns an integer string under 1k", () => {
+    expect(formatTokenCap(0)).toBe("0");
+    expect(formatTokenCap(999)).toBe("999");
+  });
+
+  it("guards against NaN / negatives", () => {
+    expect(formatTokenCap(Number.NaN)).toBe("0");
+    expect(formatTokenCap(-1)).toBe("0");
   });
 });
 

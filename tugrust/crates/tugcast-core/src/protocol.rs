@@ -144,10 +144,10 @@ impl FeedId {
     /// Usage panel request (tugdeck → tugcast).
     pub const USAGE_QUERY: Self = Self(0x91);
 
-    // -- Snippets (reusable prompt fragments) --
-    /// Snippets document push (tugcast → tugdeck): the whole `snippets.json`
+    // -- Jots (reusable prompt fragments) --
+    /// Jots document push (tugcast → tugdeck): the whole `jots.json`
     /// document plus its content hash, republished on every file change.
-    pub const SNIPPETS: Self = Self(0xA0);
+    pub const JOTS: Self = Self(0xA0);
 
     // -- Router-internal --
     /// Control commands (tugdeck → tugcast, tugcast → tugdeck)
@@ -192,7 +192,7 @@ impl FeedId {
             Self::PULSE => Some("Pulse"),
             Self::USAGE => Some("Usage"),
             Self::USAGE_QUERY => Some("UsageQuery"),
-            Self::SNIPPETS => Some("Snippets"),
+            Self::JOTS => Some("Jots"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
             Self::SHELL_INPUT => Some("ShellInput"),
             Self::TUG_FEED => Some("TugFeed"),

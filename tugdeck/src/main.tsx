@@ -51,7 +51,7 @@ import { registerSettingsCard } from "./components/tugways/cards/settings-card";
 import { registerKeyboardCard } from "./components/tugways/cards/keyboard-card";
 import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
-import { registerSnippetsSection } from "./components/lens/sections/snippets-section";
+import { registerJotsCard } from "./components/jots/jots-card-registration";
 import { registerCardsSection } from "./components/lens/sections/cards-section";
 import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
@@ -332,10 +332,12 @@ if (!container) {
   // restores its layout, so the Lens survives reload
   // (`filterRegisteredCards` drops panes whose only card is unregistered).
   registerLensCard();
+  // Same unconditional-and-early rule as the Lens: Jots is a sidebar card, and
+  // a pane whose only card is unregistered at load is dropped.
+  registerJotsCard();
   // Registration order is the DEFAULT Lens section order — the fallback
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerCardsSection();
-  registerSnippetsSection();
   registerLayoutsSection();
   registerTextCard();
   registerFileViewCard();

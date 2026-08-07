@@ -14,6 +14,10 @@
 
 import React from "react";
 import { registerCard } from "@/card-registry";
+import {
+  CONTENT_WIDTH_COMFY_PX,
+  CONTENT_WIDTH_SLIM_PX,
+} from "@/lib/layout-imposer";
 import { FileViewCardContent } from "./file-view-card";
 
 export function registerFileViewCard(): void {
@@ -26,8 +30,9 @@ export function registerFileViewCard(): void {
     sizePolicy: {
       // Sized like the Text card so a viewer opens at the same stature next
       // to one — see `text-card-registration.tsx` for the shared rationale.
-      min: { width: 800, height: 400 },
-      preferred: { width: 800, height: 1200 },
+      min: { width: CONTENT_WIDTH_SLIM_PX, height: 400 },
+      preferred: { width: CONTENT_WIDTH_COMFY_PX, height: 1200 },
     },
+    takesContentWidth: true,
   });
 }

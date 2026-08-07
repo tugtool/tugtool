@@ -31,6 +31,7 @@ import React, {
 } from "react";
 
 import { registerCard } from "@/card-registry";
+import { CONTENT_WIDTH_COMFY_PX } from "@/lib/layout-imposer";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
@@ -197,12 +198,13 @@ export function registerDiffCard(): void {
     defaultMeta: { title: "Diff", icon: "GitCompareArrows", closable: true },
     category: { label: "Files", icon: "GitCompareArrows" },
     sizePolicy: {
-      // Opens at the 800 default width the Session, Text, and File cards
-      // share, so a diff popped out beside one reads at the same stature.
-      // The width floor stays below that — a diff still shrinks to a
-      // narrow column when the reader wants it beside something else.
+      // Opens at the deck's content width, the one the Session, Text, and File
+      // cards open at, so a diff popped out beside one reads at the same
+      // stature. The width floor stays below every preset — a diff still shrinks
+      // to a narrow column when the reader wants it beside something else.
       min: { width: 480, height: 320 },
-      preferred: { width: 800, height: 640 },
+      preferred: { width: CONTENT_WIDTH_COMFY_PX, height: 640 },
     },
+    takesContentWidth: true,
   });
 }

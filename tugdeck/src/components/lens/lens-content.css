@@ -68,9 +68,8 @@ body {
 
 /* The trailing edge of every Lens list row, wherever the row is authored. One
    rule, so the three sections cannot drift apart: whatever inline inset a list
-   gives its rows for READING (Sessions and Text Files one step in, Snippets
-   two), the far edge is the same vertical for all of them, shared with the
-   band headers above them.
+   gives its rows for READING, the far edge is the same vertical for all of
+   them, shared with the band headers above them.
 
    The leading inset is untouched — it is where the eye starts each line, and
    the three lists are entitled to differ on it. The trailing one is not a
@@ -91,10 +90,10 @@ body {
 }
 
 /* ---- The Lens's one-line lists ----
-   Snippets and Text Files are the same kind of surface: a dense index of
-   one-line handles read by scanning. They share this class so a row in one is
-   the same height as a row in the other — two lists stacked in one narrow
-   column that disagree on row height read as a layout accident.
+   The Cards rows and the Jots card's list are the same kind of surface: a
+   dense index of one-line handles read by scanning. They carry the same row
+   height so a row in one is the same height as a row in the other — two lists
+   that disagree on row height read as a layout accident.
 
    TUNE HERE for row height. The rest of the shared presentation — alternating
    row color and its strength, separators, text size — is props, and lives in

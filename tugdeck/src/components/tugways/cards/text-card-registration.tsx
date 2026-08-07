@@ -16,6 +16,10 @@
 
 import React from "react";
 import { registerCard } from "@/card-registry";
+import {
+  CONTENT_WIDTH_COMFY_PX,
+  CONTENT_WIDTH_SLIM_PX,
+} from "@/lib/layout-imposer";
 import { TextCardContent } from "./text-card";
 
 export function registerTextCard(): void {
@@ -27,16 +31,17 @@ export function registerTextCard(): void {
     category: { label: "Files", icon: "FileText" },
     lensGroup: "files",
     sizePolicy: {
-      // Sized like the Session card so a Text card opens at the same
-      // stature next to one. The 800 width floor and 800×1200 preferred
-      // match `session-card-registration.tsx` exactly — the preferred height
-      // is deliberately taller than most canvases and `addCard` clamps
-      // both dimensions to 90% of the live canvas at creation. The only
-      // divergence is the height floor: the Session card's 600 exists to fit
-      // its fixed 200px prompt entry + toolbars + transcript minimum,
-      // which a Text card has none of, so it can shrink to 400.
-      min: { width: 800, height: 400 },
-      preferred: { width: 800, height: 1200 },
+      // Sized like the Session card so a Text card opens at the same stature
+      // next to one: the same slim floor, and the same deck-content width at
+      // creation (`takesContentWidth` below). The preferred height is
+      // deliberately taller than most canvases and `addCard` clamps both
+      // dimensions to 90% of the live canvas at creation. The only divergence is
+      // the height floor: the Session card's 600 exists to fit its fixed 200px
+      // prompt entry + toolbars + transcript minimum, which a Text card has none
+      // of, so it can shrink to 400.
+      min: { width: CONTENT_WIDTH_SLIM_PX, height: 400 },
+      preferred: { width: CONTENT_WIDTH_COMFY_PX, height: 1200 },
     },
+    takesContentWidth: true,
   });
 }

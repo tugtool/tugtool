@@ -3,11 +3,11 @@
  * focus gesture (tuglaws/focus-language.md § Drag and the keyboard).
  *
  * The repro this pins: a prompt-entry card holds the keyboard while the Lens
- * sits inactive beside it, and the user grabs a snippet row in the Lens.
+ * sits inactive beside it, and the user grabs a jot row in the Lens.
  * Every scenario below was a distinct failure before the drag doctrine landed:
  *
  *  1. **Selection commits on mousedown.** A mousedown on an inactive Lens's
- *     snippet row moves the list's owned selection to that row immediately —
+ *     jot row moves the list's owned selection to that row immediately —
  *     so the drag carries the row it selected — and does NOT activate the
  *     Lens. Selection used to ride `click`, which no drag ever produces.
  *
@@ -24,7 +24,7 @@
  *     of an already-focused contenteditable blurs to `<body>` in WebKit, and
  *     the watchdog does not correct `<body>`.
  *
- *  5. **A drop claims no focus.** A snippet drop into a NON-key card's prompt
+ *  5. **A drop claims no focus.** A jot drop into a NON-key card's prompt
  *     entry inserts the text and moves neither `document.activeElement`, nor
  *     the active card, nor the focus engine's ledger. The drop used to end in
  *     a raw `view.focus()`, leaving a blinking caret and live typing in a card
@@ -53,7 +53,7 @@
  * @covers tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
- * @covers tugdeck/src/lib/snippet-drag.ts
+ * @covers tugdeck/src/lib/jot-drag.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -72,20 +72,20 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 const ENTRY_CARD_ID = "A";
-const LENS_CARD_ID = "lens-card";
-const SNIPPET_MIME = "application/x-tug-snippet";
+const JOTS_CARD_ID = "jots-card";
+const JOT_MIME = "application/x-tug-jot";
 const ENTRY_EDITOR = '[data-slot="tug-text-editor"] .cm-content';
 
-/** A snippet row's draggable label, by snippet id. */
+/** A jot row's draggable label, by jot id. */
 function rowLabel(id: string): string {
-  return `.lens-snippets-list .snippet-row-content[data-snippet-id="${id}"] .snippet-row-label`;
+  return `.jots-list .jot-row-content[data-jot-id="${id}"] .jot-row-label`;
 }
 
-/** The list cell wrapping a snippet row, by snippet id. */
-function selectedSnippetIdExpr(): string {
+/** The list cell wrapping a jot row, by jot id. */
+function selectedJotIdExpr(): string {
   return `(() => {
-    const cell = document.querySelector('.lens-snippets-list .tug-list-view-cell[data-selected="true"]');
-    return cell?.querySelector('[data-snippet-id]')?.getAttribute('data-snippet-id') ?? null;
+    const cell = document.querySelector('.jots-list .tug-list-view-cell[data-selected="true"]');
+    return cell?.querySelector('[data-jot-id]')?.getAttribute('data-jot-id') ?? null;
   })()`;
 }
 
@@ -98,7 +98,7 @@ function deckWithEntryAndLens() {
         title: "Session A",
         closable: true,
       },
-      { id: LENS_CARD_ID, componentId: "lens", title: "Lens", closable: true },
+      { id: JOTS_CARD_ID, componentId: "jots", title: "Jots", closable: true },
     ],
     panes: [
       {
@@ -111,12 +111,12 @@ function deckWithEntryAndLens() {
         acceptsFamilies: ["maker"],
       },
       {
-        id: "lens-pane",
+        id: "jots-pane",
         position: { x: 0, y: 0 },
         size: { width: 320, height: 600 },
-        cardIds: [LENS_CARD_ID],
-        activeCardId: LENS_CARD_ID,
-        title: "Lens",
+        cardIds: [JOTS_CARD_ID],
+        activeCardId: JOTS_CARD_ID,
+        title: "Jots",
         acceptsFamilies: [],
 
       },
@@ -148,20 +148,20 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
     async () => {
       const tugbankPath = mkTempTugbank();
       const dir = mkdtempSync(join(tmpdir(), "tug-at0267-"));
-      const snippetsPath = join(dir, "snippets.json");
-      const snippets = Array.from({ length: 6 }, (_, i) => ({
+      const jotsPath = join(dir, "jots.json");
+      const jots = Array.from({ length: 6 }, (_, i) => ({
         id: `s${i}`,
-        text: `drag doctrine snippet ${i}`,
+        text: `drag doctrine jot ${i}`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0267-drag-activation-focus",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({
@@ -215,7 +215,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
             selected: string | null;
             activeCard: string | null;
           }>(`(() => ({
-            selected: ${selectedSnippetIdExpr()},
+            selected: ${selectedJotIdExpr()},
             activeCard: window.__tug.getActiveCardId(),
           }))()`);
           console.log("[at0267] after mousedown:", JSON.stringify(afterDown));
@@ -227,7 +227,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
           await app.nativeMouseUp(s2);
           await settle();
           // No drag came: the click commits the activation on mouseup.
-          expect(await app.getActiveCardId()).toBe(LENS_CARD_ID);
+          expect(await app.getActiveCardId()).toBe(JOTS_CARD_ID);
 
           // ---- 3. A dragstart between down and up cancels the activation.
           await app.nativeClickAtElement(
@@ -240,7 +240,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
           const s4 = await centerOf(rowLabel("s4"));
           await app.nativeMouseDown(s4);
           await settle();
-          expect(await app.evalJS<string | null>(selectedSnippetIdExpr())).toBe(
+          expect(await app.evalJS<string | null>(selectedJotIdExpr())).toBe(
             "s4",
           );
           // The browser's own dragstart for this gesture, dispatched on the
@@ -278,7 +278,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
           // third landed a caret. Hand the Lens the keyboard, then click once.
           await app.nativeClickAtElement(rowLabel("s0"));
           await settle();
-          expect(await app.getActiveCardId()).toBe(LENS_CARD_ID);
+          expect(await app.getActiveCardId()).toBe(JOTS_CARD_ID);
 
           const caretLedgerBefore = await readLedger();
           await app.nativeClickAtElement(
@@ -317,10 +317,10 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
 
           // ---- 5. A drop into a NON-key card claims nothing.
           // Hand the Lens the active card again so the entry is a background
-          // card, then drop a snippet onto its editor.
+          // card, then drop a jot onto its editor.
           await app.nativeClickAtElement(rowLabel("s1"));
           await settle();
-          expect(await app.getActiveCardId()).toBe(LENS_CARD_ID);
+          expect(await app.getActiveCardId()).toBe(JOTS_CARD_ID);
 
           const dropLedgerBefore = await readLedger();
           const beforeDrop = await app.evalJS<{
@@ -344,7 +344,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
             let dt;
             try {
               dt = new DataTransfer();
-              dt.setData(${JSON.stringify(SNIPPET_MIME)}, "dropped-payload");
+              dt.setData(${JSON.stringify(JOT_MIME)}, "dropped-payload");
               dt.setData("text/plain", "dropped-payload");
             } catch {
               return { constructed: false, dispatched: false };
@@ -386,7 +386,7 @@ describe.skipIf(!SHOULD_RUN)("at0267 — drag, activation, and focus", () => {
           // ...and nothing else moved: not DOM focus, not the active card, not
           // the focus engine's ledger.
           expect(afterDrop.activeDesc).toBe(beforeDrop.activeDesc);
-          expect(afterDrop.activeCard).toBe(LENS_CARD_ID);
+          expect(afterDrop.activeCard).toBe(JOTS_CARD_ID);
           expect(ledgerDelta(dropLedgerBefore, await readLedger())).toEqual({});
 
           // ---- 6. One click works after a REAL drag from a parked-sink

@@ -93,7 +93,7 @@
 /* ============================================================================
    .session-telemetry-status-row — Z2 combined session-status row
    ============================================================================
-   The flat 5-cell flex layout (STATE, TIME, TOKENS, CONTEXT, TASKS)
+   The flat 5-cell flex layout (STATE, TIME, TOKENS, CONTEXT, WORK)
    with `justify-content: center` and a fixed inter-item `gap`. The
    five cells pack as one centered group; the leftover row width
    splits into two equal flexing margins on the far left and right.
@@ -102,9 +102,9 @@
 
    Each cell's per-priority static width, value/endcap styling, and
    the container-query collapse rules live in the cell's own file
-   (`tug-status-cell.css`). The collapse order (TIME → ~430px, then
-   TOKENS → ~260px; STATE / CONTEXT / TASKS most persistent) is driven
-   by `@container` queries on the host's `container-name: session-status`.
+   (`tug-status-cell.css`), which is also where the collapse order and
+   the measured widths behind each rung are stated — one place, so the
+   numbers cannot be described here and set there.
    ========================================================================= */
 
 /* Replay-window inerting: while a resume replay reconstructs history,
@@ -132,7 +132,7 @@
 }
 
 .session-telemetry-status-row {
-  /* Flat 5-cell flex row: STATE + TIME + TOKENS + CONTEXT + TASKS as
+  /* Flat 5-cell flex row: STATE + TIME + TOKENS + CONTEXT + WORK as
      direct siblings. `justify-content: center` packs the five cells as
      one centered group with a fixed inter-item `gap`; the leftover row
      width splits into two equal flexing margins on the far left and
@@ -146,11 +146,22 @@
   justify-content: center;
   font-family: var(--tug-font-family-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 0.6875rem;
+  font-size: 0.625rem;
   line-height: 1.2;
+  /* The gap the pre-diet row had. The diet cut it to `xl` (16px) on the
+     arithmetic alone, and the arithmetic was answering the wrong question: at
+     the slim card the row had ~110px it was not spending, so the cut bought
+     margin nobody needed and paid for it in rhythm — five readings 16px apart
+     read as a cluster, not as a panel of instruments. The cell budgets in
+     `tug-status-cell.css` are sized against this gap; the two numbers are one
+     decision. */
   gap: var(--tug-space-2xl);
   width: 100%;
-  padding-inline: var(--tug-space-2xl);
+  /* The row's own inset, inside the strip's 8px. Kept small on purpose: the
+     cells are what should hold the row's width, and every pixel spent here is a
+     pixel of wing the instruments do not get. The strip's padding already keeps
+     the outermost wing off the card edge. */
+  padding-inline: var(--tug-space-md);
   box-sizing: border-box;
 
   /* Cell-width fallback — the generous default each cell inherits

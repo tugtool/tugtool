@@ -851,7 +851,7 @@ pub(crate) fn build_app(
     router: FeedRouter,
     _dev_state: SharedDevState,
     bank_store: Option<Arc<TugbankClient>>,
-    snippets_state: Option<Arc<crate::snippets::SnippetsState>>,
+    jots_state: Option<Arc<crate::jots::JotsState>>,
 ) -> Router {
     // Allow any origin on localhost — tugcast only binds to loopback.
     // This prevents WKWebView CORS errors during page teardown (keepalive
@@ -910,12 +910,12 @@ pub(crate) fn build_app(
             .layer(Extension(store));
     }
 
-    // Wire the snippets routes when a state (resolved file path) is provided.
-    if let Some(state) = snippets_state {
+    // Wire the jots routes when a state (resolved file path) is provided.
+    if let Some(state) = jots_state {
         base = base
             .route(
-                "/api/snippets",
-                get(crate::snippets::get_snippets).put(crate::snippets::put_snippets),
+                "/api/jots",
+                get(crate::jots::get_jots).put(crate::jots::put_jots),
             )
             .layer(Extension(state));
     }
@@ -947,9 +947,9 @@ pub async fn run_server(
     router: FeedRouter,
     dev_state: SharedDevState,
     bank_store: Option<Arc<TugbankClient>>,
-    snippets_state: Option<Arc<crate::snippets::SnippetsState>>,
+    jots_state: Option<Arc<crate::jots::JotsState>>,
 ) -> Result<(), std::io::Error> {
-    let app = build_app(router, dev_state, bank_store, snippets_state);
+    let app = build_app(router, dev_state, bank_store, jots_state);
 
     axum::serve(
         listener,

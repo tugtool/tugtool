@@ -48,7 +48,7 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
+const JOTS_LIST = ".jots-card .jots-list";
 const ROWS = 4;
 
 function priorCardDeck() {
@@ -141,15 +141,15 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0341-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       writeFileSync(
-        snippetsPath,
+        jotsPath,
         `${JSON.stringify(
           {
             version: 1,
-            snippets: Array.from({ length: ROWS }, (_, i) => ({
+            jots: Array.from({ length: ROWS }, (_, i) => ({
               id: `s${i}`,
-              text: `row-${i} snippet handle`,
+              text: `row-${i} jot handle`,
             })),
           },
           null,
@@ -160,7 +160,7 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0341-lens-cross-section-arrows",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -174,11 +174,34 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
           await app.dispatchControlAction("focus-lens");
           await waitRing(app, "cards:list");
 
-          // The Cards list's cursor sits on its one pane row, which is also its
-          // last, so Down runs off the list's edge. Before the liveliness net
-          // this clamped and the ring never left the section; now it crosses to
-          // the next section's BAND, which is where that section starts.
-          await step(app, "ArrowDown", "snippets:band");
+          // ---- Left off a body returns to its own band. ----
+          //
+          // Declared as a seam rather than an override, so it fires only where
+          // nothing else claims the arrow: a vertical-axis list declines
+          // horizontal arrows, while a horizontal group (the Layouts tiles)
+          // keeps them for its own cursor and never sees it.
+          await step(app, "ArrowLeft", "cards:band");
+
+          // ---- Right runs the band, and never leaves it. ----
+          //
+          // Walked rather than enumerated: what the plane claims is that the
+          // band is a closed RING — every Right lands on something that sits ON
+          // the band, and the walk comes back to the band itself rather than
+          // dead-ending or spilling into the rows. Which stops a band offers is
+          // that section's business and changes as controls are added.
+          const bandStops: string[] = [];
+          for (let i = 0; i < 6; i += 1) {
+            const at = await press(app, "ArrowRight");
+            expect(at).not.toBeNull();
+            const [kind, part] = (at as string).split(":");
+            expect(kind).toBe("cards");
+            expect(BAND_PARTS).toContain(part);
+            bandStops.push(part);
+            if (part === "band" && i > 0) break;
+          }
+          expect(bandStops[bandStops.length - 1]).toBe("band");
+          // More than one stop, or the "ring" claim is vacuous.
+          expect(bandStops.length).toBeGreaterThan(1);
 
           // ---- The headline: Down on a band means DOWN. ----
           //
@@ -186,66 +209,54 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
           // in the section's rows — the thing the band is a header for. Under
           // the linear net this landed on the filter field, one step to the
           // right, which is the complaint the declared plane answers.
-          await step(app, "ArrowDown", "snippets:list");
+          await step(app, "ArrowDown", "cards:list");
 
-          // Interior Downs belong to the list's cursor — the ring stays.
-          await app.nativeKey("ArrowDown");
-          await waitRing(app, "snippets:list");
-          expect(
-            await app.evalJS<string>(
-              `(document.querySelector('${SNIPPETS_LIST} [data-key-cursor]')?.textContent || "")`,
-            ),
-          ).toContain("row-1");
+          // The Cards list's cursor sits on its one pane row, which is also its
+          // last, so Down runs off the list's edge. Before the liveliness net
+          // this clamped and the ring never left the section; now it crosses to
+          // the next section's BAND, which is where that section starts.
+          await step(app, "ArrowDown", "layouts:band");
 
-          // ---- Left off a body returns to its own band. ----
-          //
-          // Declared as a seam rather than an override, so it fires only where
-          // nothing else claims the arrow: a vertical-axis list declines
-          // horizontal arrows, while a horizontal group (the Layouts tiles)
-          // keeps them for its own cursor and never sees it.
-          await step(app, "ArrowLeft", "snippets:band");
-
-          // ---- Right runs the band, in the order it reads. ----
-          await step(app, "ArrowRight", "snippets:filter");
-          // The field is empty, so it spends the arrow on movement rather than
-          // holding it for a caret with nothing to move.
-          await step(app, "ArrowRight", "snippets:action");
-          await step(app, "ArrowRight", "snippets:fold");
-          // The band is a closed ring: off its last stop, Right wraps back to
-          // the band itself rather than dead-ending or spilling into the rows.
-          await step(app, "ArrowRight", "snippets:band");
-          await step(app, "ArrowLeft", "snippets:fold");
-
-          // Down from anywhere on the band reaches the same body — the whole
-          // band is a header for one thing.
-          await step(app, "ArrowDown", "snippets:list");
+          // Down from the band reaches that section's body — the Layouts tiles,
+          // which are a grid rather than a list and so address as neither.
+          await step(app, "ArrowDown", "layouts:other");
 
           // ---- Up retraces the column. ----
           //
-          // Up is the list's while its cursor has somewhere to go, then crosses
-          // to the band above it — the band, not the fold cue it was last on,
-          // because a vertical arrow enters a row at its leading member.
-          await app.nativeKey("ArrowUp");
-          await waitRing(app, "snippets:list");
-          await step(app, "ArrowUp", "snippets:band");
-          // And on into the section above, at its BODY rather than its band:
-          // the Cards list is the row directly over the Snippets band.
+          // Up climbs back through the section's body to the band above it —
+          // the band, not whatever stop it was last on, because a vertical arrow
+          // enters a row at its leading member — and on into the section above
+          // at its BODY. Walked rather than counted: how many rows a section's
+          // body has is that section's business (Layouts alone has four groups,
+          // several of them grids), and the claim is that the column ENDS at the
+          // band, not that it is one step deep.
+          const climb: string[] = [];
+          for (let i = 0; i < 12; i += 1) {
+            const at = await press(app, "ArrowUp");
+            expect(at).not.toBeNull();
+            climb.push(at as string);
+            if (at === "layouts:band") break;
+            // Every stop on the way up is still inside the section's body —
+            // the climb may not leak sideways into another section.
+            expect(at).toBe("layouts:other");
+          }
+          expect(climb[climb.length - 1]).toBe("layouts:band");
           await step(app, "ArrowUp", "cards:list");
 
           // A filter field with a query is a different animal: the caret owns
           // the arrows again. Land on the field and type.
-          await step(app, "ArrowDown", "snippets:band");
-          await step(app, "ArrowRight", "snippets:filter");
-          await app.nativeType("row");
+          await step(app, "ArrowLeft", "cards:band");
+          await step(app, "ArrowRight", "cards:filter");
+          await app.nativeType("Accordion");
           await app.waitForCondition<boolean>(
-            `document.querySelector('.lens-section[data-lens-section="snippets"] .tug-filter-field-input')?.value === "row"`,
+            `document.querySelector('.lens-section[data-lens-section="cards"] .tug-filter-field-input')?.value === "Accordion"`,
             { timeoutMs: 3_000 },
           );
 
           // Up is the field's now — the ring does not leave.
           await app.nativeKey("ArrowUp");
           await new Promise<void>((r) => setTimeout(r, 250));
-          expect(await ringAddress(app)).toBe("snippets:filter");
+          expect(await ringAddress(app)).toBe("cards:filter");
 
           // The whole tour is keyboard-only: every landing came through the
           // engine, with no raw focus write behind its back.
@@ -282,15 +293,15 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
       // filter field instead of into the rows the band is a header for.
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0341-drift-"));
-      const snippetsPath = join(filesDir, "snippets.json");
+      const jotsPath = join(filesDir, "jots.json");
       writeFileSync(
-        snippetsPath,
+        jotsPath,
         `${JSON.stringify(
           {
             version: 1,
-            snippets: Array.from({ length: ROWS }, (_, i) => ({
+            jots: Array.from({ length: ROWS }, (_, i) => ({
               id: `s${i}`,
-              text: `row-${i} snippet handle`,
+              text: `row-${i} jot handle`,
             })),
           },
           null,
@@ -301,7 +312,7 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0341-lens-plane-drift",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });

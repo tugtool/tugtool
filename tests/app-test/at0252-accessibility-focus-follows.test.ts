@@ -37,9 +37,9 @@ import {
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 60_000;
 
-const SNIPPETS_LIST = ".lens-content .lens-snippets-list";
-const SNIPPETS_KBD = `${SNIPPETS_LIST}[data-key-view-kbd]`;
-const CURSOR = `${SNIPPETS_LIST} [data-key-cursor]`;
+const JOTS_LIST = ".jots-card .jots-list";
+const JOTS_KBD = `${JOTS_LIST}[data-key-view-kbd]`;
+const CURSOR = `${JOTS_LIST} [data-key-cursor]`;
 
 const ROWS = 5;
 
@@ -66,16 +66,16 @@ function priorCardDeck() {
 
 async function activeElementProbe(app: App): Promise<{
   isSink: boolean;
-  isSnippetsList: boolean;
+  isJotsList: boolean;
   accessAttr: string | null;
 }> {
   return app.evalJS(
     `(function(){
       var ae = document.activeElement;
-      var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+      var list = document.querySelector(${JSON.stringify(JOTS_LIST)});
       return {
         isSink: ae !== null && ae.hasAttribute("data-tug-key-sink"),
-        isSnippetsList: ae !== null && list !== null && ae === list,
+        isJotsList: ae !== null && list !== null && ae === list,
         accessAttr: document.documentElement.getAttribute("data-keyboard-access"),
       };
     })()`,
@@ -88,20 +88,20 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0252-"));
-      const snippetsPath = join(filesDir, "snippets.json");
-      const snippets = Array.from({ length: ROWS }, (_, i) => ({
+      const jotsPath = join(filesDir, "jots.json");
+      const jots = Array.from({ length: ROWS }, (_, i) => ({
         id: `s${i}`,
-        text: `row-${i} snippet handle`,
+        text: `row-${i} jot handle`,
       }));
       writeFileSync(
-        snippetsPath,
-        `${JSON.stringify({ version: 1, snippets }, null, 2)}\n`,
+        jotsPath,
+        `${JSON.stringify({ version: 1, jots: jots }, null, 2)}\n`,
       );
       try {
         seedTugbankForLaunch(tugbankPath);
         const app = await launchTugApp({
           testName: "at0252-accessibility-focus-follows",
-          env: { TUGBANK_PATH: tugbankPath, TUG_SNIPPETS_PATH: snippetsPath },
+          env: { TUGBANK_PATH: tugbankPath, TUG_JOTS_PATH: jotsPath },
         });
         try {
           await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
@@ -111,10 +111,10 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
           );
 
           // Keyboard into the Lens: engine-routed key view on the
-          // snippets list, activeElement parked on the sink. The band leads
+          // jots list, activeElement parked on the sink. The band leads
           // its section and every control on it is a stop, so the walk
           // crosses the band before it reaches the rows.
-          await app.dispatchControlAction("focus-lens");
+          await app.dispatchControlAction("toggle-jots");
           await app.waitForCondition<boolean>(
             `document.querySelector("[data-key-view-kbd]") !== null`,
             { timeoutMs: 5_000 },
@@ -122,7 +122,7 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
           for (let i = 0; i < 8; i += 1) {
             if (
               await app.evalJS<boolean>(
-                `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+                `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
               )
             ) {
               break;
@@ -130,27 +130,27 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
             await app.nativeKey("Tab");
           }
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+            `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             { timeoutMs: 5_000 },
           );
           const standard = await activeElementProbe(app);
           expect(standard.accessAttr).toBe("standard");
           expect(standard.isSink).toBe(true);
-          expect(standard.isSnippetsList).toBe(false);
+          expect(standard.isJotsList).toBe(false);
 
           // VoiceOver on → accessibility mode → the mirror grants the
           // key-view element real DOM focus (with a regained tabindex).
           await app.dispatchControlAction("voiceover-changed", { enabled: true });
           await app.waitForCondition<boolean>(
             `(function(){
-              var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+              var list = document.querySelector(${JSON.stringify(JOTS_LIST)});
               return list !== null && document.activeElement === list;
             })()`,
             { timeoutMs: 5_000 },
           );
           const mirrored = await activeElementProbe(app);
           expect(mirrored.accessAttr).toBe("accessibility");
-          expect(mirrored.isSnippetsList).toBe(true);
+          expect(mirrored.isJotsList).toBe(true);
           // The invariant is "the list became programmatically focusable so the
           // mirror could grant it" — the grant itself is already asserted
           // above. Which non-stop tabindex spelling the mirror uses is a
@@ -158,7 +158,7 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
           expect(
             await app.evalJS<string | null>(
               `(function(){
-                var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+                var list = document.querySelector(${JSON.stringify(JOTS_LIST)});
                 return list === null ? null : list.getAttribute("tabindex");
               })()`,
             ),
@@ -175,10 +175,10 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
             { timeoutMs: 3_000 },
           );
           const midTour = await activeElementProbe(app);
-          expect(midTour.isSnippetsList).toBe(true);
+          expect(midTour.isJotsList).toBe(true);
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(SNIPPETS_KBD)}) !== null`,
+              `document.querySelector(${JSON.stringify(JOTS_KBD)}) !== null`,
             ),
           ).toBe(true);
 
@@ -201,7 +201,7 @@ describe.skipIf(!SHOULD_RUN)("at0252 — accessibility focus-follows mirror", ()
           expect(
             await app.evalJS<string | null>(
               `(function(){
-                var list = document.querySelector(${JSON.stringify(SNIPPETS_LIST)});
+                var list = document.querySelector(${JSON.stringify(JOTS_LIST)});
                 return list === null ? null : list.getAttribute("tabindex");
               })()`,
             ),

@@ -61,7 +61,7 @@ function persistedBlob(): DeckState {
       },
     ],
     activePaneId: "p2",
-    imposition: { lens: "right" },
+    imposition: { sidebars: { lens: { side: "right" } } },
     hasFocus: true,
   };
 }
@@ -111,7 +111,7 @@ describe("retired changeset card degrades a persisted deck blob gracefully", () 
         },
       ],
       activePaneId: "p1",
-      imposition: { lens: "right" },
+      imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
     expect(

@@ -50,7 +50,6 @@ import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
 import { SessionRouteIndicatorBadge } from "../chrome/session-route-indicator-badge";
 import { formatPathChipText } from "../chrome/path-chip-format";
-import { SessionIdBadge } from "../chrome/session-id-badge";
 import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
 import { ModelChip } from "./model-chip";
 import { useModelPicker } from "./model-picker-sheet";
@@ -297,6 +296,11 @@ const SESSION_CYCLE_GROUP = "session-prompt-cycle";
 // unmounts (Table T01), so it is not in the walk at all.
 const SESSION_CYCLE_ORDER_ROUTE = 0;
 const SESSION_CYCLE_ORDER_CLAUDE_CODE = 1;
+// 2 was the Session chip's. The Z4B diet unmounted that chip from the code
+// route, its only mount, so nothing claims the order now — but the constant and
+// its place in `cycleSpatialOrder` stay, because that grid describes the SHAPE
+// of the toolbar row and the engine skips whichever stops are not currently
+// mounted. Renumbering would churn every constant below it for nothing.
 const SESSION_CYCLE_ORDER_SESSION = 2;
 const SESSION_CYCLE_ORDER_PROJECT = 3;
 const SESSION_CYCLE_ORDER_MODE = 4;
@@ -318,8 +322,8 @@ const SESSION_CYCLE_ORDER_SUBMIT = 7;
 const SESSION_CYCLE_ORDER_FIND_BASE = 8;
 const SESSION_CYCLE_FIND_STOP_COUNT = 4;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
-// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK / BTW take
-// orders 12…17 (base + 0…5). The PULSE label
+// no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK take
+// orders 12…16 (base + 0…4). The PULSE label
 // follows at 18 (its own one-node grid row beneath the status cells); the
 // editor (the text body) at 19; and the Z4C compose-phase attachment tiles
 // — one leaf stop each — the orders from 20 upward (base + tile index), so
@@ -3752,8 +3756,9 @@ export function SessionCardBody({
     // `/btw <question>` — ask a side question and open the non-modal placard.
     // Un-gated and pre-`canSubmit`, so it works idle AND mid-turn with no
     // `performSubmit` change. A bare `/btw` just opens the placard (history /
-    // earlier asks) without asking. The Z2 BTW cell is where answers live;
-    // this is how you ask.
+    // earlier asks) without asking — which is the ONLY way back to it, now that
+    // the Z2 BTW cell is gone: the placard is where answers live, and `/btw` is
+    // both how you ask and how you look.
     btw: (args) => {
       if (args.trim().length > 0) sideQuestionStore.ask(args);
       statusRowRef.current?.openSideQuestions();
@@ -4087,13 +4092,13 @@ export function SessionCardBody({
     sessionMetadataStore,
     onScrollToRow: handleScrollToRow,
     statusRowRef,
-    // Author the Z2 status cells into the card's cycle as six leaf stops
+    // Author the Z2 status cells into the card's cycle as five leaf stops
     // ([P10] revised) starting at SESSION_CYCLE_ORDER_STATUS_BASE; the status-bar
     // region is wrapped in a second `cycle.CycleScope` (below) sharing this
     // card's mode id.
     statusRowFocusGroup: SESSION_CYCLE_GROUP,
     statusRowFocusOrderBase: SESSION_CYCLE_ORDER_STATUS_BASE,
-    // BTW cell: its count + activation (toggling the shared `/btw` placard).
+    // The `/btw` placard's body (there is no BTW cell; `/btw` opens it).
     sideQuestionStore,
     // Staged-context queue: the `/btw` overlay's Add-to-context action.
     pendingContextStore,
@@ -4352,9 +4357,10 @@ export function SessionCardBody({
                 empty slot leaves the wrapper `:empty`, which collapses the
                 whole strip (CSS).
 
-                The `/btw` surface is one of the Z2 status row's placards now
-                (BTW cell), so there is no separate pinned strip — the row owns
-                the placard, its open/close, and its under-cell anchoring.
+                The `/btw` surface is one of the Z2 status row's placards, so
+                there is no separate pinned strip — the row owns the placard and
+                its open/close. It has no cell of its own: `/btw` is how you
+                ask, and the placard pops from the strip's trailing edge.
               */}
               {effectiveStatusBarContent != null && (
                 <div
@@ -4599,10 +4605,18 @@ export function SessionCardBody({
                     </TugPushButton>
                   </>
                 ) : (
-                // Static Code chip set ([P01]/[P10]): identity · session ·
-                // project · mode · model · effort. The find cluster is not
-                // here — it lives in the find bar, which owns the search for
-                // exactly as long as it is open.
+                // Static Code chip set ([P01]/[P10]): identity · mode · model ·
+                // effort. The find cluster is not here — it lives in the find
+                // bar, which owns the search for exactly as long as it is open.
+                //
+                // The Session and Project chips are deliberately absent on THIS
+                // route. Both names already read in the pane title bar (see
+                // `sessionCardTitleOverride`), so on the strip they were a
+                // second copy — and they were the two most expensive variable
+                // faces on the one route that has a width problem. The shell and
+                // commit clusters keep theirs: those routes are not
+                // space-challenged, and Project means something different in a
+                // commit (where it lands) than as an identity label.
                 <>
                   <SessionRouteIndicatorBadge
                     codeSessionStore={codeSessionStore}
@@ -4610,13 +4624,6 @@ export function SessionCardBody({
                     focusGroup={SESSION_CYCLE_GROUP}
                     focusOrder={SESSION_CYCLE_ORDER_CLAUDE_CODE}
                   />
-                  <SessionIdBadge
-                    cardId={cardId}
-                    sessionMetadataStore={sessionMetadataStore}
-                    focusGroup={SESSION_CYCLE_GROUP}
-                    focusOrder={SESSION_CYCLE_ORDER_SESSION}
-                  />
-                  {effectivePromptStatusContent}
                   {/* Disabled while a turn is in flight so a mode/model/effort
                       change never races the running turn — the chips mirror the
                       submit button, a live blue arrow exactly when `canSubmit`. */}
