@@ -149,6 +149,36 @@ describe("ShellGrammarStore", () => {
     expect(s.get("git status")).toBeUndefined();
   });
 
+  // A disposed store's feed subscription is gone, so a request made after
+  // dispose could never be answered — it degrades immediately instead of
+  // acquiring a timer and a parked resolver.
+  it("acquires nothing after dispose", async () => {
+    const s = store();
+    s.dispose();
+    expect((await s.request("git status")).band).toBe("unknown");
+  });
+
+  // `useSyncExternalStore` compares snapshots by identity: the same map
+  // handed back across changes would make every change invisible.
+  it("publishes a fresh snapshot per change and a stable one between", () => {
+    const s = store();
+    const before = s.getSnapshot();
+    expect(s.getSnapshot()).toBe(before);
+    s._ingestForTest({
+      type: "shell_grammar",
+      tug_session_id: "s1",
+      line: "git status",
+      band: "yes",
+    });
+    const after = s.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(after.get("git status")?.band).toBe("yes");
+    expect(s.getSnapshot()).toBe(after);
+    s.clear();
+    expect(s.getSnapshot()).not.toBe(after);
+    expect(s.getSnapshot().size).toBe(0);
+  });
+
   it("bounds what it remembers", () => {
     const s = store();
     for (let i = 0; i < 60; i += 1) {

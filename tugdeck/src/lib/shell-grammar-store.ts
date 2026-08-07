@@ -76,6 +76,11 @@ export class ShellGrammarStore {
   private readonly _timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly _listeners = new Set<() => void>();
   private readonly _unsubscribeFeed: () => void;
+  /** Immutable copy handed to `getSnapshot`, rebuilt when a grade lands —
+   * `useSyncExternalStore` compares snapshots by identity, so returning the
+   * live map would make every change invisible [L02]. */
+  private _snapshot: ReadonlyMap<string, LineGrade> = new Map();
+  private _disposed = false;
 
   constructor(
     private readonly _feedStore: FeedStore,
@@ -101,6 +106,11 @@ export class ShellGrammarStore {
   request(line: string): Promise<LineGrade> {
     const cached = this._grades.get(line);
     if (cached !== undefined) return Promise.resolve(cached);
+
+    // A disposed store must not acquire anything new [L27]: its feed
+    // subscription is gone, so a frame sent now could never be answered and
+    // its timer would be the only thing to settle the wait.
+    if (this._disposed) return Promise.resolve(UNKNOWN_GRADE);
 
     const connection = getConnection();
     if (connection === null || connection === undefined) {
@@ -145,17 +155,22 @@ export class ShellGrammarStore {
   requestWithin(line: string, timeoutMs: number): Promise<LineGrade> {
     const cached = this._grades.get(line);
     if (cached !== undefined) return Promise.resolve(cached);
-    return Promise.race([
-      this.request(line),
-      new Promise<LineGrade>((resolve) => {
-        globalThis.setTimeout(() => resolve(UNKNOWN_GRADE), timeoutMs);
-      }),
-    ]);
+    return new Promise<LineGrade>((resolve) => {
+      // The race timer is retired when the answer wins it, so an answered
+      // wait leaves no timer parked against a settled promise [L27].
+      const timer = globalThis.setTimeout(() => resolve(UNKNOWN_GRADE), timeoutMs);
+      void this.request(line).then((grade) => {
+        globalThis.clearTimeout(timer);
+        resolve(grade);
+      });
+    });
   }
 
   /** Drop every cached grade. Called with the verdict cache, on draft teardown. */
   clear(): void {
     this._grades.clear();
+    this._snapshot = new Map();
+    for (const listener of this._listeners) listener();
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -166,9 +181,10 @@ export class ShellGrammarStore {
   };
 
   /** Every grade landed so far. Routing reads `get`; this is the [L02] surface. */
-  getSnapshot = (): ReadonlyMap<string, LineGrade> => this._grades;
+  getSnapshot = (): ReadonlyMap<string, LineGrade> => this._snapshot;
 
   dispose(): void {
+    this._disposed = true;
     this._unsubscribeFeed();
     this._listeners.clear();
     // Anything still waiting gets the answer that changes nothing.
@@ -214,6 +230,7 @@ export class ShellGrammarStore {
       if (oldest.done === true) break;
       this._grades.delete(oldest.value);
     }
+    this._snapshot = new Map(this._grades);
 
     this._settle(p.line, grade);
     for (const listener of this._listeners) listener();

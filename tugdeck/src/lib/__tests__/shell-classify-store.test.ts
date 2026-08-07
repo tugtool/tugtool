@@ -217,6 +217,32 @@ describe("ShellClassifyStore", () => {
     s.dispose();
   });
 
+  // A disposed store's feed subscription is gone, so a frame sent after
+  // dispose could never be answered — the request must not reach the wire.
+  it("acquires nothing after dispose", async () => {
+    const { sends } = stubConnection();
+    const s = store();
+    s.dispose();
+    expect(await s.request("ls -la")).toBeNull();
+    expect(sends.length).toBe(0);
+  });
+
+  // `useSyncExternalStore` compares snapshots by identity: the same map
+  // handed back across changes would make every change invisible.
+  it("publishes a fresh snapshot per change and a stable one between", () => {
+    const s = store();
+    const before = s.getSnapshot();
+    expect(s.getSnapshot()).toBe(before);
+    s._ingestForTest(reply("ls -la", false, { ok: true, verdict: "shell" }));
+    const after = s.getSnapshot();
+    expect(after).not.toBe(before);
+    expect(after.get("-:ls -la")).toBe("shell");
+    expect(s.getSnapshot()).toBe(after);
+    s.clear();
+    expect(s.getSnapshot()).not.toBe(after);
+    expect(s.getSnapshot().size).toBe(0);
+  });
+
   it("settles a parked request rather than leaking its resolver on dispose", async () => {
     const { sends } = stubConnection();
     const s = store();

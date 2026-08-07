@@ -421,7 +421,7 @@ impl SharedAgentPool {
                     && !w.retired.load(Ordering::Relaxed)
                     && !w.superseded.load(Ordering::Relaxed)
             });
-            if live || workers.len() >= self.spec.max_workers || !self.respawn_allowed(class) {
+            if live || staying(&workers) >= self.spec.max_workers || !self.respawn_allowed(class) {
                 return;
             }
             match self.spawn(class) {
@@ -537,7 +537,7 @@ impl SharedAgentPool {
             });
         }
 
-        if workers.len() < self.spec.max_workers && self.respawn_allowed(class) {
+        if staying(&workers) < self.spec.max_workers && self.respawn_allowed(class) {
             match self.spawn(class) {
                 Ok(worker) => {
                     workers.push(Arc::clone(&worker));
@@ -669,6 +669,19 @@ impl SharedAgentPool {
             .iter()
             .any(|w| w.class == class && w.warm() && w.idle())
     }
+}
+
+/// Workers that are staying: neither retired nor superseded. The cap bounds
+/// these, not the raw roster — a rolling replacement overlaps the worker it
+/// retires, and counting both would let a pool held at its cap by the other
+/// lane block its own recycle forever.
+fn staying(workers: &[Arc<Worker>]) -> usize {
+    workers
+        .iter()
+        .filter(|w| {
+            !w.retired.load(Ordering::Relaxed) && !w.superseded.load(Ordering::Relaxed)
+        })
+        .count()
 }
 
 /// What every unavailable path answers with. One string because callers do not
@@ -1628,6 +1641,31 @@ mod tests {
 
         pool.run_classify("ls".to_string(), None).await.expect("ok");
         assert_eq!(fake.spawn_count(), 2, "answered by the warm replacement");
+    }
+
+    /// The cap must not block the recycle. A superseded worker is leaving, so
+    /// it does not count against `max_workers` — otherwise a pool held at its
+    /// cap by the other lane could never replace a capped worker, and that
+    /// worker would go on answering with a conversation the turn cap exists to
+    /// bound.
+    #[tokio::test]
+    async fn a_recycle_proceeds_while_the_other_lane_holds_the_cap() {
+        let fake = FakeSpawner::always(Ok("SHELL".to_string()));
+        let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
+        warmed(&pool, JobClass::Summarize).await;
+
+        // The warmup was the classify worker's first turn, so the cap lands on
+        // the last loop turn.
+        for _ in 0..MAX_TURNS_PER_WORKER - 1 {
+            pool.run_classify("ls".to_string(), None).await.expect("ok");
+        }
+        assert_eq!(
+            fake.spawn_count(),
+            3,
+            "the replacement spawned despite the pool sitting at its cap",
+        );
+        pool.run_classify("ls".to_string(), None).await.expect("ok");
     }
 
     #[tokio::test(start_paused = true)]
