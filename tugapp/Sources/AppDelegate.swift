@@ -867,9 +867,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // BuildInfo.profile.
         fileMenu.addItem(NSMenuItem(title: "New Session", action: #selector(newSessionCard(_:)), keyEquivalent: "n").identified("file.newSessionCard"))
 
-        // File section: New Text File through the save & revert verbs form one
-        // group under a divider, distinct from the session creator above.
-        fileMenu.addItem(NSMenuItem.separator())
         // New Text File (⌥⌘N): a new untitled manual buffer — no file
         // exists until the first Save.
         fileMenu.addItem(NSMenuItem(title: "New Text File", action: #selector(newTextCard(_:)), keyEquivalent: "n", modifierMask: [.command, .option]).identified("file.newTextCard"))
