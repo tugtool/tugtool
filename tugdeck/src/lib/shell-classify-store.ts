@@ -59,7 +59,7 @@ function keyFor(line: string, withGrammar: boolean): string {
 }
 
 export class ShellClassifyStore {
-  private readonly _verdicts = new Map<string, ShellVerdict | null>();
+  private readonly _verdicts = new Map<string, ShellVerdict>();
   private readonly _pending = new Map<string, (verdict: ShellVerdict | null) => void>();
   private readonly _timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly _listeners = new Set<() => void>();
@@ -75,8 +75,8 @@ export class ShellClassifyStore {
     this._onFeedUpdate();
   }
 
-  /** The verdict already known for this question, if its reply has landed. */
-  get(line: string, grammar?: string): ShellVerdict | null | undefined {
+  /** The verdict already known for this question, if one has landed. */
+  get(line: string, grammar?: string): ShellVerdict | undefined {
     return this._verdicts.get(keyFor(line, grammar !== undefined));
   }
 
@@ -162,7 +162,7 @@ export class ShellClassifyStore {
   };
 
   /** Every verdict landed so far. Routing reads `get`; this is the [L02] surface. */
-  getSnapshot = (): ReadonlyMap<string, ShellVerdict | null> => this._verdicts;
+  getSnapshot = (): ReadonlyMap<string, ShellVerdict> => this._verdicts;
 
   dispose(): void {
     this._unsubscribeFeed();
@@ -204,15 +204,22 @@ export class ShellClassifyStore {
         ? p.verdict
         : null;
 
-    // Re-insert so a repeatedly-consulted draft stays hot rather than aging out
-    // behind drafts that were asked about once.
     const key = keyFor(p.line, p.with_grammar);
-    this._verdicts.delete(key);
-    this._verdicts.set(key, verdict);
-    while (this._verdicts.size > VERDICT_CACHE_CAPACITY) {
-      const oldest = this._verdicts.keys().next();
-      if (oldest.done === true) break;
-      this._verdicts.delete(oldest.value);
+    // Only a verdict is remembered. A failure is not an answer about the line
+    // — it is a fact about the agent at one moment — and caching one would
+    // make the question unaskable for the rest of the session: `request` hands
+    // back a cached `null` without asking, so the first `gs` that arrived while
+    // the classify lane was cold would send every later `gs` to Claude too.
+    if (verdict !== null) {
+      // Re-insert so a repeatedly-consulted draft stays hot rather than aging
+      // out behind drafts that were asked about once.
+      this._verdicts.delete(key);
+      this._verdicts.set(key, verdict);
+      while (this._verdicts.size > VERDICT_CACHE_CAPACITY) {
+        const oldest = this._verdicts.keys().next();
+        if (oldest.done === true) break;
+        this._verdicts.delete(oldest.value);
+      }
     }
 
     this._settle(key, verdict);

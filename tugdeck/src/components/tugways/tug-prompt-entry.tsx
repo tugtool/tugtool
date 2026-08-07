@@ -2022,6 +2022,7 @@ export const TugPromptEntry = React.forwardRef<
         if (update.state.doc.length === 0) {
           verdictCacheRef.current.clear();
           shellGrammarStoreRef.current?.clear();
+          shellClassifyStoreRef.current?.clear();
           pendingVerdictRef.current = null;
         }
 

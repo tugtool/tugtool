@@ -14,6 +14,13 @@
 //! 2.1.222, `claude-haiku-4-5`). One warm process therefore serves many turns,
 //! recycled by turn count and reaped when idle ([P04]).
 //!
+//! Which means **nobody waits on a cold start**. A job whose ceiling is shorter
+//! than one is never handed a worker that has not answered yet: its turn
+//! becomes that worker's warmup and the caller degrades immediately. The lane
+//! is otherwise brought up ahead of any caller — by `ensure_warm`, called on
+//! traffic that precedes the job — and kept up across a recycle by warming the
+//! replacement before the old worker stops answering.
+//!
 //! Every turn is self-contained ([P05]): the job's full instructions ride each
 //! message and the model is told to answer only from it, so any turn can be a
 //! worker's first and a recycle costs nothing but a spawn.
@@ -42,9 +49,38 @@ use tugcast_core::{FeedId, Frame};
 const MAX_TURNS_PER_WORKER: u64 = 40;
 
 /// Idle time after which a worker is reaped, mirroring the idle unload the
-/// on-device backend used. A machine nobody is typing shell candidates into
-/// carries no classify worker.
-const IDLE_REAP: Duration = Duration::from_secs(300);
+/// on-device backend used. A machine nobody is working on carries no worker at
+/// all.
+///
+/// Per class, because the two lanes pay a respawn differently. A summarize is
+/// asked on the session overview's own cadence and its 6 s ceiling absorbs a
+/// cold spawn, so a reaped summarize worker costs nothing anyone sees. A
+/// classify is asked by somebody who is mid-keystroke and its 2 s ceiling
+/// cannot cover a spawn at all, so a reaped classify worker costs the next
+/// typed command its routing. The classify window is therefore long enough to
+/// span a working session's gaps — an app left open overnight still drops the
+/// worker, a person who steps away for coffee does not.
+fn idle_reap(class: JobClass) -> Duration {
+    match class {
+        JobClass::Classify => Duration::from_secs(1800),
+        JobClass::Summarize => Duration::from_secs(300),
+    }
+}
+
+/// What a cold worker needs before it can answer anything: the `claude` spawn
+/// plus its first turn, measured at 1.6–2.3 s against CLI 2.1.222.
+///
+/// This is what decides whether a caller may be handed a freshly spawned worker
+/// at all. A job whose ceiling is under this cannot be answered by a cold
+/// worker — waiting on one can only end in a timeout, and (before the warmup
+/// path below) that timeout retired the very process the wait had just paid
+/// for, so the lane never became warm and every classify was a cold classify.
+const COLD_START_BUDGET: Duration = Duration::from_secs(4);
+
+/// Ceiling on a warmup turn — the throwaway first turn that makes a freshly
+/// spawned worker warm. Nobody is waiting on it, so it is generous; it exists
+/// only so a worker that never answers is retired rather than held forever.
+const WARMUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// How long a class waits before replacing a worker that **died**, mirroring
 /// the daemon respawn debounce in `feeds::pulse`. This gates replacement after
@@ -147,15 +183,38 @@ struct Worker {
     turns: AtomicU64,
     in_flight: AtomicUsize,
     last_used: Mutex<Instant>,
-    /// Set when the worker has been recycled, timed out, or died. A retired
-    /// worker answers nothing further and is dropped on the next sweep.
+    /// Set when the worker has timed out or died. A retired worker answers
+    /// nothing further and is dropped on the next sweep.
     retired: AtomicBool,
+    /// Set when the worker has reached the turn cap and a replacement is on its
+    /// way up. It goes on answering — a warm worker one turn past the cap beats
+    /// a cold one — and is retired the moment the replacement is warm.
+    superseded: AtomicBool,
+    /// Set once the worker has answered a turn. Until then it is still paying
+    /// its cold start, and a job whose ceiling is shorter than that cannot be
+    /// spent on it.
+    answered: AtomicBool,
 }
 
 impl Worker {
     fn idle(&self) -> bool {
         self.in_flight.load(Ordering::Relaxed) == 0
     }
+
+    /// Warm: it has answered something, and it is not on its way out.
+    fn warm(&self) -> bool {
+        self.answered.load(Ordering::Relaxed) && !self.retired.load(Ordering::Relaxed)
+    }
+}
+
+/// What the pool can offer a job right now.
+enum Acquired {
+    /// A worker that has already answered a turn. The only kind a ceiling
+    /// shorter than a cold start can be spent on.
+    Warm(Arc<Worker>),
+    /// A worker still paying its cold start: `fresh` when this job's own turn
+    /// would be the warmup, and false when one is already in flight on it.
+    Cold { worker: Arc<Worker>, fresh: bool },
 }
 
 // MARK: - The pool ([P02])
@@ -190,7 +249,7 @@ impl SharedAgentPool {
     /// caller degrades identically on one ([P06]). An unknown job name is a
     /// programming error, so it panics where a test would catch it and errors
     /// where a user would rather have a missing headline than a dead process.
-    pub async fn run(&self, job: &str, input: String) -> Result<String, String> {
+    pub async fn run(self: &Arc<Self>, job: &str, input: String) -> Result<String, String> {
         let Some(spec) = self.spec.job(job) else {
             debug_assert!(false, "unknown shared-agent job {job:?}");
             return Err(format!("unknown job {job}"));
@@ -210,7 +269,7 @@ impl SharedAgentPool {
     /// answer naming no label, or naming both, is a refusal rather than a coin
     /// flip.
     pub async fn run_classify(
-        &self,
+        self: &Arc<Self>,
         text: String,
         grammar: Option<String>,
     ) -> Result<String, String> {
@@ -238,19 +297,46 @@ impl SharedAgentPool {
         })
     }
 
-    async fn run_spec(&self, spec: &'static JobSpec, turn: String) -> Result<String, String> {
+    async fn run_spec(
+        self: &Arc<Self>,
+        spec: &'static JobSpec,
+        turn: String,
+    ) -> Result<String, String> {
         if app_test_gated() {
             record(spec.name, "unavailable", None);
             return Err(UNAVAILABLE.to_string());
         }
         let started = Instant::now();
         let class = JobClass::of(spec.name);
-        let worker = match self.acquire(class) {
-            Ok(worker) => worker,
+        let acquired = match self.acquire(class) {
+            Ok(acquired) => acquired,
             Err(error) => {
                 record(spec.name, "unavailable", Some((started, spec)));
                 return Err(error);
             }
+        };
+
+        // A job whose ceiling is shorter than a cold start cannot be answered
+        // by a worker that has not answered anything yet. Waiting would spend
+        // the caller's whole budget and end in a timeout that retires the very
+        // process the wait had just paid for — which is how the classify lane
+        // came to be cold on every single call. So the turn becomes the
+        // worker's warmup instead: it runs with nobody waiting on it, the
+        // caller degrades now rather than in two seconds ([P06]), and the lane
+        // is warm for the next question.
+        let worker = match acquired {
+            Acquired::Warm(worker) => worker,
+            Acquired::Cold { worker, fresh } if spec.timeout < COLD_START_BUDGET => {
+                if fresh {
+                    self.warm(worker, turn);
+                }
+                record(spec.name, "warming", Some((started, spec)));
+                return Err(UNAVAILABLE.to_string());
+            }
+            // A ceiling that covers a cold start waits for one: a first
+            // headline is worth the spawn, and there is no earlier caller to
+            // have paid it.
+            Acquired::Cold { worker, .. } => worker,
         };
 
         worker.turns.fetch_add(1, Ordering::Relaxed);
@@ -258,12 +344,19 @@ impl SharedAgentPool {
         let outcome = self.turn(&worker, spec, turn).await;
         worker.in_flight.fetch_sub(1, Ordering::Relaxed);
         *worker.last_used.lock().unwrap() = Instant::now();
+        if outcome.is_ok() {
+            worker.answered.store(true, Ordering::Relaxed);
+        }
 
-        // A worker that reached the turn cap is replaced on the next job, not
-        // this one — the caller already has its answer and should not pay for
+        // A worker that reached the turn cap is replaced, and the replacement
+        // comes up warm before the old one stops answering: retiring on the
+        // spot would leave the lane cold, which for a ceiling that cannot cover
+        // a cold start means one degraded call every `MAX_TURNS_PER_WORKER`.
+        // The caller already has its answer either way and never pays for the
         // hygiene.
         if worker.turns.load(Ordering::Relaxed) >= MAX_TURNS_PER_WORKER {
-            self.retire(&worker, "recycled");
+            worker.superseded.store(true, Ordering::Relaxed);
+            self.ensure_warm(class);
         }
 
         match &outcome {
@@ -284,32 +377,13 @@ impl SharedAgentPool {
         spec: &'static JobSpec,
         turn: String,
     ) -> Result<String, String> {
-        let (reply, answer) = oneshot::channel();
-        // The ceiling covers the whole wait: the channel send (which blocks
-        // when the worker's queue is full) and the answer both count against
-        // the job's timeout, so the caller's wait is bounded no matter where
-        // the turn stalls.
-        let attempt = async {
-            if worker
-                .tx
-                .send(TurnRequest { text: turn, reply })
-                .await
-                .is_err()
-            {
-                return Err("shared agent worker died".to_string());
-            }
-            match answer.await {
-                Ok(outcome) => outcome,
-                Err(_) => Err("shared agent worker dropped the turn".to_string()),
-            }
-        };
-        match tokio::time::timeout(spec.timeout, attempt).await {
-            Ok(Ok(text)) => Ok(text),
-            Ok(Err(error)) => {
+        match one_turn(worker, turn, spec.timeout).await {
+            Ok(text) => Ok(text),
+            Err(TurnFailure::Died(error)) => {
                 self.mark_dead(worker);
                 Err(error)
             }
-            Err(_) => {
+            Err(TurnFailure::TimedOut) => {
                 // A hung worker counts as a failure for the respawn debounce:
                 // without it a systematically stalled backend would spawn one
                 // fresh child per call.
@@ -320,50 +394,166 @@ impl SharedAgentPool {
         }
     }
 
-    /// Pick a worker of `class`, growing the pool when that is what the latency
-    /// contract needs ([P12]).
+    /// Make sure `class` has a live worker, warming a fresh one if it does not.
     ///
-    /// An idle worker of the class is always preferred. Failing that the pool
-    /// grows, because queueing a classify behind a busy classify is harmless
-    /// (typing serializes them) while queueing it behind a summarize is not.
-    /// Only when the pool cannot grow does a job queue, and only ever behind
-    /// its own class.
-    fn acquire(&self, class: JobClass) -> Result<Arc<Worker>, String> {
+    /// The lane's own way of paying its cold start, called on traffic that
+    /// *precedes* the job rather than by the job itself — a Session card asking
+    /// for the login-PATH command set has a composer somebody may type a
+    /// command into, and that is exactly the moment to have a classify worker
+    /// on its way up. Cheap and idempotent: a lane that already has a worker
+    /// does nothing, and a warmup spends one short turn, not one per keystroke.
+    pub fn ensure_warm(self: &Arc<Self>, class: JobClass) {
+        if app_test_gated() {
+            return;
+        }
+        let Some(spec) = self.spec.jobs.iter().find(|j| JobClass::of(j.name) == class) else {
+            return;
+        };
+        let worker = {
+            let mut workers = self.workers.lock().unwrap();
+            self.sweep(&mut workers);
+            // A superseded worker is still answering but is on its way out, so
+            // it is not the live worker this asks about — it is the reason to
+            // bring one up. A worker still warming counts as live: it is
+            // already the answer to this call.
+            let live = workers.iter().any(|w| {
+                w.class == class
+                    && !w.retired.load(Ordering::Relaxed)
+                    && !w.superseded.load(Ordering::Relaxed)
+            });
+            if live || workers.len() >= self.spec.max_workers || !self.respawn_allowed(class) {
+                return;
+            }
+            match self.spawn(class) {
+                Ok(worker) => {
+                    workers.push(Arc::clone(&worker));
+                    worker
+                }
+                Err(error) => {
+                    self.note_death(class);
+                    warn!(agent = self.spec.name, %error, "shared agent spawn failed");
+                    return;
+                }
+            }
+        };
+        self.warm(worker, compose_turn(spec.instructions, warmup_input(class)));
+    }
+
+    /// Bring `class`'s lane up and wait for it, up to the warmup ceiling.
+    ///
+    /// For the callers with no keystroke behind them — the observability verbs
+    /// and the eval harness they serve. A composer must never wait here: its
+    /// whole budget is shorter than the wait. But "the lane was cold" is not a
+    /// fact about the line the harness asked about, so those callers warm the
+    /// lane and then ask. Answers `false` if the lane never came up.
+    pub async fn wait_until_warm(self: &Arc<Self>, class: JobClass) -> bool {
+        let deadline = Instant::now() + WARMUP_TIMEOUT;
+        loop {
+            self.ensure_warm(class);
+            if self.lane_warm(class) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// Take a freshly spawned worker through one turn nobody is waiting on.
+    ///
+    /// The answer is discarded — what the turn is for is the process it leaves
+    /// behind, ready to answer the next caller inside that caller's ceiling. A
+    /// warmup that never lands retires its worker, so a `claude` that hangs on
+    /// its first turn cannot be held forever by the thing meant to make it
+    /// useful.
+    fn warm(self: &Arc<Self>, worker: Arc<Worker>, turn: String) {
+        let pool = Arc::clone(self);
+        worker.turns.fetch_add(1, Ordering::Relaxed);
+        worker.in_flight.fetch_add(1, Ordering::Relaxed);
+        tokio::spawn(async move {
+            let outcome = one_turn(&worker, turn, WARMUP_TIMEOUT).await;
+            worker.in_flight.fetch_sub(1, Ordering::Relaxed);
+            *worker.last_used.lock().unwrap() = Instant::now();
+            match outcome {
+                Ok(_) => {
+                    worker.answered.store(true, Ordering::Relaxed);
+                    info!(
+                        agent = pool.spec.name,
+                        worker = worker.id,
+                        class = ?worker.class,
+                        "shared agent worker warm",
+                    );
+                    pool.retire_superseded(worker.class);
+                }
+                Err(_) => {
+                    pool.retire(&worker, "warmup failed");
+                    pool.note_death(worker.class);
+                }
+            }
+        });
+    }
+
+    /// Pick a worker of `class`, growing the pool when the class has none to
+    /// use ([P12]). `fresh` says the worker came back straight from a spawn,
+    /// which is what tells the caller it is cold.
+    ///
+    /// The order is warm-first, in every sense. An idle warm worker; failing
+    /// that a *busy* warm one, because queueing a classify behind a classify is
+    /// harmless — typing serializes them and the wait is one turn — while
+    /// spawning a second child for a lane that has one buys a cold start
+    /// nobody can spend. Only a class with no usable worker at all grows the
+    /// pool, and that is exactly what [P12] is about: a classify must never
+    /// queue behind a *summarize*, whose ceiling is three times its own.
+    fn acquire(&self, class: JobClass) -> Result<Acquired, String> {
         let mut workers = self.workers.lock().unwrap();
         self.sweep(&mut workers);
+        let of_class = |w: &&Arc<Worker>| w.class == class;
 
         if let Some(idle) = workers
             .iter()
-            .find(|w| w.class == class && w.idle())
+            .find(|w| of_class(w) && w.warm() && w.idle())
             .cloned()
         {
-            return Ok(idle);
+            return Ok(Acquired::Warm(idle));
+        }
+        // Never queue behind a retired worker: it is stuck on or has abandoned
+        // a turn nobody is waiting for, so honest unavailability beats a wait
+        // that can only time out.
+        if let Some(busy) = workers.iter().find(|w| of_class(w) && w.warm()).cloned() {
+            return Ok(Acquired::Warm(busy));
+        }
+        // A lane already coming up is not a lane to grow: the warmup in flight
+        // is about to produce the idle worker this job wanted, and a second
+        // child would pay the same cold start twice.
+        if let Some(warming) = workers
+            .iter()
+            .find(|w| of_class(w) && !w.retired.load(Ordering::Relaxed))
+            .cloned()
+        {
+            return Ok(Acquired::Cold {
+                worker: warming,
+                fresh: false,
+            });
         }
 
         if workers.len() < self.spec.max_workers && self.respawn_allowed(class) {
             match self.spawn(class) {
                 Ok(worker) => {
                     workers.push(Arc::clone(&worker));
-                    return Ok(worker);
+                    return Ok(Acquired::Cold {
+                        worker,
+                        fresh: true,
+                    });
                 }
                 Err(error) => {
                     self.note_death(class);
-                    // A same-class worker that is merely busy still beats no
-                    // answer at all, so a failed growth spawn falls through to
-                    // the queue rather than failing the job outright.
                     warn!(agent = self.spec.name, %error, "shared agent spawn failed");
                 }
             }
         }
 
-        // Never queue behind a retired worker: it is stuck on or has abandoned
-        // a turn nobody is waiting for, so honest unavailability beats a wait
-        // that can only time out.
-        workers
-            .iter()
-            .find(|w| w.class == class && !w.retired.load(Ordering::Relaxed))
-            .cloned()
-            .ok_or_else(|| UNAVAILABLE.to_string())
+        Err(UNAVAILABLE.to_string())
     }
 
     /// Drop workers that are retired, or that have been idle past the reap
@@ -375,7 +565,7 @@ impl SharedAgentPool {
             if w.retired.load(Ordering::Relaxed) && w.idle() {
                 return false;
             }
-            if w.idle() && now.duration_since(*w.last_used.lock().unwrap()) >= IDLE_REAP {
+            if w.idle() && now.duration_since(*w.last_used.lock().unwrap()) >= idle_reap(w.class) {
                 info!(
                     agent = self.spec.name,
                     worker = w.id,
@@ -406,7 +596,22 @@ impl SharedAgentPool {
             in_flight: AtomicUsize::new(0),
             last_used: Mutex::new(Instant::now()),
             retired: AtomicBool::new(false),
+            superseded: AtomicBool::new(false),
+            answered: AtomicBool::new(false),
         }))
+    }
+
+    /// Retire the workers of `class` a now-warm replacement was brought up for.
+    /// Called from the replacement's warmup, which is the moment the lane can
+    /// afford to lose them.
+    fn retire_superseded(&self, class: JobClass) {
+        let workers = self.workers.lock().unwrap();
+        for worker in workers
+            .iter()
+            .filter(|w| w.class == class && w.superseded.load(Ordering::Relaxed))
+        {
+            self.retire(worker, "recycled");
+        }
     }
 
     fn retire(&self, worker: &Arc<Worker>, why: &str) {
@@ -453,11 +658,71 @@ impl SharedAgentPool {
         self.sweep(&mut workers);
         workers.len()
     }
+
+    /// Whether `class` has a worker that has answered a turn and is free to
+    /// answer another — the state [`ensure_warm`](Self::ensure_warm) exists to
+    /// reach.
+    pub fn lane_warm(&self, class: JobClass) -> bool {
+        self.workers
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|w| w.class == class && w.warm() && w.idle())
+    }
 }
 
 /// What every unavailable path answers with. One string because callers do not
 /// branch on the reason — they degrade ([P06]).
 const UNAVAILABLE: &str = "shared agent unavailable";
+
+/// Why one turn did not answer. The two are handled differently by the pool —
+/// a death is the worker's, a timeout is the caller's — but a warmup, which has
+/// no caller, treats them alike.
+enum TurnFailure {
+    Died(String),
+    TimedOut,
+}
+
+/// One turn against one worker, under `ceiling`.
+///
+/// The ceiling covers the whole wait: the channel send (which blocks when the
+/// worker's queue is full) and the answer both count against it, so a caller's
+/// wait is bounded no matter where the turn stalls.
+async fn one_turn(
+    worker: &Arc<Worker>,
+    turn: String,
+    ceiling: Duration,
+) -> Result<String, TurnFailure> {
+    let (reply, answer) = oneshot::channel();
+    let attempt = async {
+        if worker
+            .tx
+            .send(TurnRequest { text: turn, reply })
+            .await
+            .is_err()
+        {
+            return Err("shared agent worker died".to_string());
+        }
+        match answer.await {
+            Ok(outcome) => outcome,
+            Err(_) => Err("shared agent worker dropped the turn".to_string()),
+        }
+    };
+    match tokio::time::timeout(ceiling, attempt).await {
+        Ok(Ok(text)) => Ok(text),
+        Ok(Err(error)) => Err(TurnFailure::Died(error)),
+        Err(_) => Err(TurnFailure::TimedOut),
+    }
+}
+
+/// The throwaway input a warmup turn carries — shaped like the job's real input
+/// so the turn exercises the wording the next caller will get.
+fn warmup_input(class: JobClass) -> &'static str {
+    match class {
+        JobClass::Classify => "pwd",
+        JobClass::Summarize => "The standing goal:\n- warm up\nWhat it is doing right now:\n- nothing\n",
+    }
+}
 
 /// The slot [`JobSpec::instructions`] substitutes a command's own documentation
 /// into, carried over from the on-device wording.
@@ -786,7 +1051,13 @@ pub fn request_classification(
     let has_grammar = grammar.is_some();
     tokio::spawn(async move {
         let result = match agent {
-            Some(pool) => pool.run_classify(text.clone(), grammar).await,
+            Some(pool) => {
+                // Unlike a submit, this verb can wait for the lane — and must,
+                // or the first line of an eval run would be scored on a cold
+                // start rather than on an answer.
+                pool.wait_until_warm(JobClass::Classify).await;
+                pool.run_classify(text.clone(), grammar).await
+            }
             None => Err(UNAVAILABLE.to_string()),
         };
         // No elapsed here: `shared agent call` already timed this from the
@@ -1183,6 +1454,20 @@ pub(crate) mod test_support {
         },
     ];
 
+    /// Bring `class`'s lane up and wait for its warmup turn to land.
+    ///
+    /// In production the shell feed calls `ensure_warm` on traffic that
+    /// precedes a classify, so by the time anybody submits a line the lane is
+    /// warm. A test asserting on what a *caller* pays has to stand in that same
+    /// place — an unwarmed classify is answered by the warmup path, not by the
+    /// worker.
+    pub(crate) async fn warmed(pool: &Arc<SharedAgentPool>, class: JobClass) {
+        assert!(
+            pool.wait_until_warm(class).await,
+            "the {class:?} lane never warmed",
+        );
+    }
+
     pub(crate) fn pool(spawner: Arc<FakeSpawner>, max_workers: usize) -> Arc<SharedAgentPool> {
         SharedAgentPool::new(
             AgentSpec {
@@ -1198,7 +1483,7 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::test_support::{FakeSpawner, pool};
+    use super::test_support::{FakeSpawner, pool, warmed};
     use super::*;
 
     #[tokio::test]
@@ -1215,6 +1500,7 @@ mod tests {
     async fn one_worker_serves_every_job_of_its_class_in_turn() {
         let fake = FakeSpawner::always(Ok("SHELL".to_string()));
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
         for _ in 0..3 {
             pool.run_classify("ls".to_string(), None).await.expect("ok");
         }
@@ -1225,19 +1511,20 @@ mod tests {
     }
 
     /// [P12]'s reason for existing: a classify that arrives while the only
-    /// worker is mid-summarize must not wait for it. The summarize here holds
-    /// for 5s — longer than classify's entire 2s ceiling — so if the classify
-    /// queued behind it, it would time out instead of answering.
+    /// other worker is mid-summarize must not wait for it. The summarize here
+    /// holds for 5s — longer than classify's entire 2s ceiling — so if the
+    /// classify queued behind it, it would time out instead of answering.
     #[tokio::test(start_paused = true)]
     async fn a_classify_never_queues_behind_a_busy_summarize_worker() {
         let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "SUMMARIZE", Duration::from_secs(5));
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
 
         let summarizing = {
             let pool = Arc::clone(&pool);
             tokio::spawn(async move { pool.run("summarize", "digest".to_string()).await })
         };
-        // Let the summarize claim its worker before the classify arrives.
+        // Let the summarize claim its own worker before the classify arrives.
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let verdict = pool.run_classify("ls -la".to_string(), None).await;
@@ -1245,22 +1532,55 @@ mod tests {
         assert_eq!(
             fake.spawn_count(),
             2,
-            "the classify got a worker of its own class",
+            "the classify answered on its own class's worker",
         );
         summarizing.await.expect("join").expect("summarize answers");
     }
 
+    /// The regression that took shell routing out entirely: a classify spawned
+    /// a worker, spent its whole 2 s ceiling on that worker's cold start, and
+    /// the timeout retired the very process the wait had paid for. The lane
+    /// never became warm, so every classify was a cold classify and no typed
+    /// command was ever recognized as one. A cold lane now costs the one line
+    /// that found it cold.
+    #[tokio::test]
+    async fn a_cold_lane_costs_one_line_and_then_answers() {
+        let fake = FakeSpawner::always(Ok("SHELL".to_string()));
+        let pool = pool(Arc::clone(&fake), 2);
+
+        assert!(
+            pool.run_classify("gs".to_string(), None).await.is_err(),
+            "the line that found the lane cold goes to Claude",
+        );
+        warmed(&pool, JobClass::Classify).await;
+        assert_eq!(
+            pool.run_classify("gs".to_string(), None).await.as_deref(),
+            Ok("shell"),
+            "and the next one is answered",
+        );
+        assert_eq!(
+            fake.spawn_count(),
+            1,
+            "by the worker the first line paid for",
+        );
+    }
+
+    /// A class with a worker never grows the pool: concurrent classifies queue
+    /// behind the warm one rather than buying a cold start apiece. The submit
+    /// path depends on it — a grammar-bearing question routinely arrives while
+    /// the typing debounce's question is still in flight.
     #[tokio::test(start_paused = true)]
-    async fn the_pool_grows_to_max_workers_and_never_past_it() {
+    async fn concurrent_jobs_of_a_class_share_its_worker() {
+        // The marker matches only a caller's turn (`…\n\nls`), never the
+        // warmup's (`…\n\npwd`), so warming a lane is never the slow path.
         let fake = FakeSpawner::slow(
             Ok("SHELL".to_string()),
-            "CLASSIFY",
+            "\n\nls",
             Duration::from_millis(300),
         );
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
 
-        // Four concurrent classifies against a cap of two: two workers, and the
-        // other two jobs queue behind their own class.
         let mut running = Vec::new();
         for _ in 0..4 {
             let pool = Arc::clone(&pool);
@@ -1272,34 +1592,72 @@ mod tests {
         for job in running {
             assert_eq!(job.await.expect("join").as_deref(), Ok("shell"));
         }
-        assert_eq!(fake.spawn_count(), 2);
+        assert_eq!(fake.spawn_count(), 1, "one worker served all four");
     }
 
+    /// The cap is over the whole pool, so a second class can only have a worker
+    /// while the first still fits under it.
+    #[tokio::test]
+    async fn the_pool_never_grows_past_max_workers() {
+        let fake = FakeSpawner::always(Ok("SHELL".to_string()));
+        let pool = pool(Arc::clone(&fake), 1);
+        warmed(&pool, JobClass::Classify).await;
+
+        let error = pool
+            .run("summarize", "digest".to_string())
+            .await
+            .expect_err("no room for a second class");
+        assert_eq!(error, UNAVAILABLE);
+        assert_eq!(fake.spawn_count(), 1);
+    }
+
+    /// The replacement for a recycled worker is warmed on the spot, so the lane
+    /// does not go cold once every `MAX_TURNS_PER_WORKER` and hand some
+    /// unlucky classify a spawn it cannot wait for.
     #[tokio::test]
     async fn a_worker_is_recycled_at_the_turn_cap() {
         let fake = FakeSpawner::always(Ok("SHELL".to_string()));
         let pool = pool(Arc::clone(&fake), 2);
-        for _ in 0..MAX_TURNS_PER_WORKER {
+        warmed(&pool, JobClass::Classify).await;
+        // The warmup was this worker's first turn, so the cap falls one caller
+        // turn short of the loop count.
+        for _ in 0..MAX_TURNS_PER_WORKER - 1 {
             pool.run_classify("ls".to_string(), None).await.expect("ok");
         }
-        assert_eq!(fake.spawn_count(), 1, "one worker so far");
-        // Turn 41 lands on a fresh worker.
+        assert_eq!(fake.spawn_count(), 2, "the replacement is already up");
+
         pool.run_classify("ls".to_string(), None).await.expect("ok");
-        assert_eq!(fake.spawn_count(), 2);
+        assert_eq!(fake.spawn_count(), 2, "answered by the warm replacement");
     }
 
     #[tokio::test(start_paused = true)]
     async fn an_idle_worker_is_reaped() {
         let fake = FakeSpawner::always(Ok("SHELL".to_string()));
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
         pool.run_classify("ls".to_string(), None).await.expect("ok");
         assert_eq!(pool.worker_count(), 1);
 
-        tokio::time::advance(IDLE_REAP + Duration::from_secs(1)).await;
+        tokio::time::advance(idle_reap(JobClass::Classify) + Duration::from_secs(1)).await;
         assert_eq!(pool.worker_count(), 0, "reaped after the idle window");
 
-        pool.run_classify("ls".to_string(), None).await.expect("ok");
+        // The lane comes back on the next classify — as that classify's warmup,
+        // not as its answer.
+        assert!(pool.run_classify("ls".to_string(), None).await.is_err());
         assert_eq!(fake.spawn_count(), 2, "spawned again on demand");
+    }
+
+    /// The summarize lane's ceiling *can* cover a cold start, so a summarize is
+    /// answered by the worker it spawns rather than degraded into a warmup.
+    #[tokio::test]
+    async fn a_summarize_is_answered_by_the_worker_it_spawns() {
+        let fake = FakeSpawner::always(Ok("A headline".to_string()));
+        let pool = pool(Arc::clone(&fake), 2);
+        assert_eq!(
+            pool.run("summarize", "digest".to_string()).await.as_deref(),
+            Ok("A headline"),
+        );
+        assert_eq!(fake.spawn_count(), 1);
     }
 
     /// A worker that dies must not be respawned in a hot loop. Within the
@@ -1323,9 +1681,11 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_job_past_its_ceiling_errors_and_retires_the_worker() {
-        // Classify's ceiling is 2s in the test table; this worker takes 10.
-        let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "CLASSIFY", Duration::from_secs(10));
+        // Classify's ceiling is 2s in the test table; this worker takes 10 on a
+        // caller's turn (the marker never matches a warmup's `…\n\npwd`).
+        let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "\n\nls", Duration::from_secs(10));
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
 
         let error = pool
             .run_classify("ls".to_string(), None)
@@ -1342,8 +1702,9 @@ mod tests {
     /// the window degrades instead of queueing behind the retired worker.
     #[tokio::test(start_paused = true)]
     async fn a_timed_out_class_holds_the_respawn_debounce() {
-        let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "CLASSIFY", Duration::from_secs(10));
+        let fake = FakeSpawner::slow(Ok("SHELL".to_string()), "\n\nls", Duration::from_secs(10));
         let pool = pool(Arc::clone(&fake), 2);
+        warmed(&pool, JobClass::Classify).await;
 
         assert!(pool.run_classify("ls".to_string(), None).await.is_err());
         assert_eq!(fake.spawn_count(), 1);
@@ -1365,6 +1726,7 @@ mod tests {
         for answer in ["I am not sure", "SHELL or PROMPT", "", "shellfish"] {
             let fake = FakeSpawner::always(Ok(answer.to_string()));
             let pool = pool(fake, 2);
+            warmed(&pool, JobClass::Classify).await;
             let error = pool
                 .run_classify("ls".to_string(), None)
                 .await
@@ -1383,6 +1745,7 @@ mod tests {
         ] {
             let fake = FakeSpawner::always(Ok(answer.to_string()));
             let pool = pool(fake, 2);
+            warmed(&pool, JobClass::Classify).await;
             assert_eq!(
                 pool.run_classify("ls".to_string(), None).await.as_deref(),
                 Ok(expected),
@@ -1395,6 +1758,8 @@ mod tests {
     async fn a_grammar_picks_the_documentation_wording_and_is_substituted() {
         let fake = FakeSpawner::always(Ok("SHELL".to_string()));
         let pool = pool(Arc::clone(&fake), 2);
+        // Both wordings share the lane, so the warm worker serves this one.
+        warmed(&pool, JobClass::Classify).await;
         pool.run_classify(
             "curl -sS x".to_string(),
             Some("usage: curl [options]".to_string()),
@@ -1402,8 +1767,8 @@ mod tests {
         .await
         .expect("ok");
         assert_eq!(
-            fake.turns_seen().as_slice(),
-            ["CLASSIFY-DOC usage: curl [options]\n\ncurl -sS x"],
+            fake.turns_seen().last().map(String::as_str),
+            Some("CLASSIFY-DOC usage: curl [options]\n\ncurl -sS x"),
         );
     }
 
@@ -1534,9 +1899,9 @@ mod tests {
         );
 
         // The first turn of a class pays the cold spawn, which is more than
-        // classify's own ceiling — so warm the lane first and time the turn
-        // that a user would actually wait on.
-        let _ = pool.run_classify("pwd".to_string(), None).await;
+        // classify's own ceiling — so warm the lane the way the shell feed
+        // does, and time the turn a user would actually wait on.
+        warmed(&pool, JobClass::Classify).await;
         let started = Instant::now();
         let verdict = pool
             .run_classify("ls -la".to_string(), None)

@@ -92,17 +92,40 @@ describe("ShellClassifyStore", () => {
 
   // Every failure shape is one answer to the caller, because the caller does
   // the same thing with all of them: send the line to Claude.
-  it("resolves every failure shape to no opinion", () => {
+  it("resolves every failure shape to no opinion", async () => {
     for (const body of [
       { ok: false, verdict: null, error: "shared agent unavailable" },
       { ok: false, verdict: null, error: "classification did not name a label" },
       { ok: true, verdict: "maybe" },
       { ok: true },
     ]) {
+      stubConnection();
       const s = store();
+      const asked = s.request("make it pretty");
       s._ingestForTest(reply("make it pretty", false, body));
-      expect(s.get("make it pretty")).toBeNull();
+      expect(await asked).toBeNull();
     }
+  });
+
+  // A failure is a fact about the agent at one moment, not an answer about the
+  // line — and `request` hands back a cached answer without asking. Remembering
+  // one would make the question unaskable for the rest of the session: the
+  // first `gs` that found the classify lane cold would send every later `gs` to
+  // Claude too.
+  it("does not remember a failure as an answer", async () => {
+    const { sends } = stubConnection();
+    const s = store();
+    const first = s.request("gs");
+    s._ingestForTest(reply("gs", false, { ok: false, verdict: null, error: "unavailable" }));
+    expect(await first).toBeNull();
+    expect(s.get("gs")).toBeUndefined();
+
+    // Asked again — a second frame on the wire, not the failure handed back.
+    expect(sends.length).toBe(1);
+    const second = s.request("gs");
+    expect(sends.length).toBe(2);
+    s._ingestForTest(reply("gs", false, { ok: true, verdict: "shell" }));
+    expect(await second).toBe("shell");
   });
 
   it("ignores another session's reply and a malformed frame", () => {

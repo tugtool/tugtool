@@ -271,6 +271,16 @@ async fn emit_shell_grammar(
     emit(output, tug_session_id, payload);
 }
 
+/// Make sure the SharedAgent's classify lane has a worker on its way up.
+///
+/// Idempotent and non-blocking — a lane that already has one does nothing, and
+/// no reply depends on it.
+fn warm_classify_lane(agent: &crate::shared_agent::SharedAgentHandle) {
+    if let Some(pool) = agent {
+        pool.ensure_warm(crate::shared_agent::JobClass::Classify);
+    }
+}
+
 /// Answer one classify request on the asking session's feed.
 ///
 /// Runs on its own task so the dispatcher loop keeps routing `exec` and `kill`
@@ -854,6 +864,11 @@ async fn run_dispatcher(
             // this session ([P08]). Independent of any per-session shell child —
             // the probe never touches the lazily-spawned exec shell.
             ShellInput::PathCommands { tug_session_id } => {
+                // A card asking for the command set has a composer somebody may
+                // type a command into, and a classify cannot pay a cold spawn
+                // inside its own 2s ceiling — so the lane comes up now, while
+                // nobody is waiting on it.
+                warm_classify_lane(&agent);
                 let commands = path_command_set().await;
                 emit_path_commands(&output, &tug_session_id, &commands);
             }
@@ -863,6 +878,9 @@ async fn run_dispatcher(
                 tug_session_id,
                 line,
             } => {
+                // The grade rides the same typing debounce as the classify, so
+                // this is also where a lane reaped mid-session comes back.
+                warm_classify_lane(&agent);
                 let commands = path_command_set().await;
                 let cwd = sessions
                     .get(&tug_session_id)
@@ -1419,13 +1437,19 @@ mod tests {
         let mut rx = output.subscribe();
         let (tx, in_rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
+        // The classify lane is warm before anybody types, because the card's
+        // `path_commands` request warmed it at mount — stand where the deck
+        // already put the pool, or the first line here would be answered by the
+        // warmup path rather than by the agent.
+        let agent = crate::shared_agent::test_support::scripted_haiku_pool(answer);
+        agent
+            .wait_until_warm(crate::shared_agent::JobClass::Classify)
+            .await;
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
             None,
-            Some(crate::shared_agent::test_support::scripted_haiku_pool(
-                answer,
-            )),
+            Some(agent),
             cancel.clone(),
             Duration::from_secs(3),
         ));
