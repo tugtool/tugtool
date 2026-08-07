@@ -34,7 +34,10 @@ pub use protocol::{
     ProtocolError,
     TugSessionId,
 };
-pub use types::{FileStatus, FileTreeSnapshot, FsEvent, GitStatus, ScoredResult, StatSnapshot};
+pub use types::{
+    FileStatus, FileTreeSnapshot, FsEvent, GazetteAuthor, GazettePost, GazetteRef, GazetteRefKind,
+    GitStatus, ScoredResult, StatSnapshot,
+};
 
 /// Default port for the Vite dev server.
 ///

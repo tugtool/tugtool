@@ -1250,13 +1250,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // through to the web view.
         mMenu.addItem(NSMenuItem(title: "Show DevTools", action: #selector(showDevTools(_:)), keyEquivalent: "").identified("maker.devTools"))
         mMenu.addItem(NSMenuItem(title: "Focus Lens", action: #selector(focusLens(_:)), keyEquivalent: "l").identified("maker.focusLens"))
-        // Show Lens (⌃⌘L) and Show Jots (⌃⌘J) — the two sidebar toggles, built
-        // without key equivalents so the registry's sweep supplies them and
-        // either stays rebindable. Same Maker-menu placement reasoning as Show
-        // DevTools above: hidden outside maker mode, so the chords fall through
-        // to the web view there.
+        // Show Lens (⌃⌘L), Show Jots (⌃⌘J), and Show Gazette (⌃⌘G) — the
+        // sidebar toggles, built without key equivalents so the registry's
+        // sweep supplies them and each stays rebindable. Same Maker-menu
+        // placement reasoning as Show DevTools above: hidden outside maker
+        // mode, so the chords fall through to the web view there.
         mMenu.addItem(NSMenuItem(title: "Show Lens", action: #selector(showLens(_:)), keyEquivalent: "").identified("maker.lens"))
         mMenu.addItem(NSMenuItem(title: "Show Jots", action: #selector(showJots(_:)), keyEquivalent: "").identified("maker.jots"))
+        mMenu.addItem(NSMenuItem(title: "Show Gazette", action: #selector(showGazette(_:)), keyEquivalent: "").identified("maker.gazette"))
         if BuildInfo.profile == "debug" {
             // Debug-only card creators, relocated from the flattened
             // File ▸ New submenu. Compile-time gated so release bundles
@@ -1390,6 +1391,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Show or hide the Jots rail — the Lens toggle's sibling.
     @objc private func showJots(_ sender: Any) {
         sendControl("toggle-jots")
+    }
+
+    /// Show or hide the Gazette rail — the third of the sidebar toggles.
+    @objc private func showGazette(_ sender: Any) {
+        sendControl("toggle-gazette")
     }
 
     /// Create a jot and land the caret in it, revealing the Jots rail if it is

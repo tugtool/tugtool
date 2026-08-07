@@ -1173,6 +1173,22 @@ export const COMMANDS: readonly CommandEntry[] = [
     ],
   },
 
+  // ---- Gazette ----
+  {
+    // ⌃⌘G — the third rail in the sidebar-toggle grammar (⌃⌘L Lens,
+    // ⌃⌘J Jots), so the set keeps teaching itself.
+    id: TUG_ACTIONS.TOGGLE_GAZETTE,
+    title: "Show Gazette",
+    routing: "registry",
+    menuItemId: "maker.gazette",
+    bindings: [
+      chord(
+        { key: "KeyG", ctrl: true, meta: true, label: "g" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+  },
+
   // ---- App level ----
   {
     // ⌃⌘K — the keyboard's own card, reached from the keyboard. ⌘, belongs to

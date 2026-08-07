@@ -2715,6 +2715,11 @@ impl AgentSupervisor {
                 self.do_list_pulse_lines().await;
                 Ok(())
             }
+            "list_gazette_posts" => {
+                // App-scoped read — the Gazette card's mount-time tail.
+                self.do_list_gazette_posts().await;
+                Ok(())
+            }
             "list_shell_exchanges" => {
                 // Session-scoped read — the deck's shell-restore tail fetch.
                 let tug_session_id = serde_json::from_slice::<serde_json::Value>(payload)
@@ -5269,6 +5274,37 @@ impl AgentSupervisor {
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("list_pulse_lines_ok serializes"),
+        ));
+    }
+
+    /// Handle a `list_gazette_posts` CONTROL request — the Gazette card's
+    /// mount-time tail read, after which it stays live off the GAZETTE feed.
+    /// App-scoped: the channel belongs to the app, not to a session, even
+    /// though a Reporter post names the session it narrates.
+    ///
+    /// Broadcasts `list_gazette_posts_ok { posts: GazettePost[] }`,
+    /// oldest-first; a missing ledger yields an empty array — the "no history
+    /// yet" state, same conduct as the pulse read.
+    async fn do_list_gazette_posts(&self) {
+        let posts = self
+            .session_ledger
+            .as_ref()
+            .map(|ledger| {
+                ledger
+                    .list_gazette_posts_tail(crate::feeds::reporter::GAZETTE_TAIL_LEN)
+                    .unwrap_or_else(|err| {
+                        warn!(error = %err, "list_gazette_posts failed");
+                        Vec::new()
+                    })
+            })
+            .unwrap_or_default();
+        let body = serde_json::json!({
+            "action": "list_gazette_posts_ok",
+            "posts": posts,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_gazette_posts_ok serializes"),
         ));
     }
 
@@ -10894,6 +10930,73 @@ mod tests {
         assert_eq!(exchanges[1]["command"], "false");
         assert_eq!(exchanges[1]["exit_code"], 1);
         assert_eq!(exchanges[1]["seq"], 2);
+    }
+
+    /// `list_gazette_posts` broadcasts `list_gazette_posts_ok { posts: [...] }`
+    /// oldest-first — the Gazette card's mount-time tail, after which it stays
+    /// live off the GAZETTE feed. App-scoped: the channel belongs to the app,
+    /// not to a session, so the request carries no session id.
+    #[tokio::test]
+    async fn list_gazette_posts_returns_the_channel_tail() {
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        for body in ["the older post", "the newer post"] {
+            ledger
+                .record_gazette_post(&tugcast_core::GazettePost {
+                    id: None,
+                    at_ms: 1,
+                    author: tugcast_core::GazetteAuthor::Reporter,
+                    session_id: Some("s1".to_string()),
+                    wake_reason: Some("turn-end".to_string()),
+                    body: body.to_string(),
+                    refs: Vec::new(),
+                    request_id: None,
+                    transient: false,
+                })
+                .unwrap();
+        }
+
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, mut rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let (sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            CancellationToken::new(),
+        );
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "list_gazette_posts",
+        }))
+        .unwrap();
+        sup.handle_control("list_gazette_posts", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "list_gazette_posts_ok");
+        let posts = response["posts"].as_array().expect("posts array");
+        assert_eq!(posts.len(), 2);
+        assert_eq!(posts[0]["body"], "the older post");
+        assert_eq!(posts[1]["body"], "the newer post");
+        assert_eq!(posts[1]["author"], "reporter");
+        assert_eq!(posts[1]["wake_reason"], "turn-end");
+        assert!(
+            posts[1]["id"].is_i64(),
+            "a persisted post carries its rowid onto the wire",
+        );
     }
 
     /// An unknown session (or one with no exchanges) yields an empty array,

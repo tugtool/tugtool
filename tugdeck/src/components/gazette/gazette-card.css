@@ -1,0 +1,132 @@
+/* The Gazette card. Tokens only — no literal colors. */
+
+/* @tug-pairings: none — the card sets a text color for inherited content only;
+   the ref chips' color comes from `TugBadge` and the glyphs inherit the row's
+   ([L20]). */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gazette-card {
+  display: grid;
+  /* Two tracks: the transcript takes the height, the composer's track is
+     reserved at content height and is empty today — see the card's docstring
+     for why it is reserved rather than grown later. */
+  grid-template-rows: 1fr auto;
+  block-size: 100%;
+  min-block-size: 0;
+  outline: none;
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  /* Post rhythm — TUNE HERE. */
+  --tugx-gazette-post-gap: var(--tug-space-md);
+  --tugx-gazette-gutter-inline-size: 18px;
+}
+
+.gazette-transcript {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-gazette-post-gap);
+  padding: var(--tug-space-md);
+}
+
+/* One post: the author's glyph in a fixed gutter, everything else in the
+   column beside it, so bodies from different voices share one left edge. */
+.gazette-post {
+  display: grid;
+  grid-template-columns: var(--tugx-gazette-gutter-inline-size) 1fr;
+  gap: var(--tug-space-sm);
+  align-items: start;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gazette-post-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Sits on the meta line's baseline band, not on the body's first line. */
+  block-size: 16px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.gazette-post-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gazette-post-meta {
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.gazette-post-body {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  /* Posts arrive as prose with hard newlines the model chose; honor them
+     rather than collapsing a two-beat digest into one run-on line. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.gazette-post-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-block-start: 4px;
+}
+
+/* The chip's own color comes from `TugPushButton`'s `data` role; the card only
+   caps how much width one target may take, so a long path cannot push the
+   row's other chips off the rail. */
+.gazette-ref-chip {
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.gazette-empty {
+  padding: var(--tug-space-sm);
+  font-size: 12px;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The composer's track: content height, below the transcript, so the field
+   growing under a long question never moves the reading column. */
+.gazette-composer-slot {
+  min-block-size: 0;
+}
+
+.gazette-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--tug-space-sm);
+  padding: var(--tug-space-sm) var(--tug-space-md) var(--tug-space-md);
+  border-block-start: 1px solid
+    var(--tug7-element-global-border-normal-subtle-rest);
+}
+
+.gazette-composer-field {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* The button holds its width across enabled and disabled so the field does not
+   resize as the answer arrives. */
+.gazette-composer-send {
+  flex: 0 0 auto;
+}
+
+/* A post still being written. The row is the answer's row already ([L26]);
+   only its body is a placeholder, so it reads quiet rather than absent. */
+.gazette-post[data-pending] .gazette-post-body {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  font-style: italic;
+}

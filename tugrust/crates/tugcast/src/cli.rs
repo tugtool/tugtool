@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
 
 const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("TUG_COMMIT"), ")");
@@ -80,6 +80,67 @@ pub struct Cli {
     /// Refused outside an app-test instance — see `seed_ledger` in `main`.
     #[arg(long, value_name = "JSON_FILE")]
     pub seed_ledger: Option<PathBuf>,
+
+    /// Developer subcommands. Absent means "run the server", which is what
+    /// every launch does; a present one runs its tool and exits before any
+    /// listener binds.
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+/// Tools that share the binary but not its job.
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Replay a session transcript through the Reporter's wake core and print
+    /// the gazette it would have produced.
+    ///
+    /// Hidden because it is a calibration instrument, not part of running
+    /// tugcast: it exists so the channel's cadence can be set by reading real
+    /// output at two or three values rather than by guessing one.
+    #[command(hide = true)]
+    GazetteReplay(GazetteReplayArgs),
+}
+
+/// Flags for `tugcast gazette-replay`. Each one overrides a `dev.tugtool.gazette`
+/// default for the length of the run without writing to tugbank, so a sweep
+/// never disturbs a live instance's settings.
+#[derive(Args, Debug)]
+pub struct GazetteReplayArgs {
+    /// Claude Code session transcript (`~/.claude/projects/<slug>/<id>.jsonl`).
+    pub jsonl: PathBuf,
+
+    /// Seconds of continuous activity before a sitrep wake. The number the
+    /// sweep is about; 0 leaves only turn-end and session-end wakes.
+    #[arg(long)]
+    pub sitrep_secs: Option<i64>,
+
+    /// How many prior posts ride each wake — the dedup mechanism.
+    #[arg(long)]
+    pub last_k: Option<usize>,
+
+    /// Per-window frame cap before the oldest are elided.
+    #[arg(long)]
+    pub max_frames: Option<usize>,
+
+    /// Billed tokens since the last post that force a wake. 0 is off.
+    #[arg(long)]
+    pub token_wake_tokens: Option<i64>,
+
+    /// Model for the `reporter-post` job.
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Segment and report the wake windows without calling the model. Free,
+    /// instant, and deterministic — the right first look at a new cadence.
+    #[arg(long)]
+    pub no_model: bool,
+
+    /// Print the composed job input for each wake — exactly the bytes the
+    /// Reporter is shown. The answer to "why did it stay silent?", which
+    /// cannot be read off the post that was not written. Combines with
+    /// `--no-model` to inspect the material for free.
+    #[arg(long)]
+    pub show_input: bool,
 }
 
 impl Cli {

@@ -600,6 +600,128 @@ pub struct StatSnapshot {
     pub timestamp: String,
 }
 
+// MARK: - Gazette
+
+/// Who wrote a Gazette post. The channel has exactly three authors and no
+/// mechanism for a fourth, so this is an enum rather than a string: an
+/// unknown author is a parse failure at the edge instead of a row nobody
+/// renders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GazetteAuthor {
+    /// The summarizer, posting digests of session work as it happens.
+    Reporter,
+    /// The question-answering agent. Speaks only when spoken to.
+    Operator,
+    /// The human, asking through the card's composer.
+    User,
+}
+
+impl GazetteAuthor {
+    /// The wire/storage spelling — what the `author` column holds.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Reporter => "reporter",
+            Self::Operator => "operator",
+            Self::User => "user",
+        }
+    }
+
+    /// Parse a stored/wire author. Unknown spellings are `None` rather than a
+    /// default, so a drifted writer surfaces as a skipped row instead of a
+    /// post silently attributed to the wrong voice.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "reporter" => Some(Self::Reporter),
+            "operator" => Some(Self::Operator),
+            "user" => Some(Self::User),
+            _ => None,
+        }
+    }
+}
+
+/// What a ref points at. The card renders each kind as a different chip
+/// action, so an unrecognized kind has no behavior to offer and is dropped
+/// at parse rather than rendered inert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GazetteRefKind {
+    /// A session id — raises that Session card.
+    Session,
+    /// A repo-relative file path.
+    File,
+    /// A commit sha.
+    Commit,
+    /// A plan document under the roadmap.
+    Plan,
+    /// A brief document under the roadmap.
+    Brief,
+}
+
+impl GazetteRefKind {
+    /// The wire/storage spelling — what the `refs` JSON holds, and what a
+    /// diagnostic prints when it names the kind of a ref it kept or dropped.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Session => "session",
+            Self::File => "file",
+            Self::Commit => "commit",
+            Self::Plan => "plan",
+            Self::Brief => "brief",
+        }
+    }
+}
+
+/// One clickable provenance chip on a post.
+///
+/// `target` is carried verbatim from the model's envelope and is validated
+/// against the buffered context before it is ever persisted — a path or sha
+/// that never appeared in the frames the model was shown cannot be linked,
+/// so it is dropped rather than rendered as a chip that goes nowhere.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GazetteRef {
+    pub kind: GazetteRefKind,
+    pub target: String,
+}
+
+/// One post on the Gazette channel, as it travels on `FeedId::GAZETTE` and
+/// as the CONTROL tail read returns it.
+///
+/// `id` is the ledger rowid, absent on a transient post — an Operator error
+/// that is broadcast so the card can stop waiting but never written to the
+/// ledger, because an infrastructure hiccup is not history. `request_id` is
+/// present only on an Operator post answering a specific question, and is
+/// what the card matches to clear its pending state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GazettePost {
+    /// Ledger rowid. `None` on a transient post ([P08]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<i64>,
+    pub at_ms: i64,
+    pub author: GazetteAuthor,
+    /// The session a Reporter digest narrates. `None` for Operator answers
+    /// and user questions, which belong to the channel rather than a session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Which structural moment woke the Reporter. `None` for the other authors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wake_reason: Option<String>,
+    pub body: String,
+    #[serde(default)]
+    pub refs: Vec<GazetteRef>,
+    /// Correlation id, on an Operator post answering a question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// True on a broadcast-but-never-persisted post. Defaults false so a
+    /// persisted row deserializes without carrying the flag.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub transient: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

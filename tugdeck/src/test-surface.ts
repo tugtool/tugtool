@@ -46,6 +46,10 @@ import { getDeckStore } from "./lib/deck-store-registry";
 import { transferFocusForActivation } from "./focus-transfer";
 import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
+import {
+  _ingestGazetteFrameForTest,
+  getGazetteStore,
+} from "./lib/gazette-store";
 import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
@@ -239,8 +243,13 @@ import {
  * nothing. A removal is breaking by the rule above, hence the major; no
  * consumer gates on this constant, and the harness's own surface version
  * (`_harness/index.ts`) is a separate number that does not move.
+ *
+ * `2.1.0`: adds {@link TugTestSurface.publishGazettePost} — delivers a GAZETTE
+ * frame body as if it arrived over the wire, so a test can put a Reporter post
+ * with its refs on the card without a live Reporter behind it. Additive; major
+ * stays `2`.
  */
-export const SURFACE_VERSION = "2.0.0" as const;
+export const SURFACE_VERSION = "2.1.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -747,6 +756,21 @@ export interface TugTestSurface {
    * assert on what rendered, never on this alone.
    */
   publishPulseFrame(payloadJson: string): boolean;
+
+  /**
+   * Deliver a GAZETTE frame body as if it had arrived over the wire
+   * (SURFACE_VERSION 2.1.0).
+   *
+   * `payloadJson` is the post the Reporter or the Operator writes —
+   * `{"id":…,"at_ms":…,"author":"reporter"|"operator"|"user","body":…,"refs":[…]}`.
+   * The bytes go through the production parser and the production fold, so what
+   * the card renders is what a live author would have produced.
+   *
+   * Returns `false` when no store is attached or the JSON does not parse. A
+   * `true` return only means the bytes were handed over: the frame parser drops
+   * a malformed post silently, so assert on what rendered, never on this alone.
+   */
+  publishGazettePost(payloadJson: string): boolean;
 
   /**
    * Register an element as a selection boundary on behalf of a test
@@ -1712,6 +1736,16 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       if (getPulseStore() === null) return false;
       try {
         _ingestPulseFrameForTest(JSON.parse(payloadJson));
+      } catch {
+        return false;
+      }
+      return true;
+    },
+
+    publishGazettePost(payloadJson: string): boolean {
+      if (getGazetteStore() === null) return false;
+      try {
+        _ingestGazetteFrameForTest(JSON.parse(payloadJson));
       } catch {
         return false;
       }

@@ -607,6 +607,9 @@ export const TUG_ACTIONS = {
   //                         sibling of TOGGLE_LENS: ⌃⌘⟨letter⟩ is the
   //                         sidebar-toggle grammar, so the pair is
   //                         self-teaching.
+  // TOGGLE_GAZETTE:         payload — none. Show/hide the Gazette rail. Third
+  //                         in the ⌃⌘⟨letter⟩ sidebar-toggle grammar, beside
+  //                         TOGGLE_LENS and TOGGLE_JOTS.
   // NEW_JOT:                payload — none. Capture a jot in one gesture:
   //                         reveal the Jots card if it is hidden, create an
   //                         empty jot, and land the caret in its editor.
@@ -746,6 +749,7 @@ export const TUG_ACTIONS = {
   FOCUS_LENS:             "focus-lens",
   TOGGLE_LENS:            "toggle-lens",
   TOGGLE_JOTS:            "toggle-jots",
+  TOGGLE_GAZETTE:         "toggle-gazette",
   NEW_JOT:                "new-jot",
   // SET_CARD_WIDTH: payload — `{ paneId, preset }`. Set one content pane's
   //                 width to a named preset (slim / comfy / wide), clamped up

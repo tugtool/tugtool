@@ -1,0 +1,487 @@
+//! gazette_agent — the Gazette's model traffic: one Sonnet [`AgentSpec`] on
+//! the SharedAgent pool, operated against three fixed jobs.
+//!
+//! The whole feature's model usage is `reporter-post`, `operator-retrieve`,
+//! and `operator-answer`. That is exactly the extension `shared_agent`
+//! anticipates — "standing up a second agent on a different model means
+//! constructing a second `AgentSpec`, not writing new machinery" — so there is
+//! no process supervision here, only a job table and the knobs that tune it.
+//!
+//! ## The division of labor
+//!
+//! Rust decides *when* to wake the Reporter; the model decides *whether and
+//! what* to post. Half the moments worth posting about are semantic
+//! ("investigation results came back", "a plan step landed"), and hard-coding
+//! detectors for those would be brittle and forever behind the skills'
+//! evolution. So the wake is structural and cheap, and "post nothing" is a
+//! first-class output of the job. Granularity is thereby a prompt-tunable
+//! editorial policy rather than a Rust event taxonomy.
+//!
+//! ## Why every number here is a knob
+//!
+//! Cadence is a question about feel, and feel is not answerable from a desk.
+//! Each tuning value is a tugbank default read through a closure at the moment
+//! it is used, never cached at startup, so turning one applies without a
+//! restart — the `pulse_enabled` / `scribe_model` pattern in `main.rs`.
+//!
+//! One-way isolation, inherited from Pulse's law: nothing in the Gazette
+//! subsystem writes toward any work session.
+
+// The knob surface is authored ahead of the bridge and the Operator pipeline
+// that read it: the model and worker-cap keys have consumers today, the
+// cadence and window keys are read when the Reporter bridge lands. Suppress
+// dead-code for the phased rollout, the same way `session_ledger.rs` and
+// `path_resolver.rs` do. Declaring the whole table in one place is the point —
+// a knob invented later next to its reader is a knob nobody knows exists.
+#![allow(dead_code)]
+
+use std::sync::Arc;
+
+use tokio::time::Duration;
+
+use crate::shared_agent::{AgentSpec, JobSpec, SharedAgentPool};
+
+// MARK: - Configuration
+
+/// Tugbank domain for every Gazette default. Mirrored deck-side by the
+/// Gazette store, which reads `card_rows` off the DEFAULTS feed.
+pub const GAZETTE_DOMAIN: &str = "dev.tugtool.gazette";
+
+/// Kill switch (`Value::Bool`). Absent or unreadable reads as ENABLED, the
+/// same default-on posture PULSE takes: a channel is never accidentally dark
+/// because a value was never written.
+pub const ENABLED_KEY: &str = "enabled";
+
+/// Full model id or alias for all three jobs.
+pub const MODEL_KEY: &str = "model";
+
+/// Total worker cap for this pool.
+pub const MAX_WORKERS_KEY: &str = "max_workers";
+
+/// Seconds of continuous session activity, since that session's last post,
+/// after which the Reporter wakes with `sitrep-timer`.
+pub const SITREP_SECS_KEY: &str = "sitrep_secs";
+
+/// How many of the Reporter's own prior posts for a session ride each wake.
+pub const LAST_K_POSTS_KEY: &str = "last_k_posts";
+
+/// Cumulative turn-usage tokens since the last post that trigger a wake.
+/// Zero disables the threshold entirely.
+pub const TOKEN_WAKE_TOKENS_KEY: &str = "token_wake_tokens";
+
+/// Per-session buffer cap, in frames.
+pub const BUFFER_MAX_FRAMES_KEY: &str = "buffer_max_frames";
+
+/// How many rows the card renders. A render window, never a deletion — the
+/// ledger keeps everything and the Operator searches all of it.
+pub const CARD_ROWS_KEY: &str = "card_rows";
+
+/// The model both personas run on.
+///
+/// An alias rather than a pinned id, matching the `scribe_model` default: the
+/// jobs here are prose work with a human reading the output, so tracking the
+/// current Sonnet is what we want, and the knob is there for pinning.
+pub const DEFAULT_MODEL: &str = "sonnet";
+
+/// Room for a Reporter post, an Operator retrieve, and an Operator answer to
+/// be in flight at once.
+///
+/// Three rather than the Haiku pool's two because `JobClass::of` maps every
+/// non-classify job to one lane, so all three of these share it. A
+/// `reporter-post` may hold a worker for its full two-minute ceiling, and a
+/// user waiting on an answer must not queue behind narration nobody is
+/// waiting for.
+pub const DEFAULT_MAX_WORKERS: usize = 3;
+
+/// The dominant wake, and the number that decides how the channel feels.
+///
+/// Ninety seconds, chosen by reading three offline replays of the same real
+/// session side by side rather than by reasoning about it: 90 gave a post
+/// roughly every three minutes, 120 every five, 180 every twelve. The channel
+/// at 180 read as a log somebody skims later; at 90 it read as someone telling
+/// you what is happening. Cadence is a question about feel, and this is the
+/// answer the reading gave.
+///
+/// A faster value is worth trying if this proves too quiet in practice — the
+/// number is a tugbank default, so turning it needs no rebuild and no restart,
+/// and `gazette-replay --sitrep-secs` reads any candidate against a real
+/// transcript first.
+pub const DEFAULT_SITREP_SECS: i64 = 90;
+
+/// How much of its own recent voice the Reporter sees per wake.
+///
+/// This is the entire dedup mechanism: the model is shown what it already
+/// said about this session and declines to repeat it. Nothing compares text.
+pub const DEFAULT_LAST_K_POSTS: usize = 5;
+
+/// Off by default — the sitrep timer and turn ends already cover the ground,
+/// and a token threshold that fires mid-thought is noise.
+pub const DEFAULT_TOKEN_WAKE_TOKENS: i64 = 0;
+
+/// Per-session frame cap before the oldest are elided from the wake input.
+pub const DEFAULT_BUFFER_MAX_FRAMES: usize = 256;
+
+/// Byte ceiling on one wake's buffered frames, alongside the frame cap.
+/// Fixed rather than a knob: it exists to bound one turn's input, and the
+/// frame cap is the dial worth turning.
+pub const BUFFER_MAX_BYTES: usize = 256 * 1024;
+
+/// Starting render window for the card.
+pub const DEFAULT_CARD_ROWS: usize = 50;
+
+// MARK: - The job table
+
+/// Nothing user-blocking waits on a Reporter post, so its ceiling is a
+/// quality bound rather than a latency budget: a digest that needs two
+/// minutes may take them.
+const REPORTER_POST_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Retrieval is a short structured answer — a list of verb calls — so a long
+/// wait here means something is wrong rather than something is thorough.
+const OPERATOR_RETRIEVE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Someone is watching a pending row while this runs, but the answer is the
+/// product; the card shows pending state rather than racing a deadline.
+const OPERATOR_ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
+
+const REPORTER_POST_SLOW: Duration = Duration::from_secs(60);
+const OPERATOR_RETRIEVE_SLOW: Duration = Duration::from_secs(10);
+const OPERATOR_ANSWER_SLOW: Duration = Duration::from_secs(45);
+
+pub static GAZETTE_AGENT_JOBS: &[JobSpec] = &[
+    JobSpec {
+        name: "reporter-post",
+        timeout: REPORTER_POST_TIMEOUT,
+        slow: Some(REPORTER_POST_SLOW),
+        instructions: REPORTER_POST_INSTRUCTIONS,
+    },
+    JobSpec {
+        name: "operator-retrieve",
+        timeout: OPERATOR_RETRIEVE_TIMEOUT,
+        slow: Some(OPERATOR_RETRIEVE_SLOW),
+        instructions: OPERATOR_RETRIEVE_INSTRUCTIONS,
+    },
+    JobSpec {
+        name: "operator-answer",
+        timeout: OPERATOR_ANSWER_TIMEOUT,
+        slow: Some(OPERATOR_ANSWER_SLOW),
+        instructions: OPERATOR_ANSWER_INSTRUCTIONS,
+    },
+];
+
+/// Build the pool. Spawns nothing — the first job of a class is what spawns
+/// its worker, so an instance where nobody opens the Gazette pays nothing.
+pub fn build_pool(
+    model: Arc<dyn Fn() -> String + Send + Sync>,
+    max_workers: usize,
+) -> Arc<SharedAgentPool> {
+    SharedAgentPool::new(
+        AgentSpec {
+            name: "gazette",
+            model,
+            jobs: GAZETTE_AGENT_JOBS,
+            max_workers,
+        },
+        Arc::new(crate::shared_agent::ClaudeAgentWorkerSpawner),
+    )
+}
+
+// MARK: - Instructions
+
+/// The Reporter's wording.
+///
+/// The rubric is carried verbatim from the brief because it is the editorial
+/// contract, not a paraphrase of one: these are the moments a person working
+/// in Tug is already wondering about, and the list is what makes the model's
+/// judgment match theirs.
+///
+/// Silence is bounded on purpose. An early draft made "post nothing" both
+/// emphatic and open-ended, and the model read the coding-flavored bullet list
+/// as the whole beat: a session that answered a question and finished its turn
+/// got no post, because the subject was not code. That is backwards. A turn
+/// ending IS the news — the person stepped away and this is how they learn what
+/// came back — so the wording now names the two cases silence is for (an empty
+/// window, or a repeat of the last post) and requires a post outside them.
+/// Whether the work was worth doing is not the Reporter's call; whether it
+/// happened is.
+///
+/// The first repair overshot into the opposite failure. Telling the Reporter to
+/// post "even when the subject is nothing to do with their code" handed it the
+/// contrast, and it performed it: the next post opened "Answered a physics
+/// question, not code:". Defining the beat by what it is not guarantees that
+/// framing reaches the body. So the wording no longer mentions code as a
+/// baseline anywhere, and the voice rule forbids the move outright — report the
+/// work, never a judgment about which kind of work it was.
+///
+/// Length is stated as a budget because an adjective did not hold. "A few
+/// sentences at most" produced 100-to-130-word posts that walked the reasoning
+/// and re-gave the answer the session had already given — the content, not a
+/// summary of it. A countable limit plus the rule that the post exists to get
+/// the reader to the session, not to stand in for it, is what actually binds.
+///
+/// Two things here are load-bearing downstream and must not drift. The output
+/// is strict JSON with `{"post": null}` as a first-class answer — silence is
+/// the safe failure mode, and a repaired or partial post is worse than none.
+/// And refs must quote their targets **verbatim** from the frames, because a
+/// path or sha the buffered context never contained is validated away Rust-side
+/// rather than rendered as a chip that goes nowhere.
+const REPORTER_POST_INSTRUCTIONS: &str = "\
+You are the Reporter for the Gazette, a channel that narrates the work happening across a developer's coding sessions. You are shown one session's recent activity and decide whether it is worth posting about, and if so, what to say.
+
+Your rubric: tell the human things about their sessions they are worrying about anyway. These are examples of moments, not a list of subjects — whatever the session was doing is what you report:
+
+- An agent (or set of agents) returned with investigation results on an open matter.
+- A /devise finished canvassing the code and started writing its plan.
+- A plan step finished during an /implement run.
+- A session crossed a token-usage or elapsed-time threshold.
+- A brief finished being written.
+- A session finished a turn and is ready for the user to look in — with a summary of what was done. This one is not optional; see the wake reasons below.
+- A commit landed — post a short summary.
+- Work is still cooking — a sitrep.
+
+Silence is a real answer, and it has exactly two uses. The first: nothing happened — the window holds only bookkeeping, with no work in it to describe. The second: you would be repeating yourself — you are shown your own last few posts about this session, and saying the same thing again in different words is worse than saying nothing.
+
+Outside those two cases, POST. Whether the work was worth doing is not your call; whether it happened is. A turn that answered a question, explained something, wrote a file, or ran a command has done work, and the person who asked for it is entitled to see it reported. A channel that cries wolf gets ignored, but so does one that stays quiet while the session is plainly busy. Do not narrate every tool call.
+
+The WAKE REASON tells you why you are being asked now. Use it:
+- turn-end — the session finished a turn and is ready to look in. ALWAYS summarize what the turn did. A turn ending is itself the news: the person stepped away, and this post is how they find out what came back. The only turn-end you may pass on is one whose window holds no work at all, or one you would only be repeating your last post to describe.
+- sitrep-timer — work has been going for a while. Post only if it has gotten somewhere since your last post.
+- session-end — the session is over. Write a wrap-up of what it accomplished overall.
+- token-threshold — the session has spent a lot. Say what it has been spending on.
+
+Write like a person telling a colleague what happened. Two or three sentences, 60 words at the outside — this is a notice in a narrow rail, not a transcript. Concrete and specific: name what was built, what was found, what broke, what was asked and what the answer was. Never narrate your own process.
+
+The post is the summary, never the content. Say what happened and stop — enough that the reader knows where the session got to and can decide whether to look in, never so much that reading the post replaces opening it. If you are explaining how something works, listing every file touched, walking through the reasoning, or reproducing the answer the session already gave, you have written the content instead of the summary. The session itself is one click away; your job is to get them there knowing what they will find.
+
+Report the work; never your view of it. Do not classify what kind of work it was, and never define it by what it was not — no \"not code\", no \"off-topic\", no \"just a question\", no \"only an aside\". Every subject gets the same voice. Open on the specifics — what was asked, what came back, what changed — rather than on a label for the kind of work it was. You are not weighing whether this belonged in the session, and a post that starts by excusing itself has spent its first sentence on nothing.
+
+REFS are the clickable provenance on your post. Include one for each file, commit, plan, brief, or session that the post is genuinely about — not everything mentioned. Every ref target MUST be copied EXACTLY as it appears in the activity you were shown: a path spelled differently, or a commit sha you shortened or reconstructed, cannot be linked and will be discarded. If you cannot copy it exactly, leave it out.
+
+Spell a path the way the activity spells it. If the activity says roadmap/gazette-plan.md, the target is roadmap/gazette-plan.md — do not expand it to a full path from the root of the disk, and do not shorten a full path the activity gave you. Copy the characters you were shown. Ref kinds are: session, file, commit, plan, brief.
+
+Answer with JSON and nothing else — no prose before it, no code fence around it.
+
+To post nothing:
+{\"post\": null}
+
+To post:
+{\"post\": {\"body\": \"...\", \"refs\": [{\"kind\": \"commit\", \"target\": \"a1b2c3d4e\"}]}}
+
+An empty refs list is fine. Answer only from the material below.";
+
+/// The retrieval half of the Operator.
+///
+/// The model never gets shell or file access: it names verbs and tugcast runs
+/// them read-only. That keeps the job table the whole audit surface and makes
+/// read-only-ness structural rather than promised.
+const OPERATOR_RETRIEVE_INSTRUCTIONS: &str = "\
+You are the Operator for the Gazette. Someone has asked a question about the work that has happened in their coding sessions, and your job right now is ONLY to decide what to look up.
+
+You cannot run commands or read files. You name verbs; the system runs them for you, read-only, and hands you the results. Choose the verbs that will actually answer the question.
+
+Available verbs and their arguments:
+
+- gazette.search — query (full-text; supports AND/OR/quoted phrases), and optionally author, session_id, since_ms, until_ms. Finds posts in the channel's whole history.
+- gazette.window — post_id, n. The posts either side of a hit, to read the narrative around it.
+- sessions.list — optionally since_ms, until_ms, active. Sessions with their titles and times.
+- session.prompts — session_id, optionally query. What the person actually asked in that session.
+- changes.for_session — session_id. Files that session touched, with the operation and how it was proven.
+- changes.for_path — pattern (SQL LIKE, e.g. \"%.css\"), optionally since_ms, until_ms. Which sessions touched matching files, and when.
+- git.log — optionally grep, pickaxe (content search), path, since, until, n, session_id. Commits.
+- git.show — sha, optionally path, session_id. One commit's message and diff.
+- repo.grep — pattern, optionally path_scope, session_id. The current state of the tree.
+
+Strategy that works: the channel's prose is good at locating WHEN something happened and WHICH session did it; the ledgers and git are what CONFIRM the specific fact. So narrow with gazette.search or changes.for_path, then confirm with git.show or repo.grep. Never rely on a post's wording as the final answer when a ledger can settle it.
+
+Ask for at most 6 verbs. Prefer two or three well-chosen ones. If the question needs a fact you can only get after seeing these results, you will get one more chance to ask later — do not try to cover every branch now.
+
+Answer with JSON and nothing else — no prose before it, no code fence around it:
+
+{\"verbs\": [{\"verb\": \"changes.for_path\", \"args\": {\"pattern\": \"%.css\", \"since_ms\": 1234567890000}}]}
+
+Answer only from the material below.";
+
+/// The answering half.
+///
+/// The two-round cap lives in Rust, but the model is told about it, because a
+/// model that knows this is its last chance answers with what it has instead
+/// of asking for a lookup it will never receive.
+const OPERATOR_ANSWER_INSTRUCTIONS: &str = "\
+You are the Operator for the Gazette. Someone asked a question about the work in their coding sessions, verbs were run on your behalf, and their results are below. Answer the question.
+
+Answer like a colleague who just looked it up: lead with the answer, then the evidence for it. Be specific — name the file, the commit, the session, the date. If the results settle the question, say so plainly. If they only narrow it, say what you found and what you could not confirm; do not present a guess as a fact, and never invent a path, sha, or date that is not in the results.
+
+The channel's own posts are prose written by the Reporter and are good for locating when something happened and which session did it. The ledger and git results are ground truth. When they disagree, trust the ledgers.
+
+REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
+
+If the results are not enough and one more lookup would settle it, you may ask for more verbs instead of answering — but ONLY ONCE. If you have already been given a second round of results, you must answer now with what you have, saying what remains unconfirmed.
+
+Answer with JSON and nothing else — no prose before it, no code fence around it.
+
+To answer:
+{\"answer\": {\"body\": \"...\", \"refs\": [{\"kind\": \"file\", \"target\": \"tugdeck/styles/themes/brio.css\"}]}}
+
+To ask for one more round of lookups:
+{\"verbs\": [{\"verb\": \"git.show\", \"args\": {\"sha\": \"a1b2c3d4e\"}}]}
+
+Answer only from the material below.";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job(name: &str) -> &'static JobSpec {
+        GAZETTE_AGENT_JOBS
+            .iter()
+            .find(|j| j.name == name)
+            .unwrap_or_else(|| panic!("{name} missing from the gazette job table"))
+    }
+
+    /// The contracts Rust enforces downstream have to be the ones the model
+    /// was actually told about. Each assertion here pins a string that some
+    /// other code path depends on the model having read.
+    #[test]
+    fn the_job_table_carries_every_contract_the_gates_depend_on() {
+        assert_eq!(GAZETTE_AGENT_JOBS.len(), 3);
+
+        // Silence is a first-class output, and the parser accepts exactly this
+        // shape — a model that was never told so would answer prose.
+        let reporter = job("reporter-post").instructions;
+        assert!(reporter.contains(r#"{"post": null}"#));
+        assert!(reporter.contains(r#""refs""#));
+        // …but bounded to the two cases it is for. An open-ended "posting
+        // nothing is often right" let the model treat a finished turn whose
+        // subject was not code as unremarkable, which is the opposite of the
+        // channel's job. Both halves are pinned: the two uses, and the
+        // requirement to post outside them.
+        assert!(reporter.contains("Silence is a real answer, and it has exactly two uses"));
+        assert!(reporter.contains("Outside those two cases, POST."));
+        assert!(reporter.contains("ALWAYS summarize what the turn did"));
+        assert!(
+            !reporter.contains("often the right one"),
+            "the open-ended silence license is what made a finished turn go unreported",
+        );
+        // Voice: one register for every subject. The rule is pinned, and so is
+        // the absence of the framing that provoked it — telling the Reporter to
+        // post "even when it isn't code" is what produced a post opening
+        // "Answered a physics question, not code:". The prompt must not name
+        // code as the baseline the work is measured against.
+        assert!(reporter.contains("Report the work; never your view of it"));
+        assert!(reporter.contains("never define it by what it was not"));
+        // Length is a budget, not an adjective. "A few sentences at most" drew
+        // 100-plus-word posts that reproduced the answer the session had
+        // already given; a countable limit and the summary-not-content rule
+        // are what actually bind.
+        assert!(reporter.contains("60 words at the outside"));
+        assert!(reporter.contains("The post is the summary, never the content"));
+        assert!(
+            !reporter.contains("nothing to do with their code"),
+            "naming code as the baseline is what the Reporter then narrated",
+        );
+        // Ref targets are validated verbatim against the buffered context, so
+        // the instruction to copy exactly is what keeps the drop rate down.
+        // The path clause is the specific fix for the one drop the offline
+        // sweep actually produced: a repo-relative path expanded to an
+        // absolute one, which no window contains and no chip can link.
+        assert!(reporter.contains("EXACTLY"));
+        assert!(reporter.contains("Spell a path the way the activity spells it"));
+        // Every wake reason the bridge can send is explained.
+        for reason in ["turn-end", "sitrep-timer", "session-end", "token-threshold"] {
+            assert!(
+                reporter.contains(reason),
+                "wake reason {reason} unexplained"
+            );
+        }
+        // The rubric, which is the editorial contract.
+        for beat in [
+            "investigation results",
+            "/devise",
+            "/implement",
+            "brief finished being written",
+            "commit landed",
+            "sitrep",
+        ] {
+            assert!(reporter.contains(beat), "rubric lost {beat:?}");
+        }
+
+        // Retrieval names every verb the executor implements; a verb the model
+        // never hears about is a verb that is never called.
+        let retrieve = job("operator-retrieve").instructions;
+        for verb in [
+            "gazette.search",
+            "gazette.window",
+            "sessions.list",
+            "session.prompts",
+            "changes.for_session",
+            "changes.for_path",
+            "git.log",
+            "git.show",
+            "repo.grep",
+        ] {
+            assert!(retrieve.contains(verb), "verb {verb} missing from retrieve");
+        }
+        assert!(retrieve.contains(r#""verbs""#));
+        assert!(retrieve.contains("at most 6 verbs"));
+
+        // The answer job must know both of its output shapes and that its
+        // second round is final.
+        let answer = job("operator-answer").instructions;
+        assert!(answer.contains(r#""answer""#));
+        assert!(answer.contains(r#""verbs""#));
+        assert!(answer.contains("ONLY ONCE"));
+        assert!(answer.contains("EXACTLY"));
+    }
+
+    /// Every job answers with JSON that a strict parser reads, so an
+    /// instruction that allowed a code fence or a preamble would produce a
+    /// silent no-post.
+    #[test]
+    fn every_job_demands_bare_json() {
+        for spec in GAZETTE_AGENT_JOBS {
+            assert!(
+                spec.instructions.contains("no code fence around it"),
+                "{} may answer with a fenced block",
+                spec.name,
+            );
+            assert!(
+                spec.instructions
+                    .contains("Answer only from the material below"),
+                "{} is not told to answer only from its input",
+                spec.name,
+            );
+        }
+    }
+
+    /// Nothing user-blocking waits on a post, but a person does wait on an
+    /// answer — and the retrieval leg is a short structured reply, so it gets
+    /// the tightest ceiling of the three.
+    #[test]
+    fn job_ceilings_match_what_each_one_keeps_someone_waiting_for() {
+        assert!(job("operator-retrieve").timeout < job("operator-answer").timeout);
+        assert_eq!(job("reporter-post").timeout, Duration::from_secs(120));
+        for spec in GAZETTE_AGENT_JOBS {
+            let slow = spec.slow.expect("every job marks drift");
+            assert!(
+                slow < spec.timeout,
+                "{} slow mark is unreachable",
+                spec.name
+            );
+        }
+    }
+
+    /// The cadence default is the one number the whole channel's feel rests
+    /// on, and it was set by reading three offline replays rather than by
+    /// argument. A silent drift back up would change how the app feels with
+    /// nothing to point at.
+    #[test]
+    fn cadence_defaults_are_the_tuned_starting_values() {
+        assert_eq!(DEFAULT_SITREP_SECS, 90);
+        assert_eq!(DEFAULT_LAST_K_POSTS, 5);
+        assert_eq!(DEFAULT_TOKEN_WAKE_TOKENS, 0, "threshold wake is opt-in");
+        assert_eq!(
+            DEFAULT_MAX_WORKERS, 3,
+            "one lane, three jobs: a question must not queue behind a digest",
+        );
+    }
+}

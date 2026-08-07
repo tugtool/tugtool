@@ -162,6 +162,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
 | ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
+| ⌃⌘G | `toggle-gazette` | Show Gazette | menu bar (swept) |
 | ⌃⌘H | `toggle-history-view` | Show Commit History | JS, global |
 | ⌃⌘I | `insert-file` | Insert File… | menu bar (swept) |
 | ⌃⌘J | `toggle-jots` | Show Jots | menu bar (swept) |
@@ -271,6 +272,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `maker.devTools` | `show-devtools` | first responder | registry gate |
 | `maker.focusLens` | `focus-lens` | first responder | host tier |
 | `maker.galleryCard` | `show-component-gallery` | first responder | host tier |
+| `maker.gazette` | `toggle-gazette` | registered handler | host tier |
 | `maker.jots` | `toggle-jots` | registered handler | host tier |
 | `maker.lens` | `toggle-lens` | registered handler | host tier |
 | `maker.newCardInPane` | `add-card-to-active-pane` | first responder | registry gate |

@@ -136,6 +136,16 @@ async fn main() {
     // Parse CLI arguments
     let cli = cli::Cli::parse();
 
+    // Developer subcommands run before anything the server owns is claimed —
+    // no port bound, no instance registered, no ledger writer taken — so one
+    // can be run against a machine with a live tugcast on it without the two
+    // ever meeting.
+    if let Some(command) = cli.command.as_ref() {
+        let cli::Command::GazetteReplay(args) = command;
+        let opts = feeds::gazette_replay::ReplayOptions::from_args(args);
+        std::process::exit(feeds::gazette_replay::run(&args.jsonl, &opts).await);
+    }
+
     // Ledger seeding runs before everything else and never returns — it must
     // not bind a port, register an instance, or touch tmux.
     if let Some(spec) = cli.seed_ledger.as_deref() {
@@ -1338,6 +1348,125 @@ async fn main() {
         Arc::new(shared_agent::ClaudeAgentWorkerSpawner),
     );
 
+    // The Gazette's Sonnet agent: a second `AgentSpec` on the same pool
+    // machinery, carrying the Reporter's digests and both halves of the
+    // Operator. Like the Haiku pool, building it spawns nothing — the first
+    // job of a class spawns that class's worker, so an instance where nobody
+    // opens the Gazette never pays for one.
+    //
+    // Model and worker cap are read per spawn from the `dev.tugtool.gazette`
+    // defaults, so both apply without a restart.
+    let gazette_model: Arc<dyn Fn() -> String + Send + Sync> = {
+        let bank = bank_client.clone();
+        Arc::new(move || {
+            bank.as_ref()
+                .and_then(|b| {
+                    b.get(
+                        feeds::gazette_agent::GAZETTE_DOMAIN,
+                        feeds::gazette_agent::MODEL_KEY,
+                    )
+                    .ok()
+                    .flatten()
+                })
+                .and_then(|v| match v {
+                    tugbank_core::Value::String(s) if !s.trim().is_empty() => Some(s),
+                    _ => None,
+                })
+                .unwrap_or_else(|| feeds::gazette_agent::DEFAULT_MODEL.to_string())
+        })
+    };
+    let gazette_max_workers = bank_client
+        .as_ref()
+        .and_then(|b| {
+            b.get(
+                feeds::gazette_agent::GAZETTE_DOMAIN,
+                feeds::gazette_agent::MAX_WORKERS_KEY,
+            )
+            .ok()
+            .flatten()
+        })
+        .and_then(|v| match v {
+            tugbank_core::Value::I64(n) if n > 0 => Some(n as usize),
+            _ => None,
+        })
+        .unwrap_or(feeds::gazette_agent::DEFAULT_MAX_WORKERS);
+    let gazette_agent = feeds::gazette_agent::build_pool(gazette_model, gazette_max_workers);
+
+    // GAZETTE — the Reporter's live bridge. It taps the same CODE_OUTPUT
+    // frames the Pulse narrates from plus the submission wire and
+    // SESSION_STATE, buffers them per session, and wakes the Sonnet pool at
+    // structural moments. What a wake *means* lives in `reporter_wake`, the
+    // pure core the offline replay harness drives too — which is what makes
+    // the cadence tuned against real transcripts the cadence that ships.
+    //
+    // Every knob is a closure read at the moment it is used, so turning one
+    // in tugbank reaches the next wake with no restart.
+    let gazette_knob = {
+        let bank = bank_client.clone();
+        move |key: &'static str, fallback: i64| -> Arc<dyn Fn() -> i64 + Send + Sync> {
+            let bank = bank.clone();
+            Arc::new(move || {
+                bank.as_ref()
+                    .and_then(|b| {
+                        b.get(feeds::gazette_agent::GAZETTE_DOMAIN, key)
+                            .ok()
+                            .flatten()
+                    })
+                    .and_then(|v| match v {
+                        tugbank_core::Value::I64(n) if n >= 0 => Some(n),
+                        _ => None,
+                    })
+                    .unwrap_or(fallback)
+            })
+        }
+    };
+    let gazette_enabled: Arc<dyn Fn() -> bool + Send + Sync> = {
+        let bank = bank_client.clone();
+        Arc::new(move || {
+            let Some(bank) = bank.as_ref() else {
+                return true;
+            };
+            match bank.get(
+                feeds::gazette_agent::GAZETTE_DOMAIN,
+                feeds::gazette_agent::ENABLED_KEY,
+            ) {
+                Ok(Some(tugbank_core::Value::Bool(enabled))) => enabled,
+                // Absent / other-typed / unreadable all read as the
+                // default-ON posture PULSE takes.
+                _ => true,
+            }
+        })
+    };
+    let gazette_sitrep = gazette_knob(
+        feeds::gazette_agent::SITREP_SECS_KEY,
+        feeds::gazette_agent::DEFAULT_SITREP_SECS,
+    );
+    let gazette_token_wake = gazette_knob(
+        feeds::gazette_agent::TOKEN_WAKE_TOKENS_KEY,
+        feeds::gazette_agent::DEFAULT_TOKEN_WAKE_TOKENS,
+    );
+    let gazette_last_k = gazette_knob(
+        feeds::gazette_agent::LAST_K_POSTS_KEY,
+        feeds::gazette_agent::DEFAULT_LAST_K_POSTS as i64,
+    );
+    let gazette_buffer_frames = gazette_knob(
+        feeds::gazette_agent::BUFFER_MAX_FRAMES_KEY,
+        feeds::gazette_agent::DEFAULT_BUFFER_MAX_FRAMES as i64,
+    );
+    let reporter_bridge =
+        feeds::reporter::ReporterBridge::new(feeds::reporter::ReporterBridgeConfig {
+            code_tx: code_output_feed.sender(),
+            submission_tx: code_submission_tx.clone(),
+            session_state_tx: session_state_feed.sender(),
+            ledger: Some(Arc::clone(&ledger)),
+            agent: Some(Arc::clone(&gazette_agent)),
+            enabled: gazette_enabled,
+            sitrep_secs: gazette_sitrep,
+            token_wake_tokens: gazette_token_wake,
+            last_k_posts: Arc::new(move || gazette_last_k().max(0) as usize),
+            buffer_max_frames: Arc::new(move || gazette_buffer_frames().max(1) as usize),
+        });
+
     // PULSE — app-wide color commentary. One bridge per process: it
     // taps the shared CODE_OUTPUT broadcast for the allowlisted frame
     // subset, lazily spawns/supervises the tugpulse daemon (gated on
@@ -1446,6 +1575,58 @@ async fn main() {
     // a reconnecting deck needs comes from the `list_pulse_lines`
     // CONTROL read, not feed replay ([P09]).
     let pulse_tx = feed_router.register_stream_feed(Box::new(pulse_bridge), cancel.clone());
+    // GAZETTE posts fan out to every connected deck; the tail a reconnecting
+    // deck needs comes from the `list_gazette_posts` CONTROL read. This call's
+    // return value is the only source of the GAZETTE sender, so the Operator
+    // adapter — which publishes user questions and answers on the same feed —
+    // is constructed after it.
+    let gazette_tx = feed_router.register_stream_feed(Box::new(reporter_bridge), cancel.clone());
+
+    // Adapter: router sends raw Frames on GAZETTE_INPUT. Parse `{body,
+    // requestId}` and run the Operator pipeline — user post persisted and
+    // broadcast first ([P08]), then retrieve → verbs → answer, then the
+    // answer post with the request id echoed so the card's pending row can
+    // clear. Each question runs in its own task, the USAGE_QUERY shape: two
+    // people asking at once are two pipelines, not a queue, and the pool's
+    // worker cap is what actually bounds the concurrency.
+    let (gz_input_tx, mut gz_input_rx) = mpsc::channel::<Frame>(16);
+    let operator_pipeline = Arc::new(feeds::operator::OperatorPipeline {
+        ctx: Arc::new(feeds::operator::OperatorContext {
+            ledger: Arc::clone(&ledger),
+            bootstrap_project_dir: bootstrap.project_dir.clone(),
+        }),
+        pool: Arc::clone(&gazette_agent),
+        gazette_tx: gazette_tx.clone(),
+    });
+    tokio::spawn(async move {
+        #[derive(serde::Deserialize)]
+        struct RawGazetteInput {
+            body: Option<String>,
+            #[serde(rename = "requestId", alias = "request_id")]
+            request_id: Option<String>,
+        }
+        while let Some(frame) = gz_input_rx.recv().await {
+            let raw = match serde_json::from_slice::<RawGazetteInput>(&frame.payload) {
+                Ok(raw) => raw,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        payload_len = frame.payload.len(),
+                        "GAZETTE_INPUT: malformed JSON payload"
+                    );
+                    continue;
+                }
+            };
+            let Some(body) = raw.body else {
+                warn!("GAZETTE_INPUT: payload carried no body");
+                continue;
+            };
+            let pipeline = Arc::clone(&operator_pipeline);
+            tokio::spawn(async move {
+                pipeline.handle(body, raw.request_id).await;
+            });
+        }
+    });
 
     // Session overview ([P11]) — the SharedAgent's second tenant: one sentence
     // per session saying what it is working on, published on PULSE above the
@@ -1520,6 +1701,7 @@ async fn main() {
     feed_router.register_input(FeedId::GIT_LOG_QUERY, gl_input_tx);
     feed_router.register_input(FeedId::GIT_COMMIT_FILES_QUERY, gcf_input_tx);
     feed_router.register_input(FeedId::USAGE_QUERY, usage_input_tx);
+    feed_router.register_input(FeedId::GAZETTE_INPUT, gz_input_tx);
 
     // Attach the supervisor to the router so `handle_client` can intercept
     // session-lifecycle CONTROL frames and cross-check CODE_INPUT P5

@@ -52,8 +52,10 @@ export const FeedId = {
   // Shell (reserved for Phase T2+)
   SHELL_OUTPUT: 0x60,
   SHELL_INPUT: 0x61,
-  // TugFeed (reserved for Phase T3+)
-  TUG_FEED: 0x70,
+  // Gazette (app-wide narration channel: Reporter/Operator/user posts down,
+  // the card's questions up)
+  GAZETTE: 0x70,
+  GAZETTE_INPUT: 0x71,
   // Pulse (app-wide color commentary)
   PULSE: 0x80,
   // Usage (subscription usage panel: `claude -p "/usage"` response + request)
@@ -814,6 +816,135 @@ export function encodeListSessionStateChanges(tugSessionId: string): Frame {
 export interface ListSessionStateChangesOk {
   tug_session_id: string;
   rows: SessionStateChangeWireRow[];
+}
+
+/**
+ * Who wrote a Gazette post. The channel has exactly three authors; an
+ * unrecognized spelling is a parse failure at the edge rather than a row
+ * rendered in the wrong voice.
+ */
+export type GazetteAuthor = "reporter" | "operator" | "user";
+
+const GAZETTE_AUTHORS: readonly string[] = ["reporter", "operator", "user"];
+
+/**
+ * What a ref chip points at. Each kind has its own chip action, so a kind
+ * with no action to offer is dropped at parse instead of rendered inert.
+ */
+export type GazetteRefKind = "session" | "file" | "commit" | "plan" | "brief";
+
+const GAZETTE_REF_KINDS: readonly string[] = [
+  "session",
+  "file",
+  "commit",
+  "plan",
+  "brief",
+];
+
+/** One clickable provenance chip on a post. */
+export interface GazetteRef {
+  kind: GazetteRefKind;
+  target: string;
+}
+
+/**
+ * One Gazette post as it travels on `FeedId.GAZETTE` and as the
+ * `list_gazette_posts_ok` tail returns it — the same shape on both wires,
+ * so one parse serves both.
+ *
+ * `id` is the ledger rowid, absent on a transient post (broadcast so the
+ * card can stop waiting, never written, because an infrastructure hiccup
+ * is not history). `request_id` appears only on an Operator post answering
+ * a specific question.
+ */
+export interface GazettePostWire {
+  id?: number;
+  at_ms: number;
+  author: GazetteAuthor;
+  session_id?: string;
+  wake_reason?: string;
+  body: string;
+  refs: GazetteRef[];
+  request_id?: string;
+  transient: boolean;
+}
+
+/** Decoded `list_gazette_posts_ok` response payload (app-scoped). */
+export interface ListGazettePostsOk {
+  posts: GazettePostWire[];
+}
+
+/**
+ * Request the Gazette ledger tail. App-scoped — no session id. The response
+ * is `list_gazette_posts_ok { posts }`, oldest-first; the gazette-store sends
+ * this once on mount, then stays live off the GAZETTE feed.
+ */
+export function encodeListGazettePosts(): Frame {
+  return controlFrame("list_gazette_posts", {});
+}
+
+/**
+ * A question for the Operator, on `GAZETTE_INPUT`. `requestId` correlates the
+ * answer: tugcast echoes it on the answer post (and on a transient failure
+ * post), which is how the card knows which pending row to clear. App-scoped —
+ * a question is asked of the channel, not of a session.
+ */
+export function encodeGazetteInput(body: string, requestId: string): Frame {
+  return {
+    feedId: FeedId.GAZETTE_INPUT,
+    flags: FrameFlags.DATA,
+    payload: new TextEncoder().encode(
+      JSON.stringify({ body, requestId }),
+    ),
+  };
+}
+
+/**
+ * Decode one post from an already-parsed JSON value; null on a shape the
+ * card cannot render. Refs with an unknown kind are dropped individually —
+ * a chip nobody can act on is worse than no chip — but the post itself
+ * survives, since its body is the news.
+ */
+export function parseGazettePost(value: unknown): GazettePostWire | null {
+  if (typeof value !== "object" || value === null) return null;
+  const p = value as Record<string, unknown>;
+  if (typeof p.body !== "string") return null;
+  if (typeof p.author !== "string" || !GAZETTE_AUTHORS.includes(p.author)) {
+    return null;
+  }
+  const refs: GazetteRef[] = Array.isArray(p.refs)
+    ? p.refs.flatMap((raw): GazetteRef[] => {
+        if (typeof raw !== "object" || raw === null) return [];
+        const r = raw as Record<string, unknown>;
+        if (typeof r.kind !== "string" || !GAZETTE_REF_KINDS.includes(r.kind)) {
+          return [];
+        }
+        if (typeof r.target !== "string" || r.target.length === 0) return [];
+        return [{ kind: r.kind as GazetteRefKind, target: r.target }];
+      })
+    : [];
+  return {
+    ...(typeof p.id === "number" ? { id: p.id } : {}),
+    at_ms: typeof p.at_ms === "number" ? p.at_ms : 0,
+    author: p.author as GazetteAuthor,
+    ...(typeof p.session_id === "string" ? { session_id: p.session_id } : {}),
+    ...(typeof p.wake_reason === "string"
+      ? { wake_reason: p.wake_reason }
+      : {}),
+    body: p.body,
+    refs,
+    ...(typeof p.request_id === "string" ? { request_id: p.request_id } : {}),
+    transient: p.transient === true,
+  };
+}
+
+/** Parse a GAZETTE feed frame's payload; null on malformed/foreign shapes. */
+export function parseGazetteFrame(payload: Uint8Array): GazettePostWire | null {
+  try {
+    return parseGazettePost(JSON.parse(new TextDecoder().decode(payload)));
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -195,6 +195,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   reload: "command",
   "toggle-lens": "command",
   "toggle-jots": "command",
+  "toggle-gazette": "command",
   "new-jot": "command",
   "focus-lens": "command",
   "zoom-actual": "command",
@@ -387,6 +388,7 @@ const RETIRED_SINCE_THE_MAP: ReadonlySet<string> = new Set(["cycle-card"]);
 const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: string]> = [
   ["⌘J", TUG_ACTIONS.NEW_JOT],
   ["⌃⌘J", TUG_ACTIONS.TOGGLE_JOTS],
+  ["⌃⌘G", TUG_ACTIONS.TOGGLE_GAZETTE],
   ["⌥⌘[", TUG_ACTIONS.PREVIOUS_STACK_CARD],
   ["⌥⌘]", TUG_ACTIONS.NEXT_STACK_CARD],
 ];
@@ -470,4 +472,45 @@ describe("every chord the static map held reaches the same command", () => {
       );
     }
   });
+});
+
+describe("every registry-routed command has a body to run", () => {
+  // `routing: "registry"` means `dispatchCommand` looks the wire up in the
+  // action-dispatch registry — a handler declared nowhere else. A command
+  // with the routing and no `registerAction` is a chord and a menu item that
+  // both warn and do nothing, which is exactly the drift that happened when
+  // the Gazette toggle shipped with only its chain handler: the deck-canvas
+  // actions map serves the responder chain, and registry routing never
+  // consults it.
+  //
+  // Derived from the source rather than a fixture, for the same reason
+  // SWIFT_WIRES is: a remembered list is one nobody updates.
+  const dispatchSource = readFileSync(
+    join(import.meta.dir, "../../../action-dispatch.ts"),
+    "utf8",
+  );
+
+  const registered = new Set<string>();
+  for (const match of dispatchSource.matchAll(
+    /registerAction\(\s*(?:"([^"]+)"|TUG_ACTIONS\.([A-Z_]+))/g,
+  )) {
+    if (match[1] !== undefined) registered.add(match[1]);
+    else if (match[2] !== undefined) {
+      const wire = (TUG_ACTIONS as Record<string, string>)[match[2]];
+      if (wire !== undefined) registered.add(wire);
+    }
+  }
+
+  test("the scan found the registry it is checking against", () => {
+    // A regex that stopped matching would otherwise turn this whole suite
+    // green by finding nothing to contradict.
+    expect(registered.size).toBeGreaterThan(20);
+  });
+
+  for (const entry of COMMANDS.filter((c) => c.routing === "registry")) {
+    const wire = commandWire(entry);
+    test(`${wire} is registered in action-dispatch`, () => {
+      expect(registered.has(wire)).toBe(true);
+    });
+  }
 });

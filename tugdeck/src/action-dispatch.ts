@@ -34,6 +34,7 @@ import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
+import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
@@ -50,10 +51,12 @@ import { keyboardAccessStore } from "./keyboard-access-store";
 import { decodeSessionUpdated, normalizeSessionRow } from "./protocol";
 import type {
   CardBinding,
+  GazettePostWire,
   PulseLineWireRow,
   SessionStateChangeWireRow,
 } from "./protocol";
 import { publishListPulseLinesOk } from "./lib/pulse-store";
+import { publishListGazettePostsOk } from "./lib/gazette-store";
 import { cardServicesStore } from "./lib/card-services-store";
 import { pendingAskStore } from "./lib/pending-ask-store";
 import { applyRestoredShellExchanges } from "./lib/shell-session-store";
@@ -519,6 +522,13 @@ export function initActionDispatch(
   // browser-dev keybinding — the sidebar-toggle grammar's other half.
   registerAction("toggle-jots", () => {
     deckManager.toggleSidebarPane(JOTS_CARD_ID);
+  });
+
+  // toggle-gazette: Show/hide the Gazette rail, the third of the sidebar
+  // toggles. Fired by the Swift menu's "Show Gazette" item (⌃⌘G) and the
+  // browser-dev keybinding.
+  registerAction("toggle-gazette", () => {
+    deckManager.toggleSidebarPane(GAZETTE_CARD_ID);
   });
 
   // next/previous-keyboard-focus: move the keyboard focus ring one stop, the
@@ -1033,6 +1043,18 @@ export function initActionDispatch(
       return;
     }
     publishListPulseLinesOk({ lines: lines as PulseLineWireRow[] });
+  });
+
+  // list_gazette_posts_ok: response to the gazette-store's app-scoped
+  // ledger-tail request. Posts are oldest-first; an empty channel is a
+  // valid empty array.
+  registerAction("list_gazette_posts_ok", (payload) => {
+    const posts = payload.posts;
+    if (!Array.isArray(posts)) {
+      console.warn("list_gazette_posts_ok: missing or invalid posts", payload);
+      return;
+    }
+    publishListGazettePostsOk({ posts: posts as GazettePostWire[] });
   });
 
   // list_shell_exchanges_ok ([P07]): the shell-restore tail for one session.

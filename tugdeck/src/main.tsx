@@ -20,6 +20,7 @@ import { restoreSessions } from "./lib/session-restore";
 import { attachSessionLedgerStore } from "./lib/session-ledger-store";
 import { attachSessionStateChangesStore } from "./lib/session-state-changes-store";
 import { attachPulseStore } from "./lib/pulse-store";
+import { attachGazetteStore } from "./lib/gazette-store";
 import { attachSessionActivityStore } from "./lib/session-activity-store";
 import { attachChangesetAllStore } from "./lib/changeset-all-store";
 import { attachChangesetVerbStore } from "./lib/changeset-verb-store";
@@ -51,6 +52,7 @@ import { registerKeyboardCard } from "./components/tugways/cards/keyboard-card";
 import { registerDevtoolsCard } from "./components/devtools/devtools-card";
 import { registerLensCard } from "./components/lens/lens-register-card";
 import { registerJotsCard } from "./components/jots/jots-card-registration";
+import { registerGazetteCard } from "./components/gazette/gazette-card-registration";
 import { registerCardsSection } from "./components/lens/sections/cards-section";
 import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
@@ -330,6 +332,8 @@ if (!container) {
   // Same unconditional-and-early rule as the Lens: Jots is a sidebar card, and
   // a pane whose only card is unregistered at load is dropped.
   registerJotsCard();
+  // Same unconditional-and-early rule again: the Gazette is a sidebar card.
+  registerGazetteCard();
   // Registration order is the DEFAULT Lens section order — the fallback
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerCardsSection();
@@ -526,6 +530,11 @@ if (!container) {
   // fetch on first observation, live `PULSE` frames folded after.
   // The Z2 strip reads it via `usePulse`.
   attachPulseStore(connection);
+
+  // Wire the app-scoped GAZETTE store: one `list_gazette_posts` tail
+  // fetch on first observation, live `GAZETTE` frames folded after.
+  // The Gazette card reads it via `useGazette`.
+  attachGazetteStore(connection);
 
   // Wire the app-scoped ACTIVITY store: one subscription to the
   // per-session activity feed ([P01]), routed by each frame's own

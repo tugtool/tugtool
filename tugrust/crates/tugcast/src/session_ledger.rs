@@ -80,6 +80,7 @@ use tokio::sync::Notify;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tugcast_core::{GazetteAuthor, GazettePost};
 
 use crate::ledger_integrity;
 use crate::path_resolver::resolve_to_claude_form;
@@ -1605,6 +1606,89 @@ impl SessionLedger {
                 scopes TEXT NOT NULL
             );
 
+            -- App-scoped Gazette channel — every post by any of its three
+            -- authors ('reporter' | 'operator' | 'user'). `session_id` is
+            -- the provenance link a Reporter digest carries back to the
+            -- session it narrates (NULL on Operator answers and user
+            -- questions, which belong to the channel rather than to any one
+            -- session); `wake_reason` records which structural moment woke
+            -- the Reporter, and is NULL for the other two authors. `refs`
+            -- is a JSON array of {kind, target}, serialized like
+            -- `pulse_lines.scopes`.
+            --
+            -- Deliberately NO session cascade, for the same reason
+            -- `pulse_lines` has none and one more besides: the channel
+            -- outlives any single session, and a digest's whole value is
+            -- that it still says what happened after the session row it
+            -- points at has been evicted.
+            --
+            -- UNCAPPED, and unlike `pulse_lines` that is the point rather
+            -- than an oversight. `pulse_lines` is a rolling log the strip
+            -- reads the tail of; this is permanent history the Operator
+            -- searches. Nothing prunes it.
+            --
+            -- NEVER register this table with `rebuild_table_if_schema_drifted`.
+            -- That guard resolves a column-set change by DROPPING and
+            -- recreating, which is harmless for a rolling log and total
+            -- data loss here. A future column is added with an ALTER-based
+            -- `migrate_gazette_posts_add_*` alongside the other migrations,
+            -- following `migrate_pulse_lines_add_intent`. The FTS5 shadow
+            -- tables below are the opposite case: they are derived from
+            -- this table and may be dropped and rebuilt freely.
+            CREATE TABLE IF NOT EXISTS gazette_posts (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_ms       INTEGER NOT NULL,
+                author      TEXT NOT NULL,
+                session_id  TEXT,
+                wake_reason TEXT,
+                body        TEXT NOT NULL,
+                refs        TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS gazette_posts_session
+                ON gazette_posts(session_id);
+
+            -- Full-text index over the searchable columns. External-content
+            -- (`content=`) so the bytes live once, in `gazette_posts`, and
+            -- this is a pure index: `bm25()` ranks a query's hits and
+            -- `snippet()` cuts the excerpts the Operator's `gazette.search`
+            -- verb returns. A LIKE scan would answer the same questions
+            -- without an index, tokenization, or ranking — over a table
+            -- that only grows.
+            CREATE VIRTUAL TABLE IF NOT EXISTS gazette_posts_fts USING fts5(
+                body,
+                refs,
+                content='gazette_posts',
+                content_rowid='id'
+            );
+
+            -- Keep the index in step with the content table. External-content
+            -- FTS5 does not observe its content table on its own; these are
+            -- the documented sync triggers, with the delete/update pair using
+            -- the 'delete' command rows FTS5 requires.
+            CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_insert
+            AFTER INSERT ON gazette_posts
+            BEGIN
+                INSERT INTO gazette_posts_fts (rowid, body, refs)
+                VALUES (new.id, new.body, new.refs);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_delete
+            AFTER DELETE ON gazette_posts
+            BEGIN
+                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs)
+                VALUES ('delete', old.id, old.body, old.refs);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_update
+            AFTER UPDATE ON gazette_posts
+            BEGIN
+                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs)
+                VALUES ('delete', old.id, old.body, old.refs);
+                INSERT INTO gazette_posts_fts (rowid, body, refs)
+                VALUES (new.id, new.body, new.refs);
+            END;
+
             -- Cache of external-session scan results — one row per
             -- on-disk JSONL the external scanner has parsed, keyed by
             -- session id and validated by (file_size, file_mtime).
@@ -2099,6 +2183,40 @@ impl SessionLedger {
         )?;
         let rows = stmt
             .query_map([], row_from_query)?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows.into_iter().collect()
+    }
+
+    /// Sessions ordered newest-first by `last_used_at`, optionally bounded by
+    /// a `last_used_at` range and narrowed to the live ones. Backs the
+    /// Operator's `sessions.list` verb — "what was I working on last Tuesday".
+    ///
+    /// Failed rows are included: a session that died is still part of the
+    /// history a question can be about, and the `state` travels with the row
+    /// so the answer can say so.
+    pub fn list_sessions_recent(
+        &self,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+        active_only: bool,
+        limit: usize,
+    ) -> Result<Vec<SessionRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag
+             FROM sessions
+             WHERE (?1 IS NULL OR last_used_at >= ?1)
+               AND (?2 IS NULL OR last_used_at <= ?2)
+               AND (?3 = 0 OR state = 'live')
+             ORDER BY last_used_at DESC
+             LIMIT ?4",
+        )?;
+        let rows = stmt
+            .query_map(
+                params![since_ms, until_ms, active_only as i64, limit as i64],
+                row_from_query,
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         rows.into_iter().collect()
     }
@@ -4326,6 +4444,252 @@ impl SessionLedger {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    // MARK: - Gazette posts
+
+    /// Append one Gazette post and return its rowid.
+    ///
+    /// Nothing prunes: the channel is permanent history, and the Operator's
+    /// searches reach all of it. A transient post never arrives here — it is
+    /// broadcast and forgotten by the caller.
+    pub fn record_gazette_post(&self, post: &GazettePost) -> Result<i64, LedgerError> {
+        let refs_json = serde_json::to_string(&post.refs).unwrap_or_else(|_| "[]".to_string());
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT INTO gazette_posts (at_ms, author, session_id, wake_reason, body, refs)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                post.at_ms,
+                post.author.as_str(),
+                post.session_id,
+                post.wake_reason,
+                post.body,
+                refs_json,
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// The newest `limit` posts, returned OLDEST-first (display order), which
+    /// is what the card's CONTROL tail read wants on mount.
+    pub fn list_gazette_posts_tail(&self, limit: usize) -> Result<Vec<GazettePost>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs
+                 FROM gazette_posts ORDER BY id DESC LIMIT ?1
+             ) ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], gazette_post_from_row)?;
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    /// The newest `limit` posts for one session, oldest-first — what a wake
+    /// hands the Reporter as "what you already said about this session", and
+    /// therefore the whole dedup mechanism.
+    pub fn list_gazette_posts_for_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<GazettePost>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs
+                 FROM gazette_posts
+                 WHERE session_id = ?1 AND author = 'reporter'
+                 ORDER BY id DESC LIMIT ?2
+             ) ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id, limit as i64], gazette_post_from_row)?;
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    /// The `n` posts on either side of `id`, inclusive of `id` itself —
+    /// reading the narrative around a search hit.
+    pub fn gazette_posts_window(&self, id: i64, n: usize) -> Result<Vec<GazettePost>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs
+             FROM gazette_posts
+             WHERE id BETWEEN ?1 - ?2 AND ?1 + ?2
+             ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![id, n as i64], gazette_post_from_row)?;
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    /// Full-text search over post bodies and refs, best-match first.
+    ///
+    /// `query` is an FTS5 MATCH expression. A malformed one (an unbalanced
+    /// quote, a bare operator) is a caller error rather than a panic: it comes
+    /// back as `Err` and the Operator sees its own mistake in the verb result.
+    /// The optional filters narrow the content table alongside the MATCH, so
+    /// "what did the Reporter say about this session last Tuesday" is one query.
+    pub fn search_gazette_posts(
+        &self,
+        query: &str,
+        filter: &GazetteSearchFilter,
+        limit: usize,
+    ) -> Result<Vec<GazetteSearchHit>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.at_ms, p.author, p.session_id, p.wake_reason, p.body, p.refs,
+                    snippet(gazette_posts_fts, 0, '', '', '…', 32)
+             FROM gazette_posts_fts f
+             JOIN gazette_posts p ON p.id = f.rowid
+             WHERE gazette_posts_fts MATCH ?1
+               AND (?2 IS NULL OR p.author = ?2)
+               AND (?3 IS NULL OR p.session_id = ?3)
+               AND (?4 IS NULL OR p.at_ms >= ?4)
+               AND (?5 IS NULL OR p.at_ms <= ?5)
+             ORDER BY bm25(gazette_posts_fts) ASC
+             LIMIT ?6",
+        )?;
+        let rows = stmt.query_map(
+            params![
+                query,
+                filter.author.map(|a| a.as_str()),
+                filter.session_id.as_deref(),
+                filter.since_ms,
+                filter.until_ms,
+                limit as i64,
+            ],
+            |row| {
+                let excerpt: String = row.get(7)?;
+                Ok(gazette_post_from_row(row)?.map(|post| GazetteSearchHit { post, excerpt }))
+            },
+        )?;
+        Ok(rows
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect())
+    }
+
+    // MARK: - File events, read side
+
+    /// Every file event one session recorded, oldest-first. Backs the
+    /// Operator's `changes.for_session` verb.
+    pub fn list_file_events_for_session(
+        &self,
+        session_id: &str,
+        limit: usize,
+    ) -> Result<Vec<FileEventRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT tug_session_id, tool_use_id, file_path, tool_name, op, origin,
+                    ambiguous, parent_tool_use_id, project_dir, at
+             FROM changes.file_events
+             WHERE tug_session_id = ?1
+             ORDER BY at ASC, rowid ASC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![session_id, limit as i64], file_event_read_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// File events whose path matches a SQL LIKE pattern, newest-first,
+    /// optionally bounded by time. Backs `changes.for_path` — "which sessions
+    /// touched this file, and when".
+    ///
+    /// LIKE rather than FTS here on purpose: a path pattern is a structural
+    /// match against a short indexed-ish column, not a relevance question over
+    /// prose, so the mechanism that is wrong for post bodies is right here.
+    pub fn list_file_events_for_path_pattern(
+        &self,
+        pattern: &str,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<FileEventRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT tug_session_id, tool_use_id, file_path, tool_name, op, origin,
+                    ambiguous, parent_tool_use_id, project_dir, at
+             FROM changes.file_events
+             WHERE file_path LIKE ?1
+               AND (?2 IS NULL OR at >= ?2)
+               AND (?3 IS NULL OR at <= ?3)
+             ORDER BY at DESC, rowid DESC
+             LIMIT ?4",
+        )?;
+        let rows = stmt.query_map(
+            params![pattern, since_ms, until_ms, limit as i64],
+            file_event_read_row,
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+}
+
+/// Optional narrowing applied alongside a Gazette full-text MATCH.
+#[derive(Debug, Clone, Default)]
+pub struct GazetteSearchFilter {
+    pub author: Option<GazetteAuthor>,
+    pub session_id: Option<String>,
+    pub since_ms: Option<i64>,
+    pub until_ms: Option<i64>,
+}
+
+/// One search result: the post, plus the FTS5-cut excerpt around the match.
+#[derive(Debug, Clone)]
+pub struct GazetteSearchHit {
+    pub post: GazettePost,
+    pub excerpt: String,
+}
+
+/// Decode one `gazette_posts` row.
+///
+/// An unparseable author yields `None` rather than an error: one row written
+/// by a drifted writer should be skipped, not fail the whole read and take
+/// the card's scrollback with it.
+fn gazette_post_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<GazettePost>> {
+    let author_raw: String = row.get(2)?;
+    let Some(author) = GazetteAuthor::parse(&author_raw) else {
+        tracing::warn!(author = %author_raw, "gazette_posts: unknown author; row skipped");
+        return Ok(None);
+    };
+    let refs_json: String = row.get(6)?;
+    Ok(Some(GazettePost {
+        id: Some(row.get(0)?),
+        at_ms: row.get(1)?,
+        author,
+        session_id: row.get(3)?,
+        wake_reason: row.get(4)?,
+        body: row.get(5)?,
+        refs: serde_json::from_str(&refs_json).unwrap_or_default(),
+        request_id: None,
+        transient: false,
+    }))
+}
+
+/// Decode one `changes.file_events` row for the read-side verbs. The column
+/// order matches both read queries above.
+fn file_event_read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FileEventRow> {
+    Ok(FileEventRow {
+        tug_session_id: row.get(0)?,
+        tool_use_id: row.get(1)?,
+        file_path: row.get(2)?,
+        tool_name: row.get(3)?,
+        op: row.get(4)?,
+        origin: row.get(5)?,
+        ambiguous: row.get::<_, i64>(6)? != 0,
+        parent_tool_use_id: row.get(7)?,
+        project_dir: row.get(8)?,
+        at: row.get(9)?,
+    })
 }
 
 /// Decode one row from a `SELECT … FROM sessions` cursor matching the column
@@ -4699,6 +5063,7 @@ fn sweep_trash_dir(trash_root: &Path, cutoff: i64) -> usize {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
+    use tugcast_core::{GazetteRef, GazetteRefKind};
 
     const WS_A: &str = "ws-alpha";
     const WS_B: &str = "ws-beta";
@@ -4895,6 +5260,329 @@ mod tests {
         assert_eq!(tail.last().unwrap().scopes, scopes);
         assert_eq!(tail.last().unwrap().intent.as_deref(), Some("intent 250"));
         assert_eq!(tail.first().unwrap().intent, None); // beat 231, odd
+    }
+
+    // MARK: - Gazette posts
+
+    fn gazette_post(at_ms: i64, author: GazetteAuthor, body: &str) -> GazettePost {
+        GazettePost {
+            id: None,
+            at_ms,
+            author,
+            session_id: None,
+            wake_reason: None,
+            body: body.to_string(),
+            refs: vec![],
+            request_id: None,
+            transient: false,
+        }
+    }
+
+    /// The one assumption the search design rests on: the bundled SQLite has
+    /// FTS5 compiled in. Kept as a permanent test rather than a one-off spike
+    /// — a rusqlite bump that dropped the feature would otherwise surface as
+    /// every ledger open failing, far from the cause.
+    #[test]
+    fn fts5_is_available_in_the_bundled_sqlite() {
+        let ledger = fresh();
+        let conn = ledger.db.lock().unwrap();
+        conn.execute_batch("CREATE VIRTUAL TABLE fts5_probe USING fts5(x); DROP TABLE fts5_probe;")
+            .expect("bundled SQLite must have FTS5 (SQLITE_ENABLE_FTS5)");
+    }
+
+    #[test]
+    fn gazette_posts_round_trip_with_refs_and_tail_ordering() {
+        let ledger = fresh();
+        assert!(ledger.list_gazette_posts_tail(50).unwrap().is_empty());
+
+        let mut first = gazette_post(1_000, GazetteAuthor::Reporter, "Landed the wake core");
+        first.session_id = Some("s1".to_string());
+        first.wake_reason = Some("sitrep-timer".to_string());
+        first.refs = vec![
+            GazetteRef {
+                kind: GazetteRefKind::Commit,
+                target: "4fe4d3fcd".to_string(),
+            },
+            GazetteRef {
+                kind: GazetteRefKind::File,
+                target: "tugrust/crates/tugcast/src/lib.rs".to_string(),
+            },
+        ];
+        let id = ledger.record_gazette_post(&first).expect("record");
+        assert!(id > 0);
+
+        for i in 2..=60_i64 {
+            ledger
+                .record_gazette_post(&gazette_post(
+                    1_000 + i,
+                    GazetteAuthor::Reporter,
+                    &format!("post {i}"),
+                ))
+                .expect("record");
+        }
+
+        // Nothing prunes — the channel is permanent history.
+        assert_eq!(ledger.list_gazette_posts_tail(1_000).unwrap().len(), 60);
+
+        // The tail is the newest N, oldest-first.
+        let tail = ledger.list_gazette_posts_tail(10).unwrap();
+        assert_eq!(tail.len(), 10);
+        assert_eq!(tail.first().unwrap().body, "post 51");
+        assert_eq!(tail.last().unwrap().body, "post 60");
+
+        // Refs and the provenance columns survive the round trip.
+        let all = ledger.list_gazette_posts_tail(1_000).unwrap();
+        let restored = all.first().unwrap();
+        assert_eq!(restored.id, Some(id));
+        assert_eq!(restored.author, GazetteAuthor::Reporter);
+        assert_eq!(restored.session_id.as_deref(), Some("s1"));
+        assert_eq!(restored.wake_reason.as_deref(), Some("sitrep-timer"));
+        assert_eq!(restored.refs.len(), 2);
+        assert_eq!(restored.refs[0].kind, GazetteRefKind::Commit);
+        assert_eq!(restored.refs[0].target, "4fe4d3fcd");
+        // A stored row is never transient and carries no request id.
+        assert!(!restored.transient);
+        assert_eq!(restored.request_id, None);
+    }
+
+    /// The channel outlives the sessions it narrates: evicting a session row
+    /// must not take its digests with it. Deliberately no cascade trigger.
+    #[test]
+    fn gazette_posts_survive_deletion_of_the_session_they_reference() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        let mut post = gazette_post(1_000, GazetteAuthor::Reporter, "narrating s1");
+        post.session_id = Some("s1".to_string());
+        ledger.record_gazette_post(&post).expect("record");
+
+        // Straight at the row, which is what eviction ultimately does — and
+        // what fires every cascade trigger the schema declares.
+        {
+            let conn = ledger.db.lock().unwrap();
+            conn.execute("DELETE FROM sessions WHERE session_id = 's1'", [])
+                .expect("delete session row");
+        }
+
+        let posts = ledger.list_gazette_posts_tail(50).unwrap();
+        assert_eq!(posts.len(), 1, "the digest outlives its session row");
+        assert_eq!(posts[0].session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn gazette_window_reads_around_a_hit_and_clamps_at_the_ends() {
+        let ledger = fresh();
+        let mut ids = Vec::new();
+        for i in 1..=10_i64 {
+            ids.push(
+                ledger
+                    .record_gazette_post(&gazette_post(
+                        1_000 + i,
+                        GazetteAuthor::Reporter,
+                        &format!("post {i}"),
+                    ))
+                    .expect("record"),
+            );
+        }
+        // Interior: n on each side plus the hit itself.
+        let window = ledger.gazette_posts_window(ids[4], 2).unwrap();
+        assert_eq!(window.len(), 5);
+        assert_eq!(window.first().unwrap().body, "post 3");
+        assert_eq!(window.last().unwrap().body, "post 7");
+
+        // At an edge the window clamps rather than erroring.
+        let head = ledger.gazette_posts_window(ids[0], 3).unwrap();
+        assert_eq!(head.first().unwrap().body, "post 1");
+        assert_eq!(head.len(), 4);
+    }
+
+    /// The last-K-posts read is what a wake shows the Reporter as "what you
+    /// already said", so it must be per-session and Reporter-only — an
+    /// Operator answer mentioning the session is not something the Reporter
+    /// said.
+    #[test]
+    fn gazette_per_session_read_is_reporter_only_and_scoped() {
+        let ledger = fresh();
+        for (session, author, body) in [
+            (Some("s1"), GazetteAuthor::Reporter, "s1 digest one"),
+            (Some("s2"), GazetteAuthor::Reporter, "s2 digest"),
+            (Some("s1"), GazetteAuthor::Operator, "an answer about s1"),
+            (Some("s1"), GazetteAuthor::Reporter, "s1 digest two"),
+            (None, GazetteAuthor::User, "a question"),
+        ] {
+            let mut post = gazette_post(1_000, author, body);
+            post.session_id = session.map(str::to_string);
+            ledger.record_gazette_post(&post).expect("record");
+        }
+        let mine = ledger.list_gazette_posts_for_session("s1", 10).unwrap();
+        assert_eq!(mine.len(), 2);
+        assert_eq!(mine[0].body, "s1 digest one");
+        assert_eq!(mine[1].body, "s1 digest two");
+    }
+
+    #[test]
+    fn gazette_search_ranks_by_relevance_and_composes_with_filters() {
+        let ledger = fresh();
+        let rows: [(&str, GazetteAuthor, Option<&str>, i64); 4] = [
+            (
+                "border color tuning in the theme",
+                GazetteAuthor::Reporter,
+                Some("s1"),
+                1_000,
+            ),
+            (
+                "a passing mention of color",
+                GazetteAuthor::Reporter,
+                Some("s1"),
+                2_000,
+            ),
+            (
+                "border border border everywhere",
+                GazetteAuthor::Reporter,
+                Some("s2"),
+                3_000,
+            ),
+            ("border color question", GazetteAuthor::User, None, 4_000),
+        ];
+        for (body, author, session, at_ms) in rows {
+            let mut post = gazette_post(at_ms, author, body);
+            post.session_id = session.map(str::to_string);
+            ledger.record_gazette_post(&post).expect("record");
+        }
+
+        // The triggers kept the index in step with the inserts, and bm25
+        // ranks — the row matching both terms outranks the ones matching one,
+        // which insertion order alone would not produce.
+        let hits = ledger
+            .search_gazette_posts("border AND color", &GazetteSearchFilter::default(), 10)
+            .expect("search");
+        assert_eq!(hits.len(), 2);
+        assert!(hits.iter().all(|h| h.post.body.contains("border")));
+        assert!(!hits[0].excerpt.is_empty(), "snippet() cut an excerpt");
+
+        // Filters narrow the content table alongside the MATCH.
+        let scoped = ledger
+            .search_gazette_posts(
+                "border",
+                &GazetteSearchFilter {
+                    session_id: Some("s2".to_string()),
+                    ..Default::default()
+                },
+                10,
+            )
+            .expect("search");
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].post.session_id.as_deref(), Some("s2"));
+
+        let by_author = ledger
+            .search_gazette_posts(
+                "border",
+                &GazetteSearchFilter {
+                    author: Some(GazetteAuthor::User),
+                    ..Default::default()
+                },
+                10,
+            )
+            .expect("search");
+        assert_eq!(by_author.len(), 1);
+        assert_eq!(by_author[0].post.author, GazetteAuthor::User);
+
+        let windowed = ledger
+            .search_gazette_posts(
+                "border",
+                &GazetteSearchFilter {
+                    since_ms: Some(2_500),
+                    ..Default::default()
+                },
+                10,
+            )
+            .expect("search");
+        assert_eq!(windowed.len(), 2);
+
+        // A malformed MATCH expression is an error the caller can report, not
+        // a panic.
+        assert!(
+            ledger
+                .search_gazette_posts("\"unbalanced", &GazetteSearchFilter::default(), 10)
+                .is_err()
+        );
+    }
+
+    /// A post deleted from the content table must leave no ghost in the
+    /// index — the `'delete'` command rows the triggers write are what keep
+    /// an external-content FTS5 table honest.
+    #[test]
+    fn gazette_search_index_follows_content_deletes() {
+        let ledger = fresh();
+        let id = ledger
+            .record_gazette_post(&gazette_post(
+                1_000,
+                GazetteAuthor::Reporter,
+                "a distinctive phrase",
+            ))
+            .expect("record");
+        assert_eq!(
+            ledger
+                .search_gazette_posts("distinctive", &GazetteSearchFilter::default(), 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        {
+            let conn = ledger.db.lock().unwrap();
+            conn.execute("DELETE FROM gazette_posts WHERE id = ?1", params![id])
+                .expect("delete");
+        }
+        assert!(
+            ledger
+                .search_gazette_posts("distinctive", &GazetteSearchFilter::default(), 10)
+                .unwrap()
+                .is_empty(),
+            "the index dropped the row with its content"
+        );
+    }
+
+    #[test]
+    fn file_event_reads_answer_by_session_and_by_path_pattern() {
+        let ledger = fresh();
+        let event = |session: &str, path: &str, at: i64| FileEventRow {
+            tug_session_id: session.to_string(),
+            tool_use_id: format!("t-{session}-{at}"),
+            file_path: path.to_string(),
+            tool_name: "Edit".to_string(),
+            op: "edit".to_string(),
+            origin: "exact".to_string(),
+            ambiguous: false,
+            parent_tool_use_id: None,
+            project_dir: "/proj".to_string(),
+            at,
+        };
+        for row in [
+            event("s1", "tugdeck/styles/themes/brio.css", 1_000),
+            event("s1", "tugdeck/src/main.tsx", 2_000),
+            event("s2", "tugdeck/styles/themes/aria.css", 3_000),
+        ] {
+            ledger.record_file_event(&row).expect("record_file_event");
+        }
+
+        let for_s1 = ledger.list_file_events_for_session("s1", 100).unwrap();
+        assert_eq!(for_s1.len(), 2);
+        assert_eq!(for_s1[0].file_path, "tugdeck/styles/themes/brio.css");
+
+        // The worked example's first move: which sessions touched a CSS file.
+        let css = ledger
+            .list_file_events_for_path_pattern("%.css", None, None, 100)
+            .unwrap();
+        assert_eq!(css.len(), 2);
+        assert_eq!(
+            css[0].file_path, "tugdeck/styles/themes/aria.css",
+            "newest first"
+        );
+
+        let bounded = ledger
+            .list_file_events_for_path_pattern("%.css", Some(2_500), None, 100)
+            .unwrap();
+        assert_eq!(bounded.len(), 1);
+        assert_eq!(bounded[0].tug_session_id, "s2");
     }
 
     // ── CRUD round-trip per state transition ─────────────────────────────────

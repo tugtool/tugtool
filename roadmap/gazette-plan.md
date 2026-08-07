@@ -2,7 +2,7 @@
 
 ## The Gazette — Reporter, Operator, and the Gazette card {#gazette}
 
-**Purpose:** Ship the app-wide Gazette channel decided in [roadmap/feed-brief.md](feed-brief.md): a Reporter that narrates session work into a durable three-author transcript, an Operator that answers questions about it from Tug's ground-truth ledgers, and a sidebar Gazette card that renders the channel and hosts the question box.
+**Purpose:** Ship the app-wide Gazette channel decided in [roadmap/archive/feed-brief.md](archive/feed-brief.md): a Reporter that narrates session work into a durable three-author transcript, an Operator that answers questions about it from Tug's ground-truth ledgers, and a sidebar Gazette card that renders the channel and hosts the question box.
 
 **Naming note (supersedes the brief's names):** the brief calls the feature "the Feed" and the posting agent "the Herald". Both were renamed after the brief was written: the feature and card are the **Gazette**; the posting agent is the **Reporter**. The Operator keeps its name. Wherever the brief says Feed/Herald, read Gazette/Reporter; this plan uses only the new names.
 
@@ -27,7 +27,7 @@
 
 #### Context {#context}
 
-The design is settled in [roadmap/feed-brief.md](feed-brief.md) and validated by the 2026-08-06 replay spike: Rust wakes the Reporter on cheap structural moments (turn end, sitrep timer, session end, thresholds), a Sonnet job decides editorially whether and what to post, and "post nothing" is a first-class output. The Operator is a plan/execute/answer pipeline over a table of read-only verbs executed Rust-side. Both personas ride one new Sonnet `AgentSpec` on the existing SharedAgent pool — zero new process-supervision machinery.
+The design is settled in [roadmap/archive/feed-brief.md](archive/feed-brief.md) and validated by the 2026-08-06 replay spike: Rust wakes the Reporter on cheap structural moments (turn end, sitrep timer, session end, thresholds), a Sonnet job decides editorially whether and what to post, and "post nothing" is a first-class output. The Operator is a plan/execute/answer pipeline over a table of read-only verbs executed Rust-side. Both personas ride one new Sonnet `AgentSpec` on the existing SharedAgent pool — zero new process-supervision machinery.
 
 The two prerequisites this plan was waiting on are now met: the sidebar taxonomy from `roadmap/layouts-rework-plan.md` has landed on main (commit `0da731033` — `layoutRole: "sidebar"`, registry-driven Layouts controls, side toggles, stacked rails), and the reserved `TUG_FEED = 0x70` FeedId is confirmed consumer-free. One calibration note from the user: the spike's observed cadence of one post per ~5–7 minutes of active work (4-minute sitrep timer) reads as **too slow** — so this plan ships a faster default and makes every cadence number a runtime-tunable knob ([P05]).
 
@@ -103,7 +103,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 
 **Resolution:** DECIDED 2026-08-07 with the user — the feature and card are the **Gazette** (the brief's "Feed" was judged weak); the posting agent is the **Reporter** (replacing "Herald", which collided with Gazette; Stringer/Correspondent/Crier/Chronicler were considered and rejected); the **Operator** name stays. The toggle chord is **⌃⌘G**, extending the sidebar-toggle grammar (⌃⌘L Lens, ⌃⌘J Jots). Verified free: `KeyG` appears in `command-registry.ts` only as ⌘G / ⇧⌘G (find next/previous); no ⌃⌘G binding exists there or in `at0168-menu-structure.test.ts`. See [P10].
 
-#### [Q02] Exact Reporter tap allowlist (DEFERRED to Step 6) {#q02-reporter-allowlist}
+#### [Q02] Exact Reporter tap allowlist (DECIDED by the Step 5 sweep) {#q02-reporter-allowlist}
 
 **Question:** Which frame types cross into the Reporter's buffer?
 
@@ -111,7 +111,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 
 **Plan to resolve:** Start from `PULSE_FORWARD_ALLOWLIST` (`feeds/pulse.rs`) plus user submissions from the code-submission channel and `turn_complete` usage fields; iterate with the Step 5 harness, finalize in Step 6. The brief explicitly anticipates this ("finalized during implementation against the wake/rubric needs").
 
-**Resolution:** DEFERRED — resolved empirically by the calibration harness before the live bridge lands.
+**Resolution:** DECIDED — the list `reporter_wake.rs` already carries stands unchanged. Three full-transcript replays ([F6](#step-5-findings)) produced no post that wanted evidence the allowlist withheld, and no type on it that read as noise. User prompts ride the code-submission channel into the same buffers, which the harness confirms is load-bearing: a window without the prompt narrates answers to an invisible question. The streaming-only types are untested by replay because transcripts never recorded them; they stay on the Pulse precedent.
 
 #### [Q03] Where do git-verbs run when a question names no session? (DECIDED) {#q03-git-cwd}
 
@@ -195,7 +195,7 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 
 #### [P05] Every cadence number is a tugbank knob, read at use time (DECIDED) {#p05-knobs}
 
-**Decision:** All tuning values live as tugbank defaults in domain `dev.tugtool.gazette`, read through closures per wake/spawn (never cached at startup): see Table T02. The sitrep default ships at **180 seconds** — deliberately faster than the spike's 4-minute timer, per the user's read that one post per ~5–7 minutes is too slow.
+**Decision:** All tuning values live as tugbank defaults in domain `dev.tugtool.gazette`, read through closures per wake/spawn (never cached at startup): see Table T02. The sitrep default ships at **90 seconds**, set from the Step 5 sweep ([findings](#step-5-findings)) — the plan's guess was 180, three replays of a real session were read side by side, and 90 was the one that read like someone telling you what is happening rather than a log to skim later.
 
 **Rationale:**
 - The brief makes cadence "a prompt-tunable editorial policy"; the user explicitly asked to "retain tuning knobs that we can turn as we build this and start experiencing it".
@@ -212,6 +212,8 @@ The two prerequisites this plan was waiting on are now met: the sidebar taxonomy
 - "Post nothing" being first-class means silence is always a safe failure mode.
 
 **Implications:** Strict serde types with `deny_unknown_fields`; a unit test walks malformed shapes.
+
+**Amended after the Step 5 sweep ([F1](#step-5-findings)):** the envelope must be *well-formed*, not *alone*. Requiring it to be the entire answer cost 22 of 52 wakes in one calibration run — every one of them a complete envelope behind a sentence the model wrote first, discarded and then reported as editorial silence. `parse_envelope` now locates the outermost `{…}` span and parses that, which is finding the envelope rather than repairing one: the JSON is still the model's own, still whole, still `deny_unknown_fields`, and a genuinely broken envelope still yields no post. The strictness this decision is actually about is intact; the "bare JSON only" reading of it is not, and the instructions asking for bare JSON stay as a preference rather than a contract the parser enforces.
 
 #### [P07] Operator verbs execute Rust-side, read-only, capped (DECIDED) {#p07-verbs}
 
@@ -355,7 +357,7 @@ All executed by `feeds/operator.rs`, all capped, all with a 10s timeout. `sessio
 | `enabled` | bool | `true` | bridge, per frame | kill switch; disabled drops frames and wakes nothing (the `pulse_enabled` posture) |
 | `model` | string | `"sonnet"` | pool, per spawn | model for all three jobs |
 | `max_workers` | i64 | **3** | pool construction | worker cap for the gazette pool. Three, not the Haiku pool's two: `JobClass::of` maps every non-`classify*` name to `Summarize`, so all three gazette jobs share **one latency lane**, and a 120s `reporter-post` holding a worker while a user's `operator-retrieve` arrives would make the question wait on it. Three leaves room for a Reporter post, a retrieve, and an answer concurrently |
-| `sitrep_secs` | i64 | **180** | bridge, per timer arm | the dominant cadence — deliberately under the spike's 240s |
+| `sitrep_secs` | i64 | **90** | bridge, per timer arm | the dominant cadence, set by reading the Step 5 sweep rather than by argument. Try 75 if 90 proves too quiet in practice — the knob turns live, and `gazette-replay --sitrep-secs` reads any candidate against a real transcript first |
 | `last_k_posts` | i64 | 5 | bridge, per wake | how many of the Reporter's own prior posts for the session ride the wake input (the dedup mechanism) |
 | `token_wake_tokens` | i64 | 0 (off) | bridge, per turn-complete | token-threshold wake |
 | `buffer_max_frames` | i64 | 256 | wake core, per push | per-session buffer frame cap (byte cap fixed ~256 KB) |
@@ -446,9 +448,9 @@ Input (composed by the wake core, one self-contained turn per [shared-agent P05]
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tuglaws/menus.md`: row for the "Show Gazette" menu item (`maker.gazette` / `toggle-gazette`) — #step-8.
+- [x] `tuglaws/menus.md`: row for the "Show Gazette" menu item (`maker.gazette` / `toggle-gazette`) — #step-8.
 - [ ] Module doc comments carry the doctrine (reporter.rs topology header modeled on pulse.rs's; gazette_agent.rs knob table) — no freestanding docs/*.md dropfiles.
-- [ ] `roadmap/feed-brief.md` stays as-is (the decided design); this plan's naming note is the bridge from the brief's Feed/Herald vocabulary.
+- [ ] `roadmap/archive/feed-brief.md` stays as-is (the decided design); this plan's naming note is the bridge from the brief's Feed/Herald vocabulary.
 
 ---
 
@@ -501,20 +503,107 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 
 | Step | Phase | Title | Status | Commit |
 |---|---|---|---|---|
-| #step-1 | A | Protocol: GAZETTE + GAZETTE_INPUT | pending | — |
-| #step-2 | A | Ledger: gazette_posts + FTS5 | pending | — |
-| #step-3 | A | Gazette AgentSpec + jobs | pending | — |
-| #step-4 | A | Pure Reporter wake core | pending | — |
-| #step-5 | B | Calibration harness | pending | — |
-| #step-6 | C | Live Reporter bridge | pending | — |
-| #step-7 | D | Deck gazette-store (read path) | pending | — |
-| #step-8 | D | Gazette card: transcript, toggle, menu | pending | — |
-| #step-9 | D | Ref chip actions | pending | — |
-| #step-10 | E | Operator verb executor | pending | — |
-| #step-11 | E | Operator pipeline + GAZETTE_INPUT | pending | — |
-| #step-12 | E | The composer (store write path + card input) | pending | — |
-| #step-13 | F | App-test + doc rows | pending | — |
-| #step-14 | F | Integration checkpoint | pending | — |
+| #step-1 | A | Protocol: GAZETTE + GAZETTE_INPUT | done | `4fe4d3fcd` |
+| #step-2 | A | Ledger: gazette_posts + FTS5 | done | `9a9051001` |
+| #step-3 | A | Gazette AgentSpec + jobs | done | `6564ccb0b` |
+| #step-4 | A | Pure Reporter wake core | done | `360ac963b` |
+| #step-5 | B | Calibration harness | done | `361959fdd`, `b88ffe101` |
+| #step-6 | C | Live Reporter bridge | done | `a597790b0` |
+| #step-7 | D | Deck gazette-store (read path) | done | `046754c40` |
+| #step-8 | D | Gazette card: transcript, toggle, menu | done | `c6a84c504` |
+| #step-9 | D | Ref chip actions | done | `3531a5cc4` |
+| #step-10 | E | Operator verb executor | done | `ae6d95e95` |
+| #step-11 | E | Operator pipeline + GAZETTE_INPUT | done | `ae6d95e95` |
+| #step-12 | E | The composer (store write path + card input) | done | `372465d3c` |
+| #step-13 | F | App-test + doc rows | done | `e5297c3f1` |
+| #step-14 | F | Integration checkpoint | done | verification only |
+
+#### Corrections after Phase D {#post-d-corrections}
+
+Five defects found by living with the channel rather than by reading it. Each is
+fixed and pinned; they are recorded because three of them touch contracts Phases
+E and F build on.
+
+- **A registry-routed command needs a body in `action-dispatch.ts`.** ⌃⌘G and
+  the menu row both did nothing: the chain handler in `deck-canvas.tsx` is a
+  different tier, and `routing: "registry"` never consults it. The step-8 file
+  table lists five files and omits `action-dispatch.ts` — **#step-12's composer
+  command, if it is registry-routed, needs the same sixth edit.** A drift test
+  now asserts every registry-routed command has a `registerAction`, derived from
+  the source rather than a fixture.
+- **[R01] had drifted where it mattered most.** The replay harness woke on every
+  `turn_complete`; the bridge skips a turn that held no assistant work. On one
+  session the harness reported three wakes against the bridge's one, so the
+  cadence number the instrument exists to produce was wrong. The rule now lives
+  in `reporter_wake.rs` as `counts_as_assistant_activity` and both callers gate
+  on it. **Any new wake condition belongs in the shared core, never in one
+  caller.**
+- **The Reporter's editorial contract was retuned against real output.** Silence
+  was open-ended and the rubric read as a list of coding subjects, so a session
+  that answered a question and finished its turn went unreported. Silence is now
+  bounded to two cases (empty window, or repeating the last post) and a turn-end
+  summary is mandatory. The voice rule forbids classifying the work or defining
+  it by what it was not — an earlier repair that said "post even when it isn't
+  code" produced posts opening "Answered a physics question, not code:". Length
+  is a budget (two or three sentences, 60 words) plus "the post is the summary,
+  never the content": median post length went from 100-plus words to 44 with the
+  cadence unchanged. **#step-14's acceptance reads against this wording, not the
+  brief's original.**
+- **`parse_envelope` recovers two model slips.** One level of `{"post": {"post":
+  …}}`, and a self-correction — a bad envelope followed by "Let me fix that
+  JSON:" and a good one, where the old outermost-span heuristic spanned both
+  plus the prose between. Candidates are now every balanced top-level object,
+  newest-first. Both were silently costing posts.
+- **`gazette-replay --show-input`** prints the composed job input per wake. A
+  silence cannot be diagnosed from the post that was not written.
+
+Two observations left open, neither blocking: a post occasionally emits a ref
+whose target is a bare basename (`sessions-section.tsx`) that survives
+validation but would not resolve when clicked, and the manual checkpoints on
+#step-6, #step-8, and #step-9 are the reader's to make.
+
+#### Notes from Phase E {#post-e-notes}
+
+- **`session.prompts` cannot return a prompt history, because the ledger does
+  not keep one.** Table T01 names the `turns` table as its backing, but `turns`
+  is the *pending* submission journal — a row is deleted the moment claude
+  acknowledges it. The durable record of what someone asked is the session
+  row's `last_user_prompt`, one prompt deep. The verb therefore returns that
+  plus anything still in flight, and says so in a `note` field the answering
+  model reads, so an answer that needed the full history says it could not
+  confirm rather than guessing. Reaching the real history means reading
+  claude's JSONL, which is not a read-only ledger verb and is not in this
+  plan's scope.
+- **#step-10 landed inside #step-11's commit.** The executor's only consumer is
+  the pipeline, and an unused module is a hard error under `-D warnings`, so a
+  standalone step-10 commit would have been red. Both ledger rows point at
+  `ae6d95e95`.
+- **The composer's submit is not a registry-routed command**, so the sixth-edit
+  warning above does not apply to it: the Ask button and Cmd-Return call
+  `gazetteStore.submitQuestion` directly. A future ⌘-chord for "ask the
+  Gazette" would need the `action-dispatch.ts` body.
+
+#### Notes from Phase F {#post-f-notes}
+
+- **#step-13's doc rows were already paid.** `tuglaws/menus.md` and the
+  `at0168-menu-structure.test.ts` fixture both took their Gazette row in
+  #step-8, where the menu item itself landed — a menu row and its law row are
+  one change, not two. What was left of #step-13 was the app-test.
+- **The app-test needed a surface method the store did not have.**
+  `_ingestGazetteFrameForTest` is module-scoped; an app-test reaches the deck
+  only through `window.__tug`. So `publishGazettePost` joins `publishPulseFrame`
+  on the test surface (SURFACE_VERSION 1.26.0) — a two-line delegate to the
+  same seam, not a second ingestion path.
+- **`just app-test` refreshes `tugdeck/dist`, never the app binary.** Everything
+  in the card passed against a bundle whose tugcast predated the Operator, and
+  only the composer's round trip failed — the frontend was current and the Rust
+  was not. `just build-app` before the first app-test of a run that changed
+  Rust; a rail that renders proves nothing about the feed behind it.
+- **The pending placeholder is unobservable under the app-test gate**, so the
+  test does not look for it. The gated pool fails the job without spawning, so
+  the Operator's reply is broadcast in the same breath as the question — the
+  window in which the placeholder stands is shorter than a poll. What it
+  resolves *to* is asserted instead.
 
 #### Step 1: Protocol — reclaim 0x70, add GAZETTE_INPUT {#step-1}
 
@@ -614,18 +703,42 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 **Artifacts:** `feeds/gazette_replay.rs` (a module in the bin crate), a `gazette-replay` subcommand arm in `cli.rs` + `main()`, and a `justfile` recipe `gazette-replay JSONL *FLAGS`.
 
 **Tasks:**
-- [ ] Add the subcommand to the existing clap surface in `cli.rs` and dispatch it at the top of `main()` — **before any listener binds or ledger writer is claimed**, so a replay never contends with a live tugcast — then return.
-- [ ] Read a session JSONL, map records to the frame shapes the tap classifier reads, simulate time from record timestamps, segment into wake windows via the wake core, call `pool.run("reporter-post", …)` per window (real `ClaudeAgentWorkerSpawner`), render a markdown gazette: per-wake reason, buffer stats, post-or-silence, refs kept/dropped.
-- [ ] Flags: `--sitrep-secs`, `--last-k`, `--model`, `--max-frames`, `--no-model`; defaults from Table T02.
-- [ ] **Sweep the cadence rather than validating one value.** Run each spike session at `--sitrep-secs` 90, 120, and 180 and read all three gazettes side by side. The spike's 240s produced one post per ~5–7 minutes of active work, which the user judged too slow; 180 is the shipped default and ~120 is where "every two to three minutes" lives. Reading three is the only way to answer a question that is genuinely about feel — set the shipped default from what reads best, not from this plan's guess.
-- [ ] Fold allowlist conclusions into Step 6 ([Q02]); adjust the rubric wording if the sweep shows the model posting on the wrong moments rather than at the wrong rate (those are different failures and want different fixes).
+- [x] Add the subcommand to the existing clap surface in `cli.rs` and dispatch it at the top of `main()` — **before any listener binds or ledger writer is claimed**, so a replay never contends with a live tugcast — then return.
+- [x] Read a session JSONL, map records to the frame shapes the tap classifier reads, simulate time from record timestamps, segment into wake windows via the wake core, call `pool.run("reporter-post", …)` per window (real `ClaudeAgentWorkerSpawner`), render a markdown gazette: per-wake reason, buffer stats, post-or-silence, refs kept/dropped.
+- [x] Flags: `--sitrep-secs`, `--last-k`, `--model`, `--max-frames`, `--no-model`; defaults from Table T02. `--token-wake-tokens` added alongside them, since the threshold is a knob the sweep should be able to move.
+- [x] **Sweep the cadence rather than validating one value.** Run each spike session at `--sitrep-secs` 90, 120, and 180 and read all three gazettes side by side. The spike's 240s produced one post per ~5–7 minutes of active work, which the user judged too slow; 180 is the shipped default and ~120 is where "every two to three minutes" lives. Reading three is the only way to answer a question that is genuinely about feel — set the shipped default from what reads best, not from this plan's guess.
+- [x] Fold allowlist conclusions into Step 6 ([Q02]); adjust the rubric wording if the sweep shows the model posting on the wrong moments rather than at the wrong rate (those are different failures and want different fixes).
 
 **Tests:**
-- [ ] Segmentation-only mode (`--no-model`) unit-testable: wake windows over a fixture JSONL are deterministic.
+- [x] Segmentation-only mode (`--no-model`) unit-testable: wake windows over a fixture JSONL are deterministic.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo build -p tugcast` (the subcommand builds; a real run is manual and costs tokens)
-- [ ] `just gazette-replay <a real jsonl>` produces a readable gazette (manual read), at all three sweep values
+- [x] `cd tugrust && cargo build -p tugcast` (the subcommand builds; a real run is manual and costs tokens)
+- [x] `just gazette-replay <a real jsonl>` produces a readable gazette (manual read), at all three sweep values
+
+##### What the sweep found {#step-5-findings}
+
+One session, `038ba4cc`, 2h28m of continuous work, 806 frames, run whole at each cadence.
+
+| `--sitrep-secs` | wakes | turn-end | sitrep | posted | chose silence | unparseable | one post per |
+|---|---|---|---|---|---|---|---|
+| 90 | 64 | 16 | 48 | 47 | 16 | 1 | **3m09s** |
+| 120 | 52 | 16 | 36 | 30 | 22 | 0 | **4m56s** |
+| 180 | 40 | 16 | 24 | 12 | 25 | 3 | **12m22s** |
+
+**Cadence set: 90 seconds** ([P05], Table T02). Read side by side, 180 gave a channel to skim later and 90 gave one that tells you what is happening; 47 posts across 2h28m of real work is the volume that reads right. 75 is the next value to try if this proves too quiet — no code change is involved, since `--sitrep-secs` reads any candidate against a real transcript and the tugbank knob turns live.
+
+**F1 — The envelope contract was losing good posts, and the loss looked like editorial silence.** The first 120s run posted **zero** times out of 52. Every one of those 52 answers held a complete, well-formed envelope behind a sentence of the model's own preamble, and strict whole-string parsing discarded all of them. Two fixes landed: the harness now counts *unparseable* apart from *chose silence* (a run that merges them reports a broken contract as good judgment — the same distinction [P14] makes for job failures), and `parse_envelope` now locates the outermost `{…}` span rather than requiring the envelope to be the entire answer. That is finding the envelope, not repairing one: the JSON parsed is still the model's own, still whole, still `deny_unknown_fields`. Preamble rate on this corpus was roughly four in ten. **This invalidates [P06] as written** — its "malformed output is silence" holds, but "the whole answer must be the envelope" does not survive contact with the model.
+
+**F2 — Residual unparseables are genuinely malformed and correctly silent.** The 1-in-64 and 3-in-40 that remain are unescaped double quotes inside the `body` string. No repair is possible without inventing the author's intent, so silence is right. ~4% is the floor.
+
+**F3 — A single run is not a measurement.** The same transcript at 180s posted 27 of 40 in one run and 12 of 40 in the next, same config. The post/no-post decision is noisy at the per-wake level, so the shipped default should be read off the *feel* of the three gazettes rather than off one run's rate.
+
+**F4 — Turn-end wakes are cadence-independent, and some of them are free of content.** 16 turn-end wakes in every run — the knob only moves the other half. Some are two-frame windows from a local command (`/model`, `/compact`) that opens and closes a turn with no assistant activity in it, costing a model call to be told nothing happened. **Step 6 should skip a turn-end wake whose window holds no assistant activity**; the harness deliberately does not, because encoding a bridge policy here would create exactly the drift Risk R01 warns about.
+
+**F5 — Refs are dropped when the model writes an absolute path.** Frames carry whatever a tool's input carried, so a post citing `/Users/…/tugdeck/src/lib/font-metrics.ts` fails the verbatim check against a window holding the repo-relative form. Drops were visible in 1, 10, and 5 posts across the three runs. Worth a wording pass in Step 6 (tell the Reporter to copy the path *as the frame spells it*) before reaching for looser matching, which would reintroduce the dead-chip risk [R02] exists to prevent.
+
+**F6 — The allowlist needs no change ([Q02] closes).** No frame type in `REPORTER_FORWARD_ALLOWLIST` proved to be noise, and no post wanted evidence the allowlist withheld. The streaming-only types (`tool_input_progress`, `api_retry`, `wake_started`) are absent from transcripts and so untested by replay; they stay on the list on the Pulse precedent.
 
 ---
 
@@ -640,17 +753,19 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 **Artifacts:** `feeds/reporter.rs` `ReporterBridge` implementing `StreamFeed` (id `GAZETTE`, capacity 64); `main.rs` wiring (knob closures over `bank_client`, `register_stream_feed`, submission-channel tap mirroring `SessionOverviewConfig`); CONTROL verb `"list_gazette_posts"` + `do_list_gazette_posts` in `agent_supervisor.rs`.
 
 **Tasks:**
-- [ ] Tap loop: subscribe `code_tx` in-task; classify/mute; push to buffers; arm per-session sitrep deadlines (`tokio::select!` over a computed next-deadline, the timer only armed while a buffer is non-empty); session-end wake off session-state frames; token-threshold wake off `turn_complete` usage when the knob is non-zero.
-- [ ] Wake path: snapshot+clear buffer, fetch last-K posts for the session (`list` read filtered by session), spawn a task: `run("reporter-post")` → parse ([P06]) → validate refs (R02) → `record_gazette_post` → broadcast S03 frame. Disabled knob drops frames and never wakes (the `pulse_enabled` posture).
-- [ ] **On job `Err`, re-merge the snapshot to the front of the session's buffer** subject to the [P04] caps, and log it as a distinct warn from an editorial no-post ([P14]) — an infrastructure failure must not read as the model choosing silence.
-- [ ] Finalize the allowlist from harness findings; record it as a `const` with the pulse-style doc comment ([Q02] closes here).
+- [x] Tap loop: subscribe `code_tx` in-task; classify/mute; push to buffers; arm per-session sitrep deadlines (`tokio::select!` over a computed next-deadline, the timer only armed while a buffer is non-empty); session-end wake off session-state frames; token-threshold wake off usage when the knob is non-zero. **Correction found in the wiring:** a live `turn_complete` carries no usage at all — `tugcode/src/types.ts` populates its telemetry only on the replay path — so the meter reads `cost_update`, the one live frame that carries the four-token shape. It is read for the counter and never buffered: a threshold reading is not something to write a post about, and adding it to the allowlist would have changed a surface [Q02] just closed.
+- [x] Wake path: snapshot+clear buffer, fetch last-K posts for the session (`list` read filtered by session), spawn a task: `run("reporter-post")` → parse ([P06]) → validate refs (R02) → `record_gazette_post` → broadcast S03 frame. Disabled knob drops frames and never wakes (the `pulse_enabled` posture).
+- [x] **On job `Err`, re-merge the snapshot to the front of the session's buffer** subject to the [P04] caps, and log it as a distinct warn from an editorial no-post ([P14]) — an infrastructure failure must not read as the model choosing silence.
+- [x] **Skip a turn-end wake whose window holds no assistant activity** ([F4](#step-5-findings)). A local command (`/model`, `/compact`) opens and closes a turn with nothing in it, and waking there spends a model call to be told nothing happened. The harness deliberately does not do this — a bridge policy encoded there would be exactly the drift Risk R01 exists to prevent — so it lands here, with a test for the empty turn.
+- [x] **Tell the Reporter to copy a path as the frame spells it** ([F5](#step-5-findings)). Refs citing absolute paths fail the verbatim check against windows holding the repo-relative form; a wording pass is the fix, not looser matching, which would put back the dead chips [R02] exists to prevent.
+- [x] The allowlist is already final ([Q02] resolved by the sweep) — carry `REPORTER_FORWARD_ALLOWLIST` across unchanged rather than re-deriving it.
 
 **Tests:**
-- [ ] Tokio tests with a scripted pool (the `FakeSpawner` pattern from `shared_agent.rs::test_support`): allowlisted frame → wake → post persisted + broadcast; replay-bracketed frames produce nothing; a `GAZETTE` frame never enters the buffer ([P12]); disabled knob spawns/wakes nothing; `list_gazette_posts` CONTROL verb answers the tail.
-- [ ] A failing pool re-merges: script `Err`, wake, assert the frames are still buffered and reach the *next* wake's composed input ([P14]).
+- [x] Tokio tests with a scripted pool (the `FakeSpawner` pattern from `shared_agent.rs::test_support`): allowlisted frame → wake → post persisted + broadcast; replay-bracketed frames produce nothing; a `GAZETTE` frame never enters the buffer ([P12]); disabled knob spawns/wakes nothing; `list_gazette_posts` CONTROL verb answers the tail.
+- [x] A failing pool re-merges: script `Err`, wake, assert the frames are still buffered and reach the *next* wake's composed input ([P14]).
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast reporter`
+- [x] `cd tugrust && cargo nextest run -p tugcast reporter`
 - [ ] Manual: run a dash-build tugcast, do real session work, watch `GAZETTE` frames arrive (dev log / `websocat`)
 
 ---
@@ -668,15 +783,15 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 > **Read path only.** `submitQuestion` and the pending-question machinery land in #step-12, once there is an Operator to answer. Everything here is the narration channel: tail, fold, window, dispose.
 
 **Tasks:**
-- [ ] Model on `lib/pulse-store.ts`: singleton, connect hook, CONTROL `list_gazette_posts` on mount, `conn.onFrame(FeedId.GAZETTE, …)` fold, render-window cap from the `dev.tugtool.gazette`/`card_rows` default via the DEFAULTS feed, `useSyncExternalStore` hook, test-only frame-injection seam.
-- [ ] **[L27]: every acquisition captures its release.** The store acquires the `conn.onFrame` registration and the DEFAULTS-feed watch (the pending timeout joins them in #step-12); each unregister closure is stored and invoked in `dispose()`. `pulse-store.ts` captures its `onFrame` return for exactly this reason. A `_disposed` guard is not a substitute for unwiring, and there is no acceptable number of leaked callbacks.
+- [x] Model on `lib/pulse-store.ts`: singleton, connect hook, CONTROL `list_gazette_posts` on mount, `conn.onFrame(FeedId.GAZETTE, …)` fold, render-window cap from the `dev.tugtool.gazette`/`card_rows` default via the DEFAULTS feed, `useSyncExternalStore` hook, test-only frame-injection seam.
+- [x] **[L27]: every acquisition captures its release.** The store acquires the `conn.onFrame` registration and the DEFAULTS-feed watch (the pending timeout joins them in #step-12); each unregister closure is stored and invoked in `dispose()`. `pulse-store.ts` captures its `onFrame` return for exactly this reason. A `_disposed` guard is not a substitute for unwiring, and there is no acceptable number of leaked callbacks.
 
 **Tests:**
-- [ ] Fold/ordering/cap; tail-then-live merge without duplicates (dedupe by ledger `id`).
-- [ ] `dispose()` releases both registrations — assert the connection has no live callback afterwards, not merely that a stale one no-ops.
+- [x] Fold/ordering/cap; tail-then-live merge without duplicates (dedupe by ledger `id`).
+- [x] `dispose()` releases both registrations — assert the connection has no live callback afterwards, not merely that a stale one no-ops.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test gazette-store && bun run check`
+- [x] `cd tugdeck && bun test gazette-store && bun run check`
 
 ---
 
@@ -699,20 +814,20 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 | `tugapp/Sources/AppDelegate.swift` | the "Show Gazette" row mirroring "Show Jots" (`identified("maker.gazette")`, `keyEquivalent: ""` — the chord is applied from the registry) |
 
 **Tasks:**
-- [ ] Registration is the `registerJotsCard()` shape verbatim ([P10]); called unconditionally in `main.tsx` boot before layout restore (copy the INVARIANT comment).
-- [ ] Card UI: post rows oldest-first autoscrolled to newest — author icon (lucide `newspaper` for the Reporter; the `operator` glyph via `TugSpriteIcon`/`operatorIconNode` from `components/tugways/tug-icons.tsx`; the Session card's user icon), timestamp, body, ref chips (render-only this step), readable at rail width (min 320).
-- [ ] **[L12]: register the transcript content area as a selection boundary** so `SelectionGuard` clamps selection to the card. A scrolling transcript is the exact shape this law exists for.
-- [ ] **[L19]/[L16]/[L20]: honor the component contract, not just the visual.** Module docstring, exported props interface, `data-slot`, `@tug-pairings`, and `@tug-renders-on` on every rule that sets `color`/`fill`/`border-color` without a `background-color` — `audit-tokens lint` fails otherwise. Gazette-scoped `--tugx-*` tokens resolve to `--tug7-*` in one hop and never reach into a composed child's tokens.
-- [ ] **Reserve the composer's row in the card's grid now, and leave it empty.** The composer lands in #step-12; a layout that grows a row later would shift the transcript under the reader. Reserving costs one grid track and makes #step-12 a drop-in.
-- [ ] Update the `at0168-menu-structure.test.ts` fixture and the `tuglaws/menus.md` table for the new menu row.
-- [ ] Cross-check tuglaws (`tuglaws.md`, `pane-model.md`, `component-authoring.md`, `commands.md`, `chord-tiers.md`); name the laws in the commit body.
+- [x] Registration is the `registerJotsCard()` shape verbatim ([P10]); called unconditionally in `main.tsx` boot before layout restore (copy the INVARIANT comment).
+- [x] Card UI: post rows oldest-first autoscrolled to newest — author icon (lucide `newspaper` for the Reporter; the `operator` glyph via `TugSpriteIcon`/`operatorIconNode` from `components/tugways/tug-icons.tsx`; the Session card's user icon), timestamp, body, ref chips (render-only this step), readable at rail width (min 320).
+- [x] **[L12]: register the transcript content area as a selection boundary** so `SelectionGuard` clamps selection to the card. A scrolling transcript is the exact shape this law exists for. **Correction found in the wiring:** the card already has one. `CardHost` calls `useSelectionBoundary(cardId, …)` on the card-host div for every registered card, deliberately one entry per card rather than per pane; `registerBoundary` is keyed by card id, so a second call from inside the card would *replace* the host's rather than add to it. The transcript takes the boundary it is already inside, and the hook's own docstring says card authors never call it directly.
+- [x] **[L19]/[L16]/[L20]: honor the component contract, not just the visual.** Module docstring, exported props interface, `data-slot`, `@tug-pairings`, and `@tug-renders-on` on every rule that sets `color`/`fill`/`border-color` without a `background-color` — `audit-tokens lint` fails otherwise. Gazette-scoped `--tugx-*` tokens resolve to `--tug7-*` in one hop and never reach into a composed child's tokens.
+- [x] **Reserve the composer's row in the card's grid now, and leave it empty.** The composer lands in #step-12; a layout that grows a row later would shift the transcript under the reader. Reserving costs one grid track and makes #step-12 a drop-in.
+- [x] Update the `at0168-menu-structure.test.ts` fixture and the `tuglaws/menus.md` table for the new menu row.
+- [x] Cross-check tuglaws (`tuglaws.md`, `pane-model.md`, `component-authoring.md`, `commands.md`, `chord-tiers.md`); name the laws in the commit body.
 
 **Tests:**
-- [ ] Registration test rows (the card-registry drift tests pick up the new sidebar automatically — verify `layout-tree.test.ts` / `card-registry.test.ts` expectations).
-- [ ] The chord-routing drift table passes with the new row.
+- [x] Registration test rows (the card-registry drift tests pick up the new sidebar automatically — verify `layout-tree.test.ts` / `card-registry.test.ts` expectations).
+- [x] The chord-routing drift table passes with the new row.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build`
+- [x] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build`
 - [ ] Manual in the running app: ⌃⌘G toggles the rail; the Layouts section shows a "Gazette" side control with no section edits; **the Reporter posts from #step-6 render live in the rail.** This is the Phase D payoff — from here the cadence knobs turn against lived experience rather than replayed transcripts.
 
 ---
@@ -728,15 +843,16 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 **Artifacts:** chip click handlers in `gazette-card.tsx`.
 
 **Tasks:**
-- [ ] `session` → raise/focus the bound Session card via the store's activation path (`transferFocusForActivation` — the real z-raise); a session with no live card renders the chip inert with a title tooltip.
-- [ ] `file`, `plan`, `brief` → open the path in the file-viewing card via the existing parameterized `show-card`/file-open dispatch (reuse, never a new mechanism).
-- [ ] `commit` → open the commit's diff via the existing `GIT_DIFF_QUERY` commit flavor (`sha` field) surface.
+- [x] `session` → raise/focus the bound Session card via the store's activation path (`transferFocusForActivation` — the real z-raise); a session with no live card renders the chip inert with a title tooltip.
+- [x] `file`, `plan`, `brief` → open the path in the file-viewing card via the existing parameterized `show-card`/file-open dispatch (reuse, never a new mechanism).
+- [x] `commit` → open the commit's diff via the existing `GIT_DIFF_QUERY` commit flavor (`sha` field) surface.
 
 **Tests:**
-- [ ] Dispatch-level unit tests (command payloads), not fake-DOM renders.
+- [x] Dispatch-level unit tests (command payloads), not fake-DOM renders.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test && bunx vite build`; manual chip clicks in the app
+- [x] `cd tugdeck && bun test && bunx vite build`
+- [ ] Manual: chip clicks in the app — a file chip opens its card, a commit chip its diff, a session chip raises the session.
 
 ---
 
@@ -824,14 +940,14 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 **Artifacts:** `tests/app-test/at0xxx-gazette-card.test.ts` with `@covers` lines naming `tugdeck/src/components/gazette/*` and `tugdeck/src/lib/gazette-store.ts`.
 
 **Tasks:**
-- [ ] App-test: toggle the rail (⌃⌘G and menu), inject posts through the store's test seam, assert rows + icons + chips render, type into the composer and submit — the app-test-gated pool yields the transient degraded post, which is itself the assertion that the round trip ran.
-- [ ] `just app-test-covers-check` passes; run `just app-test-changed`.
+- [x] App-test: toggle the rail (⌃⌘G and menu), inject posts through the store's test seam, assert rows + icons + chips render, type into the composer and submit — the app-test-gated pool yields the transient degraded post, which is itself the assertion that the round trip ran.
+- [x] `just app-test-covers-check` passes; run `just app-test-changed`.
 
 **Tests:** the app-test itself.
 
 **Checkpoint:**
-- [ ] `just app-test-covers-check`
-- [ ] `just app-test-changed`
+- [x] `just app-test-covers-check`
+- [x] `just app-test-changed`
 
 ---
 
@@ -844,14 +960,25 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 **References:** (#success-criteria, #exit-criteria)
 
 **Tasks:**
-- [ ] Walk every success criterion in (#success-criteria) against the built app: live Reporter posts during real work at the 180s default; the worked-example Operator question; knob turns (`sitrep_secs`, `card_rows`) taking effect without restart.
+- [x] Walk every success criterion in (#success-criteria) against the built app: live Reporter posts during real work at the 90s default; the worked-example Operator question; knob turns (`sitrep_secs`, `card_rows`) taking effect without restart.
 
 **Tests:**
-- [ ] `cd tugrust && cargo nextest run` (workspace)
-- [ ] `cd tugdeck && bun test && bun run check && bunx vite build`
+- [x] `cd tugrust && cargo nextest run` (workspace)
+- [x] `cd tugdeck && bun test && bun run check && bunx vite build`
 
 **Checkpoint:**
-- [ ] All of the above green; manual acceptance noted in the session.
+- [x] All of the above green; manual acceptance noted in the session.
+
+**What the walk found** (#post-f-notes carries the incidental findings):
+
+| Criterion | How it was read |
+|---|---|
+| Harness output read at 90/120/180 | Phase B; the 90s default was chosen from the three readings, not from this plan's guess. |
+| Live Reporter posts carrying `session_id` and validated refs | Observed in the debug build during Phase D/E; `r02` validation test green. |
+| Worked-example Operator answer within two rounds | Answered in the live build at the close of Phase E, after `fd7964c2f` — the retrieval slip that was costing every answer. |
+| Sidebar registration with **no** Layouts-section change | `layouts-section.tsx` walks `getAllRegistrations()` for `layoutRole: "sidebar"`; the dash's diff against `main` touches no file under `components/lens/`. |
+| Idle → zero wakes; replay flood → zero posts | `an_idle_session_never_wakes`, `an_idle_session_leaves_an_empty_buffer`, `replay_bracketed_frames_produce_nothing`, `replay_brackets_mute_one_session_without_blocking_others`. |
+| Suites green | 2097 Rust tests (the `git_head_roundtrip` contention flake passes 7/7 alone); 6064 deck tests; `check`, `audit:tokens lint`, `vite build`; `at0365` plus the four tests the test-surface change selects. |
 
 ---
 
@@ -861,15 +988,15 @@ Fourteen steps is far too much for a single run. They group into **six phases**,
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] All Step Status Ledger rows `done` with commits recorded.
-- [ ] Success criteria in (#success-criteria) hold (harness output read; live posts observed; worked example answered; knobs turn live).
-- [ ] No isolation regression: the [P12] tests pin no-feedback-loop and no-write-toward-sessions.
+- [x] All Step Status Ledger rows `done` with commits recorded.
+- [x] Success criteria in (#success-criteria) hold (harness output read; live posts observed; worked example answered; knobs turn live).
+- [x] No isolation regression: the [P12] tests pin no-feedback-loop and no-write-toward-sessions.
 
 **Acceptance tests:**
-- [ ] `cd tugrust && cargo nextest run` green (warnings are errors).
-- [ ] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build` green.
-- [ ] `just app-test-changed` green.
-- [ ] No [L27] leak: `GazetteStore.dispose()` releases the frame callback, the DEFAULTS watch, and the pending timeout.
+- [x] `cd tugrust && cargo nextest run` green (warnings are errors).
+- [x] `cd tugdeck && bun test && bun run check && bun run audit:tokens && bunx vite build` green.
+- [x] `just app-test-changed` green.
+- [x] No [L27] leak: `GazetteStore.dispose()` releases the frame callback, the DEFAULTS watch, and the pending timeout.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
