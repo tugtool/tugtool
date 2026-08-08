@@ -16,7 +16,14 @@
  * @module lib/sparkline-geometry
  */
 
-/** One tape sample. `t` is wall-clock ms; `v` is 0..1 of full scale. */
+/**
+ * One tape sample. `v` is 0..1 of full scale. `t` is MONOTONIC-CLOCK ms —
+ * `performance.now()`, the same time base `Animation.startTime` is written
+ * from, so `xOf(t)` below and the scroll's transform are the same function of
+ * the same clock. It is NOT wall clock: nothing persists a tape, and the
+ * activity meters' wall-clock bins are converted at a single named seam in
+ * `sparkline-tape.ts`.
+ */
 export interface SparklinePoint {
   t: number;
   v: number;

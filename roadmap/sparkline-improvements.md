@@ -609,16 +609,16 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Extract the tape policy, behaviour-preserving | pending | — |
-| #step-2 | One clock: `performance.now()` and an explicit epoch origin | pending | — |
-| #step-3 | Worker paint acknowledgements | pending | — |
-| #step-4 | Ack-gated rebase, one path, with a lost-ack watchdog | pending | — |
-| #step-5 | Split flat-dormancy from hidden-pause | pending | — |
-| #step-6 | Harden the visibility gate | pending | — |
-| #step-7 | Self-healing registration | pending | — |
-| #step-8 | Backing-store correctness and transfer guard | pending | — |
-| #step-9 | `recordActivity` test hook and the real-app test | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Extract the tape policy, behaviour-preserving | done | `d872aed4b` |
+| #step-2 | One clock: `performance.now()` and an explicit epoch origin | done | `2504adad4` |
+| #step-3 | Worker paint acknowledgements | done | `b0954ec94` |
+| #step-4 | Ack-gated rebase, one path, with a lost-ack watchdog | done | `d3407cdd2` |
+| #step-5 | Split flat-dormancy from hidden-pause | done | `acc24c28a` |
+| #step-6 | Harden the visibility gate | done | `ddb779bf5` |
+| #step-7 | Self-healing registration | done | `9d7e1bc8b` |
+| #step-8 | Backing-store correctness and transfer guard | done | `bdc7bded1` |
+| #step-9 | `recordActivity` test hook and the real-app test | done | `2806a56ab` |
+| #step-10 | Integration checkpoint | done (mechanical); by-eye observations open | — |
 
 ---
 
@@ -962,8 +962,8 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 **References:** (#success-criteria), (#exit-criteria), [Risk R03](#r03-other-causes)
 
 **Tasks:**
-- [ ] Verify every success criterion in [#success-criteria](#success-criteria) mechanically, criterion by criterion.
-- [ ] Run the selective app-test derived from the working diff, then the core tier — the changes touch `test-surface.ts`, which no `@covers` line can scope.
+- [x] Verify every success criterion in [#success-criteria](#success-criteria) mechanically, criterion by criterion. — see [#step-10-results](#step-10-results).
+- [x] Run the selective app-test derived from the working diff, then the core tier — the changes touch `test-surface.ts`, which no `@covers` line can scope. Selection resolved against the dash's full diff (`main...HEAD`), since the working diff is empty on a committed dash: `at0370`, `at0282`, `at0293`, `at0017` — 4/4 green. Core tier 20/20 green.
 - [ ] Watch a live session in the Lens and on its card side by side for at least two full epochs (240 s) with real streaming activity; confirm neither judders and neither blanks, and that **both fall to baseline together** when the turn ends.
 - [ ] With the dev panel open (Opt-Cmd-/), scroll the Lens rail hard during streaming and confirm the `sparkline` transition log is quiet and no registration `rebase` verdicts fire.
 - [ ] Look specifically for a rollover seam ([Risk R02](#r02-ack-not-frame-exact)). If one is visible, add the `requestAnimationFrame` boundary in `setEpochStart` **and** the [L13] exemption comment; if not, leave the direct application in place and record that the ack alone was sufficient.
@@ -972,14 +972,32 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] If judder remains after all of the above, record it against [Risk R03](#r03-other-causes) with a WebKit layer-tree capture rather than reopening the registration work.
 
 **Tests:**
-- [ ] Full unit suite plus the two app-tests, green together.
+- [x] Full unit suite plus the two app-tests, green together.
 
 **Checkpoint:**
-- [ ] `cd tugdeck && bun test`
-- [ ] `cd tugdeck && bun run check`
-- [ ] `cd tugdeck && bunx vite build`
-- [ ] `just app-test-changed`
-- [ ] `just app-test`
+- [x] `cd tugdeck && bun test` — 6171 pass, 0 fail
+- [x] `cd tugdeck && bun run check`
+- [x] `cd tugdeck && bunx vite build`
+- [x] `just app-test-changed` — resolved against `main...HEAD`; 4/4 green
+- [x] `just app-test` — 20/20 files, 39/39 tests green
+
+##### Mechanical verification, criterion by criterion {#step-10-results}
+
+| Success criterion | How it was verified | Result |
+|---|---|---|
+| `Date.now(` exactly once in the tape path | drift-prevention unit test reading both files off disk; `grep` confirms one live call at `sparkline-tape.ts` `captureWallOffset`, two more in comments | PASS |
+| Committed `t0` lands exactly on epoch multiples; transform bounded | `proposedT0` sweep over four epochs at 1337 ms steps | PASS |
+| One `t0` per inter-rebase interval | `assertRebaseOrdering`'s single-`t0` half, over every scenario the suite drives | PASS |
+| Every `setEpochStart` preceded by a delivered ack | `assertRebaseOrdering`'s ordering half, same scenarios | PASS |
+| A rebase whose ack never arrives still converges | watchdog cases, live and on the `hidden-paused` wake path | PASS |
+| A hidden→visible cycle produces zero teardowns | allowed-verbs trace scan (the surface has no teardown verb at all) plus the ordered pause/paint/move/resume case | PASS |
+| A Lens row survives three scroll cycles with one running `Animation` | `at0370`, with the tape reading `hidden-paused` on all three — the pause path genuinely ran | PASS |
+| Canvas backing store matches `devicePixelRatio` | `at0370`, all 24 mounted canvases | PASS |
+| `bunx vite build` + `bun test` clean; `at0370` + `at0282` green | above | PASS |
+
+Recorded from `at0370`'s diagnostics: `document.timeline.currentTime - performance.now() === 0` on a visible window, so the timeline does **not** stall there — [Q01](#q01-timeline-stall)'s deferral holds, and the self-check's visibility gate is cheap insurance rather than a load-bearing correction on this path. The occluded-window branch is still unmeasured, which is exactly why the gate stays.
+
+The remaining unchecked tasks above are by-eye observations over minutes of real streaming (two full epochs side by side, a hard Lens scroll with the dev panel open, a rollover seam, idle cost, a >120 s collapsed span). They need a human at a running app and are the point of the debug build below.
 
 ---
 
@@ -989,18 +1007,18 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `Date.now(` appears exactly once across `tug-sparkline.tsx` and `sparkline-tape.ts` — the named `wallOffset` seam (drift-prevention unit test, [Risk R04](#r04-clock-seam-reopened)).
-- [ ] A stalled stream still decays to baseline, in a unit case and in the real app ([#step-9](#step-9)) — the seam's observable behaviour.
-- [ ] The ordering invariant holds in every unit scenario: no `setEpochStart` without a delivered ack, from the surface or from the watchdog ([#step-4](#step-4) headline test).
-- [ ] A rebase whose ack never arrives still converges, including on the `hidden-paused` wake path where the failure would otherwise leave the tape paused ([Risk R05](#r05-lost-ack)).
-- [ ] The single-`t0` invariant holds: no ordinary paint ever uses a `t0` other than `committedT0`, including while a rebase ack is outstanding ([P10](#p10-committed-t0)).
-- [ ] The nudge band is capped at 2 CSS px and everything above it goes through the ack ([#step-7](#step-7) boundary test).
-- [ ] A canvas re-claim repaints; no tape is ever left blank by a resolution change ([#step-8](#step-8)).
-- [ ] No animation teardown outside mount/unmount in any scenario, unit or app-test ([#step-5](#step-5), [#step-9](#step-9)).
-- [ ] A Lens row survives three scroll-out/scroll-in cycles with the same `Animation` object, still running (`at0370`).
-- [ ] Canvas backing store matches the live `devicePixelRatio` on every mounted tape (`at0370`).
-- [ ] `tug-sparkline.tsx` and `sparkline-render-worker.ts` module headers describe the shipped design, not the replaced one.
-- [ ] `cd tugdeck && bun test`, `bun run check`, `bunx vite build`, `just app-test-changed`, and `just app-test` all clean.
+- [x] `Date.now(` appears exactly once across `tug-sparkline.tsx` and `sparkline-tape.ts` — the named `wallOffset` seam (drift-prevention unit test, [Risk R04](#r04-clock-seam-reopened)).
+- [x] A stalled stream still decays to baseline, in a unit case and in the real app ([#step-9](#step-9)) — the seam's observable behaviour.
+- [x] The ordering invariant holds in every unit scenario: no `setEpochStart` without a delivered ack, from the surface or from the watchdog ([#step-4](#step-4) headline test).
+- [x] A rebase whose ack never arrives still converges, including on the `hidden-paused` wake path where the failure would otherwise leave the tape paused ([Risk R05](#r05-lost-ack)).
+- [x] The single-`t0` invariant holds: no ordinary paint ever uses a `t0` other than `committedT0`, including while a rebase ack is outstanding ([P10](#p10-committed-t0)).
+- [x] The nudge band is capped at 2 CSS px and everything above it goes through the ack ([#step-7](#step-7) boundary test).
+- [x] A canvas re-claim repaints; no tape is ever left blank by a resolution change ([#step-8](#step-8)). Unit-covered for `repaint()` and the cancel-then-repaint ordering; the cross-display observation is a by-eye task in [#step-10](#step-10).
+- [x] No animation teardown outside mount/unmount in any scenario, unit or app-test ([#step-5](#step-5), [#step-9](#step-9)).
+- [x] A Lens row survives three scroll-out/scroll-in cycles with the same `Animation` object, still running (`at0370`).
+- [x] Canvas backing store matches the live `devicePixelRatio` on every mounted tape (`at0370`).
+- [x] `tug-sparkline.tsx` and `sparkline-render-worker.ts` module headers describe the shipped design, not the replaced one.
+- [x] `cd tugdeck && bun test`, `bun run check`, `bunx vite build`, `just app-test-changed`, and `just app-test` all clean.
 
 **Acceptance tests:**
 - [ ] `tugdeck/src/lib/__tests__/sparkline-tape.test.ts`

@@ -28,14 +28,22 @@
  *
  * ## Wire protocol
  *
- * One shared worker instance for all tapes, keyed by `id`. Nothing is ever
- * posted back — the hot path is one-directional by design, because a reply
- * would put the main thread back in the loop it was taken out of.
+ * One shared worker instance for all tapes, keyed by `id`. The HOT path is
+ * one-directional by design — a reply on every sample would put the main
+ * thread back in the loop it was taken out of. Rebase paints alone carry an
+ * `ack`, and they are the only messages this thread answers.
  *
  *  - `init`     transfer the canvas and fix the geometry
  *  - `tape`     the whole tape plus the epoch origin — draw it
  *  - `colors`   theme or dominant-channel change
  *  - `dispose`  drop the entry
+ *
+ * The one outbound message is `painted`, posted at the END of the `tape`
+ * handler when that message carried an `ack`. By then `paint()` has returned
+ * and the `OffscreenCanvas` commit for this task is queued, so the main thread
+ * may move the scroll knowing the pixels for the new origin exist. That
+ * ordering is the whole point: move the transform first and the viewport
+ * shows the new position over the previous epoch's pixels.
  *
  * Every draw carries the WHOLE tape rather than appending a sample, and `t0`
  * rides along rather than being stored. Both are deliberate: the main thread
@@ -73,9 +81,14 @@ export type SparklineWorkerRequest =
       points: SparklinePoint[];
       t0: number;
       now: number;
+      /** Present only on a rebase paint; answered with `painted`. */
+      ack?: number;
     }
   | { kind: "colors"; id: number; colors: SparklineColors; t0: number }
   | { kind: "dispose"; id: number };
+
+/** The worker's only outbound message. See the wire protocol above. */
+export type SparklineWorkerResponse = { kind: "painted"; id: number; ack: number };
 
 interface Entry {
   ctx: OffscreenCanvasRenderingContext2D;
@@ -106,11 +119,21 @@ self.onmessage = (event: MessageEvent<SparklineWorkerRequest>): void => {
   if (entry === undefined) return;
 
   switch (msg.kind) {
-    case "tape":
+    case "tape": {
       entry.tape = msg.points;
       pruneSparklineTape(entry.tape, msg.now, entry.geo.retainMs);
       paint(entry, msg.t0);
+      // After the draw, so the commit for this task is already queued.
+      if (msg.ack !== undefined) {
+        const painted: SparklineWorkerResponse = {
+          kind: "painted",
+          id: msg.id,
+          ack: msg.ack,
+        };
+        self.postMessage(painted);
+      }
       return;
+    }
     case "colors":
       entry.colors = msg.colors;
       paint(entry, msg.t0);

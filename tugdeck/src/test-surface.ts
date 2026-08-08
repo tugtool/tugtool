@@ -51,6 +51,13 @@ import {
   getGazetteStore,
 } from "./lib/gazette-store";
 import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
+import {
+  ACTIVITY_DESCRIPTORS,
+  getSessionActivityStore,
+  type ActivityChannel,
+} from "./lib/session-activity-store";
+import { peekSparklineTape } from "./components/tugways/tug-sparkline";
+import type { SparklineTapeDebugState } from "./lib/sparkline-tape";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
   cardSessionBindingStore,
@@ -248,8 +255,13 @@ import {
  * frame body as if it arrived over the wire, so a test can put a Reporter post
  * with its refs on the card without a live Reporter behind it. Additive; major
  * stays `2`.
+ *
+ * `2.2.0`: adds {@link TugTestSurface.recordActivity} — records units on a
+ * session's activity channel through the real `SessionActivityStore`, so a test
+ * can drive a live sparkline tape deterministically instead of waiting on a
+ * real stream. Additive; major stays `2`.
  */
-export const SURFACE_VERSION = "2.1.0" as const;
+export const SURFACE_VERSION = "2.2.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -771,6 +783,33 @@ export interface TugTestSurface {
    * a malformed post silently, so assert on what rendered, never on this alone.
    */
   publishGazettePost(payloadJson: string): boolean;
+
+  /**
+   * Record activity units on a session's channel, exactly as a live `ACTIVITY`
+   * frame would (SURFACE_VERSION 2.2.0).
+   *
+   * This drives the REAL `SessionActivityStore.record` — the same entry point
+   * the wire uses — so everything downstream is production: the meters, their
+   * binning, the dominant-channel hysteresis, and every sparkline tape bound to
+   * that session. There is no fixture and no mock; what a test sees is what a
+   * stream would have produced.
+   *
+   * Returns `false` when no store is attached or the channel name is not one
+   * the store knows.
+   */
+  recordActivity(session: string, channel: string, units: number): boolean;
+
+  /**
+   * The live state of the sparkline tape drawn under the first element matching
+   * `selector` (SURFACE_VERSION 2.2.0), or `null` when nothing is mounted there.
+   *
+   * The tape's state is deliberately outside React and outside the DOM — that
+   * is what makes an idle tape free — so it is otherwise unreachable from a
+   * real-app test. `lastV` is what the pen is holding at the right edge, which
+   * is how a test sees a stalled stream drain to baseline through the real
+   * store rather than through a reconstructed one.
+   */
+  sparklineTapeState(selector: string): SparklineTapeDebugState | null;
 
   /**
    * Register an element as a selection boundary on behalf of a test
@@ -1740,6 +1779,24 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         return false;
       }
       return true;
+    },
+
+    recordActivity(session: string, channel: string, units: number): boolean {
+      const store = getSessionActivityStore();
+      if (store === null) return false;
+      if (!(channel in ACTIVITY_DESCRIPTORS)) return false;
+      // `Date.now()`, deliberately, and NOT `performance.now()`: the meters bin
+      // on ABSOLUTE wall-clock indices, and this has to stamp the same clock
+      // the live frame handler stamps or the units land in a bin the series
+      // never reaches — the recording would silently do nothing.
+      store.record(session, channel as ActivityChannel, units, Date.now());
+      return true;
+    },
+
+    sparklineTapeState(selector: string): SparklineTapeDebugState | null {
+      const container = document.querySelector(selector);
+      if (container === null) return null;
+      return peekSparklineTape(container)?.debugState() ?? null;
     },
 
     publishGazettePost(payloadJson: string): boolean {
