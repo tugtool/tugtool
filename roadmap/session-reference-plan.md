@@ -166,7 +166,7 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 | Legacy trailer breaks History parse | med | high (legacy commits are everywhere) | Spec S03 legacy grammar; unit tests over both forms | any unparsed `Tug-Session` ink in History |
 | Synopsis quality (labels, staleness) | med | med | reuse the PULSE headline register rules verbatim; `/rename` freeze | tuning in #step-15 |
 | Identity hook over-subscribes and wakes every surface | med | med (it is the easy way to write it) | by-id getters only, and no phase in the record ([P15], Spec S01) | any identity surface re-rendering on transcript traffic |
-| Chrome swap remounts the content region | high | low | chrome slot is a sibling, never an ancestor (Risk R04) | scroll or editor state lost on tab switch |
+| Chrome swap remounts the content region | high | **precluded** — cards portal into an empty `.tug-pane-content`; there is no card subtree for a chrome branch to re-key (Risk R04) | keep the sibling discipline and the one scroll-survival assertion, which pins the invariant rather than guarding a live hazard | anyone moving the pane off portaled content |
 
 **Risk R01: Masthead height regressions** {#r01-masthead-height}
 
@@ -199,11 +199,11 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 - **Mitigation:** strip only `Tug-Session:` / `Tug-Session-Id:` (and keep `Tug-Dash:` stripping consistent with them); the typed fields remain filterable server-side later; unit-test the stripper on bodies with interleaved trailers.
 - **Residual risk:** none meaningful — the trailer text was never useful filter ink.
 
-**Risk R04: The 36↔72 swap costs the content region its mount identity** {#r04-mount-identity}
+**Risk R04: The 36↔72 swap costs the content region its mount identity — precluded by the pane's existing structure** {#r04-mount-identity}
 
-- **Risk:** [P14] makes chrome height a function of the active tab, so `TugPane` renders a masthead slot on one tab and a one-line bar on the other. Implemented as a conditional subtree *around* the content region — or with a key that folds in the chrome mode — every tab switch remounts both cards: transcript scroll, CM6 editor state, and every registration reset. [L26] is explicit that logically-continuous mounts must not be torn down, and this is exactly a logical continuity (the card did not change; the chrome above it did).
-- **Mitigation:** the chrome slot is a **sibling** of the content region, never an ancestor of it, and nothing in the content region's key derives from the chrome mode; height travels as `--tugx-pane-chrome-height` (a CSS custom property, [L06]) rather than as a structural branch. The scroll-survival app-test in #step-11 is the assertion.
-- **Residual risk:** none if the slot stays a sibling; the failure is a structural mistake, not a tuning one, and the test catches it on the first run.
+- **The hazard in the abstract:** [P14] makes chrome height a function of the active tab, so `TugPane` renders a masthead slot on one tab and a one-line bar on the other. A conditional subtree *around* the content region — or a key folding in the chrome mode — would remount both cards on every tab switch: transcript scroll, CM6 editor state, and every registration reset. [L26] is explicit that logically-continuous mounts must not be torn down, and this is exactly a logical continuity (the card did not change; the chrome above it did).
+- **Why it cannot happen here:** the pane is **already** the shape the mitigation would ask for, and cards are not in the branch at all. `tug-pane.tsx`'s render puts `CardTitleBar` and `.tug-pane-body` as **siblings** under `.tug-pane-chrome`, and `.tug-pane-content` is an **empty `ref`'d div** — cards portal into it rather than mounting as React children of the pane. A chrome-mode branch therefore has no card subtree to reparent or re-key; producing this failure would require re-architecting the pane away from portaled content first. Keep the discipline anyway (the chrome slot is a sibling; nothing in the content region's key derives from chrome mode; height travels as `--tugx-pane-chrome-height`, a CSS custom property, [L06]) — it costs nothing and states the invariant the structure is relying on.
+- **Disposition:** **not a risk to mitigate — an invariant to pin.** The scroll-survival app-test in #step-11 stays: it is one cheap assertion, and it converts "the pane portals its content" from an implementation detail somebody could refactor into a stated contract with a failing test behind it.
 
 ---
 
@@ -252,7 +252,7 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 
 authored as `--tug-color(violet, l: …, c: …[, a: …])` recipes like every peer entry. Per-session hashed tint is **retired — do not re-propose** (color is a semantic channel; a hashed hue reads as meaning while meaning nothing).
 
-**Rationale:** the slot already exists and already carries a non-default tone — `route` in indigo-violet, beside `default` / `selected` / `highlighted` — with exactly this ground/border/ink/icon quartet, and [P06] says the session atom **is** a real Tug atom, so this is the slot it belongs in. The rejected alternative was a bespoke `--tug-session-color` role token declared beside `--tug-chrome-height` with the component deriving three of the four values by `color-mix`. That fails three ways: it is not a `--tug7-*` target, so `--tugx-session-identity-*` cannot resolve in one hop ([L17]); it moves per-theme tunability out of the theme file and into component CSS, which is what [L20]'s "B's appearance remains independently tunable per theme" exists to prevent; and `audit-theme-contrast.ts` resolves `var()` chains to a terminal `--tug-color(...)` recipe and **cannot see through `color-mix`**, so the contrast gate would silently audit nothing. The spike's `--gsi-session-color: var(--tug7-element-badge-text-tinted-agent-rest)` has the right instinct (one hop to a real token) but borrows the **badge** slot, which [L20] forbids for a non-badge component — it is scaffolding, per the header note, not the shipping shape.
+**Rationale:** the slot already exists, already carries a non-default tone, and already carries this exact quartet. Read the two precedents precisely, because they are not the same shape: the **`default`** tone is the one authoring all four roles — ground, border, ink, **and icon** (`--tug7-element-atom-icon-normal-default-rest`) — so the quartet is a shape the slot already supports; the **`route`** tone (indigo-violet, beside `default` / `selected` / `highlighted`) is the precedent for a *non-default tone living here at all*, and it authors a **triplet** — ground, border, ink, no icon — because a route atom paints no icon. The session atom does paint one (`MessageSquare`, [P01]), so it takes `default`'s four roles at `route`'s precedent. And [P06] says the session atom **is** a real Tug atom, so this is the slot it belongs in. The rejected alternative was a bespoke `--tug-session-color` role token declared beside `--tug-chrome-height` with the component deriving three of the four values by `color-mix`. That fails three ways: it is not a `--tug7-*` target, so `--tugx-session-identity-*` cannot resolve in one hop ([L17]); it moves per-theme tunability out of the theme file and into component CSS, which is what [L20]'s "B's appearance remains independently tunable per theme" exists to prevent; and `audit-theme-contrast.ts` resolves `var()` chains to a terminal `--tug-color(...)` recipe and **cannot see through `color-mix`**, so the contrast gate would silently audit nothing. The spike's `--gsi-session-color: var(--tug7-element-badge-text-tinted-agent-rest)` has the right instinct (one hop to a real token) but borrows the **badge** slot, which [L20] forbids for a non-badge component — it is scaffolding, per the header note, not the shipping shape.
 
 **Implications:** six theme edits (four values each) + new `ELEMENT_SURFACE_PAIRING_MAP` entries so `bun run audit:theme-contrast` actually gates the pair — the `atom` slot has **no entries in that map today**, so without them the contrast criterion passes vacuously. `--tugx-session-identity-*` aliases the four in one hop. The atom is a rounded pill, deliberately not the squared `TugBadge`, but it may take `TugBadge`'s `color-mix(currentColor …, transparent)` idiom for *state* variation on top of the authored rest values.
 
@@ -444,6 +444,8 @@ Each of `brio,nocturne,bravura,harmony,aria,vivace`.css gains:
   | `--tug7-element-atom-icon-normal-session-rest` | icon | the `agent` icon lightness |
 
   `TugSessionIdentity` aliases each in **one hop** to a `--tugx-session-identity-*` ([L17]); no `color-mix` derivation of a rest value in component CSS ([L20]).
+
+  **Four tokens, all `-rest`, and no `-hover` pair — this is complete, not partial.** The slot's `default` tone authors `-hover` variants for its ground and border (`--tug7-surface-atom-primary-normal-default-hover`, `--tug7-element-atom-border-normal-default-hover`); the `route` tone authors none. The session tone follows `route`: **rest-only**. State variation on top of the authored rest values — hover, the [P13] missing state — is the component's job via `TugBadge`'s `color-mix(currentColor …, transparent)` idiom (Spec S02), which is legitimate precisely because it varies *state* rather than deriving a *rest* value ([L20], [P05]). An implementer who counts six tokens against `default` and stops has miscounted the precedent; the count is four.
 - `--tug-masthead-height: 72px` beside `--tug-chrome-height: 36px` (~line 38).
 
 Contrast: the four tokens need **`ELEMENT_SURFACE_PAIRING_MAP` entries** (`components/tugways/theme-pairings.ts`) — ink and icon on the ground at role `control` (a chip label is an interactive element label), border on the ground at `decorative`. The `atom` slot has no entries in that map today, so `bun run audit:theme-contrast` gates nothing until they are added; adding them is what makes the Success Criterion falsifiable rather than free.
@@ -598,6 +600,8 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 #### Step Status Ledger {#step-status-ledger}
 
 **Steps land in numeric order.** The one ordering fact worth knowing before you start: #step-11 and #step-12 sit where they do — ahead of the clipboard and row work — because #step-9 opens a "a rename shows nowhere" window that only the masthead closes (see #strategy).
+
+**The nineteen steps land as three phases** — #step-1…7, #step-8…14, #step-15…19 — each vetted, implemented, and closed on its own. Numeric order is unchanged; the phases are contiguous cuts through it. See #phasing for the seams and why they fall there.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
@@ -908,7 +912,7 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 - [ ] App-test: sheet clip, scrim, and banner all seat below the 72px masthead — three measured `top` reads, one per re-pointed site. (The sheet's *bottom* is deliberately **not** asserted: the in-pane clamp measures the clip rect, so it follows the clip top for free and an assertion there would pass whether or not the work was done.)
 - [ ] App-test: a `/rename` while the masthead is up repaints **the masthead's description line** (the `useSessionIdentity` contract). The tab strip / Window menu / slot-stack picker are *not* asserted to change — the Line string no longer carries the name, so they correctly show `project/tag` before and after. Asserting a repaint there would be asserting a bug.
 - [ ] App-test ([P14]): a multi-tab pane stacking [Session, Text] swaps chrome 36↔72 with the active tab, both directions — **and the tab row stays 36px across the swap** (the four `tug-tab-bar.css` sites left alone; total chrome 108 on the Session tab, 72 on the Text tab).
-- [ ] App-test ([L26], Risk R04): the swap must not cost the content region its React identity. Scroll the Text tab's content, switch to the Session tab and back, and assert the scroll position survived. A conditional chrome subtree that reparents or re-keys the content region would remount both cards on every tab switch — a silent, expensive regression that no geometry assertion above can see.
+- [ ] App-test ([L26], Risk R04): the swap must not cost the content region its React identity. Scroll the Text tab's content, switch to the Session tab and back, and assert the scroll position survived. This one is **pinning an invariant, not guarding a live hazard** — `.tug-pane-content` is an empty `ref`'d div that cards portal into, so a chrome branch has no card subtree to re-key and the failure is structurally out of reach today (Risk R04). Write it anyway: it costs one assertion and it turns "the pane portals its content" into a contract with a failing test behind it.
 
 **Checkpoint:**
 - [ ] `bunx vite build` && `just app-test-changed`
@@ -1120,3 +1124,48 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 | Client build | `bunx vite build` |
 | Themes | `bun run audit:theme-contrast` |
 | Surfaces | `just app-test-changed` per step; #step-19 sweep |
+
+---
+
+### Phasing — three landing units, one numeric order {#phasing}
+
+> This section governs how the plan is **consumed**: vetted, implemented, and closed. It changes no step, no decision, and no ordering. The nineteen steps still land in numeric order; the phases are contiguous cuts through that order, and each cut is a place where `main` is coherent and the work can stop.
+
+#### Why the plan is cut at all {#why-phased}
+
+The plan is right and it is large — nineteen steps across five subsystems (Rust ledger, tugcode, git trailers, theme tokens, tugdeck chrome), with fifteen decisions and eight specs behind them. Size is not a defect, but it does have one consequence worth naming: **a document this size cannot be vetted as a unit.** Each review pass samples a different slice of an enormous falsifiable surface and finds something, and the finding gets folded in as prose, and the document grows, and the next pass samples differently. That loop terminates on scope, not on quality — the yield across passes has already fallen from "this step is wrong" to "this sentence miscounts a token quartet," which is the signature of a plan that has converged on facts while its reviewing unit has not converged on size.
+
+So the unit changes. **Each phase is vetted once, implemented, and closed** — three normal-sized plans' worth of review instead of one indefinite one.
+
+#### The three phases {#the-three-phases}
+
+| Phase | Steps | What it is | Standalone value on `main` |
+|---|---|---|---|
+| **A — Data layer** | #step-1 … #step-7 | Rust + tugcode only. Tag arm in the feed, mint hardening + `minted_tags`, external backfill, live `ai-title`, fork lineage, trailer write + read. | Real and shippable alone: the Changes card speaks callsigns, external sessions get true tags, forks stop orphaning their ledger row, and commits carry citations that resolve. **No pixel moves.** |
+| **B — Consolidation and chrome** | #step-8 … #step-14 | The [D123]-shaped heart. Tokens, `resolveSessionIdentity` + the hook + the great deletion, `TugSessionIdentity`, the masthead, the strip removal, the clipboard atom, the row tier. | The five parallel naming rules are gone and every dense surface renders one identity. This is where the phase's thesis becomes visible. |
+| **C — Completion** | #step-15 … #step-19 | The synopsis, the citation surfaces (tab strip / Gazette / Changes / History), `/resume <tag>`, doctrine, the integration checkpoint. | Closes the Success Criteria and records the doctrine. |
+
+#### Where the seams fall, and why there {#phase-seams}
+
+- **A|B is the cleanest cut in the plan.** Phase A touches no `tugdeck/src` file and Phase B's client work consumes A's wire shape (`tag` on the feed, `root_tag` / `tag_lineage` / later `synopsis` on `SessionRow`). Nothing in A depends on anything in B. If the phase were abandoned after A, `main` keeps every repair and loses nothing half-built.
+- **B|C falls after the strip removal, which is the last irreversible-feeling gesture.** By the end of #step-14 the masthead carries the voice, the Z2 strip is gone with its behaviors re-homed, and both dense tiers (row, chip) exist. Everything in C is additive onto surfaces that already render correctly.
+- **#step-9 → #step-11 → #step-12 is one arc and must not be cut.** #step-9 retires `sessionCardTitleOverride`'s name arm, so a `/rename` shows nowhere until the masthead's description line lands at #step-11; #step-12 must follow #step-11 immediately or the PULSE speaks twice. That arc is why Phase B cannot be subdivided further, and it is the load-bearing reason the phase boundary sits at #step-14 rather than anywhere inside 9–12 (see #strategy).
+
+#### The two severable steps {#severable-steps}
+
+Two steps carry no dependents and can slip a phase without blocking anything — worth knowing before the schedule pressure arrives, not after:
+
+- **#step-13 (the clipboard atom)** depends only on #step-10 and nothing depends on it. It sits in Phase B because it is small and the component is fresh in hand, not because B needs it.
+- **#step-15 (the synopsis)** is the plan's own stated last-among-features: every surface renders correctly without it (an honest empty description line), and it is the only step carrying an unresolved tuning question ([Q01]). It opens Phase C so that its in-app tuning has the whole of C to happen alongside.
+
+Nothing else in the plan is optional. In particular #step-16 is **not** garnish despite sitting late — it is where Phase A's trailer work becomes visible (the Gazette UUID dies, the History card gets its citation chip, the tab strip stops saying "Session").
+
+#### What closes a phase {#phase-exit}
+
+Each phase closes on the same three things, scoped to its own steps:
+
+- [ ] every step in the range `done` in the Step Status Ledger with its commit recorded;
+- [ ] the range's checkpoints green in one pass — `cd tugrust && cargo nextest run` for A; `bunx vite build` && `just app-test-changed` (and `bun run audit:theme-contrast` where tokens moved) for B and C;
+- [ ] the Success Criteria items the range is responsible for, verified — A owns the trailer, mint, fork, and permanence criteria; B owns the grep gates, the `/rename` repaint, and the contrast-pairing gate; C owns the surface criteria and the doctrine.
+
+The full #step-19 integration pass belongs to Phase C and remains the phase-exit gate for the work as a whole. A and B do not re-run it; they run their own ranges' checkpoints and stop.
