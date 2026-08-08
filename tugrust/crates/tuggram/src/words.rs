@@ -534,7 +534,16 @@ fn is_safe_word_name(name: &str) -> bool {
 /// **stdout only.** `bash -i` writes `bash: no job control in this shell` to
 /// stderr; folding the two streams together would parse that line into the
 /// table. Stdin is closed so an interactive shell cannot sit waiting on it.
+///
+/// `setsid` before exec puts the shell in a new session with no controlling
+/// TTY. An interactive shell that keeps the caller's controlling terminal does
+/// job control on it — `tcsetpgrp` hands the terminal's foreground process
+/// group to itself — and every write the caller makes while that lasts raises
+/// SIGTTOU. Run from a terminal, that stops the caller: `zsh: suspended (tty
+/// output)`.
 fn run_interrogation(shell: &str, script: &str, cwd: Option<&Path>) -> Option<Vec<u8>> {
+    use std::os::unix::process::CommandExt;
+
     let shell = shell.to_string();
     let script = script.to_string();
     let cwd = cwd.map(|c| c.to_path_buf());
@@ -546,6 +555,12 @@ fn run_interrogation(shell: &str, script: &str, cwd: Option<&Path>) -> Option<Ve
             .stderr(std::process::Stdio::null());
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
+        }
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
         }
         let _ = tx.send(cmd.output());
     });

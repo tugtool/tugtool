@@ -2622,6 +2622,7 @@ dependencies = [
 name = "tuggram"
 version = "0.8.0"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "tempfile",
