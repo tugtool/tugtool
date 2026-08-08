@@ -384,6 +384,38 @@ type SlashBridge = readonly [
   validate?: (chain: CommandValidationSource) => boolean,
 ];
 
+/**
+ * The slash bridges that carry a chord, by name.
+ *
+ * Most do not: a bridge is reachable by typing its name, which is the whole
+ * point of the family, and a chord for each would spend the modifier bands on
+ * a list that grows every time someone adds a slash command. The ones here
+ * earned it by being reached often enough that typing the name is the slow
+ * path.
+ *
+ * Menu-eligible, so AppKit's key-equivalent scan owns the chord and the
+ * Session menu item renders it. The item's action round-trips to the same
+ * `run-slash-command` dispatch the JS funnel would have made, so the two
+ * doors do not differ in what they run — only in who catches the keystroke.
+ */
+const SLASH_BRIDGE_BINDINGS: Readonly<Record<string, readonly CommandBinding[]>> = {
+  // ⌃⌘I for the model picker — I for the name it opens. It held Insert File
+  // until this table took it; that command moved to ⌃⌘2.
+  model: [
+    chord(
+      { key: "KeyI", ctrl: true, meta: true, label: "i" },
+      { preventDefault: true, menuEligible: true },
+    ),
+  ],
+  // ⌃⌘U for the usage panel — U for Usage.
+  usage: [
+    chord(
+      { key: "KeyU", ctrl: true, meta: true, label: "u" },
+      { preventDefault: true, menuEligible: true },
+    ),
+  ],
+};
+
 const SLASH_BRIDGES: readonly SlashBridge[] = [
   // Export writes the transcript the card already holds, so it needs the
   // card and not a live session.

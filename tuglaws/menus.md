@@ -159,18 +159,20 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⇧⌘S | `save-as` | Save As… | menu bar (swept) |
 | ⇧⌘Z | `redo` | Redo | JS, global |
 | ⌃⇧⌘A | `disclaim-all-changes` | Disclaim All Changes | JS, responder |
+| ⌃⌘2 | `insert-file` | Insert File… | menu bar (swept) |
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
 | ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
 | ⌃⌘G | `toggle-gazette` | Show Gazette | menu bar (swept) |
 | ⌃⌘H | `toggle-history-view` | Show Commit History | JS, global |
-| ⌃⌘I | `insert-file` | Insert File… | menu bar (swept) |
+| ⌃⌘I | `run-slash-command:model` | AI Model… | menu bar (swept) |
 | ⌃⌘J | `toggle-jots` | Show Jots | menu bar (swept) |
 | ⌃⌘K | `show-keyboard-shortcuts` | Keyboard Shortcuts… | menu bar (swept) |
 | ⌃⌘L | `toggle-lens` | Show Lens | menu bar (swept) |
 | ⌃⌘M | `commit-auto-message` | Generate a Commit Message | JS, responder |
 | ⌃⌘P | `select-composer-route:prompt` | Prompt Route | JS, global |
 | ⌃⌘T | `next-theme` | Next Theme | menu bar (swept) |
+| ⌃⌘U | `run-slash-command:usage` | Show Usage | menu bar (swept) |
 | ⌃⌥⌘P | `cycle-permission-mode` | Cycle Permission Mode | JS, global |
 | ⌘+ | `zoom-in` | Zoom In | menu bar (swept) |
 | ⌘, | `show-settings` | Settings… | JS, global |
