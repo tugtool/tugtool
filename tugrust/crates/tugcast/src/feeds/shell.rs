@@ -477,7 +477,7 @@ async fn emit_shell_grammar(
 /// the classifier until it reaches an rc file. The cost is coverage only: the
 /// line goes to Claude, which is the designed degraded path.
 fn touches_shell_words(command: &str) -> bool {
-    let first = command.trim_start().split_whitespace().next().unwrap_or("");
+    let first = command.split_whitespace().next().unwrap_or("");
     matches!(first, "alias" | "unalias" | "source" | ".")
 }
 

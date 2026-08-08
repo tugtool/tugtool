@@ -526,16 +526,14 @@ async fn git_log(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
 /// when it bites — a silently truncated diff reads as a complete one.
 fn cap_text(text: &str, max_lines: usize, max_bytes: usize) -> (String, bool) {
     let mut out = String::new();
-    let mut lines = 0usize;
     let mut truncated = false;
-    for line in text.lines() {
+    for (lines, line) in text.lines().enumerate() {
         if lines >= max_lines || out.len() + line.len() + 1 > max_bytes {
             truncated = true;
             break;
         }
         out.push_str(line);
         out.push('\n');
-        lines += 1;
     }
     if truncated {
         out.push_str("… output capped\n");

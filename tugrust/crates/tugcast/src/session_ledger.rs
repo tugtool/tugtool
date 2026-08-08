@@ -5414,7 +5414,12 @@ mod tests {
     #[test]
     fn pulse_lines_per_scope_gives_every_session_its_own_window() {
         let ledger = fresh();
-        assert!(ledger.list_pulse_lines_per_scope(3, 200).unwrap().is_empty());
+        assert!(
+            ledger
+                .list_pulse_lines_per_scope(3, 200)
+                .unwrap()
+                .is_empty()
+        );
 
         // A quiet session speaks once, then a chatty one floods the log —
         // the flat tail would bury the quiet line past any window.
@@ -5452,7 +5457,10 @@ mod tests {
             .unwrap();
         let per_scope = ledger.list_pulse_lines_per_scope(1, 200).unwrap();
         assert_eq!(
-            per_scope.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+            per_scope
+                .iter()
+                .map(|r| r.text.as_str())
+                .collect::<Vec<_>>(),
             vec!["woven"],
         );
     }
@@ -5464,7 +5472,8 @@ mod tests {
         let ledger = fresh();
         assert!(ledger.list_pulse_overviews().unwrap().is_empty());
 
-        ledger.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+        ledger
+            .record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
             .unwrap();
         ledger
             .record_pulse_overview("s1", 1_000, 1, "first take", None)

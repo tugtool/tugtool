@@ -222,7 +222,7 @@ impl ShellWords {
         let mut seen: Vec<String> = vec![name.to_string()];
 
         for _ in 1..MAX_CHAIN_DEPTH {
-            if seen.iter().any(|s| *s == head) {
+            if seen.contains(&head) {
                 return Some(WordResolution::Opaque);
             }
             // A head that is not a member of the table, or is a builtin, is the
