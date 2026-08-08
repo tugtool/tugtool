@@ -32,6 +32,7 @@
  * @covers tugdeck/src/components/gazette/gazette-card-registration.tsx
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-ref-action.ts
+ * @covers tugdeck/src/lib/contextual-stamp.ts
  */
 
 import { describe, expect, test } from "bun:test";
