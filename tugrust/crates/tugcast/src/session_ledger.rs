@@ -479,6 +479,26 @@ pub struct PulseLineRow {
     pub scopes: Vec<String>,
 }
 
+/// One row of the `pulse_overviews` table — a session's standing answer to
+/// "what is this working on", as opposed to a beat's "what just happened".
+///
+/// Keyed by scope and replaced in place: an overview is a latest-per-scope
+/// fact, never a log, so there is nothing to cap and nothing to append to.
+/// That is also why it does not live in `pulse_lines` — a standing statement
+/// would otherwise compete with the beats for the rolling log's cap and come
+/// back from the tail misfiled as a beat.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct PulseOverviewRow {
+    pub scope: String,
+    pub at_ms: i64,
+    pub beat: i64,
+    pub text: String,
+    /// `"done"` on a retrospective (a settled stretch), absent on a live
+    /// intent — the same optional field the live overview frame carries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+}
+
 /// The canonical turn-rule version stamped on every freshly-written
 /// `external_scan_cache` row. Bump this whenever the scanner's turn rule
 /// changes: existing rows (stamped a lower epoch, or the `DEFAULT 0` of a
@@ -1605,6 +1625,32 @@ impl SessionLedger {
                 intent TEXT,
                 scopes TEXT NOT NULL
             );
+
+            -- Standing PULSE overviews — one row per scope, replaced in
+            -- place as the agent revises what a session is working on. The
+            -- deck restores them alongside the beat tail through
+            -- `list_pulse_lines`, which is what lets a card come back from
+            -- a relaunch still wearing its headline.
+            --
+            -- Separate from `pulse_lines` because an overview is a fact,
+            -- not an event: it has no place in a capped rolling log, and a
+            -- log row restored without its `kind` would come back as a beat.
+            -- Unlike `pulse_lines` this DOES cascade — an overview is about
+            -- exactly one session, so it dies with the session row.
+            CREATE TABLE IF NOT EXISTS pulse_overviews (
+                scope  TEXT PRIMARY KEY,
+                at_ms  INTEGER NOT NULL,
+                beat   INTEGER NOT NULL,
+                text   TEXT NOT NULL,
+                phase  TEXT
+            );
+
+            CREATE TRIGGER IF NOT EXISTS pulse_overviews_cascade_delete_on_session
+            AFTER DELETE ON sessions
+            FOR EACH ROW
+            BEGIN
+                DELETE FROM pulse_overviews WHERE scope = OLD.session_id;
+            END;
 
             -- App-scoped Gazette channel — every post by any of its three
             -- authors ('reporter' | 'operator' | 'user'). `session_id` is
@@ -4445,6 +4491,109 @@ impl SessionLedger {
         Ok(rows)
     }
 
+    /// The newest `per_scope` lines for EACH scope the log's last `scan`
+    /// rows mention, returned OLDEST-first (display order).
+    ///
+    /// The deck's restore read, and deliberately not `list_pulse_lines_tail`:
+    /// a flat app-wide tail is whatever the last-chatty session said, so a
+    /// quiet card rehydrates empty even though its lines are sitting in the
+    /// table. Selecting per scope gives every session its own window. A line
+    /// covering several scopes counts against all of them but is returned
+    /// once; an unscoped (app-wide ambience) line gets a window of its own.
+    pub fn list_pulse_lines_per_scope(
+        &self,
+        per_scope: usize,
+        scan: usize,
+    ) -> Result<Vec<PulseLineRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, beat, text, intent, scopes
+             FROM pulse_lines ORDER BY id DESC LIMIT ?1",
+        )?;
+        let newest_first = stmt
+            .query_map(params![scan as i64], |row| {
+                let scopes_json: String = row.get(5)?;
+                Ok(PulseLineRow {
+                    id: row.get(0)?,
+                    at_ms: row.get(1)?,
+                    beat: row.get(2)?,
+                    text: row.get(3)?,
+                    intent: row.get(4)?,
+                    scopes: serde_json::from_str(&scopes_json).unwrap_or_default(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        // Where an unscoped line's window is kept — not a scope id, and the
+        // empty string can never collide with one.
+        const UNSCOPED: &str = "";
+        let mut taken: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let mut kept: Vec<PulseLineRow> = Vec::new();
+        for row in newest_first {
+            let keys: Vec<&str> = if row.scopes.is_empty() {
+                vec![UNSCOPED]
+            } else {
+                row.scopes.iter().map(String::as_str).collect()
+            };
+            if !keys
+                .iter()
+                .any(|k| taken.get(*k).copied().unwrap_or(0) < per_scope)
+            {
+                continue;
+            }
+            for key in keys {
+                *taken.entry(key.to_string()).or_insert(0) += 1;
+            }
+            kept.push(row);
+        }
+        kept.reverse();
+        Ok(kept)
+    }
+
+    /// Write one scope's standing overview, replacing whatever it held.
+    pub fn record_pulse_overview(
+        &self,
+        scope: &str,
+        at_ms: i64,
+        beat: i64,
+        text: &str,
+        phase: Option<&str>,
+    ) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        conn.execute(
+            "INSERT INTO pulse_overviews (scope, at_ms, beat, text, phase)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(scope) DO UPDATE SET
+                 at_ms = excluded.at_ms,
+                 beat  = excluded.beat,
+                 text  = excluded.text,
+                 phase = excluded.phase",
+            params![scope, at_ms, beat, text, phase],
+        )?;
+        Ok(())
+    }
+
+    /// Every standing overview, newest-written first. Small by construction
+    /// — one row per session that has ever earned a headline.
+    pub fn list_pulse_overviews(&self) -> Result<Vec<PulseOverviewRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT scope, at_ms, beat, text, phase
+             FROM pulse_overviews ORDER BY at_ms DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(PulseOverviewRow {
+                    scope: row.get(0)?,
+                    at_ms: row.get(1)?,
+                    beat: row.get(2)?,
+                    text: row.get(3)?,
+                    phase: row.get(4)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     // MARK: - Gazette posts
 
     /// Append one Gazette post and return its rowid.
@@ -5260,6 +5409,90 @@ mod tests {
         assert_eq!(tail.last().unwrap().scopes, scopes);
         assert_eq!(tail.last().unwrap().intent.as_deref(), Some("intent 250"));
         assert_eq!(tail.first().unwrap().intent, None); // beat 231, odd
+    }
+
+    #[test]
+    fn pulse_lines_per_scope_gives_every_session_its_own_window() {
+        let ledger = fresh();
+        assert!(ledger.list_pulse_lines_per_scope(3, 200).unwrap().is_empty());
+
+        // A quiet session speaks once, then a chatty one floods the log —
+        // the flat tail would bury the quiet line past any window.
+        let quiet = vec!["quiet".to_string()];
+        let chatty = vec!["chatty".to_string()];
+        ledger
+            .record_pulse_line(1_000, 1, "quiet beat", None, &quiet, 200)
+            .unwrap();
+        for i in 2..=50_i64 {
+            ledger
+                .record_pulse_line(1_000 + i, i, &format!("chatty {i}"), None, &chatty, 200)
+                .unwrap();
+        }
+        assert!(
+            !ledger
+                .list_pulse_lines_tail(3)
+                .unwrap()
+                .iter()
+                .any(|r| r.scopes == quiet),
+            "the flat tail is exactly what loses the quiet session"
+        );
+
+        let per_scope = ledger.list_pulse_lines_per_scope(3, 200).unwrap();
+        let texts: Vec<&str> = per_scope.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            vec!["quiet beat", "chatty 48", "chatty 49", "chatty 50"],
+            "each scope keeps its own newest 3; order stays oldest-first"
+        );
+
+        // A line covering both scopes is returned once and counts for each.
+        let woven = vec!["quiet".to_string(), "chatty".to_string()];
+        ledger
+            .record_pulse_line(2_000, 51, "woven", None, &woven, 200)
+            .unwrap();
+        let per_scope = ledger.list_pulse_lines_per_scope(1, 200).unwrap();
+        assert_eq!(
+            per_scope.iter().map(|r| r.text.as_str()).collect::<Vec<_>>(),
+            vec!["woven"],
+        );
+    }
+
+    // ── pulse_overviews: latest-per-scope, replaced in place ─────────────────
+
+    #[test]
+    fn pulse_overviews_replace_in_place_and_cascade() {
+        let ledger = fresh();
+        assert!(ledger.list_pulse_overviews().unwrap().is_empty());
+
+        ledger.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        ledger
+            .record_pulse_overview("s1", 1_000, 1, "first take", None)
+            .unwrap();
+        ledger
+            .record_pulse_overview("s2", 1_100, 1, "other session", None)
+            .unwrap();
+        // The same scope speaking again replaces, never accumulates.
+        ledger
+            .record_pulse_overview("s1", 2_000, 2, "revised take", Some("done"))
+            .unwrap();
+
+        let rows = ledger.list_pulse_overviews().unwrap();
+        assert_eq!(rows.len(), 2);
+        let s1 = rows.iter().find(|r| r.scope == "s1").expect("s1 overview");
+        assert_eq!(s1.text, "revised take");
+        assert_eq!(s1.beat, 2);
+        assert_eq!(s1.at_ms, 2_000);
+        assert_eq!(s1.phase.as_deref(), Some("done"));
+        let s2 = rows.iter().find(|r| r.scope == "s2").expect("s2 overview");
+        assert_eq!(s2.phase, None);
+
+        // An overview is about exactly one session, so it dies with it.
+        ledger.mark_closed("s1").unwrap();
+        ledger.trash("s1").unwrap();
+        let rows = ledger.list_pulse_overviews().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].scope, "s2");
     }
 
     // MARK: - Gazette posts

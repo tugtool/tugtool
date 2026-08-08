@@ -1593,6 +1593,10 @@ pub struct SessionOverviewConfig {
     pub submission_tx: broadcast::Sender<Frame>,
     /// The PULSE broadcast to publish overviews on.
     pub pulse_tx: broadcast::Sender<Frame>,
+    /// Where a published overview is also written, so a card comes back
+    /// from a relaunch still wearing its headline. Absent in tests and in
+    /// a ledger-less build, where an overview is broadcast and forgotten.
+    pub ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
     /// The `pulse-overview` tenant switch, read per tick so a flip is live.
     pub tenant_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     /// PULSE's own switch, same closure shape the bridge uses.
@@ -1774,6 +1778,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                         &mut queue,
                         &mut active,
                         &config.pulse_tx,
+                        config.ledger.as_ref(),
                     ),
                     Err(error) => {
                         warn!(%error, session = %session_id, "session overview: emit task failed");
@@ -2228,6 +2233,7 @@ fn apply_emit_outcome(
     queue: &mut VecDeque<(String, bool)>,
     active: &mut HashSet<String>,
     pulse_tx: &broadcast::Sender<Frame>,
+    ledger: Option<&Arc<crate::session_ledger::SessionLedger>>,
 ) {
     let EmitOutcome {
         session_id,
@@ -2296,14 +2302,17 @@ fn apply_emit_outcome(
     }
     state.beat += 1;
     state.last_headline = Some(headline.clone());
-    let frame = overview_frame(
-        &session_id,
-        &headline,
-        state.beat,
-        crate::session_ledger::now_millis(),
-        retrospective.then_some("done"),
-    );
+    let at_ms = crate::session_ledger::now_millis();
+    let phase = retrospective.then_some("done");
+    let frame = overview_frame(&session_id, &headline, state.beat, at_ms, phase);
     let receivers = pulse_tx.send(frame).unwrap_or(0);
+    if let Some(ledger) = ledger {
+        if let Err(error) =
+            ledger.record_pulse_overview(&session_id, at_ms, state.beat, &headline, phase)
+        {
+            warn!(%error, session = %session_id, "session overview: ledger write failed");
+        }
+    }
     info!(
         session = %session_id,
         beat = state.beat,
@@ -4000,6 +4009,7 @@ mod tests {
             &mut VecDeque::new(),
             &mut HashSet::new(),
             &pulse_tx,
+            None,
         );
 
         let state = &sessions["s1"];
@@ -4461,6 +4471,7 @@ mod tests {
             shell_tx: shell_tx.clone(),
             submission_tx: submission_tx.clone(),
             pulse_tx,
+            ledger: None,
             tenant_enabled: Arc::new(move || tenant_on),
             pulse_enabled: Arc::new(move || pulse_on),
             shared_agent: Some(agent.pool()),

@@ -5251,25 +5251,41 @@ impl AgentSupervisor {
     /// Handle a `list_pulse_lines` CONTROL request — the deck's
     /// PULSE-ledger tail read (the pulse-store sends it on mount, then
     /// stays live off the PULSE feed). App-scoped: no session id.
-    /// Broadcasts `list_pulse_lines_ok { lines: PulseLineRow[] }`,
-    /// oldest-first; a missing ledger yields an empty array (the
-    /// "no history yet" state, same conduct as the state-changes read).
+    /// Broadcasts `list_pulse_lines_ok { lines: PulseLineRow[],
+    /// overviews: PulseOverviewRow[] }`, lines oldest-first; a missing
+    /// ledger yields empty arrays (the "no history yet" state, same
+    /// conduct as the state-changes read).
+    ///
+    /// The beat read is per-scope, not a flat app-wide tail: the deck
+    /// filters what it gets by session, so a flat tail hands one chatty
+    /// session's lines to every card and leaves the quiet ones blank.
+    /// The overviews ride along because they are what a card wears as its
+    /// headline, and they live nowhere in the beat log.
     async fn do_list_pulse_lines(&self) {
-        let lines = self
+        let (lines, overviews) = self
             .session_ledger
             .as_ref()
             .map(|ledger| {
-                ledger
-                    .list_pulse_lines_tail(crate::feeds::pulse::PULSE_TAIL_LEN)
+                let lines = ledger
+                    .list_pulse_lines_per_scope(
+                        crate::feeds::pulse::PULSE_TAIL_LEN,
+                        crate::feeds::pulse::PULSE_LEDGER_CAP,
+                    )
                     .unwrap_or_else(|err| {
                         warn!(error = %err, "list_pulse_lines failed");
                         Vec::new()
-                    })
+                    });
+                let overviews = ledger.list_pulse_overviews().unwrap_or_else(|err| {
+                    warn!(error = %err, "list_pulse_overviews failed");
+                    Vec::new()
+                });
+                (lines, overviews)
             })
             .unwrap_or_default();
         let body = serde_json::json!({
             "action": "list_pulse_lines_ok",
             "lines": lines,
+            "overviews": overviews,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,

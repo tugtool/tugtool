@@ -1656,6 +1656,7 @@ async fn main() {
             shell_tx: shell_output_feed.sender(),
             submission_tx: code_submission_tx.clone(),
             pulse_tx,
+            ledger: Some(Arc::clone(&ledger)),
             tenant_enabled: overview_tenant,
             pulse_enabled: Arc::clone(&pulse_enabled),
             shared_agent: feed_router.shared_agent.clone(),

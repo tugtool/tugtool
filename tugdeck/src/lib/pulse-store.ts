@@ -1,10 +1,13 @@
 /**
  * `PulseStore` — app-scoped snapshot cache for PULSE commentary lines.
  *
- * Hydrates from tugcast's capped pulse ledger on first observation
- * (one `list_pulse_lines` CONTROL round-trip — the
+ * Hydrates from tugcast's pulse ledger on first observation (one
+ * `list_pulse_lines` CONTROL round-trip — the
  * `session-state-changes-reader` pattern), then folds live `PULSE`
- * feed frames as the commentator speaks. The snapshot also carries
+ * feed frames as the commentator speaks. The response carries both
+ * halves the strip shows: a per-scope window of beats, and every
+ * scope's standing overview — so a card comes back from a relaunch
+ * wearing its headline instead of blank. The snapshot also carries
  * the `pulse/enabled` tugbank default so the strip's
  * hidden-when-disabled state flows from the store, not an ad-hoc
  * fetch.
@@ -27,7 +30,13 @@ import {
 } from "@/protocol";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 
-/** Mirror of tugcast's tail length — the rolling display cap. */
+/**
+ * Mirror of tugcast's tail length — the rolling display cap, applied PER
+ * SCOPE. A global cap would undo the per-scope restore the ledger read
+ * performs: every selector here filters by session after the fact, so
+ * trimming the log app-wide throws away exactly the quiet card's lines the
+ * ledger went to the trouble of finding.
+ */
 export const PULSE_LINES_CAP = 20;
 
 /** Tugbank default holding the kill switch (bool; absent = enabled). */
@@ -100,6 +109,31 @@ export function latestOverviewForScope(
 
 /** Where an unscoped or explicitly app-wide overview files. */
 const OVERVIEW_APP_SCOPE = "app";
+
+/**
+ * Trim `lines` (oldest-first) so no scope keeps more than `cap` of them,
+ * preserving order. A line covering several scopes counts against each but
+ * is kept once; unscoped app-wide ambience gets a window of its own.
+ *
+ * The mirror of tugcast's `list_pulse_lines_per_scope`, and needed for the
+ * same reason on this side of the wire.
+ */
+export function capLinesPerScope(
+  lines: readonly PulseLineEntry[],
+  cap: number,
+): PulseLineEntry[] {
+  const taken = new Map<string, number>();
+  const kept: PulseLineEntry[] = [];
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    const keys = line.scopes.length > 0 ? line.scopes : [""];
+    if (!keys.some((key) => (taken.get(key) ?? 0) < cap)) continue;
+    for (const key of keys) taken.set(key, (taken.get(key) ?? 0) + 1);
+    kept.push(line);
+  }
+  kept.reverse();
+  return kept;
+}
 
 /**
  * The newest line about `scope` — a card's strip shows commentary
@@ -340,6 +374,26 @@ export class PulseStore {
         atMs: row.at_ms,
       }),
     );
+    // Restored overviews seed the per-scope standing line. A live frame
+    // that landed while the load was in flight is NEWER than what the
+    // ledger holds, so it wins — the tail seeds a scope, never overwrites
+    // a fresher statement about it.
+    const overviews = new Map(this.snapshot.overviews);
+    for (const row of payload.overviews) {
+      if (typeof row.scope !== "string" || row.scope.length === 0) continue;
+      const held = overviews.get(row.scope);
+      if (held !== undefined && held.atMs >= row.at_ms) continue;
+      overviews.set(
+        row.scope,
+        Object.freeze({
+          text: row.text,
+          scopes: Object.freeze([row.scope]) as readonly string[],
+          beat: row.beat,
+          atMs: row.at_ms,
+        }),
+      );
+    }
+    this.snapshot = Object.freeze({ ...this.snapshot, overviews });
     // Tail (history) first, then any live lines that landed while the
     // load was in flight; dedupe on line identity.
     const live = this.snapshot.lines;
@@ -388,8 +442,7 @@ export class PulseStore {
     lines: PulseLineEntry[],
     status: PulseSnapshot["status"],
   ): void {
-    const capped =
-      lines.length > PULSE_LINES_CAP ? lines.slice(-PULSE_LINES_CAP) : lines;
+    const capped = capLinesPerScope(lines, PULSE_LINES_CAP);
     this.snapshot = Object.freeze({
       enabled: this.snapshot.enabled,
       status,

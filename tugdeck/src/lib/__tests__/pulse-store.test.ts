@@ -88,6 +88,7 @@ describe("PulseStore", () => {
     store.getSnapshot();
     publishListPulseLinesOk({
       lines: [wireRow(1, "first"), wireRow(2, "second")] as never,
+      overviews: [],
     });
     const snap = store.getSnapshot();
     expect(snap.status).toBe("ready");
@@ -106,6 +107,7 @@ describe("PulseStore", () => {
     // …then the tail arrives carrying the SAME line plus history.
     publishListPulseLinesOk({
       lines: [wireRow(1, "first"), wireRow(2, "second")] as never,
+      overviews: [],
     });
     expect(store.getSnapshot().lines.map((l) => l.text)).toEqual([
       "first",
@@ -140,6 +142,7 @@ describe("PulseStore", () => {
       lines: [
         { ...wireRow(1, "Explore · Reading foo.ts"), intent: "Mapping the reducer seam first." },
       ] as never,
+      overviews: [],
     });
     snap = store.getSnapshot();
     expect(snap.lines[0].intent).toBe("Mapping the reducer seam first.");
@@ -156,6 +159,60 @@ describe("PulseStore", () => {
     expect(snap.lines.length).toBe(PULSE_LINES_CAP);
     expect(snap.lines[0].text).toBe("line 6");
     expect(snap.latest?.text).toBe(`line ${PULSE_LINES_CAP + 5}`);
+  });
+
+  it("the cap is per scope — a chatty session cannot evict a quiet one", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // One quiet session speaks once, then a chatty one floods past the cap.
+    conn.pushPulseFrame({
+      type: "pulse",
+      text: "quiet beat",
+      scopes: ["s2"],
+      beat: 0,
+      at: 1_000,
+    });
+    for (let beat = 1; beat <= PULSE_LINES_CAP + 5; beat++) {
+      conn.pushPulseFrame(liveLine(beat, `line ${beat}`));
+    }
+    const snap = store.getSnapshot();
+    expect(latestLineForScope(snap.lines, "s2")?.text).toBe("quiet beat");
+    // …and the chatty session is still capped at its own window.
+    expect(snap.lines.filter((l) => l.scopes.includes("s1")).length).toBe(
+      PULSE_LINES_CAP,
+    );
+  });
+
+  it("the tail restores standing overviews; a live one already held wins", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // s1 already spoke live while the tail was in flight.
+    conn.pushPulseFrame({
+      type: "pulse",
+      kind: "overview",
+      text: "live: rewiring the responder chain",
+      scopes: ["s1"],
+      beat: 4,
+      at: 9_000,
+    });
+    publishListPulseLinesOk({
+      lines: [],
+      overviews: [
+        { scope: "s1", at_ms: 1_000, beat: 1, text: "stale: earlier stretch" },
+        { scope: "s2", at_ms: 2_000, beat: 2, text: "restored: pulse ledger" },
+      ],
+    });
+    const { overviews } = store.getSnapshot();
+    expect(latestOverviewForScope(overviews, "s1")?.text).toBe(
+      "live: rewiring the responder chain",
+    );
+    expect(latestOverviewForScope(overviews, "s2")?.text).toBe(
+      "restored: pulse ledger",
+    );
+    // A card with no overview of its own and no app-wide one stays bare.
+    expect(latestOverviewForScope(overviews, "s3")).toBeNull();
   });
 
   it("latestLineForScope shows own-session, app-wide, and woven lines only", () => {
