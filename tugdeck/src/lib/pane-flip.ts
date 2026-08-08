@@ -36,12 +36,14 @@
 
 import { dampedSpring } from "@/lib/unit-functions";
 
-/** Where a frame moved to, from where it was. */
+/** Where a frame moved to, from where it was, and how much narrower it was. */
 export interface FlipDelta {
   /** Horizontal distance in CSS pixels, positive rightward. */
   dx: number;
   /** Vertical distance in CSS pixels, positive downward. */
   dy: number;
+  /** The old width over the new one: the horizontal scale the frame starts at. */
+  sx: number;
 }
 
 /**
@@ -55,40 +57,60 @@ export interface FlipDelta {
 export const SPRING_KEYFRAME_SAMPLES = 32;
 
 /**
- * The distance from a frame's old position to its new one.
+ * The distance from a frame's old position to its new one, and the ratio of its
+ * old width to its new one.
  *
- * Only the origin is read. Size is deliberately ignored: an arrangement change
- * moves frames without resizing them — a pane's rendered width comes from its
- * own stored size and its vertical run is the gap-to-gap column, neither of
- * which an imposition-kind swap, a Lens side flip, or a slot reassignment
- * touches. A width change that happens to land in the same window snaps, which
- * is honest; interpolating it would take the tween out of the transform-only
- * form the module docstring describes.
+ * Width is carried as a **scale** rather than a length because that is what
+ * keeps the tween inside the transform-only form: `scaleX` is transform-family,
+ * a `width` keyframe is not, and a single non-accelerable property in the effect
+ * puts the whole thing back on the main thread — where it would re-run layout
+ * for the frame's entire subtree on every frame of the motion.
+ *
+ * Height is not read. The gestures that resize a frame — the deck's content
+ * width, a title-bar width preset — move its vertical edges not at all: an
+ * imposed pane's run is the gap-to-gap column, and a free pane's height is its
+ * own stored number. A height change that happens to land in the same window
+ * snaps, which is honest.
+ *
+ * A zero or absent final width reads as no scale at all, so a frame measured
+ * mid-teardown yields a plain move rather than a division by zero.
  */
 export function flipDelta(
   first: DOMRectReadOnly,
   last: DOMRectReadOnly,
 ): FlipDelta {
-  return { dx: first.left - last.left, dy: first.top - last.top };
+  return {
+    dx: first.left - last.left,
+    dy: first.top - last.top,
+    sx: last.width > 0 ? first.width / last.width : 1,
+  };
 }
 
 /**
- * The keyframes that carry a frame from `(dx, dy)` back to where it belongs.
+ * The keyframes that carry a frame from `(dx, dy)` at scale `sx` back to where
+ * it belongs at its own size.
  *
- * The first frame is the full inverse delta — the frame's old position, painted
- * from its new one — and the last is exactly no transform at all. In between,
- * the offsets are evenly spaced and the values follow a critically damped
- * spring, so the frame accelerates away, decelerates onto its place, and stops
- * there without running past it.
+ * The first frame is the full inverse delta — the frame's old place and old
+ * width, painted from its new ones — and the last is exactly no transform at
+ * all. In between, the offsets are evenly spaced and the values follow a
+ * critically damped spring, so the frame accelerates away, decelerates onto its
+ * place, and stops there without running past it.
  *
  * Both endpoints are pinned rather than sampled: a curve a hair off at its ends
  * leaves a frame a hair off its place, and the final keyframe being exactly
  * `translate(0px, 0px)` is what makes cancelling the tween safe at any moment —
  * there is no wrong pose to snap to.
+ *
+ * A frame that only moves gets no `scaleX` term at all, so the everyday
+ * arrangement gestures are tweened by exactly the transform they always were.
+ * When there IS a scale, the caller must have anchored the frame's
+ * `transform-origin` at its left edge: `dx` is measured between left edges, and
+ * a scale about the centre would pull that edge off the measurement.
  */
 export function springKeyframes(
   dx: number,
   dy: number,
+  sx: number = 1,
   samples: number = SPRING_KEYFRAME_SAMPLES,
 ): Keyframe[] {
   const steps = Math.max(2, Math.floor(samples));
@@ -98,8 +120,12 @@ export function springKeyframes(
     const offset = i / steps;
     const progress = i === 0 ? 0 : i === steps ? 1 : spring(offset);
     const remaining = 1 - progress;
+    const move = `translate(${formatPx(dx * remaining)}px, ${formatPx(dy * remaining)}px)`;
     frames.push({
-      transform: `translate(${formatPx(dx * remaining)}px, ${formatPx(dy * remaining)}px)`,
+      transform:
+        sx === 1
+          ? move
+          : `${move} scaleX(${formatScale(1 + (sx - 1) * remaining)})`,
       offset,
     });
   }
@@ -109,4 +135,10 @@ export function springKeyframes(
 /** Three decimals is finer than a device pixel, and the rest is only length. */
 function formatPx(value: number): string {
   return String(Number(value.toFixed(3)));
+}
+
+/** A scale multiplies a width, so it is carried finer than the length it makes:
+ *  five decimals is under a thousandth of a pixel across the widest pane. */
+function formatScale(value: number): string {
+  return String(Number(value.toFixed(5)));
 }

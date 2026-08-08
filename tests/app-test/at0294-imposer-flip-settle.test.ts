@@ -49,8 +49,18 @@
  *      fixed-position probe.
  *   5. A slot assignment: the frame is already on top when its tween starts,
  *      and a bare pane raise arms no window at all.
- *   6. Retarget: a second change dispatched inside the first one's window.
+ *   6. The deck's content width: the frames scale to their new boxes on the
+ *      same spring, still transform-only, and keep neither the transform nor
+ *      the origin it was anchored by.
+ *   7. Retarget: a second change dispatched inside the first one's window.
  *      Tweens are replaced, not stacked, and the final geometry is still right.
+ *
+ * A width change reaches the settle at all only because the deck makes one of
+ * them in ONE state change — `setContentWidth` resizes every content pane,
+ * restamps the record, and re-solves the rails together. FLIP measures across a
+ * single commit; a notify per pane would hand it a half-changed deck each time.
+ * `deck-manager.ts` is deliberately NOT a `@covers` line here: it is at its
+ * fan-out budget, and the width applier's own contract is `at0357`'s.
  *
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  * @covers tugdeck/src/components/tugways/tug-pane.css
@@ -154,6 +164,35 @@ async function inlineTransforms(app: App): Promise<Record<string, string>> {
   );
 }
 
+/** The inline `transform-origin` of every frame, by pane id — the settle's to
+ *  write while a frame is scaling and the settle's to take away after. */
+async function inlineTransformOrigins(app: App): Promise<Record<string, string>> {
+  return app.evalJS<Record<string, string>>(
+    `Array.from(document.querySelectorAll(${JSON.stringify(FRAMES)}))
+      .reduce(function (out, el) {
+        out[el.getAttribute("data-pane-id")] = el.style.transformOrigin || "";
+        return out;
+      }, {})`,
+  );
+}
+
+/** Each frame's first keyframe transform value, by pane id — what the tween
+ *  starts from, which is where the width delta shows up. */
+async function firstKeyframeTransforms(
+  app: App,
+): Promise<Record<string, string>> {
+  return app.evalJS<Record<string, string>>(
+    `document.getAnimations().reduce(function (out, a) {
+      var target = a.effect && a.effect.target;
+      if (!target || !target.classList || !target.classList.contains("tug-pane")) return out;
+      var kfs = a.effect.getKeyframes() || [];
+      if (kfs.length === 0) return out;
+      out[target.getAttribute("data-pane-id") || ""] = String(kfs[0].transform);
+      return out;
+    }, {})`,
+  );
+}
+
 async function settling(app: App): Promise<boolean> {
   return app.evalJS<boolean>(
     `document.querySelector("[data-imposer-settling]") !== null`,
@@ -164,6 +203,14 @@ async function setLensSide(app: App, side: "left" | "right"): Promise<void> {
   await app.evalJS<null>(
     `(window.__tug.dispatchControlAction("set-sidebar-side", { componentId: "lens", side: ${JSON.stringify(
       side,
+    )} }), null)`,
+  );
+}
+
+async function setContentWidth(app: App, preset: string): Promise<void> {
+  await app.evalJS<null>(
+    `(window.__tug.dispatchControlAction("set-content-width", { preset: ${JSON.stringify(
+      preset,
     )} }), null)`,
   );
 }
@@ -199,12 +246,13 @@ function expectedLeft(
   viewport: number,
   lensSide: "left" | "right",
   lensWidth: number,
+  paneWidth: number = PANE_WIDTH,
 ): number {
   const inset = lensWidth + GAP;
   const spanX = lensSide === "left" ? inset : 0;
   const spanWidth = viewport - inset;
   const band = spanWidth - GAP * 2;
-  const travel = Math.max(0, band - PANE_WIDTH);
+  const travel = Math.max(0, band - paneWidth);
   const fraction = count < 2 ? 0.5 : slot / (count - 1);
   return spanX + GAP + fraction * travel;
 }
@@ -410,6 +458,95 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await frameZIndex(app, "p1")).toBeGreaterThan(
             await frameZIndex(app, "p2"),
           );
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a deck-wide width change crosses too — the frames scale rather than snap",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0294-imposer-flip-width",
+        });
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
+            { timeoutMs: 5_000 },
+          );
+          await wait(AFTER_LAND_MS);
+          const vp = await viewportWidth(app);
+
+          // The Layouts section's width row. Every content pane goes from the
+          // seed's 420 to slim's 675, which moves the seams as well as the
+          // boxes — the whole arrangement changes, and none of it may cut.
+          await setContentWidth(app, "slim");
+
+          await app.waitForCondition<boolean>(
+            `document.querySelector("[data-imposer-settling]") !== null`,
+            { timeoutMs: 2_000 },
+          );
+          {
+            // Still transform-only: a `width` keyframe here would be the
+            // regression, because it puts the effect back on the main thread
+            // and re-runs layout for the frame's subtree every frame.
+            const census = await frameAnimations(app);
+            expect(census.length).toBeGreaterThan(0);
+            for (const anim of census) {
+              expect(anim.properties.filter((p) => p !== "offset" &&
+                p !== "computedOffset" && p !== "easing" && p !== "composite"))
+                .toEqual(["transform"]);
+            }
+            // And the width delta really is in the tween: each content frame
+            // starts at the ratio of the old width to the new one, anchored at
+            // its left edge so the scale and the move agree about which edge
+            // the delta was measured between.
+            const starts = await firstKeyframeTransforms(app);
+            for (const paneId of ["p1", "p2"]) {
+              // A zero vertical term comes back from the engine as the
+              // one-argument `translate(0px)`, so the y is optional here.
+              expect(starts[paneId]).toMatch(
+                /^translate\(-?[\d.]+px(, -?[\d.]+px)?\) scaleX\([\d.]+\)$/,
+              );
+              const scale = Number(/scaleX\(([\d.]+)\)/.exec(starts[paneId])![1]);
+              expect(scale).toBeCloseTo(PANE_WIDTH / 675, 2);
+            }
+            const origins = await inlineTransformOrigins(app);
+            for (const paneId of ["p1", "p2"]) {
+              expect(origins[paneId]).toBe("0px 0px");
+            }
+          }
+
+          // After land: the boxes are the preset's, sitting where the imposer
+          // puts a 675-wide pane, and no frame keeps either half of the pose
+          // the tween wore.
+          await wait(AFTER_LAND_MS);
+          expect(await settling(app)).toBe(false);
+          expect(await frameAnimations(app)).toEqual([]);
+          {
+            const inline = await inlineTransforms(app);
+            expect(Object.values(inline).every((v) => v === "")).toBe(true);
+            const origins = await inlineTransformOrigins(app);
+            expect(Object.values(origins).every((v) => v === "")).toBe(true);
+          }
+          const lens = await lensWidth(app);
+          for (const [paneId, slot] of [
+            ["p1", 0],
+            ["p2", 1],
+          ] as const) {
+            expect(
+              await app.evalJS<number>(
+                `document.querySelector('.tug-pane[data-pane-id="${paneId}"]').getBoundingClientRect().width`,
+              ),
+            ).toBeCloseTo(675, 0);
+            expect(await frameLeft(app, paneId)).toBeCloseTo(
+              expectedLeft(slot, 2, vp, "right", lens, 675),
+              0,
+            );
+          }
         } finally {
           await app.close();
         }

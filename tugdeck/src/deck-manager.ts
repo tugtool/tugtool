@@ -1429,8 +1429,21 @@ export class DeckManager implements IDeckManagerStore {
     const moved = nextPanes
       .filter((pane) => pane.slot !== undefined || sidebarPaneIds.has(pane.id))
       .map((pane) => pane.activeCardId);
+    // Every pane whose box actually changes, not only the rails the allocator
+    // just re-solved: a caller may hand this a pane list it has already resized
+    // (the content-width applier does), and a card that is about to be laid out
+    // at a new width is owed its resize bracket either way.
+    const sizeById = new Map(
+      this.deckState.panes.map((pane) => [pane.id, pane.size]),
+    );
     const resized = nextPanes
-      .filter((pane) => widthByPaneId.has(pane.id))
+      .filter((pane) => {
+        const was = sizeById.get(pane.id);
+        return (
+          was !== undefined &&
+          (was.width !== pane.size.width || was.height !== pane.size.height)
+        );
+      })
       .map((pane) => pane.activeCardId);
 
     for (const cardId of moved) this.cardLifecycle.notifyCardWillMove(cardId);
@@ -3700,26 +3713,40 @@ export class DeckManager implements IDeckManagerStore {
    * `setSidebarSide` from short-circuiting on an unchanged side.
    *
    * Sidebar panes are not content and are skipped — a rail's width belongs to
-   * the allocator ([P04]), which runs LAST here: restamping the content panes
-   * moves every seam in the chain, and a width row is a Layouts click, one of
-   * the two moments the deck is licensed to re-arrange itself. Leaving the
-   * rails tuned for the old card widths was how picking a width could open
-   * gaps at every seam and stand there.
+   * the allocator ([P04]), which runs in the same commit: restamping the
+   * content panes moves every seam in the chain, and a width row is a Layouts
+   * click, one of the two moments the deck is licensed to re-arrange itself.
+   * Leaving the rails tuned for the old card widths was how picking a width
+   * could open gaps at every seam and stand there.
+   *
+   * ONE COMMIT, deliberately — the widths, the record, and the rails together,
+   * rather than a notify per pane. The settle is FLIP: `deck-canvas.tsx` reads
+   * where the frames are on the store event and where they landed after the
+   * commit React makes of it, so a gesture that notifies once per pane offers
+   * that measurement a half-changed deck each time and re-arms the window on
+   * every one of them. The panes are resized here rather than through
+   * `_setPaneWidth` for exactly that reason; the clamp and the stamp are the
+   * same as that path's, because both take them from `resolveContentWidthPx`.
    */
   setContentWidth(preset: ContentWidth): void {
-    this.deckState = {
-      ...this.deckState,
-      imposition: { ...this.deckState.imposition, contentWidth: preset },
-    };
-    this.notify();
-    this.scheduleSave();
-
-    const contentPaneIds = this.deckState.panes
-      .filter((pane) => this._sidebarComponentIdOfPane(pane.id) === undefined)
-      .map((pane) => pane.id);
-    for (const paneId of contentPaneIds) this._setPaneWidth(paneId, preset);
-
-    this.retuneSidebarAllocation();
+    const panes = this.deckState.panes.map((pane) => {
+      if (this._sidebarComponentIdOfPane(pane.id) !== undefined) return pane;
+      const policy = getStackSizePolicy(this._componentIdsOfPane(pane));
+      const width = resolveContentWidthPx(
+        preset,
+        policy.min.width,
+        policy.max?.width,
+      );
+      return {
+        ...pane,
+        size: { ...pane.size, width },
+        widthPreset: preset,
+      };
+    });
+    this._commitImposition(
+      { ...this.deckState.imposition, contentWidth: preset },
+      panes,
+    );
   }
 
   // ---- Cascade positioning ----

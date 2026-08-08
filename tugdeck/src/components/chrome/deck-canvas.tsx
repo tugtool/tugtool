@@ -207,10 +207,18 @@ function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
  * terms that motion would cut. They change on a rail edge drag too, which arms
  * a window whose tweens are all no-ops: the drag wrote the width live, so each
  * frame's first and last rects are the same one.
+ *
+ * A pane's own WIDTH is a term for the same reason: `imposeRect` reads it, so a
+ * width preset — the deck-wide one from the Layouts section, or one card's from
+ * its title bar — moves every seam in the chain and resizes the panes it lands
+ * on. It is the one arrangement input a pointer also writes: a hand-dragged
+ * edge changes it too, and arms a window whose tweens are the same no-ops a
+ * rail drag's are, for the same reason. Height is not a term, because no
+ * arrangement gesture changes one and the settle does not interpolate it.
  */
 function arrangementSignature(state: DeckState): string {
   const panes = state.panes
-    .map((pane) => `${pane.id}:${pane.slot ?? ""}`)
+    .map((pane) => `${pane.id}:${pane.slot ?? ""}:${pane.size.width}`)
     .sort();
   const rails = sidebarRailsOf(state)
     .map(
@@ -1193,7 +1201,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   }, []);
 
   // Drop a frame's tween registration and, crucially, the inline `transform`
-  // TugAnimator leaves on it.
+  // TugAnimator leaves on it — along with the `transform-origin` the tween was
+  // anchored by, which is the settle's to write and the settle's to take away.
   //
   // TugAnimator commits an animation's final value into `el.style` when it
   // completes — unconditionally, whatever `fill` says, and `cancel()` in
@@ -1219,6 +1228,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         settleTweensRef.current.delete(paneId);
       }
       el.style.removeProperty("transform");
+      el.style.removeProperty("transform-origin");
     },
   );
 
@@ -1338,10 +1348,19 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const firstRect = firstRects.get(paneId);
       if (firstRect === undefined) continue;
       if (frame.hasAttribute("data-gesture")) continue;
-      const { dx, dy } = flipDelta(firstRect, frame.getBoundingClientRect());
-      // A frame that did not move gets no animation at all.
-      if (dx === 0 && dy === 0) continue;
-      const anim = animate(frame, springKeyframes(dx, dy), {
+      const { dx, dy, sx } = flipDelta(
+        firstRect,
+        frame.getBoundingClientRect(),
+      );
+      // A frame that did not move and did not change width gets no animation
+      // at all.
+      if (dx === 0 && dy === 0 && sx === 1) continue;
+      // The scale anchors the frame's left edge, which is the edge `dx` was
+      // measured between. Set for every tween, scaling or not, so the property
+      // has one value and one owner rather than depending on which kind of
+      // gesture wrote it last; `clearFlip` takes it off with the transform.
+      frame.style.transformOrigin = "0 0";
+      const anim = animate(frame, springKeyframes(dx, dy, sx), {
         // Raw ms: TugAnimator scales by getTugTiming() itself.
         duration,
         // A keyword easing, because the curve rides in the keyframe offsets —

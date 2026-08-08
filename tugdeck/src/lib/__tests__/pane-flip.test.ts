@@ -7,7 +7,7 @@ import {
 } from "@/lib/pane-flip";
 import { dampedSpring } from "@/lib/unit-functions";
 
-/** A rect standing in for a measured frame; only the origin is ever read. */
+/** A rect standing in for a measured frame; the origin and the width are read. */
 function rect(left: number, top: number, width = 400, height = 600): DOMRectReadOnly {
   return {
     left,
@@ -24,11 +24,17 @@ function rect(left: number, top: number, width = 400, height = 600): DOMRectRead
 
 /** The px pair inside a `translate(…)` keyframe value. */
 function translation(frame: Keyframe): { x: number; y: number } {
-  const match = /^translate\((-?[\d.]+)px, (-?[\d.]+)px\)$/.exec(
+  const match = /^translate\((-?[\d.]+)px, (-?[\d.]+)px\)/.exec(
     String(frame.transform),
   );
   if (!match) throw new Error(`not a 2D translate: ${String(frame.transform)}`);
   return { x: Number(match[1]), y: Number(match[2]) };
+}
+
+/** The factor inside a `scaleX(…)` keyframe value, or 1 when there is none. */
+function scaleX(frame: Keyframe): number {
+  const match = /scaleX\(([\d.]+)\)$/.exec(String(frame.transform));
+  return match === null ? 1 : Number(match[1]);
 }
 
 describe("flipDelta", () => {
@@ -36,17 +42,38 @@ describe("flipDelta", () => {
     expect(flipDelta(rect(100, 50), rect(400, 210))).toEqual({
       dx: -300,
       dy: -160,
+      sx: 1,
     });
   });
 
-  test("is zero when a frame did not move", () => {
-    expect(flipDelta(rect(240, 96), rect(240, 96))).toEqual({ dx: 0, dy: 0 });
+  test("is nothing at all when a frame did not move or resize", () => {
+    expect(flipDelta(rect(240, 96), rect(240, 96))).toEqual({
+      dx: 0,
+      dy: 0,
+      sx: 1,
+    });
   });
 
-  test("ignores size — an arrangement change translates, it does not resize", () => {
-    const before = rect(0, 0, 400, 600);
-    const after = rect(0, 0, 900, 200);
-    expect(flipDelta(before, after)).toEqual({ dx: 0, dy: 0 });
+  test("carries a width change as the scale the frame starts at", () => {
+    const before = rect(0, 0, 675, 600);
+    const after = rect(0, 0, 1230, 600);
+    expect(flipDelta(before, after)).toEqual({
+      dx: 0,
+      dy: 0,
+      sx: 675 / 1230,
+    });
+  });
+
+  test("ignores height — no arrangement gesture changes one", () => {
+    expect(flipDelta(rect(0, 0, 400, 600), rect(0, 0, 400, 200))).toEqual({
+      dx: 0,
+      dy: 0,
+      sx: 1,
+    });
+  });
+
+  test("reads a frame with no width as unscaled rather than dividing by zero", () => {
+    expect(flipDelta(rect(0, 0, 400, 600), rect(0, 0, 0, 0)).sx).toBe(1);
   });
 });
 
@@ -102,7 +129,36 @@ describe("springKeyframes", () => {
   });
 
   test("honors an explicit sample count, floored at two intervals", () => {
-    expect(springKeyframes(10, 0, 4)).toHaveLength(5);
-    expect(springKeyframes(10, 0, 1)).toHaveLength(3);
+    expect(springKeyframes(10, 0, 1, 4)).toHaveLength(5);
+    expect(springKeyframes(10, 0, 1, 1)).toHaveLength(3);
+  });
+
+  describe("with a width change", () => {
+    const SCALED = springKeyframes(-40, 0, 675 / 1230);
+
+    test("starts at the old width's scale and ends at none", () => {
+      expect(scaleX(SCALED[0])).toBeCloseTo(675 / 1230, 5);
+      expect(SCALED[SCALED.length - 1].transform).toBe(
+        "translate(0px, 0px) scaleX(1)",
+      );
+    });
+
+    test("stays a 2D transform, so the effect stays accelerable", () => {
+      for (const frame of SCALED) {
+        expect(Object.keys(frame).sort()).toEqual(["offset", "transform"]);
+        expect(String(frame.transform)).toMatch(
+          /^translate\(-?[\d.]+px, -?[\d.]+px\) scaleX\([\d.]+\)$/,
+        );
+      }
+    });
+
+    test("walks the scale up on the same spring the move rides", () => {
+      const spring = dampedSpring();
+      const sx = 675 / 1230;
+      for (let i = 1; i < SPRING_KEYFRAME_SAMPLES; i += 1) {
+        const remaining = 1 - spring(i / SPRING_KEYFRAME_SAMPLES);
+        expect(scaleX(SCALED[i])).toBeCloseTo(1 + (sx - 1) * remaining, 4);
+      }
+    });
   });
 });
