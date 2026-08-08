@@ -368,9 +368,14 @@ const SHIPPED_CHORDS: ReadonlyArray<readonly [chord: string, commandId: string]>
  *
  * Show Lens moved off ⌥⌘L so the two sidebar toggles could share one grammar —
  * ⌃⌘⟨letter⟩ — which is what makes ⌃⌘L and ⌃⌘J teach each other.
+ *
+ * Insert File gave the ⌃ seat on I to AI Model and kept the letter, moving to
+ * ⇧⌘I. Sharing a letter is deliberate: both are composer gestures reached from
+ * the same seat, and neither has a better initial than I.
  */
 const MOVED_SINCE_THE_MAP: ReadonlyMap<string, string> = new Map([
   [TUG_ACTIONS.TOGGLE_LENS, "⌃⌘L"],
+  [TUG_ACTIONS.INSERT_FILE, "⇧⌘I"],
 ]);
 
 /**
@@ -391,6 +396,11 @@ const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: str
   ["⌃⌘G", TUG_ACTIONS.TOGGLE_GAZETTE],
   ["⌥⌘[", TUG_ACTIONS.PREVIOUS_STACK_CARD],
   ["⌥⌘]", TUG_ACTIONS.NEXT_STACK_CARD],
+  // The slash bridges that earned a chord. The family is reachable by typing
+  // its names, which is why the rest carry none; these two are reached often
+  // enough that typing the name is the slow path.
+  ["⌃⌘I", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:model`],
+  ["⌃⌘U", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:usage`],
 ];
 
 /** The map as it reads today: transcription, minus retirements, plus moves and additions. */

@@ -156,10 +156,10 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | Chord | Command | Title | Claimed at |
 |---|---|---|---|
 | ⇧⌘G | `find-previous` | Find Previous | JS, global |
+| ⇧⌘I | `insert-file` | Insert File… | menu bar (swept) |
 | ⇧⌘S | `save-as` | Save As… | menu bar (swept) |
 | ⇧⌘Z | `redo` | Redo | JS, global |
 | ⌃⇧⌘A | `disclaim-all-changes` | Disclaim All Changes | JS, responder |
-| ⌃⌘2 | `insert-file` | Insert File… | menu bar (swept) |
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
 | ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |

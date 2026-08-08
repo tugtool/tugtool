@@ -60,8 +60,17 @@ function deckShape() {
   };
 }
 
-function chipTitleExpr(): string {
-  return `(function(){ var e = document.querySelector(${JSON.stringify(MODE_CHIP)}); return e ? e.getAttribute("title") : null; })()`;
+/**
+ * The mode the chip is SHOWING — its width-stabilized active face.
+ *
+ * Read off the chip's own value rather than a hover string: the chip used to
+ * carry a native `title` and this test read that, which meant a rename of the
+ * tooltip could fail a test about the permission cycle. The face is what the
+ * user sees, and it is what the cycle is supposed to move.
+ */
+function chipModeExpr(): string {
+  const value = `${MODE_CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
+  return `(function(){ var e = document.querySelector(${JSON.stringify(value)}); return e ? e.textContent : null; })()`;
 }
 
 /**
@@ -109,7 +118,7 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌥⌘P, never on Shift+Tab", 
 
         // The Mode chip starts at Default (what tugcode spawns with).
         await app.waitForCondition<boolean>(
-          `${chipTitleExpr()} === "Permission mode: Default"`,
+          `${chipModeExpr()} === "Default"`,
           { timeoutMs: 8000 },
         );
 
@@ -126,7 +135,7 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌥⌘P, never on Shift+Tab", 
         // ⌃⌥⌘P → Default advances to Accept Edits.
         await app.evalJS<boolean>(dispatchKeyExpr("KeyP", "p", { meta: true, ctrl: true, alt: true }));
         await app.waitForCondition<boolean>(
-          `${chipTitleExpr()} === "Permission mode: Accept Edits"`,
+          `${chipModeExpr()} === "Accept Edits"`,
           { timeoutMs: 6000 },
         );
 
@@ -134,8 +143,8 @@ describe.skipIf(!SHOULD_RUN)("AT0177: cycle on ⌃⌥⌘P, never on Shift+Tab", 
         // any (incorrect) cycle a window to land, then assert it stayed put.
         await app.evalJS<boolean>(dispatchKeyExpr("Tab", "Tab", { shift: true }));
         await new Promise((resolve) => setTimeout(resolve, 750));
-        const after = await app.evalJS<string | null>(chipTitleExpr());
-        expect(after).toBe("Permission mode: Accept Edits");
+        const after = await app.evalJS<string | null>(chipModeExpr());
+        expect(after).toBe("Accept Edits");
       } finally {
         await app.close();
       }

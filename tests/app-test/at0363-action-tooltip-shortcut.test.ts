@@ -18,16 +18,23 @@
  * `pointerenter` at the real button, and Radix's real open machinery
  * portalling a real bubble into the canvas overlay. Nothing is stubbed.
  *
+ * A second test runs the same check on the Z4B **AI Model** chip, whose chord
+ * reaches the command through a different door: `run-slash-command:model` is a
+ * slash bridge, and its chord is menu-eligible, so AppKit's key-equivalent
+ * scan owns it and the Session ▸ AI Model… item is where it has to land. Two
+ * doors, one table — and this is what says so.
+ *
  * @covers tugdeck/src/components/tugways/tug-action-tooltip.tsx
  * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-top-bar.tsx
+ * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -37,6 +44,7 @@ const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 // `TugIconButton` names a fixed prop list and drops anything else, so the
 // button carries no test id of its own; its aria-label is the stable handle.
 const SAVE_BUTTON = `${CARD} [data-slot="text-card-top-bar"] button[aria-label="Save"]`;
+const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
 const BUBBLE = ".tug-tooltip-content";
 const CHIP = ".tug-tooltip-content .tug-tooltip-shortcut";
 
@@ -71,6 +79,26 @@ function deckShape() {
         activeCardId: "A",
         title: "",
         acceptsFamilies: ["standard"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+/** A session card, which is where the Z4B chip strip lives. */
+function sessionDeckShape() {
+  return {
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 900, height: 600 },
+        cardIds: ["A"],
+        activeCardId: "A",
+        title: "",
+        acceptsFamilies: ["maker"],
       },
     ],
     activePaneId: "p1",
@@ -159,6 +187,55 @@ describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => 
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "the AI Model chip names the chord the Session menu carries",
+    async () => {
+      const app = await launchTugApp({ testName: "at0363-model-chip" });
+      try {
+        await app.seedDeckState({ state: sessionDeckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        // The Z4B strip is the bound session's, so the card needs one (the
+        // at0196 idiom).
+        await app.bindSession("A");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${MODEL_CHIP}') !== null`,
+          { timeoutMs: 15000 },
+        );
+
+        await app.evalJS<null>(
+          `(function(){
+            var el = document.querySelector('${MODEL_CHIP}');
+            el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
+            el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+            return null;
+          })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${CHIP}') !== null`,
+          { timeoutMs: 5000 },
+        );
+
+        // The bridge's chord is menu-eligible, so the Session item is where
+        // AppKit's scan lands it — and the chip has to agree with that item.
+        const chip = await app.getElementText(CHIP);
+        const item = await app.menuItemState("session.model");
+        expect(item.found).toBe(true);
+        if (!item.found) throw new Error("[at0363] session.model not in the menu");
+        expect(
+          item.keyEquivalent,
+          "the sweep wrote the bridge's chord onto its menu item",
+        ).not.toBe("");
+        expect(chip).toBe(menuChord(item.keyEquivalent, item.modifierMask));
+        note("at0363 model chord", chip);
+      } finally {
+        await app.close();
       }
     },
     TEST_TIMEOUT_MS,

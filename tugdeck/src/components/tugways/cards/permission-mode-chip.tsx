@@ -39,6 +39,8 @@ import "./sheet-option-list.css";
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
@@ -140,6 +142,19 @@ export function PermissionModeChip({
 
   return (
     <>
+    {/* The one chip whose chord and click are not the same gesture: clicking
+        opens the picker, while the bound command CYCLES to the next mode
+        without a sheet. The phrase says so rather than implying they match —
+        and says it without naming the chord, which is the registry's to
+        render ([P11]). */}
+    <TugActionTooltip
+      action={TUG_ACTIONS.CYCLE_PERMISSION_MODE}
+      content={
+        mode === null
+          ? "Permission mode. Click to choose; the shortcut cycles."
+          : `Permission mode: ${formatPermissionMode(mode)}. Click to choose; the shortcut cycles.`
+      }
+    >
     <TugPushButton
       ref={copy.ref as React.Ref<HTMLButtonElement>}
       onContextMenu={copy.onContextMenu}
@@ -150,11 +165,6 @@ export function PermissionModeChip({
       role="action"
       data-slot="permission-mode-chip"
       aria-label="Permission mode"
-      title={
-        mode === null
-          ? undefined
-          : `Permission mode: ${formatPermissionMode(mode)}`
-      }
       disabled={disabled}
       focusGroup={focusGroup}
       focusOrder={focusOrder}
@@ -170,6 +180,7 @@ export function PermissionModeChip({
         alternates={PERMISSION_MODE_MENU.map((m) => formatPermissionMode(m))}
       />
     </TugPushButton>
+    </TugActionTooltip>
     {copy.contextMenu}
     </>
   );

@@ -88,7 +88,9 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   // Session
   { id: "session.focusPrompt", key: "k", mods: MOD.command },
   { id: "session.stop", key: "" },
-  { id: "session.insertFile", key: "i", mods: MOD.command | MOD.control },
+  // ⇧⌘I, not ⌃⌘I: the ⌃ seat on I went to AI Model below, and Insert File
+  // kept the letter. Both are composer gestures; neither has a better initial.
+  { id: "session.insertFile", key: "i", mods: MOD.command | MOD.shift },
   // Go in Transcript ▸ and Configure ▸ — submenu shells; the walk recurses, so
   // their children are found at depth 2.
   { id: "session.go" },
@@ -100,7 +102,10 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "session.new" },
   { id: "session.resume" },
   { id: "session.rename" },
-  { id: "session.model" },
+  // The two slash bridges that carry a chord. Both are menu-eligible, so the
+  // key equivalent has to be ON the item — the sweep writing it here is the
+  // whole mechanism, and an empty string would mean the chord reaches nothing.
+  { id: "session.model", key: "i", mods: MOD.command | MOD.control },
   { id: "session.effort" },
   { id: "session.permissionMode" },
   { id: "session.permissionMode.default" },

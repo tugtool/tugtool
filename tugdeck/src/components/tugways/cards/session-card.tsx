@@ -92,6 +92,7 @@ import type { TugComboBoxItem } from "../tug-combo-box";
 import { TugIconButton } from "../tug-icon-button";
 import { TugPushButton } from "../tug-push-button";
 import { TugActionTooltip } from "../tug-action-tooltip";
+import { TugTooltip } from "../tug-tooltip";
 import {
   TugInlineAlert,
   type TugInlineAlertTone,
@@ -4063,23 +4064,28 @@ export function SessionCardBody({
   const projectCopy = useCopyableButton(`Project: ${projectDir ?? ""}`);
   const projectStatusContent = projectDir !== null ? (
     <>
-      <TugPushButton
-        ref={projectCopy.ref as React.Ref<HTMLButtonElement>}
-        onContextMenu={projectCopy.onContextMenu}
-        size="sm"
-        emphasis="tinted"
-        role="action"
-        layout="label-top"
-        label="Project"
-        data-slot="project-chip"
-        focusGroup={SESSION_CYCLE_GROUP}
-        focusOrder={SESSION_CYCLE_ORDER_PROJECT}
-        aria-label="Open project folder in Finder"
-        title={`Open in Finder: ${projectDir}`}
-        onClick={() => openPathInOS(projectDir, "folder")}
-      >
-        {projectChipText}
-      </TugPushButton>
+      {/* A plain TugTooltip, not a TugActionTooltip: revealing the folder is
+          `openPathInOS`, not a registry command, so there is no chord to read
+          and nothing for an action tooltip to add. The chip face is
+          ellipsized, so the hover is where the full path lives. */}
+      <TugTooltip content={`Open in Finder: ${projectDir}`}>
+        <TugPushButton
+          ref={projectCopy.ref as React.Ref<HTMLButtonElement>}
+          onContextMenu={projectCopy.onContextMenu}
+          size="sm"
+          emphasis="tinted"
+          role="action"
+          layout="label-top"
+          label="Project"
+          data-slot="project-chip"
+          focusGroup={SESSION_CYCLE_GROUP}
+          focusOrder={SESSION_CYCLE_ORDER_PROJECT}
+          aria-label="Open project folder in Finder"
+          onClick={() => openPathInOS(projectDir, "folder")}
+        >
+          {projectChipText}
+        </TugPushButton>
+      </TugTooltip>
       {projectCopy.contextMenu}
     </>
   ) : null;

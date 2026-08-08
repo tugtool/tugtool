@@ -400,7 +400,7 @@ type SlashBridge = readonly [
  */
 const SLASH_BRIDGE_BINDINGS: Readonly<Record<string, readonly CommandBinding[]>> = {
   // ⌃⌘I for the model picker — I for the name it opens. It held Insert File
-  // until this table took it; that command moved to ⌃⌘2.
+  // until this table took it; that command kept the letter and moved to ⇧⌘I.
   model: [
     chord(
       { key: "KeyI", ctrl: true, meta: true, label: "i" },
@@ -478,6 +478,9 @@ const SLASH_BRIDGE_COMMANDS: readonly CommandEntry[] = SLASH_BRIDGES.map(
     action: TUG_ACTIONS.RUN_SLASH_COMMAND,
     payload: { name, args: "" },
     menuItemId,
+    ...(SLASH_BRIDGE_BINDINGS[name] !== undefined
+      ? { bindings: SLASH_BRIDGE_BINDINGS[name] }
+      : {}),
     mirrored: true,
     validate: validate ?? sessionBound,
   }),
@@ -846,11 +849,15 @@ export const COMMANDS: readonly CommandEntry[] = [
     routing: "first-responder",
     menuItemId: "session.insertFile",
     // Menu-eligible on purpose: the panel that produces the path is the
-    // host's, so ⌃⌘I has to reach the menu item rather than the JS funnel,
-    // where the command would dispatch with no file chosen.
+    // host's, so the chord has to reach the menu item rather than the JS
+    // funnel, where the command would dispatch with no file chosen.
+    //
+    // ⇧⌘I, not ⌃⌘I — the ⌃ seat went to AI Model, and the I stayed here for
+    // Insert. The two share a letter on purpose: both are composer gestures
+    // reached from the same seat, and neither has a better initial.
     bindings: [
       chord(
-        { key: "KeyI", ctrl: true, meta: true, label: "i" },
+        { key: "KeyI", meta: true, shift: true, label: "i" },
         { preventDefault: true, menuEligible: true },
       ),
     ],

@@ -49,6 +49,8 @@
 import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
@@ -135,6 +137,13 @@ export function ModelChip({
   // swallow it", never hides, and the value stays centered.
   return (
     <>
+    {/* The hover says which model is running — the chip's face is abbreviated,
+        and the exact id is the thing a reader is actually checking. The chord
+        rides along from the registry: the same gesture opens the picker. */}
+    <TugActionTooltip
+      action={`${TUG_ACTIONS.RUN_SLASH_COMMAND}:model`}
+      content={title}
+    >
     <TugPushButton
       ref={copy.ref as React.Ref<HTMLButtonElement>}
       onContextMenu={copy.onContextMenu}
@@ -146,7 +155,6 @@ export function ModelChip({
       data-slot="model-chip"
       data-unknown={unknown ? "" : undefined}
       aria-label="AI Model"
-      title={title}
       disabled={disabled}
       focusGroup={focusGroup}
       focusOrder={focusOrder}
@@ -162,6 +170,7 @@ export function ModelChip({
         alternates={sizerLabels}
       />
     </TugPushButton>
+    </TugActionTooltip>
     {copy.contextMenu}
     </>
   );

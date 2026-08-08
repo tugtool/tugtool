@@ -40,6 +40,8 @@
 import React, { useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
@@ -118,19 +120,19 @@ export function EffortChip({
   const copy = useCopyableButton(`Effort: ${content}`);
 
   // A model that doesn't support reasoning effort disables the chip — there's
-  // nothing to pick. The `title` lives on a thin hoverable host span as well as
-  // the button: a disabled button is `pointer-events: none`, so hovering its
-  // area passes through to the host, keeping the "not supported by this model"
-  // tooltip alive even while the button itself is non-interactive.
+  // nothing to pick. The tooltip rides the thin host span rather than the
+  // button: a disabled button is `pointer-events: none`, so hovering its area
+  // passes through to the host, keeping the "not supported by this model"
+  // explanation alive even while the button itself is non-interactive.
   const chipDisabled = disabled || !display.supported;
 
   return (
     <>
-    <span
-      data-slot="effort-chip-host"
-      title={title}
-      style={{ display: "inline-flex" }}
+    <TugActionTooltip
+      action={`${TUG_ACTIONS.RUN_SLASH_COMMAND}:effort`}
+      content={title}
     >
+    <span data-slot="effort-chip-host" style={{ display: "inline-flex" }}>
     <TugPushButton
       ref={copy.ref as React.Ref<HTMLButtonElement>}
       onContextMenu={copy.onContextMenu}
@@ -141,7 +143,6 @@ export function EffortChip({
       role="action"
       data-slot="effort-chip"
       aria-label="Reasoning effort"
-      title={title}
       disabled={chipDisabled}
       focusGroup={focusGroup}
       focusOrder={focusOrder}
@@ -153,6 +154,7 @@ export function EffortChip({
       />
     </TugPushButton>
     </span>
+    </TugActionTooltip>
     {copy.contextMenu}
     </>
   );
