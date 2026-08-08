@@ -5397,6 +5397,19 @@ export class SessionManager {
     // observational: it never consumes the line, and it never throws
     // into the drain.
     this.observeSubagentLifecycle(event);
+    // `ai-title`: claude's auto-generated session title. It arrives
+    // turn-free and carries no `uuid`, so it must be caught here rather
+    // than in the turn dispatchers. Forwarded as `session_title` and
+    // consumed — tugcast writes it to the ledger (never over a
+    // `/rename`), so the picker and the chip see the title as it is
+    // written rather than at the next external scan.
+    if (event.type === "ai-title") {
+      const title = typeof event.aiTitle === "string" ? event.aiTitle.trim() : "";
+      if (title.length > 0) {
+        writeLine({ type: "session_title", title });
+      }
+      return;
+    }
     // Intercept the `initialize` control-response before any turn
     // routing — it arrives turn-free (no active turn), so it must be
     // caught here rather than in `routeTopLevelEvent` (which only runs
@@ -7400,6 +7413,18 @@ export class SessionManager {
           error: `Could not write forked session (${err instanceof Error ? err.message : String(err)}).`,
         };
       }
+      // Announce the parentage BEFORE the synthetic `session_init` that
+      // records the spawn: tugcast allocates the fork's lineage callsign
+      // (`<root>-<Letter><Number>`) against the parent and stages it, so the
+      // fork is recorded under a name that says where it came from instead of
+      // an unrelated fresh pair. The rewound-to prompt uuid is the branch
+      // point — two forks taken there share a letter.
+      writeLine({
+        type: "session_fork",
+        parentSessionId: liveId,
+        newSessionId: newId,
+        forkPoint: promptUuid,
+      });
       // Point the manager at the fork for this and every later (re)spawn,
       // and tell tugcast so the card→session binding is rebound + persisted
       // (a cold-boot then resumes the truncated fork, not the original).

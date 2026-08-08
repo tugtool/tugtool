@@ -129,13 +129,24 @@ export interface SessionRow {
    *  chip shows the hash unless this is `true`; the chooser ignores it (it shows
    *  any title). Defaults to `false` for older tugcast that omits the field. */
   name_user_set: boolean;
-  /** Mnemonic `adjective-noun` tag minted client-side "from the drop" and made
-   *  unique per-ledger by tugcast (an optional numeric suffix breaks the rare
-   *  collision); `null` on legacy rows until they are next resumed. Layered over
+  /** Mnemonic `adjective-noun` callsign, minted client-side "from the drop" and
+   *  made permanent by tugcast (a collision rerolls a complete fresh pair —
+   *  never a numeric suffix, and a callsign any session ever minted is spent
+   *  forever); `null` on legacy rows until they are next resumed. Layered over
    *  the UUID and the `/rename` name (precedence: name → tag → truncated UUID).
+   *  A fork's callsign carries a `-<Letter><Number>` lineage suffix.
    *  Defaults to `null` for older tugcast that omits the field. Keep in lockstep
    *  with the Rust `SessionRow.tag`. */
   tag: string | null;
+  /** The lineage root's callsign, or `null` for a root session. `tag` already
+   *  carries the composed name; this is the structured record. Defaults to
+   *  `null` for older tugcast. Keep in lockstep with the Rust
+   *  `SessionRow.root_tag`. */
+  root_tag: string | null;
+  /** Dash-joined lineage segments (`A1`, `A1-B2`), or `null` for a root
+   *  session. Defaults to `null` for older tugcast. Keep in lockstep with the
+   *  Rust `SessionRow.tag_lineage`. */
+  tag_lineage: string | null;
   /**
    * Provenance of the row: `"tug"` rows come from the sqlite ledger
    * (sessions Tug spawned or adopted); `"external"` rows were
@@ -173,8 +184,26 @@ export interface TerminalLive {
  * carry them, and an older tugcast won't send them on listings either.
  */
 export function normalizeSessionRow(
-  row: Omit<SessionRow, "origin" | "terminal_live" | "name_user_set" | "tag"> &
-    Partial<Pick<SessionRow, "origin" | "terminal_live" | "name_user_set" | "tag">>,
+  row: Omit<
+    SessionRow,
+    | "origin"
+    | "terminal_live"
+    | "name_user_set"
+    | "tag"
+    | "root_tag"
+    | "tag_lineage"
+  > &
+    Partial<
+      Pick<
+        SessionRow,
+        | "origin"
+        | "terminal_live"
+        | "name_user_set"
+        | "tag"
+        | "root_tag"
+        | "tag_lineage"
+      >
+    >,
 ): SessionRow {
   return {
     ...row,
@@ -183,6 +212,8 @@ export function normalizeSessionRow(
     file_size: row.file_size ?? null,
     name_user_set: row.name_user_set ?? false,
     tag: row.tag ?? null,
+    root_tag: row.root_tag ?? null,
+    tag_lineage: row.tag_lineage ?? null,
   };
 }
 

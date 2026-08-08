@@ -75,6 +75,16 @@ export interface GitLogCommit {
   /** The `Tug-Dash:` trailer value when the commit landed as a dash join —
    *  drives the History join badge ([P09]). */
   tug_dash?: string;
+  /** The `Tug-Session:` trailer value — the human citation, raw ([P10]).
+   *  New-form commits carry `<tag> (<shortid8>)`; legacy commits carry
+   *  `<display> (<full-uuid>)`, and both must render, since legacy commits
+   *  live in history forever. Never appears in `body` — tugcast strips every
+   *  Tug trailer line before the body ships. */
+  tug_session?: string;
+  /** The `Tug-Session-Id:` trailer value — the full tug session uuid, the
+   *  exact ledger join. Machine-only; never displayed. Absent on every legacy
+   *  commit, which resolve through `tug_session`'s parenthesized token. */
+  tug_session_id?: string;
   /** The commit's changed paths (`--name-only`), repo-relative — paths only.
    *  They ride the log so the History filter can match a commit by the files
    *  it touched; the statuses and line counts an expanded row shows still come

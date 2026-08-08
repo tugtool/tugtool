@@ -42,7 +42,6 @@ import { useLayoutEffect, useRef } from "react";
 import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
 import { filterAndRank } from "./text-match";
 import type { SessionRow } from "../protocol";
-import { deriveStableTag } from "./session-tag";
 import type { WorkspaceSnapshot } from "./session-ledger-store";
 
 // ---------------------------------------------------------------------------
@@ -69,7 +68,7 @@ interface SessionsInputs {
   /**
    * The filter field's query. Empty / whitespace → no filtering. When
    * non-empty, a `session-resume` row survives only when every term matches
-   * one of its name, tag (minted or derived), last prompt, or id.
+   * one of its name, callsign, last prompt, or id.
    */
   readonly filterQuery?: string;
   /**
@@ -83,19 +82,13 @@ interface SessionsInputs {
 }
 
 /**
- * The fields a filter term may match on a session row: its name, its tag
- * (minted, or the stable tag derived from the id for an untagged session — the
- * name such a row is displayed under), its last prompt, and its id.
+ * The fields a filter term may match on a session row: its name, its callsign,
+ * its last prompt, and its id. Every row carries a real minted callsign after
+ * its first scan — external sessions are minted one at scan time, so there is
+ * no derived stand-in to match against.
  */
 function filterFieldsForRow(row: SessionRow): (string | null | undefined)[] {
-  const tagged = (row.tag ?? "").trim().length > 0;
-  return [
-    row.name,
-    row.tag,
-    tagged ? null : deriveStableTag(row.session_id),
-    row.last_user_prompt,
-    row.session_id,
-  ];
+  return [row.name, row.tag, row.last_user_prompt, row.session_id];
 }
 
 /**

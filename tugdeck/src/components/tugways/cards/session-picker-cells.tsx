@@ -81,7 +81,6 @@ import {
   truncateForDisplay,
 } from "./session-picker-format";
 import { sessionRowTitle } from "@/lib/session-name";
-import { deriveStableTag } from "@/lib/session-tag";
 
 // ---------------------------------------------------------------------------
 // Row-accessory focus authoring
@@ -201,13 +200,12 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   const snippet =
     titleText.length > 0 ? truncateForDisplay(titleText, 64) : null;
 
-  // The mnemonic adjective-noun tag is the session's friendly identity. Prefer
-  // the real minted tag from the ledger; for a session with none yet (an
-  // external terminal session), derive a STABLE one from the session id so every
-  // row still shows a consistent adj-noun name. Lead the metadata line with it,
-  // alongside the summary title and the UUID — UNLESS it's already the title (an
-  // untitled tagged session falls back to the tag), where repeating it doubles.
-  const tagText = (row.tag?.trim() ?? "") || deriveStableTag(row.session_id);
+  // The mnemonic adjective-noun callsign is the session's friendly identity,
+  // minted by the ledger — for a Tug session at spawn, for an external terminal
+  // session at scan time. Lead the metadata line with it, alongside the summary
+  // title and the UUID — UNLESS it's already the title (an untitled session
+  // falls back to the callsign), where repeating it doubles.
+  const tagText = row.tag?.trim() ?? "";
   const showTag = tagText.length > 0 && tagText !== titleText;
   const metaSubtitle = showTag
     ? `${tagText} · ${formatSessionRowSubtitle(row)}`

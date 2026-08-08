@@ -3,9 +3,16 @@
  *
  * A tag is an `adjective-noun` pair (e.g. `azure-heron`) drawn from the curated
  * lexicon (`session-tag-lexicon.ts`). The client mints one "from the drop" and
- * re-rolls it against the tags it already knows; the ledger's unique index is
- * the atomic backstop that suffixes the rare true collision, so this module only
- * needs to avoid the tags already in hand.
+ * re-rolls it against the tags it already knows, so this module only needs to
+ * avoid the tags already in hand.
+ *
+ * **The ledger is the authority, and its answer can differ from ours.** A tag
+ * any session ever minted is spent forever (the append-only `minted_tags`
+ * arbiter), so the server does not suffix a collision — it rerolls a complete
+ * fresh pair. The client adopts that on the `session_updated` / spawn-ack path
+ * it already rides, which means a freshly shown callsign may change **once**,
+ * seconds after spawn, and is then immutable for the life of the session.
+ * Nothing may cache the optimistic tag past that ack.
  *
  * Pure logic — no React, no DOM, no store. Unit-testable in isolation. The
  * exact-match `resolveTag` + a `tag → session_id` reverse map are deferred to
@@ -17,7 +24,7 @@
 import type { SessionRow } from "@/protocol";
 import { TAG_ADJECTIVES, TAG_NOUNS } from "@/lib/session-tag-lexicon";
 
-/** Re-roll attempts before giving up and letting the ledger suffix the tag. */
+/** Re-roll attempts before giving up and letting the ledger reroll the tag. */
 const MINT_REROLL_CAP = 8;
 
 /** Empty exclusion set for a derivation that needs no re-roll (see below). */
@@ -58,8 +65,8 @@ export function deriveStableTag(seed: string): string {
  *
  * Picks a random adjective + noun; if the pair is already in `known`, re-rolls
  * up to {@link MINT_REROLL_CAP} times. If every attempt collides (astronomically
- * unlikely against 524k combinations), returns the last candidate — the ledger's
- * unique index suffixes it authoritatively. `rng` defaults to `Math.random` and
+ * unlikely against 524k combinations), returns the last candidate — the ledger
+ * rerolls it authoritatively. `rng` defaults to `Math.random` and
  * is injectable for deterministic tests.
  */
 export function mintTag(

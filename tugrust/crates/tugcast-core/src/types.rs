@@ -194,6 +194,18 @@ pub struct GitLogCommit {
     /// commit landed as a dash join — the History join badge ([P09]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tug_dash: Option<String>,
+    /// The `Tug-Session:` trailer value — the human citation, raw ([P10],
+    /// Spec S03). New-form commits carry `<tag> (<shortid8>)`; legacy commits
+    /// carry `<display> (<full-uuid>)`, and both must parse, since legacy
+    /// commits live in history forever.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tug_session: Option<String>,
+    /// The `Tug-Session-Id:` trailer value — the full tug session uuid, the
+    /// exact ledger join. Machine-only; never displayed. Absent on every
+    /// legacy commit, which resolve through the parenthesized token in
+    /// `tug_session` instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tug_session_id: Option<String>,
     /// The commit's changed paths (`--name-only`), repo-relative. Paths ONLY —
     /// the per-file statuses and line counts stay on the `GIT_COMMIT_FILES`
     /// route the expanded row asks for. They ride the log so the History
@@ -894,6 +906,8 @@ mod tests {
                     committer_email: "ada@example.com".to_string(),
                     committer_date: "2026-07-15T09:30:00-07:00".to_string(),
                     tug_dash: Some("tugdash/feature onto main".to_string()),
+                    tug_session: Some("stocky-pixie (f6e43925)".to_string()),
+                    tug_session_id: Some("f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f".to_string()),
                     files: vec!["src/lib.rs".to_string(), "src/main.rs".to_string()],
                 },
                 GitLogCommit {
@@ -906,6 +920,8 @@ mod tests {
                     committer_email: "grace@example.com".to_string(),
                     committer_date: "2026-07-14T12:00:00-07:00".to_string(),
                     tug_dash: None,
+                    tug_session: None,
+                    tug_session_id: None,
                     files: Vec::new(),
                 },
             ],

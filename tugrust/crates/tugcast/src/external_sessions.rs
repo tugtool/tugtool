@@ -53,6 +53,11 @@ pub struct ExternalSessionMeta {
     pub last_used_at: i64,
     pub file_size: i64,
     pub file_mtime: i64,
+    /// The callsign minted for this session at scan time ([P12], [Q04]), or
+    /// `None` when the scan ran without a ledger to mint against (the
+    /// ledger-less [`scan_external_sessions`] path). Never derived from the
+    /// session id — a real tag, permanent from the moment it is claimed.
+    pub tag: Option<String>,
 }
 
 /// Why a candidate file was excluded from the scan. Surfaced only via
@@ -1025,6 +1030,9 @@ fn parse_session_file_inner(
             last_used_at: file_mtime,
             file_size,
             file_mtime,
+            // The parse never mints; the ledger-backed scan backfills the
+            // callsign afterwards ([Q04]).
+            tag: None,
         },
         resume,
         resumed,
@@ -1238,6 +1246,9 @@ fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCache
         frontier_leaf_uuid: parsed.resume.frontier.leaf_uuid.clone(),
         effective_uuids: parsed.resume.effective_uuids.clone(),
         lineage_ancestors: encode_lineage(&parsed.lineage_ancestors),
+        // Not a parse product — `upsert_scan_cache` carries the stored tag
+        // across so a re-parse cannot erase a minted callsign.
+        tag: None,
     }
 }
 
@@ -1282,6 +1293,7 @@ fn meta_from_cache_row(row: ScanCacheRow) -> ExternalSessionMeta {
         last_used_at: row.last_used_at,
         file_size: row.file_size,
         file_mtime: row.file_mtime,
+        tag: row.tag,
     }
 }
 
@@ -1441,6 +1453,7 @@ pub fn scan_external_sessions_cached_with_progress(
                     frontier_leaf_uuid: None,
                     effective_uuids: None,
                     lineage_ancestors: None,
+                    tag: None,
                 };
                 if let Err(err) = ledger.upsert_scan_cache(&row) {
                     tracing::warn!(error = %err, "external scan: cache write failed");
@@ -1462,6 +1475,23 @@ pub fn scan_external_sessions_cached_with_progress(
         }
     }
     suppress_superseded_lineage(&mut outcome.metas, &lineage_claims);
+    // Pass 4: mint a real callsign for every surfaced session that lacks one
+    // ([P12], [Q04]). Runs after the lineage sweep so a suppressed ancestor
+    // file never burns a tag. Idempotent — a session that already has one
+    // reads it back, so a warm rescan mints nothing. A mint failure is not a
+    // scan failure: the row simply surfaces tagless and the next scan retries.
+    let now = crate::session_ledger::now_millis();
+    for meta in &mut outcome.metas {
+        if meta.tag.is_some() {
+            continue;
+        }
+        match ledger.backfill_external_tag(&meta.session_id, now) {
+            Ok(tag) => meta.tag = tag,
+            Err(err) => {
+                tracing::warn!(error = %err, "external scan: tag backfill failed");
+            }
+        }
+    }
     outcome
 }
 
@@ -1834,6 +1864,105 @@ mod tests {
         assert_eq!(again.parsed, 0);
         assert_eq!(again.cache_hits, 1);
         assert_eq!(again.metas[0].turn_count, 3);
+    }
+
+    const SESSION_B: &str = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+
+    #[test]
+    fn a_scan_mints_a_persistent_tag_for_every_external_session() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first"]),
+        );
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_B,
+            &terminated_jsonl(SESSION_B, PROJECT, &["first"]),
+        );
+
+        let cold = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(cold.metas.len(), 2);
+        let mut tags: Vec<String> = cold
+            .metas
+            .iter()
+            .map(|m| m.tag.clone().expect("every scanned session gets a tag"))
+            .collect();
+        tags.sort();
+        tags.dedup();
+        assert_eq!(tags.len(), 2, "two sessions, two distinct callsigns");
+
+        // A rescan serves from cache and must not re-mint: a callsign is
+        // permanent from the moment it is claimed ([P12]).
+        let warm = scan_external_sessions_cached(&ledger, PROJECT);
+        let mut warm_tags: Vec<String> = warm
+            .metas
+            .iter()
+            .map(|m| m.tag.clone().expect("tag survives the rescan"))
+            .collect();
+        warm_tags.sort();
+        assert_eq!(warm_tags, tags);
+    }
+
+    #[test]
+    fn a_scan_creates_no_sessions_rows() {
+        // Minting at scan time must not smuggle in a provenance change: a
+        // discovered session stays `external` until it is first resumed
+        // ([Q04]), which is exactly what `SessionRow.provenance` reports.
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first"]),
+        );
+
+        scan_external_sessions_cached(&ledger, PROJECT);
+        assert!(
+            ledger.get(SESSION_A).unwrap().is_none(),
+            "the scan minted a sessions row"
+        );
+    }
+
+    #[test]
+    fn adoption_carries_the_scan_time_tag_unchanged() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first"]),
+        );
+        let scan = scan_external_sessions_cached(&ledger, PROJECT);
+        let scanned = scan.metas[0].tag.clone().expect("minted at scan");
+
+        // First resume adopts the session into the ledger. The client's
+        // optimistic candidate loses to the callsign the picker already
+        // showed — "mine is not taken" makes the re-claim idempotent rather
+        // than a collision (Spec S08).
+        ledger
+            .record_spawn(
+                SESSION_A,
+                "ws",
+                PROJECT,
+                "card-1",
+                1_700_000_000_000,
+                Some("some-other"),
+            )
+            .unwrap();
+        assert_eq!(
+            ledger.get(SESSION_A).unwrap().unwrap().tag.as_deref(),
+            Some(scanned.as_str())
+        );
     }
 
     #[test]

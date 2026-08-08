@@ -1300,6 +1300,50 @@ pub async fn relay_session_io(
                         // A racing `close_session` that has already flipped
                         // us to `Closed`, or a previous iteration that
                         // already promoted, both short-circuit cleanly.
+                        // A rewind-fork announcement ([P11]). It arrives
+                        // immediately BEFORE the fork's synthetic
+                        // `session_init`, so the lineage is allocated and
+                        // staged here and consumed there. Best-effort: a
+                        // parent with no callsign to descend from (a legacy
+                        // tagless row), or an allocation error, leaves the
+                        // fork to spawn as an ordinary root session rather
+                        // than inventing a lineage.
+                        if line.contains("\"type\":\"session_fork\"") {
+                            if let (Some(ledger), Some(fork)) =
+                                (session_ledger, parse_session_fork(line.as_bytes()))
+                            {
+                                let now = crate::session_ledger::now_millis();
+                                match ledger.allocate_fork_lineage(
+                                    &fork.parent_session_id,
+                                    &fork.fork_point,
+                                    &fork.new_session_id,
+                                    now,
+                                ) {
+                                    Ok(Some(lineage)) => {
+                                        info!(
+                                            session = %tug_session_id,
+                                            parent = %fork.parent_session_id,
+                                            tag = %lineage.tag,
+                                            "allocated fork lineage"
+                                        );
+                                        let mut entry = ledger_entry.lock().await;
+                                        entry.pending_fork =
+                                            Some((fork.new_session_id.clone(), lineage));
+                                    }
+                                    Ok(None) => info!(
+                                        session = %tug_session_id,
+                                        parent = %fork.parent_session_id,
+                                        "fork parent has no callsign; the fork spawns as a root"
+                                    ),
+                                    Err(err) => warn!(
+                                        session = %tug_session_id,
+                                        error = %err,
+                                        "fork lineage allocation failed"
+                                    ),
+                                }
+                            }
+                        }
+
                         if line.contains("\"type\":\"session_init\"") {
                             let claude_id = parse_claude_session_id(line.as_bytes());
                             tracing::info!(
@@ -1321,11 +1365,24 @@ pub async fn relay_session_io(
                             // ledger row's `card_id` column is the source of
                             // truth for the client-side restore (consumed via
                             // the `list_card_bindings` CONTROL verb).
-                            let (workspace_key, card_id, tag) = {
+                            let (workspace_key, card_id, tag, pending_fork) = {
                                 let mut entry = ledger_entry.lock().await;
                                 if let Some(id) = &claude_id {
                                     entry.claude_session_id = Some(id.clone());
                                 }
+                                // A staged fork lineage ([P11]) is consumed by
+                                // the one `session_init` that follows its
+                                // announcement, and names the spawn: the
+                                // composed callsign outranks the parent's tag
+                                // the entry is still carrying.
+                                let pending_fork = match &entry.pending_fork {
+                                    Some((fork_id, _))
+                                        if claude_id.as_deref() == Some(fork_id.as_str()) =>
+                                    {
+                                        entry.pending_fork.take().map(|(_, lineage)| lineage)
+                                    }
+                                    _ => None,
+                                };
                                 if entry.spawn_state == SpawnState::Spawning {
                                     entry.spawn_state.try_transition(SpawnState::Live).ok();
                                     if let Some(tx) = entry.input_tx.clone() {
@@ -1348,7 +1405,15 @@ pub async fn relay_session_io(
                                     entry.workspace_key.as_ref().to_owned(),
                                     entry.card_id.clone(),
                                     entry.tag.clone(),
+                                    pending_fork,
                                 )
+                            };
+                            // A fork's composed callsign outranks the tag the
+                            // entry still carries — that one belongs to the
+                            // session this fork was taken from.
+                            let tag = match &pending_fork {
+                                Some(lineage) => Some(lineage.tag.clone()),
+                                None => tag,
                             };
 
                             // Record under claude's own session id — that
@@ -1392,6 +1457,21 @@ pub async fn relay_session_io(
                                 card_id: card_id_for_ledger,
                                 tag: tag.as_deref(),
                             });
+                            // The row now exists under the composed callsign;
+                            // write the structured lineage beside it ([P11]).
+                            if let (Some(ledger), Some(lineage)) = (session_ledger, &pending_fork) {
+                                if let Err(err) = ledger.set_fork_lineage(
+                                    record_id,
+                                    &lineage.root_tag,
+                                    &lineage.tag_lineage,
+                                ) {
+                                    warn!(
+                                        session = %tug_session_id,
+                                        error = %err,
+                                        "set_fork_lineage failed; the fork keeps its callsign but loses its structured lineage"
+                                    );
+                                }
+                            }
                             // After each successful spawn record, cap the
                             // workspace to the configured non-live row max.
                             // Eviction targets the oldest closed/failed row,
@@ -1783,6 +1863,32 @@ pub async fn relay_session_io(
                         } else {
                             line.as_bytes().to_vec()
                         };
+
+                        // `session_title` peek: claude's auto-generated
+                        // `ai-title`, forwarded live by tugcode instead of
+                        // waiting for the next external scan to read it out
+                        // of the JSONL. The write never clobbers a `/rename`
+                        // (`record_auto_title` gates on `name_user_set`), and
+                        // it is best-effort — a ledger error is logged and the
+                        // frame still forwards.
+                        if line.contains("\"type\":\"session_title\"") {
+                            if let (Some(ledger), Some(title)) =
+                                (session_ledger, parse_session_title(line.as_bytes()))
+                            {
+                                match ledger.record_auto_title(tug_session_id.as_str(), &title) {
+                                    Ok(true) => info!(
+                                        session = %tug_session_id,
+                                        "recorded auto session title"
+                                    ),
+                                    Ok(false) => {}
+                                    Err(err) => warn!(
+                                        session = %tug_session_id,
+                                        error = %err,
+                                        "record_auto_title failed"
+                                    ),
+                                }
+                            }
+                        }
 
                         // `resume_failed` peek: tugcode emits this when
                         // a `--resume` attempt aborts before `session_init`.
@@ -2447,6 +2553,38 @@ fn parse_resume_failed_reason(line: &[u8]) -> Option<String> {
         .get("reason")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
+}
+
+/// A parsed `session_fork` IPC line — tugcode's announcement that a rewind
+/// fork was taken, and from where ([P11]).
+struct SessionForkAnnouncement {
+    parent_session_id: String,
+    new_session_id: String,
+    fork_point: String,
+}
+
+/// Parse a `session_fork` IPC line. All three fields are required: a fork with
+/// no parent, no id, or no branch point has no lineage to allocate.
+fn parse_session_fork(line: &[u8]) -> Option<SessionForkAnnouncement> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    let field = |key: &str| -> Option<String> {
+        let s = value.get(key)?.as_str()?.trim();
+        (!s.is_empty()).then(|| s.to_owned())
+    };
+    Some(SessionForkAnnouncement {
+        parent_session_id: field("parentSessionId")?,
+        new_session_id: field("newSessionId")?,
+        fork_point: field("forkPoint")?,
+    })
+}
+
+/// Extract the `title` field from a `session_title` IPC line — claude's
+/// auto-generated `ai-title`, forwarded live by tugcode. Blank titles are
+/// treated as absent; there is nothing to record.
+fn parse_session_title(line: &[u8]) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    let title = value.get("title")?.as_str()?.trim();
+    (!title.is_empty()).then(|| title.to_owned())
 }
 
 /// Inline the per-turn telemetry payload onto a replayed
@@ -4855,6 +4993,50 @@ mod tests {
         let (out, injected) = inject_replay_telemetry(line, &map);
         assert_eq!(out, line.to_vec());
         assert_eq!(injected, 0);
+    }
+
+    // ---- parse_session_fork -------------------------------------------
+
+    #[test]
+    fn session_fork_needs_all_three_fields() {
+        let full =
+            br#"{"type":"session_fork","parentSessionId":"p","newSessionId":"n","forkPoint":"u"}"#;
+        let parsed = parse_session_fork(full).expect("parses");
+        assert_eq!(parsed.parent_session_id, "p");
+        assert_eq!(parsed.new_session_id, "n");
+        assert_eq!(parsed.fork_point, "u");
+
+        // A fork with no parent, no id, or no branch point has no lineage to
+        // allocate — better to spawn it as a root than to guess.
+        assert!(
+            parse_session_fork(br#"{"type":"session_fork","newSessionId":"n","forkPoint":"u"}"#)
+                .is_none()
+        );
+        assert!(parse_session_fork(
+            br#"{"type":"session_fork","parentSessionId":"p","newSessionId":"","forkPoint":"u"}"#
+        )
+        .is_none());
+        assert!(parse_session_fork(b"not json").is_none());
+    }
+
+    // ---- parse_session_title ------------------------------------------
+
+    #[test]
+    fn session_title_parses_and_rejects_the_empty_cases() {
+        assert_eq!(
+            parse_session_title(br#"{"type":"session_title","title":"Parser bug"}"#),
+            Some("Parser bug".to_owned())
+        );
+        assert_eq!(
+            parse_session_title(br#"{"type":"session_title","title":"  padded  "}"#),
+            Some("padded".to_owned())
+        );
+        assert_eq!(
+            parse_session_title(br#"{"type":"session_title","title":"   "}"#),
+            None
+        );
+        assert_eq!(parse_session_title(br#"{"type":"session_title"}"#), None);
+        assert_eq!(parse_session_title(b"not json"), None);
     }
 
     // ---- merge_and_persist_system_metadata ----------------------------

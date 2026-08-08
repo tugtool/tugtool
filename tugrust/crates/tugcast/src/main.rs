@@ -30,6 +30,7 @@ mod scribe;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
+mod session_tag_lexicon;
 mod shared_agent;
 mod shell_ledger;
 mod terminal_registry;

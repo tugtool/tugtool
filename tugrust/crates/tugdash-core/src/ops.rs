@@ -809,14 +809,19 @@ fn sessions_db_file() -> Option<std::path::PathBuf> {
     tugcore::instance::resolve_sessions_db_path()
 }
 
-/// The `Tug-Session:` trailer value for the committing session ([P09], Spec
-/// S02), or `None` when it can't be resolved — no `TUG_SESSION_ID` env, no
-/// `sessions.db`, or no row for that id. `tugdash commit` runs inside a Claude
-/// session where tugcast exports `TUG_SESSION_ID`; the display name is read
+/// The committing session's identity for the commit trailers: the human
+/// citation and the machine id ([P10], Spec S03).
+///
+/// `None` when it can't be resolved — no `TUG_SESSION_ID` env, no
+/// `sessions.db`, or no row for that id. `tugutil dash commit` runs inside a
+/// Claude session where tugcast exports `TUG_SESSION_ID`; the callsign is read
 /// read-only from `sessions.db` (the `dash_draft_message` pattern). Any
-/// absence omits the trailer silently — a commit never fails on trailer
+/// absence omits both trailers silently — a commit never fails on trailer
 /// resolution.
-pub(crate) fn session_trailer() -> Option<String> {
+///
+/// The citation grammar lives in `tugchanges_core::session_citation`, shared
+/// with the deck-commit lane so the two can never drift.
+pub(crate) fn session_citation() -> Option<(String, String)> {
     let session_id = std::env::var("TUG_SESSION_ID")
         .ok()
         .filter(|s| !s.is_empty())?;
@@ -824,37 +829,38 @@ pub(crate) fn session_trailer() -> Option<String> {
     let conn =
         rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .ok()?;
-    // No row → `query_row` errors → `.ok()?` omits the trailer. A row with a
-    // NULL/blank name falls back to the id's first 8 chars (the chooser's
-    // fallback), so a real session always attributes.
-    let name: Option<String> = conn
+    // No row → `query_row` errors → `.ok()?` omits the trailers.
+    let tag: Option<String> = conn
         .query_row(
-            "SELECT name FROM sessions WHERE session_id = ?1",
+            "SELECT tag FROM sessions WHERE session_id = ?1",
             rusqlite::params![session_id],
             |row| row.get::<_, Option<String>>(0),
         )
         .ok()?;
-    let display = name
-        .map(|n| n.trim().to_string())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| session_id.chars().take(8).collect());
-    Some(format!("{display} ({session_id})"))
+    let citation = tugchanges_core::session_citation(tag.as_deref(), &session_id);
+    Some((citation, session_id))
 }
 
-/// Append the `Tug-Session:` (when resolvable) + `Tug-Dash: <branch> onto
-/// <base>` trailers to a dash round-commit or join/squash message ([P08], Spec
-/// S02). `base` comes from the dash's recorded base branch — the same source
-/// `show()` / join use. Idempotent via `append_trailers`, so a draft that
-/// already carries a trailer is never duplicated.
+/// Append the session trailers (when resolvable) + `Tug-Dash: <branch> onto
+/// <base>` to a dash round-commit or join/squash message ([P08]/[P10], Spec
+/// S02/S03). `base` comes from the dash's recorded base branch — the same
+/// source `show()` / join use. Idempotent via `append_trailers`, so a draft
+/// that already carries a trailer is never duplicated.
+///
+/// The session travels as a **pair**: `Tug-Session` is the human citation and
+/// `Tug-Session-Id` the full uuid a reader joins against the ledger. Neither
+/// is displayed as body ink — tugcast parses both into typed fields and strips
+/// the lines.
 fn with_dash_trailers(repo: &Path, name: &str, branch: &str, message: &str) -> String {
     let dash_value = match dash_base(repo, name) {
         Ok(base) if !base.is_empty() => format!("{branch} onto {base}"),
         _ => branch.to_string(),
     };
-    let session = session_trailer();
+    let session = session_citation();
     let mut trailers: Vec<(&str, &str)> = Vec::new();
-    if let Some(sv) = session.as_deref() {
-        trailers.push(("Tug-Session", sv));
+    if let Some((citation, id)) = session.as_ref() {
+        trailers.push(("Tug-Session", citation.as_str()));
+        trailers.push(("Tug-Session-Id", id.as_str()));
     }
     trailers.push(("Tug-Dash", dash_value.as_str()));
     tugchanges_core::append_trailers(message, &trailers)
@@ -1813,11 +1819,16 @@ mod tests {
             "round commit carries Tug-Dash: {round}"
         );
         // Only assert absence when the environment genuinely lacks the id, so
-        // the test never flakes on a runner that happens to export it.
+        // the test never flakes on a runner that happens to export it. Both
+        // keys travel together — neither lands without the other.
         if std::env::var("TUG_SESSION_ID").is_err() {
             assert!(
                 !round.contains("Tug-Session:"),
                 "no session env → no Tug-Session: {round}"
+            );
+            assert!(
+                !round.contains("Tug-Session-Id:"),
+                "no session env → no Tug-Session-Id: {round}"
             );
         }
 

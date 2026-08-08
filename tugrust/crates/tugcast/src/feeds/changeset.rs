@@ -598,8 +598,9 @@ pub(crate) async fn compose_snapshot(
 /// - every **live** session gains an entry — fileless when it owns no dirty
 ///   files — so the card can list every open session, clean or not;
 /// - every session entry with a matching ledger row takes its
-///   `display_name` from [`session_row_title`] (the chooser's rule: name →
-///   prompt snippet → id prefix) and its `live` flag from the row's state.
+///   `display_name` from [`session_row_title`] (the chooser's rule:
+///   user-set name → callsign → prompt snippet → id prefix) and its `live`
+///   flag from the row's state.
 ///
 /// Entries re-sort to (sessions by id, dashes by ref) so injection order
 /// never perturbs diff-suppression.
@@ -718,12 +719,24 @@ fn entry_sort_key(entry: &ChangesetEntry) -> (u8, &str) {
     }
 }
 
-/// Session row title, the session chooser's rule: the session's name (a
-/// `/rename` or auto `aiTitle`) when set, else a one-line snippet of the
-/// last user prompt, else the first 8 chars of the session id.
+/// Session row title: the user's `/rename` name when set, else the
+/// session's callsign `tag`, else a one-line snippet of the last user
+/// prompt, else the first 8 chars of the session id.
+///
+/// Only a **user-set** name outranks the callsign — an auto `aiTitle`
+/// (`name_user_set = false`) does not front, so a tagged session reads as
+/// its callsign rather than as a machine-written title.
 fn session_row_title(row: &SessionRow) -> String {
-    if let Some(name) = &row.name {
-        let trimmed = name.trim();
+    if row.name_user_set {
+        if let Some(name) = &row.name {
+            let trimmed = name.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_owned();
+            }
+        }
+    }
+    if let Some(tag) = &row.tag {
+        let trimmed = tag.trim();
         if !trimmed.is_empty() {
             return trimmed.to_owned();
         }
@@ -750,14 +763,22 @@ fn snippet_for_display(s: &str, max: usize) -> String {
     }
 }
 
-/// Owner display name: the session's `name` when the user set it, else the
-/// first 8 chars of the session id (the Z4B chip's fallback rendering).
+/// Owner display name: the session's `name` when the user set it, else its
+/// callsign `tag`, else the first 8 chars of the session id.
+///
+/// The id hash stays the exact `id[..8]` form for a tagless legacy row —
+/// the client's hash-equality sniff still recognizes it.
 fn session_display_name(pfe: &ProjectFileEvent) -> String {
     if pfe.owner_name_user_set {
         if let Some(name) = &pfe.owner_name {
             if !name.is_empty() {
                 return name.clone();
             }
+        }
+    }
+    if let Some(tag) = &pfe.owner_tag {
+        if !tag.is_empty() {
+            return tag.clone();
         }
     }
     let id = &pfe.event.tug_session_id;
@@ -1801,6 +1822,9 @@ mod tests {
         }
     }
 
+    /// A tagless row; a `name` given here is a user-set `/rename`. Tests
+    /// wanting a callsign or an auto `aiTitle` override `tag` /
+    /// `name_user_set` with struct-update syntax.
     fn session_row(
         id: &str,
         name: Option<&str>,
@@ -1818,8 +1842,10 @@ mod tests {
             state,
             card_id: Some("card-1".to_owned()),
             name: name.map(str::to_owned),
-            name_user_set: false,
+            name_user_set: name.is_some(),
             tag: None,
+            root_tag: None,
+            tag_lineage: None,
         }
     }
 
@@ -1914,6 +1940,114 @@ mod tests {
         assert!(*live, "row state overrides the event-derived flag");
     }
 
+    #[test]
+    fn session_row_title_prefers_a_user_name_then_the_callsign() {
+        let base = session_row(
+            "sess-aaaaaaaa",
+            None,
+            Some("fix the parser"),
+            SessionState::Live,
+        );
+
+        // A tagged row speaks its callsign, not the prompt snippet.
+        let tagged = SessionRow {
+            tag: Some("stocky-pixie".to_owned()),
+            ..base.clone()
+        };
+        assert_eq!(session_row_title(&tagged), "stocky-pixie");
+
+        // A user-set name still outranks the callsign.
+        let renamed = SessionRow {
+            name: Some("the parser work".to_owned()),
+            name_user_set: true,
+            ..tagged.clone()
+        };
+        assert_eq!(session_row_title(&renamed), "the parser work");
+
+        // An auto `aiTitle` does not front — the callsign wins.
+        let auto_titled = SessionRow {
+            name: Some("Parser bug investigation".to_owned()),
+            name_user_set: false,
+            ..tagged
+        };
+        assert_eq!(session_row_title(&auto_titled), "stocky-pixie");
+    }
+
+    #[test]
+    fn session_row_title_keeps_the_legacy_tagless_fallbacks() {
+        let with_prompt = session_row(
+            "sess-aaaaaaaa",
+            None,
+            Some("fix  the\nparser"),
+            SessionState::Live,
+        );
+        assert_eq!(session_row_title(&with_prompt), "fix the parser");
+
+        let bare = session_row("sess-aaaaaaaa", None, None, SessionState::Live);
+        assert_eq!(session_row_title(&bare), "sess-aaa", "exactly id[..8]");
+
+        // An auto title on a tagless row falls through to the prompt.
+        let auto_titled = SessionRow {
+            name: Some("Parser bug investigation".to_owned()),
+            name_user_set: false,
+            ..with_prompt
+        };
+        assert_eq!(session_row_title(&auto_titled), "fix the parser");
+    }
+
+    fn project_file_event(
+        session_id: &str,
+        owner_name: Option<&str>,
+        owner_name_user_set: bool,
+        owner_tag: Option<&str>,
+    ) -> ProjectFileEvent {
+        ProjectFileEvent {
+            event: FileEventRow {
+                tug_session_id: session_id.to_owned(),
+                tool_use_id: "tu-1".to_owned(),
+                file_path: "a.txt".to_owned(),
+                tool_name: "Edit".to_owned(),
+                op: "modified".to_owned(),
+                origin: "proof".to_owned(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: "/proj".to_owned(),
+                at: 0,
+            },
+            owner_name: owner_name.map(str::to_owned),
+            owner_name_user_set,
+            owner_tag: owner_tag.map(str::to_owned),
+            owner_live: true,
+        }
+    }
+
+    #[test]
+    fn session_display_name_speaks_the_callsign_before_the_hash() {
+        let tagged = project_file_event("sess-aaaaaaaa", None, false, Some("stocky-pixie"));
+        assert_eq!(session_display_name(&tagged), "stocky-pixie");
+
+        let renamed = project_file_event(
+            "sess-aaaaaaaa",
+            Some("the parser work"),
+            true,
+            Some("stocky-pixie"),
+        );
+        assert_eq!(session_display_name(&renamed), "the parser work");
+
+        let auto_titled = project_file_event(
+            "sess-aaaaaaaa",
+            Some("Parser bug investigation"),
+            false,
+            Some("stocky-pixie"),
+        );
+        assert_eq!(session_display_name(&auto_titled), "stocky-pixie");
+
+        // A legacy tagless row still degrades to exactly id[..8] — the
+        // client's hash-equality sniff depends on that form.
+        let legacy = project_file_event("sess-aaaaaaaa", None, false, None);
+        assert_eq!(session_display_name(&legacy), "sess-aaa");
+    }
+
     #[tokio::test]
     async fn run_changeset_commit_commits_exactly_the_listed_files() {
         let (_temp, repo) = init_repo();
@@ -1966,32 +2100,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn run_changeset_commit_lands_a_session_trailer() {
+    async fn run_changeset_commit_lands_the_session_trailer_pair() {
         let (_temp, repo) = init_repo();
         std::fs::write(repo.join("a.txt"), "changed\n").unwrap();
-        // The deck path enriches the message with a Tug-Session trailer before
-        // committing (do_changeset_commit → append_trailers). Mirror that here.
-        let message =
-            tugchanges_core::append_trailers("commit a", &[("Tug-Session", "web (sess-1)")]);
+        // The deck path enriches the message with the citation + machine-id
+        // pair before committing (do_changeset_commit → append_trailers).
+        // Mirror that here.
+        const FULL_ID: &str = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let pair: [(&str, &str); 2] = [
+            ("Tug-Session", "stocky-pixie (f6e43925)"),
+            ("Tug-Session-Id", FULL_ID),
+        ];
+        let message = tugchanges_core::append_trailers("commit a", &pair);
         run_changeset_commit(&repo, &["a.txt".to_string()], &message, None)
             .await
             .expect("commit succeeds");
-        let trailer = git_stdout(
-            &repo,
-            &[
-                "log",
-                "-1",
-                "--format=%(trailers:key=Tug-Session,valueonly)",
-            ],
-        )
-        .await
-        .expect("git log reads the trailer");
-        assert_eq!(trailer.trim(), "web (sess-1)");
-        // A second append over the already-trailered message is a no-op.
-        assert_eq!(
-            tugchanges_core::append_trailers(&message, &[("Tug-Session", "web (sess-1)")]),
-            message
-        );
+        let read = |key: &'static str| {
+            let repo = repo.clone();
+            async move {
+                git_stdout(
+                    &repo,
+                    &[
+                        "log",
+                        "-1",
+                        &format!("--format=%(trailers:key={key},valueonly)"),
+                    ],
+                )
+                .await
+                .expect("git log reads the trailer")
+                .trim()
+                .to_owned()
+            }
+        };
+        assert_eq!(read("Tug-Session").await, "stocky-pixie (f6e43925)");
+        assert_eq!(read("Tug-Session-Id").await, FULL_ID);
+        // A second append over the already-trailered message is a no-op —
+        // both keys, so a re-draft never doubles either line.
+        assert_eq!(tugchanges_core::append_trailers(&message, &pair), message);
     }
 
     #[tokio::test]

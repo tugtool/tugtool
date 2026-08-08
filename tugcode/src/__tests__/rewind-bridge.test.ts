@@ -680,6 +680,52 @@ describe("conversation rewind — fork (default)", () => {
     const ack = out.find((m) => m.type === "rewind_result");
     expect(sessionInit.session_id).toBe(ack.newSessionId);
   });
+
+  test("announces the fork's parentage and branch point BEFORE the session_init that records it", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager } = convManager(jsonl);
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[1],
+        scope: "conversation",
+        fork: true,
+      });
+    });
+
+    const ack = out.find((m) => m.type === "rewind_result");
+    const announcement = out.find((m) => m.type === "session_fork");
+    expect(announcement).toEqual({
+      type: "session_fork",
+      parentSessionId: "live-claude-id",
+      newSessionId: ack.newSessionId,
+      // The rewound-to prompt uuid IS the branch point: two forks taken
+      // there share a lineage letter.
+      forkPoint: anchors[1],
+    });
+    // Ordering is the contract — tugcast stages the allocated lineage on the
+    // announcement and consumes it on the init that follows.
+    const types = out.map((m) => m.type);
+    expect(types.indexOf("session_fork")).toBeLessThan(
+      types.indexOf("session_init"),
+    );
+  });
+
+  test("a destructive in-place rewind announces no fork", async () => {
+    const { jsonl, anchors } = buildSessionJsonl();
+    const { manager } = convManager(jsonl);
+
+    const out = await captureIpcOutput(async () => {
+      await manager.handleSessionRewind({
+        type: "session_rewind",
+        promptUuid: anchors[1],
+        scope: "conversation",
+        fork: false,
+      });
+    });
+    expect(out.map((m) => m.type)).not.toContain("session_fork");
+  });
 });
 
 describe("conversation rewind — destructive in-place (fork:false)", () => {

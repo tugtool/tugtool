@@ -70,14 +70,28 @@ const encodeProjectDir = (absDir: string): string =>
   absDir.replace(/[^A-Za-z0-9-]/g, "-");
 
 /**
- * The seeded sessions. Each row's title is derived from its first user prompt
- * (these sessions carry no name and no minted tag), so the leading word of each
- * prompt is a fragment that appears in exactly one rendered title.
+ * The seeded sessions. Each carries an `ai-title` record, so its row title is
+ * that title and the leading word of each is a fragment appearing in exactly
+ * one rendered title. The title has to be seeded rather than left to fall
+ * through to the prompt: every scanned session is minted a real callsign, and
+ * an untitled row renders that callsign — a different string every run.
  */
 const SEEDED = [
-  { id: "a7c02650-0000-4000-8000-0000000000a1", prompt: "zebra harmonica calibration" },
-  { id: "a7c02650-0000-4000-8000-0000000000a2", prompt: "quokka telemetry sweep" },
-  { id: "a7c02650-0000-4000-8000-0000000000a3", prompt: "walrus ledger reconciliation" },
+  {
+    id: "a7c02650-0000-4000-8000-0000000000a1",
+    prompt: "zebra harmonica calibration",
+    title: "zebra harmonica calibration",
+  },
+  {
+    id: "a7c02650-0000-4000-8000-0000000000a2",
+    prompt: "quokka telemetry sweep",
+    title: "quokka telemetry sweep",
+  },
+  {
+    id: "a7c02650-0000-4000-8000-0000000000a3",
+    prompt: "walrus ledger reconciliation",
+    title: "walrus ledger reconciliation",
+  },
 ];
 /** A fragment of exactly one seeded title. */
 const MATCHING_FRAGMENT = "zebra";
@@ -85,7 +99,12 @@ const MATCHING_FRAGMENT = "zebra";
 const ABSENT_FRAGMENT = "qqzzxx";
 
 /** A minimal one-turn session JSONL in claude's own shape. */
-function buildFixtureJsonl(cwd: string, sessionId: string, prompt: string): string {
+function buildFixtureJsonl(
+  cwd: string,
+  sessionId: string,
+  prompt: string,
+  title: string,
+): string {
   const base = {
     isSidechain: false,
     userType: "external",
@@ -126,6 +145,7 @@ function buildFixtureJsonl(cwd: string, sessionId: string, prompt: string): stri
         },
       },
     },
+    { type: "ai-title", aiTitle: title, sessionId },
   ];
   return lines.map((e) => JSON.stringify(e)).join("\n") + "\n";
 }
@@ -143,7 +163,7 @@ beforeAll(() => {
   for (const session of SEEDED) {
     writeFileSync(
       join(fixtureDir, `${session.id}.jsonl`),
-      buildFixtureJsonl(projectDir, session.id, session.prompt),
+      buildFixtureJsonl(projectDir, session.id, session.prompt, session.title),
     );
   }
 });

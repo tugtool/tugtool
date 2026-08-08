@@ -409,6 +409,41 @@ export interface ControlRequestForward {
 }
 
 /**
+ * A rewind-fork announcement, emitted just before the fork's synthetic
+ * `session_init` ([P11]).
+ *
+ * The fork is a new session that descends from an existing one, and tugcast
+ * owns the lineage grammar — it allocates `<root>-<Letter><Number>` against
+ * the parent's lineage and stages the composed callsign so the `session_init`
+ * that follows records the fork under it. Nothing round-trips: tugcode
+ * announces the fork's parentage and the rewind point it was taken at, and
+ * tugcast does the naming.
+ */
+export interface SessionFork {
+  type: "session_fork";
+  /** The session being forked FROM — claude's own id for it. */
+  parentSessionId: string;
+  /** The fork's freshly minted claude session id. */
+  newSessionId: string;
+  /** The rewound-to prompt uuid — the branch point, stable across forks. */
+  forkPoint: string;
+}
+
+/**
+ * The auto-generated session title claude writes as an `ai-title` record.
+ *
+ * The record lands in the session JSONL, so the external scan has always been
+ * able to read it — but only on the next scan, which meant a title could be
+ * hours stale. This frame forwards it the moment it arrives. tugcast writes it
+ * to `sessions.name` only when `name_user_set = 0`: a `/rename` is the user's
+ * word and an auto title never overwrites it.
+ */
+export interface SessionTitle {
+  type: "session_title";
+  title: string;
+}
+
+/**
  * System init metadata forwarded to tugcast for UI population.
  *
  * `version` is optional and is included only when the source actually
@@ -1394,6 +1429,8 @@ export type OutboundMessage =
   | ContentBlockStart
   | ControlRequestForward
   | SystemMetadata
+  | SessionFork
+  | SessionTitle
   | SessionCapabilities
   | CostUpdate
   | StreamingUsage

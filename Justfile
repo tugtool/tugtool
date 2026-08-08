@@ -213,6 +213,14 @@ db-inspect DB *ARGS:
         sqlite3 "$db"
     fi
 
+# Regenerate the Rust session-tag lexicon from its TypeScript source.
+# tugdeck/src/lib/session-tag-lexicon.ts owns the words; the ledger's mint
+# reroll needs the same pools. Run this after editing the lexicon — a Rust
+# drift test reads the TS file at test time and fails when the two part.
+gen-session-tag-lexicon:
+    cd tugdeck && bun run scripts/generate-session-tag-lexicon.ts
+    cd tugrust && cargo fmt -p tugcast
+
 # Format Rust code
 fmt:
     cd tugrust && cargo fmt --all

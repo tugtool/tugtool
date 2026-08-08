@@ -266,6 +266,13 @@ pub struct LedgerEntry {
     /// `session_updated`. `None` when tugdeck sent no tag. Tug-side only — never
     /// forwarded into the child spawn args ([P07]).
     pub tag: Option<String>,
+    /// A rewind-fork's allocated lineage ([P11]), staged by the
+    /// `session_fork` announcement and consumed by the `session_init` that
+    /// immediately follows it. The composed callsign rides in as the spawn's
+    /// tag; the two structured columns are written onto the row right after.
+    /// Keyed by the fork's claude session id so a `session_init` for anything
+    /// else cannot consume it. `None` for every ordinary spawn.
+    pub pending_fork: Option<(String, crate::session_ledger::ForkLineage)>,
     /// Lifecycle state.
     pub spawn_state: SpawnState,
     /// Whether this entry currently owns a `WorkspaceRegistry` refcount for its
@@ -384,6 +391,7 @@ impl LedgerEntry {
             session_mode,
             permission_mode: None,
             tag: None,
+            pending_fork: None,
             spawn_state: SpawnState::Idle,
             holds_workspace_refcount: false,
             crash_budget,
@@ -854,6 +862,8 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "name": row.name,
             "name_user_set": row.name_user_set,
             "tag": row.tag,
+            "root_tag": row.root_tag,
+            "tag_lineage": row.tag_lineage,
         },
     });
     Frame::new(
@@ -1251,6 +1261,12 @@ fn build_listed_union(
             if entry.row.name.is_none() {
                 entry.row.name = meta.name;
             }
+            // A legacy tagless ledger row shows the callsign the scan minted
+            // for it; `record_spawn` persists that same tag onto the row at
+            // its next resume ([Q04]).
+            if entry.row.tag.is_none() {
+                entry.row.tag = meta.tag;
+            }
         }
         let synthetic_workspace_key =
             crate::session_ledger::encode_claude_project_name(&scan.canonical_project_dir);
@@ -1271,9 +1287,14 @@ fn build_listed_union(
                     name: meta.name,
                     // A scanned `aiTitle` is never a user rename.
                     name_user_set: false,
-                    // Scanned external rows carry no tag; they acquire one lazily
-                    // on their next resume ([P06]).
-                    tag: None,
+                    // The callsign minted at scan time ([P12], [Q04]) — the
+                    // picker sees a real tag before the session is ever
+                    // adopted, and adoption carries this same tag onto the
+                    // `sessions` row rather than minting a second one.
+                    tag: meta.tag,
+                    // A scanned session is a root until it is forked from.
+                    root_tag: None,
+                    tag_lineage: None,
                 },
                 origin: "external",
                 terminal_live,
@@ -1589,17 +1610,26 @@ fn parse_changeset_disclaim_payload(
     })
 }
 
-/// The commit message enriched with a `Tug-Session:` trailer when the deck
-/// supplied the session name + id (Spec S01/S02). Absent either field, the
-/// message is returned byte-for-byte. Idempotent via `append_trailers`.
-fn changeset_commit_message(request: &ChangesetCommitPayload) -> String {
-    match (&request.session_name, &request.session_id) {
-        (Some(name), Some(id)) => tugchanges_core::append_trailers(
-            &request.message,
-            &[("Tug-Session", &format!("{name} ({id})"))],
-        ),
-        _ => request.message.clone(),
-    }
+/// The commit message enriched with the session trailer pair ([P10], Spec
+/// S03): `Tug-Session` carrying the human citation `<tag> (<shortid8>)` and
+/// `Tug-Session-Id` the full uuid a reader joins against the ledger. Without a
+/// session id the message is returned byte-for-byte. Idempotent via
+/// `append_trailers`.
+///
+/// `tag` is resolved from the ledger by the caller, not taken from the deck's
+/// payload — the ledger is the authority on a callsign, and the deck may still
+/// be holding the optimistic one it minted at spawn. The citation grammar
+/// itself lives in `tugchanges_core::session_citation`, shared with the dash
+/// lane so the two can never drift.
+fn changeset_commit_message(request: &ChangesetCommitPayload, tag: Option<&str>) -> String {
+    let Some(id) = request.session_id.as_deref().filter(|s| !s.is_empty()) else {
+        return request.message.clone();
+    };
+    let citation = tugchanges_core::session_citation(tag, id);
+    tugchanges_core::append_trailers(
+        &request.message,
+        &[("Tug-Session", &citation), ("Tug-Session-Id", id)],
+    )
 }
 
 /// Parsed `changeset_draft_request` (Spec S01): the entry identity an on-demand
@@ -4074,7 +4104,21 @@ impl AgentSupervisor {
             return;
         }
 
-        let message = changeset_commit_message(request);
+        // The callsign comes from the ledger, never from the payload — the
+        // deck may still be holding the optimistic tag it minted at spawn.
+        let tag = request
+            .session_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|id| self.session_ledger.as_ref().map(|l| (l, id)))
+            .and_then(|(ledger, id)| match ledger.get(id) {
+                Ok(row) => row.and_then(|r| r.tag),
+                Err(err) => {
+                    warn!(error = %err, session_id = id, "ledger read for commit trailer failed");
+                    None
+                }
+            });
+        let message = changeset_commit_message(request, tag.as_deref());
         match crate::feeds::changeset::run_changeset_commit(
             dir,
             &request.files,
@@ -6668,33 +6712,47 @@ mod tests {
 
     // ── session tag on the wire: inbound parse + outbound frame ───────────────
 
-    #[test]
-    fn changeset_commit_message_appends_session_trailer_when_present() {
-        let request = ChangesetCommitPayload {
+    fn commit_request(session_id: Option<&str>) -> ChangesetCommitPayload {
+        ChangesetCommitPayload {
             project_dir: "/p".to_string(),
             files: vec!["a.txt".to_string()],
             message: "commit a".to_string(),
             session_name: Some("web".to_string()),
-            session_id: Some("sess-1".to_string()),
+            session_id: session_id.map(str::to_owned),
             hunks: None,
-        };
+        }
+    }
+
+    #[test]
+    fn changeset_commit_message_appends_the_citation_and_the_machine_id() {
+        // The name never appears — the callsign is the session's name, and it
+        // is immutable, so an old commit keeps saying where it came from.
+        let request = commit_request(Some("f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f"));
         assert_eq!(
-            changeset_commit_message(&request),
-            "commit a\n\nTug-Session: web (sess-1)"
+            changeset_commit_message(&request, Some("stocky-pixie")),
+            "commit a\n\nTug-Session: stocky-pixie (f6e43925)\n\
+             Tug-Session-Id: f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
         );
     }
 
     #[test]
-    fn changeset_commit_message_is_byte_for_byte_without_session_fields() {
-        let request = ChangesetCommitPayload {
-            project_dir: "/p".to_string(),
-            files: vec!["a.txt".to_string()],
-            message: "commit a".to_string(),
-            session_name: None,
-            session_id: None,
-            hunks: None,
-        };
-        assert_eq!(changeset_commit_message(&request), "commit a");
+    fn a_tagless_session_cites_the_bare_short_id() {
+        // A doubled hash is noise, so the legacy fallback drops the parens.
+        let request = commit_request(Some("f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f"));
+        assert_eq!(
+            changeset_commit_message(&request, None),
+            "commit a\n\nTug-Session: f6e43925\n\
+             Tug-Session-Id: f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f"
+        );
+    }
+
+    #[test]
+    fn changeset_commit_message_is_byte_for_byte_without_a_session_id() {
+        let request = commit_request(None);
+        assert_eq!(
+            changeset_commit_message(&request, Some("stocky-pixie")),
+            "commit a"
+        );
     }
 
     #[test]
@@ -6798,6 +6856,8 @@ mod tests {
             name: None,
             name_user_set: false,
             tag: Some("azure-heron".to_owned()),
+            root_tag: None,
+            tag_lineage: None,
         };
         let frame = build_session_updated_frame(&row);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");

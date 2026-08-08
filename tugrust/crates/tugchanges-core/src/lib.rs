@@ -33,4 +33,4 @@ pub use preflight::{
     diff, log, preflight,
 };
 pub use shell_ops::{DeclaredKind, DeclaredOp, ParseOutcome, parse_shell_ops};
-pub use trailer::append_trailers;
+pub use trailer::{SHORT_SESSION_ID_LEN, append_trailers, session_citation};

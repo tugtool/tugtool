@@ -388,13 +388,15 @@ describe("session ledger CONTROL encoders / decoders", () => {
         card_id: "card-1",
         name: null,
         // Bare ledger-row pushes never carry origin/terminal_live/file_size/
-        // name_user_set/tag; the decoder normalizes them to the tug/not-live/
-        // no-size/not-user-set/no-tag defaults.
+        // name_user_set/tag/lineage; the decoder normalizes them to the
+        // tug/not-live/no-size/not-user-set/no-tag/root-session defaults.
         origin: "tug",
         terminal_live: null,
         file_size: null,
         name_user_set: false,
         tag: null,
+        root_tag: null,
+        tag_lineage: null,
       },
     });
   });

@@ -400,11 +400,21 @@ pub async fn build_git_log_snapshot(
             &limit_arg,
             // Fields are `%x1f`-delimited: sha, author name, author date
             // (short), committer name, committer email, committer date (strict
-            // ISO), subject, `Tug-Dash:` trailer (empty when absent — the
-            // History join badge reads it, [P09]), then the multi-line body
-            // (`%b`). The trailer's own multi-value separator is `%x1e` (RS) —
-            // NOT `%x00`, which `-z` now owns as the record terminator.
-            "--format=%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f%(trailers:key=Tug-Dash,valueonly,separator=%x1e)%x1f%b",
+            // ISO), subject, the three Tug trailers (`Tug-Dash` for the
+            // History join badge [P09]; `Tug-Session` / `Tug-Session-Id` for
+            // the session citation [P10]) — each empty when absent — then the
+            // multi-line body (`%b`). A trailer's own multi-value separator is
+            // `%x1e` (RS) — NOT `%x00`, which `-z` owns as the record
+            // terminator.
+            //
+            // Adding a trailer field here REQUIRES widening `parse_git_log`'s
+            // `splitn` cap in the same edit, or the new values glue themselves
+            // to the front of every body.
+            "--format=%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s\
+             %x1f%(trailers:key=Tug-Dash,valueonly,separator=%x1e)\
+             %x1f%(trailers:key=Tug-Session,valueonly,separator=%x1e)\
+             %x1f%(trailers:key=Tug-Session-Id,valueonly,separator=%x1e)\
+             %x1f%b",
             // Each commit's changed paths follow its record, so the History
             // filter can match on the files a commit touched. Paths only —
             // statuses and line counts stay on the `GIT_COMMIT_FILES` route.
@@ -431,23 +441,55 @@ pub async fn build_git_log_snapshot(
     }
 }
 
+/// The trailer keys whose lines never belong in a displayed commit body: they
+/// are machine plumbing, and every one of them is already a typed field on
+/// [`GitLogCommit`]. Stripped together so the History card carries no Tug
+/// trailer ink at all rather than some of it.
+const TUG_TRAILER_KEYS: &[&str] = &["Tug-Session:", "Tug-Session-Id:", "Tug-Dash:"];
+
+/// Remove Tug trailer lines from a `%b` body and trim the trailing whitespace
+/// they leave behind.
+///
+/// Line-wise rather than paragraph-wise on purpose: trailers are supposed to
+/// be one final block, but a hand-edited or re-drafted message can interleave
+/// them with prose, and a body that keeps one stray `Tug-Session:` line is the
+/// exact ink this exists to remove. Non-trailer lines are preserved verbatim,
+/// including blank ones inside the body.
+fn strip_tug_trailers(body: &str) -> String {
+    let kept: Vec<&str> = body
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim_start();
+            !TUG_TRAILER_KEYS.iter().any(|key| trimmed.starts_with(key))
+        })
+        .collect();
+    kept.join("\n").trim_end().to_string()
+}
+
 /// Parse `git log -z --name-only` output into [`GitLogCommit`]s.
 ///
 /// `-z` NUL-terminates every chunk, and `--name-only` makes two kinds of chunk
 /// share the stream: a commit's
-/// `%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f<trailer>%x1f%b` record,
+/// `%H%x1f%an%x1f%ad%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f<3 trailers>%x1f%b` record,
 /// then one chunk per changed path (git prefixes the first path of a commit
-/// with a newline, which is stripped). The two are told apart by the field
-/// separator: a record always carries eight of them, and a path cannot contain
+/// with a newline, which is stripped). The two are told apart by the
+/// **presence** of a field separator, not by a count: a path cannot contain
 /// one — `%x1f` is a control byte no checked-in path uses. Every path chunk
 /// belongs to the record that most recently preceded it, so a commit with no
 /// files (a merge, an empty commit) simply collects none.
 ///
-/// The 8th record field is the `Tug-Dash:` trailer value (empty when absent; a
-/// repeated trailer's values are `%x1e`-joined and only the first is kept); the
-/// 9th is the multi-line body, trailing whitespace trimmed. Records with fewer
-/// than seven fields (no subject) are skipped with a `warn!`, and so are the
-/// paths that would have followed them.
+/// Record fields, 0-indexed: 0 sha, 1 author, 2 author date, 3 committer,
+/// 4 committer email, 5 committer date, 6 subject, **7 `Tug-Dash`,
+/// 8 `Tug-Session`, 9 `Tug-Session-Id`**, 10 the multi-line body with trailing
+/// whitespace trimmed. A trailer field is empty when absent; a repeated
+/// trailer's values are `%x1e`-joined and only the first is kept.
+///
+/// Records with fewer than seven fields (no subject) are skipped with a
+/// `warn!`, and so are the paths that would have followed them. That bound is
+/// **seven, not ten**, and stays there when trailer fields are added: it exists
+/// because `subject` is `fields[6]`, an index the trailing fields do not move.
+/// Raising it would newly reject records this parser handles today and drop
+/// their paths.
 fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
     let mut commits: Vec<GitLogCommit> = Vec::new();
     // False while the paths of a record we rejected stream past, so they are
@@ -468,21 +510,32 @@ fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
             }
             continue;
         }
-        let fields: Vec<&str> = chunk.splitn(9, LOG_FIELD_SEP).collect();
+        // 11 = 10 leading fields + the body, which must stay whole. Left one
+        // short, every trailer value after the cap glues itself to the front
+        // of the body — a silent corruption under a green suite.
+        let fields: Vec<&str> = chunk.splitn(11, LOG_FIELD_SEP).collect();
         if fields.len() < 7 {
             warn!(record = chunk, "skipping malformed git log record");
             collecting = false;
             continue;
         }
-        let tug_dash = fields
-            .get(7)
-            .and_then(|raw| raw.split(LOG_TRAILER_SEP).next())
-            .map(str::trim)
-            .filter(|v| !v.is_empty())
-            .map(str::to_owned);
+        let trailer = |index: usize| -> Option<String> {
+            fields
+                .get(index)
+                .and_then(|raw| raw.split(LOG_TRAILER_SEP).next())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let tug_dash = trailer(7);
+        let tug_session = trailer(8);
+        let tug_session_id = trailer(9);
+        // `%b` retains trailer lines — git does not remove them — which is why
+        // the History card showed raw trailer ink. Strip every Tug trailer so
+        // the body is the message the author wrote.
         let body = fields
-            .get(8)
-            .map(|raw| raw.trim_end().to_string())
+            .get(10)
+            .map(|raw| strip_tug_trailers(raw))
             .unwrap_or_default();
         commits.push(GitLogCommit {
             sha: fields[0].to_string(),
@@ -494,6 +547,8 @@ fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
             subject: fields[6].to_string(),
             body,
             tug_dash,
+            tug_session,
+            tug_session_id,
             files: Vec::new(),
         });
         collecting = true;
@@ -801,6 +856,132 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    // ── parse_git_log: the Tug trailer fields and the stripped body ──────────
+
+    const SEP: char = LOG_FIELD_SEP;
+
+    /// One `git log -z` record. Field order mirrors the `--format` string:
+    /// sha, author, date, committer, email, committer date, subject, then the
+    /// three Tug trailers, then the body.
+    fn log_record(
+        subject: &str,
+        dash: &str,
+        session: &str,
+        session_id: &str,
+        body: &str,
+    ) -> String {
+        [
+            "0123456789abcdef0123456789abcdef01234567",
+            "Ada",
+            "2026-08-08",
+            "Ada",
+            "ada@example.com",
+            "2026-08-08T09:30:00-07:00",
+            subject,
+            dash,
+            session,
+            session_id,
+            body,
+        ]
+        .join(&SEP.to_string())
+    }
+
+    #[test]
+    fn the_session_trailers_land_in_typed_fields_and_leave_the_body() {
+        const FULL_ID: &str = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let record = log_record(
+            "add the thing",
+            "",
+            "stocky-pixie (f6e43925)",
+            FULL_ID,
+            &format!(
+                "A real explanation\nover two lines.\n\nTug-Session: stocky-pixie (f6e43925)\nTug-Session-Id: {FULL_ID}\n"
+            ),
+        );
+        let commits = parse_git_log(&format!("{record}\0"));
+        assert_eq!(commits.len(), 1);
+        let c = &commits[0];
+        assert_eq!(c.tug_session.as_deref(), Some("stocky-pixie (f6e43925)"));
+        assert_eq!(c.tug_session_id.as_deref(), Some(FULL_ID));
+        // THE assertion the `splitn` widening exists for: left at 9, both
+        // trailer values glue themselves onto the front of the body and this
+        // fails loudly instead of shipping trailer ink under a green suite.
+        assert_eq!(c.body, "A real explanation\nover two lines.");
+        assert!(!c.body.contains("Tug-Session"));
+        assert_eq!(c.subject, "add the thing");
+    }
+
+    #[test]
+    fn a_legacy_one_line_trailer_parses_with_no_machine_id() {
+        // Legacy commits carry `<display> (<full-uuid>)` and no id trailer;
+        // they live in history forever and must still resolve.
+        let legacy = "web (f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f)";
+        let record = log_record(
+            "old commit",
+            "",
+            legacy,
+            "",
+            &format!("Body text.\n\nTug-Session: {legacy}\n"),
+        );
+        let commits = parse_git_log(&format!("{record}\0"));
+        assert_eq!(commits[0].tug_session.as_deref(), Some(legacy));
+        assert_eq!(commits[0].tug_session_id, None);
+        assert_eq!(commits[0].body, "Body text.");
+    }
+
+    #[test]
+    fn body_stripping_keeps_prose_and_removes_interleaved_trailers() {
+        // Trailers are supposed to be one final block; a hand-edited message
+        // can interleave them, and a stray line left behind is the exact ink
+        // the strip exists to remove.
+        let record = log_record(
+            "s",
+            "tugdash/x onto main",
+            "stocky-pixie (f6e43925)",
+            "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+            "First line.\nTug-Session: stocky-pixie (f6e43925)\n\nSecond paragraph.\n\nTug-Dash: tugdash/x onto main\nTug-Session-Id: f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f\n",
+        );
+        let commits = parse_git_log(&format!("{record}\0"));
+        assert_eq!(commits[0].body, "First line.\n\nSecond paragraph.");
+        assert_eq!(
+            commits[0].tug_dash.as_deref(),
+            Some("tugdash/x onto main"),
+            "Tug-Dash still lands as a typed field; only its body ink goes"
+        );
+    }
+
+    #[test]
+    fn a_commit_with_files_keeps_them_on_its_own_record() {
+        // The widened record must not disturb how path chunks are filed: they
+        // belong to the record that preceded them, and a subject-less record
+        // still skips its paths rather than donating them to its predecessor.
+        let good = log_record("first", "", "", "", "body");
+        let malformed = format!("only{SEP}three{SEP}fields");
+        let second = log_record("second", "", "", "", "");
+        let stream = format!(
+            "{good}\0\nsrc/a.rs\0src/b.rs\0{malformed}\0\norphan.rs\0{second}\0\nsrc/c.rs\0"
+        );
+        let commits = parse_git_log(&stream);
+        assert_eq!(commits.len(), 2, "the malformed record is skipped");
+        assert_eq!(commits[0].subject, "first");
+        assert_eq!(commits[0].files, vec!["src/a.rs", "src/b.rs"]);
+        assert_eq!(commits[1].subject, "second");
+        assert_eq!(
+            commits[1].files,
+            vec!["src/c.rs"],
+            "the skipped record's path never lands on a neighbour"
+        );
+    }
+
+    #[test]
+    fn a_body_with_no_trailers_is_untouched() {
+        let record = log_record("s", "", "", "", "Just prose.\n\nAnd more.\n");
+        let commits = parse_git_log(&format!("{record}\0"));
+        assert_eq!(commits[0].body, "Just prose.\n\nAnd more.");
+        assert_eq!(commits[0].tug_session, None);
+        assert_eq!(commits[0].tug_session_id, None);
+    }
 
     #[test]
     fn test_parse_typical_output() {

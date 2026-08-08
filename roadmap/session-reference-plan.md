@@ -605,13 +605,13 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Tag arm in the Rust changeset feed | pending | — |
-| #step-2 | Mint hardening: reroll, no NULL, no bare `-N` | pending | — |
-| #step-3 | External-session tag backfill at scan time | pending | — |
-| #step-4 | Live `ai-title` capture | pending | — |
-| #step-5 | Fork carries lineage | pending | — |
-| #step-6 | Trailer writers: citation + machine id | pending | — |
-| #step-7 | Trailer read: typed fields, stripped body | pending | — |
+| #step-1 | Tag arm in the Rust changeset feed | done | `df35bbfd3` |
+| #step-2 | Mint hardening: reroll, no NULL, no bare `-N` | done | `0add2f636` |
+| #step-3 | External-session tag backfill at scan time | done | `639f3bc6c` |
+| #step-4 | Live `ai-title` capture | done | `21dc1261a` |
+| #step-5 | Fork carries lineage | done | `db8fc452d` |
+| #step-6 | Trailer writers: citation + machine id | done | `972f2805a` |
+| #step-7 | Trailer read: typed fields, stripped body | done | `87a47bdb9` |
 | #step-8 | Session atom tone + masthead height tokens (six themes) | pending | — |
 | #step-9 | `resolveSessionIdentity` and the great deletion | pending | — |
 | #step-10 | `TugSessionIdentity`: chip + line tiers | pending | — |

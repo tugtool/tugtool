@@ -7,7 +7,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { SessionsDataSource } from "@/lib/session-picker-data-source";
-import { deriveStableTag } from "@/lib/session-tag";
 import type { WorkspaceSnapshot } from "@/lib/session-ledger-store";
 import type { SessionRow } from "@/protocol";
 
@@ -25,6 +24,8 @@ function makeRow(partial: Partial<SessionRow> & { session_id: string }): Session
     name: partial.name ?? null,
     name_user_set: partial.name_user_set ?? false,
     tag: partial.tag ?? null,
+    root_tag: partial.root_tag ?? null,
+    tag_lineage: partial.tag_lineage ?? null,
     origin: partial.origin ?? "tug",
     terminal_live: partial.terminal_live ?? null,
     file_size: partial.file_size ?? null,
@@ -95,11 +96,13 @@ describe("SessionsDataSource fuzzy filter", () => {
     expect(rowsOf(filtered("heron parser"))).toEqual(["session-new"]);
   });
 
-  test("an untagged row is matchable by its derived stable tag", () => {
+  test("a legacy tagless row is still matchable by its id", () => {
+    // Every row carries a real minted callsign after its first scan; a row
+    // that predates that is matched by the fields it does have.
     const ds = new SessionsDataSource({
       projectDir: "/proj",
       ledger: readySnapshot([makeRow({ session_id: "untagged", turn_count: 1 })]),
-      filterQuery: deriveStableTag("untagged"),
+      filterQuery: "untagged",
     });
     expect(rowsOf(ds)).toEqual(["session-new", "untagged"]);
   });
