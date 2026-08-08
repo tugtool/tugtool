@@ -62,9 +62,11 @@ Root cause: [D123] ("a name is one string produced in one place") exists for pan
 | **Row** | callsign lead, title beneath, pulse/activity/telemetry — `TugSessionRow` adopted everywhere (picker moves off hand-assembled `TugListRow`) | picker, `/resume` sheet, Lens Sessions group |
 | **Masthead** | expanded card chrome — see below | Session card title bar |
 
-**Typography convention:** the tag gets one distinct, recognizable treatment everywhere it appears — it is the one identifier that is never prose.
+**Typography convention:** the tag gets one distinct, recognizable treatment everywhere it appears — it is the one identifier that is never prose. Resolved by the first gallery review round: **bold sans, never monospace** — mono belongs to flat text (the commit trailer), not to session chrome. The session's mark is the existing chatbox icon, which already means *session* in the app; not a dot, which could mean anything.
 
-**Tint:** a deterministic per-session tint, hashed **from the tag**, applied to the chip and the pulse-dot, giving sessions glanceable visual identity alongside the lexical one. Hashing the tag rather than the session id means the tint is stable across machines for the same callsign, travels with a citation, and is reproducible by anything that can read the tag — including surfaces that never see a session id. Lineage forks derive from their full suffixed tag, so `stocky-pixie-A1` is visibly its own session rather than a shade of its root. Hue selection must be theme-aware and pass the `brio` contrast budget in all six themes (`bun run audit:theme-contrast`); the gallery auditions the palette quantization.
+**Two registers, one identity** (first review round): **presence** — a surface that *is* the session (the masthead, the row about to open) renders the callsign as typography: chatbox icon, bold sans, no enclosure; **citation** — a surface that *refers* to a session from foreign context (a Gazette post, the Changes orphan hint, a History commit) wraps the same identity in a badge, where a chip correctly reads as a link to the thing elsewhere. The title bar is not a citation: it is the thing itself, so it never wears the chip.
+
+**Tint: auditioned and retired** (first review round — do not re-propose). A deterministic hash-derived per-session hue was auditioned on the gallery card and rejected: color is a semantic channel in Tug — role tokens mean danger/success/caution/accent — and a hashed hue reads as meaning while meaning nothing, so every glance asks a question with no answer. The distinctiveness the tint was hired for is already carried by the lexicon words themselves.
 
 ### The masthead — the title bar grows up
 
@@ -177,8 +179,10 @@ A gallery page auditioning, over live fixtures:
 - **Citation resolution:** structured-first — trailers parsed server-side into typed fields and rendered as chrome, following the `Tug-Dash:` precedent. Annotator pattern-matching for citations in free prose is a deferred second phase, gated on the hex-collision fix and an `AnnotationScope` in History.
 - **Commit trailers:** both — a human `Tug-Session:` citation and a machine `Tug-Session-Id:` full UUID. Full disambiguation is worth the extra line; `changes.db` keys on the full id.
 - **Masthead height:** a fixed second tier (`--tug-masthead-height`), not content-driven. Overflow truncates; the placard carries the full text.
-- **Tint derivation:** hashed from the tag, so it is stable across machines, travels with a citation, and is reproducible anywhere the callsign is known.
+- **Tint:** retired after the first gallery round (see Typography above) — identity is carried by words, the chatbox icon, and weight, not hue.
+- **Callsign face:** bold sans; monospace never appears in graphical session rendering.
+- **Registers:** presence (typographic, for surfaces that are the session) vs citation (badge, for references from foreign context).
 
 ## Open questions
 
-None outstanding. The gallery spike settles the visual parameters (masthead line count and height value, tint palette quantization, tag typography) within the model above.
+The gallery spike settles the remaining visual parameters (masthead line count and height value, citation-badge emphasis, row composition) within the model above.

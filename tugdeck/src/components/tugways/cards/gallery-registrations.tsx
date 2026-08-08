@@ -102,6 +102,7 @@ import { GalleryTugArcGauge } from "./gallery-tug-arc-gauge";
 import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
 import { GalleryMotionBench } from "./gallery-motion-bench";
 import { GalleryPulseDisplay } from "./gallery-pulse-display";
+import { GallerySessionIdentity } from "./gallery-session-identity";
 import { GalleryConfigureTug } from "./gallery-configure-tug";
 import { GalleryModalHeaders } from "./gallery-modal-headers";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
@@ -1133,6 +1134,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-pulse-display",
     contentFactory: (_cardId) => <GalleryPulseDisplay />,
     defaultMeta: { title: "Pulse Display", icon: "Activity", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
+    category: CATEGORIES.feedback,
+  });
+
+  // Session identity — design spike for the session-reference brief
+  // (roadmap/session-reference-brief.md): the callsign chip and its tint,
+  // the four density tiers (chip / line / row / masthead), the citation,
+  // and the fork-lineage grammar, each auditioned in its real context.
+  registerCard({
+    componentId: "gallery-session-identity",
+    contentFactory: (_cardId) => <GallerySessionIdentity />,
+    defaultMeta: { title: "Session Identity", icon: "Fingerprint", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,

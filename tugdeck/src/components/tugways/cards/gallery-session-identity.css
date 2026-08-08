@@ -1,0 +1,394 @@
+/**
+ * gallery-session-identity.css — scaffolding + one PROTOTYPE for the
+ * session-reference design spike.
+ *
+ * Two registers live here, deliberately separated:
+ *
+ * 1. Scaffolding — section shells, frames, labels, mock surfaces. Same
+ *    contract as every gallery card: rules that ship nowhere.
+ * 2. Prototype — `.gsi-masthead`, the expanded title bar, styled on the
+ *    real pane-chrome tokens; and `.gsi-presence`, the typographic
+ *    (presence-register) callsign. When `TugSessionIdentity` and the
+ *    masthead tier ship they own their own `--tugx-*` tokens and these
+ *    rules die with the spike. Nothing here is a precedent the app
+ *    inherits.
+ *
+ * The hashed per-session tint that stood here was retired by review:
+ * color is a semantic channel in Tug, and a hash-derived hue reads as
+ * meaning while meaning nothing. The citation chip is now a real TugBadge
+ * and needs no rules of its own.
+ */
+
+.gsi-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  padding: var(--tug-space-md);
+}
+
+.gsi-blurb {
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  max-width: 68ch;
+  margin: 0;
+}
+
+.gsi-blurb code {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.9em;
+}
+
+.gsi-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+.gsi-section-title {
+  font-size: var(--tug-font-size-md);
+  font-weight: var(--tug-font-weight-semibold);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  margin: 0;
+}
+
+/* ── Frames — one labeled proposal each ──────────────────────────────── */
+
+.gsi-frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-frame-label {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.gsi-candidate-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--tug-space-lg);
+}
+
+.gsi-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-line {
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: nowrap;
+}
+
+/* ── PROTOTYPE: the presence register ────────────────────────────────────
+   The session as itself: chatbox icon, bold sans callsign, muted context
+   run. No enclosure — presence is typography, not a chip. */
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: nowrap;
+}
+
+.gsi-presence-icon {
+  flex: none;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsi-presence-context {
+  flex: none;
+  font-weight: var(--tug-font-weight-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsi-presence-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* A citation badge under a width it cannot have. The prototype ellipsizes
+   at the end; the production chip middle-truncates (TugLabel's machinery)
+   so root and leaf of a lineage chain both survive. */
+.gsi-chip-narrow {
+  display: inline-flex;
+  max-width: 170px;
+  min-width: 0;
+}
+
+.gsi-chip-narrow > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ── The Gazette post mock ───────────────────────────────────────────── */
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-gazette-post {
+  display: flex;
+  gap: var(--tug-space-sm);
+  width: 440px;
+  box-sizing: border-box;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+}
+
+.gsi-gazette-glyph {
+  flex: none;
+  display: inline-flex;
+  padding-block-start: 2px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsi-gazette-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+.gsi-gazette-body p {
+  margin: 0;
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.gsi-gazette-stamp {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.gsi-gazette-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  min-width: 0;
+}
+
+/* The "today" chip carries a full UUID; without this it would set the
+   mock's width instead of showing the overflow that is the point. */
+.gsi-gazette-refs > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-orphan-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  width: 440px;
+  box-sizing: border-box;
+  padding: var(--tug-space-xs) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+}
+
+/* ── The list frame — picker rows at the picker's width ──────────────── */
+
+/* Same three list facts the pulse gallery's rail restates: the row inset,
+   the zeroed indicator gutter, and the pane ground the rows sit on. */
+.gsi-list {
+  --tugx-list-row-padding-inline: var(--tug-space-md);
+  --tugx-list-row-indicator-gutter: 0px;
+
+  width: 440px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+  overflow: hidden;
+}
+
+.gsi-list > * + * {
+  border-block-start: 1px solid var(--tugx-list-view-divider-color);
+}
+
+/* ── PROTOTYPE: the masthead ─────────────────────────────────────────── */
+
+.gsi-pane-mock {
+  width: 520px;
+  border: 1px solid var(--tugx-pane-title-bar-divider);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* The fixed second tier: one height per line count, judged here, shipped as
+   a single --tug-masthead-height. Content never sets the height — overflow
+   truncates. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.gsi-masthead {
+  --gsi-masthead-height: 62px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  height: var(--gsi-masthead-height);
+  box-sizing: border-box;
+  padding: 0 var(--tug-space-md);
+  background-color: var(--tugx-pane-title-bar-bg-active);
+}
+
+.gsi-masthead[data-lines="3"] {
+  --gsi-masthead-height: 86px;
+}
+
+.gsi-masthead-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* The masthead's presence run reads on the chrome ground, in the chrome's
+   own foreground tokens. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.gsi-masthead .gsi-presence {
+  color: var(--tugx-pane-title-fg-active);
+}
+
+.gsi-masthead-spacer {
+  flex: 1;
+}
+
+.gsi-masthead-widget,
+.gsi-masthead-control {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--tug-radius-sm, 4px);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.gsi-masthead-title {
+  font-size: var(--tug-font-size-sm);
+  color: var(--tugx-pane-title-fg-active);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── The telemetry placard mock ──────────────────────────────────────── */
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-placard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  width: 300px;
+  box-sizing: border-box;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border: 1px solid var(--tugx-pane-title-bar-divider);
+  border-radius: 6px;
+  background-color: var(--tugx-pane-bg);
+}
+
+.gsi-placard-row {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--tug-space-sm);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-placard-key {
+  font-size: var(--tug-font-size-2xs, 10px);
+  letter-spacing: 0.14em;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-placard-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+.gsi-placard-copy {
+  display: inline-flex;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── The citation ────────────────────────────────────────────────────── */
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-trailer {
+  margin: 0;
+  width: 520px;
+  box-sizing: border-box;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-history-line {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  width: 520px;
+  box-sizing: border-box;
+  padding: var(--tug-space-xs) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-history-sha {
+  flex: none;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-link-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-history-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The unresolved citation: quiet sans, not mono — mono stays in flat text
+   (the trailer above), never in session chrome. */
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-history-citation {
+  flex: none;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
