@@ -263,7 +263,9 @@ describe("popup survives a char to the right of the caret", () => {
   test("inserting a closing char after the caret does not cancel the popup", () => {
     // A non-whitespace character to the right of the caret must NOT
     // dismiss the popup — it is part of the token, so word-savvy
-    // derivation folds it into the query instead.
+    // derivation folds it into the query instead. A closing quote is
+    // trailing punctuation, so the query it folds into is the trimmed
+    // one and the command still matches.
     const active = replaceDoc(makeState(), "/permissions", false);
     expect(active.field(completionField).active).toBe(true);
 
@@ -277,6 +279,6 @@ describe("popup survives a char to the right of the caret", () => {
     expect(withRightChar.doc.toString()).toBe('/permissions"');
     const field = withRightChar.field(completionField);
     expect(field.active).toBe(true);
-    expect(field.query).toBe('permissions"');
+    expect(field.query).toBe("permissions");
   });
 });

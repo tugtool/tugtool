@@ -22,6 +22,7 @@ import {
   completionQueryMatchesSelection,
   queryStopChar,
   scanForwardForTokenEnd,
+  trimTrailingPunctuation,
   tugCompletionExt,
 } from "../tug-text-editor/completion-extension";
 
@@ -205,6 +206,102 @@ describe("word-savvy query derivation", () => {
       userEvent: "delete.backward",
     }).state;
     expect(deleted.field(completionField).active).toBe(false);
+  });
+});
+
+describe("trailing punctuation is trimmed from the query", () => {
+  test("only a trailing run is shed", () => {
+    expect(trimTrailingPunctuation("roadmap/plan.md;")).toBe("roadmap/plan.md");
+    expect(trimTrailingPunctuation("plan.md).")).toBe("plan.md");
+    expect(trimTrailingPunctuation('plan.md,"')).toBe("plan.md");
+    expect(trimTrailingPunctuation("")).toBe("");
+    expect(trimTrailingPunctuation(";;;")).toBe("");
+  });
+
+  test("interior punctuation and path structure survive", () => {
+    expect(trimTrailingPunctuation("my,file.md")).toBe("my,file.md");
+    expect(trimTrailingPunctuation("src/")).toBe("src/");
+    expect(trimTrailingPunctuation("some-file_v2")).toBe("some-file_v2");
+  });
+
+  test("a mention written mid-sentence queries the path, not the clause", () => {
+    // The reported flow: "@roadmap/gazette-plan.md; Phase F …". The token
+    // ends at whitespace, so without the trim the query carries the
+    // semicolon and matches no file.
+    const typed = makeState("roadmap/gazette-plan.md; Phase F", 0).update({
+      changes: { from: 0, insert: "@" },
+      selection: EditorSelection.cursor(1),
+      userEvent: "input.type",
+    }).state;
+    const field = typed.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.query).toBe("roadmap/gazette-plan.md");
+  });
+
+  test("the session stays open with the caret parked after the punctuation", () => {
+    // Liveness is judged against the raw token end, so a caret resting on
+    // the far side of the semicolon is still inside its token.
+    const typed = makeState("@roadmap/plan.md; rest", 22).update({
+      selection: EditorSelection.cursor(17),
+      userEvent: "select.pointer",
+    }).state;
+    const field = typed.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.query).toBe("roadmap/plan.md");
+  });
+
+  test("typing past the punctuation makes it interior again", () => {
+    // Nothing is removed from the document, so the trim reverses itself
+    // the moment the character stops being the token's last.
+    const opened = makeState("", 0).update({
+      changes: { from: 0, insert: "@" },
+      selection: EditorSelection.cursor(1),
+      userEvent: "input.type",
+    }).state;
+    const commaed = opened.update({
+      changes: { from: 1, insert: "a," },
+      selection: EditorSelection.cursor(3),
+      userEvent: "input.type",
+    }).state;
+    expect(commaed.field(completionField).query).toBe("a");
+
+    const continued = commaed.update({
+      changes: { from: 3, insert: "b" },
+      selection: EditorSelection.cursor(4),
+      userEvent: "input.type",
+    }).state;
+    expect(continued.field(completionField).query).toBe("a,b");
+  });
+
+  test("a directory's trailing slash is kept", () => {
+    const typed = makeState("src/", 0).update({
+      changes: { from: 0, insert: "@" },
+      selection: EditorSelection.cursor(1),
+      userEvent: "input.type",
+    }).state;
+    expect(typed.field(completionField).query).toBe("src/");
+  });
+});
+
+describe("leading punctuation does not break the trigger's claim", () => {
+  const doc = (s: string) => Text.of(s.split("\n"));
+
+  test("beginsTokenAt sees through an opener run", () => {
+    expect(beginsTokenAt(doc("(@file.md)"), 1)).toBe(true);
+    expect(beginsTokenAt(doc('a ("@file.md'), 4)).toBe(true);
+    expect(beginsTokenAt(doc("x(@file.md"), 2)).toBe(false);
+  });
+
+  test("clicking into a bracketed mention finds the trigger, not the bracket", () => {
+    const clicked = makeState("see (@notes) now", 16).update({
+      selection: EditorSelection.cursor(8),
+      userEvent: "select.pointer",
+    }).state;
+    const field = clicked.field(completionField);
+    expect(field.active).toBe(true);
+    expect(field.trigger).toBe("@");
+    expect(field.anchorOffset).toBe(5);
+    expect(field.query).toBe("notes");
   });
 });
 

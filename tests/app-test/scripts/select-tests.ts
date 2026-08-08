@@ -144,6 +144,7 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the
     // whole directory — the directory declaration is what actually costs here.
+    "tugdeck/src/components/tugways/tug-text-editor/completion-extension.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/drop-extension.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/theme.ts": 30,

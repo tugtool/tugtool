@@ -63,8 +63,15 @@ function deckShape() {
   };
 }
 
-function chipTitleExpr(): string {
-  return `(function(){ var e = document.querySelector(${JSON.stringify(MODE_CHIP)}); return e ? e.getAttribute("title") : null; })()`;
+/**
+ * The mode the chip is SHOWING — its width-stabilized active face, which is
+ * what the user reads. The chip used to carry a native `title` and this
+ * expression read that; the face is the more direct statement of the same
+ * fact, and it does not move when the hover copy is reworded.
+ */
+function chipModeExpr(): string {
+  const value = `${MODE_CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
+  return `(function(){ var e = document.querySelector(${JSON.stringify(value)}); return e ? e.textContent : null; })()`;
 }
 
 /** Poll until the item's validated enabled state matches. */
@@ -130,7 +137,7 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         // ── 1. Permission-mode checkmark ──
         // Fresh session: chip and checkmark both read Default.
         await app.waitForCondition<boolean>(
-          `${chipTitleExpr()} === "Permission mode: Default"`,
+          `${chipModeExpr()} === "Default"`,
           { timeoutMs: 8000 },
         );
         await waitMenuChecked(app, "session.permissionMode.default", true);
@@ -143,7 +150,7 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
           `(window.__tug.dispatchControlAction("set-permission-mode", { mode: "plan" }), null)`,
         );
         await app.waitForCondition<boolean>(
-          `${chipTitleExpr()} === "Permission mode: Plan"`,
+          `${chipModeExpr()} === "Plan"`,
           { timeoutMs: 8000 },
         );
         await waitMenuChecked(app, "session.permissionMode.plan", true);

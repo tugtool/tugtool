@@ -41,6 +41,12 @@
  *     the token is an editing detail, never a filter boundary: editing
  *     mid-token filters on (and accepting replaces) the whole token,
  *     so an accept can never strand a tail fragment after the atom.
+ *     The token's trailing punctuation run is trimmed off the query
+ *     ({@link trimTrailingPunctuation}) and left in the document, so a
+ *     mention written mid-sentence (`@roadmap/plan.md; Phase F`) both
+ *     matches and keeps its punctuation. Openers on the other side
+ *     (`(@plan.md)`) don't break the trigger's claim to the token — see
+ *     {@link beginsTokenAt}.
  *
  *   - **Rejoin**: when inactive, an edit (`docChanged`) or a
  *     user-originated caret move (`isUserEvent("select")` — click,
@@ -358,6 +364,9 @@ export function detectTriggerInsertion(
  * The atom char is a stop because accepted completions occupy a
  * single U+FFFC code point — once accepted, an `@…` is no longer a
  * literal trigger run and must not rejoin.
+ *
+ * A leading run of {@link LEADING_TOKEN_PUNCTUATION} is skipped, so
+ * clicking back into `(@file.md)` finds the `@` rather than the `(`.
  */
 export function scanBackForTrigger(
   doc: { sliceString: (from: number, to: number) => string },
@@ -371,6 +380,13 @@ export function scanBackForTrigger(
     head = i;
   }
   if (head === -1) return null;
+  while (
+    head < pos &&
+    LEADING_TOKEN_PUNCTUATION.includes(doc.sliceString(head, head + 1))
+  ) {
+    head++;
+  }
+  if (head >= pos) return null;
   const ch = doc.sliceString(head, head + 1);
   if (lookupCompletionProvider(providers, ch) !== undefined) {
     return { trigger: ch, anchorOffset: head };
@@ -400,6 +416,50 @@ export function queryStopChar(trigger: string): string | null {
 }
 
 /**
+ * Punctuation that a trigger token sheds from its tail before the query
+ * is filtered or accepted: sentence and clause marks, quotes, and closing
+ * brackets.
+ *
+ * `/` is absent because it is path structure a `@` query needs
+ * (`@src/` is a directory descent, not a mention followed by a slash),
+ * and `-`, `_`, `~`, `+` are absent because they are ordinary filename
+ * characters.
+ */
+const TRAILING_TOKEN_PUNCTUATION = ",;:!?.'\"`)]}>";
+
+/**
+ * Punctuation that may sit between a token boundary and a trigger
+ * without breaking the trigger's claim to the token: opening brackets
+ * and quotes, so `(@file.md)` and `"@file.md"` are mentions wearing
+ * delimiters rather than words beginning with `(`.
+ */
+const LEADING_TOKEN_PUNCTUATION = "([{<'\"`";
+
+/**
+ * Strip the token's trailing punctuation run from a typeahead query.
+ *
+ * `@` tokens end at whitespace, so a mention written mid-sentence carries
+ * the punctuation that follows it into the query — `@roadmap/plan.md;`
+ * queries for a path no file has. Trimming the tail leaves the query the
+ * user meant, and {@link acceptCompletionAt} replaces only up to the trim
+ * point, so the punctuation survives as the prose it was.
+ *
+ * The trim is re-derived on every transaction from document text that is
+ * never modified: typing past the punctuation makes it interior and the
+ * next derivation includes it again. Only the tail is affected, so
+ * `@my,file.md` still queries in full.
+ *
+ * Pure; exported for the test suite.
+ */
+export function trimTrailingPunctuation(query: string): string {
+  let end = query.length;
+  while (end > 0 && TRAILING_TOKEN_PUNCTUATION.includes(query[end - 1]!)) {
+    end--;
+  }
+  return query.slice(0, end);
+}
+
+/**
  * Walk forward from `pos` to the end of the token containing it:
  * the first whitespace, atom character (U+FFFC), or doc end — or the
  * trigger's {@link queryStopChar} when one is supplied. Returns the
@@ -426,18 +486,25 @@ export function scanForwardForTokenEnd(
 }
 
 /**
- * Whether `pos` is a token start: doc start, or preceded by whitespace
- * or an atom character. Gates the caret-parked-on-trigger cases — a
+ * Whether `pos` is a token start: doc start, or preceded by whitespace,
+ * an atom character, or a run of {@link LEADING_TOKEN_PUNCTUATION} that
+ * itself begins a token. Gates the caret-parked-on-trigger cases — a
  * trigger char glued to preceding text (`x/cmd`, `foo@bar`) does not
- * begin a token when approached from its own offset.
+ * begin a token when approached from its own offset, while a bracketed
+ * or quoted one (`(@file.md`, `"@file.md`) does.
  */
 export function beginsTokenAt(
   doc: { sliceString: (from: number, to: number) => string },
   pos: number,
 ): boolean {
-  if (pos === 0) return true;
-  const prev = doc.sliceString(pos - 1, pos);
-  return prev === TUG_ATOM_CHAR || /\s/.test(prev);
+  let i = pos;
+  while (i > 0) {
+    const prev = doc.sliceString(i - 1, i);
+    if (prev === TUG_ATOM_CHAR || /\s/.test(prev)) return true;
+    if (!LEADING_TOKEN_PUNCTUATION.includes(prev)) return false;
+    i--;
+  }
+  return true;
 }
 
 /**
@@ -491,8 +558,12 @@ export function deriveQueryUpdate(
     queryStopChar(state.trigger),
   );
   if (selection.head > tokenEnd) return { kind: "cancel" };
-  const query = doc.sliceString(queryStart, tokenEnd);
-  if (query.includes("\n")) return { kind: "cancel" };
+  const raw = doc.sliceString(queryStart, tokenEnd);
+  if (raw.includes("\n")) return { kind: "cancel" };
+  // Liveness is judged against the raw token end (above), the query against
+  // the trimmed one: a caret resting after the `;` in `@plan.md;` is still
+  // inside its token, so the session stays open on a query of "plan.md".
+  const query = trimTrailingPunctuation(raw);
   if (query === state.query) return { kind: "unchanged" };
   return { kind: "query", value: query };
 }
@@ -564,7 +635,9 @@ export function detectRejoin(
   // flashes on every keystroke. Leading-trigger-wins means that run simply
   // gets no popup.
   if (sel.head > queryEnd) return null;
-  const query = tr.state.doc.sliceString(found.anchorOffset + 1, queryEnd);
+  const query = trimTrailingPunctuation(
+    tr.state.doc.sliceString(found.anchorOffset + 1, queryEnd),
+  );
   return {
     provider,
     trigger: found.trigger,
@@ -769,9 +842,8 @@ function completionExtender(
         detected.anchorOffset + 1,
         queryStopChar(detected.trigger),
       );
-      const query = tr.state.doc.sliceString(
-        detected.anchorOffset + 1,
-        queryEnd,
+      const query = trimTrailingPunctuation(
+        tr.state.doc.sliceString(detected.anchorOffset + 1, queryEnd),
       );
       const filtered = detected.provider(query);
       return {
@@ -891,27 +963,54 @@ export function acceptCompletionAt(view: EditorView, index?: number): void {
   const idx = index ?? state.selectedIndex;
   if (idx < 0 || idx >= state.filtered.length) return;
   const item = state.filtered[idx]!;
+  const doc = view.state.doc;
   const start = state.anchorOffset;
+  // `state.query` is already shorn of the token's trailing punctuation
+  // ({@link trimTrailingPunctuation}), so the replaced range stops before it
+  // and `@plan.md;` accepts to `<atom>;` — the semicolon was prose, not part
+  // of the path. Scanning forward from there recovers the run.
   const end = start + 1 + state.query.length;
-  // Follow the atom with a separating space so text the user types next
+  const tokenEnd = scanForwardForTokenEnd(
+    doc,
+    end,
+    queryStopChar(state.trigger),
+  );
+  const trailing = doc.sliceString(end, tokenEnd);
+  // Follow the token with a separating space so text the user types next
   // doesn't glue onto it (e.g. accepting "/tugplug:commit" then typing
   // "just" must not yield the non-existent command "/tugplug:commitjust").
   // Skip it when a space already follows — accepting in front of existing
-  // text shouldn't leave a double space. Either way the caret lands past
-  // the separator, ready for the next keystroke.
-  const hasTrailingSpace = view.state.doc.sliceString(end, end + 1) === " ";
-  const insert = hasTrailingSpace ? TUG_ATOM_CHAR : TUG_ATOM_CHAR + " ";
+  // text shouldn't leave a double space. The space goes after any surviving
+  // punctuation, never between it and the atom.
+  const needsSpace = doc.sliceString(tokenEnd, tokenEnd + 1) !== " ";
+  const changes =
+    trailing.length === 0
+      ? [
+          {
+            from: start,
+            to: end,
+            insert: needsSpace ? TUG_ATOM_CHAR + " " : TUG_ATOM_CHAR,
+          },
+        ]
+      : [
+          { from: start, to: end, insert: TUG_ATOM_CHAR },
+          ...(needsSpace
+            ? [{ from: tokenEnd, to: tokenEnd, insert: " " }]
+            : []),
+        ];
   const positioned: PositionedAtom = {
     position: start,
     segment: item.atom,
   };
   view.dispatch({
-    changes: { from: start, to: end, insert },
+    changes,
     effects: [
       addAtomsEffect.of([positioned]),
       cancelEffect.of(null),
     ],
-    selection: { anchor: start + 2 },
+    // Past the separator either way — the atom, the surviving punctuation,
+    // and the space — ready for the next keystroke.
+    selection: { anchor: start + 2 + trailing.length },
     scrollIntoView: true,
     userEvent: "input.tug-completion",
   });
