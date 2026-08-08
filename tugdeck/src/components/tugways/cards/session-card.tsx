@@ -266,7 +266,7 @@ function activeTurnHasCompactNote(
  * one line — forwarded as `placeholder`. Dev-specific; the gallery
  * prompt-entry passes nothing.
  */
-const SESSION_PROMPT_PLACEHOLDER = "Ask Claude to build, fix, or explain";
+const SESSION_PROMPT_PLACEHOLDER = "Ask Tug to build, fix, or explain";
 
 /**
  * Focus group the session card authors its keyboard-focus-cycling stops
