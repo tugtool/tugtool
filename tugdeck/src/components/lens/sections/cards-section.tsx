@@ -629,13 +629,9 @@ function useCardsInputs(filterQuery: string): {
     lensStore.subscribe,
     useCallback(() => lensStore.getSnapshot().collapsedCardGroups, []),
   );
-  // Session labels are built from the name / tag stores at recompute time, so
-  // their versions are inputs: a name or tag arriving late must re-run the
-  // projection.
-  const nameVersion = useSyncExternalStore(
-    sessionNameStore.subscribe,
-    sessionNameStore.getVersion,
-  );
+  // A session label is `<project>/<callsign>`, built at recompute time, so the
+  // tag store's version is an input: a callsign arriving late — or the ledger
+  // rerolling the optimistic one — must re-run the projection.
   const tagVersion = useSyncExternalStore(
     sessionTagStore.subscribe,
     sessionTagStore.getVersion,
@@ -646,7 +642,6 @@ function useCardsInputs(filterQuery: string): {
     collapsedGroups,
     filterQuery,
     bindings,
-    nameVersion,
     tagVersion,
   });
   return { dataSource };

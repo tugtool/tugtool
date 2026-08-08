@@ -141,8 +141,7 @@ body {
 
 /* The bar clips, and the clip lands on the PADDING box — so a mount site whose
    legend or accessory is a pressable control gives the bar inline padding to
-   stand the cut off its ring (`--tugx-session-row-pulse-inset` in the Lens row,
-   `--session-pulse-strip-ring-clearance` on the Z2 strip) and takes the same
+   stand the cut off its ring (`--tugx-session-row-pulse-inset` in the Lens row) and takes the same
    amount off its own. A control flush to a clipping edge loses the ring stroke
    that paints outside it. */
 .tug-pulse[data-layout="inline"] {

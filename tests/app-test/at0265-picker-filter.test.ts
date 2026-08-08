@@ -70,11 +70,14 @@ const encodeProjectDir = (absDir: string): string =>
   absDir.replace(/[^A-Za-z0-9-]/g, "-");
 
 /**
- * The seeded sessions. Each carries an `ai-title` record, so its row title is
- * that title and the leading word of each is a fragment appearing in exactly
- * one rendered title. The title has to be seeded rather than left to fall
- * through to the prompt: every scanned session is minted a real callsign, and
- * an untitled row renders that callsign — a different string every run.
+ * The seeded sessions. Each carries an `ai-title` record and a prompt, so the
+ * leading word of each is a fragment appearing in exactly one rendered row.
+ *
+ * Which LINE of the row carries it is the callsign's doing: the callsign leads
+ * every session row, so the title line is the minted callsign — a different
+ * string every run — and the seeded text lands on the row's description line
+ * instead. Assertions here therefore read the whole row's rendered text, not
+ * the title line alone.
  */
 const SEEDED = [
   {
@@ -187,14 +190,15 @@ const SESSIONS_LIST = '[data-tug-focus-key="session-picker-cycle:2"]';
 /** How many `session-resume` rows the list is showing. */
 const RESUME_COUNT = `document.querySelectorAll(${JSON.stringify(RESUME_ROW)}).length`;
 
-/** The rendered title text of every visible resume row. */
+/**
+ * The full rendered text of every visible resume row — the callsign line and
+ * the description line together, which is what the filter matches against and
+ * what the highlight paints into.
+ */
 const RESUME_TITLES = `(function(){
   return Array.prototype.map.call(
     document.querySelectorAll(${JSON.stringify(RESUME_ROW)}),
-    function (row) {
-      var title = row.querySelector('.tug-list-row-title');
-      return title ? (title.textContent || '') : '';
-    },
+    function (row) { return row.textContent || ''; },
   );
 })()`;
 
@@ -303,9 +307,9 @@ describe.skipIf(!SHOULD_RUN)("AT0265: the picker's filter field trims the sessio
           })()`,
         );
 
-        // (A) Typing narrows the list, and every survivor's title carries the
-        // fragment — with at least one painted mark, since the fragment came
-        // from a rendered title.
+        // (A) Typing narrows the list, and every survivor RENDERS the fragment
+        // — with at least one painted mark, since the fragment came from text
+        // the row actually displays.
         await typeFilter(app, MATCHING_FRAGMENT);
         await app.waitForCondition<boolean>(`${RESUME_COUNT} < ${baselineCount}`, {
           timeoutMs: 6000,

@@ -1,0 +1,138 @@
+/* @tug-pairings {
+ * --tug7-element-atom-text-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | control
+ * --tug7-element-atom-icon-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | control
+ * --tug7-element-atom-border-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | decorative
+ * --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-default-rest | content
+ * --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | informational
+ * } */
+
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                          | Role        | Context                                   |
+ * |------------------------------------------------|--------------------------------------------------|-------------|-------------------------------------------|
+ * | --tug7-element-atom-text-normal-session-rest    | --tug7-surface-atom-primary-normal-session-rest  | control     | [data-tier="chip"] (color)                |
+ * | --tug7-element-atom-icon-normal-session-rest    | --tug7-surface-atom-primary-normal-session-rest  | control     | chip .tug-session-identity-icon (color)   |
+ * | --tug7-element-atom-border-normal-session-rest  | --tug7-surface-atom-primary-normal-session-rest  | decorative  | [data-tier="chip"] (border-color)         |
+ * | --tug7-element-global-text-normal-default-rest  | --tug7-surface-global-primary-normal-default-rest| content     | [data-tier="line"] (color)                |
+ * | --tug7-element-global-text-normal-muted-rest    | --tug7-surface-global-primary-normal-default-rest| informational | line icon; the missing chip (color)     |
+ */
+
+/* The gap between the mark and the run is ONE number for both registers:
+   presence and citation must read as the same mark at different weights, and
+   a gap that varied by surface would break that. Knob defaults live as
+   `var(--x, default)` fallbacks at point of use, never declared here. */
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tugx-session-identity-icon-gap, 6px);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.tug-session-identity-icon {
+  flex: none;
+}
+
+/* `<project>/<callsign>` is ONE run: one span, one weight, one color. The
+   two-span form opened a flex gap after the slash and let each half truncate
+   independently — this can do neither. */
+.tug-session-identity-run {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* ── Presence: the session as itself. No enclosure. ───────────────────── */
+
+.tug-session-identity[data-tier="line"] {
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The mark is quieter than the name it marks — it says what kind of thing
+   this is, and the name is the thing. */
+.tug-session-identity[data-tier="line"] .tug-session-identity-icon {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── Citation: the session atom. A rounded pill, deliberately not the
+      squared house badge, in the theme's one session color. ───────────── */
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity[data-tier="chip"] {
+  padding: 2px 9px;
+  border: 1px solid var(--tug7-element-atom-border-normal-session-rest);
+  border-radius: 999px;
+  background-color: var(--tug7-surface-atom-primary-normal-session-rest);
+  color: var(--tug7-element-atom-text-normal-session-rest);
+  font-size: var(--tug-font-size-sm);
+}
+
+.tug-session-identity[data-tier="chip"] .tug-session-identity-icon {
+  color: var(--tug7-element-atom-icon-normal-session-rest);
+}
+
+.tug-session-identity[data-tier="chip"][data-size="2xs"] {
+  padding: 1px 7px;
+  font-size: var(--tug-font-size-xs);
+}
+
+/* State varies on top of the authored rest values rather than deriving them:
+   the `currentColor` mix is TugBadge's idiom, and it is legitimate here for
+   the same reason it is there — it varies STATE, it does not author a rest
+   color outside the theme. [L20] */
+.tug-session-identity[data-tier="chip"][data-interactive="true"] {
+  cursor: pointer;
+}
+
+.tug-session-identity[data-tier="chip"][data-interactive="true"]:hover {
+  border-color: color-mix(in oklab, currentcolor 45%, transparent);
+}
+
+/* ── The unresolvable citation ─────────────────────────────────────────
+   The atom keeps its SHAPE — a reader still needs to know what kind of
+   thing is named — and drops the session color for muted ink, so it reads
+   as inert rather than as a link that happens to be broken. The slashed
+   icon carries the failure; the tooltip carries the sentence. */
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity[data-tier="chip"][data-missing="true"] {
+  border-color: color-mix(in oklab, currentcolor 30%, transparent);
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: default;
+}
+
+.tug-session-identity[data-tier="chip"][data-missing="true"]
+  .tug-session-identity-icon {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── Hover content ──────────────────────────────────────────────────────
+   Rendered inside TugTooltip's bubble, so its ground is the tooltip's. */
+
+.tug-session-identity-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tug-session-identity-tip-line {
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+.tug-session-identity-tip-desc {
+  opacity: 0.85;
+}
+
+/* The citation is flat text, and flat text is where monospace belongs — the
+   one place in session identity it appears. */
+.tug-session-identity-tip-citation {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  opacity: 0.75;
+}

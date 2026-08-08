@@ -63,7 +63,11 @@ import {
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
-import { cardTitleStore } from "@/lib/card-title-store";
+import {
+  cardTitleStore,
+  type CardMastheadPayload,
+} from "@/lib/card-title-store";
+import { SessionMasthead } from "@/components/tugways/session-masthead";
 import { composePaneTitleBarText } from "@/lib/pane-title";
 import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
@@ -88,6 +92,21 @@ import { paneOcclusionGesture } from "@/components/chrome/pane-occlusion-control
  * Height of the card title bar in pixels. Must match --tug-chrome-height.
  */
 export const CARD_TITLE_BAR_HEIGHT = 36;
+
+/**
+ * Height of the masthead chrome tier in pixels. Must match
+ * `--tug-masthead-height`.
+ *
+ * Fixed, never content-driven: the masthead's three lines truncate rather
+ * than wrap, so this number is what the chrome is, not what its content
+ * happened to need. The pane wears it exactly when its ACTIVE card publishes
+ * a masthead sidecar — chrome follows the frontmost tab, because a pinned
+ * tall chrome over a Text tab would caption one card with another's identity.
+ *
+ * The masthead and the tab bar STACK; they do not merge. A multi-tab Session
+ * pane's chrome is 72 + 36: masthead on top, tab row beneath it, unchanged.
+ */
+export const MASTHEAD_HEIGHT = 72;
 
 /**
  * Imperative handle on CardTitleBar — lets the surrounding TugPane
@@ -214,6 +233,16 @@ export interface CardTitleBarProps {
    * method ([L30]).
    */
   onSetWidth?: (preset: ContentWidth) => void;
+  /**
+   * The active card's masthead request, or null for the one-line bar. Present
+   * → the bar renders at {@link MASTHEAD_HEIGHT} and gives its title region
+   * to the card family's masthead component instead of a title string; the
+   * pane's own controls stay exactly where they are, aligned to the lead
+   * line. The payload is a KEY — the masthead resolves what to display
+   * itself; nothing about identity travels through this prop.
+   * @selector [data-masthead="true"]
+   */
+  masthead?: CardMastheadPayload | null;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
 }
@@ -231,6 +260,7 @@ function CardTitleBar({
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
   onSetWidth,
+  masthead = null,
   onClose,
   onDragStart,
 }: CardTitleBarProps, ref) {
@@ -465,6 +495,7 @@ function CardTitleBar({
     <div
       className="tug-pane-title-bar"
       data-slot="tug-pane-title-bar"
+      data-masthead={masthead !== null ? "true" : undefined}
       onPointerDown={handleTitleBarPointerDown}
       data-testid="tug-pane-title-bar"
       // The title bar is an ACTIVATION/DRAG gesture surface, never a
@@ -477,15 +508,25 @@ function CardTitleBar({
       // responder-chain.md § First responder.
       data-tug-fr-preserve=""
     >
-      {IconComponent && (
-        <span className="tug-pane-icon" data-testid="tug-pane-icon">
-          {React.createElement(IconComponent)}
-        </span>
-      )}
+      {/* The masthead REPLACES the icon and the title string — a card wearing
+          one is saying its own name in its own three lines, and a registry
+          icon plus a duplicate title beside them would be two answers to one
+          question. The pane's controls below are untouched. */}
+      {masthead !== null ? (
+        <SessionMasthead sessionId={masthead.sessionId} cardId={activeCardId} />
+      ) : (
+        <>
+          {IconComponent && (
+            <span className="tug-pane-icon" data-testid="tug-pane-icon">
+              {React.createElement(IconComponent)}
+            </span>
+          )}
 
-      <span className="tug-pane-title" data-testid="tug-pane-title">
-        {title}
-      </span>
+          <span className="tug-pane-title" data-testid="tug-pane-title">
+            {title}
+          </span>
+        </>
+      )}
 
       <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
         {/* The slot's depth at rest, and the way into the panes behind this
@@ -1435,6 +1476,18 @@ export function TugPane({
     cardTitleStore.subscribe,
     useCallback(
       () => cardTitleStore.get(activeCardId ?? null),
+      [activeCardId],
+    ),
+  );
+
+  // The active card's masthead request ([P14]: chrome follows the frontmost
+  // tab, so a stacked Session card behind another tab contributes nothing
+  // here). The payload object is stable while unchanged, so this is a
+  // legitimate `useSyncExternalStore` snapshot.
+  const activeCardMasthead = useSyncExternalStore(
+    cardTitleStore.subscribe,
+    useCallback(
+      () => cardTitleStore.getMasthead(activeCardId ?? null),
       [activeCardId],
     ),
   );
@@ -2571,6 +2624,12 @@ export function TugPane({
       className="tug-pane"
       data-testid="tug-pane"
       data-pane-id={id}
+      // The chrome tier this pane wears. CSS turns it into
+      // `--tugx-pane-chrome-height`, which every in-pane surface seating below
+      // the title bar measures against — the scrim, the sheet's clip, the
+      // banner. A custom property rather than a measured number, so the 72↔36
+      // swap is one cascade and not four subscriptions ([L06]).
+      {...(activeCardMasthead !== null ? { "data-masthead": "true" } : {})}
       {...(isLensPane ? { "data-lens-pane": "" } : {})}
       {...(sidebarSide !== undefined ? { "data-lens": sidebarSide } : {})}
       {...(imposed && placement !== undefined && !bullseye
@@ -2639,6 +2698,7 @@ export function TugPane({
             activeCardId={activeCardId}
             slotStack={slotStack}
             onRevealPane={onRevealPane}
+            masthead={activeCardMasthead}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
           />

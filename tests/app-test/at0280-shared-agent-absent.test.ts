@@ -49,7 +49,7 @@
  * @covers tugdeck/src/lib/shared-agent-store.ts
  * @covers tugdeck/src/lib/shell-classify-store.ts
  * @covers tugdeck/src/lib/shell-line-classifier.ts
- * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
+ * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  */
@@ -71,8 +71,10 @@ const SID = "a7c0d1ea-0000-4000-8000-000000000280";
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const ATOM = `${CARD} [data-slot="tug-text-editor"] img[data-atom-type]`;
-const STRIP = `${CARD} [data-slot="session-pulse-strip"]`;
-const HEADLINE = `${CARD} [data-slot="tug-pulse-headline"]`;
+// The card's PULSE lives in its pane chrome, on the masthead.
+const PANE = '.tug-pane[data-pane-id="p1"]';
+const STRIP = `${PANE} .session-masthead-pulse`;
+const HEADLINE = `${PANE} [data-slot="tug-pulse-headline"]`;
 
 // The Lens's own row for the same session. Addressed the way
 // `at0257-lens-session-reorder.test.ts` addresses Sessions rows.
@@ -162,7 +164,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
           );
-          // Bound, not resumed: the composer and the strip are what this pins,
+          // Bound, not resumed: the composer and the PULSE are what this pins,
           // and neither needs a live agent behind them.
           await app.bindSession("A", { tugSessionId: SID, projectDir });
           await app.waitForCondition<boolean>(
@@ -170,7 +172,7 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 20_000 },
           );
 
-          // 1. The strip is there, and it carries no headline run.
+          // 1. The PULSE line is there, and it carries no headline run.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(STRIP)}) !== null`,
             { timeoutMs: 20_000 },

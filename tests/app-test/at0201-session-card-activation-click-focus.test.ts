@@ -55,8 +55,14 @@ function activeElementInCard(cardId: string): string {
   return `document.activeElement !== null && document.activeElement.matches(${JSON.stringify(PROMPT_INPUT_SELECTOR)}) && document.activeElement.closest('[data-card-id="${cardId}"]') !== null`;
 }
 
+/**
+ * The pane's title-bar gesture surface. The BAR, not the title text inside it:
+ * a Session pane wears a masthead rather than a title string, so there is no
+ * `tug-pane-title` there to click — and the bar is what this test is about
+ * anyway, since it is the activation/drag surface.
+ */
 function paneTitleSelectorFor(paneId: string): string {
-  return `[data-pane-id="${paneId}"] [data-testid="tug-pane-title"]`;
+  return `[data-pane-id="${paneId}"] [data-testid="tug-pane-title-bar"]`;
 }
 
 const twoSessionPanes = {

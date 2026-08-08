@@ -2623,5 +2623,28 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
   { element: "--tugx-pane-bulletin-fg", surface: "--tugx-pane-bulletin-bg", role: "content" },
   { element: "--tugx-pane-bulletin-border", surface: "--tugx-pane-bulletin-bg", role: "informational" },
 
+  // ---- tug-session-identity.css — the atom slot's `session` tone ----
+  // The ground carries alpha, so parentSurface composites it over surface-default
+  // before the ink and icon are measured against it. The label and its icon are an
+  // interactive element's label ("control"); the border is structural ("decorative").
+  {
+    element: "--tug7-element-atom-text-normal-session-rest",
+    surface: "--tug7-surface-atom-primary-normal-session-rest",
+    role: "control",
+    parentSurface: "--tug7-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug7-element-atom-icon-normal-session-rest",
+    surface: "--tug7-surface-atom-primary-normal-session-rest",
+    role: "control",
+    parentSurface: "--tug7-surface-global-primary-normal-default-rest",
+  },
+  {
+    element: "--tug7-element-atom-border-normal-session-rest",
+    surface: "--tug7-surface-atom-primary-normal-session-rest",
+    role: "decorative",
+    parentSurface: "--tug7-surface-global-primary-normal-default-rest",
+  },
+
 ];
 

@@ -40,10 +40,14 @@ body {
  * stacking context via inline z-index). Pure CSS positioning — no
  * applier, no observers, no inline styles.
  *
- *   * `top: calc(var(--tug-chrome-height) + 1px)` aligns with the
- *     title-bar bottom in frame coordinates. The `+ 1px` accounts
- *     for `.tug-pane-chrome`'s 1px border (the gap between the
- *     frame top and the chrome's content origin).
+ *   * `top: calc(var(--tugx-pane-chrome-height) + 1px)` aligns with
+ *     the title-bar bottom in frame coordinates, at whichever chrome
+ *     tier the pane is wearing. The `+ 1px` accounts for
+ *     `.tug-pane-chrome`'s 1px border (the gap between the frame top
+ *     and the chrome's content origin). The panel's in-pane height
+ *     follows from this for free: the JS clamp measures the clip's
+ *     own rect, so moving the clip top moves the panel's bottom with
+ *     it and the `max-height` fallback below needs no change.
  *   * `height: 100vh` accommodates panels taller than the host
  *     pane (panel scrolls inside `.tug-sheet-content` via
  *     `overflow-y: auto`). Where the clip extends past the
@@ -60,7 +64,7 @@ body {
  */
 .tug-sheet-clip {
   position: absolute;
-  top: calc(var(--tug-chrome-height) + 1px);
+  top: calc(var(--tugx-pane-chrome-height, var(--tug-chrome-height)) + 1px);
   left: 0;
   right: 0;
   /* Tall clip — it must NOT bound the panel (a CSS `100%`/`vh` cap can't see

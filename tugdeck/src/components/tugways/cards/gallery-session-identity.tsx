@@ -51,14 +51,14 @@
  * and MONOSPACE for the callsign in graphical surfaces (mono is for flat
  * text — the commit trailer — not for session chrome).
  *
- * Everything that exists as a Tug* component is the real component: the
- * rows are {@link TugSessionRow} and {@link TugListRow}, the one-line
- * title bar the masthead is judged against is the real
+ * Everything that exists as a Tug* component is the real component: both
+ * identity registers are {@link TugSessionIdentity} at its `chip` and `line`
+ * tiers, the rows are {@link TugSessionRow} and {@link TugListRow}, the
+ * one-line title bar the masthead is judged against is the real
  * {@link CardTitleBar}, and the PULSE in the three-line masthead is the
- * real {@link TugPulse}. Two prototypes remain, styled by this card's own
- * CSS: the session atom (which becomes `TugSessionIdentity` with its own
- * tokens) and the masthead band (on the real pane-chrome tokens) —
- * nothing in `gallery-session-identity.css` is a rule the app inherits.
+ * real {@link TugPulse}. One prototype remains, styled by this card's own
+ * CSS: the masthead band (on the real pane-chrome tokens) — nothing in
+ * `gallery-session-identity.css` is a rule the app inherits.
  *
  * @module components/tugways/cards/gallery-session-identity
  */
@@ -70,13 +70,17 @@ import {
   ArrowLeftRight,
   Copy,
   MessageSquare,
-  MessageSquareOff,
   Newspaper,
   Waves,
   X,
 } from "lucide-react";
 
 import { CardTitleBar } from "@/components/chrome/tug-pane";
+import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
+import {
+  composeSessionIdentity,
+  type SessionIdentity,
+} from "@/lib/session-identity";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugListRow } from "@/components/tugways/tug-list-row";
@@ -208,14 +212,28 @@ function citation(f: IdentityFixture): string {
 // ---------------------------------------------------------------------------
 
 /**
- * PRESENCE — the session rendered as itself: the chatbox icon (the app's
- * existing session mark) and `<project>/<callsign>` as ONE bold run. No
- * enclosure — this register is for surfaces that ARE the session, where a
- * chip would read as a link to a thing that is already here.
- *
- * The string is a single text node, not a context span beside a tag span.
- * Two spans meant a flex gap opened after the slash and each half could
- * truncate on its own (`tugto… syrupy-beam`); one run cannot do either.
+ * A fixture identity for the shipping component. The card's sections name a
+ * session by its callsign and project, which is what a bench needs; the
+ * resolver's other fields are filled in around them.
+ */
+function fixtureIdentity(
+  tag: string,
+  project: string,
+  over: Partial<SessionIdentity> = {},
+): SessionIdentity {
+  return composeSessionIdentity({
+    sessionId: `${tag}-0000-4000-8000-000000000000`.padEnd(36, "0"),
+    name: null,
+    synopsis: null,
+    tag,
+    projectDir: `/Users/tester/src/${project}`,
+    ...over,
+  });
+}
+
+/**
+ * PRESENCE — the session rendered as itself. The real component at its `line`
+ * tier; this wrapper exists only to take the card's fixture shape.
  */
 function CallsignText({
   tag,
@@ -227,12 +245,11 @@ function CallsignText({
   icon?: boolean;
 }): React.ReactElement {
   return (
-    <span className="gsi-presence" title={`session ${tag}`}>
-      {icon ? (
-        <MessageSquare size={14} className="gsi-presence-icon" aria-hidden />
-      ) : null}
-      <span className="gsi-presence-tag">{`${context}/${tag}`}</span>
-    </span>
+    <TugSessionIdentity
+      identity={fixtureIdentity(tag, context)}
+      tier="line"
+      icon={icon}
+    />
   );
 }
 
@@ -240,12 +257,11 @@ function CallsignText({
  * CITATION — the session referred to from foreign context, as an ATOM: the
  * rounded, specialized pill that gives session references their own look
  * and feel, distinct from the squared house badge. The form is fixed:
- * `<project>/<callsign>`, one bold run — no font-style mixing. Painted in
- * ONE color — `--gsi-session-color`, the theme-authored *session color*,
- * seeded from the AGENT role (decided on this card) — so the pill always
- * means the same thing: "this is a session, elsewhere." This is the chip
- * tier of the future `TugSessionIdentity`, which will own the token when
- * it ships.
+ * `<project>/<callsign>`, one bold run — no font-style mixing. Painted from
+ * the `session` tone on the `atom` slot — the theme-authored *session
+ * color*, hue-seeded from the AGENT family — so the pill always means the
+ * same thing: "this is a session, elsewhere." This is the chip tier of the
+ * future `TugSessionIdentity`, which aliases the same tokens when it ships.
  */
 function SessionAtom({
   tag,
@@ -258,34 +274,21 @@ function SessionAtom({
   size?: "sm" | "2xs";
   /**
    * The citation resolved to nothing — a post or a commit naming a session
-   * this ledger has no record of. Decided in the fifth review round: the
-   * atom keeps its shape, so a reader still knows what kind of thing is
-   * being named, and states its failure in the ONE place that already
-   * carries the meaning "session" — the icon, which gains a slash. It is
-   * inert: no link, no raise, and the tooltip says why rather than
-   * repeating the tag.
+   * this ledger has no record of. The atom keeps its shape, so a reader still
+   * knows what kind of thing is being named, and states its failure in the ONE
+   * place that already carries the meaning "session" — the icon, which gains a
+   * slash. It is inert: no link, no raise, and the tooltip says why rather
+   * than repeating the tag.
    */
   missing?: boolean;
 }): React.ReactElement {
-  const Glyph = missing ? MessageSquareOff : MessageSquare;
   return (
-    <span
-      className="gsi-atom"
-      data-size={size}
-      data-missing={missing ? "true" : undefined}
-      title={
-        missing
-          ? `Session not found — no record of ${context}/${tag} in this ledger`
-          : `session ${tag}`
-      }
-    >
-      <Glyph
-        size={size === "2xs" ? 11 : 12}
-        className="gsi-atom-icon"
-        aria-hidden
-      />
-      <span className="gsi-atom-tag">{`${context}/${tag}`}</span>
-    </span>
+    <TugSessionIdentity
+      identity={fixtureIdentity(tag, context)}
+      tier="chip"
+      size={size}
+      missing={missing}
+    />
   );
 }
 

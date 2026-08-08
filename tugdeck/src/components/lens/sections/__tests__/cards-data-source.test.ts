@@ -119,7 +119,6 @@ function inputs(
     filterQuery: "",
     registryVersion: 0,
     bindings: new Map(),
-    nameVersion: 0,
     tagVersion: 0,
     ...over,
   };

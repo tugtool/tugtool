@@ -36,6 +36,7 @@ body {
 
   /* Chrome */
   --tug-chrome-height: 36px;
+  --tug-masthead-height: 72px;
 
   /* Icon Size */
   --tug-icon-size-2xs: 10px;
@@ -978,6 +979,10 @@ body {
   --tug7-surface-atom-primary-normal-route-rest: --tug-color(teal, l: 290, c: 40);
   --tug7-element-atom-border-normal-route-rest: --tug-color(teal, l: 400, c: 40);
   --tug7-element-atom-text-normal-route-rest: --tug-color(teal, l: 750, c: 60);
+  --tug7-surface-atom-primary-normal-session-rest: --tug-color(aqua, l: 290, c: 40, a: 300);
+  --tug7-element-atom-border-normal-session-rest: --tug-color(aqua, l: 400, c: 40, a: 400);
+  --tug7-element-atom-text-normal-session-rest: --tug-color(aqua, l: 890, c: 100);
+  --tug7-element-atom-icon-normal-session-rest: --tug-color(aqua, l: 770, c: 240);
 
   /* Skeleton */
   --tug7-surface-skeleton-primary-normal-default-rest: --tug-color(aqua, l: 350, c: 20);

@@ -17,9 +17,10 @@
  * tug-pane-banner.css — styles for TugPaneBanner.
  *
  * Pane-scoped modal banner. Positioned absolutely inside `.tug-pane-chrome`, clipped
- * below the title bar via `top: var(--tug-chrome-height)` — same technique
+ * below the title bar via `top: var(--tugx-pane-chrome-height)` — same technique
  * as .tug-sheet-clip so chrome height stays consistent across pane-modal
- * surfaces.
+ * surfaces, and so both follow the pane between the one-line bar and the
+ * masthead rather than pinning to one of them.
  *
  * Component-tier aliases point to the same base `--tug7-*` tokens TugBanner
  * uses so the two components share the same visual grammar. Token sovereignty
@@ -55,8 +56,9 @@ body {
 .tug-pane-banner {
   position: absolute;
   inset: 0;
-  /* Sit below the pane title bar; strip and detail panel both clip at this line */
-  top: var(--tug-chrome-height, 36px);
+  /* Sit below the pane title bar — at whichever chrome tier the pane wears;
+     strip and detail panel both clip at this line */
+  top: var(--tugx-pane-chrome-height, var(--tug-chrome-height, 36px));
   /* Above the pane body, below any app-modal surfaces */
   z-index: 20;
   /* Base state: pointer events enabled so the dim backdrop (error variant)

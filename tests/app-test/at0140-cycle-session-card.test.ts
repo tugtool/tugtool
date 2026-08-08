@@ -17,17 +17,19 @@
  *      reads `data-cycling="false"` and the submit holds no key view.
  *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
  *      live stops (route → Claude Code → AI → STATE → TIME
- *      → TOKENS → CONTEXT → WORK → PULSE → editor → wrap) never lands on the
+ *      → TOKENS → CONTEXT → WORK → editor → wrap) never lands on the
  *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
  *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
  *      first stop in the revised order).
  *   4. **Tab tours the stops:** route → Claude Code → AI →
- *      submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap
+ *      submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap
  *      (trapped). The Session and Project chips are not on this route (the Z4B
  *      diet), and there is no BTW cell (the Z2 diet). Every Z4B chip and Z2 status cell
  *      is its own leaf stop ([P10] revised — no arrow-roving): Tab steps
- *      stop-to-stop and each wears the blue leaf ring in turn. The PULSE label
- *      is the last leaf before the editor. The editor is the last stop — a text
+ *      stop-to-stop and each wears the blue leaf ring in turn. The WORK cell
+ *      is the last leaf before the editor (the PULSE label retired with the Z2
+ *      strip; the voice lives in the pane masthead, which takes no card-cycle
+ *      stop). The editor is the last stop — a text
  *      stop: the input area takes the border while the editor stays blurred (no
  *      caret).
  *   5. **Return on the editor stop resumes typing ([P11]):** it descends into
@@ -59,7 +61,6 @@
  * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/components/tugways/cards/ai-config-sheet.tsx
  * @covers tugdeck/src/lib/model-label.ts
- * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
  * @covers tugdeck/src/components/tugways/tug-placard.tsx
  * @covers tugdeck/src/components/tugways/tug-popover.tsx
  */
@@ -85,10 +86,6 @@ const ROUTE = `${CARD} ${ROUTE_CHOICE}`;
 // walk steps route → Claude Code → AI → submit.
 const CLAUDE_CHIP = `${CARD} [data-slot="session-route-indicator-badge"]`;
 const AI_CHIP = `${CARD} [data-slot="ai-chip"]`;
-// The PULSE label — the last leaf stop before the editor, its own one-node
-// grid row beneath the status cells. Live in the harness (the pulse store
-// attaches on the real connection and `pulse/enabled` defaults on).
-const PULSE = `${CARD} [data-slot="session-pulse-legend"]`;
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 // The five Z2 status cells. Each is its own leaf cycle stop ([P10]
 // revised — no item-group roving): the cell `<button>` carries
@@ -160,9 +157,8 @@ const EDITOR_FOCUSED = `(function(){
 })()`;
 
 // Whether a status-cell detail surface is currently open. The Z2 status
-// cells open the shared TugPlacard (`data-slot="tug-placard"`); the PULSE
-// label still opens a plain TugPopover (`data-slot="tug-popover"`). Either
-// counts as open.
+// cells open the shared TugPlacard (`data-slot="tug-placard"`); a plain
+// TugPopover (`data-slot="tug-popover"`) counts too.
 const POPOVER_OPEN = `(document.querySelector('[data-slot="tug-popover"]') !== null || document.querySelector('[data-slot="tug-placard"]') !== null)`;
 
 // Capability payload whose default model supports reasoning effort, so the AI
@@ -194,7 +190,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
+    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card" });
       try {
@@ -232,7 +228,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
-        // (route → Claude Code → AI → STATE → … → WORK → PULSE → editor → wrap)
+        // (route → Claude Code → AI → STATE → … → WORK → editor → wrap)
         // skips it: Tab steps from AI straight to STATE, never the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
@@ -258,13 +254,12 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_WORK), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // WORK → PULSE (its own one-node row beneath the status cells). WORK is
-        // the row's last cell: the BTW cell went away with the Z2 diet, and
-        // `/btw` reaches its placard by being asked rather than by a stop.
-        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
-        await app.nativeKey("Tab");
-        // PULSE → editor. The editor's stop carries its focus contract, so
-        // landing on it GRANTS the caret — no parked blurred state.
+        // WORK → editor. WORK is the row's last cell: the BTW cell went away
+        // with the Z2 diet, and `/btw` reaches its placard by being asked rather
+        // than by a stop. The PULSE stop went with the strip — the voice moved
+        // to the masthead, which is pane chrome and takes no card-cycle stop.
+        // The editor's stop carries its focus contract, so landing on it
+        // GRANTS the caret — no parked blurred state.
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
         // Tab from the (empty) editor hands off at the editor's seat and wraps
         // to the route.
@@ -294,7 +289,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
         // (4) Tab tours the stops left→right, up to the editor: route → Claude
-        // Code → AI → submit → STATE … WORK → PULSE → editor. The editor is the
+        // Code → AI → submit → STATE … WORK → editor. The editor is the
         // last stop — a text stop that carries the editor's own focus contract,
         // so landing on it grants the caret. With a draft in the field the tour
         // ends there (Tab is the editor's again — it indents); the empty-editor
@@ -322,9 +317,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_WORK), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // WORK → PULSE (the last leaf before the editor).
-        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
-        await app.nativeKey("Tab");
+        // WORK → editor: WORK is now the last leaf before it.
         // The landing grants the caret — resuming typing IS the landing, no
         // Return required. The draft is intact under the caret.
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
@@ -583,7 +576,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
   );
 
   test(
-    "Space toggles an info popover ([P02] space-dismiss): Space opens the STATE / PULSE popover from its stop, a second Space closes it and the ring returns to the stop",
+    "Space toggles an info popover ([P02] space-dismiss): Space opens the STATE popover from its stop, a second Space closes it and the ring returns to the stop",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card-space-toggle" });
       try {
@@ -630,16 +623,12 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
         expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
 
-        // The same toggle holds for the PULSE label (its own one-node row beneath
-        // the status cells): ArrowDown from STATE seams into the PULSE row.
-        await app.nativeKey("ArrowDown");
-        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
-        await app.nativeKey(" ");
-        await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
-        await app.nativeKey(" ");
-        await app.waitForCondition<boolean>(`${POPOVER_OPEN} === false`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(hasKeyView(PULSE), { timeoutMs: 6000 });
-        expect(await app.evalJS<string | null>(CYCLING)).toBe("true");
+        // There is no second stop to check the toggle against any more: the
+        // PULSE label was the other one, and it retired with the Z2 strip when
+        // the voice moved into the pane's masthead. The label is still a
+        // popover trigger there, but as pointer-only chrome — a card-cycle
+        // stop that walked out of the card and into its chrome would cross an
+        // ownership boundary.
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {

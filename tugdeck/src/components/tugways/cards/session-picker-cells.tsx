@@ -69,6 +69,11 @@ import type {
   TugListViewCellRenderer,
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
+import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
+import {
+  TugSessionRow,
+  TUG_SESSION_ROW_STACK_DOT_SIZE,
+} from "@/components/tugways/tug-session-row";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 import type {
@@ -80,7 +85,10 @@ import {
   formatSessionRowSubtitle,
   truncateForDisplay,
 } from "./session-picker-format";
-import { sessionRowTitle } from "@/lib/session-name";
+import {
+  sessionIdentityContextFrom,
+  useSessionIdentity,
+} from "@/lib/session-identity";
 
 // ---------------------------------------------------------------------------
 // Row-accessory focus authoring
@@ -193,25 +201,25 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
     row.last_user_prompt !== null && row.last_user_prompt.length > 0
       ? row.last_user_prompt
       : null;
-  // The user-assigned name is the row title when set; else the mnemonic tag;
-  // else the `last_user_prompt`-derived snippet. `""` when none exist →
-  // "No prompts yet".
-  const titleText = sessionRowTitle(row.name, row.tag, fullPrompt ?? "");
-  const snippet =
-    titleText.length > 0 ? truncateForDisplay(titleText, 64) : null;
+  // The callsign leads: it is the session's identity, and it is the same
+  // callsign every other surface in the app shows for this session. A legacy
+  // tagless row degrades to its short id — never the raw UUID.
+  const identity = useSessionIdentity(
+    row.session_id,
+    sessionIdentityContextFrom(row),
+  );
+  const titleText = identity?.tag ?? row.session_id.slice(0, 8);
+  const snippet = truncateForDisplay(titleText, 64);
 
-  // The mnemonic adjective-noun callsign is the session's friendly identity,
-  // minted by the ledger — for a Tug session at spawn, for an external terminal
-  // session at scan time. Lead the metadata line with it, alongside the summary
-  // title and the UUID — UNLESS it's already the title (an untitled session
-  // falls back to the callsign), where repeating it doubles.
-  const tagText = row.tag?.trim() ?? "";
-  const showTag = tagText.length > 0 && tagText !== titleText;
-  const metaSubtitle = showTag
-    ? `${tagText} · ${formatSessionRowSubtitle(row)}`
-    : formatSessionRowSubtitle(row);
+  // The description line — the `/rename` name, else the rolling synopsis, with
+  // the `last_user_prompt` snippet standing in until a session has either.
+  const description = truncateForDisplay(identity?.title ?? fullPrompt ?? "", 96);
 
-  const subtitleText = isLive
+  // The metadata line: `time · turns`, and the state when a row is not simply
+  // resumable. There is no SIZE here — `SessionRow` carries no size field in
+  // either the TS or the Rust shape, and the picker's own projection is where
+  // one would have to come from, so this line is two facts and says two.
+  const metadata = isLive
     ? "Live in another card"
     : isTerminalLive
       ? row.terminal_live?.status === "busy"
@@ -221,7 +229,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
           : "In use in a terminal"
       : isFailed
         ? formatFailedRowSubtitle(row)
-        : metaSubtitle;
+        : formatSessionRowSubtitle(row);
 
   const idShort = row.session_id.slice(0, 8);
 
@@ -279,20 +287,28 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // `[data-slot="tug-icon-button"]`) when the user dispatches
   // `request-trash-session` — see `session-card.tsx` `pendingTrashAnchorEl`.
   // Highlights are computed against the strings this row actually RENDERS —
-  // `snippet` is already truncated and whitespace-collapsed, `subtitleText`
-  // already composed — so the paint lands on the right characters. A row that
-  // matched on a field it does not display (its id, a long prompt tail) shows
-  // no mark, which is correct.
-  const titleNode = renderFilterHighlight(
-    snippet ?? "No prompts yet",
-    filterQuery,
-  );
-  const subtitleNode = renderFilterHighlight(subtitleText, filterQuery);
-
+  // each already truncated and composed — so the paint lands on the right
+  // characters. A row that matched on a field it does not display (its id, a
+  // long prompt tail) shows no mark, which is correct.
   return (
-    <TugListRow
-      title={titleNode}
-      subtitle={subtitleNode}
+    <TugSessionRow
+      // The identity stack: callsign, description, PULSE, metadata. The same
+      // component the Lens wears, at the same tier — the picker and the Lens
+      // are showing the same thing and had no business showing it two ways.
+      name={renderFilterHighlight(snippet, filterQuery)}
+      description={renderFilterHighlight(description, filterQuery)}
+      metadata={renderFilterHighlight(metadata, filterQuery)}
+      // A session with a live card gets the phase dot; one without gets none,
+      // which is the honest rendering rather than an invented state. Most
+      // picker rows are closed sessions, so most show no dot.
+      indicator={
+        row.card_id !== null ? (
+          <SessionPhaseDot
+            cardId={row.card_id}
+            size={TUG_SESSION_ROW_STACK_DOT_SIZE}
+          />
+        ) : undefined
+      }
       selected={isSelected}
       disabled={isLive || isTerminalLive}
       trailing={trailing}

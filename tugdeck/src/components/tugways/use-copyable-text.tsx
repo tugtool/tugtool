@@ -57,6 +57,15 @@ export interface UseCopyableTextOptions {
    */
   getText?: () => string;
   /**
+   * Optional override for the WRITE itself, for content that is more than
+   * plain text — an atom, which carries a private sidecar flavor beside its
+   * text so a paste back into Tug re-materializes the chip rather than the
+   * string. Return `true` when the write was handled; `false` falls through
+   * to the plain-text write (the browser-mode path, where the native
+   * pasteboard bridge that carries custom flavors is not installed).
+   */
+  write?: () => boolean;
+  /**
    * When true, the context menu is suppressed and the copy handler
    * is a no-op.
    */
@@ -100,6 +109,7 @@ export interface UseCopyableTextResult {
 export function useCopyableText({
   ref,
   getText,
+  write,
   disabled,
   forwardedRef,
   copyMenu,
@@ -116,11 +126,16 @@ export function useCopyableText({
     if (disabled) return;
     const el = ref.current;
     if (!el) return;
+    // A caller with more than plain text to write — an atom, which carries a
+    // private sidecar flavor beside its text — takes the write itself. It
+    // returns false when its own path is unavailable (a browser-mode run with
+    // no native bridge), and the plain-text write below is the fallback.
+    if (write !== undefined && write()) return;
     const text = getText ? getText() : (el.textContent ?? "");
     if (text) {
       void navigator.clipboard.writeText(text);
     }
-  }, [ref, getText, disabled]);
+  }, [ref, getText, write, disabled]);
 
   // ---- Responder registration ----
 
@@ -244,12 +259,20 @@ export interface UseCopyableButtonResult {
  * {@link TugBadge} does, so the Z4B control chips (Project / Mode / Model /
  * Effort) call this to copy their `Label: value` text on right-click —
  * matching the display badges beside them. `text` is the exact string copied.
+ *
+ * `write` is the escape hatch for content that is more than its text — a
+ * session atom writes its private sidecar flavor beside the citation, so a
+ * paste back into Tug returns the chip. See {@link UseCopyableTextOptions.write}.
  */
-export function useCopyableButton(text: string): UseCopyableButtonResult {
+export function useCopyableButton(
+  text: string,
+  write?: () => boolean,
+): UseCopyableButtonResult {
   const ref = React.useRef<HTMLElement | null>(null);
   const { composedRef, handleContextMenu, contextMenu } = useCopyableText({
     ref,
     getText: () => text,
+    write,
     copyMenu: true,
   });
   return { ref: composedRef, onContextMenu: handleContextMenu, contextMenu };

@@ -47,7 +47,7 @@
  * @covers tugdeck/src/lib/workers/sparkline-render-worker.ts
  * @covers tugdeck/src/lib/sparkline-geometry.ts
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
- * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
+ * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/test-surface.ts
  */
 

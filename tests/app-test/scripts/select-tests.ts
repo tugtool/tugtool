@@ -201,7 +201,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 25 → 26 with bullseye (at0372): the posture is a branch of THIS
     // file's geometry ternary, and a painted frame against live insets is
     // the only place that branch can be asserted.
-    "tugdeck/src/components/chrome/tug-pane.tsx": 26,
+    // 26 → 27 with the masthead (at0375): the second chrome tier is this
+    // file's slot and this file's height constant, and the 72↔36 swap on tab
+    // change is a branch nothing smaller owns.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 27,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows
     // names it. Crossed the budget when transcript DOM eviction landed inside

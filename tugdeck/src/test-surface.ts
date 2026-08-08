@@ -68,6 +68,10 @@ import { getConnection } from "./lib/connection-singleton";
 import { sendSpawnSession } from "./lib/session-lifecycle";
 import type { AtomSegment } from "./lib/tug-atom-img";
 import { dispatchAction, getResponderChainManager } from "./action-dispatch";
+import { writeSessionAtomToClipboard } from "./lib/session-atom";
+import { resolveSessionIdentity } from "./lib/session-identity";
+import { readClipboardViaNative } from "./lib/tug-native-clipboard";
+import { parseClipboardSidecar } from "./components/tugways/tug-text-editor/clipboard-filters";
 import type { RateLimitInfo } from "./protocol";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import type { TaggedValue } from "./lib/tugbank-client";
@@ -264,8 +268,18 @@ import {
  * `2.3.0`: adds {@link TugTestSurface.getPaneRecord} — a pane's STORED
  * position, size, slot, and width stamp, so a test can assert what a derived
  * presentation did NOT write. Additive; major stays `2`.
+ *
+ * `2.4.0`: adds {@link TugTestSurface.publishSessionUpdated} — delivers a
+ * `session_updated` ledger row through the real action dispatch, so a test can
+ * rename a session the way the wire does and watch every identity surface
+ * repaint. Additive; major stays `2`.
+ *
+ * `2.5.0`: adds {@link TugTestSurface.copySessionAtom} — writes a session atom
+ * to the real pasteboard through the production writer, so a test can assert
+ * the flavors and the paste round-trip without driving a context menu.
+ * Additive; major stays `2`.
  */
-export const SURFACE_VERSION = "2.3.0" as const;
+export const SURFACE_VERSION = "2.5.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -803,6 +817,59 @@ export interface TugTestSurface {
    * a malformed post silently, so assert on what rendered, never on this alone.
    */
   publishGazettePost(payloadJson: string): boolean;
+
+  /**
+   * Deliver a `session_updated` ledger row as if it had arrived over the wire
+   * (SURFACE_VERSION 2.4.0).
+   *
+   * `payloadJson` is the frame body the supervisor pushes after any ledger
+   * write — `{"session_id":…,"fields":{"name":…,"name_user_set":true,"tag":…}}`.
+   * The bytes go through `dispatchAction`, which is the production entry point:
+   * the real decoder, the real name / tag store writes, and the real
+   * session-ledger bus. There is no fixture and no mock — a `/rename` reaches
+   * the client on exactly this frame, so a test that publishes one is renaming
+   * the session the way the user does.
+   *
+   * Returns `false` only when the JSON does not parse. A `true` return means
+   * the bytes were handed over; the decoder drops a malformed row with a
+   * console warning, so assert on what rendered, never on this alone.
+   */
+  publishSessionUpdated(payloadJson: string): boolean;
+
+  /**
+   * Write the session atom for `sessionId` to the system pasteboard
+   * (SURFACE_VERSION 2.5.0).
+   *
+   * Drives `writeSessionAtomToClipboard` — the exact function the chip's
+   * right-click Copy handler calls — so both flavors go out through the
+   * production path: the citation as `text/plain` and the atom sidecar on the
+   * private `dev.tug.prompt-atoms` type. Identity resolves through the bare
+   * resolver, which is a snapshot, which is correct here: a clipboard write is
+   * a one-shot non-React caller.
+   *
+   * This exists because the menu GESTURE is not reachable from the harness,
+   * not because the write is hard to reach. Returns `false` when the native
+   * pasteboard bridge is unavailable.
+   */
+  copySessionAtom(sessionId: string): boolean;
+
+  /**
+   * Read the atom sidecar back off the system pasteboard and parse it with the
+   * production parser (SURFACE_VERSION 2.5.0), returning
+   * `{text, atoms: [{type, label, value}]}` — or `null` when the pasteboard
+   * carries no sidecar or it fails validation.
+   *
+   * This closes the copy round trip through the REAL pasteboard: the native
+   * write put the sidecar on the private `dev.tug.prompt-atoms` type, and this
+   * reads it back through `readClipboardViaNative` + `parseClipboardSidecar`,
+   * the same two functions the editor's paste handler calls. It exists because
+   * `pbpaste` cannot see a private pasteboard type, so a test otherwise has no
+   * way to assert the flavor was written at all.
+   */
+  readClipboardAtoms(): Promise<{
+    text: string;
+    atoms: Array<{ type: string; label: string; value: string }>;
+  } | null>;
 
   /**
    * Record activity units on a session's channel, exactly as a live `ACTIVITY`
@@ -1837,6 +1904,43 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       } catch {
         return false;
       }
+      return true;
+    },
+
+    copySessionAtom(sessionId: string): boolean {
+      return writeSessionAtomToClipboard(resolveSessionIdentity(sessionId));
+    },
+
+    async readClipboardAtoms(): Promise<{
+      text: string;
+      atoms: Array<{ type: string; label: string; value: string }>;
+    } | null> {
+      const { atoms } = await readClipboardViaNative();
+      if (atoms === "") return null;
+      const sidecar = parseClipboardSidecar(atoms);
+      if (sidecar === null) return null;
+      return {
+        text: sidecar.text,
+        atoms: sidecar.atoms.map((a) => ({
+          type: a.segment.type,
+          label: a.segment.label,
+          value: a.segment.value,
+        })),
+      };
+    },
+
+    publishSessionUpdated(payloadJson: string): boolean {
+      let body: unknown;
+      try {
+        body = JSON.parse(payloadJson);
+      } catch {
+        return false;
+      }
+      if (typeof body !== "object" || body === null) return false;
+      dispatchAction({
+        ...(body as Record<string, unknown>),
+        action: "session_updated",
+      });
       return true;
     },
 

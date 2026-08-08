@@ -40,7 +40,6 @@ import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
 import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
 import { CommitModeController } from "@/lib/commit-mode-controller";
-import { useSessionBranch } from "@/lib/changeset-all-store";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { AppTestAskDialog } from "../chrome/session-app-test-ask-dialog";
 import { pendingAskStore } from "@/lib/pending-ask-store";
@@ -102,7 +101,6 @@ import {
 } from "../tug-inline-alert";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
-import { SessionPulseStrip } from "./session-pulse-strip";
 import { usePulseEnabled } from "@/lib/pulse-store";
 import { TugLabel } from "../tug-label";
 import {
@@ -191,9 +189,10 @@ import {
 } from "@/lib/session-spawn-error-store";
 import { cardServicesStore, type CardServices } from "@/lib/card-services-store";
 import { cardTitleStore } from "@/lib/card-title-store";
-import { sessionNameStore } from "@/lib/session-name-store";
-import { sessionTagStore } from "@/lib/session-tag-store";
-import { sessionCardTitleOverride } from "@/lib/session-card-title";
+import {
+  sessionIdentityLine,
+  useSessionIdentity,
+} from "@/lib/session-identity";
 import { useSessionCardObserver } from "./use-session-card-observer";
 import { useLandingReceipts } from "./use-landing-receipts";
 import { useMenuStatePublication } from "./use-menu-state-publication";
@@ -329,13 +328,12 @@ const SESSION_CYCLE_ORDER_FIND_BASE = 8;
 const SESSION_CYCLE_FIND_STOP_COUNT = 4;
 // The Z2 status cells are five independent leaf stops ([P10] revised —
 // no arrow-roving): STATE / TIME / TOKENS / CONTEXT / WORK take
-// orders 12…16 (base + 0…4). The PULSE label
-// follows at 18 (its own one-node grid row beneath the status cells); the
-// editor (the text body) at 19; and the Z4C compose-phase attachment tiles
-// — one leaf stop each — the orders from 20 upward (base + tile index), so
-// they Tab right after the editor.
+// orders 12…16 (base + 0…4). The editor (the text body) follows at 19; and
+// the Z4C compose-phase attachment tiles — one leaf stop each — take the
+// orders from 20 upward (base + tile index), so they Tab right after the
+// editor. 18 is a gap: it was the PULSE label's stop, and the PULSE moved to
+// the masthead, which is pane chrome and takes no card-cycle stop.
 const SESSION_CYCLE_ORDER_STATUS_BASE = 12;
-const SESSION_CYCLE_ORDER_PULSE = 18;
 const SESSION_CYCLE_ORDER_EDITOR = 19;
 const SESSION_CYCLE_ORDER_ATTACHMENT_BASE = 20;
 
@@ -2780,13 +2778,6 @@ export function SessionCardBody({
   // does not have to be frame-perfect with the tile registrations.
   const [attachmentCount, setAttachmentCount] = useState(0);
 
-  // Whether the PULSE label is a live cycle stop: the strip renders (and so
-  // registers its leaf) exactly while the `pulse/enabled` default is on AND a
-  // status bar is present — and the status bar always is in the real card
-  // (`effectiveZ2` falls back to the status row). A narrow boolean selector so
-  // this re-renders only when the kill switch flips, not per pulse line.
-  const pulseStopPresent = usePulseEnabled();
-
   // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
   // linearly; arrows give them a 2D feel: horizontal rings — the bottom toolbar
   // (route → Claude Code → AI settings → submit), the Z2 status cells, and (while
@@ -2834,11 +2825,6 @@ export function SessionCardBody({
         k(SESSION_CYCLE_ORDER_STATUS_BASE + 3),
         k(SESSION_CYCLE_ORDER_STATUS_BASE + 4),
       ],
-      // PULSE — a one-node row beneath the status cells (rowGridOrder drops it
-      // when the strip is hidden, so Down from a status cell reaches the editor
-      // / attachments instead). A lone node gets no horizontal ring; the seams
-      // carry Up / Down across it.
-      pulseStopPresent ? [k(SESSION_CYCLE_ORDER_PULSE)] : [],
       // The editor's text stop — the input-area wrapper, which is what wears
       // the ring while the editor itself stays blurred. Also a lone node.
       [k(SESSION_CYCLE_ORDER_EDITOR)],
@@ -2846,7 +2832,7 @@ export function SessionCardBody({
         k(SESSION_CYCLE_ORDER_ATTACHMENT_BASE + i),
       ),
     ]);
-  }, [attachmentCount, pulseStopPresent, findBarOpen]);
+  }, [attachmentCount, findBarOpen]);
   useSpatialOrder(cycle.scopeId, cycleSpatialOrder);
 
 
@@ -4077,43 +4063,44 @@ export function SessionCardBody({
     [pendingAsk],
   );
 
-  // The bound session's `/rename` name and mnemonic tag — the title-bar label
-  // resolves name → tag (like the Z4B chip), so subscribe to both ([L02]).
-  const sessionName = useSyncExternalStore(
-    sessionNameStore.subscribe,
-    useCallback(
-      () => (boundSessionId === null ? null : sessionNameStore.getName(boundSessionId)),
-      [boundSessionId],
-    ),
+  // The bound session's identity, through the one hook every identity surface
+  // uses ([L02]).
+  const sessionIdentity = useSessionIdentity(
+    boundSessionId,
+    projectDir !== null ? { projectDir } : undefined,
   );
-  const sessionTag = useSyncExternalStore(
-    sessionTagStore.subscribe,
-    useCallback(
-      () => (boundSessionId === null ? null : sessionTagStore.getTag(boundSessionId)),
-      [boundSessionId],
-    ),
-  );
-
-  // The current branch, for the `<project>/<session> (<branch>)` title (dropped
-  // on `main`). Read from the aggregate so the Lens monitor row and this title
-  // bar share one source and read identically.
-  const sessionBranch = useSessionBranch(projectDir);
+  const sessionLine =
+    sessionIdentity !== null && projectDir !== null
+      ? sessionIdentityLine(sessionIdentity)
+      : null;
 
   // Publish the session's identity to the pane chrome's title bar via
-  // `cardTitleStore` — the shared `<project>/<session> (<branch>)` label.
-  // Cleared on unmount or when the binding goes away so the title bar falls
-  // back to the registry default.
+  // `cardTitleStore` — the Line tier, `<project>/<callsign>`. Cleared on
+  // unmount or when the binding goes away so the title bar falls back to the
+  // registry default.
+  //
+  // The branch is gone from this string, and so is the name: what a session is
+  // CALLED is its callsign, which is immutable, so this string is constant for
+  // the life of the binding and `set` no-ops after the first call. Nothing may
+  // be built on a re-`set` firing — identity changes reach surfaces through
+  // `useSessionIdentity`, which is the only notification path.
+  //
+  // The masthead sidecar rides beside the string: it asks the pane for the
+  // taller chrome tier and names the session it is about. A KEY, not a
+  // snapshot — the masthead resolves what to display from the identity stores
+  // itself, so nothing about the name travels this channel.
   useEffect(() => {
     cardTitleStore.set(
       cardId,
-      projectDir !== null
-        ? sessionCardTitleOverride(projectDir, sessionName, sessionTag, sessionBranch)
-        : "Session",
+      sessionLine ?? "Session",
+      boundSessionId !== null
+        ? { kind: "session-masthead", sessionId: boundSessionId }
+        : undefined,
     );
     return () => {
       cardTitleStore.clear(cardId);
     };
-  }, [cardId, projectDir, sessionName, sessionTag, sessionBranch]);
+  }, [cardId, sessionLine, boundSessionId]);
 
   const projectChipText =
     projectDir !== null ? formatPathChipText(projectDir) : null;
@@ -4465,31 +4452,10 @@ export function SessionCardBody({
               )}
             </div>
             {/*
-              The PULSE strip — one ambient line of commentary beneath the
-              Z2 status row, filtered to THIS card's session (one app-wide
-              commentator, per-card display). Gated like the status bar (no
-              Z2 content → no strip); the component additionally hides itself
-              while the `pulse/enabled` default is off.
-            */}
-            {effectiveStatusBarContent != null && (
-              // Wrapped in a cycle scope (sharing this card's mode id, like the
-              // status row above) so the PULSE label's `useFocusable` registers
-              // into the same cycle as the prompt-entry stops ([P10] revised —
-              // a leaf stop at order 14, its own one-node grid row).
-              <cycle.CycleScope>
-                <SessionPulseStrip
-                  codeSessionStore={codeSessionStore}
-                  cardId={cardId}
-                  focusGroup={SESSION_CYCLE_GROUP}
-                  focusOrder={SESSION_CYCLE_ORDER_PULSE}
-                />
-              </cycle.CycleScope>
-            )}
-            {/*
               Changes glance ([P03] revised): a bottom-anchored PASSIVE shade
               that rises from the TOP OF THE PROMPT ENTRY over the whole
-              transcript region — find bar, Z2 status row, and PULSE strip
-              included. ⌃⌘C toggles it; on an empty composer it also enters
+              transcript region — find bar and Z2 status row included. ⌃⌘C
+              toggles it; on an empty composer it also enters
               commit mode so the prompt entry becomes the message editor.
               `shadePassive` keeps focus in the composer below; `shadeAnchor=
               "bottom"` + auto-size gives the rise-from-the-composer geometry.
@@ -4691,8 +4657,8 @@ export function SessionCardBody({
                 // bar, which owns the search for exactly as long as it is open.
                 //
                 // The Session and Project chips are deliberately absent on THIS
-                // route. Both names already read in the pane title bar (see
-                // `sessionCardTitleOverride`), so on the strip they were a
+                // route. Both names already read in the pane title bar (the
+                // identity's Line tier), so on the strip they were a
                 // second copy — and they were the two most expensive variable
                 // faces on the one route that has a width problem. The shell and
                 // commit clusters keep theirs: those routes are not

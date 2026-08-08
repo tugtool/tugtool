@@ -346,15 +346,6 @@
   display: none;
 }
 
-/* When the PULSE strip follows Z2, it differentiates itself by its
-   transcript-colored background, not a rule — so drop Z2's bottom divider
-   to collapse the cluster of lower lines. The border box is kept
-   (color → transparent) so there's no 1px layout shift. With the pulse
-   disabled there's no `.session-pulse-strip` sibling and the divider stays. */
-.session-card-status-bar:has(+ .session-pulse-strip) {
-  border-bottom-color: transparent;
-}
-
 /* Z2 status content — `flex: 1 1 auto` lets it span the row; `min-width: 0`
    lets it shrink below content. The status-row renderer inside is `width:
    100%` and centers its own cells. */

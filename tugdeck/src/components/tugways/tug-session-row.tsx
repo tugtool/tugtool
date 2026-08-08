@@ -63,7 +63,7 @@ import React from "react";
 
 import { cn } from "@/lib/utils";
 import { TugLabel } from "./tug-label";
-import { TugListRow } from "./tug-list-row";
+import { TugListRow, type TugListRowProps } from "./tug-list-row";
 import { TugPulse, type TugPulsePreset } from "./tug-pulse";
 
 /** How a session row packs its furniture. See the module docstring. */
@@ -121,16 +121,34 @@ export const TUG_SESSION_ROW_DEFAULT_FIT: TugSessionRowFit = "inset";
 export const TUG_SESSION_ROW_INDICATOR_SIZE = 28;
 
 /**
+ * Glyph box for the phase indicator on the FOUR-LINE identity stack.
+ *
+ * Smaller than {@link TUG_SESSION_ROW_INDICATOR_SIZE} because the stack is a
+ * denser thing than the Lens's monitor row: the dot leads a callsign that has
+ * three lines under it rather than one, and at 28 it would out-shout the name
+ * it is marking. The 28 stays where it is — the Lens keeps its indicator, and
+ * the size is a caller choice rather than a component change.
+ *
+ * Still the BOX, not the dot: the ring travels to the box edge and the dot
+ * paints at 60% of it, so this reads as a ~10px dot in a 16px ring, overhanging
+ * into the row's block padding rather than setting its line height.
+ */
+export const TUG_SESSION_ROW_STACK_DOT_SIZE = 16;
+
+/**
  * The activity tape's size on a session row, before scale. Declared here for
  * the same reason as the indicator's: the tape is a fixed-width accessory
  * whose width comes straight off the activity run's, so the number belongs to
  * the row's packing rather than to whichever surface mounts it.
  *
- * Both numbers are the Session card strip's (`session-pulse-strip`). The pair
- * has to match, not just the scale constants: width sets the scroll speed and
- * height sets the amplitude, so a tape one pixel shorter draws the same series
- * at a different vertical proportion under a stroke that stays 1px. Same
- * session, two surfaces, one reading.
+ * The width is `SPARKLINE_WIDTH` in `session-masthead.tsx`, which is where the
+ * Session card's own tape lives now. The pair has to match, not just the scale
+ * constants: width sets the scroll speed and height sets the amplitude, so a
+ * tape one pixel shorter draws the same series at a different vertical
+ * proportion under a stroke that stays 1px. Same session, two surfaces, one
+ * reading. (The masthead's tape is shorter — 18 against this 22 — because it
+ * rides a `--tugx-pulse-bar-height: 18px` bar; the width, which is the scroll
+ * clock, is the number that must not drift.)
  */
 const SPARK_BASE_WIDTH = 64;
 const SPARK_BASE_HEIGHT = 22;
@@ -211,6 +229,20 @@ export interface TugSessionRowProps
   /** The layout-imposer slots — the arrangement affordance. */
   slots?: React.ReactNode;
 
+  /**
+   * The session's description — its `/rename` name, else its synopsis. Omit
+   * for a row that carries only the name line and the PULSE; supply it (with
+   * {@link metadata}) for the four-line identity stack.
+   *
+   * Rendered whenever the prop is present, EVEN WHEN EMPTY, so a rename can
+   * fill it without moving the two lines below. A row that does not want the
+   * line at all omits the prop entirely.
+   */
+  description?: React.ReactNode;
+
+  /** The metadata line — `time · turns`. Closes the four-line stack. */
+  metadata?: React.ReactNode;
+
   /** The PULSE's headline — the session's standing goal. */
   intent?: React.ReactNode;
 
@@ -222,6 +254,15 @@ export interface TugSessionRowProps
 
   /** Selected state, forwarded to the underlying `TugListRow`. */
   selected?: boolean;
+
+  /** Trailing accessory — a status badge, a trash action. Forwarded whole. */
+  trailing?: React.ReactNode;
+
+  /** When the trailing accessory shows. Forwarded whole. */
+  trailingReveal?: TugListRowProps["trailingReveal"];
+
+  /** Disabled appearance and interaction. Forwarded whole. */
+  disabled?: boolean;
 }
 
 export const TugSessionRow = React.forwardRef<
@@ -234,10 +275,15 @@ export const TugSessionRow = React.forwardRef<
     indicator,
     name,
     slots,
+    description,
+    metadata,
     intent,
     activity,
     sparkline,
     selected,
+    trailing,
+    trailingReveal,
+    disabled,
     className,
     style,
     ...rest
@@ -257,6 +303,9 @@ export const TugSessionRow = React.forwardRef<
       data-slot="tug-session-row"
       data-fit={fit}
       selected={selected}
+      trailing={trailing}
+      trailingReveal={trailingReveal}
+      disabled={disabled}
       leading={indicatorInline ? undefined : indicator}
       {...rest}
     >
@@ -272,6 +321,19 @@ export const TugSessionRow = React.forwardRef<
             <span className="tug-session-row-slots">{slots}</span>
           ) : null}
         </span>
+        {/* The description. Present whenever the prop is — an empty one keeps
+            its line rather than collapsing it, so a rename does not move the
+            lines beneath. A row that wants three lines omits the prop. */}
+        {description !== undefined ? (
+          <span
+            className="tug-session-row-description"
+            data-empty={
+              description === null || description === "" ? "true" : undefined
+            }
+          >
+            {description}
+          </span>
+        ) : null}
         {/* The PULSE. Nothing about how it reads is decided here: `TugPulse`
             owns both faces, the leading between its lines, where each
             baseline falls, and what a level with nothing to say says. */}
@@ -285,6 +347,9 @@ export const TugSessionRow = React.forwardRef<
           activity={activity}
           trailing={sparklineInFlow ? sparkline : undefined}
         />
+        {metadata !== undefined && metadata !== null ? (
+          <span className="tug-session-row-metadata">{metadata}</span>
+        ) : null}
         {sparklineInFlow ? null : (
           <span className="tug-session-row-wash" aria-hidden="true">
             {sparkline}

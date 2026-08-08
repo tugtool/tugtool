@@ -3,13 +3,13 @@
  * right one gives way.
  *
  * The PULSE carries a session's standing goal over the operation running right
- * now. Two surfaces render that pair: the session card's strip in one line
+ * now. Two surfaces render that pair: the session card's masthead in one line
  * (**S1** — headline, `›`, activity) and the Lens row stacked (**L1** — the
  * goal on its own line between the session name and the activity). Four
  * claims here, and every one of them is a layout fact no unit test can reach:
  *
- *   1. **One row, not two.** The strip carries both levels on a single 34px
- *      line whether or not a goal exists — no second row, no reserved height.
+ *   1. **One row, not two.** The masthead carries both levels on a single
+ *      18px line whether or not a goal exists — no second row, no reserved height.
  *      The old shape put the overview on a row of its own; this pins that it
  *      is gone rather than merely unused.
  *   2. **The activity is what truncates.** Give a session a short goal and a
@@ -45,7 +45,8 @@
  * `at0280-shared-agent-absent.test.ts` pins the opposite posture — no model,
  * therefore no goal anywhere. The two tests must never disagree.
  *
- * @covers tugdeck/src/components/tugways/cards/session-pulse-strip.tsx
+ * @covers tugdeck/src/components/tugways/session-masthead.tsx
+ * @covers tugdeck/src/components/tugways/session-masthead.css
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/tugways/tug-pulse.css
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
@@ -67,20 +68,27 @@ const TEST_TIMEOUT_MS = 90_000;
 const SID_A = "a7c0d1ea-0000-4000-8000-000000000282";
 const SID_B = "a7c0d1ea-0000-4000-8000-000000000283";
 
-const CARD_A = '[data-card-id="A"]';
-const STRIP_A = `${CARD_A} [data-slot="session-pulse-strip"]`;
+// The card's PULSE lives in its pane chrome, on the masthead — so these are
+// scoped by pane rather than by card element. Each pane here holds one card
+// and that card is active, so a pane's masthead is that card's voice.
+const CARD_A = '.tug-pane[data-pane-id="p1"]';
+const STRIP_A = `${CARD_A} .session-masthead-pulse`;
 const HEADLINE_A = `${CARD_A} [data-slot="tug-pulse-headline"]`;
 const ACTIVITY_A = `${CARD_A} [data-slot="tug-pulse-activity"]`;
-const CARD_B = '[data-card-id="B"]';
-const STRIP_B = `${CARD_B} [data-slot="session-pulse-strip"]`;
+const CARD_B = '.tug-pane[data-pane-id="p2"]';
+const STRIP_B = `${CARD_B} .session-masthead-pulse`;
 
 const lensRow = (sid: string): string =>
   `.lens-cards-list .session-row-content[data-session-id="${sid}"]`;
 const lensIntent = (sid: string): string =>
   `${lensRow(sid)} [data-slot="tug-pulse-headline"]`;
 
-/** The strip's fixed band height — one line, in every state. */
-const STRIP_HEIGHT = 34;
+/**
+ * The PULSE band's fixed height — one line, in every state. In the masthead
+ * the bar is shortened to fit the three-line stack, through `TugPulse`'s
+ * published `--tugx-pulse-bar-height` knob.
+ */
+const STRIP_HEIGHT = 18;
 
 /**
  * A goal short enough to fit the strip whole at any sane card width, so a
@@ -94,7 +102,7 @@ const GOAL = "Wiring overview cadence gate";
  */
 const LONG_ACTIVITY =
   "Read(tugrust/crates/tugcast/src/feeds/session_overview.rs) then " +
-  "Edit(tugdeck/src/components/tugways/cards/session-pulse-strip.tsx) then " +
+  "Edit(tugdeck/src/components/tugways/session-masthead.tsx) then " +
   "Bash(cd tugrust && cargo nextest run -p tugcast --no-fail-fast)";
 
 function deckShape() {

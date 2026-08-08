@@ -1,0 +1,318 @@
+/* @tug-pairings {
+ * --tugx-pane-title-fg-active | --tugx-pane-title-bar-bg-active | display
+ * --tug7-element-global-text-normal-muted-rest | --tugx-pane-title-bar-bg-active | informational
+ * } */
+
+/**
+ * @tug-pairings
+ * | Element                                       | Surface                          | Role          | Context                                    |
+ * |-----------------------------------------------|----------------------------------|---------------|--------------------------------------------|
+ * | --tugx-pane-title-fg-active                   | --tugx-pane-title-bar-bg-active  | display       | .session-masthead-lead (color, inherited)  |
+ * | --tug7-element-global-text-normal-muted-rest  | --tugx-pane-title-bar-bg-active  | informational | .session-masthead-description; the widget  |
+ */
+
+/**
+ * The three lines and their leading. This is ONE scheme in one place:
+ * identity on top, then a tight group of the lines that say what the session
+ * is doing. Line height is stated explicitly on every line and never
+ * inherited — inherited body leading (~1.45) puts a 13px run in a 19px box,
+ * and no margin can take that back.
+ */
+.session-masthead {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-session-identity-line-gap, 1px);
+  min-width: 0;
+  flex: 1 1 auto;
+  /* The slot is a fixed height; this fills it and never asks for more. */
+  block-size: 100%;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* The identity line stands apart from the group beneath it — a slightly wider
+   gap is what makes three lines read as one identity plus two readings rather
+   than as three equal rows. */
+.session-masthead-lead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-block-end: var(--tugx-session-identity-lead-gap, 5px);
+  line-height: var(--tug-line-height-tight);
+}
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.session-masthead-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-tight);
+}
+
+/* An un-described session keeps the line's space rather than collapsing it:
+   the two lines below must not move when a rename lands. */
+.session-masthead-description[data-empty="true"]::after {
+  content: "\00a0";
+}
+
+/* TugPulse is composed through its PUBLISHED knobs — the bar is shortened for
+   the stack and the baseline moves with it. Shrinking one without the other
+   clips descenders, which is exactly why the component publishes both. [L20] */
+.session-masthead-pulse {
+  --tugx-pulse-bar-height: 18px;
+  --tugx-pulse-baseline: 13px;
+
+  min-width: 0;
+}
+
+/* ── The PULSE line's two controls ──────────────────────────────────────
+   Both are pointer-only chrome affordances: the label opens the recent-pulses
+   history, the tape opens the expanded Activity card. Neither is a card-cycle
+   focus stop — that stop retired with the Z2 strip, because chrome is the
+   pane's and a card-cycle stop walking into it would cross an ownership
+   boundary. */
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.session-masthead-legend {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  block-size: 16px;
+  padding-block: 0;
+  padding-inline: 5px;
+  margin: 0;
+  border: none;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
+  /* The label's VOICE is the PULSE's, not the masthead's — size, tracking, and
+     tone all come from `tug-pulse.css`, so this and the Lens row's stand-in
+     say the same word in the same voice. What is left here is the pill: its
+     box and its hover. */
+  color: var(--tugx-pulse-legend-color);
+  font-family: inherit;
+  font-size: var(--tugx-pulse-legend-size);
+  letter-spacing: var(--tugx-pulse-legend-tracking);
+  /* The trailing letter-spacing pads the right edge, so a matching start
+     indent keeps the glyph run optically centered. */
+  text-indent: 0.18em;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.session-masthead-legend:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+/* While the popover is open the trigger stays lit (Radix sets data-state). */
+.session-masthead-legend[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
+}
+
+/* The tape's trigger wears the same ghost tint as the legend, so both entry
+   points to the expanded views read as one discoverable pair. The padding
+   gives the tint a pill to fill; a matching negative margin absorbs it so
+   wrapping the tape never shifts the line. */
+.session-masthead-spark-trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: none;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.session-masthead-spark-trigger:hover {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
+}
+
+.session-masthead-spark-trigger[data-state="open"] {
+  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
+}
+
+/* ── The activity run's rendered markdown ───────────────────────────────
+   Flattened to one inline run: this is a single line, so block wrappers from
+   the parse lose their box behavior. */
+
+.session-masthead-pulse-text
+  :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.session-masthead-pulse-text li {
+  list-style: none;
+}
+
+.session-masthead-pulse-text code {
+  font-family: var(--tug-font-family-mono, monospace);
+  font-size: 0.95em;
+}
+
+/* Transcript parity inside one line: display math flows inline, media shrinks
+   to text height, tables flatten to an inline run. */
+.session-masthead-pulse-text .katex-display {
+  display: inline;
+  margin: 0;
+}
+
+.session-masthead-pulse-text .katex-display > .katex {
+  display: inline;
+  white-space: nowrap;
+}
+
+.session-masthead-pulse-text :is(img, svg, video) {
+  max-height: 1.1em;
+  width: auto;
+  vertical-align: text-bottom;
+}
+
+.session-masthead-pulse-text :is(table, thead, tbody, tr, th, td) {
+  display: inline;
+  padding: 0;
+  border: none;
+}
+
+/* Clamp KaTeX's 1.21em default so a fraction stack fits the fixed box. */
+.session-masthead-pulse-text .katex {
+  font-size: 1.05em;
+}
+
+/* ── PULSE legend popover: recent pulses, grouped by intent ─────────────
+   Composed on TugPopupListFrame (kind="item") — the titled surface the Z2
+   status popups share, so the recent-pulses list reads as one of that family.
+   The frame owns width, padding, titlebar chrome, and the scroll cap; these
+   rules add only the intent-group vocabulary. */
+
+/* Space between two intent groups so a new goal reads as a fresh section. */
+.session-pulse-history-group + .session-pulse-history-group {
+  margin-block-start: var(--tug-space-sm);
+}
+
+/* The goal heading over a run of beats. Shown ONCE per group. Prose, so it
+   drops the frame's mono body face for the ambient sans and wraps rather than
+   ellipsizing; muted so the beats beneath read as the primary data. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-pulse-history-intent {
+  font-family: var(--tug-font-family-sans);
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding: var(--tug-space-xs) var(--tug-space-sm) var(--tug-space-2xs);
+}
+
+/* Flatten the goal's markdown so the heading stays calm (no bold/mono
+   shouting over the muted context tone), and collapse block wrappers to one
+   inline run so it wraps as plain prose. */
+.session-pulse-history-intent :is(p, ul, ol, li, blockquote) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+.session-pulse-history-intent :is(strong, b, em, i) {
+  font-weight: inherit;
+  font-style: inherit;
+}
+
+.session-pulse-history-intent code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+/* Beat rows flatten their rendered markdown to one inline run so the
+   item-primary's single-line ellipsis holds. */
+.session-pulse-history-beat
+  :is(p, h1, h2, h3, h4, h5, h6, ul, ol, li, blockquote, pre) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.session-pulse-history-beat li {
+  list-style: none;
+}
+
+/* ── The telemetry widget ──────────────────────────────────────────────
+   Everything identity deliberately does not say — branch, state, stamps,
+   the citation. Pane-chrome furniture like the close button: it takes no
+   card-cycle focus stop. */
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.session-masthead-widget {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tug-radius-sm);
+  background: transparent;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  cursor: pointer;
+}
+
+.session-masthead-widget:hover {
+  background-color: color-mix(in oklab, currentcolor 12%, transparent);
+}
+
+/* ── The placard body ──────────────────────────────────────────────────── */
+
+.session-masthead-placard {
+  inline-size: 320px;
+}
+
+.session-masthead-placard-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+}
+
+.session-masthead-placard-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-overlay-rest) */
+.session-masthead-placard-label {
+  flex: none;
+  inline-size: 84px;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+}
+
+.session-masthead-placard-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+}
+
+/* The citation is flat text, and flat text is where monospace belongs. */
+.session-masthead-placard-citation {
+  font-family: var(--tug-font-family-mono);
+}

@@ -47,6 +47,7 @@ import {
 } from "./atom-bytes-store";
 import { buildWirePayload } from "./build-wire-payload";
 import { synthesizeUserMessageFromBlocks } from "./synthesize-user-message";
+import { sessionTagStore } from "./session-tag-store";
 import {
   isCompactionSummarizeText,
   splitCompactionSeed,
@@ -229,6 +230,16 @@ function mintTurnKey(): string {
     return crypto.randomUUID();
   }
   return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Whether a callsign names a session this client has seen — the discriminator
+ * that recovers a session `@`-mention from a value shaped like a relative
+ * path. Handed to the synthesizer rather than reached for there, so that
+ * module stays pure.
+ */
+function isKnownSessionTag(tag: string): boolean {
+  return sessionTagStore.knownTags().has(tag);
 }
 
 /** CODE_OUTPUT frame `type` values the reducer currently handles. */
@@ -903,6 +914,7 @@ export class CodeSessionStore {
       ? { text: effText, atoms, thumbnailBake: Promise.resolve() }
       : synthesizeUserMessageFromBlocks(wire.content, this.atomBytesStore, {
           atomIdAt: wire.atomIdAt,
+          isKnownTag: isKnownSessionTag,
         });
     this.dispatch({
       type: "send",
@@ -1811,6 +1823,7 @@ export class CodeSessionStore {
         const synth = synthesizeUserMessageFromBlocks(
           content,
           this.atomBytesStore,
+          { isKnownTag: isKnownSessionTag },
         );
         return {
           type: "add_user_message",

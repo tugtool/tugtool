@@ -6,21 +6,19 @@
  *
  * 1. Scaffolding — section shells, frames, labels, mock surfaces. Same
  *    contract as every gallery card: rules that ship nowhere.
- * 2. Prototypes — `.gsi-atom` (the citation-register session atom),
- *    `.gsi-presence` (the typographic presence-register callsign), and
- *    `.gsi-masthead` (the expanded title bar, on the real pane-chrome
- *    tokens). When `TugSessionIdentity` and the masthead tier ship they
- *    own their own `--tugx-*` tokens and these rules die with the spike.
- *    Nothing here is a precedent the app inherits.
+ * 2. Prototypes — now just `.gsi-masthead` (the expanded title bar, on the
+ *    real pane-chrome tokens). Both identity registers have shipped as
+ *    `TugSessionIdentity` and own their rules and tokens; when the masthead
+ *    tier ships too, these rules die with the spike. Nothing here is a
+ *    precedent the app inherits.
  *
- * The atom's `--gsi-session-color` is the proposed SESSION COLOR: one
- * theme-authored value per theme (a role, like danger or success), so the
- * pill always means the same thing. The card seeds candidates from
- * existing theme families; the shipped token is hand-authored into the six
- * theme files and contrast-audited. The hashed PER-SESSION tint that stood
- * here before was retired by review: a hue that varies per item reads as
- * meaning while meaning nothing — one fixed color that means "session" is
- * the correction, not the contradiction.
+ * The atom paints from the SESSION COLOR: the `session` tone on the `atom`
+ * slot, four values hand-authored into each of the six theme files and
+ * gated by the contrast audit, so the pill always means the same thing.
+ * The hashed PER-SESSION tint that stood here before was retired by
+ * review: a hue that varies per item reads as meaning while meaning
+ * nothing — one fixed color that means "session" is the correction, not
+ * the contradiction.
  */
 
 .gsi-root {
@@ -94,108 +92,11 @@
   white-space: nowrap;
 }
 
-/* ── PROTOTYPE: the presence register ────────────────────────────────────
-   The session as itself: chatbox icon, bold sans callsign, muted context
-   run. No enclosure — presence is typography, not a chip. */
+/* Both registers ship as `TugSessionIdentity` — the atom (`tier="chip"`) and
+   the presence callsign (`tier="line"`) own their rules and their tokens in
+   `tug-session-identity.css`. Nothing about either lives here any more. */
 
-/* The gap between the session icon and the callsign is ONE number for both
-   registers — presence and atom read as the same mark at different weights,
-   and a gap that varies by surface would break that. It ships as
-   `--tugx-session-identity-icon-gap`. */
-.gsi-presence,
-.gsi-atom {
-  --gsi-icon-gap: 6px;
-}
-
-/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
-.gsi-presence {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gsi-icon-gap);
-  min-width: 0;
-  font-size: var(--tug-font-size-sm);
-  color: var(--tug7-element-global-text-normal-default-rest);
-  white-space: nowrap;
-}
-
-.gsi-presence-icon {
-  flex: none;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* `<project>/<callsign>` is ONE run: one span, one weight, one color. The
-   earlier two-span form opened a flex gap after the slash and let each
-   half truncate independently — this cannot do either. */
-.gsi-presence-tag {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-/* ── PROTOTYPE: the session atom — the citation register ─────────────────
-   The rounded, specialized pill for session references. The form is fixed:
-   `<project>/<callsign>`, one bold run — no font-style mixing. One color
-   knob: `--gsi-session-color`, the per-theme session role, DECIDED to seed
-   from the agent family (the model's color; a session is an agent
-   surface). Ground, border, ink, and icon all derive from it, mixing
-   toward transparent and toward the theme's own text token so one rule
-   reads on all six themes; the shipped token is one hand-authored value
-   per theme file. */
-
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gsi-atom {
-  --gsi-session-color: var(--tug7-element-badge-text-tinted-agent-rest);
-
-  display: inline-flex;
-  align-items: center;
-  gap: var(--gsi-icon-gap);
-  min-width: 0;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background-color: color-mix(in oklab, var(--gsi-session-color) 12%, transparent);
-  border: 1px solid color-mix(in oklab, var(--gsi-session-color) 30%, transparent);
-  color: color-mix(
-    in oklab,
-    var(--gsi-session-color) 60%,
-    var(--tug7-element-global-text-normal-default-rest)
-  );
-  font-size: var(--tug-font-size-sm);
-  white-space: nowrap;
-}
-
-/* The unresolvable citation. The atom keeps its SHAPE — the reader still
-   needs to know what kind of thing is named — and drops the session color
-   for the theme's muted ink, so it reads as inert rather than as a link
-   that happens to be broken. The slashed icon carries the failure; the
-   tooltip carries the sentence. */
-.gsi-atom[data-missing="true"] {
-  --gsi-session-color: var(--tug7-element-global-text-normal-muted-rest);
-
-  border-style: dashed;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-.gsi-atom[data-size="2xs"] {
-  padding: 1px 7px;
-  font-size: var(--tug-font-size-xs);
-}
-
-.gsi-atom-icon {
-  flex: none;
-  color: var(--gsi-session-color);
-}
-
-.gsi-atom-tag {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-/* A citation atom under a width it cannot have. The prototype ellipsizes
-   at the end; the production chip middle-truncates (TugLabel's machinery)
-   so root and leaf of a lineage chain both survive. */
+/* A citation atom under a width it cannot have. */
 .gsi-chip-narrow {
   display: inline-flex;
   max-width: 170px;
@@ -468,7 +369,7 @@
 /* The masthead's presence run and description read on the chrome ground,
    in the chrome's own foreground tokens. */
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.gsi-masthead .gsi-presence,
+.gsi-masthead [data-slot="tug-session-identity"],
 .gsi-masthead .gsi-stack-title {
   color: var(--tugx-pane-title-fg-active);
 }

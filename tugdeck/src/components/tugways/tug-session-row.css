@@ -179,6 +179,68 @@ body {
   display: none;
 }
 
+/* ── The four-line identity stack ────────────────────────────────────────
+   Identity on top, then a tight group of three lines that say what the
+   session is doing. The lead gap is what makes those two things read as two
+   things; the line gap inside the group is what makes the group one.
+
+   Line-height is stated on every line and NEVER inherited: inherited body
+   leading (~1.45) puts a 13px run in a 19px box, and four of those is a
+   different row than the one the geometry was measured on. No margin can
+   take that back. */
+
+/* The gap between identity and the group beneath it. Carried by the name
+   line rather than the container, so a row with no description pays nothing
+   for a group it does not have. */
+.tug-session-row-lines:has(> .tug-session-row-description)
+  .tug-session-row-name-line {
+  margin-block-end: var(--tugx-session-identity-lead-gap, 5px);
+  line-height: var(--tug-line-height-tight);
+}
+
+/* Inside the group the step is one pixel — the container's own line gap is
+   sized for a two-line row, and the stack is tighter than that. */
+.tug-session-row-lines:has(> .tug-session-row-description) {
+  gap: var(--tugx-session-identity-line-gap, 1px);
+}
+
+/* The sub-lines take a small indent off the name they belong to, so the
+   callsign reads as the heading of the three beneath it. */
+.tug-session-row-description,
+.tug-session-row-metadata {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline-start: var(--tugx-session-identity-row-indent, 10px);
+  line-height: var(--tug-line-height-tight);
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-row-description {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-size: var(--tug-font-size-sm);
+}
+
+/* An un-described session keeps the line's space rather than collapsing it:
+   the lines below must not move when a rename lands. */
+.tug-session-row-description[data-empty="true"]::after {
+  content: "\00a0";
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-row-metadata {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-size: var(--tug-font-size-xs);
+}
+
+/* Block padding and leading are opposite jobs: the tight leading above makes
+   four lines read as ONE entry, and this padding stands that block off the
+   rules between rows. */
+.tug-session-row:has(.tug-session-row-description) {
+  padding-block: var(--tugx-session-identity-row-pad, 12px);
+}
+
 /* ── `inset`, `wash`, `duplex`, `reveal` — no leading column ──────────────
    With the indicator on the name line there is no leading accessory at all,
    so the row primitive renders no leading column and every line — the name
@@ -197,6 +259,15 @@ body {
 .tug-session-row[data-fit="wash"] .tug-pulse,
 .tug-session-row[data-fit="duplex"] .tug-pulse {
   padding-inline-start: var(--tugx-session-row-pulse-inset);
+}
+
+/* On the four-line stack the PULSE joins the indented group instead, so all
+   three sub-lines start on ONE vertical and the callsign reads as their
+   heading. After the fit rules deliberately — this and they carry the same
+   specificity, so source order is what decides, and the stack's indent is the
+   more specific intent. */
+.tug-session-row:has(.tug-session-row-description) .tug-pulse {
+  padding-inline-start: var(--tugx-session-identity-row-indent, 10px);
 }
 
 /* Two numbers handed to `TugPulse` under the row's own names — the tape's

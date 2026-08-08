@@ -49,7 +49,7 @@ const NO_RUNS: CompactionRuns = new Map();
 
 /**
  * What every pulse surface says for the length of a `/compact` run — the
- * on-card `session-pulse-strip` and the Lens **Sessions** row read the same
+ * card's `session-masthead` and the Lens **Sessions** row read the same
  * string, so a compacting session says one thing wherever it is shown.
  */
 export const COMPACTING_PULSE_TEXT = "Compacting context…";

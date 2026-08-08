@@ -640,13 +640,13 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 | #step-5 | Fork carries lineage | done | `db8fc452d` |
 | #step-6 | Trailer writers: citation + machine id | done | `972f2805a` |
 | #step-7 | Trailer read: typed fields, stripped body | done | `87a47bdb9` |
-| #step-8 | Session atom tone + masthead height tokens (six themes) | pending | — |
-| #step-9 | `resolveSessionIdentity` and the great deletion | pending | — |
-| #step-10 | `TugSessionIdentity`: chip + line tiers | pending | — |
-| #step-11 | The masthead | pending | — |
-| #step-12 | Z2 strip removal and re-homing | pending | — |
-| #step-13 | The atom on the clipboard | pending | — |
-| #step-14 | Row tier: `TugSessionRow` grows; picker + Lens adopt | pending | — |
+| #step-8 | Session atom tone + masthead height tokens (six themes) | done | `ce245c1ad` |
+| #step-9 | `resolveSessionIdentity` and the great deletion | done | `90caaa41d` |
+| #step-10 | `TugSessionIdentity`: chip + line tiers | done | `b1b5ecd10` |
+| #step-11 | The masthead | done | `ff7ce5e77` |
+| #step-12 | Z2 strip removal and re-homing | done | `c410e1466` |
+| #step-13 | The atom on the clipboard | done | `7d8ed2c2b` |
+| #step-14 | Row tier: `TugSessionRow` grows; picker + Lens adopt | done | `045cab247` |
 | #step-15 | The synopsis | pending | — |
 | #step-16 | Citation surfaces: tab strip, Gazette, Changes, History | pending | — |
 | #step-17 | `tag → session_id` and `/resume <tag>` | pending | — |

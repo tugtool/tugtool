@@ -56,9 +56,7 @@ import {
   subscribeOpenFileViewCards,
 } from "@/lib/file-view-open-registry";
 import type { LensCardsRowOrder } from "@/lib/lens-store/types";
-import { sessionCardTitleOverride } from "@/lib/session-card-title";
-import { sessionNameStore } from "@/lib/session-name-store";
-import { sessionTagStore } from "@/lib/session-tag-store";
+import { sessionIdentityLineForBinding } from "@/lib/session-identity";
 import {
   getOpenTextCard,
   getOpenTextCardsVersion,
@@ -286,13 +284,10 @@ export const DEFAULT_RESOLVERS: CardsResolvers = {
   textDisplayName: (cardId) => getOpenTextCard(cardId)?.getDisplayName() ?? null,
   textUnsaved: (cardId) => getOpenTextCard(cardId)?.hasUnsavedMark() ?? false,
   viewPath: (cardId) => getOpenFileViewCard(cardId)?.getPath() ?? null,
-  sessionLabel: (binding) =>
-    sessionCardTitleOverride(
-      binding.projectDir,
-      sessionNameStore.getName(binding.tugSessionId),
-      sessionTagStore.getTag(binding.tugSessionId),
-      null,
-    ),
+  // A projection, not a render: this recomputes when the identity stores'
+  // version tokens move (they are inputs to the section's memo), which is the
+  // sanctioned non-React path into the resolver.
+  sessionLabel: (binding) => sessionIdentityLineForBinding(binding),
   defaultTitle: (componentId) =>
     getRegistration(componentId)?.defaultMeta.title ?? "",
   icon: (componentId) =>
@@ -317,11 +312,13 @@ export interface LensCardsInputs {
   readonly registryVersion: number;
   readonly bindings: ReadonlyMap<string, CardSessionBinding>;
   /**
-   * Version tokens for the name / tag stores session labels are built from.
-   * Labels are read at recompute time, so a name or tag arriving late must
-   * re-run the projection — these are how the section says "they changed".
+   * Version token for the tag store. A session label is the identity's Line
+   * tier — `<project>/<callsign>` — so the callsign is the one identity fact
+   * it reads, and it is read at recompute time: a tag arriving late (or a
+   * ledger reroll replacing the optimistic one) must re-run the projection.
+   * This is how the section says "it changed". The name and synopsis do not
+   * appear in the Line string and are deliberately not inputs here.
    */
-  readonly nameVersion: unknown;
   readonly tagVersion: unknown;
 }
 
@@ -723,7 +720,6 @@ export class LensCardsDataSource implements TugListViewDataSource {
       this.inputs.filterQuery === next.filterQuery &&
       this.inputs.registryVersion === next.registryVersion &&
       this.inputs.bindings === next.bindings &&
-      this.inputs.nameVersion === next.nameVersion &&
       this.inputs.tagVersion === next.tagVersion
     ) {
       return false;

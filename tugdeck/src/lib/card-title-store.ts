@@ -14,6 +14,24 @@
  * subscribes via `useSyncExternalStore` and composes the override
  * with the registry title as `"<registry> — <override>"`.
  *
+ * ## The masthead sidecar
+ *
+ * A card may also ask for a taller chrome tier by publishing a
+ * {@link CardMastheadPayload} beside its string. The payload is a
+ * **key, not a snapshot** — it names which session the chrome is
+ * about, and the chrome resolves what to display from the identity
+ * stores at render. That is deliberate: a snapshot here would make
+ * this store a second notification path for identity, and there is
+ * exactly one ({@link useSessionIdentity}).
+ *
+ * The string channel survives alongside it for **reader
+ * compatibility**, not for notification: `get()` is what the tab bar,
+ * the deck canvas, the Window menu, and the pane already consume.
+ * Note what that means for a session card — its Line string is
+ * `<project>/<callsign>`, and a callsign is immutable, so `set` is
+ * effectively once per binding and nothing may be built on a re-`set`
+ * firing.
+ *
  * **Laws:**
  * - [L02] subscribable store, consumed via `useSyncExternalStore`
  *   (no `useEffect` copying through React state).
@@ -26,21 +44,46 @@
  * @module lib/card-title-store
  */
 
+/**
+ * A card's request for the masthead chrome tier, and the key the chrome
+ * resolves its content from. Never a snapshot of what to display.
+ */
+export interface CardMastheadPayload {
+  readonly kind: "session-masthead";
+  readonly sessionId: string;
+}
+
 class CardTitleStore {
   private readonly _overrides = new Map<string, string>();
+  private readonly _mastheads = new Map<string, CardMastheadPayload>();
   private readonly _listeners = new Set<() => void>();
 
-  /** Set the title override for `cardId`. Idempotent. */
-  set(cardId: string, title: string): void {
-    if (this._overrides.get(cardId) === title) return;
+  /**
+   * Set the title override for `cardId`, optionally with a masthead sidecar.
+   * Idempotent.
+   *
+   * The equality guard compares the string **and** the payload. Comparing
+   * only the string would drop a changed sidecar under an unchanged title —
+   * and after the callsign became the whole string, an unchanged title is the
+   * normal case, so the sidecar would arrive and notify nobody.
+   */
+  set(cardId: string, title: string, masthead?: CardMastheadPayload): void {
+    const sameTitle = this._overrides.get(cardId) === title;
+    const prev = this._mastheads.get(cardId);
+    const sameMasthead =
+      prev?.kind === masthead?.kind && prev?.sessionId === masthead?.sessionId;
+    if (sameTitle && sameMasthead) return;
     this._overrides.set(cardId, title);
+    if (masthead === undefined) this._mastheads.delete(cardId);
+    else this._mastheads.set(cardId, masthead);
     this._notify();
   }
 
-  /** Remove the title override for `cardId`. No-op when absent. */
+  /** Remove the title override (and any masthead) for `cardId`. */
   clear(cardId: string): void {
-    if (!this._overrides.has(cardId)) return;
+    if (!this._overrides.has(cardId) && !this._mastheads.has(cardId)) return;
     this._overrides.delete(cardId);
+    this._mastheads.delete(cardId);
     this._notify();
   }
 
@@ -48,6 +91,16 @@ class CardTitleStore {
   get(cardId: string | null): string | null {
     if (cardId === null) return null;
     return this._overrides.get(cardId) ?? null;
+  }
+
+  /**
+   * Read the masthead sidecar for `cardId`, or `null` when the card wants the
+   * one-line bar. The returned object is stable while unchanged, so a pane may
+   * snapshot it directly from `useSyncExternalStore`.
+   */
+  getMasthead(cardId: string | null): CardMastheadPayload | null {
+    if (cardId === null) return null;
+    return this._mastheads.get(cardId) ?? null;
   }
 
   /**

@@ -7,12 +7,13 @@
  *   <latest pulse line>                        <activity sparkline>
  *
  * The middle line is the agent's standing session overview — the same string the
- * card's strip wears as its headline. Both PULSE lines always render, so the
+ * card's masthead wears as its headline. Both PULSE lines always render, so the
  * row is the same height whatever the session is doing and a deck with no
  * model sees a row that stands in rather than one that collapses.
  *
- * The name is resolved exactly like the Session card's title-bar chip
- * (`sessionCardTitleOverride`). The row itself is `TugSessionRow`, the shared
+ * The name is the session identity's Line tier, resolved through
+ * `useSessionIdentity` like every other identity surface. The row itself is
+ * `TugSessionRow`, the shared
  * component the Pulse Display gallery card auditions its fits on: how the row
  * divides its one line's width between the indicator, the name, the slots, and
  * the PULSE's three parts is that component's decision, so what the gallery
@@ -42,11 +43,7 @@ import {
   sparklineCurves,
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
-import {
-  TugProgressIndicator,
-  type TugProgressIndicatorPhaseVisual,
-} from "@/components/tugways/tug-progress-indicator";
-import { dotDriftFor } from "@/components/tugways/internal/tug-progress-pulsing-dot";
+import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import {
   sessionSessionPhaseKey,
   sessionSessionPhaseVisual,
@@ -59,10 +56,10 @@ import {
   isCompactingCard,
 } from "@/lib/compaction-progress-store";
 import { cardServicesStore } from "@/lib/card-services-store";
-import { sessionNameStore } from "@/lib/session-name-store";
-import { sessionTagStore } from "@/lib/session-tag-store";
-import { sessionCardTitleOverride } from "@/lib/session-card-title";
-import { branchForProject, useChangesetAll } from "@/lib/changeset-all-store";
+import {
+  sessionIdentityLine,
+  useSessionIdentity,
+} from "@/lib/session-identity";
 import {
   latestLineForScope,
   usePulse,
@@ -76,7 +73,7 @@ import {
   isRateChannel,
 } from "@/lib/session-activity-store";
 
-// Sparkline shape — the same constants the on-card `session-pulse-strip` uses,
+// Sparkline shape — the same constants the card's `session-masthead` uses,
 // so a session reads identically in the Lens and on its card. Its SIZE is the
 // row's, not this section's: the tape's width comes off the activity run's, so
 // `TugSessionRow` declares it and the gallery's audition rows read the same
@@ -84,85 +81,8 @@ import {
 const SPARKLINE_FULL_SCALE_CHARS = 1200;
 const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 
-/** Quiet, offline-tinted phase input used until a card's services exist. */
-const OFFLINE_PHASE_INPUT: SessionPhaseInput = {
-  phase: "idle",
-  transportState: "offline",
-  interruptInFlight: false,
-};
-
-const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
-  sessionSessionPhaseVisual;
-
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
-
-/**
- * The session's label, formatted EXACTLY like the Session card's title bar:
- * `<project>/<session> (<branch>)` (branch omitted on `main`), name → tag
- * precedence, read reactively from the name / tag stores ([L02]).
- */
-function useSessionLabel(
-  projectDir: string,
-  tugSessionId: string,
-  branch: string | null,
-): string {
-  const name = useSyncExternalStore(
-    sessionNameStore.subscribe,
-    useCallback(() => sessionNameStore.getName(tugSessionId), [tugSessionId]),
-  );
-  const tag = useSyncExternalStore(
-    sessionTagStore.subscribe,
-    useCallback(() => sessionTagStore.getTag(tugSessionId), [tugSessionId]),
-  );
-  return sessionCardTitleOverride(projectDir, name, tag, branch);
-}
-
-/** The per-row phase dot — reads the bound card's `codeSessionStore`. Its size
- *  and where it sits are the row's (`TUG_SESSION_ROW_INDICATOR_SIZE`, and the
- *  `inset` fit's name line); this function only answers what phase it is in. */
-function RowPhaseDot({ cardId }: { cardId: string }): React.ReactElement {
-  const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
-    cardServicesStore.getServices(cardId),
-  );
-  const store = services?.codeSessionStore ?? null;
-  const snap = useSyncExternalStore(
-    store?.subscribe ?? NOOP_SUBSCRIBE,
-    store !== null ? store.getSnapshot : () => null,
-    () => null,
-  );
-  const input: SessionPhaseInput =
-    snap !== null
-      ? {
-          phase: snap.phase,
-          transportState: snap.transportState,
-          interruptInFlight: snap.interruptInFlight,
-          runningJobCount: countRunningJobs(snap.jobs),
-          // A session waiting on an answer reads Awaiting from the Lens
-          // too — that row is how a card the user isn't looking at says
-          // it needs them.
-          pendingAsk: snap.pendingAsk !== null,
-        }
-      : OFFLINE_PHASE_INPUT;
-  return (
-    <TugProgressIndicator
-      variant="pulsing-dot"
-      size={TUG_SESSION_ROW_INDICATOR_SIZE}
-      phase={sessionSessionPhaseKey(input)}
-      phaseVisual={PHASE_VISUAL}
-      // The ONLY place in the app that takes the dot's period jitter. This is
-      // a list of separate sessions, each doing its own work, and on one exact
-      // period a column of them reads as a single mechanism with several
-      // heads; a few percent of spread pulls them apart over a dozen breaths.
-      // Everywhere else — a Z2 STATE cell, a tool-call header — the dots
-      // belong to one thing and must stay locked, so they take the nominal
-      // period. Keyed on the card so a session keeps its rate across a filter,
-      // a reorder, or a scroll out of view and back.
-      style={dotDriftFor(cardId)}
-      aria-hidden
-    />
-  );
-}
 
 /**
  * When the session was made — the date half of the row's resting line.
@@ -258,9 +178,11 @@ export function CardsSessionRow({
   filterQuery,
   onRowPointerDown,
 }: CardsSessionRowProps): React.ReactElement {
-  const changesets = useChangesetAll();
-  const branch = branchForProject(changesets, projectDir);
-  const displayName = useSessionLabel(projectDir, tugSessionId, branch);
+  // The row's name line is the identity's Line tier — `<project>/<callsign>`,
+  // the same string the tab strip and the Window menu wear, resolved through
+  // the one hook so a `/rename` or a reroll repaints here with no reload.
+  const identity = useSessionIdentity(tugSessionId, { projectDir });
+  const displayName = identity === null ? "" : sessionIdentityLine(identity);
   const pulse = usePulse();
   const latest = latestLineForScope(pulse.lines, tugSessionId);
   // The session's standing goal — the same string the card's strip wears as
@@ -294,7 +216,15 @@ export function CardsSessionRow({
       data-lens-row-id={orderKey}
       data-lens-row-group="sessions"
       data-lens-group-run="sessions"
-      indicator={<RowPhaseDot cardId={cardId} />}
+      indicator={
+        <SessionPhaseDot
+          cardId={cardId}
+          size={TUG_SESSION_ROW_INDICATOR_SIZE}
+          // The ONLY place in the app that takes the dot's period jitter: a
+          // list of separate sessions, each doing its own work.
+          drift
+        />
+      }
       name={renderFilterHighlight(displayName, filterQuery)}
       slots={<SlotPicker cardId={cardId} />}
       // The row is its own reorder handle — a vertical drag from anywhere on

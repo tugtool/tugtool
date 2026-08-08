@@ -262,18 +262,47 @@ body {
    Pane title bar
    ========================================================================= */
 
+/* The chrome tier this pane wears, published for every in-pane surface that
+   seats below the title bar. It follows the ACTIVE card: a pane whose
+   frontmost tab publishes a masthead sidecar wears the masthead's height,
+   and any other tab puts it back. The masthead and the tab bar STACK — the
+   tab row stays `--tug-chrome-height` whatever this says, so a multi-tab
+   Session pane's chrome is 72 + 36. */
+.tug-pane {
+  --tugx-pane-chrome-height: var(--tug-chrome-height);
+}
+
+.tug-pane[data-masthead="true"] {
+  --tugx-pane-chrome-height: var(--tug-masthead-height);
+}
+
 .tug-pane-title-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: var(--tug-chrome-height);
-  min-height: var(--tug-chrome-height);
+  height: var(--tugx-pane-chrome-height, var(--tug-chrome-height));
+  min-height: var(--tugx-pane-chrome-height, var(--tug-chrome-height));
   padding: 0 var(--tug-space-md);
   background-color: var(--tugx-pane-title-bar-bg-inactive);
   border-bottom: 1px solid var(--tugx-pane-title-bar-divider);
   cursor: grab;
   user-select: none;
   flex-shrink: 0;
+}
+
+/* The masthead tier. The bar keeps its role — drag surface, controls host —
+   and gives its title region to the card family's masthead. No block padding:
+   the bar's `height` is a content-box height, so padding here would make the
+   tier taller than the token says it is; the masthead centers itself inside
+   the tier instead. Controls align to the LEAD line rather than to the tier's
+   center, so the close box sits beside the callsign it belongs to instead of
+   floating beside the description. */
+.tug-pane-title-bar[data-masthead="true"] {
+  align-items: flex-start;
+}
+
+.tug-pane-title-bar[data-masthead="true"] .tug-pane-title-bar-controls {
+  margin-block-start: 4px;
 }
 
 /* When a tab bar sits directly below, drop the title-bar divider so the title
@@ -656,7 +685,9 @@ body {
  */
 .tug-pane-scrim {
   position: absolute;
-  top: var(--tug-chrome-height);
+  /* Seats below the whole title-bar tier: at 36 it would dim the masthead's
+     bottom half — telemetry widget included — whenever a sheet is up. */
+  top: var(--tugx-pane-chrome-height, var(--tug-chrome-height));
   right: 0;
   bottom: 0;
   left: 0;

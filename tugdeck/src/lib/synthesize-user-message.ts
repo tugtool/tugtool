@@ -110,6 +110,15 @@ export interface SynthesizeOptions {
    */
   mintAtomId?: () => string;
   /**
+   * Whether a callsign is one this client has seen — the discriminator that
+   * recovers a session mention from a value shaped like a relative path (see
+   * {@link mentionAtomType}). Injected rather than reached for so this module
+   * stays pure and testable; the live path passes `sessionTagStore`'s known
+   * set, and omitting it makes every mention a file, which is the behavior
+   * that predates session atoms.
+   */
+  isKnownTag?: (tag: string) => boolean;
+  /**
    * Thumbnail baker. Takes the image block's base64 + mediaType and
    * returns a `data:image/...;base64,...` URL (or `null` on bake
    * failure). Defaults to the Web-Worker-backed `bakeThumbnail`
@@ -144,12 +153,30 @@ export interface SynthesizeResult {
 
 /**
  * Atom type for a replayed `@`-mention. The wire doesn't carry the
- * original type, but a directory mention's value always ends in `/`
- * (tugcast's index form), so directory chips round-trip; everything
- * else defaults to `"file"`.
+ * original type, so it is recovered from the value's shape and, for a
+ * session, from what the tag store knows.
+ *
+ * A directory mention's value always ends in `/` (tugcast's index form), so
+ * directory chips round-trip. A session mention is `<project>/<callsign>`,
+ * which is shaped exactly like a relative file path — nothing in the string
+ * tells the two apart, and no marker grammar change could tell them apart
+ * without giving the session a parallel mechanism, which is the one thing it
+ * must not have. So the callsign is the discriminator: a two-segment value
+ * whose tail is a tag this client has seen is a session. Collision needs a
+ * real file named for a minted `adjective-noun` from the curated lexicon
+ * sitting one directory deep, and the cost of one is a chip with the wrong
+ * icon. Everything else defaults to `"file"`.
  */
-function mentionAtomType(value: string): string {
-  return value.endsWith("/") ? "directory" : "file";
+function mentionAtomType(
+  value: string,
+  isKnownTag?: (tag: string) => boolean,
+): string {
+  if (value.endsWith("/")) return "directory";
+  if (isKnownTag !== undefined) {
+    const parts = value.split("/");
+    if (parts.length === 2 && isKnownTag(parts[1])) return "session";
+  }
+  return "file";
 }
 
 function defaultMintAtomId(): string {
@@ -200,6 +227,7 @@ export function synthesizeUserMessageFromBlocks(
   const mintAtomId = options?.mintAtomId ?? defaultMintAtomId;
   const bakeImage = options?.bakeImage ?? defaultBakeImage;
   const atomIdAt = options?.atomIdAt;
+  const isKnownTag = options?.isKnownTag;
 
   // Command-expansion echo: when claude expands a typed `/command`, it
   // rewrites the user turn to a `<command-name>` envelope rather than the
@@ -232,7 +260,7 @@ export function synthesizeUserMessageFromBlocks(
         echoText += TUG_ATOM_CHAR;
         echoAtoms.push({
           kind: "atom",
-          type: mentionAtomType(seg.value),
+          type: mentionAtomType(seg.value, isKnownTag),
           label: seg.value,
           value: seg.value,
         });
@@ -274,7 +302,7 @@ export function synthesizeUserMessageFromBlocks(
         textBuf += TUG_ATOM_CHAR;
         atoms.push({
           kind: "atom",
-          type: mentionAtomType(seg.value),
+          type: mentionAtomType(seg.value, isKnownTag),
           label: seg.value,
           value: seg.value,
         });
