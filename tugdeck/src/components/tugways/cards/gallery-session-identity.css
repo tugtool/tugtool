@@ -6,17 +6,21 @@
  *
  * 1. Scaffolding — section shells, frames, labels, mock surfaces. Same
  *    contract as every gallery card: rules that ship nowhere.
- * 2. Prototype — `.gsi-masthead`, the expanded title bar, styled on the
- *    real pane-chrome tokens; and `.gsi-presence`, the typographic
- *    (presence-register) callsign. When `TugSessionIdentity` and the
- *    masthead tier ship they own their own `--tugx-*` tokens and these
- *    rules die with the spike. Nothing here is a precedent the app
- *    inherits.
+ * 2. Prototypes — `.gsi-atom` (the citation-register session atom),
+ *    `.gsi-presence` (the typographic presence-register callsign), and
+ *    `.gsi-masthead` (the expanded title bar, on the real pane-chrome
+ *    tokens). When `TugSessionIdentity` and the masthead tier ship they
+ *    own their own `--tugx-*` tokens and these rules die with the spike.
+ *    Nothing here is a precedent the app inherits.
  *
- * The hashed per-session tint that stood here was retired by review:
- * color is a semantic channel in Tug, and a hash-derived hue reads as
- * meaning while meaning nothing. The citation chip is now a real TugBadge
- * and needs no rules of its own.
+ * The atom's `--gsi-session-color` is the proposed SESSION COLOR: one
+ * theme-authored value per theme (a role, like danger or success), so the
+ * pill always means the same thing. The card seeds candidates from
+ * existing theme families; the shipped token is hand-authored into the six
+ * theme files and contrast-audited. The hashed PER-SESSION tint that stood
+ * here before was retired by review: a hue that varies per item reads as
+ * meaning while meaning nothing — one fixed color that means "session" is
+ * the correction, not the contradiction.
  */
 
 .gsi-root {
@@ -81,6 +85,7 @@
   gap: var(--tug-space-sm);
 }
 
+
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
 .gsi-line {
   font-size: var(--tug-font-size-sm);
@@ -93,11 +98,20 @@
    The session as itself: chatbox icon, bold sans callsign, muted context
    run. No enclosure — presence is typography, not a chip. */
 
+/* The gap between the session icon and the callsign is ONE number for both
+   registers — presence and atom read as the same mark at different weights,
+   and a gap that varies by surface would break that. It ships as
+   `--tugx-session-identity-icon-gap`. */
+.gsi-presence,
+.gsi-atom {
+  --gsi-icon-gap: 6px;
+}
+
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
 .gsi-presence {
   display: inline-flex;
   align-items: center;
-  gap: var(--tug-space-2xs);
+  gap: var(--gsi-icon-gap);
   min-width: 0;
   font-size: var(--tug-font-size-sm);
   color: var(--tug7-element-global-text-normal-default-rest);
@@ -109,12 +123,9 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.gsi-presence-context {
-  flex: none;
-  font-weight: var(--tug-font-weight-normal);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
+/* `<project>/<callsign>` is ONE run: one span, one weight, one color. The
+   earlier two-span form opened a flex gap after the slash and let each
+   half truncate independently — this cannot do either. */
 .gsi-presence-tag {
   min-width: 0;
   overflow: hidden;
@@ -122,7 +133,67 @@
   font-weight: var(--tug-font-weight-semibold);
 }
 
-/* A citation badge under a width it cannot have. The prototype ellipsizes
+/* ── PROTOTYPE: the session atom — the citation register ─────────────────
+   The rounded, specialized pill for session references. The form is fixed:
+   `<project>/<callsign>`, one bold run — no font-style mixing. One color
+   knob: `--gsi-session-color`, the per-theme session role, DECIDED to seed
+   from the agent family (the model's color; a session is an agent
+   surface). Ground, border, ink, and icon all derive from it, mixing
+   toward transparent and toward the theme's own text token so one rule
+   reads on all six themes; the shipped token is one hand-authored value
+   per theme file. */
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-atom {
+  --gsi-session-color: var(--tug7-element-badge-text-tinted-agent-rest);
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gsi-icon-gap);
+  min-width: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background-color: color-mix(in oklab, var(--gsi-session-color) 12%, transparent);
+  border: 1px solid color-mix(in oklab, var(--gsi-session-color) 30%, transparent);
+  color: color-mix(
+    in oklab,
+    var(--gsi-session-color) 60%,
+    var(--tug7-element-global-text-normal-default-rest)
+  );
+  font-size: var(--tug-font-size-sm);
+  white-space: nowrap;
+}
+
+/* The unresolvable citation. The atom keeps its SHAPE — the reader still
+   needs to know what kind of thing is named — and drops the session color
+   for the theme's muted ink, so it reads as inert rather than as a link
+   that happens to be broken. The slashed icon carries the failure; the
+   tooltip carries the sentence. */
+.gsi-atom[data-missing="true"] {
+  --gsi-session-color: var(--tug7-element-global-text-normal-muted-rest);
+
+  border-style: dashed;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gsi-atom[data-size="2xs"] {
+  padding: 1px 7px;
+  font-size: var(--tug-font-size-xs);
+}
+
+.gsi-atom-icon {
+  flex: none;
+  color: var(--gsi-session-color);
+}
+
+.gsi-atom-tag {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* A citation atom under a width it cannot have. The prototype ellipsizes
    at the end; the production chip middle-truncates (TugLabel's machinery)
    so root and leaf of a lineage chain both survive. */
 .gsi-chip-narrow {
@@ -206,11 +277,16 @@
 
 /* Same three list facts the pulse gallery's rail restates: the row inset,
    the zeroed indicator gutter, and the pane ground the rows sit on. */
+/* The picker is a SHEET, not a rail — its rows have real room, and a frame
+   narrow enough to force an ellipsis would audition a truncation the
+   picker never performs. Wide enough that every fixture row fits, so what
+   is judged here is the hierarchy rather than the cut. */
 .gsi-list {
   --tugx-list-row-padding-inline: var(--tug-space-md);
   --tugx-list-row-indicator-gutter: 0px;
 
-  width: 440px;
+  width: 100%;
+  max-width: 660px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -226,49 +302,175 @@
 /* ── PROTOTYPE: the masthead ─────────────────────────────────────────── */
 
 .gsi-pane-mock {
-  width: 520px;
+  width: 100%;
+  max-width: 660px;
   border: 1px solid var(--tugx-pane-title-bar-divider);
   border-radius: 6px;
   overflow: hidden;
 }
 
-/* The fixed second tier: one height per line count, judged here, shipped as
-   a single --tug-masthead-height. Content never sets the height — overflow
-   truncates. */
-/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.gsi-masthead {
-  --gsi-masthead-height: 62px;
+/* ── PROTOTYPE: the identity stack ───────────────────────────────────────
+   ONE leading scheme, two mounts. The masthead is the top three lines;
+   the row tier is those three plus the metadata line. The lines are not
+   evenly spaced and must not be: the callsign is IDENTITY, and the
+   description / PULSE / metadata are all WHAT IT IS DOING. So the space
+   under the callsign separates the two groups, and the lines inside the
+   second group sit tight enough to read as one block.
+
+   LEADING IS LINE-HEIGHT FIRST, MARGIN SECOND. These lines are single
+   runs of text, not prose, so they take the TIGHT line-height explicitly.
+   Left to inherit, each one carries the card's ~1.45 body leading — a
+   13px run inside a 19px box — and the half-leading above and below every
+   line is space no margin can take back. Setting the line-height is what
+   actually closes the stack up; the two gaps below then buy exactly the
+   air they say they buy, on top of a line box that fits its text.
+
+   Those two numbers are the whole scheme. They ship as
+   `--tugx-session-identity-lead-gap` / `-line-gap`, and the row tier and
+   the masthead read the same ones — a leading that drifted between the
+   picker and the card would undo the point of having one component. */
+.gsi-stack {
+  --gsi-stack-lead-gap: 5px;
+  --gsi-stack-line-gap: 1px;
+
+  /* Row tier only. The dot's ring box, and how far the three lines under
+     the callsign are indented. Kept as knobs because they move together:
+     the indent is read against where the dot sits. */
+  --gsi-row-dot-size: 16px;
+  --gsi-row-indent: 10px;
+
+  /* The PULSE joins the scheme through the knobs TugPulse publishes for
+     exactly this — no reaching into its internals ([L20]).
+
+     The bar height is the one that matters. Its default 34px is sized for
+     a PULSE that stands alone on a strip; dropped into the stack it is a
+     14px run inside a 34px box, and the 20px of air that buys is the slack
+     that reads as loose leading no margin could explain. Measured, not
+     guessed (`at9998` probe): every other line here is 14–15px. The
+     baseline moves with the height — it is stated from the TOP of the bar,
+     so shrinking the bar without it would clip the runs' descenders. */
+  --tugx-pulse-bar-height: 18px;
+  --tugx-pulse-baseline: 13px;
+  --tugx-pulse-run-line-height: var(--tug-line-height-tight);
 
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 3px;
+  gap: 0;
+  min-width: 0;
+  line-height: var(--tug-line-height-tight);
+}
+
+.gsi-stack-lead {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+  line-height: var(--tug-line-height-tight);
+}
+
+/* The row's dot carries its own air — the ring box is wider than the dot
+   it draws — so the flex gap beside it buys a wider space than it says.
+   The row tier takes it down accordingly, and the dot and the callsign
+   read as one mark rather than two things sharing a line. Not all the way
+   down, though: the pair still needs to read as a dot BESIDE a name, and
+   the ring's own inset is not the same thing as space between them. */
+.gsi-stack[data-variant="row"] .gsi-stack-lead {
+  gap: var(--tug-space-sm);
+}
+
+.gsi-stack-spacer {
+  flex: 1;
+}
+
+.gsi-stack-title {
+  margin-top: var(--gsi-stack-lead-gap);
+  margin-bottom: var(--gsi-stack-line-gap);
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-tight);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The fourth line — time / turns / size. Row tier only: the masthead
+   sends this to the telemetry placard instead of spending chrome on it. */
+.gsi-stack-meta {
+  margin-top: var(--gsi-stack-line-gap);
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-tight);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The row tier mounts the stack on a list ground, four lines, Lens-like:
+   the phase dot leads the callsign line and the ring overhangs into the
+   row's own block padding, exactly as `TugSessionRow`'s inset fit does. */
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-stack[data-variant="row"] {
+  /* The rows sit between separator rules, and the block padding is what
+     keeps them off those rules — tight here reads as crowded, not dense.
+     It is also not the leading: closing the lines up (which is what the
+     stack does above) and standing the block off its neighbours are
+     opposite jobs, and this is the one that answers to the separator. */
+  padding: var(--tug-space-lg) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+}
+
+.gsi-stack[data-variant="row"] .gsi-stack-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The dot rides the row's own left margin and the three lines beneath it
+   take a small indent — enough to read as hanging off the callsign line
+   without paying the dot's full advance for a hanging indent, which at
+   four lines would cut a lot of width for a hierarchy the type already
+   states. */
+.gsi-stack[data-variant="row"] .gsi-stack-title,
+.gsi-stack[data-variant="row"] .tug-pulse,
+.gsi-stack[data-variant="row"] .gsi-stack-meta {
+  margin-inline-start: var(--gsi-row-indent);
+}
+
+/* The dot's box is a RING box, not a glyph box: the dot paints at 60% of it
+   and the rest is the breath the pulse throws. So the box overhangs — left,
+   by the ring's own inset, to put the DOT (not its box) on the row's margin;
+   and block-wise into the row's padding, so it does not set the callsign
+   line's height and undo the leading above it. Same idea as
+   `TugSessionRow`'s inset fit, at the smaller row-tier size. */
+.gsi-stack[data-variant="row"] .gsi-stack-lead > :first-child {
+  margin-inline-start: calc(var(--gsi-row-dot-size) * -0.2);
+  margin-block: calc(var(--gsi-row-dot-size) * -0.25);
+}
+
+/* The masthead, DECIDED: the stack's top three lines at one fixed height.
+   Content never sets the height; overflow truncates. This number is what
+   ships as `--tug-masthead-height`. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.gsi-masthead {
+  /* Falls out of the tightened stack: a 22px control line, the lead gap,
+     two text lines at tight leading, and symmetric breathing room. The
+     three-line masthead does NOT need the 86px it wanted while every line
+     carried inherited body leading. */
+  --gsi-masthead-height: 72px;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   height: var(--gsi-masthead-height);
   box-sizing: border-box;
   padding: 0 var(--tug-space-md);
   background-color: var(--tugx-pane-title-bar-bg-active);
 }
 
-.gsi-masthead[data-lines="3"] {
-  --gsi-masthead-height: 86px;
-}
-
-.gsi-masthead-lead {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  min-width: 0;
-}
-
-/* The masthead's presence run reads on the chrome ground, in the chrome's
-   own foreground tokens. */
+/* The masthead's presence run and description read on the chrome ground,
+   in the chrome's own foreground tokens. */
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.gsi-masthead .gsi-presence {
+.gsi-masthead .gsi-presence,
+.gsi-masthead .gsi-stack-title {
   color: var(--tugx-pane-title-fg-active);
-}
-
-.gsi-masthead-spacer {
-  flex: 1;
 }
 
 .gsi-masthead-widget,
@@ -283,14 +485,6 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.gsi-masthead-title {
-  font-size: var(--tug-font-size-sm);
-  color: var(--tugx-pane-title-fg-active);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ── The telemetry placard mock ──────────────────────────────────────── */
 
@@ -333,6 +527,86 @@
 .gsi-placard-copy {
   display: inline-flex;
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ── The clipboard flavors ───────────────────────────────────────────── */
+
+.gsi-flavors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.gsi-flavor {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--tug-space-sm);
+  row-gap: 2px;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-flavor-name {
+  grid-column: 1;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-flavor-role {
+  grid-column: 2;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-flavor-payload {
+  grid-column: 2;
+  min-width: 0;
+  padding: 2px 8px;
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  overflow-wrap: anywhere;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-content-rest) */
+.gsi-flavor-effect {
+  grid-column: 2;
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-roundtrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-md);
+  box-sizing: border-box;
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  border-radius: var(--tug-radius-sm, 4px);
+  background-color: var(--tugx-pane-bg);
+}
+
+.gsi-roundtrip-arrow {
+  color: var(--tug7-element-global-text-normal-muted-disabled-rest);
+}
+
+/* The composer side: the atom sits INSIDE prose, which is the whole point
+   of the paste — it lands as a chip in a sentence, not as a string. */
+/* @tug-renders-on var(--tugx-pane-bg) */
+.gsi-roundtrip-composer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  flex-wrap: wrap;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* ── The citation ────────────────────────────────────────────────────── */
@@ -384,11 +658,3 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* The unresolved citation: quiet sans, not mono — mono stays in flat text
-   (the trailer above), never in session chrome. */
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gsi-history-citation {
-  flex: none;
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
