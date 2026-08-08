@@ -332,6 +332,34 @@ describe("computeCommandCapabilities", () => {
     expect(deselected["window.revealStack"].enabled).toBe(false);
   });
 
+  test("the card-width radio checks the stamped preset, and none at a dragged width", () => {
+    const chain = new ResponderChainManager();
+
+    // A rail, or nothing selected: no pane has a preset to set.
+    const unsettable = computeCommandCapabilities(source(chain, { cardWidth: null }));
+    expect(unsettable["window.cardWidth.slim"].enabled).toBe(false);
+    expect(unsettable["window.cardWidth.comfy"].enabled).toBe(false);
+    expect(unsettable["window.cardWidth.wide"].enabled).toBe(false);
+
+    const comfy = computeCommandCapabilities(
+      source(chain, { cardWidth: { preset: "comfy" } }),
+    );
+    expect(comfy["window.cardWidth.slim"].enabled).toBe(true);
+    expect(comfy["window.cardWidth.slim"].state).toBe(false);
+    expect(comfy["window.cardWidth.comfy"].state).toBe(true);
+    expect(comfy["window.cardWidth.wide"].state).toBe(false);
+
+    // Dragged to a width of its own: still settable, but no row claims the
+    // check — the settled control shows what the geometry holds.
+    const custom = computeCommandCapabilities(
+      source(chain, { cardWidth: { preset: null } }),
+    );
+    expect(custom["window.cardWidth.comfy"].enabled).toBe(true);
+    expect(custom["window.cardWidth.slim"].state).toBe(false);
+    expect(custom["window.cardWidth.comfy"].state).toBe(false);
+    expect(custom["window.cardWidth.wide"].state).toBe(false);
+  });
+
   test("the save family follows the frontmost Text card's gates", () => {
     const chain = new ResponderChainManager();
 

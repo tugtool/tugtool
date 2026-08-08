@@ -7,9 +7,10 @@
  * control frames, the key pipeline, buttons, the slash bridges — resolves
  * through this table and calls `dispatchCommand` ([P01], Spec S01).
  *
- * The table is pure data. It imports the action vocabulary and nothing
- * else, so the dispatcher, the keymap registry, the menu-state mirror,
- * and the Settings panes can all read it without an import cycle.
+ * The table is pure data. It imports the action vocabulary and the content
+ * width presets — both leaves that import nothing of Tug's — so the
+ * dispatcher, the keymap registry, the menu-state mirror, and the Settings
+ * panes can all read it without an import cycle.
  *
  * ## What is NOT in here
  *
@@ -27,6 +28,11 @@
 
 import type { TugAction } from "./action-vocabulary";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import type { ContentWidth } from "@/lib/layout-imposer";
+import {
+  CONTENT_WIDTH_LABELS,
+  CONTENT_WIDTH_PRESETS,
+} from "@/lib/layout-imposer";
 
 /* ---------------------------------------------------------------------------
  * Chords and bindings (Spec S02)
@@ -151,6 +157,15 @@ export interface CommandMenuFacts {
   readonly selectionActive: boolean;
   /** How many panes share the focused pane's slot. */
   readonly stackDepth: number;
+  /**
+   * The focused pane's named width, and whether it has one to set at all.
+   * `null` when the width commands do not apply — nothing selected, or the
+   * focused pane holds a rail (a sidebar takes its width from the allocator,
+   * never from a preset). Otherwise `preset` is the stamp `setPaneWidth`
+   * left, and `null` there means the pane sits at a width the user dragged
+   * by hand: settable, but at none of the three, so no row is checked.
+   */
+  readonly cardWidth: { readonly preset: ContentWidth | null } | null;
 }
 
 /** Nothing focused, nothing open — the answer before the first push. */
@@ -165,6 +180,7 @@ export const EMPTY_MENU_FACTS: CommandMenuFacts = {
   focusedPaneActiveCardClosable: false,
   selectionActive: false,
   stackDepth: 0,
+  cardWidth: null,
 };
 
 /**
@@ -543,6 +559,62 @@ const SLOT_COMMANDS: readonly CommandEntry[] = Array.from(
       bindings: [chord({ key: `Digit${n}`, meta: true, label: String(n) })],
     };
   },
+);
+
+/**
+ * ⌃⌘1/2/3 — the focused card's width, as one of the three named presets.
+ *
+ * Three entries and not one cycling command, because the set is static and
+ * the gesture is meant to be no-look: a cycle you must know your place in
+ * is a cycle you have to look at. Each is separately rebindable and each is
+ * one row in the keymap pane ([P05]).
+ *
+ * **The tier, derived** (tuglaws/chord-tiers.md): a pane's width is Tug's
+ * own layout vocabulary, so it takes the Tug tier ⌃⌘ alongside ⌃⌘L Show
+ * Lens and ⌃⌘T Next Theme — not plain ⌘, which R3 reserves for verbs hit
+ * many times an hour. The digits index `CONTENT_WIDTH_PRESETS` in the order
+ * every picker offers them, which is the tier doc's amended reading of the
+ * digit row: a digit indexes an ordered set, and the tier says which set —
+ * ⌘n a place on the deck, ⌃⌘n a size for the card. ⌥⌘1/2/3 was considered
+ * and rejected: ⌥ is the variant operator, so under R1 it would have to
+ * read as a variant of Move Card to Slot N, which width is not.
+ *
+ * **Promoted to the Window menu**, unlike the slot family. ⌘1–⌘9 stay
+ * chord-only ([Q02]) because surfaces like `pdf-view.tsx` decline them by
+ * hand to leave the digits with the deck, and a menu item would take that
+ * choice away — AppKit's key-equivalent scan runs first and claims them
+ * unconditionally. Nothing claims ⌃⌘ digits: no viewer, no text surface, no
+ * CM6 keymap. So the reason that kept slots off the menu simply does not
+ * apply here, and the promotion is free. The Swift items are constructed
+ * with EMPTY key equivalents so `applyCommandChords` writes them from this
+ * table and all three stay rebindable end to end.
+ */
+const CARD_WIDTH_COMMANDS: readonly CommandEntry[] = CONTENT_WIDTH_PRESETS.map(
+  (preset, i) => ({
+    id: `${TUG_ACTIONS.SET_PANE_WIDTH}:${preset}`,
+    title: CONTENT_WIDTH_LABELS[preset],
+    routing: "first-responder" as const,
+    action: TUG_ACTIONS.SET_PANE_WIDTH,
+    payload: preset,
+    menuItemId: `window.cardWidth.${preset}`,
+    mirrored: true,
+    bindings: [
+      chord(
+        { key: `Digit${i + 1}`, meta: true, ctrl: true, label: String(i + 1) },
+        { menuEligible: true },
+      ),
+    ],
+    // Both predicates read the published fact rather than walking the
+    // chain: which pane is focused and what width it holds is deck state,
+    // and the canvas answering "yes I handle set-pane-width" says nothing
+    // about whether THIS pane has a width to set.
+    validate: (chain: CommandValidationSource) => chain.menu.cardWidth !== null,
+    // The radio's mark, and the one width that shows none: a pane the user
+    // dragged to a size of its own has no preset stamped, so no row is
+    // checked — the settled control shows what the geometry holds.
+    state: (chain: CommandValidationSource) =>
+      chain.menu.cardWidth?.preset === preset,
+  }),
 );
 
 export const COMMANDS: readonly CommandEntry[] = [
@@ -1100,6 +1172,7 @@ export const COMMANDS: readonly CommandEntry[] = [
     validate: (chain) => chain.menu.stackDepth > 1,
     disabledChord: "detach",
   },
+  ...CARD_WIDTH_COMMANDS,
   ...SLOT_COMMANDS,
   {
     // Its door is the pane's close box — a targeted control, invisible to

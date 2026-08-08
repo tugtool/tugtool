@@ -18,7 +18,7 @@ The algebra was already half-latent in shipped bindings — ⌘V → ⌥⌘V →
 
 ## The two base tiers
 
-**⌘ — the universal tier.** Verbs any Mac user already knows (Save, Find, Copy, Close, Quit) plus the highest-frequency Tug verbs (Focus Prompt ⌘K, Reveal Stack ⌘R). Digits are places: ⌘1–9 are slots, ⌘0 is actual size.
+**⌘ — the universal tier.** Verbs any Mac user already knows (Save, Find, Copy, Close, Quit) plus the highest-frequency Tug verbs (Focus Prompt ⌘K, Reveal Stack ⌘R). Its digits are places: ⌘1–9 are slots, ⌘0 is actual size — see "The digit row" below for what a digit means across tiers.
 
 **⌃⌘ — the Tug tier.** Tug's own machinery: surfaces, shades, modes, themes, app-specific features. This is where Tug gets to be Tug without colliding with thirty years of ⌘ convention. ⌃⌘F Full Screen is the macOS-conventional resident that anchors the tier and proves ⌃⌘ letters reach the web view intact.
 
@@ -39,6 +39,16 @@ Composed sets are never assigned fresh — each one *means* its composition, and
 | ⌥⇧⌘ | Both twists at once. "…as Plain Text" is always ⌥⇧⌘ (⌥⇧⌘C, ⌥⇧⌘V — the latter matching macOS "Paste and Match Style" exactly). First/Last Turn ⌥⇧⌘↑/↓ are the ⇧-extremes of Previous/Next Turn ⌥⌘↑/↓. |
 | ⌃⇧⌘ | The counterpart of a Tug-tier command. Debut resident: Disclaim All ⌃⇧⌘A, the counterpart of Claim All ⌃⌘A. |
 | ⌃⌥⌘ | The variant or advanced form of a Tug-tier command — the "super-advanced" tier. Debut resident: Cycle Permission Mode ⌃⌥⌘P, since permission modes govern agent autonomy, the quintessential expert feature. |
+
+## The digit row
+
+**A digit indexes an ordered set; the tier says which set.** ⌘1–9 are the deck's slots and ⌃⌘1–3 are the card's widths — the same gesture (reach for the *n*th thing) read against the tier's own subject: the ⌘ tier arranges the deck, the ⌃⌘ tier is Tug's machinery for the card in front of you. ⌘0 stays actual size, which is the zoom family's own zero rather than an index into anything.
+
+This generalizes the older wording, "digits are places" ([D130]). Places was only ever true of the tier that had digits; stated flatly it made ⌃⌘ digits unreachable by derivation and would have pushed the width commands onto three unrelated letters with no grammar between them. The narrower reading survives inside the new one — ⌘n *is* a place — and the wider one is what makes the second row explainable rather than remembered.
+
+The rule that keeps this from becoming a pool: a digit family must be an **ordered set the user already sees in that order**. Slots run left to right across the deck; widths are `CONTENT_WIDTH_PRESETS`, narrow to wide, the order every picker offers them in. A family whose order is arbitrary has no business on the digit row, because the whole value of a digit is that you can predict which one before you press it.
+
+**⌥⌘1–3 was the proposal this replaced, and R1 is why it failed.** ⌥ is the variant operator, so ⌥⌘n must read as a variant of ⌘n — a variant of Move Card to Slot *n*. Card width is a different verb on a different property, so the composed set had no base to compose from: the modifier stack would have been climbed purely because plain ⌘ digits were taken, which is the accretion R1 exists to stop.
 
 ## The closed sets
 
@@ -79,7 +89,7 @@ Plain ⌘, for future grants under R3.
 | ⌘' ⌘; ⌘\ | Free punctuation. |
 | ⌘[ ⌘] | Reserved for any future back/forward navigation concept. |
 
-Digits are fully spent: ⌘1–9 are slots, ⌘0 is actual size.
+Plain-⌘ digits are fully spent: ⌘1–9 are slots, ⌘0 is actual size. ⌃⌘1–3 are the card widths; ⌃⌘4–9 and ⌃⌘0 are free, and free for an *ordered set* under the digit-row rule above — not as loose slots.
 
 **Freed by [D126]** and returned to the pool: ⇧⌘P, ⇧⌘C, ⇧⌘H, ⇧⌘M, ⌥⌘T, ⌘I.
 
@@ -127,6 +137,22 @@ The grammar is the point. One toggle would not have justified moving Show Lens; 
 
 ---
 
+## The card-width row
+
+⌃⌘⟨digit⟩ names one of the three content widths, and pressing it puts the focused card at that width ([D130]).
+
+| Command | Chord | Derivation |
+|---|---|---|
+| `set-pane-width:slim` | **⌃⌘1** | Tug tier: a pane's width is Tug's own layout vocabulary, alongside ⌃⌘L and ⌃⌘T. The digit is the preset's index in `CONTENT_WIDTH_PRESETS`. |
+| `set-pane-width:comfy` | **⌃⌘2** | As above. Comfy is the default, so this is the reset gesture as much as a choice. |
+| `set-pane-width:wide` | **⌃⌘3** | As above. |
+
+Three commands and not one cycling command, though the ⌃⌘T Next Theme precedent would have allowed a cycle. The set is static and small, the gesture is meant to be **no-look**, and a cycle you have to know your place in is one you have to look at — the same argument that makes Next Card in Stack a true ring rather than a swap. It also gives the Window menu three check-markable rows instead of one verb whose current value is invisible, which is the shape the title-bar width popup already has.
+
+**These are `menuEligible` with empty Swift key equivalents** (Window ▸ Slim / Comfy / Wide), so `applyCommandChords` writes them and all three stay rebindable — the discipline the sidebar toggles follow, and the one the shade toggles below do not.
+
+R6 says the menu placement is half the grant, so: promoting these preempts every scoped binding on ⌃⌘1–3, and that is the intent. It is safe here precisely where it was not for the slot family — ⌘1–9 stay chord-only because surfaces like the PDF viewer decline them by hand to leave the digits with the deck, and a menu item would take that choice away from every surface that comes after. Nothing in the app claims ⌃⌘ digits: no viewer, no text surface, no CM6 keymap.
+
 ## Known anomalies
 
 Recorded so a reader takes them as debt rather than as precedent.
@@ -145,6 +171,7 @@ Recorded so a reader takes them as debt rather than as precedent.
 
 - [L30] — every user-invocable command is a registry entry; every emitter goes through the two funnels
 - [D126] — the adoption of this algebra and the nine moves it drove
+- [D130] — the digit row generalized, and the card-width chords it granted
 - [commands.md](commands.md) — the authoring contract: the entry shape, "Adding a command", the four-layer chord resolution order, the lints
 - [menus.md](menus.md) — the menuState wire contract and the generated chord table
 - `tugdeck/src/components/tugways/command-registry.ts` — the table and `lintChordCollisions`

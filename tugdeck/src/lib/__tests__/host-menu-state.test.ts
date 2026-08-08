@@ -63,6 +63,13 @@ registerCard({
   contentFactory: () => null,
   defaultMeta: { title: "", closable: true },
 });
+// A rail, for the card-width projection: a sidebar pane has no preset to set.
+registerCard({
+  componentId: "menu-state-rail",
+  contentFactory: () => null,
+  defaultMeta: { title: "Rail", closable: true },
+  layoutRole: "sidebar",
+});
 
 describe("projectDeckState", () => {
   test("empty deck projects no panes and a null activeCard", () => {
@@ -199,6 +206,30 @@ describe("projectDeckState", () => {
     );
     expect(state.activePaneId).toBeUndefined();
     expect(projectDeckState(state).stackDepth).toBe(0);
+  });
+
+  test("cardWidth carries the focused pane's stamp, and null where the popup would not draw", () => {
+    const base = deck([card("a")], [pane("p1", ["a"], { widthPreset: "wide" })]);
+    expect(projectDeckState({ ...base, activePaneId: "p1" }).cardWidth).toEqual({
+      preset: "wide",
+    });
+
+    // Dragged to a width of its own: settable, no preset stamped.
+    const unstamped = deck([card("a")], [pane("p1", ["a"])]);
+    expect(projectDeckState({ ...unstamped, activePaneId: "p1" }).cardWidth).toEqual({
+      preset: null,
+    });
+
+    // Deselected: no pane to set a width on.
+    expect(projectDeckState(base).cardWidth).toBeNull();
+
+    // A rail takes its width from the allocator, so the commands do not
+    // apply — the same condition the title bar hides its width popup behind.
+    const rail = deck(
+      [card("s", { componentId: "menu-state-rail" })],
+      [pane("p1", ["s"])],
+    );
+    expect(projectDeckState({ ...rail, activePaneId: "p1" }).cardWidth).toBeNull();
   });
 });
 

@@ -34,6 +34,8 @@ import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
 import { cardSessionBindingStore } from "./card-session-binding-store";
 import { visibleCardCount } from "./card-ring";
+import { isSidebarCard } from "../card-registry";
+import type { ContentWidth } from "./layout-imposer";
 import { BASE_THEME_NAME } from "../theme-constants";
 import {
   COMMANDS,
@@ -523,6 +525,14 @@ export interface MenuStateDeckProjection {
    * serialized onto the wire.
    */
   focusedActiveCardId: string | null;
+  /**
+   * The focused pane's named width, gating and check-marking Window ▸
+   * Slim / Comfy / Wide. Null when the commands do not apply; a null
+   * `preset` inside means a hand-dragged width (see
+   * {@link CommandMenuFacts.cardWidth}). Module-internal: the mirror
+   * carries the gates, so this never rides the wire.
+   */
+  cardWidth: { preset: ContentWidth | null } | null;
 }
 
 /** The full wire payload posted to `webkit.messageHandlers.menuState`. */
@@ -645,6 +655,21 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
       ? 0
       : slotStackOf(state, focusedStack?.slot).length;
 
+  // The focused pane's width, on the same two gates the title bar's width
+  // popup already renders itself behind: a pane is width-settable when one
+  // is selected and it is not a rail. Reading the same conditions here is
+  // what keeps the menu's three rows and the popup's three rows from ever
+  // disagreeing about which is checked.
+  const focusedIsRail =
+    focusedStack?.cardIds.some((cid) => {
+      const card = cardsById.get(cid);
+      return card !== undefined && isSidebarCard(card.componentId);
+    }) ?? false;
+  const cardWidth =
+    state.activePaneId === undefined || focusedStack === null || focusedIsRail
+      ? null
+      : { preset: focusedStack.widthPreset ?? null };
+
   return {
     panes,
     activeCard,
@@ -652,6 +677,7 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
     stackDepth,
     visibleCardCount: visibleCardCount(state),
     focusedActiveCardId: focusedActiveCard?.id ?? null,
+    cardWidth,
   };
 }
 
@@ -672,6 +698,7 @@ export class HostMenuStatePublisher {
     stackDepth: 0,
     visibleCardCount: 0,
     focusedActiveCardId: null,
+    cardWidth: null,
   };
   /**
    * Per-card dev blocks. Every mounted session card publishes its own
@@ -846,6 +873,7 @@ export class HostMenuStatePublisher {
       stackDepth,
       visibleCardCount,
       focusedActiveCardId,
+      cardWidth,
     } = this.deckProjection;
     const session =
       activeCard?.component === "session" && focusedActiveCardId !== null
@@ -896,6 +924,7 @@ export class HostMenuStatePublisher {
       focusedPaneActiveCardClosable: focusedPane?.closable ?? false,
       selectionActive,
       stackDepth,
+      cardWidth,
     };
     this.lastFacts = facts;
     const commands = computeCommandCapabilities(this.validationSource(facts));

@@ -245,6 +245,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   // The parameter picks the command.
   "run-card-command": { bridgeFor: TUG_ACTIONS.RUN_SLASH_COMMAND },
   "set-permission-mode": { bridgeFor: TUG_ACTIONS.SET_PERMISSION_MODE },
+  "set-pane-width": { bridgeFor: TUG_ACTIONS.SET_PANE_WIDTH },
 };
 
 describe("SWIFT_WIRES is derived, not remembered", () => {
@@ -401,6 +402,11 @@ const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: str
   // enough that typing the name is the slow path.
   ["⌃⌘I", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:model`],
   ["⌃⌘U", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:usage`],
+  // The card-width row. ⌘ digits are places on the deck, ⌃⌘ digits are
+  // sizes for the card — one tier apart, both indexing an ordered set.
+  ["⌃⌘1", `${TUG_ACTIONS.SET_PANE_WIDTH}:slim`],
+  ["⌃⌘2", `${TUG_ACTIONS.SET_PANE_WIDTH}:comfy`],
+  ["⌃⌘3", `${TUG_ACTIONS.SET_PANE_WIDTH}:wide`],
 ];
 
 /** The map as it reads today: transcription, minus retirements, plus moves and additions. */

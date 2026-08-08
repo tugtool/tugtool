@@ -59,6 +59,7 @@ import { dispatchCommand } from "@/command-dispatch";
 import {
   isSidebarPinned,
   sidebarSide,
+  isContentWidth,
   resolvePlacement,
   resolveContentWidthPx,
   slotCount,
@@ -282,6 +283,7 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.OPEN_FILE,
   TUG_ACTIONS.REVEAL_IN_FINDER,
   TUG_ACTIONS.MOVE_TO_SLOT,
+  TUG_ACTIONS.SET_PANE_WIDTH,
   TUG_ACTIONS.NEW_TEXT_CARD,
   TUG_ACTIONS.OPEN_QUICKLY,
   TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
@@ -625,6 +627,34 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const card = deck.cards.find((c) => c.id === cardId);
         if (!card || isSidebarCard(card.componentId)) return;
         dispatchCommand("assign-slot", { cardId, slot: event.value - 1 });
+      },
+      // ⌃⌘1..3 — put the selected card's pane at a named width. The canvas
+      // owns this for the same reason it owns ⌘1..9: the chord walks past
+      // the focused card and its pane to the one responder that can name
+      // which pane the selection is in. `set-card-width` does the work, so
+      // the keyboard, the Window menu, and the title bar's width popup
+      // share one path (clamp to the stack's bounds, stamp the preset).
+      // Silent returns throughout — a rail has no preset to set, and a
+      // deselected deck has no pane to set it on.
+      [TUG_ACTIONS.SET_PANE_WIDTH]: (event: ActionEvent) => {
+        if (!isContentWidth(event.value)) return;
+        const deck = store.getSnapshot();
+        const cardId = store.getFirstResponderCardId();
+        if (cardId === null) return;
+        const pane = deck.panes.find((p) => p.cardIds.includes(cardId));
+        if (!pane) return;
+        if (
+          pane.cardIds.some((cid) => {
+            const card = deck.cards.find((c) => c.id === cid);
+            return card !== undefined && isSidebarCard(card.componentId);
+          })
+        ) {
+          return;
+        }
+        dispatchCommand(TUG_ACTIONS.SET_CARD_WIDTH, {
+          paneId: pane.id,
+          preset: event.value,
+        });
       },
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.

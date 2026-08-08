@@ -286,6 +286,15 @@ export const TUG_ACTIONS = {
   //                 imposition, when nothing is selected, when the
   //                 selection is the Lens, or when N exceeds the
   //                 arrangement's slot count.
+  // SET_PANE_WIDTH: payload — `value: string` (a `ContentWidth`: slim /
+  //                 comfy / wide). Deck-level: put the SELECTED card's pane
+  //                 at that named width. Used by ⌃⌘1..3 (Window ▸ Slim /
+  //                 Comfy / Wide), handled by the deck canvas, which owns
+  //                 the layout tree. The pane-addressed sibling
+  //                 `SET_CARD_WIDTH` is the title bar's popup — the popup
+  //                 names the pane it opened on, this one means "the pane
+  //                 I am in". Both land on `setPaneWidth`, so the clamp and
+  //                 the `widthPreset` stamp are the same on either door.
   // REVEAL_STACK:   payload — none. Open the focused pane's slot-stack
   //                 picker — the title-bar menu listing every pane sharing
   //                 its slot. Used by ⌘R (Window ▸ Reveal Stack), answered
@@ -438,6 +447,7 @@ export const TUG_ACTIONS = {
   FOCUS_PREVIOUS: "focus-previous",
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
+  SET_PANE_WIDTH: "set-pane-width",
   REVEAL_STACK:   "reveal-stack",
   PREVIOUS_STACK_CARD: "previous-stack-card",
   NEXT_STACK_CARD: "next-stack-card",

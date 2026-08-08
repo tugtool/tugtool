@@ -752,6 +752,21 @@ export function initActionDispatch(
     dispatchCommand(`${TUG_ACTIONS.SET_PERMISSION_MODE}:${mode}`);
   });
 
+  // set-pane-width: the Window ▸ Slim / Comfy / Wide round-trip. The bare
+  // wire name carries the preset as a param; the three commands the user
+  // actually invokes are the parameterized ids, so this hands off to them
+  // rather than reaching `setPaneWidth` itself — same shape as the
+  // permission-mode submenu above, and it keeps the chain walk (and the
+  // "which pane am I in" answer) on the canvas where the chord lands too.
+  registerAction(TUG_ACTIONS.SET_PANE_WIDTH, (payload) => {
+    const preset = payload.preset;
+    if (!isContentWidth(preset)) {
+      console.warn(`${TUG_ACTIONS.SET_PANE_WIDTH}: invalid preset`, payload);
+      return;
+    }
+    dispatchCommand(`${TUG_ACTIONS.SET_PANE_WIDTH}:${preset}`);
+  });
+
   // spawn_session_ok: the tugcast supervisor echoes the
   // canonical workspace_key back via this CONTROL ack after a successful
   // spawn_session (). The handler populates

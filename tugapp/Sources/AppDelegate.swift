@@ -1219,6 +1219,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // pair switches without looking. ⌘R rides the JS keymap sweep, and
         // detaches when the stack has nowhere to go.
         wMenu.addItem(NSMenuItem(title: "Reveal Stack", action: #selector(revealStack(_:)), keyEquivalent: "").identified("window.revealStack"))
+        wMenu.addItem(NSMenuItem.separator())
+        // Card width — the focused card's own width, as one of the three
+        // named presets, check-marked like the title bar's width popup it
+        // duplicates. ⌃⌘1/2/3: the Tug tier, digits indexing the presets in
+        // picker order (tuglaws/chord-tiers.md). Key equivalents are left
+        // EMPTY on purpose — `applyCommandChords` writes them from the
+        // frontend's keymap on the first menuState push, which is what keeps
+        // all three rebindable instead of pinned by a construction literal.
+        for (title, preset) in [("Slim", "slim"), ("Comfy", "comfy"), ("Wide", "wide")] {
+            let item = NSMenuItem(title: title, action: #selector(setCardWidthFromMenu(_:)), keyEquivalent: "").identified("window.cardWidth.\(preset)")
+            item.representedObject = preset
+            wMenu.addItem(item)
+        }
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
         // every menu open. macOS hides the redundant separator pair when
@@ -1749,6 +1762,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func nextCardInStack(_ sender: Any?) {
         sendControl("next-stack-card")
+    }
+
+    /// Window ▸ Slim / Comfy / Wide. The preset rides `representedObject`;
+    /// enablement and the check mark ride each item's registry gate on the
+    /// menuState push, exactly as the Permission Mode radio group does.
+    @objc private func setCardWidthFromMenu(_ sender: NSMenuItem) {
+        guard let preset = sender.representedObject as? String else { return }
+        sendControl("set-pane-width", params: ["preset": preset])
     }
 
     /// Write every key equivalent the frontend's keymap states, recursively
