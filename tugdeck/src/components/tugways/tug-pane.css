@@ -41,6 +41,8 @@
  *   --tug7-effect-card-desat-normal-amount-inactive   | desaturation intensity (0-1)
  *   --tug7-effect-card-wash-normal-dim-inactive       | wash overlay color
  *   --tug7-effect-card-wash-normal-blend-inactive     | wash blend mode
+ *   --tug7-effect-card-desat-normal-amount-bullseye   | desaturation intensity while another pane stands in bullseye
+ *   --tug7-effect-card-wash-normal-dim-bullseye       | wash overlay color while another pane stands in bullseye
  * } */
 
 body {
@@ -92,6 +94,16 @@ body {
   --tugx-pane-content-dim-desat-amount: var(--tug7-effect-card-desat-normal-amount-inactive);
   --tugx-pane-content-dim-wash-color: var(--tug7-effect-card-wash-normal-dim-inactive);
   --tugx-pane-content-dim-wash-blend: var(--tug7-effect-card-wash-normal-blend-inactive);
+
+  /* --- The same two layers, deepened, while one pane stands in bullseye ---
+     Bullseye recedes every other surface by taking the dim the deck already
+     has further, rather than by laying a scrim over the deck. That is what
+     keeps it NON-MODAL: these layers carry `pointer-events: none`, so
+     clicking another pane still lands — and clicking another pane is one of
+     bullseye's exit doors. The blend mode is deliberately NOT re-declared:
+     the recede is a matter of degree, not of a different effect. */
+  --tugx-pane-content-dim-desat-amount-bullseye: var(--tug7-effect-card-desat-normal-amount-bullseye);
+  --tugx-pane-content-dim-wash-color-bullseye: var(--tug7-effect-card-wash-normal-dim-bullseye);
 
   /* --- Pane scrim (built-in modal scrim layer inside .tug-pane-chrome) --- */
   --tugx-pane-scrim-bg: var(--tug7-surface-overlay-primary-normal-dim-rest);
@@ -568,6 +580,14 @@ body {
   opacity: var(--tugx-pane-content-dim-desat-amount);
   pointer-events: none;
   z-index: 10;
+  /* Fades with the settle rather than cutting, so the recede arrives with the
+     motion it belongs to. One knob times both: the duration is the same
+     `--tugx-imposer-settle-duration` `deck-canvas.tsx` writes onto the frames
+     container, with the default riding as a `var()` fallback here at the point
+     of use — the container carries no value until the first arrangement
+     gesture. */
+  transition: opacity
+    var(--tugx-imposer-settle-duration, 300ms) ease-out;
 }
 
 /* Layer 2: lightness wash — dims achromatic content when the pane is unfocused */
@@ -579,6 +599,35 @@ body {
   mix-blend-mode: var(--tugx-pane-content-dim-wash-blend);
   pointer-events: none;
   z-index: 11;
+  transition: background-color
+    var(--tugx-imposer-settle-duration, 300ms) ease-out;
+}
+
+/* ----------------------------------------------------------------------------
+   The recede, while one pane stands in bullseye.
+
+   `data-bullseye` on the frames container is the selector hook; the dim itself
+   is these same two layers at deeper values. The per-pane half of the selector
+   is `:not([data-focused="true"])`, which already means exactly "every pane but
+   the bullseyed one" — the bullseyed pane is ALWAYS the focused pane, because
+   the posture is derived from the first responder. So no new per-pane bit is
+   needed, and nothing here can disagree with the geometry.
+
+   Only the two values change. NOTHING lands on `.tug-pane` itself — no
+   `filter`, no `transform`, no `backdrop-filter`, no `contain`, no
+   `will-change`. Any of those would make every receded frame a containing
+   block for its `position: fixed` descendants, and `TugSheet` portals into the
+   frame while completion popups, alerts, and banners position from viewport
+   coordinates. These two layers are safe because they are pseudo-elements
+   confined by `.tug-pane-chrome`'s own `isolation: isolate`, and they already
+   carry `pointer-events: none`.
+   -------------------------------------------------------------------------- */
+[data-bullseye] .tug-pane:not([data-focused="true"]) .tug-pane-chrome::before {
+  opacity: var(--tugx-pane-content-dim-desat-amount-bullseye);
+}
+
+[data-bullseye] .tug-pane:not([data-focused="true"]) .tug-pane-chrome::after {
+  background-color: var(--tugx-pane-content-dim-wash-color-bullseye);
 }
 
 /* ============================================================================

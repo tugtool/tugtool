@@ -131,6 +131,13 @@ function fitPaneGeometry(
  * persisted separately via `putFocusedCardId` (single source of truth) and
  * read back on mount through `initialFocusedCardId`. Keeping two paths for
  * one field invites divergence.
+ *
+ * `bullseyePaneId` is likewise absent, and must stay absent. Bullseye is a
+ * temporary reading posture; persisting it would strand a user who quit or
+ * crashed while bullseyed in a posture they never asked to keep. The fields
+ * below are listed one by one rather than spread for exactly this reason —
+ * omission is the default here, and a refactor to a spread would quietly undo
+ * it. A unit test pins the key set.
  */
 export function serialize(deckState: DeckState): object {
   return {

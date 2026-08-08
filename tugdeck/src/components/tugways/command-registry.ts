@@ -173,6 +173,13 @@ export interface CommandMenuFacts {
    * by hand: settable, but at none of the three, so no row is checked.
    */
   readonly cardWidth: { readonly preset: ContentWidth | null } | null;
+  /**
+   * Whether the focused pane stands in bullseye. `null` when the command
+   * does not apply — nothing selected, or the focused pane holds a rail —
+   * which is the same pair of gates `cardWidth` uses, because both answer
+   * "is there a content pane the selection is in".
+   */
+  readonly bullseye: { readonly on: boolean } | null;
 }
 
 /** Nothing focused, nothing open — the answer before the first push. */
@@ -188,6 +195,7 @@ export const EMPTY_MENU_FACTS: CommandMenuFacts = {
   selectionActive: false,
   stackDepth: 0,
   cardWidth: null,
+  bullseye: null,
 };
 
 /**
@@ -1185,6 +1193,40 @@ export const COMMANDS: readonly CommandEntry[] = [
     disabledChord: "detach",
   },
   ...CARD_WIDTH_COMMANDS,
+  // ⌃⌘B — bullseye: put the focused card in a centered, comfy-width reading
+  // posture with every other surface receded, and take it back out.
+  //
+  // **The tier, derived** (tuglaws/chord-tiers.md): a card's posture on the
+  // deck is Tug's own layout machinery, so it takes the Tug tier ⌃⌘
+  // alongside ⌃⌘L Show Lens, ⌃⌘T Next Theme, and the ⌃⌘1/2/3 width row
+  // directly above. Plain ⌘ is out under R3 — a deliberate posture change is
+  // not a many-times-an-hour verb — and the composed sets are out under R1,
+  // because there is no ⌘B base for this to be a variant or counterpart of
+  // (⌘B is held in reserve for bold, and Tug renders markdown).
+  //
+  // **Promoted to the Window menu**, which under R6 makes the grant total:
+  // the item preempts every scoped binding on ⌃⌘B, and that is intended —
+  // bullseye is a deck-level posture, so no surface should be able to
+  // decline it. The Swift item is constructed with an EMPTY key equivalent
+  // so `applyCommandChords` writes the chord from this table and it stays
+  // rebindable end to end, the discipline the width row follows.
+  {
+    id: TUG_ACTIONS.TOGGLE_BULLSEYE,
+    title: "Bullseye",
+    routing: "first-responder",
+    action: TUG_ACTIONS.TOGGLE_BULLSEYE,
+    menuItemId: "window.bullseye",
+    mirrored: true,
+    bindings: [
+      chord({ key: "KeyB", meta: true, ctrl: true }, { menuEligible: true }),
+    ],
+    // Both predicates read the published fact for the same reason the width
+    // row's do: which pane is focused, and whether it stands in bullseye, is
+    // deck state — the canvas answering "yes I handle toggle-bullseye" says
+    // nothing about whether THIS pane can hold the posture.
+    validate: (chain) => chain.menu.bullseye !== null,
+    state: (chain) => chain.menu.bullseye?.on === true,
+  },
   ...SLOT_COMMANDS,
   {
     // Its door is the pane's close box — a targeted control, invisible to

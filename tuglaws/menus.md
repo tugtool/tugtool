@@ -164,6 +164,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃⌘2 | `set-pane-width:comfy` | Comfy | menu bar (swept) |
 | ⌃⌘3 | `set-pane-width:wide` | Wide | menu bar (swept) |
 | ⌃⌘A | `claim-all-changes` | Claim All Changes | JS, responder |
+| ⌃⌘B | `toggle-bullseye` | Bullseye | menu bar (swept) |
 | ⌃⌘C | `toggle-changes-view` | Show Session Changes | JS, global |
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
 | ⌃⌘G | `toggle-gazette` | Show Gazette | menu bar (swept) |
@@ -315,6 +316,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `view.previousKeyboardFocus` | `previous-keyboard-focus` | registered handler | host tier |
 | `view.zoomIn` | `zoom-in` | first responder | host tier |
 | `view.zoomOut` | `zoom-out` | first responder | host tier |
+| `window.bullseye` | `toggle-bullseye` | first responder | registry gate |
 | `window.cardWidth.comfy` | `set-pane-width:comfy` | first responder | registry gate |
 | `window.cardWidth.slim` | `set-pane-width:slim` | first responder | registry gate |
 | `window.cardWidth.wide` | `set-pane-width:wide` | first responder | registry gate |

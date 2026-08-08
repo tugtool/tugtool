@@ -123,7 +123,13 @@ The algebra's first application. Each row's rationale is a derivation, not a pre
 
 ---
 
-## The sidebar-toggle grammar
+## The ⌃⌘⟨letter⟩ reading, and the sidebar-toggle grammar inside it
+
+**⌃⌘⟨letter⟩ carries Tug's layout and card-posture vocabulary** — how the deck is arranged and how a card stands on it. The sidebar toggles below are one *family* within that reading, not the whole of it.
+
+This widens an earlier wording that named the tier's letters as the sidebar-toggle grammar outright. That was the same mistake "digits are places" made on the digit row ([D130]): true of the family that happened to be there first, and stated flatly it made the next honest grant underivable — bullseye is a card's posture on the deck, unmistakably Tug's own layout machinery, and under the narrow reading it would have had to be either a sidebar toggle (which it is not) or an unexplainable exception. The narrower reading survives inside the wider one: a rail toggle *is* layout vocabulary, and a sidebar card's letter is still how a rail toggle gets its key.
+
+### The sidebar-toggle family
 
 ⌃⌘⟨letter⟩ names a sidebar card, and toggling one shows or hides its rail. Two residents:
 
@@ -177,3 +183,23 @@ Recorded so a reader takes them as debt rather than as precedent.
 - `tugdeck/src/components/tugways/command-registry.ts` — the table and `lintChordCollisions`
 - `tugdeck/src/components/tugways/keymap-registry.ts` — `resolveChord`, `commandShortcut`, `isCancelChordEvent`
 - `tugdeck/src/components/tugways/chord-format.ts` — chord identity (`chordMatchesEvent`), display (`formatChord`), and the Swift key-equivalent conversion
+
+---
+
+## The bullseye chord
+
+⌃⌘B puts the focused card in **bullseye** — centred in the band at the comfy width with every other surface receded — and takes it back out ([D131]).
+
+| Command | Chord | Derivation |
+|---|---|---|
+| `toggle-bullseye` | **⌃⌘B** | Tug tier: a card's *posture* on the deck is Tug's own layout machinery, alongside the width row above and ⌃⌘L / ⌃⌘T. |
+
+**Why not plain ⌘.** R3. Bullseye is a deliberate posture change — you enter it to read or write for a while — not a verb hit many times an hour, so it has no claim on a finite plain-⌘ slot.
+
+**Why not a composed set.** R1. ⌥⌘B or ⇧⌘B would have to read as a variant of ⌘B, and there is no ⌘B command to vary: ⌘B is **held in reserve** for bold in the free pool, because Tug renders markdown. A composed chord with no base to twist is exactly what R1 rejects.
+
+**B is free on the tier**, and free of macOS too — the reserved ⌃⌘ set is ⌃⌘Q (lock screen), ⌃⌘D (dictionary), ⌃⌘Space (emoji), and ⌃⌘F (full screen), which the tier already hosts as its anchoring resident.
+
+**Promotion to Window ▸ Bullseye is R6's half of the grant**, and here the preemption is the point rather than a cost: a menu item's key equivalent is claimed by AppKit before the web view sees the keydown, so no scoped binding can decline ⌃⌘B. A deck-level posture is not a surface's to refuse. The item carries an **empty** key equivalent so `applyCommandChords` writes the chord from the table and it stays rebindable — the discipline the sidebar toggles and the width row follow.
+
+**Tier occupancy after this grant.** ⌃⌘ letters in use: A, B, C, F, G, H, I, J, K, L, M, P, T, U. ⌃⌘ digits: 1–3 (the card widths); 4–9 and 0 free, and free only for an *ordered set* under the digit-row rule.

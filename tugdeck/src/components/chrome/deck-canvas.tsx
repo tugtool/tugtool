@@ -38,7 +38,11 @@ import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
 import { getJotsStore } from "@/lib/jots-store";
-import { findLensPane, findSidebarPanes } from "@/deck-store-selectors";
+import {
+  bullseyePaneIdOf,
+  findLensPane,
+  findSidebarPanes,
+} from "@/deck-store-selectors";
 import type { SlotStackEntry } from "@/deck-store-selectors";
 import { stepCardRing } from "@/lib/card-ring";
 import { cardTitleStore } from "@/lib/card-title-store";
@@ -62,6 +66,7 @@ import {
   isContentWidth,
   resolvePlacement,
   resolveContentWidthPx,
+  imposeStyle,
   slotCount,
   DEFAULT_CONTENT_WIDTH,
   IMPOSITION_GAP_PX,
@@ -216,11 +221,23 @@ function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
  * edge changes it too, and arms a window whose tweens are the same no-ops a
  * rail drag's are, for the same reason. Height is not a term, because no
  * arrangement gesture changes one and the settle does not interpolate it.
+ *
+ * The bullseye term is the DERIVED id, not the raw field, because that is
+ * what the render path places from. Entering and leaving bullseye re-places
+ * and re-widths a frame — a one-up placement at comfy on the way in, the
+ * pane's own mode and width on the way out — which is exactly the kind of
+ * moment the settle exists for. Reading the raw field would miss every
+ * focus-shaped exit: clicking another pane ends bullseye through the
+ * derivation with the field untouched, and that exit would cut rather than
+ * cross. Deriving also keeps activation from arming a pointless window — the
+ * term only moves while bullseye is actually on, which is exactly when there
+ * is a frame to move.
  */
 function arrangementSignature(state: DeckState): string {
   const panes = state.panes
     .map((pane) => `${pane.id}:${pane.slot ?? ""}:${pane.size.width}`)
     .sort();
+  const bullseye = bullseyePaneIdOf(state) ?? "";
   const rails = sidebarRailsOf(state)
     .map(
       (rail) =>
@@ -229,7 +246,7 @@ function arrangementSignature(state: DeckState): string {
           .join("+")}`,
     )
     .join(";");
-  return `${state.imposition.kind ?? ""}|${rails}|${panes.join(",")}`;
+  return `${state.imposition.kind ?? ""}|${bullseye}|${rails}|${panes.join(",")}`;
 }
 
 /**
@@ -284,6 +301,7 @@ const DECK_CANVAS_VALIDATED_ACTIONS: ReadonlySet<string> = new Set([
   TUG_ACTIONS.REVEAL_IN_FINDER,
   TUG_ACTIONS.MOVE_TO_SLOT,
   TUG_ACTIONS.SET_PANE_WIDTH,
+  TUG_ACTIONS.TOGGLE_BULLSEYE,
   TUG_ACTIONS.NEW_TEXT_CARD,
   TUG_ACTIONS.OPEN_QUICKLY,
   TUG_ACTIONS.CLEAR_RECENT_DOCUMENTS,
@@ -655,6 +673,31 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           paneId: pane.id,
           preset: event.value,
         });
+      },
+      // ⌃⌘B — put the selected card's pane in bullseye, or take it out. The
+      // canvas owns it for the same reason it owns the width row: it is the
+      // one responder that can name which pane the selection is in, and the
+      // chord walks past the focused card and its pane to get here. One
+      // action rather than the width row's selection-relative /
+      // pane-addressed pair, because bullseye's two doors — this chord and
+      // Window ▸ Bullseye — share one idea of which pane they mean.
+      // Silent returns throughout, matching the width handler: a chord on a
+      // deselected deck or a rail should do nothing, not warn and not beep.
+      [TUG_ACTIONS.TOGGLE_BULLSEYE]: (_event: ActionEvent) => {
+        const deck = store.getSnapshot();
+        const cardId = store.getFirstResponderCardId();
+        if (cardId === null) return;
+        const pane = deck.panes.find((p) => p.cardIds.includes(cardId));
+        if (!pane) return;
+        if (
+          pane.cardIds.some((cid) => {
+            const card = deck.cards.find((c) => c.id === cid);
+            return card !== undefined && isSidebarCard(card.componentId);
+          })
+        ) {
+          return;
+        }
+        store.toggleBullseye(pane.id);
       },
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.
@@ -1435,6 +1478,41 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     0,
   );
 
+  // The pane standing in bullseye, derived once per render and handed down as
+  // a boolean per pane. Read here rather than in each pane because the answer
+  // is deck state — which pane holds the first responder — and a pane cannot
+  // see that from its own props.
+  const bullseyePaneId = bullseyePaneIdOf(deckState);
+
+  // Where the bullseyed pane WAS before it took the posture — its centre, as
+  // a CSS length expression, in the frames container's coordinates.
+  //
+  // This is the line the other content panes are sorted around: everything
+  // left of it leaves by the left edge, everything right of it by the right.
+  // Sorting around the CANVAS centre instead was the first cut and it let
+  // cards cross the bullseyed card on their way out — bullseye the leftmost
+  // card of a three-up and the middle card, still left of the canvas centre,
+  // would slide left THROUGH the card that was arriving there. Sorting around
+  // the bullseyed card's own former place makes crossings impossible by
+  // construction: each pane leaves by the side it was already on.
+  //
+  // It is the pane's PRE-bullseye anchor deliberately, not its bullseyed one.
+  // Bullseye writes nothing, so the pane still carries its slot and its
+  // stored position, and `placementFor` still answers with the placement it
+  // will return to — which is exactly the reference the user's eye used
+  // before the gesture started.
+  const bullseyeAnchorCentre = ((): string | undefined => {
+    if (bullseyePaneId === null) return undefined;
+    const pane = deckState.panes.find((p) => p.id === bullseyePaneId);
+    if (pane === undefined) return undefined;
+    const placement = placementFor(pane);
+    const left =
+      placement === undefined
+        ? `${pane.position.x}px`
+        : String(imposeStyle(placement, pane.size.width).left ?? "0px");
+    return `calc(${left} + ${pane.size.width / 2}px)`;
+  })();
+
   // Raise the pane a stack-picker row names. The same path `assignCardToSlot`
   // takes for its raise, and for the same reason: a bare `activateCard` flips
   // the first responder but skips the focus transfer, so the outgoing card
@@ -1518,6 +1596,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         ref={containerRef}
         style={{ position: "absolute", inset: 0 }}
         {...{ [CANVAS_BACKGROUND_ATTRIBUTE]: "" }}
+        {...(bullseyePaneId !== null ? { "data-bullseye": "" } : {})}
       >
       {/* TugPanes: one per pane in deckState.panes.
           Rendered in stable ID order (no DOM reordering on focus change).
@@ -1573,6 +1652,20 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             )}
             zIndex={zIndexMap.get(stackState.id) ?? CARD_ZINDEX_BASE}
             placement={placementFor(stackState)}
+            bullseye={bullseyePaneId === stackState.id}
+            // Every OTHER content pane leaves the canvas while bullseye
+            // holds — receding a card that is still sitting there is not
+            // what "distraction-free" means. Rails are excluded and stay at
+            // their pins: a rail leaving would take the band's insets with
+            // it, and the bullseyed card would jump the moment the posture
+            // began.
+            bullseyeExit={
+              bullseyePaneId !== null &&
+              bullseyePaneId !== stackState.id &&
+              !sidebarPaneIds.has(stackState.id)
+                ? bullseyeAnchorCentre
+                : undefined
+            }
             contentWidthPx={contentWidthPx}
             slotStack={slotStackByPaneId.get(stackState.id)}
             onRevealPane={handleRevealPane}

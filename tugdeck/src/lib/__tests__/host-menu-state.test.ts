@@ -231,6 +231,46 @@ describe("projectDeckState", () => {
     );
     expect(projectDeckState({ ...rail, activePaneId: "p1" }).cardWidth).toBeNull();
   });
+
+  test("bullseye rides the same two gates as cardWidth, and reads the derived id", () => {
+    const base = deck([card("a")], [pane("p1", ["a"])]);
+
+    // Selected content pane, not bullseyed.
+    expect(projectDeckState({ ...base, activePaneId: "p1" }).bullseye).toEqual({
+      on: false,
+    });
+
+    // Bullseyed and focused.
+    expect(
+      projectDeckState({
+        ...base,
+        activePaneId: "p1",
+        bullseyePaneId: "p1",
+      }).bullseye,
+    ).toEqual({ on: true });
+
+    // Deselected: no pane to put in bullseye.
+    expect(projectDeckState(base).bullseye).toBeNull();
+
+    // A rail cannot stand in bullseye, so the command does not apply.
+    const rail = deck(
+      [card("s", { componentId: "menu-state-rail" })],
+      [pane("p1", ["s"])],
+    );
+    expect(projectDeckState({ ...rail, activePaneId: "p1" }).bullseye).toBeNull();
+  });
+
+  test("bullseye reads off, not on, for a stale id whose pane lost focus", () => {
+    // The tell that the fact reads the DERIVED id rather than the raw field:
+    // a focus move ends bullseye without clearing anything, and the menu's
+    // check mark has to agree with the geometry.
+    const state: DeckState = {
+      ...deck([card("a"), card("b")], [pane("p1", ["a"]), pane("p2", ["b"])]),
+      activePaneId: "p2",
+      bullseyePaneId: "p1",
+    };
+    expect(projectDeckState(state).bullseye).toEqual({ on: false });
+  });
 });
 
 describe("HostMenuStatePublisher", () => {

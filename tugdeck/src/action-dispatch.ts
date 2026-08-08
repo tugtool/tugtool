@@ -753,6 +753,14 @@ export function initActionDispatch(
     dispatchCommand(`${TUG_ACTIONS.SET_PANE_WIDTH}:${preset}`);
   });
 
+  // toggle-bullseye: the Window ▸ Bullseye round-trip. No payload — the
+  // command is selection-relative, so the round-trip through
+  // `dispatchCommand` is what keeps the "which pane am I in" answer on the
+  // canvas, where the chord lands too.
+  registerAction(TUG_ACTIONS.TOGGLE_BULLSEYE, () => {
+    dispatchCommand(TUG_ACTIONS.TOGGLE_BULLSEYE);
+  });
+
   // spawn_session_ok: the tugcast supervisor echoes the
   // canonical workspace_key back via this CONTROL ack after a successful
   // spawn_session (). The handler populates

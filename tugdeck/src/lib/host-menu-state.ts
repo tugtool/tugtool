@@ -28,7 +28,7 @@
  */
 
 import type { DeckState } from "../layout-tree";
-import { slotStackOf } from "../deck-store-selectors";
+import { bullseyePaneIdOf, slotStackOf } from "../deck-store-selectors";
 import { paneTitleBarTextFor } from "./pane-title";
 import { cardTitleStore } from "./card-title-store";
 import { TUG_ACTIONS } from "../components/tugways/action-vocabulary";
@@ -539,6 +539,13 @@ export interface MenuStateDeckProjection {
    * carries the gates, so this never rides the wire.
    */
   cardWidth: { preset: ContentWidth | null } | null;
+  /**
+   * Whether the focused pane stands in bullseye, gating and check-marking
+   * Window ▸ Bullseye. Null when the command does not apply — the same two
+   * gates {@link MenuStateDeckProjection.cardWidth} uses. Module-internal:
+   * the mirror carries the gates, so this never rides the wire.
+   */
+  bullseye: { on: boolean } | null;
 }
 
 /** The full wire payload posted to `webkit.messageHandlers.menuState`. */
@@ -676,6 +683,15 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
       ? null
       : { preset: focusedStack.widthPreset ?? null };
 
+  // Bullseye rides the same two gates, and for the same reason: both answer
+  // "is there a content pane the selection is in". `on` reads the DERIVED
+  // id, so the menu's check mark can never disagree with the geometry — one
+  // rule answers both.
+  const bullseye =
+    state.activePaneId === undefined || focusedStack === null || focusedIsRail
+      ? null
+      : { on: bullseyePaneIdOf(state) === focusedStack.id };
+
   return {
     panes,
     activeCard,
@@ -684,6 +700,7 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
     visibleCardCount: visibleCardCount(state),
     focusedActiveCardId: focusedActiveCard?.id ?? null,
     cardWidth,
+    bullseye,
   };
 }
 
@@ -705,6 +722,7 @@ export class HostMenuStatePublisher {
     visibleCardCount: 0,
     focusedActiveCardId: null,
     cardWidth: null,
+    bullseye: null,
   };
   /**
    * Per-card dev blocks. Every mounted session card publishes its own
@@ -880,6 +898,7 @@ export class HostMenuStatePublisher {
       visibleCardCount,
       focusedActiveCardId,
       cardWidth,
+      bullseye,
     } = this.deckProjection;
     const session =
       activeCard?.component === "session" && focusedActiveCardId !== null
@@ -932,6 +951,7 @@ export class HostMenuStatePublisher {
       selectionActive,
       stackDepth,
       cardWidth,
+      bullseye,
     };
     this.lastFacts = facts;
     const commands = computeCommandCapabilities(this.validationSource(facts));

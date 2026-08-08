@@ -1221,6 +1221,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.representedObject = preset
             wMenu.addItem(item)
         }
+        wMenu.addItem(NSMenuItem.separator())
+        // Bullseye — the focused card's POSTURE rather than its size: a
+        // temporary reading stance, centred in the band at comfy with every
+        // other surface receded, reversible by pressing again. Its own group
+        // because the width rows above set a number that persists and this
+        // sets a stance that does not. ⌃⌘B, same Tug tier as the width row,
+        // and the key equivalent is left EMPTY for the same reason theirs
+        // are — `applyCommandChords` writes it from the frontend's keymap, so
+        // it stays rebindable end to end.
+        wMenu.addItem(NSMenuItem(title: "Bullseye", action: #selector(toggleBullseye(_:)), keyEquivalent: "").identified("window.bullseye"))
         // Anchor separator for the dynamic pane-list slice: pane items are
         // inserted directly after it (and removed by identifier prefix) on
         // every menu open. macOS hides the redundant separator pair when
@@ -1754,6 +1764,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc private func setCardWidthFromMenu(_ sender: NSMenuItem) {
         guard let preset = sender.representedObject as? String else { return }
         sendControl("set-pane-width", params: ["preset": preset])
+    }
+
+    /// Window ▸ Bullseye. No payload — the command is selection-relative, and
+    /// the frontend's deck canvas is the one responder that can name which
+    /// pane the selection is in. The check mark and the enablement both ride
+    /// this item's registry gate on the menuState push, so the mark can never
+    /// disagree with what the deck is actually showing.
+    @objc private func toggleBullseye(_ sender: Any?) {
+        sendControl("toggle-bullseye")
     }
 
     /// Write every key equivalent the frontend's keymap states, recursively

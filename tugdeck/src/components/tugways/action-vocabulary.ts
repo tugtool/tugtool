@@ -295,6 +295,16 @@ export const TUG_ACTIONS = {
   //                 names the pane it opened on, this one means "the pane
   //                 I am in". Both land on `setPaneWidth`, so the clamp and
   //                 the `widthPreset` stamp are the same on either door.
+  // TOGGLE_BULLSEYE: payload — none. Deck-level: put the SELECTED card's
+  //                 pane in bullseye — centered in the band at the comfy
+  //                 width, with every other pane receded — or take it out
+  //                 when it is already there. Used by ⌃⌘B (Window ▸
+  //                 Bullseye), handled by the deck canvas, which owns the
+  //                 layout tree and is the one responder that can name
+  //                 which pane the selection is in. One action, not two:
+  //                 unlike SET_PANE_WIDTH / SET_CARD_WIDTH, bullseye's two
+  //                 doors (the chord and the menu item) share one idea of
+  //                 "which pane" — the pane I am in. A rail is refused.
   // REVEAL_STACK:   payload — none. Open the focused pane's slot-stack
   //                 picker — the title-bar menu listing every pane sharing
   //                 its slot. Used by ⌘R (Window ▸ Reveal Stack), answered
@@ -437,6 +447,7 @@ export const TUG_ACTIONS = {
   FOCUS_PROMPT:   "focus-prompt",
   MOVE_TO_SLOT:   "move-to-slot",
   SET_PANE_WIDTH: "set-pane-width",
+  TOGGLE_BULLSEYE: "toggle-bullseye",
   REVEAL_STACK:   "reveal-stack",
   PREVIOUS_STACK_CARD: "previous-stack-card",
   NEXT_STACK_CARD: "next-stack-card",

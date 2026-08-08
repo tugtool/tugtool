@@ -10,7 +10,11 @@
 
 import { describe, test, expect } from "bun:test";
 import type { CardState, DeckState, TugPaneState } from "../layout-tree";
-import { isFocusDestination, slotStackOf } from "../deck-store-selectors";
+import {
+  bullseyePaneIdOf,
+  isFocusDestination,
+  slotStackOf,
+} from "../deck-store-selectors";
 
 function makeCard(id: string, componentId = "probe"): CardState {
   return { id, componentId, title: id, closable: true };
@@ -144,5 +148,58 @@ describe("slotStackOf", () => {
     const stack = slotStackOf(slottedState(), 0);
     expect(stack.some((p) => p.id === "pane-2")).toBe(false);
     expect(stack.some((p) => p.id === "pane-free")).toBe(false);
+  });
+});
+
+describe("bullseyePaneIdOf", () => {
+  function bullseyed(paneId: string): DeckState {
+    return { ...baseState(), bullseyePaneId: paneId };
+  }
+
+  test("returns the id when the pane exists and hosts the first responder", () => {
+    expect(bullseyePaneIdOf(bullseyed("pane-1"))).toBe("pane-1");
+  });
+
+  test("returns null when nothing is bullseyed", () => {
+    expect(bullseyePaneIdOf(baseState())).toBeNull();
+  });
+
+  test("returns null when the pane was removed from the deck", () => {
+    const state: DeckState = {
+      ...bullseyed("pane-1"),
+      cards: [makeCard("card-c")],
+      panes: [makePane("pane-2", ["card-c"], "card-c")],
+      activePaneId: "pane-2",
+    };
+    expect(bullseyePaneIdOf(state)).toBeNull();
+  });
+
+  test("returns null when activePaneId is undefined — the canvas-background deselect", () => {
+    const state: DeckState = { ...bullseyed("pane-1"), activePaneId: undefined };
+    expect(bullseyePaneIdOf(state)).toBeNull();
+  });
+
+  test("returns null when focus moved to another pane, leaving the raw id stale", () => {
+    const state: DeckState = { ...bullseyed("pane-1"), activePaneId: "pane-2" };
+    expect(bullseyePaneIdOf(state)).toBeNull();
+    // The raw field is untouched — it is unreadable, not cleared.
+    expect(state.bullseyePaneId).toBe("pane-1");
+  });
+
+  test("holds across a tab switch inside the bullseyed pane — the pane hosts the responder, not one card", () => {
+    const state = bullseyed("pane-1");
+    const switched: DeckState = {
+      ...state,
+      panes: state.panes.map((p) =>
+        p.id === "pane-1" ? { ...p, activeCardId: "card-b" } : p,
+      ),
+    };
+    expect(bullseyePaneIdOf(switched)).toBe("pane-1");
+  });
+
+  test("is pure — the same snapshot answers the same way twice", () => {
+    const s = bullseyed("pane-1");
+    expect(bullseyePaneIdOf(s)).toBe(bullseyePaneIdOf(s));
+    expect(s.bullseyePaneId).toBe("pane-1");
   });
 });

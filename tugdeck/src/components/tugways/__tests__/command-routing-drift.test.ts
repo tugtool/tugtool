@@ -244,6 +244,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   // The parameter picks the command.
   "run-card-command": { bridgeFor: TUG_ACTIONS.RUN_SLASH_COMMAND },
   "set-pane-width": { bridgeFor: TUG_ACTIONS.SET_PANE_WIDTH },
+  "toggle-bullseye": "command",
 };
 
 describe("SWIFT_WIRES is derived, not remembered", () => {
@@ -407,6 +408,10 @@ const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: str
   ["⌃⌘1", `${TUG_ACTIONS.SET_PANE_WIDTH}:slim`],
   ["⌃⌘2", `${TUG_ACTIONS.SET_PANE_WIDTH}:comfy`],
   ["⌃⌘3", `${TUG_ACTIONS.SET_PANE_WIDTH}:wide`],
+  // Bullseye — a card's POSTURE on the deck, one tier-mate of the width row
+  // above: ⌃⌘ carries Tug's layout and card-posture vocabulary generally,
+  // of which the sidebar toggles are one family.
+  ["⌃⌘B", TUG_ACTIONS.TOGGLE_BULLSEYE],
 ];
 
 /** The map as it reads today: transcription, minus retirements, plus moves and additions. */

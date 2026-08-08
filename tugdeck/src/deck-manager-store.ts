@@ -383,6 +383,22 @@ export interface IDeckManagerStore {
   setContentWidth: (preset: ContentWidth) => void;
 
   /**
+   * Put a pane in bullseye — centered in the band at the comfy width, with
+   * every other pane receded — or take it out when it is already there.
+   * Refuses a missing pane and a sidebar pane. Writes no geometry, so leaving
+   * bullseye restores nothing: nothing was disturbed.
+   */
+  toggleBullseye: (paneId: string) => void;
+
+  /**
+   * The pane standing in bullseye, or `null`. A derivation over the current
+   * snapshot, not a stored answer: it holds only while the pane exists and
+   * hosts the first responder, which is what makes every focus-shaped exit
+   * door work without an event handler per door.
+   */
+  getBullseyePaneId: () => string | null;
+
+  /**
    * Return the per-card Component State Preservation Protocol registry
    * ([D13], [A9]) for `cardId`, creating it lazily on first call. Used
    * by `useComponentStatePreservation` to register capture/restore

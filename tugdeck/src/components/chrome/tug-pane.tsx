@@ -29,6 +29,7 @@ import React, {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
 } from "react";
 import { Layers, MoreHorizontal, MoveHorizontal, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
@@ -56,6 +57,8 @@ import {
   type ImposedPlacement,
   CONTENT_WIDTH_PRESETS,
   CONTENT_WIDTH_LABELS,
+  DEFAULT_CONTENT_WIDTH,
+  resolveContentWidthPx,
   type ContentWidth,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
@@ -930,6 +933,38 @@ export interface TugPaneProps {
    */
   placement?: ImposedPlacement;
   /**
+   * True while this pane stands in bullseye — centered in the band at the
+   * comfy width, over the full vertical run, with every other pane receded.
+   *
+   * A presentation over whichever geometry mode the pane already holds, not a
+   * fourth mode: it takes precedence over both derived modes while it lasts,
+   * and the pane's stored `position` / `size` / `slot` / `widthPreset` are
+   * untouched throughout, so leaving bullseye restores nothing — nothing was
+   * disturbed. Resolved by `DeckCanvas`, which owns the deck state the
+   * posture lives in.
+   */
+  bullseye?: boolean;
+  /**
+   * Set while ANOTHER pane stands in bullseye and this one is a content pane
+   * — so this pane gets out of the way. The value is the bullseyed pane's
+   * PRE-bullseye centre as a CSS length expression: this pane leaves by the
+   * left edge if it sits left of that line and by the right edge if it sits
+   * right of it.
+   *
+   * Sorting around the bullseyed card rather than around the canvas centre is
+   * what makes crossings impossible: each pane leaves by the side it was
+   * already on, so nothing slides through the card arriving at the centre.
+   *
+   * Set on content panes only. Rails keep their pins and recede in place: a
+   * rail that left the deck would take the band's insets with it, moving the
+   * bullseyed card the moment the posture began.
+   *
+   * Like {@link bullseye} itself this writes nothing — the stored
+   * `position` / `size` are untouched and the pane slides straight back on
+   * exit. Resolved by `DeckCanvas`, which owns the deck state.
+   */
+  bullseyeExit?: string;
+  /**
    * The deck's content-width preset in pixels — the width an ordinary card
    * opens at in this arrangement. Deck state, so `DeckCanvas` resolves it.
    *
@@ -1001,6 +1036,23 @@ export interface TugPaneProps {
   sizePolicy?: CardSizePolicy;
 }
 
+/**
+ * A resolved `left` value as a term usable inside a CSS math expression.
+ *
+ * React writes a bare number as `px`; the imposer writes a `calc()` string.
+ * Nesting a `calc()` inside another calculation is legal — it reads as
+ * parenthesised — so both forms compose into the bullseye-exit clamp without
+ * the caller having to know which mode produced the pin. Anything else (an
+ * absent or non-length value, which no geometry mode emits) falls back to
+ * `0px` rather than producing an invalid expression that would drop the whole
+ * declaration.
+ */
+function cssLength(value: CSSProperties["left"]): string {
+  if (typeof value === "number") return `${value}px`;
+  if (typeof value === "string" && value.length > 0) return value;
+  return "0px";
+}
+
 // ---------------------------------------------------------------------------
 // Resize edge descriptors
 // ---------------------------------------------------------------------------
@@ -1044,6 +1096,8 @@ export function TugPane({
   onRevealPane,
   sidebarStack,
   isLensPane = false,
+  bullseye = false,
+  bullseyeExit,
 }: TugPaneProps) {
   const sidebarSide = sidebarStack?.side;
   const { id, position, size } = stackState;
@@ -1066,13 +1120,16 @@ export function TugPane({
   // its stored `position`/`size`. Every mode still owns its geometry [L09].
   const pinned = sidebarSide !== undefined;
   const imposed = !pinned && placement !== undefined;
-  // Both modes place the frame by CSS pins rather than by stored pixels, so
-  // both need the same two things at gesture time: a freeze of the live rect
-  // before the first move, and an `evictSlot` on the commit that follows.
-  // Read from a ref so the drag and resize machines' `useCallback` identities
-  // do not churn with the arrangement.
-  const derivedRef = useRef(pinned || imposed);
-  derivedRef.current = pinned || imposed;
+  // All three place the frame by CSS pins rather than by stored pixels, so all
+  // three need the same two things at gesture time: a freeze of the live rect
+  // before the first move, and an `evictSlot` on the commit that follows. A
+  // bullseyed pane's stored rect is stale for exactly the reason the other
+  // two's are — the frame is somewhere the store never said — so a drag on one
+  // without this would jump it to that stale position at the threshold
+  // crossing. Read from a ref so the drag and resize machines' `useCallback`
+  // identities do not churn with the arrangement.
+  const derivedRef = useRef(pinned || imposed || bullseye);
+  derivedRef.current = pinned || imposed || bullseye;
   const activeCardId = activeCardIdFromProps ?? stackState.activeCardId;
 
   // Ref to the frame DOM element for appearance-zone style mutations.
@@ -2392,6 +2449,14 @@ export function TugPane({
     widthPinned && contentWidthPx !== undefined
       ? Math.max(contentWidthPx, renderWidth)
       : renderWidth;
+  // Bullseye's width is `comfy`, held between the stack's own bounds by the
+  // same `resolveContentWidthPx` call the width doors make — not a fourth
+  // number and not a second opinion about width ([D130]).
+  const bullseyeWidth = resolveContentWidthPx(
+    DEFAULT_CONTENT_WIDTH,
+    sizePolicy.min.width,
+    sizePolicy.max?.width,
+  );
 
   // The width control, on content-role panes only: a rail takes its width from
   // the allocator, so a preset there would be overwritten by the next solve.
@@ -2421,6 +2486,85 @@ export function TugPane({
     [responderRef],
   );
 
+  // Three geometry modes, and one presentation over them. A pinned sidebar
+  // holds one side of the canvas a gap in, runs the canvas height less a gap
+  // top and the deeper gap at the bottom, and takes only its width from the
+  // store. An imposed pane pins to its place in the imposition chain over the
+  // same vertical run, also taking only its width from the store — unless it
+  // is size-locked, in which case the slot is an ordinary content card's box
+  // and the pane is centred inside it. A free pane uses its stored
+  // left/top/width/height. [L06]/[L09]
+  //
+  // Bullseye is not a fourth mode: it is a presentation that supersedes
+  // whichever mode the pane holds, for as long as the pane holds focus, and
+  // it writes nothing — so the branch below it is what the frame returns to
+  // on exit, unchanged. It comes first because that supersession is the whole
+  // point. Precedence over imposed is the feature (a slotted card bullseyes
+  // to the centre and returns to its slot); precedence over pinned is
+  // defensive only, since a rail can never be bullseyed. The placement is
+  // one-up — `travelFraction` already answers 0.5 for `count < 2`, so
+  // "centred in the band" is the imposer's existing definition rather than
+  // new centring math.
+  const modeStyle: CSSProperties = bullseye
+    ? imposeStyle({ slot: 0, count: 1 }, bullseyeWidth, pinnedFrame)
+    : sidebarSide !== undefined
+      ? imposeSidebarStyle(sidebarSide, renderWidth)
+      : imposed && placement !== undefined
+        ? imposeStyle(placement, slotWidth, pinnedFrame)
+        : {
+            left: position.x,
+            top: position.y,
+            width: renderWidth,
+            height: frameHeight,
+          };
+
+  // Another pane is in bullseye, so this one leaves the canvas by the
+  // horizontal edge it is already nearest. Overrides `left` alone: the
+  // vertical run, the width, and the mode's other pins all stand, so the pane
+  // slides straight out and straight back.
+  //
+  // THIS PANE'S SIDE IS READ FROM `modeStyle.left`, its ACTUAL resolved pin,
+  // never from `position.x`. For an imposed pane the stored position is a
+  // last-known value the imposer has long since superseded — a three-up deck
+  // can have all three panes stored at nearly the same x while sitting left,
+  // centre, and right on screen — so deciding from it sent every card out the
+  // same side. `modeStyle.left` is a number for a free pane and the imposer's
+  // `calc()` for a slotted one, and both compose here.
+  //
+  // THE LINE IT IS COMPARED AGAINST is the bullseyed pane's own former
+  // centre, handed down in `bullseyeExit` — not the canvas centre. Panes left
+  // of the bullseyed card leave leftward and panes right of it leave
+  // rightward, so no pane ever crosses the card arriving at the middle. The
+  // canvas centre was the first cut and it produced exactly that crossing:
+  // bullseye the leftmost card of a three-up and the middle card, still left
+  // of the canvas centre, slid left THROUGH it.
+  //
+  // The comparison itself stays in CSS rather than being resolved here: both
+  // terms are length expressions over the live insets, and evaluating them at
+  // render would mean measuring, which is the observation [L06] keeps out of
+  // the geometry path. A clamp does it instead — the inner term is this
+  // pane's centre minus that line, negative on one side and positive on the
+  // other, and multiplying by a large number saturates it into one bound or
+  // the other. The 1px bias breaks an exact tie toward the left, which would
+  // otherwise resolve to 0 and leave the pane sitting on screen.
+  //
+  // BOTH BOUNDS PARK THE PANE JUST PAST ITS OWN EDGE — one gap beyond, not a
+  // whole canvas away. That symmetry is about the MOTION, not the resting
+  // place: the frame animates out on the FLIP settle, and a left bound of
+  // `-100%` would send a left-leaving pane a full canvas-width further than a
+  // right-leaving one travels, so the two would cross at visibly different
+  // speeds over the same duration. Equal travel, equal read.
+  //
+  // The win over measuring: this re-resolves on a window resize for free,
+  // like every other pin the imposer emits, and the right bound stays a
+  // percentage — the form that lets the settle cross rather than cut ([D121]).
+  const exitStyle: CSSProperties =
+    bullseyeExit === undefined
+      ? {}
+      : {
+          left: `clamp(${-(renderWidth + IMPOSITION_GAP_PX)}px, (${cssLength(modeStyle.left)} + ${renderWidth / 2}px - ${bullseyeExit} - 1px) * 10000, calc(100% + ${IMPOSITION_GAP_PX}px))`,
+        };
+
   return (
     <div
       ref={frameRefCallback}
@@ -2429,30 +2573,15 @@ export function TugPane({
       data-pane-id={id}
       {...(isLensPane ? { "data-lens-pane": "" } : {})}
       {...(sidebarSide !== undefined ? { "data-lens": sidebarSide } : {})}
-      {...(imposed && placement !== undefined
+      {...(imposed && placement !== undefined && !bullseye
         ? { "data-imposed": String(placement.slot) }
         : {})}
+      {...(bullseye ? { "data-bullseye": "" } : {})}
       data-stack-depth={String(slotStack.length)}
       style={{
         position: "absolute",
-        // Three geometry modes. A pinned sidebar holds one side of the canvas
-        // a gap in, runs the canvas height less a gap top and the deeper gap
-        // at the bottom, and takes only its width from the store. An imposed
-        // pane pins to its place in the imposition chain over the same
-        // vertical run, also taking only its width from the store — unless it
-        // is size-locked, in which case the slot is an ordinary content card's
-        // box and the pane is centred inside it. A free pane uses its stored
-        // left/top/width/height. [L06]/[L09]
-        ...(sidebarSide !== undefined
-          ? imposeSidebarStyle(sidebarSide, renderWidth)
-          : imposed && placement !== undefined
-            ? imposeStyle(placement, slotWidth, pinnedFrame)
-            : {
-                left: position.x,
-                top: position.y,
-                width: renderWidth,
-                height: frameHeight,
-              }),
+        ...modeStyle,
+        ...exitStyle,
         zIndex,
         boxSizing: "border-box",
         // Expose the pane's minimum width to descendants via CSS custom

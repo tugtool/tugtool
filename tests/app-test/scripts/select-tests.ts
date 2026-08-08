@@ -182,7 +182,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 22 → 23 with the stack rotation's reverse direction (at0350):
     // `sendPaneBehind` is the store mutation Previous Card in Stack rides,
     // and no other test exercises a demotion in z-order.
-    "tugdeck/src/deck-manager.ts": 23,
+    // 23 → 24 with bullseye (at0372): the posture's toggle, its derived
+    // accessor, and the three geometry writers that release it all live in
+    // this module, and the load-bearing claim of that test is a read of the
+    // store record — so it has nowhere smaller to point.
+    "tugdeck/src/deck-manager.ts": 24,
     // The pane frame itself: every test that drives a card through its title bar,
     // its handles, its close control, or its geometry names it, because there is no
     // smaller surface those gestures live on. The coupling is structural rather than
@@ -194,7 +198,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 24 → 25 with the no-look depth pair: the pane answers
     // NEXT/PREVIOUS_STACK_CARD itself (at0350), since rotating the stack
     // needs the very slotStack its badge reads.
-    "tugdeck/src/components/chrome/tug-pane.tsx": 25,
+    // 25 → 26 with bullseye (at0372): the posture is a branch of THIS
+    // file's geometry ternary, and a painted frame against live insets is
+    // the only place that branch can be asserted.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 26,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows
     // names it. Crossed the budget when transcript DOM eviction landed inside

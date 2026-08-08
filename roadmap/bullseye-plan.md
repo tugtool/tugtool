@@ -57,7 +57,7 @@ The reason this needs a plan rather than a patch is that the obvious implementat
 - **Escape as an exit door.** Cards own Escape internally (descend scopes, editors, the filter field per R5's exclusion), and exiting bullseye should be intentional. ⌃⌘B, a click elsewhere, and a geometry gesture are enough.
 - **A title-bar bullseye control.** v1 has two doors (chord and menu). A third, pane-addressed door is a follow-on, and the action split it would need is described in [P07].
 - **Bullseye chasing the selection.** Focus moving to another pane *ends* bullseye; it does not transfer.
-- **Hiding or collapsing rails.** See [P04].
+- **Hiding or collapsing rails.** See [P04]. Still a non-goal. Moving other *content* panes out of the way is no longer one — see the [P04] amendment, which is the correction the built result forced.
 - **Persisting bullseye across reload.** The whole point is that it is temporary; see [P01].
 - **More than one bullseyed pane at a time.** The field holds one id.
 
@@ -191,9 +191,13 @@ Anchors in this document follow the devise skeleton: `step-N` for execution step
 - Anything that needs the truth measures the frame, which is already the rule for derived panes.
 - `clampPanesToDeck` in `DeckManager.notify` keeps acting on the stored values, unchanged and harmlessly: those are the values the pane will return to.
 
-#### [P04] Rails stay standing and recede with everything else (DECIDED) {#p04-rails-recede}
+#### [P04] Rails stay standing and recede with everything else (DECIDED — AMENDED IN IMPLEMENTATION) {#p04-rails-recede}
 
 **Decision:** Bullseye does not hide, collapse, or unpin any sidebar rail. Rails stay at their pins and take the same deepened recede every other non-bullseyed pane takes.
+
+**AMENDMENT (post-implementation).** The rails half of this held and is unchanged. The part that said *every other pane merely recedes* was wrong, and the built result proved it: a deck where nothing had moved did not read as distraction-free at any dim strength, because a dimmed card is still a card you can read. Every other **content** pane now leaves the canvas and returns on exit; rails alone stay standing and recede in place. The no-write rule is untouched — the displacement is one `left` override at render.
+
+**Which side a pane leaves by took two attempts, and the second is the rule:** it is read **against the bullseyed card**, not against the canvas. Panes left of it go left, panes right of it go right. The first cut used the canvas centre, which let a card cross the bullseyed one — bullseye the leftmost card of a three-up and the middle card, still left of the canvas centre, slid left *through* the card arriving there. Sorting around the bullseyed card's own former place makes a crossing impossible by construction: every pane keeps the side it was already on, and relative order is preserved for the whole move. The reference is that pane's PRE-bullseye centre, which costs nothing to obtain because bullseye writes nothing — the pane still carries the slot and position it will return to. Accepted consequence: travel is no longer a short hop to the nearest edge, so a pane sitting just right of the bullseyed one but near the deck's left edge crosses the whole canvas on its way out.
 
 **Rationale:**
 - Collapsing a rail runs `allocateSidebarWidths` / `retuneSidebarAllocation` on both entry and exit — real layout churn on a gesture meant to be instant and repeatable, plus two more things whose exact restoration [L23] would then be on the hook for.
@@ -215,7 +219,7 @@ Anchors in this document follow the devise skeleton: `step-N` for execution step
 - Purity matters because the accessor runs during render. A lazily-self-clearing getter would be a mutation in the render path, and [L02] wants the snapshot stable across a render pass.
 
 **Implications:**
-- The raw field may linger after focus moves. It is inert (nothing reads it) and is overwritten by the next toggle. `toggleBullseye` compares against the **derived** value, so pressing ⌃⌘B on a pane whose lingering raw id happens to match still reads as "not bullseyed" and turns it on.
+- ~~The raw field may linger after focus moves. It is inert (nothing reads it) and is overwritten by the next toggle.~~ **CORRECTED IN IMPLEMENTATION.** A lingering raw id is *not* inert: the derivation only hides it while focus is elsewhere, so focusing away and focusing back makes it match again and the posture resurrects — one the user never re-asked for. `at0372`'s third exit door caught this. The fix keeps the derivation and adds one durable clear, `_clearBullseyeOnFocusFlip`, called from `_flipFirstResponder` — the single entry point for first-responder transitions, so it still costs nothing per focus path, which was the whole appeal of deriving. The derivation stays as the guard for the window before a flip commits and for hand-built states that never flip. `toggleBullseye` still compares against the **derived** value.
 - **Bullseye survives within a multi-card pane.** The derivation asks whether the pane *hosts* the first responder, not whether one particular card holds it — so switching tabs, and closing one tab of several, both keep the posture. That is the right answer (the user is still working in the card they bullseyed) and it costs nothing, but it falls out of the derivation rather than being decided anywhere, so it is recorded here instead of left for a reader to test for.
 - `validateDeckState` gains invariant 8: *when `bullseyePaneId` is set, it references a real pane, and that pane hosts no sidebar card.* It deliberately does **not** assert the first-responder relationship — that one is allowed to go stale, which is the point.
 - The Window menu's check mark and the CSS both read the derived value, so they can never disagree with each other or with the geometry.
@@ -483,14 +487,14 @@ Registered in the same handler map as `SET_PANE_WIDTH`, and added to `DECK_CANVA
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Store: the bullseye field, its derivation, and its exits | pending | — |
-| #step-2 | Command: action, dispatch, canvas handler, registry, menu fact | pending | — |
-| #step-3 | Render: the bullseye geometry branch | pending | — |
-| #step-4 | Recede: deepen the inactive-content dim | pending | — |
-| #step-5 | Host: Window ▸ Bullseye | pending | — |
-| #step-6 | Doctrine: D131, pane-model, chord-tiers | pending | — |
-| #step-7 | App-test: at0372 | pending | — |
-| #step-8 | Integration Checkpoint | pending | — |
+| #step-1 | Store: the bullseye field, its derivation, and its exits | done | `82f0949b2` |
+| #step-2 | Command: action, dispatch, canvas handler, registry, menu fact | done | `be8a9a550` |
+| #step-3 | Render: the bullseye geometry branch | done | `f6739b575` |
+| #step-4 | Recede: deepen the inactive-content dim | done | `791abf390` |
+| #step-5 | Host: Window ▸ Bullseye | done | `f6adbb0ef` |
+| #step-6 | Doctrine: D131, pane-model, chord-tiers | done | `122e0a9e9` |
+| #step-7 | App-test: at0372 | done | `6df5afd24` |
+| #step-8 | Integration Checkpoint | done | `daf315dcd` |
 
 ---
 

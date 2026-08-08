@@ -172,6 +172,36 @@ export interface SlotStackEntry {
 }
 
 /**
+ * `bullseyePaneIdOf(state)` — the pane standing in bullseye, or `null`.
+ *
+ * The stored `state.bullseyePaneId` is an input to this derivation, not its
+ * answer. The id is honored only when a pane with that id still exists AND
+ * that pane hosts the current first responder — the same rule
+ * `DeckManager.getFirstResponderCardId()` states (`activePaneId` names the
+ * pane; that pane's `activeCardId` is the responder), reproduced here rather
+ * than imported so the selector stays a pure function of a snapshot.
+ *
+ * Deriving is what makes the focus-shaped exits hold by construction: raising
+ * another pane, the depth and lateral rings, a sidebar chord, and the
+ * canvas-background deselect all move the first responder, and every one of
+ * them stops this from matching without any of them knowing bullseye exists.
+ * A raw id may therefore linger after focus moves; it is unreadable through
+ * here and is overwritten by the next toggle.
+ *
+ * Note the pane, not the card, is the subject: switching tabs within a
+ * multi-card bullseyed pane keeps the posture, because the user is still
+ * working in the card they bullseyed.
+ */
+export function bullseyePaneIdOf(state: DeckState): string | null {
+  const paneId = state.bullseyePaneId;
+  if (paneId === undefined) return null;
+  if (state.activePaneId !== paneId) return null;
+  const pane = state.panes.find((p) => p.id === paneId);
+  if (pane === undefined) return null;
+  return pane.cardIds.includes(pane.activeCardId) ? paneId : null;
+}
+
+/**
  * `countWorkCards(state)` — how many cards the user is working in, i.e. every
  * card but the Lens. The Lens is app furniture (it opens by factory default),
  * so anything asking "does this deck hold work yet" — the setup wizard's

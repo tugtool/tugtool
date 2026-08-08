@@ -197,6 +197,42 @@ describe("serialize and deserialize (v4 wire)", () => {
     expect(out.version).toBe(4);
   });
 
+  test("serialize emits no bullseye key, even with one set — bullseye is session state", () => {
+    const card: CardState = {
+      id: "c1",
+      componentId: "terminal",
+      title: "T",
+      closable: true,
+    };
+    const pane: TugPaneState = {
+      id: "w1",
+      position: { x: 10, y: 20 },
+      size: { width: 511, height: 400 },
+      cardIds: ["c1"],
+      activeCardId: "c1",
+      title: "",
+      acceptsFamilies: ["standard"],
+    };
+    const out = serialize({
+      cards: [card],
+      panes: [pane],
+      activePaneId: "w1",
+      bullseyePaneId: "w1",
+      imposition: { sidebars: { lens: { side: "right" } } },
+      hasFocus: true,
+    });
+    expect(Object.keys(out).sort()).toEqual([
+      "activePaneId",
+      "cards",
+      "imposition",
+      "panes",
+      "version",
+    ]);
+    expect(JSON.stringify(out)).not.toContain("bullseye");
+    // And the pane's own record is untouched by the posture.
+    expect((out as { panes: TugPaneState[] }).panes[0].size.width).toBe(511);
+  });
+
   test("v4 round-trip: serialize → deserialize → serialize is stable", () => {
     const card: CardState = {
       id: "c1",
@@ -1186,6 +1222,50 @@ describe("validateDeckState", () => {
       hasFocus: true,
     };
     expect(() => validateDeckState(state)).toThrow(/duplicate pane id "s1"/);
+  });
+
+  test("rejects a bullseyePaneId naming no real pane (invariant 8)", () => {
+    const state: DeckState = {
+      cards: [makeCard("c1")],
+      panes: [makeStack("s1", ["c1"], "c1")],
+      activePaneId: "s1",
+      bullseyePaneId: "ghost",
+      imposition: { sidebars: { lens: { side: "right" } } },
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).toThrow(DeckStateInvariantError);
+    expect(() => validateDeckState(state)).toThrow(
+      /bullseyePaneId "ghost" does not reference a real pane/,
+    );
+  });
+
+  test("rejects a bullseyePaneId naming a sidebar pane (invariant 8)", () => {
+    const state: DeckState = {
+      cards: [makeCard("lens-card", "lens")],
+      panes: [makeStack("s-lens", ["lens-card"], "lens-card")],
+      activePaneId: "s-lens",
+      bullseyePaneId: "s-lens",
+      imposition: { sidebars: { lens: { side: "right" } } },
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).toThrow(
+      /names a sidebar pane; a rail cannot stand in bullseye/,
+    );
+  });
+
+  test("accepts a stale-but-real bullseyePaneId whose pane no longer holds focus", () => {
+    // The raw id is allowed to outlive the focus that justified it — the
+    // accessor derives it away. Asserting the responder relationship here
+    // would throw on the normal path.
+    const state: DeckState = {
+      cards: [makeCard("c1"), makeCard("c2")],
+      panes: [makeStack("s1", ["c1"], "c1"), makeStack("s2", ["c2"], "c2")],
+      activePaneId: "s2",
+      bullseyePaneId: "s1",
+      imposition: { sidebars: { lens: { side: "right" } } },
+      hasFocus: true,
+    };
+    expect(() => validateDeckState(state)).not.toThrow();
   });
 });
 

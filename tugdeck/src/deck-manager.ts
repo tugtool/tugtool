@@ -47,7 +47,11 @@ import {
   takesContentWidth,
 } from "./card-registry";
 import { LENS_CARD_ID } from "./lib/lens-card-id";
-import { findLensPane, findSidebarPanes } from "./deck-store-selectors";
+import {
+  bullseyePaneIdOf,
+  findLensPane,
+  findSidebarPanes,
+} from "./deck-store-selectors";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import { lensStore } from "./lib/lens-store/lens-store";
 import { sidebarWidthStore } from "./lib/sidebar-width-store";
@@ -617,6 +621,99 @@ export class DeckManager implements IDeckManagerStore {
     const activeWin = this.deckState.panes.find((s) => s.id === activePaneId);
     return activeWin?.activeCardId ?? null;
   };
+
+  /**
+   * The pane standing in bullseye, or `null`. Delegates to
+   * {@link bullseyePaneIdOf} so the store, the render path, and the menu
+   * projection all read one rule — a derivation over the snapshot, never the
+   * raw field.
+   */
+  public getBullseyePaneId = (): string | null =>
+    bullseyePaneIdOf(this.deckState);
+
+  /**
+   * Put `paneId` in bullseye, or take it out when it is already there.
+   *
+   * Refuses a pane that does not exist and a pane hosting a sidebar card: a
+   * rail is the imposition's fixed end, not a reading surface. The "already
+   * there" comparison is against the DERIVED value, so a raw id left behind
+   * by a focus move reads as "not bullseyed" and the press turns bullseye on
+   * rather than off.
+   *
+   * Notifies but does not `scheduleSave()`: bullseye is a presentation, and
+   * nothing persistable changed.
+   */
+  public toggleBullseye = (paneId: string): void => {
+    const pane = this.deckState.panes.find((p) => p.id === paneId);
+    if (!pane) return;
+    const hostsSidebar = this.deckState.cards.some(
+      (c) => pane.cardIds.includes(c.id) && isSidebarCard(c.componentId),
+    );
+    if (hostsSidebar) return;
+    const next = this.getBullseyePaneId() === paneId ? undefined : paneId;
+    this.deckState = { ...this.deckState, bullseyePaneId: next };
+    this.notify();
+  };
+
+  /**
+   * Release `paneId` from bullseye when it holds it — the geometry-shaped
+   * exit door. Stated over the mutation rather than the caller: every path
+   * that writes a pane's `position`, `size`, or `slot` calls this for the
+   * pane it wrote, because an explicit "this pane is exactly this wide,
+   * here" and a posture saying "this pane is comfy, centered" cannot both be
+   * true, and the explicit gesture wins.
+   *
+   * `grep _clearBullseyeFor` lists every path honoring the rule. A new
+   * geometry mutator that does not appear in that list is a bug.
+   *
+   * Writes the field only; callers fold it into the state replacement and the
+   * `notify()` they were already making.
+   */
+  private _clearBullseyeFor(paneId: string): void {
+    if (this.deckState.bullseyePaneId !== paneId) return;
+    this.deckState = { ...this.deckState, bullseyePaneId: undefined };
+  }
+
+  /**
+   * Release bullseye when the first responder leaves the pane holding it —
+   * the focus-shaped exit door, made durable.
+   *
+   * The read accessor already derives bullseye away the moment focus moves,
+   * so the posture *looks* correct without this. What it does not do on its
+   * own is END: a raw id left behind starts matching again the moment focus
+   * comes back to that pane, so clicking away and clicking back would
+   * resurrect a posture the user never re-asked for. Bullseye is meant to be
+   * left, not parked. (This is a correction to the plan's [P05], which
+   * argued the lingering id was inert. It is not — `at0372`'s third exit door
+   * is what proved it.)
+   *
+   * ONE site, called from `_flipFirstResponder` — the single entry point for
+   * first-responder transitions — so this covers the click, the ⌘R picker,
+   * the depth and lateral rings, every sidebar chord, the canvas-background
+   * deselect, and any focus path added later, at no per-path cost. That is
+   * the property the derived accessor was reaching for; the accessor stays
+   * as the guard that makes a stale id unreadable in the window before the
+   * flip commits, and for hand-built states that never flip at all.
+   *
+   * Membership is read pre-commit, and asks whether the bullseyed pane hosts
+   * the INCOMING responder — so switching tabs inside the bullseyed pane
+   * keeps the posture, which is the right answer: the user is still working
+   * in the card they bullseyed. A commit that also moves cards between panes
+   * can make this answer conservatively; erring toward clearing is the safe
+   * direction, and the accessor catches the other one.
+   *
+   * Folded into the state the commit is about to replace and notify, exactly
+   * as {@link _clearBullseyeFor} is — no extra `notify()`, no `scheduleSave()`.
+   */
+  private _clearBullseyeOnFocusFlip(newFR: string | null): void {
+    const paneId = this.deckState.bullseyePaneId;
+    if (paneId === undefined) return;
+    const pane = this.deckState.panes.find((p) => p.id === paneId);
+    if (pane !== undefined && newFR !== null && pane.cardIds.includes(newFR)) {
+      return;
+    }
+    this.deckState = { ...this.deckState, bullseyePaneId: undefined };
+  }
 
   public observeCardDidFinishConstruction = (
     cardId: string | null,
@@ -1785,6 +1882,7 @@ export class DeckManager implements IDeckManagerStore {
     }
     if (oldFR !== null) this.cardLifecycle.notifyCardWillDeactivate(oldFR);
     if (newFR !== null) this.cardLifecycle.notifyCardWillActivate(newFR);
+    this._clearBullseyeOnFocusFlip(newFR);
     commit();
     if (newFR !== null) this.cardLifecycle.setResponderChainKey(newFR);
     if (oldFR !== null) this.cardLifecycle.notifyCardDidDeactivate(oldFR);
@@ -1908,6 +2006,13 @@ export class DeckManager implements IDeckManagerStore {
     const activeCardId = existing.activeCardId;
     if (positionChanged) this.cardLifecycle.notifyCardWillMove(activeCardId);
     if (sizeChanged) this.cardLifecycle.notifyCardWillResize(activeCardId);
+
+    // A gesture that places or sizes this pane by hand ends its bullseye.
+    // Gated on what CHANGED rather than on `evictSlot`: the drag and resize
+    // commits pass that flag but `_setPaneWidth` does not, and every width
+    // door reaches here through it. A commit that moves neither position nor
+    // size (a re-commit of the same rect) leaves the posture standing.
+    if (positionChanged || sizeChanged) this._clearBullseyeFor(paneId);
 
     this.deckState = {
       ...this.deckState,
@@ -2188,6 +2293,10 @@ export class DeckManager implements IDeckManagerStore {
 
     const clamped = clampSlot(kind, slot);
     const updated: TugPaneState = { ...target, slot: clamped };
+
+    // Re-placing the pane ends its bullseye. This path writes `slot` on its
+    // own rather than through `movePane`, so it honors the rule explicitly.
+    this._clearBullseyeFor(targetPaneId);
 
     const panes = this.deckState.panes.map((p) =>
       p.id === targetPaneId ? updated : p,
@@ -3743,6 +3852,11 @@ export class DeckManager implements IDeckManagerStore {
         widthPreset: preset,
       };
     });
+    // A deck-wide width statement re-widths every content pane, so it ends the
+    // bullseye of whichever pane holds it. Honored explicitly because this
+    // path builds its pane array inline and hands it to `_commitImposition`,
+    // bypassing `movePane` — deliberately, so the settle measures once.
+    for (const pane of panes) this._clearBullseyeFor(pane.id);
     this._commitImposition(
       { ...this.deckState.imposition, contentWidth: preset },
       panes,

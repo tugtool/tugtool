@@ -326,6 +326,9 @@ export interface TugPaneState {
  *   `focus` / `blur` events. Consumers that gate behavior on "is this
  *   card the focus destination" read it through the
  *   `isFocusDestination` selector (see `deck-store-selectors.ts`).
+ * - `bullseyePaneId` names the pane standing in bullseye. Session-only
+ *   (never serialized) and read through `bullseyePaneIdOf` /
+ *   `DeckManager.getBullseyePaneId()`, which derive rather than trust it.
  *
  * Reload-focus restoration is handled out-of-band: `putFocusedCardId`
  * writes a single-field row to tugbank, and `DeckManager` reads it back
@@ -345,6 +348,16 @@ export interface DeckState {
    * init. Not serialized — session state only.
    */
   hasFocus: boolean;
+  /**
+   * The pane standing in bullseye — centered in the band at the comfy
+   * width, with every other pane receded. Not serialized — session state
+   * only, so a reload always comes back un-bullseyed.
+   *
+   * Read through `bullseyePaneIdOf()` (or `DeckManager.getBullseyePaneId()`,
+   * which delegates to it), never directly: the accessor derives, and a raw
+   * id may outlive the focus that justified it.
+   */
+  bullseyePaneId?: string;
 }
 
 // ---- Invariant validation ----
@@ -411,6 +424,12 @@ export function clampPanesToDeck(state: DeckState): DeckState {
  *   6. at most one pane hosts the Lens card, and it carries no `slot`.
  *   7. no pane's `position.y` is above the deck's top edge — a title bar
  *      the user cannot reach is a trap, not a layout ({@link DECK_TOP_Y}).
+ *   8. when `state.bullseyePaneId` is set, it references a real pane, and
+ *      that pane hosts no sidebar card — a rail cannot stand in bullseye.
+ *      Deliberately NOT asserted: that the pane still holds the first
+ *      responder. The raw id is allowed to go stale when focus moves; the
+ *      accessor derives it away, and asserting it here would throw on the
+ *      normal path.
  *
  * Called from `DeckManager.notify` in dev/test builds only — guarded by
  * `isDevEnv()` so production builds pay no cost. Violations surface at the
@@ -519,5 +538,20 @@ export function validateDeckState(state: DeckState): void {
     throw new DeckStateInvariantError(
       `activePaneId "${state.activePaneId}" does not reference a real pane`,
     );
+  }
+
+  // Invariant 8
+  if (state.bullseyePaneId !== undefined) {
+    const bullseyePane = state.panes.find((p) => p.id === state.bullseyePaneId);
+    if (bullseyePane === undefined) {
+      throw new DeckStateInvariantError(
+        `bullseyePaneId "${state.bullseyePaneId}" does not reference a real pane`,
+      );
+    }
+    if (bullseyePane.cardIds.some((cid) => sidebarComponentByCardId.has(cid))) {
+      throw new DeckStateInvariantError(
+        `bullseyePaneId "${state.bullseyePaneId}" names a sidebar pane; a rail cannot stand in bullseye`,
+      );
+    }
   }
 }

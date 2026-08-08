@@ -260,8 +260,12 @@ import {
  * session's activity channel through the real `SessionActivityStore`, so a test
  * can drive a live sparkline tape deterministically instead of waiting on a
  * real stream. Additive; major stays `2`.
+ *
+ * `2.3.0`: adds {@link TugTestSurface.getPaneRecord} — a pane's STORED
+ * position, size, slot, and width stamp, so a test can assert what a derived
+ * presentation did NOT write. Additive; major stays `2`.
  */
-export const SURFACE_VERSION = "2.2.0" as const;
+export const SURFACE_VERSION = "2.3.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -583,6 +587,22 @@ export interface TugTestSurface {
   focusElement(selector: string): void;
 
   // ---- State reads ----
+  /**
+   * The STORED geometry record of a pane (SURFACE_VERSION 2.3.0), or `null`
+   * when no pane holds that id.
+   *
+   * Deliberately the store's values rather than the painted frame's: a
+   * derived pane — imposed, pinned, or standing in bullseye — is painted
+   * somewhere the store never said, and the whole point of reading here is to
+   * assert what the store was NOT asked to change. A test that wants the
+   * frame measures `getBoundingClientRect()` instead.
+   */
+  getPaneRecord(paneId: string): {
+    position: { x: number; y: number };
+    size: { width: number; height: number };
+    slot: number | null;
+    widthPreset: string | null;
+  } | null;
   getActiveCardId(): string | null;
   getFocusedCardId(): string | null;
   /**
@@ -1465,6 +1485,17 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
     },
 
     // ---- state reads ----
+    getPaneRecord(paneId: string) {
+      const pane = deck.getSnapshot().panes.find((p) => p.id === paneId);
+      if (pane === undefined) return null;
+      return {
+        position: { ...pane.position },
+        size: { ...pane.size },
+        slot: pane.slot ?? null,
+        widthPreset: pane.widthPreset ?? null,
+      };
+    },
+
     getActiveCardId(): string | null {
       // "Active card" in the surface's vocabulary is the composite
       // first-responder: the card the user perceives as active.
