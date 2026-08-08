@@ -239,6 +239,13 @@ export interface UseAiConfigSheetArgs {
    */
   onCommit: (actions: AiConfigAction[]) => boolean;
   /**
+   * One line saying **whose** settings these are — the sheet is the same body
+   * in two contexts, and only this line tells them apart, so neither context
+   * leaves the reader guessing whether OK reaches one session or every new
+   * one.
+   */
+  scopeNote: string;
+  /**
    * Extra content below the rows — the session context's rules-editor door and
    * Claude Code version line. Omitted in the defaults context, which has no
    * session cwd for rules and no live version to report.
@@ -271,6 +278,7 @@ export function useAiConfigSheet({
   sessionMetadataStore,
   showSheet,
   onCommit,
+  scopeNote,
   renderFooter,
   commitDisposition,
 }: UseAiConfigSheetArgs): AiConfigSheetController {
@@ -333,6 +341,7 @@ export function useAiConfigSheet({
             baseline={baseline}
             openRow={focusRow ?? stickyRow ?? AI_CONFIG_DEFAULT_ROW}
             onCommit={onCommit}
+            scopeNote={scopeNote}
             renderFooter={renderFooter}
             close={() => close()}
           />
@@ -458,6 +467,8 @@ interface AiConfigSheetBodyProps {
   openRow: AiConfigRow;
   /** Apply the ordered actions; `false` keeps the sheet open. */
   onCommit: (actions: AiConfigAction[]) => boolean;
+  /** Whose settings these are — see {@link UseAiConfigSheetArgs.scopeNote}. */
+  scopeNote: string;
   renderFooter?: (close: () => void) => React.ReactNode;
   close: () => void;
 }
@@ -469,6 +480,7 @@ function AiConfigSheetBody({
   baseline,
   openRow,
   onCommit,
+  scopeNote,
   renderFooter,
   close,
 }: AiConfigSheetBodyProps): React.ReactElement {
@@ -620,9 +632,15 @@ function AiConfigSheetBody({
           </span>
         </div>
 
+        {/* Directly under the readout, because it qualifies it: the readout
+            says what OK commits, this says where it lands. */}
+        <div className="ai-config-scope" data-slot="ai-config-scope">
+          {scopeNote}
+        </div>
+
         <div className="ai-config-channels">
-          <div className="ai-config-channel">
-            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
+          <div className="ai-config-channel ai-config-channel-model">
+            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
               Model
             </TugLabel>
             {/* The test hook rides the wrapper, not the list: `TugListView`
@@ -648,7 +666,7 @@ function AiConfigSheetBody({
           </div>
 
           <div className="ai-config-channel">
-            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
+            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
               Effort
             </TugLabel>
             {/* The stepped track spans exactly the pending model's levels, so
@@ -677,7 +695,7 @@ function AiConfigSheetBody({
           </div>
 
           <div className="ai-config-channel">
-            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
+            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
               Mode
             </TugLabel>
             <TugChoiceGroup
@@ -686,6 +704,7 @@ function AiConfigSheetBody({
               senderId={MODE_SENDER_ID}
               size="sm"
               sidePadding="xs"
+              columns="proportional"
               commit="live"
               focusGroup={focusGroup}
               focusOrder={ROW_FOCUS_ORDER.mode}

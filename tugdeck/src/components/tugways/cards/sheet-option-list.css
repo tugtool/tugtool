@@ -9,17 +9,15 @@
  * collapsed; effort is a stepped track now and mode a segmented group.)
  *
  * One class, `.sheet-option-list`, on the list's host div, carrying the
- * resting frame + header-margin alignment:
+ * resting frame and the row gutter:
  *
  *  - the TugListView sizes to its rows exactly (short fixed list, no scroll),
  *  - rows run flush to the list frame (fill + dividers reach the edge),
  *  - the list draws its built-in resting frame (the `--tugx-list-view-frame-*`
  *    opt-in), so the list reads as a bounded control even when the keyboard
  *    ring is elsewhere,
- *  - row text aligns with the sheet header's description column: the leading
- *    glyph column is exactly as wide as the header's two-line icon + gap
- *    (tugx-header.css), so titles/subtitles share the description's left
- *    edge and the checkmark hangs in the icon margin.
+ *  - the leading glyph column is exactly a check mark wide, so every row
+ *    reserves the mark without spending a header-sized margin on it.
  *
  * @tug-pairings
  * | Element                                          | Surface          | Role          | Context                              |
@@ -46,37 +44,21 @@
   --tugx-list-view-frame-color: var(--tug7-element-global-border-normal-muted-rest);
 }
 
-/* Header-margin alignment: row text starts where the sheet header's
-   description starts. The row's start padding collapses into the glyph
-   column, which spans the header's icon + gap (minus the frame the list box
-   already contributes), so the checkmark hangs in the icon margin and the
-   text column lands exactly on the description's left edge. */
+/* The glyph column is a check mark's worth of gutter and nothing more, and the
+   row keeps its own standard inline padding. The list is a channel inside a
+   mixer, not a column hung off the sheet header — there is no header
+   description edge to reach for, so the rows are simply rows. */
 .sheet-option-list .tug-list-row {
-  padding-inline-start: 0;
-}
-
-.sheet-option-list {
-  /* Optical cheat: geometrically-aligned smaller text reads left of the
-     larger description above it, so the list text edges a hair right of the
-     true column. The dial for judging by eye. */
-  --sheet-option-list-optical-inset: 2px;
+  /* A shade tighter than a standalone list's rows. Every option shows at once
+     here — the list's height IS its content — so the rows' vertical padding is
+     the sheet's height, and buying that height back is what keeps the sheet
+     off a scrollbar. The row's own density knob, not a restyle ([L20]). */
+  --tugx-list-row-padding-block: 6px;
 }
 
 .sheet-option-list .tug-list-row-check {
-  /* The row's flex gap sits between this column and the text, so it is part
-     of the margin the column must span: column + gap + frame = icon + gap
-     (+ the optical inset above). */
-  width: calc(
-    var(--tugx-header-icon-two) + var(--tugx-header-gap-two) -
-      var(--tugx-list-view-frame-width) - var(--tugx-list-row-gap) +
-      var(--sheet-option-list-optical-inset)
-  );
+  width: var(--tugx-list-row-checkmark-size);
   margin-inline: 0;
-  /* Keep the glyph's distance to the text it marks: right-align it in the
-     (now wider) column and restore the base rule's 2xs breathing room, so
-     glyph → text stays 2xs + row gap, exactly the unframed row's rhythm.
-     The column's extra width extends leftward into the icon margin. */
-  justify-content: flex-end;
-  padding-inline-end: var(--tug-space-2xs);
+  justify-content: center;
   box-sizing: border-box;
 }

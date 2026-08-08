@@ -617,13 +617,16 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             <SliderPrimitive.Track className={cn("tug-slider-track", trackFilled && "tug-slider-track-filled")}>
               <SliderPrimitive.Range className="tug-slider-range" />
             </SliderPrimitive.Track>
+            {/* Between track and thumb, and the DOM order IS the layering —
+                see `.tug-slider-ticks`. A notch shows on the track; the thumb
+                covers the notch it rests on. */}
+            {ticks}
             <SliderPrimitive.Thumb
               ref={focusableRef}
               className={cn("tug-slider-thumb", showTicks && "tug-slider-thumb-diamond")}
               onKeyDown={handleThumbKeyDown}
             />
           </SliderPrimitive.Root>
-          {ticks}
           {tickLabels}
         </div>
 

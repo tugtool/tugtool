@@ -600,6 +600,25 @@
    padding `var(…, <default>)` above, so the sliding indicator (sized off the
    segment's border box) covers it for free. [L06] — appearance keyed off a
    data attribute, not React state. */
+/* `columns="proportional"` — auto tracks instead of 1fr. An `auto` track
+   resolves to its own max-content and then absorbs an EQUAL share of the
+   leftover width, so a long label keeps its own measure (and its padding stays
+   clear of the dividers) while each short one gives up only a few pixels.
+
+   That leftover is the whole mechanism, so the group must have a width to
+   spend: block-level `grid` fills its row, where `inline-grid` would
+   shrink-wrap to max-content and leave nothing to distribute. Proportional is
+   therefore a full-width variant by construction. Unset → the equal-width,
+   shrink-to-fit default above. */
+.tug-choice-group[data-columns="proportional"] {
+  display: grid;
+  /* Both halves are needed: `width: fit-content` on the base rule shrink-wraps
+     the group whatever its `display` is, so dropping it is what actually
+     yields the row's width to distribute. */
+  width: auto;
+  grid-auto-columns: auto;
+}
+
 .tug-choice-group[data-side-padding="2xs"] { --tugx-choice-group-side-padding: var(--tug-space-2xs); }
 .tug-choice-group[data-side-padding="xs"] { --tugx-choice-group-side-padding: var(--tug-space-xs); }
 .tug-choice-group[data-side-padding="sm"] { --tugx-choice-group-side-padding: var(--tug-space-sm); }

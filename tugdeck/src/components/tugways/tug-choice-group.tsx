@@ -170,6 +170,22 @@ export interface TugChoiceGroupProps
    * @selector [data-side-padding="2xs" | "xs" | "sm" | "md" | "lg"]
    */
   sidePadding?: "2xs" | "xs" | "sm" | "md" | "lg";
+  /**
+   * How the segments divide the group's width.
+   *
+   * - `"equal"` (default) — every segment is exactly as wide as the widest
+   *   one's text. Rock-steady, and right when the labels are close in length.
+   * - `"proportional"` — every segment gets its own text's width plus an
+   *   EQUAL share of the leftover. One long label no longer sets the measure
+   *   for all of them, so it stops crowding its own dividers while the short
+   *   ones give up only a few pixels each. The segments stay close enough in
+   *   width to still read as a stabilized row. The leftover is the whole
+   *   mechanism, so this variant fills its row rather than hugging its labels.
+   *
+   * @selector [data-columns="proportional"]
+   * @default "equal"
+   */
+  columns?: "equal" | "proportional";
   /** Accessible label for the group. */
   "aria-label"?: string;
   /**
@@ -246,6 +262,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       disabled = false,
       animated = false,
       sidePadding,
+      columns = "equal",
       className,
       style,
       "aria-label": ariaLabel,
@@ -436,6 +453,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
         data-role={role}
         data-emphasis={emphasis}
         data-side-padding={sidePadding}
+        data-columns={columns === "equal" ? undefined : columns}
         data-disabled={effectiveDisabled || undefined}
         className={cn(
           "tug-choice-group",

@@ -11,7 +11,7 @@
  *      and composes with the per-card magnification.
  *   2. **Prompt Editor** — typography, view toggles, and submit-key
  *      policy for the prompt editor.
- *   3. **Assistant** — the deck-wide default model / reasoning effort /
+ *   3. **AI Model** — the deck-wide default model / reasoning effort /
  *      permission mode new cards adopt on first open, edited through the
  *      *same* chip + mixer sheet as the Session card's Z4B row, bound to the
  *      deck defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
@@ -155,6 +155,7 @@ export function SettingsSessionCardBody() {
       }
       return true;
     },
+    scopeNote: "Settings for every new session",
   });
 
   const editorSettings = useSyncExternalStore(
@@ -349,7 +350,7 @@ export function SettingsSessionCardBody() {
         </TugBox>
 
         <TugBox
-          label="Assistant"
+          label="AI Model"
           labelPosition="legend"
           variant="bordered"
           className="settings-session-card-group"
@@ -365,6 +366,10 @@ export function SettingsSessionCardBody() {
               onOpenSheet={openAiConfigSheet}
             />
           </div>
+          <TugLabel size="sm" emphasis="calm">
+            Applied as the defaults to every new session card. Cards already
+            open keep the settings they carry.
+          </TugLabel>
         </TugBox>
         {assistantSheet.renderSheet()}
       </div>

@@ -2,7 +2,7 @@
  * settings-reveal.ts — ask the Settings card to show a particular section.
  *
  * One caller today: the "Saved Model Unavailable" bulletin, whose "Review
- * Defaults" lands the reader on the Assistant controls in the Session Card
+ * Defaults" lands the reader on the AI Model controls in the Session Card
  * section. Another section may be showing, so opening Settings is not enough —
  * the request has to survive the gap between the dispatch that opens the card
  * and the card's mount. A request made with no card attached is parked and

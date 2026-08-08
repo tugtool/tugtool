@@ -9,13 +9,23 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--tug-space-md);
+  /* The channel stack carries the sheet's rhythm (`.ai-config-channels`); the
+     gaps at THIS level only separate the readout, the stack, the scope note,
+     and the doors, so they stay a step tighter — the sheet's whole height is
+     what decides whether it scrolls. */
+  gap: var(--tug-space-sm);
 }
 
 /* ---------------------------------------------------------------------------
  * The readout — the pending state, in the largest type on the surface
  * -------------------------------------------------------------------------*/
 
+/* One type size for the whole line — the three values are one sentence, so a
+   size step between them reads as a size accident rather than a hierarchy.
+   Weight alone carries the emphasis. The size is the sheet TITLE's own knob:
+   the readout is the loudest thing in the sheet's body, but it never out-shouts
+   the sheet's name. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-readout {
   display: flex;
   flex-wrap: wrap;
@@ -23,24 +33,19 @@
   justify-content: center;
   column-gap: var(--tug-space-xs);
   text-align: center;
+  font-size: var(--tugx-header-title-size);
+  line-height: var(--tugx-header-title-lh);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* The model carries the most weight: it is the decision the other two
    qualify. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-readout-model {
-  font-size: var(--tug-font-size-lg);
   font-weight: var(--tug-font-weight-bold);
-  line-height: var(--tug-line-height-tight);
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-readout-rest {
-  font-size: var(--tug-font-size-md);
   font-weight: var(--tug-font-weight-semibold);
-  line-height: var(--tug-line-height-tight);
-  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
 /* The separators are punctuation, not content — quieter than the values they
@@ -74,10 +79,12 @@
   white-space: nowrap;
 }
 
-/* The choice group hugs its labels rather than stretching to the channel's
-   width — the parent's own flex placement, not a restyle of the child [L20]. */
-.ai-config-channel [data-slot="tug-choice-group"] {
-  align-self: flex-start;
+/* The model channel is the only one without a description under it, so it
+   alone has to spell out the separation from the channel below — and it is
+   spelling out a gap the space scale has no step for (`lg` is 12px), hence
+   the multiple. */
+.ai-config-channel-model {
+  margin-block-end: calc(var(--tug-space-lg) * 2.5);
 }
 
 /* The track's wrapper. The slider's own ticks are inset by half a thumb, so
@@ -89,21 +96,42 @@
   padding-inline: var(--tug-space-sm);
 }
 
-/* Each channel's own description, under the control it describes. Reserved at
-   two lines so a wrap never moves the sheet's height. */
+/* Each channel's own description, centered under the control it describes.
+   Reserved at one line so swapping between two one-line descriptions never
+   moves the sheet's height. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-note {
   min-block-size: calc(
-    var(--tug-font-size-xs) * var(--tug-line-height-normal) * 2
+    var(--tug-font-size-sm) * var(--tug-line-height-normal)
   );
-  font-size: var(--tug-font-size-xs);
+  font-size: var(--tug-font-size-sm);
   line-height: var(--tug-line-height-normal);
+  text-align: center;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* The scope note: whose settings these are. It sits directly under the readout
+   because it qualifies the readout — the readout says WHAT OK commits, this
+   says WHERE it lands — and quieter than a channel description because it
+   describes the whole sheet rather than one control. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-scope {
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-normal);
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The doors below the channels are ghost buttons: each hugs its own label
+   rather than stretching to the sheet's width, so they read as links in a
+   column and not as a stack of full-width bars. */
 .ai-config-footer {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: var(--tug-space-xs);
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  /* The doors are a different kind of thing from the channels above them —
+     they leave the sheet rather than set a value — so they stand off from the
+     last channel by more than the sheet's own rhythm. */
+  margin-block-start: var(--tug-space-md);
 }

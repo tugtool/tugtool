@@ -34,7 +34,7 @@ body {
   /* Stepped-track tick labels. `line` is the row the control reserves for
      them: the gap above the text plus the text's own line. */
   --tugx-slider-tick-label-fg: var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-slider-tick-label-size: var(--tug-font-size-2xs);
+  --tugx-slider-tick-label-size: var(--tug-font-size-xs);
   --tugx-slider-tick-label-gap: var(--tug-space-2xs);
   --tugx-slider-tick-label-line: calc(
     var(--tugx-slider-tick-label-gap) + var(--tugx-slider-tick-label-size) * 1.3
@@ -97,6 +97,8 @@ body {
    Slider Root (.tug-slider-root)
    ========================================================================= */
 
+/* The root holds track, ticks, and thumb, so it is the stacking context their
+   layering is resolved in. */
 .tug-slider-root {
   position: relative;
   z-index: 2;
@@ -227,8 +229,8 @@ body {
    Track Wrapper (.tug-slider-track-wrapper)
    ========================================================================= */
 
-/* Contains the Radix slider root and the tick overlay. Positioned so ticks
-   can be absolutely placed relative to the track. */
+/* Contains the Radix slider root (which carries the ticks) and the tick-label
+   row. Positioned so the labels can be absolutely placed under the track. */
 .tug-slider-track-wrapper {
   position: relative;
   flex: 1;
@@ -240,12 +242,19 @@ body {
    ========================================================================= */
 
 /* Tick container must be inset by half the thumb width so tick positions
-   match Radix thumb positions (Radix keeps thumb center within track bounds). */
+   match Radix thumb positions (Radix keeps thumb center within track bounds).
+
+   Layering is DOM order, not z-index: track, then ticks, then thumb are three
+   positioned siblings inside the root, all at `z-index: auto`, so they paint
+   in the order they are written. The ticks land ON TOP of the track — a
+   stepped track shows where its notches are — and the thumb covers the notch
+   it rests on. A z-index here would in fact LOSE to the thumb: Radix wraps
+   `SliderPrimitive.Thumb` in its own positioned span and puts our class on the
+   inner element, so the sibling this competes with is that unstyled wrapper. */
 .tug-slider-ticks {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 1;
   pointer-events: none;
 }
 

@@ -3468,6 +3468,7 @@ export function SessionCardBody({
       }
       return true;
     },
+    scopeNote: "Settings apply to this session only",
     renderFooter: (close) => (
       <>
         <TugPushButton
