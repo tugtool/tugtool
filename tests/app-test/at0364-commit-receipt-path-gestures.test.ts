@@ -11,17 +11,24 @@
  *     `preventDefault` the paired mousedown — the same default that begins a
  *     text selection — and the release still arrived as a `click`, so every
  *     attempt to copy a filename opened it in an editor instead.
- *  2. **Right-clicking it opened two menus.** The path's own Radix context
- *     menu AND the transcript cell's editing menu, stacked over one press,
- *     because the cell's React `onContextMenu` saw the same event.
+ *  2. **Right-clicking it opened two menus** — the row's own Radix menu AND
+ *     the transcript cell's editing menu, stacked over one press — and the
+ *     row's carried two items where a file reference in prose carries four.
+ *     A row under a transcript is ink like any other, so it hands its path to
+ *     the host: it stamps a `file-path` annotation and renders no menu of its
+ *     own, and the host's provider builds the registry's Open in Editor /
+ *     Show in Finder / Copy Path / Insert into Composer over the standard
+ *     editing block.
  *
- * Both are pinned here on a real receipt with a real native gesture: a drag
+ * Both are pinned here on a real receipt with real native gestures: a drag
  * across the path leaves a selection and opens no card; a right-click leaves
- * exactly one menu open; and a plain click still opens the file, so the drag
- * guard didn't cost the row its gesture.
+ * exactly one menu, carrying the whole file-reference vocabulary; and a plain
+ * click still opens the file, so the drag guard didn't cost the row its
+ * gesture.
  *
  * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
  * @covers tugdeck/src/components/tugways/tug-context-menu.tsx
+ * @covers tugdeck/src/lib/annotator/annotation-element.ts
  * @covers tugdeck/src/components/tugways/cards/session-commit-receipt-block.tsx
  */
 
@@ -158,26 +165,46 @@ describe.skipIf(!SHOULD_RUN)(
           // Nothing opened: the gesture named text, it didn't ask for a card.
           expect(await app.evalJS<number>(CARD_COUNT)).toBe(cardsBefore);
 
-          // ---- 2. One press, one menu ----
+          // ---- 2. One press, one menu, the whole file-reference vocabulary ----
           await app.nativeRightClickAtElement(FILE_REF);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(OWN_MENU)}) !== null`,
+            `document.querySelector(${JSON.stringify(CELL_MENU)}) !== null`,
             { timeoutMs: 6000 },
           );
           // Settle, so a second menu that was going to mount has mounted.
           await new Promise((resolve) => setTimeout(resolve, 250));
-          const menus = await app.evalJS<{ own: number; cell: number }>(
+          const menus = await app.evalJS<{
+            own: number;
+            cell: number;
+            items: string[];
+          }>(
             `(() => ({
                own: document.querySelectorAll(${JSON.stringify(OWN_MENU)}).length,
                cell: document.querySelectorAll(${JSON.stringify(CELL_MENU)}).length,
+               items: Array.from(
+                 document.querySelectorAll(
+                   ${JSON.stringify(`${CELL_MENU} .tug-menu-item`)},
+                 ),
+               ).map((el) => (el.textContent ?? "").trim()),
              }))()`,
           );
-          expect(menus.own).toBe(1);
-          expect(menus.cell).toBe(0);
+          // The host's provider serves it, and the row adds no second menu.
+          expect(menus.cell).toBe(1);
+          expect(menus.own).toBe(0);
+          // The registry's file-path entries lead, in registry order…
+          expect(menus.items.slice(0, 4)).toEqual([
+            "Open in Editor",
+            "Show in Finder",
+            "Copy Path",
+            "Insert into Composer",
+          ]);
+          // …over the standard editing block, which a file reference in prose
+          // keeps too (`suppressStandardItems: false`).
+          expect(menus.items.some((label) => label.startsWith("Select All"))).toBe(true);
 
           await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(OWN_MENU)}) === null`,
+            `document.querySelector(${JSON.stringify(CELL_MENU)}) === null`,
             { timeoutMs: 6000 },
           );
 

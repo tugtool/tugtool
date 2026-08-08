@@ -30,6 +30,23 @@ export interface ResolvedAnnotation {
   payload: AnnotationPayload;
 }
 
+/** How a stamp treats the press that lands on it. */
+export interface StampOptions {
+  /**
+   * Whether a press on this annotation is guarded — DOM focus held off the
+   * element and the host pane left unactivated. Defaults to true for the
+   * kinds that open a surface, which is right for a run the annotator split
+   * out of prose: it is a reference, and the card it opens claims focus.
+   *
+   * A surface whose annotation is a whole element of its own — a list row's
+   * path — passes `false`. The guard is enforced by preventing the
+   * mousedown's default, and that default is also what begins a text
+   * selection: guarded, the element cannot be selected at all. A row owns
+   * its own focus policy and its text stays selectable.
+   */
+  guardPress?: boolean;
+}
+
 /**
  * Mark `element` as an annotation carrying `payload`. Idempotent: the
  * dataset is synced, not merely added, so an element that changed kind
@@ -38,6 +55,7 @@ export interface ResolvedAnnotation {
 export function stampAnnotation(
   element: HTMLElement,
   payload: AnnotationPayload,
+  options: StampOptions = {},
 ): void {
   const next: AnnotationDataset = datasetForPayload(payload);
   for (const key of ANNOTATION_DATASET_KEYS) {
@@ -53,7 +71,7 @@ export function stampAnnotation(
   // whatever the user was typing in keeps its caret. Stamped here rather
   // than by each surface, so every file reference is protected the same
   // way whoever produced it.
-  if (annotationOpensSurface(payload.kind)) {
+  if (annotationOpensSurface(payload.kind) && options.guardPress !== false) {
     element.dataset.tugFocus = "refuse";
     element.dataset.noActivate = "";
   } else {
