@@ -16,7 +16,8 @@
  * jumped to `line`. Otherwise the file gets a fresh card of its own,
  * seeded through `addCard`'s initial-content channel — it mounts
  * directly onto the file via the same restore path a reloaded card
- * takes.
+ * takes. Under a multi-slot arrangement that fresh card opens at the slot
+ * beside the card the open came from ({@link neighborSlot}).
  *
  * Callers: the `open-file` registry handler (Control frames +
  * `dispatchCommand` from transcript links) and DeckCanvas's
@@ -38,6 +39,31 @@ import { findTextCardByPath } from "./text-card-open-registry";
 import { findFileViewCardByPath } from "./file-view-open-registry";
 import { isViewableFile } from "./file-kinds";
 import { noteRecentDocument } from "./recent-documents";
+import { slotCount } from "./layout-imposer";
+
+/**
+ * The slot a file opened from `originCardId` lands in: the slot immediately to
+ * its left, or — when the origin is already leftmost — the one immediately to
+ * its right. A file opened from a link belongs beside the card that named it;
+ * landing at the first slot can put it a whole deck away from the passage being
+ * read.
+ *
+ * `undefined` is "no opinion, take the default slot": no arrangement is up, the
+ * arrangement has one slot, or the originating card holds no slot of its own (a
+ * sidebar card such as the Lens, or a free-floating pane).
+ */
+function neighborSlot(
+  store: IDeckManagerStore,
+  originCardId: string | null,
+): number | undefined {
+  if (originCardId === null) return undefined;
+  const deck = store.getSnapshot();
+  const kind = deck.imposition.kind;
+  if (kind === undefined || slotCount(kind) < 2) return undefined;
+  const host = deck.panes.find((p) => p.cardIds.includes(originCardId));
+  if (!host || host.slot === undefined) return undefined;
+  return host.slot > 0 ? host.slot - 1 : 1;
+}
 
 /**
  * Read the deck-wide save-mode default straight from the tugbank cache
@@ -72,8 +98,9 @@ function openFileInViewerCard(store: IDeckManagerStore, path: string): void {
   // surface that dispatched this open — the Lens Files list, say — must save
   // its focus bag before `addCard` activates the new card ([L23]).
   const outgoing = store.getFirstResponderCardId();
+  const slot = neighborSlot(store, outgoing);
   if (outgoing !== null) store.invokeSaveCallback(outgoing);
-  store.addCard("file-view", { path });
+  store.addCard("file-view", { path }, { slot });
 }
 
 export function openFileInCard(
@@ -124,6 +151,7 @@ export function openFileInCard(
   // Cmd-L back into it falls to default-focus (wrong section, no ring) instead
   // of restoring the row the user was on ([L23] save-before-activation).
   const outgoing = store.getFirstResponderCardId();
+  const slot = neighborSlot(store, outgoing);
   if (outgoing !== null) store.invokeSaveCallback(outgoing);
-  store.addCard("text", seed);
+  store.addCard("text", seed, { slot });
 }

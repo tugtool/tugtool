@@ -945,8 +945,17 @@ export class DeckManager implements IDeckManagerStore {
    * `useCardStatePreservation.onRestore` receives the payload. This is
    * how parameterized openers (e.g. `open-file` seeding a path) hand
    * initial state to a card without a side channel.
+   *
+   * `options.slot` names the slot the new card joins under a multi-slot
+   * arrangement, clamped to the arrangement. Openers that have a card to open
+   * *near* — a file link naming the slot beside its own — pass it; everything
+   * else omits it and takes the first slot.
    */
-  addCard(componentId: string, initialContent?: unknown): string | null {
+  addCard(
+    componentId: string,
+    initialContent?: unknown,
+    options?: { slot?: number },
+  ): string | null {
     const registration = getRegistration(componentId);
     if (!registration) {
       console.warn(
@@ -1043,17 +1052,24 @@ export class DeckManager implements IDeckManagerStore {
       ...(openingPreset !== undefined && cappedPreferredWidth === openingWidth
         ? { widthPreset: openingPreset }
         : {}),
-      // Under a multi-slot arrangement a new card joins it at the first slot
-      // rather than walking the cascade — the arrangement is the user's stated
-      // intent for the whole deck, and a fresh card landing askew across it
-      // would be the deck ignoring it. One-up is the deck's resting state
-      // rather than a chosen arrangement, so it claims nothing: a new card
-      // cascades as it always did and takes the single slot only by being put
-      // there. Centered dialog cards stay centered under every kind; they are
-      // not part of the arrangement.
+      // Under a multi-slot arrangement a new card joins it at a slot rather
+      // than walking the cascade — the arrangement is the user's stated intent
+      // for the whole deck, and a fresh card landing askew across it would be
+      // the deck ignoring it. Which slot is the caller's to say (`options.slot`
+      // — an opener with an originating card names the slot beside it); the
+      // first slot is what a card arriving from nowhere takes. One-up is the
+      // deck's resting state rather than a chosen arrangement, so it claims
+      // nothing: a new card cascades as it always did and takes the single slot
+      // only by being put there. Centered dialog cards stay centered under
+      // every kind; they are not part of the arrangement.
       ...(slotCount(this.deckState.imposition.kind ?? DEFAULT_IMPOSITION_KIND) > 1 &&
       registration.placement !== "center"
-        ? { slot: 0 }
+        ? {
+            slot: clampSlot(
+              this.deckState.imposition.kind ?? DEFAULT_IMPOSITION_KIND,
+              options?.slot ?? 0,
+            ),
+          }
         : {}),
     };
 

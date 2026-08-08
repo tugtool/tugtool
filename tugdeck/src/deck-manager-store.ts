@@ -159,8 +159,15 @@ export interface IDeckManagerStore {
    * `CardStateBag.content` before the commit so the card mounts
    * through the restore path with the payload in hand (parameterized
    * openers like `open-file`).
+   *
+   * `options.slot` names the slot the card joins under a multi-slot
+   * arrangement (clamped to it); omitted, the card takes the first slot.
    */
-  addCard: (componentId: string, initialContent?: unknown) => string | null;
+  addCard: (
+    componentId: string,
+    initialContent?: unknown,
+    options?: { slot?: number },
+  ) => string | null;
 
   /**
    * Show a card type as a singleton: activate the existing card with
