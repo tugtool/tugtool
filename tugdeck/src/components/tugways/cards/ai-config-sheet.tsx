@@ -290,7 +290,7 @@ export function useAiConfigSheet({
       };
 
       void showSheet({
-        title: "AI",
+        title: "AI Model Settings",
         icon: "Sparkles",
         iconRole: "agent",
         onCommitDisposition: commitDisposition,

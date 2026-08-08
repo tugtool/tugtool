@@ -50,12 +50,13 @@ import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
 import { formatPathChipText } from "../chrome/path-chip-format";
 import {
-  AiChip,
+  SessionRouteIndicatorBadge,
   CC_VERSION_DOMAIN,
   CC_VERSION_KEY,
   CLAUDE_CODE_CHANGELOG_URL,
   parseLastKnownVersion,
-} from "./ai-chip";
+} from "../chrome/session-route-indicator-badge";
+import { AiChip } from "./ai-chip";
 import { useAiConfigSheet } from "./ai-config-sheet";
 import { useModel } from "@/lib/use-model";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
@@ -282,7 +283,7 @@ const SESSION_CYCLE_GROUP = "session-prompt-cycle";
 // left→right, then up to the find bar (while it is open), the status cells and
 // the PULSE strip, then into the editor and its compose-phase attachment tiles,
 // and **seeds at the route** (order 0). Forward Tab: route → Claude Code →
-// Session → Project → Mode → Model → Effort → submit → find query → find
+// Session → Project → Cwd/Changes → AI settings → submit → find query → find
 // options → find previous → find next → STATE → TIME → TOKENS → CONTEXT →
 // WORK → PULSE → editor → attachment-1 … attachment-N → wrap; Shift+Tab
 // reverses.
@@ -298,13 +299,7 @@ const SESSION_CYCLE_GROUP = "session-prompt-cycle";
 // seed lands on the next live stop; a chip a route doesn't show simply
 // unmounts (Table T01), so it is not in the walk at all.
 const SESSION_CYCLE_ORDER_ROUTE = 0;
-// The one AI chip stands where the Claude Code chip did. Mode / Model / Effort
-// (slots 5 and 6, plus 4's Mode reading) merged into it, so those orders now go
-// unclaimed on the code route. Left as gaps rather than renumbered, for the
-// reason stated below for slot 2: the grid describes the SHAPE of the toolbar
-// row and the engine skips unmounted stops, so closing the gaps would churn
-// every constant beneath them to no effect.
-const SESSION_CYCLE_ORDER_AI = 1;
+const SESSION_CYCLE_ORDER_CLAUDE_CODE = 1;
 // 2 was the Session chip's. The Z4B diet unmounted that chip from the code
 // route, its only mount, so nothing claims the order now — but the constant and
 // its place in `cycleSpatialOrder` stay, because that grid describes the SHAPE
@@ -317,6 +312,13 @@ const SESSION_CYCLE_ORDER_PROJECT = 3;
 // so the Tab walk never sees two of them.
 const SESSION_CYCLE_ORDER_CWD = 4;
 const SESSION_CYCLE_ORDER_CHANGES = 4;
+// The one AI settings chip stands where the Model chip did. Mode (slot 4's
+// code-route reading) and Effort (slot 6) merged into it, so those orders now
+// go unclaimed on the code route. Left as gaps rather than renumbered, for the
+// reason stated above for slot 2: the grid describes the SHAPE of the toolbar
+// row and the engine skips unmounted stops, so closing the gaps would churn
+// every constant beneath them to no effect.
+const SESSION_CYCLE_ORDER_AI = 5;
 const SESSION_CYCLE_ORDER_SUBMIT = 7;
 // The find bar's four controls ([D122]) — query field, option group, Find
 // previous, Find next — occupy 8…11 while the bar is open, and nothing at all
@@ -2787,7 +2789,7 @@ export function SessionCardBody({
 
   // Spatial arrow order for the cycle ([P22] / [P23]). Tab walks the cycle stops
   // linearly; arrows give them a 2D feel: horizontal rings — the bottom toolbar
-  // (route → mode → model → effort → submit), the Z2 status cells, and (while
+  // (route → Claude Code → AI settings → submit), the Z2 status cells, and (while
   // composing with attachments) the Z4C tiles — with a vertical seam cycle
   // between the rows. The editor's text stop takes a row of its own between
   // PULSE and the attachments, which is where it sits on screen: a focused
@@ -2807,13 +2809,14 @@ export function SessionCardBody({
     return rowGridOrder([
       [
         k(SESSION_CYCLE_ORDER_ROUTE),
-        k(SESSION_CYCLE_ORDER_AI),
+        k(SESSION_CYCLE_ORDER_CLAUDE_CODE),
         k(SESSION_CYCLE_ORDER_SESSION),
         k(SESSION_CYCLE_ORDER_PROJECT),
-        // Slot 4 stays in the row: it is the shell route's Cwd chip and commit
-        // mode's Changes chip, which are still real stops. The three merged
-        // code-route chips' slots (5, 6, and 4's Mode reading) leave with them.
+        // Slot 4 is the shell route's Cwd chip, commit mode's Changes chip,
+        // and nothing on the code route (its Mode reading merged into the AI
+        // settings chip along with slots 5 and 6's Model and Effort).
         k(SESSION_CYCLE_ORDER_CWD),
+        k(SESSION_CYCLE_ORDER_AI),
         k(SESSION_CYCLE_ORDER_SUBMIT),
       ],
       // The find bar's row, present exactly while the bar is (rowGridOrder
@@ -4681,9 +4684,9 @@ export function SessionCardBody({
                     </TugActionTooltip>
                   </>
                 ) : (
-                // Static Code chip set ([P01]/[P10]): one AI chip carrying
-                // model · effort · mode, plus the Claude Code identity it
-                // absorbed. The find cluster is not here — it lives in the find
+                // Static Code chip set ([P01]/[P10]): the Claude Code identity
+                // chip, then one AI settings chip carrying model · effort ·
+                // mode. The find cluster is not here — it lives in the find
                 // bar, which owns the search for exactly as long as it is open.
                 //
                 // The Session and Project chips are deliberately absent on THIS
@@ -4695,13 +4698,18 @@ export function SessionCardBody({
                 // space-challenged, and Project means something different in a
                 // commit (where it lands) than as an identity label.
                 <>
+                  <SessionRouteIndicatorBadge
+                    codeSessionStore={codeSessionStore}
+                    sessionMetadataStore={sessionMetadataStore}
+                    focusGroup={SESSION_CYCLE_GROUP}
+                    focusOrder={SESSION_CYCLE_ORDER_CLAUDE_CODE}
+                  />
                   {/* Disabled while a turn is in flight so a model/effort/mode
                       change never races the running turn — the chip mirrors the
                       submit button, live exactly when `canSubmit`. */}
                   <AiChip
                     cardId={cardId}
                     sessionMetadataStore={sessionMetadataStore}
-                    codeSessionStore={codeSessionStore}
                     onOpenSheet={aiConfigSheet.openAiConfigSheet}
                     disabled={!codeSnap.canSubmit}
                     focusGroup={SESSION_CYCLE_GROUP}

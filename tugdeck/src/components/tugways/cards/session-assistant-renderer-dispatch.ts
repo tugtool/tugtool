@@ -36,7 +36,7 @@
  * Three drift signals are detected and surfaced as a `caution` —
  * inline at the offending event (the tool-block chrome paints a
  * `SessionCautionBadge` from the threaded `caution` prop) and, in
- * aggregate, on the card chrome (`AiChip` counts
+ * aggregate, on the card chrome (`SessionRouteIndicatorBadge` counts
  * `summarizeDrift`'s events):
  *
  *  - `unknown_tool` — a `tool_call` whose name is not in the registry
@@ -380,7 +380,7 @@ export function registeredTools(): ReadonlyArray<string> {
 /**
  * The Claude Code stream-json version the Dev renderers were last
  * validated against — the most recent `just capture-capabilities`
- * baseline. `AiChip` displays it as the "validated against"
+ * baseline. `SessionRouteIndicatorBadge` displays it as the "validated against"
  * reference, and `versionDriftCaution` compares its `major.minor`
  * line against the running session's.
  *

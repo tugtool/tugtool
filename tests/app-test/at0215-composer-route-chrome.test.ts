@@ -55,13 +55,13 @@ const FIND_CLUSTER = `${CARD} [data-slot="find-cluster"]`;
 const SIDE_Q_ASK = ".side-question-question";
 const SIDE_Q_ANSWER = ".side-question-answer";
 
-// The static Code chip set — now a set of one. The Z4B diet took Session and
-// Project off this route (both names already read in the pane title bar, and
-// they were the cluster's two most expensive variable faces on the one route
-// whose width is tight); the AI merge then took the Claude Code, Mode, Model,
-// and Effort chips down to a single composite. Their absence is pinned in
-// at0196.
-const STATIC_CHIPS = ["ai-chip"] as const;
+// The static Code chip set — the Claude Code identity chip and the composite
+// AI settings chip. The Z4B diet took Session and Project off this route (both
+// names already read in the pane title bar, and they were the cluster's two
+// most expensive variable faces on the one route whose width is tight); the AI
+// merge then took the Mode, Model, and Effort chips down to a single
+// composite. Their absence is pinned in at0196.
+const STATIC_CHIPS = ["session-route-indicator-badge", "ai-chip"] as const;
 
 let dir = "";
 

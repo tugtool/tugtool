@@ -16,12 +16,12 @@
  *   1. **rest:** clicking the editor puts the caret there (base mode); the card
  *      reads `data-cycling="false"` and the submit holds no key view.
  *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
- *      live stops (route → AI → STATE → TIME
+ *      live stops (route → Claude Code → AI → STATE → TIME
  *      → TOKENS → CONTEXT → WORK → PULSE → editor → wrap) never lands on the
  *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
  *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
  *      first stop in the revised order).
- *   4. **Tab tours the stops:** route → AI →
+ *   4. **Tab tours the stops:** route → Claude Code → AI →
  *      submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap
  *      (trapped). The Session and Project chips are not on this route (the Z4B
  *      diet), and there is no BTW cell (the Z2 diet). Every Z4B chip and Z2 status cell
@@ -80,9 +80,10 @@ const ROUTE = `${CARD} ${ROUTE_CHOICE}`;
 // and the Project button. Each is a leaf stop carrying `data-key-view-kbd`
 // when active. All three are live + enabled in the headless harness
 // (`bindSession` defaults a `projectDir`, and the Code route enables them).
-// The Code route's one Z4B chip. It replaced four — Claude Code, Mode, Model,
-// and Effort — so the toolbar walk that used to pass through all four now
-// steps route → AI → submit.
+// The Code route's two Z4B chips: the Claude Code identity chip, then the AI
+// settings chip that replaced three — Mode, Model, and Effort — so the toolbar
+// walk steps route → Claude Code → AI → submit.
+const CLAUDE_CHIP = `${CARD} [data-slot="session-route-indicator-badge"]`;
 const AI_CHIP = `${CARD} [data-slot="ai-chip"]`;
 // The PULSE label — the last leaf stop before the editor, its own one-node
 // grid row beneath the status cells. Live in the harness (the pulse store
@@ -193,7 +194,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
+    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → PULSE → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card" });
       try {
@@ -231,15 +232,17 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
-        // (route → AI → STATE → … → WORK → PULSE → editor → wrap) skips it:
-        // Tab steps from AI straight to STATE, never the submit.
+        // (route → Claude Code → AI → STATE → … → WORK → PULSE → editor → wrap)
+        // skips it: Tab steps from AI straight to STATE, never the submit.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // route → AI directly: the Session and Project chips left the code route
-        // with the Z4B diet (their names read in the pane title bar instead),
-        // and Claude Code / Mode / Model / Effort merged into this one chip.
+        // route → Claude Code: the Session and Project chips left the code route
+        // with the Z4B diet (their names read in the pane title bar instead).
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
+        await app.nativeKey("Tab");
+        // Claude Code → AI: Mode / Model / Effort merged into this one chip.
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         // AI → STATE (the disabled submit is skipped). Each Z2 cell is
@@ -290,15 +293,17 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // (4) Tab tours the stops left→right, up to the editor: route → AI →
-        // submit → STATE … WORK → PULSE → editor. The editor is the last stop — a text
-        // stop that carries the editor's own focus contract, so landing on it
-        // grants the caret. With a draft in the field the tour ends there (Tab
-        // is the editor's again — it indents); the empty-editor wrap back to
-        // the route was pinned in (2).
+        // (4) Tab tours the stops left→right, up to the editor: route → Claude
+        // Code → AI → submit → STATE … WORK → PULSE → editor. The editor is the
+        // last stop — a text stop that carries the editor's own focus contract,
+        // so landing on it grants the caret. With a draft in the field the tour
+        // ends there (Tab is the editor's again — it indents); the empty-editor
+        // wrap back to the route was pinned in (2).
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(ROUTE_HAS_KEY_VIEW)).toBe(false);
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(SUBMIT_HAS_KEY_VIEW, { timeoutMs: 6000 });
         // submit → the five Z2 cells, each its own leaf stop ([P10] revised):
@@ -339,10 +344,10 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        // route→AI→submit→STATE→TIME (4 Tabs). Two fewer than before the Z4B
-        // diet (which took Session and Project off this route), and three fewer
-        // again since Claude Code / Mode / Model / Effort became one chip.
-        for (let i = 0; i < 4; i++) await app.nativeKey("Tab");
+        // route→Claude Code→AI→submit→STATE→TIME (5 Tabs). Two fewer than
+        // before the Z4B diet (which took Session and Project off this route),
+        // and two fewer again since Mode / Model / Effort became one chip.
+        for (let i = 0; i < 5; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
         // Return opens the TIME cell's popover (the cell `<button>` activates).
         await app.nativeKey("Return");
@@ -435,7 +440,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
-        // route→AI (1 Tab).
+        // route→Claude Code→AI (2 Tabs).
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("ArrowRight");
@@ -464,7 +471,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
         // Tab to the AI chip (a leaf), then Left/Right ring the toolbar.
-        // route→AI (1 Tab).
+        // route→Claude Code→AI (2 Tabs).
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("ArrowRight");
@@ -527,7 +536,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
 
         // Tab to the AI chip and open its sheet by keyboard (so the engine owns
         // close-focus and the cycle is preserved underneath).
-        // route→AI (1 Tab).
+        // route→Claude Code→AI (2 Tabs).
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Return");
@@ -595,9 +606,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
 
-        // Tab off the route popup onto the AI chip — another toolbar
-        // leaf — then ArrowDown seams from the toolbar straight to the status
-        // row's first cell (STATE), independent of which stops are live.
+        // Tab off the route popup onto the Claude Code chip, then the AI chip —
+        // toolbar leaves — then ArrowDown seams from the toolbar straight to the
+        // status row's first cell (STATE), independent of which stops are live.
+        await app.nativeKey("Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(AI_CHIP), { timeoutMs: 6000 });
         await app.nativeKey("ArrowDown");
