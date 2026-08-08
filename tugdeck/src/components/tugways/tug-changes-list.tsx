@@ -1135,7 +1135,8 @@ export function TugChangesList({
         // sits where the decision is made — after what it acts on.
         const claimAllButton =
           onClaimAll !== undefined && claimAllPaths.length >= 1 ? (
-            <TugTooltip
+            <TugActionTooltip
+              action={TUG_ACTIONS.CLAIM_ALL_CHANGES}
               content={claimPending ? "Claiming…" : "Claim all files in this session"}
             >
               <TugPushButton
@@ -1155,11 +1156,12 @@ export function TugChangesList({
               >
                 Claim all
               </TugPushButton>
-            </TugTooltip>
+            </TugActionTooltip>
           ) : null;
         const disclaimAllButton =
           onDisclaimAll !== undefined && disclaimAllPaths.length >= 1 ? (
-            <TugTooltip
+            <TugActionTooltip
+              action={TUG_ACTIONS.DISCLAIM_ALL_CHANGES}
               content={
                 disclaimPending
                   ? "Disclaiming…"
@@ -1183,7 +1185,7 @@ export function TugChangesList({
               >
                 Disclaim all
               </TugPushButton>
-            </TugTooltip>
+            </TugActionTooltip>
           ) : null;
         return (
           <React.Fragment key={entry.id}>
