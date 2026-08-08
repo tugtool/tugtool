@@ -47,7 +47,6 @@ import {
   ArrowUp,
   GitCommitHorizontal,
   MessageSquareText,
-  PencilSparkles,
   Plus,
   Square,
   X,
@@ -106,6 +105,8 @@ import {
 import { TugAttachmentPreview } from "./cards/tug-attachment-preview";
 import { TugChoiceGroup } from "./tug-choice-group";
 import { TugProgressIndicator } from "./tug-progress-indicator";
+// Tug-authored, not lucide's: the sparkles have to be addressable to twinkle.
+import { PencilSparkles } from "./tug-icons";
 import { TugPushButton } from "./tug-push-button";
 import { TugTooltip } from "./tug-tooltip";
 import { TugActionTooltip } from "./tug-action-tooltip";
@@ -668,7 +669,6 @@ export function applyAppendInsertion(
  * @selector [data-pending-approval]                — presence when snap.pendingApproval !== null
  * @selector [data-pending-question]                — presence when snap.pendingQuestion !== null
  * @selector [data-empty="true" | "false"]          — written from a substrate update listener
- * @selector [data-arbitrating="true" | "false"]    — written while a submit waits on a shell verdict
  */
 export interface TugPromptEntryProps {
   /**
@@ -1987,10 +1987,17 @@ export const TugPromptEntry = React.forwardRef<
     const paint = (busy: boolean): void => {
       const root = rootRef.current;
       if (root === null) return;
-      root.setAttribute("data-arbitrating", String(busy));
-      root
-        .querySelector<HTMLElement>(".tug-prompt-entry-submit-button")
-        ?.setAttribute("aria-busy", String(busy));
+      const button = root.querySelector<HTMLElement>(
+        ".tug-prompt-entry-submit-button",
+      );
+      if (button === null) return;
+      // The button's own activity vocabulary (`TugButtonActivity`) — written
+      // as an attribute rather than passed as the `activity` prop, because
+      // the prop would mean a render of the whole composer for a transient
+      // that is usually gone in two frames.
+      if (busy) button.setAttribute("data-tug-activity", "busy");
+      else button.removeAttribute("data-tug-activity");
+      button.setAttribute("aria-busy", String(busy));
     };
     if (!on) {
       paint(false);
@@ -3457,25 +3464,30 @@ export const TugPromptEntry = React.forwardRef<
                 submitView.icon === "stop" ? (
                   <Square size={14} strokeWidth={3} />
                 ) : (
-                  // Both glyphs are mounted and CSS picks between them off the
-                  // entry root's `data-arbitrating` ([L06] — a parked submit
-                  // must not re-render the composer). The wave is the same
-                  // tell every other "the system is deciding" moment wears,
-                  // so the arbitration reads as one of that family rather
-                  // than as a new vocabulary. Hidden means `display: none`,
-                  // which is also what keeps its loop from running.
-                  <>
-                    <span className="tug-prompt-entry-submit-glyph-rest">
-                      <ArrowUp size={16} strokeWidth={2.5} />
-                    </span>
-                    <TugProgressIndicator
-                      className="tug-prompt-entry-submit-glyph-wave"
-                      variant="wave"
-                      state="running"
-                      role="inherit"
-                      size={14}
-                    />
-                  </>
+                  <ArrowUp size={16} strokeWidth={2.5} />
+                )
+              }
+              // The arbitration tell, expressed as a button activity: while a
+              // submit is parked on the shell-vs-Claude decision, the Z5 arrow
+              // trades places with the wave — the same glyph every other "the
+              // system is deciding" moment wears, so the pause reads as one of
+              // that family rather than as a new vocabulary. `busy` because
+              // the motion is the swapped-in glyph's own, not the arrow's.
+              //
+              // The button mounts both halves and the swap comes out of the
+              // cascade, which is what lets `setArbitrating` write the
+              // attribute by hand: a parked submit must not re-render the
+              // composer ([L06]). Offered only in `submit` mode — a running
+              // turn shows the Stop square, and a stop gesture must never be
+              // dressed up as progress.
+              activityIcon={
+                submitView.icon === "stop" ? undefined : (
+                  <TugProgressIndicator
+                    variant="wave"
+                    state="running"
+                    role="inherit"
+                    size={14}
+                  />
                 )
               }
             />
@@ -3529,6 +3541,12 @@ export const TugPromptEntry = React.forwardRef<
           // input (CSS) so a click can't re-request.
           emphasis={commitDrafting ? "filled" : "outlined"}
           role="accent"
+          // The sparkles twinkle for as long as the scribe is writing. A lit
+          // button says "pressed"; it does not say "still going" — and this
+          // wait is long enough (a model reading a diff) that a still button
+          // is the one thing that would read as stuck. The pencil holds still
+          // underneath: the tool is steady, the magic is what flickers.
+          activity={commitDrafting ? "twinkle" : undefined}
           data-drafting={commitDrafting ? "" : undefined}
           aria-pressed={commitDrafting || undefined}
           onClick={handleCommitAutoMessage}
@@ -3584,9 +3602,6 @@ export const TugPromptEntry = React.forwardRef<
           data-pending-question={snap.pendingQuestion ? "" : undefined}
           data-empty="true"
           data-commit-empty="true"
-          // Flipped by direct DOM write while a submit is parked on the
-          // shell/Claude decision ([L06]); CSS swaps the Z5 glyph off it.
-          data-arbitrating="false"
           // Whole-entry stand-down: `inert` blocks mouse, keyboard,
           // and focus for the entire subtree — the route toggle,
           // chips, and submit included — while a restore replays.

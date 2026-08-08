@@ -119,6 +119,47 @@ export type TugButtonLayout = "single" | "label-top" | "content-top";
 export type TugButtonRounded = "none" | "sm" | "md" | "lg" | "full";
 
 /**
+ * TugButton activity — the motion a button wears while the action it fires
+ * is in flight.
+ *
+ * This is the button-level answer to a shape that kept getting hand-rolled
+ * per call site: a control that has already been pressed, whose work has not
+ * come back yet, and which must say so without pretending to be disabled.
+ * `loading` is the neighboring concept and a different claim — it blanks the
+ * content and overlays a spinner, which reads as "this button is out of
+ * service." An activity keeps the glyph and lets it move.
+ *
+ * Two moving parts, usable together or apart:
+ *
+ *  - **The name** picks the motion. `busy` is the null motion — the
+ *    attribute is on and nothing moves in place — for buttons whose tell is
+ *    a swapped-in {@link TugButtonProps.activityIcon} (a progress glyph
+ *    replacing the rest glyph). `twinkle` animates the parts of the glyph
+ *    marked `.tug-icon-spark` (see `tug-icons.tsx`), leaving the rest of the
+ *    drawing still — sparkles that sparkle while the thing they promise is
+ *    being written.
+ *  - **The glyph** decides what can move. Whole-icon motion is the button's
+ *    business and lives in `tug-button.css`; part-of-icon motion belongs to
+ *    the icon, which declares its own animatable parts and answers the
+ *    ancestor's `data-tug-activity` in `tug-icons.css`. A `twinkle` on a
+ *    glyph that marks no sparks is simply still — the button does not
+ *    invent motion for a drawing that never offered any.
+ *
+ * The attribute, not the prop, is the contract ([L06]). A surface that must
+ * not re-render to show a transient — the prompt entry's shell arbitration,
+ * which parks a submit for a few hundred milliseconds and would otherwise
+ * repaint the composer mid-keystroke — writes `data-tug-activity` onto the
+ * button element directly and gets the same appearance. Passing `activity`
+ * is the ordinary path; writing the attribute is the escape hatch for state
+ * that has no business in React.
+ *
+ * Adding a motion is: a name here, a rule keyed on it, and the keyframes
+ * beside the rule — in `tug-button.css` if it moves the whole glyph, in the
+ * icon's own file if it moves a part.
+ */
+export type TugButtonActivity = "busy" | "twinkle";
+
+/**
  * TugButton confirmation configuration.
  *
  * When set, clicking the button enters the `confirmed` state ([token-naming.md])
@@ -251,6 +292,23 @@ export interface TugButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButt
 
   /** Lucide icon node for "icon" and "icon-text" subtypes */
   icon?: React.ReactNode;
+
+  /**
+   * Motion the button wears while the action it fires is in flight. See
+   * {@link TugButtonActivity} for the vocabulary and for the contract a
+   * surface uses to drive the attribute by hand.
+   * @selector [data-tug-activity="busy" | "twinkle"]
+   */
+  activity?: TugButtonActivity;
+
+  /**
+   * Glyph shown in place of {@link icon} while an activity is on. Both
+   * glyphs mount and CSS picks between them off `data-tug-activity`, so the
+   * swap is a cascade decision — a surface that drives the attribute by
+   * hand gets the swap without re-rendering. Omit for an activity that
+   * animates the rest glyph in place rather than replacing it.
+   */
+  activityIcon?: React.ReactNode;
 
   /**
    * Trailing icon node rendered after the label text in "text" and "icon-text" subtypes.
@@ -481,6 +539,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
   loading = false,
   children,
   icon,
+  activity,
+  activityIcon,
   trailingIcon,
   confirmation,
   isConfirming,
@@ -1035,19 +1095,37 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       : renderSubtypeContent(iconNode, contentNode);
   }
 
+  // The icon slot as the activity sees it. With an `activityIcon` both
+  // glyphs mount in the slot and CSS picks between them off the button's
+  // `data-tug-activity` — the same shape the confirmation swap uses below,
+  // and the reason a hand-written attribute produces the swap without a
+  // render. Hidden is `display: none`, which is also what keeps a progress
+  // glyph's keyframe loop from running for the whole time it is not showing.
+  const iconSlot =
+    activityIcon === undefined ? (
+      icon
+    ) : (
+      <>
+        <span className="tug-button-rest-icon">{icon}</span>
+        <span className="tug-button-activity-icon" aria-hidden="true">
+          {activityIcon}
+        </span>
+      </>
+    );
+
   // Content rendering per subtype
   function renderContent() {
     if (loading) {
       return (
         <>
           <span className="tug-button-loading-content" aria-hidden="true">
-            {renderInner(icon, children)}
+            {renderInner(iconSlot, children)}
           </span>
           <Spinner />
         </>
       );
     }
-    return renderInner(icon, children);
+    return renderInner(iconSlot, children);
   }
 
   function wrapLabel(labelNode: React.ReactNode): React.ReactNode {
@@ -1160,7 +1238,8 @@ export const TugButton = React.forwardRef<HTMLButtonElement, TugButtonProps>(fun
       disabled={effectiveDisabled}
       role={htmlRole}
       aria-label={ariaLabel}
-      aria-busy={loading ? "true" : undefined}
+      data-tug-activity={activity}
+      aria-busy={loading || activity !== undefined ? "true" : undefined}
       aria-disabled={ariaDisabled}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
