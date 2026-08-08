@@ -13,7 +13,7 @@
 | Owner | Ken Kocienda |
 | Status | draft |
 | Target branch | main |
-| Last updated | 2026-08-08 |
+| Last updated | 2026-08-08 (vet fixups folded in) |
 
 ---
 
@@ -30,7 +30,7 @@ Why now: the sparkline is the one piece of live ink on the Lens rail, and the Le
 #### Strategy {#strategy}
 
 - **Fix the clock first.** The tape positions ink by `Date.now()` and positions the canvas by `document.timeline`. Unify both onto `performance.now()`, compute `t0` from the animation's own origin, and commit it at exactly one guarded point — so the two axes cannot disagree by construction. The activity store keeps wall clock and the tape converts at one named seam.
-- **Never move the transform ahead of the pixels.** Every place `t0` changes today resets the transform synchronously and repaints asynchronously through the render worker. Gate the transform change on a paint acknowledgement, with a free fast path when the visible picture is flat (translation-invariant).
+- **Never move the transform ahead of the pixels.** Every place `t0` changes today resets the transform synchronously and repaints asynchronously through the render worker. Gate every transform change on a paint acknowledgement — one path, no exceptions, with a bounded watchdog so a lost ack cannot freeze the tape.
 - **Split the two dormancies.** "Every change has scrolled off" (flat, safe to rebase freely) and "the element is off screen" (arbitrary picture, must not rebase) are different states that today share one code path. Separate them; the off-screen one becomes a `pause()`, not a teardown.
 - **Stop the visibility gate from flapping.** Observe against the nearest scroll container with a generous `rootMargin` and a hysteresis delay before pausing. Dormancy is an optimisation; entering it eagerly is what creates the churn.
 - **Extract the policy so it can be tested without a DOM.** The clock, the tape, the dormancy protocol, and the rebase ordering move to a pure module driven by an injected clock and an output port. The component keeps only the DOM: WAAPI, the worker, the observer, computed style.
@@ -41,7 +41,8 @@ Why now: the sparkline is the one piece of live ink on the Lens rail, and the Le
 - The tape's own time axis carries no wall clock: `Date.now(` appears in `tug-sparkline.tsx` and `sparkline-tape.ts` **exactly once**, in the single documented `wallOffset` conversion at the store-read seam ([P09](#p09-wall-clock-seam)) — asserted by a drift-prevention unit test that reads both files off disk.
 - For any sequence of clock values, `SparklineTape`'s **committed** `t0` satisfies `t0 === epochOrigin + n * EPOCH_MS` exactly, and the expected transform equals `-(now - t0) / 1000 * pxPerSec` — asserted by unit test in `tugdeck/src/lib/__tests__/sparkline-tape.test.ts`.
 - No paint ever carries a `t0` other than the committed one, except the single rebase paint that proposes the next: in every recorded surface trace, the multiset of `t0` values across all paints between two `setEpochStart` calls has exactly one member ([P10](#p10-committed-t0)).
-- In the recorded surface trace of the policy module, **every** `setEpochStart` call is immediately preceded by a `paintAcked` for the paint that carries the same `t0`, *or* by a paint whose visible window was flat — no unordered pair exists in any test scenario (unit test).
+- In the recorded surface trace of the policy module, **every** `setEpochStart` call is immediately preceded by an acknowledgement — a `paintAcked` for the paint carrying the same `t0`, or the watchdog's expiry for that same paint. No unordered pair exists in any test scenario (unit test).
+- A rebase whose ack never arrives still converges: `committedT0` and the transform advance on the watchdog, and a `hidden-paused` wake still resumes (unit test).
 - A hidden→visible cycle produces zero animation teardowns: the recorded trace contains `pause` / `resume`, and never `cancelAnimation` / `createAnimation`, outside mount and unmount (unit test).
 - In the real app, a Lens session row scrolled out of and back into its section body three times still reports exactly one animation: `document.querySelector('.sessions-monitor-spark .tug-sparkline-track').getAnimations().length === 1` and `playState === 'running'` (app-test `at0370`).
 - After a devicePixelRatio change, `canvas.width === Math.ceil(svgWidth * devicePixelRatio)` on every mounted tape (app-test `at0370`).
@@ -110,9 +111,11 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 - Timeline is wall-clock-based and does not stall → the self-check is a cheap no-op safety net.
 - Timeline stalls with rendering → the self-check is load-bearing and must also run on `visibilitychange`.
 
-**Plan to resolve:** The design does not branch on the answer. [#step-7](#step-7) implements the self-check unconditionally (compare the animation's implied position against the clock's on every settle-burst append; correct sub-pixel drift in place, escalate a large divergence to an ack-gated rebase) plus a `visibilitychange` resync. A diagnostic assertion in the app-test records the observed divergence after a forced occlusion so the answer gets written down.
+**What is already known:** `document.timeline.currentTime` is the current *frame* time, not a live clock — it is sampled at rendering updates. So under the branch where rendering is suspended, the timeline necessarily holds while `performance.now()` runs on. That makes "the timeline stalls" the branch to design for, whatever the exact WebKit occlusion behaviour turns out to be.
 
-**Resolution:** DEFERRED — absorbed by the self-healing design in [P06](#p06-registration-self-check) rather than answered up front. Revisit only if the app-test's recorded divergence is large enough to be visible between two settle-burst ticks (250 ms).
+**Plan to resolve:** The design does not branch on the answer, but it does refuse to *act* on the divergence while hidden. [#step-7](#step-7) implements the self-check on every settle-burst append **while visible only**, plus a single `visibilitychange` → visible resync ([P06](#p06-registration-self-check)) — which is what keeps a stalled timeline from turning the check into a rebase storm. A diagnostic assertion in the app-test records the observed divergence after a forced occlusion so the number gets written down.
+
+**Resolution:** DEFERRED — absorbed by the self-healing design in [P06](#p06-registration-self-check), which is correct under both answers because it acts only when the timeline is known to be advancing. Revisit only if the app-test's recorded divergence is large enough to be visible between two settle-burst ticks (250 ms).
 
 #### [Q02] Should the epoch length shrink now that rollover is cheap? (OPEN) {#q02-epoch-length}
 
@@ -131,7 +134,9 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
 | Extraction refactor changes tape behaviour silently | med | med | [#step-1](#step-1) is behaviour-preserving and lands with unit tests written against *current* behaviour before any semantic change | Any visual difference on the Session card after Step 1 |
-| Paint ack is not frame-exact | low | med | Fast path for flat pictures; a `requestAnimationFrame` boundary added only if [#step-10](#step-10) measures a seam | A visible one-frame seam at rollover |
+| Paint ack is not frame-exact | low | med | Worst case is a bounded sub-frame stall, never a blank; a `requestAnimationFrame` boundary added only if [#step-10](#step-10) measures a seam | A visible one-frame seam at rollover |
+| An ack is lost and the tape freezes | high | med | Every rebase arms a watchdog that force-commits ([P02](#p02-ack-gated-rebase)); a canvas re-claim cancels and re-issues the pending rebase ([Risk R05](#r05-lost-ack)) | A tape stuck at its epoch end, or paused after a scroll-in |
+| A stalled document timeline turns the self-check into a rebase storm | med | med | `checkRegistration` runs only while `document.visibilityState === "visible"`; the `visibilitychange` resync is the single recovery ([P06](#p06-registration-self-check)) | Repeated `rebase` verdicts in the dev log while the window is occluded |
 | Worker ack reintroduces main-thread cost | low | low | Ack rides only on paints flagged `ackTransform`, which happen at rebases (rare), never on the 4 Hz sample path | Any regression in `at0293-typing-latency` |
 | Hysteresis keeps off-screen tapes live too long | low | low | 500 ms delay only; the tape still goes fully inert via flat-dormancy on its own timer | CPU regression with many Lens rows |
 | DPR-driven canvas replacement thrashes | low | low | Keyed on the *quantised* dpr value, changed only by a `matchMedia` resolution transition | Repeated remounts observed in the dev log |
@@ -150,14 +155,23 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 
 - **Risk:** The worker's ack proves the draw *ran*, not that the compositor *presented* it. The transform could still move one frame early.
 - **Mitigation:**
-  - The flat-window fast path means the common rebase (idle rollover, flat-dormancy wake) never needs the ack at all.
   - Apply the transform directly from the ack handler. Only if [#step-10](#step-10) measures a visible seam should a `requestAnimationFrame` boundary be added, and then with an explicit [L13] exemption note — rAF parked in a motion path is what that law polices.
   - Worst case is a one-frame seam every 120 s instead of the current unbounded blank.
 - **Residual risk:** A single-frame artefact under extreme worker backpressure.
 
+**Risk R05: A rebase ack never arrives** {#r05-lost-ack}
+
+- **Risk:** `committedT0` and the transform advance only in `onPainted`. Nothing bounds the wait, and there are three real ways the ack is lost: [P07](#p07-dpr-reactivity)'s canvas re-claim releases the worker entry and unregisters the id while a rebase is in flight; the page-lifetime shared worker dies, taking every tape's pending rebase with it; a `dispose` races a `tape` message. A `hidden-paused` wake carries `resumeAfterRebase`, so a lost ack there leaves the animation **paused forever** — not merely unmoved.
+- **Why [P06](#p06-registration-self-check) cannot cover it:** the self-check runs from the settle burst and only while `state === "live"`. A tape stuck mid-rebase is not live, so the self-healing path never reaches it.
+- **Mitigation:**
+  - Every `rebase` arms `REBASE_ACK_TIMEOUT_MS` on the tape's injected timers. On expiry the tape commits exactly as `onPainted` would — the pixels are at worst one paint stale, which is strictly better than a frozen or paused tape.
+  - The canvas-claim effect cancels the pending rebase and re-issues it after `repaint()` ([#step-8](#step-8)), so the common case never reaches the watchdog.
+- **Residual risk:** One watchdog-length window of stale pixels in a failure that today has no bound at all.
+
 **Risk R03: Judder has a contributing cause outside this plan** {#r03-other-causes}
 
 - **Risk:** The diagnosis in [#the-two-defects](#the-two-defects) is derived from code reading, not from an instrumented reproduction. Compositing behaviour inside the Lens rail (a composited layer under `overflow: hidden` inside a scroll container, under `.tug-pulse-trailing`'s `translateY(-3px)`) could contribute independently.
+- **A second churn source the diagnosis under-weights: row reordering.** The Cards section re-sorts session rows by activity (`at0257-lens-session-reorder`), so during streaming the rows most likely to move are the ones whose tapes are live. Every reorder both fires the intersection observer and moves the row in the DOM. Hardening the observer ([P04](#p04-observer-hysteresis)) cures the first only if the second preserves mount identity — a reorder that remounts a row would rebuild its tape from scratch, and no amount of rebase ordering would help. [#step-6](#step-6) verifies this directly rather than assuming it.
 - **Mitigation:**
   - [#step-9](#step-9) adds a `recordActivity` test-surface hook, which makes the symptom reproducible on demand for the first time.
   - The success criteria are stated as invariants of the component's own state machine, so they are falsifiable whether or not the compositor also misbehaves.
@@ -193,17 +207,19 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 
 #### [P02] A `t0` rebase is applied only when the pixels for that `t0` are already on screen (DECIDED) {#p02-ack-gated-rebase}
 
-**Decision:** The scroll transform is never moved in the same tick as a `t0` change. A rebase is applied by one of two paths: **(a) free** — if the tape's visible window is flat (a single held value edge to edge), any translation is a no-op and the rebase applies immediately; **(b) ack-gated** — otherwise the repaint is posted to the render worker with a sequence number, and the transform is applied from the worker's `painted` acknowledgement.
+**Decision:** The scroll transform is never moved in the same tick as a `t0` change. **Every** rebase goes through one path: the repaint is posted to the render worker with a sequence number, and the transform is applied from the worker's `painted` acknowledgement. A `REBASE_ACK_TIMEOUT_MS` watchdog commits anyway if that acknowledgement never arrives ([Risk R05](#r05-lost-ack)). There is no fast path.
 
 **Rationale:**
 - This is the direct cause of the truncated tape. `startEpoch`, `enterDormant`, and `wakeLive` all change `t0` and reset the transform synchronously, while the repaint travels `postMessage` → shared worker → compositor and lands one or more frames later. In that window the viewport shows the canvas at the new transform with the old pixels, displaced by up to `epochPx` (512 px on a 584 px canvas). Because a tape's ink occupies only about 81 px of that canvas and everything else is unpainted, the viewport frequently lands on blank canvas or on the boundary — a tape with an empty left portion and the staircase jammed to one side.
-- The flat fast path is not a heuristic: it is exactly the precondition that `DORMANT_AFTER_MS = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000` was chosen to guarantee. A tape that reached flat-dormancy is provably a horizontal line across the visible window, and a horizontal line is translation-invariant. This is *why* the Session card never shows the defect and the Lens does: the card's rebases are almost always flat ones, and the Lens's off-screen rebases are not.
+- **A flat picture is NOT a licence to skip the ack, and an implementer must not reintroduce one.** The tempting shortcut is "a flat tape is a horizontal line, and translating a horizontal line changes nothing." It is false, and it fails in exactly the way this decision exists to prevent: the picture is flat across the *ink*, not across the *canvas*. `drawSparkline` clears the whole surface and begins its path at `xOf(tape[0].t)`, so everything left of the oldest retained point is empty. At a rollover the stale pixels put the ink at x ≈ 495–584 while the post-move viewport sits at x ≈ [0, 64] — blank, for one round-trip, on every idle rollover. A skipped ack would have shipped the defect down the path the design called free.
+- **And the fast path buys nothing anyway.** The stall an ack costs is only perceptible while something is moving, and while something is moving the tape is not flat. A flat tape that pauses for a round-trip is pixel-identical to a flat tape that does not. One path is both correct and simpler.
 - Gating on the ack keeps the hot 4 Hz sample path one-directional, which is the worker's documented design contract; only rebase paints carry the flag.
 
 **Implications:**
 - `SparklineWorkerRequest`'s `tape` message gains an optional `ack` sequence number, and the worker gains one outbound message type. The main thread must install an `onmessage` handler on the shared worker and route by `id`.
 - The on-main fallback painter (used when `transferControlToOffscreen` is unavailable) draws synchronously. It must **defer** its ack through `queueMicrotask` rather than calling back from inside `paint()`, or `setEpochStart` would run re-entrantly inside the tape's own paint call.
 - A rebase that is superseded before its ack arrives is dropped by sequence number.
+- Every rebase arms `REBASE_ACK_TIMEOUT_MS` on the tape's injected timers, cleared by the ack. On expiry the tape commits exactly as `onPainted` would ([Risk R05](#r05-lost-ack)). This is not defensive padding: without it, a canvas re-claim during a `hidden-paused` wake leaves the animation paused with no path back.
 - **The rollover freezes for one round-trip, and that is the accepted trade.** While a rebase ack is outstanding the animation sits at its `fill: forwards` end position — the *correct* pixels, simply not moving. On the Lens tape that is a stall of one worker round-trip once every 120 s. It cannot be pre-empted by painting ahead: the canvas holds one `t0` at a time, so a pre-painted next-epoch canvas would be wrong for the transform still in force. Trading a bounded sub-frame stall for an unbounded blank is the whole point.
 - **Apply the transform directly from the ack handler.** Do not wrap it in `requestAnimationFrame` by default: [L13] reserves rAF for gesture-driven frame loops, and a one-shot defer parked in a motion path is exactly the shape that law polices. Reach for a frame boundary only if [#step-10](#step-10) measures a visible seam, and if so record the exemption in the code comment.
 
@@ -217,7 +233,8 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 - Pausing is strictly cheaper than tearing down: no animation object churn, no `onfinish` respawn hazard, and the compositor keeps the layer.
 
 **Implications:**
-- `enterDormant` splits into `enterFlatDormancy` and `enterHiddenPause`; the wake paths differ (flat wake may rebase freely, hidden wake must ack-gate).
+- `enterDormant` splits into `enterFlatDormancy` and `enterHiddenPause`. Both wake through the same ack-gated rebase ([P02](#p02-ack-gated-rebase)); what differs is only what they preserved on the way in.
+- `surface.setEpochStart(t)` writes a resolved `startTime`, which clears the animation's hold time — so it **un-pauses on its own**. The `resume()` that follows it in Spec S01 is belt, not braces: keep it so the trace reads as an explicit state change, but do not build anything on the idea that the animation is still paused after the origin moves.
 - `committedT0` must not move while paused, and it does not: it only ever advances inside the rebase protocol, which does not run while paused. The next move happens at resume, as part of the ack-gated rebase ([P10](#p10-committed-t0)).
 
 #### [P04] The visibility gate observes the scroll container, with hysteresis (DECIDED) {#p04-observer-hysteresis}
@@ -250,10 +267,11 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 
 #### [P06] Registration is self-healing, not assumed (DECIDED) {#p06-registration-self-check}
 
-**Decision:** On every settle-burst append (only while live, i.e. only when something is already happening), the component compares the animation's implied scroll position against the position the clock implies. Divergence under `REGISTRATION_OK_PX` (1 CSS px) is ignored; between that and `REGISTRATION_NUDGE_MAX_PX` (2 CSS px) it is corrected in place by writing `anim.startTime`; **anything larger escalates to an ack-gated rebase.** The same check runs on `document`'s `visibilitychange` → visible.
+**Decision:** On every settle-burst append (only while live, i.e. only when something is already happening, **and only while `document.visibilityState === "visible"`**), the component compares the animation's implied scroll position against the position the clock implies. Divergence under `REGISTRATION_OK_PX` (1 CSS px) is ignored; between that and `REGISTRATION_NUDGE_MAX_PX` (2 CSS px) it is corrected in place by writing `anim.startTime`; **anything larger escalates to an ack-gated rebase.** The same check runs once on `document`'s `visibilitychange` → visible, which is the sole recovery path for anything that happened while hidden.
 
 **Rationale:**
 - [Q01](#q01-timeline-stall) is unresolved and does not need to be: a design that *verifies* its own registration is correct under both answers.
+- **But the check must not run while hidden, or Q01's likely answer turns the cure into the disease.** `document.timeline.currentTime` is the current *frame* time, not a live clock: it advances at rendering updates and stops entirely when WebKit suspends rendering for an occluded window, while `performance.now()` keeps going. Left ungated, the self-check would then see a divergence growing without bound and return `rebase` every 250 ms for the whole occlusion — and each of those rebases writes a `startTime` *ahead* of the stalled timeline, putting the animation in its before-phase, where a `fill: "forwards"` effect does not apply and the element snaps to `translateX(0)` over epoch-end pixels. That is this plan's own defect, re-manufactured at 4 Hz. Gating on `visibilityState` costs one property read and removes the whole failure mode; the `visibilitychange` resync then does the single correction that was actually needed.
 - The check costs one property read on a path that already runs at 250 ms and only while the tape is active. An idle tape still costs zero, which is the component's standing contract.
 - **The nudge band must stay tiny, because a nudge is an unrepainted transform move.** It is the one sanctioned exception to [P02](#p02-ack-gated-rebase), and it is only sanctioned because a ≤2 px shift of a staircase is below what the eye resolves on a 22 px tape. A wide nudge band would silently reintroduce the exact defect this plan removes — a transform moving ahead of its pixels — just at smaller amplitudes. Anything the eye could catch goes through the ack.
 - Escalation reuses [P02](#p02-ack-gated-rebase) unchanged, so the large-divergence case is provably safe rather than merely rare.
@@ -261,6 +279,7 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 **Implications:**
 - The policy module exposes `checkRegistration(animCurrentTimeMs)` and returns one of `ok` / `nudge(startTimeMs)` / `rebase`.
 - `REGISTRATION_OK_PX` and `REGISTRATION_NUDGE_MAX_PX` are named constants in `sparkline-tape.ts`, not inline literals, so the band is one legible knob.
+- Visibility is the component's to know, so the gate is applied at the call site: the component simply does not call `checkRegistration` while `document.visibilityState !== "visible"`. The policy module stays DOM-free and the unit tests drive the verdict function directly.
 - The app-test records the observed divergence after a forced background/foreground transition, which writes down the answer to [Q01](#q01-timeline-stall).
 
 #### [P07] The canvas's backing store tracks the live device pixel ratio (DECIDED) {#p07-dpr-reactivity}
@@ -276,7 +295,9 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 **Implications:**
 - One new piece of React state in the component, declared in [#state-zone-mapping](#state-zone-mapping).
 - The canvas `key` becomes `` `${svgWidth}x${height}@${dpr}` ``.
-- `SparklineSurface` gains `repaint()`, and `SparklineTape` gains a public `committedT0()` accessor — the theme-change path (`subscribeThemeChange` → `painter.refreshColors(t0)`) needs the same number and must not read it out of the test-only `debugState()`.
+- **A re-claim can orphan an outstanding rebase, so it must cancel and re-issue one.** Releasing the old painter unregisters its ack route ([Risk R05](#r05-lost-ack)); the claim effect therefore calls `cancelRebase()` before `repaint()`, and the tape re-proposes on its next tick. The watchdog is the backstop for the case this ordering misses, not the primary path.
+- **The surface must resolve the painter lazily.** Today every draw is `painterRef.current?.draw(...)` — a lookup per call, which is exactly what lets the claim effect swap painters under a live tape. The extracted `SparklineSurface` is constructed once in the *tape* effect while the painter is replaced by the *claim* effect, so its methods keep reading `painterRef.current` at call time. Capturing the painter in a closure would compile, pass every unit test, and blank the tape on the first resolution change.
+- `SparklineTape` gains a public `committedT0()` accessor — the theme-change path (`subscribeThemeChange` → `painter.refreshColors(t0)`) needs the same number and must not read it out of the test-only `debugState()`.
 - **[L26] audit, all three inputs.** The `key` change is a *deliberate* remount and L26 permits it — a canvas whose control has been transferred to a worker is genuinely a spent entity, so "a new entity has appeared" is the honest reading. The other two inputs are unchanged: the component type is still `"canvas"` and there is no renderer map in play. Critically the `key` sits on the `<canvas>` **only** — `.tug-sparkline` and `.tug-sparkline-track` keep their identity, so the tape effect, the animation, and the observer all survive a resolution change untouched.
 
 #### [P08] A spent canvas degrades to the on-main painter instead of throwing (DECIDED) {#p08-transfer-guard}
@@ -292,12 +313,13 @@ Standard devise conventions apply: explicit `{#anchor}` headings, kebab-case, pl
 
 #### [P09] The activity store stays on wall clock; the tape converts at one seam (DECIDED) {#p09-wall-clock-seam}
 
-**Decision:** `SessionActivityStore` and the meters in `activity-meter.ts` keep binning on `Date.now()`. `SparklineTape` captures `wallOffset = Date.now() - now()` once in `start()` and passes `now + wallOffset` to `getSeries`. That single expression is the only wall clock in the tape's code, it is named, and it is re-derived on the `visibilitychange` resync.
+**Decision:** `SessionActivityStore` and the meters in `activity-meter.ts` keep binning on `Date.now()`. `SparklineTape` captures `wallOffset = Date.now() - now()` once in `start()` and passes `now + wallOffset` to **every store-facing callback** — `getSeries` *and* `getColorChannel`, which take the same `nowMs` contract. That single expression is the only wall clock in the tape's code, it is named, and it is re-derived on the `visibilitychange` resync.
 
 **Rationale:**
 - `RateMeter.record(units, atMs)` computes an **absolute** bin index `Math.floor(atMs / binMs)`, and `RateMeter.series(nowMs)` calls `advanceTo(Math.floor(nowMs / binMs))`. That `advanceTo` is the *entire* zero-fill-on-advance decay mechanism — it is what makes a stalled stream fall to a flat line. Handing it a `performance.now()` value (≈1e5) against a head bin minted from `Date.now()` (≈1e12) always takes the `bin <= this.headBin` early return, so the window never advances and the tape would freeze at its last level instead of drawing the drain. Drawing that drain is exactly what the settle burst exists for, so this would have quietly defeated the component's central behaviour.
 - Moving the store to a monotonic clock instead is the larger, worse change: the meters are shared by the Pulse card's raw readouts, `dominant`'s hysteresis, and tugcast frame receipt binning, and wall clock is the honest semantics for a store keyed off wire arrival.
 - One named conversion at one seam is auditable. Two clocks used interchangeably is what caused the original defect.
+- **`getColorChannel` is a store read too, and it is the one that will be forgotten.** Its `nowMs` reaches `SessionActivityStore.dominant(session, nowMs)`, which spends it twice: on `compositeSeries(session, nowMs)` (wall-clock bins, same trap as `getSeries`) and on the dominance hysteresis, which stamps `{ channel, since: nowMs }` and compares it against state that `record()` writes from wall clock. Today's only consumer (`pulse-card.tsx`'s fixed-channel row) ignores the argument entirely, so a monotonic value here would break nothing on the day it shipped and everything on the day the compact strip started using `dominant`. The seam is defined over the callback *contract*, not over the current callers.
 
 **Implications:**
 - `SparklineTapeOptions` gains nothing — `wallOffset` is derived internally from the injected `now()` plus `Date.now()`, so a unit test with a fake clock still gets a consistent offset.
@@ -341,11 +363,13 @@ The transform change is synchronous. The repaint goes main thread → `postMessa
 
 The displacement is `P = (now - t0_old) / 1000 * pxPerSec`, up to `epochPx` = `EPOCH_S * pxPerSec` = 512 px on the 584 px Lens canvas. A tape's actual ink spans only about `retainMs * pxPerSec` ≈ 81 px of that canvas (`drawSparkline` begins its path at `xOf(tape[0].t)` and paints nothing to the left of it); the rest is cleared. So the 64 px viewport, displaced by up to 512 px, usually lands on blank canvas and occasionally straddles the ink boundary. **That is the truncated sparkline in the report: a blank left portion with the staircase jammed to one side.**
 
-**Why the Lens and not the card — frequency, and the flatness precondition.**
+**Why the Lens and not the card — frequency.**
 
-`DORMANT_AFTER_MS = (VISIBLE_SECONDS + PRUNE_MARGIN_S) * 1000` is the time for a change to scroll fully off. So a tape that reaches *flat*-dormancy is, by construction, a horizontal line edge to edge — and translating a horizontal line changes nothing. The card's tape is one always-visible instance whose rebases are almost all of that kind, so defect 2 is invisible there.
+Defect 2 is not rarer on the card because the card's rebases are safer; there is no safe rebase. It is rarer because the card has **one** always-visible tape whose only rebase is the 120-second epoch rollover — so the artefact is a sub-second blank once every two minutes on a surface nobody is staring at, which reads as nothing at all.
 
-The Lens's tapes take the *other* dormancy path. They live in a `TugListView` scroll container; `TugSparkline`'s observer uses the default root and `threshold: 0`; and Lens rows change height on every pulse beat, because `useMiddleTruncation` (in `tug-pulse.tsx`) runs a `ResizeObserver` on `.tug-pulse-line` — the sparkline's own parent — and rewrites the middle-truncated activity text, while the `TugPulse` headline appears and disappears with the session overview. Rows near the clip edge therefore cross the intersection boundary repeatedly, and **each crossing rebases a picture that is not flat**: teardown, full tape rebuild re-quantised onto the 250 ms bin grid, epoch restart from `translateX(0)`, all with the paint arriving late. Repeated, that is judder; caught at the wrong frame, that is the blank tape. All N Lens tapes also share one render worker, so paints queue exactly when the rail is busiest.
+(It is worth stating what is *not* true here, because it is the plausible-sounding thing an implementer will reach for: that a flat tape is safe to rebase without an ack because a horizontal line is translation-invariant. The line is flat across the ink, not across the canvas — `drawSparkline` clears the surface and starts its path at `xOf(tape[0].t)`, so a rollover moves the viewport onto cleared pixels whether the tape is flat or not. See [P02](#p02-ack-gated-rebase).)
+
+The Lens's tapes take the *other* dormancy path, and take it constantly. They live in a `TugListView` scroll container; `TugSparkline`'s observer uses the default root and `threshold: 0`; and Lens rows change height on every pulse beat, because `useMiddleTruncation` (in `tug-pulse.tsx`) runs a `ResizeObserver` on `.tug-pulse-line` — the sparkline's own parent — and rewrites the middle-truncated activity text, while the `TugPulse` headline appears and disappears with the session overview. Rows near the clip edge therefore cross the intersection boundary repeatedly, and **each crossing rebases a picture that is not flat**: teardown, full tape rebuild re-quantised onto the 250 ms bin grid, epoch restart from `translateX(0)`, all with the paint arriving late. Repeated, that is judder; caught at the wrong frame, that is the blank tape. All N Lens tapes also share one render worker, so paints queue exactly when the rail is busiest.
 
 #### The three clocks, and where each one stops {#three-clocks}
 
@@ -361,7 +385,7 @@ The first two are unified by [P01](#p01-one-clock) — they already share the do
 
 The third cannot be unified and must be **converted**. `RateMeter` stores `headBin = Math.floor(atMs / binMs)` as an absolute index, and `series(nowMs)` calls `advanceTo(Math.floor(nowMs / binMs))` — which is the *only* thing that zero-fills the bins that have gone by since the last `record`. That zero-fill is how a stalled stream decays to a flat line, and the settle burst exists precisely to draw that decay. Pass `performance.now()` (≈1e5) where a `Date.now()`-derived head bin (≈1e12) is expected and `advanceTo` takes its `bin <= this.headBin` early return every time: the window stops advancing, the trailing sum stops falling, and the tape holds its last level forever instead of draining. The failure is silent and looks like a data bug.
 
-Hence exactly one conversion, named, at one call site: `getSeries(now + wallOffset)` where `wallOffset = Date.now() - now()` is captured in `start()` and re-derived on the `visibilitychange` resync ([P09](#p09-wall-clock-seam)). Both directions of drift from that single line are caught by the test in [Risk R04](#r04-clock-seam-reopened).
+Hence exactly one conversion, named, applied to every callback that reaches the store: `getSeries(now + wallOffset)` and `getColorChannel(now + wallOffset)`, where `wallOffset = Date.now() - now()` is captured in `start()` and re-derived on the `visibilitychange` resync ([P09](#p09-wall-clock-seam)). `getColorChannel` is the easy one to miss — its `nowMs` funds both `dominant`'s series read and `dominant`'s hysteresis stamps, and no current caller reads it, so the mistake would be invisible until the day someone used it. Both directions of drift from that single line are caught by the test in [Risk R04](#r04-clock-seam-reopened).
 
 #### Why the naive "draw the tape twice" rollover trick does not work {#rejected-periodic-canvas}
 
@@ -380,40 +404,37 @@ paint():
 
 rebase(newT0):                                  # newT0 := proposedT0(now)
   if newT0 == committedT0: return
-  points := current tape
-  if visibleWindowIsFlat(points, newT0):
-      surface.paint(points, newT0, ack = none)
-      committedT0 := newT0
-      surface.setEpochStart(newT0)              # free: translation-invariant
-      return
-  seq := ++pendingSeq
-  surface.paint(points, newT0, ack = seq)       # worker draws, then posts { painted, id, seq }
+  seq := ++pendingSeq                           # ONE path. No flat fast path — see [P02].
   pending[seq] := newT0
+  surface.paint(current tape, newT0, ack = seq) # worker draws, then posts { painted, id, seq }
+  arm watchdog(seq, REBASE_ACK_TIMEOUT_MS)      # a lost ack must not freeze the tape [R05]
 
-onPainted(seq):
+onPainted(seq):                                 # from the surface, or from the watchdog
   if seq != pendingSeq: return                  # superseded — drop
+  clear watchdog
   committedT0 := pending[seq]                   # commit and move together
   surface.setEpochStart(committedT0)
   if resumeAfterRebase: surface.resume()        # hidden-pause wake, ordered after the move
+
+cancelRebase():                                 # canvas re-claimed under us [#step-8]
+  clear watchdog; pendingSeq := ++pendingSeq    # orphan the outstanding ack
 ```
 
-`committedT0` and the transform advance in the same statement, which is the invariant the ordering test asserts. While a rebase is pending, `committedT0` is unchanged and ordinary paints keep drawing a correct picture that over-runs the epoch's end by at most one round-trip — covered by the 8 px of slack `svgWidth = width + epochPx + 8` already reserves.
+`committedT0` and the transform advance in the same statement, which is the invariant the ordering test asserts. The watchdog reaches that statement through the same `onPainted` body rather than a parallel one, so there is exactly one place where the pairing can be got wrong. While a rebase is pending, `committedT0` is unchanged and ordinary paints keep drawing a correct picture that over-runs the epoch's end by at most one round-trip — covered by the 8 px of slack `svgWidth = width + epochPx + 8` already reserves.
 
 The rollover **trigger** is `proposedT0(now) !== committedT0`, evaluated on the tape's own tick — not `anim.onfinish`, which never fires for a paused animation ([P10](#p10-committed-t0)).
 
-`visibleWindowIsFlat(points, t0)` is true when every point whose `xOf(t)` falls in `[t0 - VISIBLE_SECONDS, ∞)` carries the same `v` as the newest point, within the plot-pixel deadband already defined as `DEADBAND_PX / amplitude`. This is a pure function over the tape and belongs in `sparkline-tape.ts`.
-
-`surface.setEpochStart(t)` is implemented by the component as `anim.startTime = t` — an exact write with no pending-start slop, no `cancel()`, and no new `Animation` object. Rollover is `setEpochStart(epochOrigin + (n + 1) * EPOCH_MS)`.
+`surface.setEpochStart(t)` is implemented by the component as `anim.startTime = t` — an exact write with no pending-start slop, no `cancel()`, and no new `Animation` object. Rollover is `setEpochStart(epochOrigin + (n + 1) * EPOCH_MS)`. Because the write resolves the start time, it also clears any hold time: a paused animation is running again the moment its origin moves, and the `resume()` after it is explicitness, not mechanism.
 
 **Spec S02: Dormancy states** {#s02-dormancy-states}
 
 | State | Entered by | Timers | Animation | Picture | Wake path |
 |---|---|---|---|---|---|
 | `live` | a data event, or mount with recent activity | settle burst + flat-off | running | arbitrary | — |
-| `flat-dormant` | flat-off timer fired (`now - lastChangeAt >= DORMANT_AFTER_MS`) | none | paused | provably flat | rebase (free path) + resume |
-| `hidden-paused` | observer reported not-intersecting for 500 ms continuous | none (pause timer cleared) | paused | arbitrary | rebase (ack path) + resume |
+| `flat-dormant` | flat-off timer fired (`now - lastChangeAt >= DORMANT_AFTER_MS`) | none | paused | provably flat | rebase (ack-gated) + resume |
+| `hidden-paused` | observer reported not-intersecting for 500 ms continuous | none (pause timer cleared) | paused | arbitrary | rebase (ack-gated) + resume |
 
-`hidden-paused` and `flat-dormant` can be true at once; the *exit* takes the stricter path (ack-gated) unless the picture is flat at exit time, which the fast path tests for anyway. The existing `onActivity` short-circuit — a dormant tape ignores an event whose sampled value would not clear the plot deadband — is preserved for both.
+`hidden-paused` and `flat-dormant` can be true at once; both exit the same way, because [P02](#p02-ack-gated-rebase) has one rebase path and flatness does not earn a shortcut. The existing `onActivity` short-circuit — a dormant tape ignores an event whose sampled value would not clear the plot deadband — is preserved for both.
 
 ---
 
@@ -473,6 +494,9 @@ export class SparklineTape {
   /** Repaint the committed tape unchanged — used after the canvas is
    *  re-claimed at a new device pixel ratio [P07]. */
   repaint(): void;
+  /** The canvas the outstanding rebase was painted on is gone. Orphan its
+   *  ack and disarm the watchdog; the caller re-issues afterwards [R05]. */
+  cancelRebase(): void;
   /** The `t0` every paint uses [P10]. Public because the component's
    *  theme-change path needs the same number for `refreshColors`. */
   committedT0(): number;
@@ -506,8 +530,8 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 |-------|------|-----------|-----|
 | Tape points, `committedT0`, epoch origin, `wallOffset`, deadband reference | local data (imperative, outside React) | `SparklineTape` fields, owned by a `useRef`-held instance | [L06] appearance is painted, not rendered |
 | Dormancy state (`live` / `flat-dormant` / `hidden-paused`) | local data | `SparklineTape` field | [L06] |
-| Settle burst, flat-off timer, pause hysteresis timer | local data | injected `setInterval`/`setTimeout` inside `SparklineTape`, all released by `stop()` from the effect cleanup | [L27] |
-| Pending rebase sequence + proposed `t0` | local data | `SparklineTape` fields; committed only in `onPainted` | [L06], [P10](#p10-committed-t0) |
+| Settle burst, flat-off timer, pause hysteresis timer, rebase-ack watchdog | local data | injected `setInterval`/`setTimeout` inside `SparklineTape`, all released by `stop()` from the effect cleanup | [L27] |
+| Pending rebase sequence + proposed `t0` | local data | `SparklineTape` fields; committed only in `onPainted`, whether reached by the surface's ack or the watchdog | [L06], [P10](#p10-committed-t0), [Risk R05](#r05-lost-ack) |
 | Scroll position (the motion itself) | appearance | WAAPI `translateX` on `.tug-sparkline-track` | [L13] |
 | `data-activity-channel` tint stamp | appearance | DOM attribute + CSS in `tug-sparkline.css` | [L06] |
 | Resolved line/area colours | appearance | `getComputedStyle` → worker `colors` message | [L06], [L16] |
@@ -533,8 +557,8 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 | `SparklineTape` | class | `tugdeck/src/lib/sparkline-tape.ts` | New. Owns the tape, the clock, dormancy, the visibility hysteresis, and Spec S01 |
 | `SparklineSurface` | interface | `tugdeck/src/lib/sparkline-tape.ts` | New. The output port; acks must be asynchronous |
 | `SparklineTapeOptions` | interface | `tugdeck/src/lib/sparkline-tape.ts` | New |
-| `visibleWindowIsFlat` | fn | `tugdeck/src/lib/sparkline-tape.ts` | New, exported for test |
 | `REGISTRATION_OK_PX`, `REGISTRATION_NUDGE_MAX_PX` | consts | `tugdeck/src/lib/sparkline-tape.ts` | New. 1 px / 2 px — the nudge band ([P06](#p06-registration-self-check)) |
+| `REBASE_ACK_TIMEOUT_MS` | const | `tugdeck/src/lib/sparkline-tape.ts` | New. The lost-ack watchdog ([Risk R05](#r05-lost-ack)) |
 | `HIDDEN_PAUSE_DELAY_MS` | const | `tugdeck/src/lib/sparkline-tape.ts` | New. 500 ms out-of-view hysteresis ([P04](#p04-observer-hysteresis)) |
 | `SparklineWorkerResponse` | type | `tugdeck/src/lib/workers/sparkline-render-worker.ts` | New outbound message type |
 | `SparklineWorkerRequest` | type | `tugdeck/src/lib/workers/sparkline-render-worker.ts` | `tape` variant gains `ack?: number` |
@@ -550,7 +574,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Rewrite the `tug-sparkline.tsx` module header: it currently describes `Date.now()`, the cancel/restart epoch, and a single dormancy. Replace with the one-clock rule ([P01](#p01-one-clock)), Spec S01, and Spec S02.
+- [ ] Rewrite the `tug-sparkline.tsx` module header: it currently describes `Date.now()`, the cancel/restart epoch, and a single dormancy. Replace with the one-clock rule ([P01](#p01-one-clock)), Spec S01 — including why there is exactly one rebase path and no flatness shortcut — and Spec S02.
 - [ ] Update the `sparkline-render-worker.ts` header, which states "Nothing is ever posted back — the hot path is one-directional by design". Amend to: the hot path is one-directional; rebase paints alone carry an ack.
 - [ ] Note the monotonic-clock contract on `SparklinePoint.t` in `sparkline-geometry.ts`.
 - [ ] Add `@covers` lines to `at0370-sparkline-registration.test.ts` for `tug-sparkline.tsx`, `sparkline-tape.ts`, `sparkline-render-worker.ts`, `sparkline-geometry.ts`, `cards-session-cell.tsx`, and `session-pulse-strip.tsx`, and verify with `just app-test-covers-check`.
@@ -563,7 +587,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit (`bun test` in `tugdeck`)** | Drive the real `SparklineTape` with an injected clock and injected timers, recording every `SparklineSurface` call | Clock derivation, rebase ordering, dormancy transitions, flatness fast path, self-check verdicts |
+| **Unit (`bun test` in `tugdeck`)** | Drive the real `SparklineTape` with an injected clock and injected timers, recording every `SparklineSurface` call | Clock derivation, rebase ordering, watchdog convergence, dormancy transitions, self-check verdicts |
 | **Golden geometry** | Feed a fixed tape to the real `drawSparkline` against a recording 2D context and compare the emitted path | Guard that the extraction did not move the staircase |
 | **App-test (`just app-test`)** | Drive the real Tug.app: real Lens, real store, real WAAPI | One animation across scroll cycles, no `cancel`, DPR tracking, canvas sizing |
 | **Drift prevention** | `grep`-style assertions inside unit tests | No `Date.now()` in the tape path |
@@ -588,7 +612,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 | #step-1 | Extract the tape policy, behaviour-preserving | pending | — |
 | #step-2 | One clock: `performance.now()` and an explicit epoch origin | pending | — |
 | #step-3 | Worker paint acknowledgements | pending | — |
-| #step-4 | Ack-gated rebase with a flat-window fast path | pending | — |
+| #step-4 | Ack-gated rebase, one path, with a lost-ack watchdog | pending | — |
 | #step-5 | Split flat-dormancy from hidden-pause | pending | — |
 | #step-6 | Harden the visibility gate | pending | — |
 | #step-7 | Self-healing registration | pending | — |
@@ -614,8 +638,9 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] Route every DOM touch through `SparklineSurface`: `redraw()` → `surface.paint(points, t0, null)`; `startEpoch`'s animation work → `surface.setEpochStart` / `pause` / `resume`; the `data-activity-channel` stamp and its `repaintColors()` → `surface.stampChannel`.
 - [ ] Inject `now`, `setInterval`, `clearInterval`, `setTimeout`, `clearTimeout` through `SparklineTapeOptions`. **Keep `now: () => Date.now()` in the component for this step** — the clock change is Step 2, and mixing the two would make a regression unattributable.
 - [ ] In `TugSparkline`, hold the instance in a `useRef`, construct it in the existing tape `useLayoutEffect`, and call `stop()` from the cleanup ([L27]).
-- [ ] Implement the component-side `SparklineSurface` against the existing `Painter` and the existing cancel/restart animation behaviour — no semantic change yet. `repaint()` and `committedT0()` land in this step as trivial pass-throughs so later steps do not have to widen the port.
-- [ ] Move the visibility hysteresis into `SparklineTape.setVisible` from the start (it is `HIDDEN_PAUSE_DELAY_MS = 0` until [#step-6](#step-6) turns it on), so the component only ever reports raw intersection and no test has to reach into the DOM for it.
+- [ ] Implement the component-side `SparklineSurface` against the existing `Painter` and the existing cancel/restart animation behaviour — no semantic change yet. `repaint()`, `cancelRebase()` and `committedT0()` land in this step as trivial pass-throughs so later steps do not have to widen the port.
+- [ ] **Every surface method resolves the painter as `painterRef.current` at call time**, matching today's `painterRef.current?.draw(...)`. The surface is built in the tape effect; the painter is owned by the claim effect and replaced under it ([#step-8](#step-8)). Capturing it would type-check and pass the unit suite.
+- [ ] Move the visibility hysteresis into `SparklineTape.setVisible` from the start (it is `HIDDEN_PAUSE_DELAY_MS = 0` until [#step-6](#step-6) turns it on), so the component only ever reports raw intersection and no test has to reach into the DOM for it. **At 0 the pause must stay synchronous** — take the timer path only for a positive delay, or this "behaviour-preserving" step quietly turns today's in-callback `enterDormant` into a deferred one.
 - [ ] Delete the dead `tapeSnapshot` local in `makePainter`'s worker branch (assigned, never read).
 
 **Tests:**
@@ -650,7 +675,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 **Tasks:**
 - [ ] Change the component's injected clock to `performance.now()`.
-- [ ] **Install the wall-clock seam before anything else in this step.** In `start()`, capture `wallOffset = Date.now() - options.now()`. Every `getSeries` call becomes `getSeries(now + wallOffset)`. Comment it with the reason from [#three-clocks](#three-clocks) — that `RateMeter.series` advances an absolute wall-clock bin index, and that this is the only thing that decays a stalled stream to baseline. This must be the **only** `Date.now(` left in either file.
+- [ ] **Install the wall-clock seam before anything else in this step.** In `start()`, capture `wallOffset = Date.now() - options.now()`. Every call into a store-facing callback becomes `getSeries(now + wallOffset)` **and `getColorChannel(now + wallOffset)`** — both take the same `nowMs` contract, and `getColorChannel`'s argument reaches `dominant`, which spends it on a wall-clock series read *and* on hysteresis stamps compared against `record()`-side state. No current caller reads that argument, which is exactly why it has to be got right now rather than noticed later ([P09](#p09-wall-clock-seam)). Comment it with the reason from [#three-clocks](#three-clocks) — that `RateMeter.series` advances an absolute wall-clock bin index, and that this is the only thing that decays a stalled stream to baseline. This must be the **only** `Date.now(` left in either file.
 - [ ] Give `SparklineTape.start(epochOriginMs)` the animation's origin and store it. Add `proposedT0(now) = epochOrigin + Math.floor((now - epochOrigin) / EPOCH_MS) * EPOCH_MS` and a `committedT0` field initialised to `proposedT0(start)`. Replace every former `t0 = <assignment>` site with a read of `committedT0`.
 - [ ] Route every paint through a single private `paint()` that uses `committedT0` — mount, settle append, colour repaint, `repaint()`. No other call site may pass a `t0`.
 - [ ] In the component, create the animation **once** per mount: `anim = track.animate([...], { duration: EPOCH_S * 1000, easing: "linear", fill: "forwards" })`, then immediately `anim.startTime = origin` where `origin` is the same `performance.now()` value handed to `start()`. Log via `tugDevLogStore.debug` if `anim.pending` is still true after the write.
@@ -665,6 +690,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] Drift prevention: read `tug-sparkline.tsx` and `sparkline-tape.ts` off disk and assert `Date.now(` occurs **exactly once** across the pair, in `sparkline-tape.ts` ([Risk R04](#r04-clock-seam-reopened)).
 - [ ] Every paint in a full live-tape scenario carries the same `t0` until a `setEpochStart` moves it — the [P10](#p10-committed-t0) invariant, in its simplest form before the ack lands.
 - [ ] A tape driven across an epoch boundary reports `committedT0` advancing by exactly `EPOCH_MS`, with no intermediate value.
+- [ ] Both store-facing callbacks receive the same converted clock: a recording `getSeries`/`getColorChannel` pair sees identical `nowMs` values, offset from the injected clock by exactly `wallOffset`.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -709,32 +735,35 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 ---
 
-#### Step 4: Ack-gated rebase with a flat-window fast path {#step-4}
+#### Step 4: Ack-gated rebase, one path, with a lost-ack watchdog {#step-4}
 
 **Depends on:** #step-3
 
 **Commit:** `tugdeck(sparkline): never move the scroll ahead of the pixels`
 
-**References:** [P02](#p02-ack-gated-rebase) Ack-gated rebase, [P10](#p10-committed-t0) Committed `t0`, Spec S01 (#s01-rebase-protocol), [Risk R02](#r02-ack-not-frame-exact), (#rejected-periodic-canvas)
+**References:** [P02](#p02-ack-gated-rebase) Ack-gated rebase, [P10](#p10-committed-t0) Committed `t0`, Spec S01 (#s01-rebase-protocol), [Risk R02](#r02-ack-not-frame-exact), [Risk R05](#r05-lost-ack), (#rejected-periodic-canvas)
 
 **Artifacts:**
-- `visibleWindowIsFlat` in `sparkline-tape.ts`.
 - `SparklineTape`'s rebase protocol per Spec S01, replacing every direct `setEpochStart` call site.
-- `committedT0` advancing only inside `onPainted` (or inside the flat fast path).
+- `REBASE_ACK_TIMEOUT_MS` and the watchdog that reaches `onPainted` when the surface does not.
+- `committedT0` advancing only inside `onPainted`.
 
 **Tasks:**
-- [ ] Implement `visibleWindowIsFlat(points, t0, visibleMs, deadband)`: true when every point at or after `t0 - visibleMs` carries the same `v` as the newest, within `deadband`. Export it.
 - [ ] Implement Spec S01 in `SparklineTape` as the single `rebase(newT0)` entry point. Maintain `pendingSeq` and a `pending` map; an ack for a superseded sequence is dropped. **`committedT0` and `setEpochStart` move in the same statement** — that pairing is the invariant, so write them adjacent and comment them as one operation.
+- [ ] **No flat fast path.** If a future reader proposes one, the answer is in [P02](#p02-ack-gated-rebase): `drawSparkline` clears the canvas and starts its path at `xOf(tape[0].t)`, so a rollover moves the viewport onto cleared pixels whether or not the tape is flat — and a flat tape stalled for a round-trip is pixel-identical to one that is not, so the shortcut has no upside to trade against. Record that in the code comment above `rebase`, not just here.
+- [ ] Add `REBASE_ACK_TIMEOUT_MS` and arm it on every `rebase`, on the injected timers. On expiry, enter `onPainted` for that sequence — the same body, not a parallel one — so the commit-and-move pairing has exactly one implementation. Add `cancelRebase()` for [#step-8](#step-8)'s re-claim.
 - [ ] Route the epoch rollover through `rebase`, triggered by `proposedT0(now) !== committedT0` on the tape's tick. While the ack is outstanding the animation sits at its `fill: forwards` end position, which is the *correct* picture — it just stops moving for a round-trip. Comment that this stall is deliberate and bounded, and why it cannot be pre-empted ([P02](#p02-ack-gated-rebase) implications).
 - [ ] Apply `setEpochStart` **directly** from the ack handler. Do not add a `requestAnimationFrame` boundary unless [#step-10](#step-10) measures a seam; if it does, add it with an explicit [L13] note explaining why a one-shot defer in a motion path is not the frame loop that law forbids.
 - [ ] Delete the old `startEpoch` entirely.
 
 **Tests:**
-- [ ] **Ordering invariant (the headline test):** across every scenario the suite drives — mount, rollover, activity burst, dormancy, wake — scan the recorded surface trace and assert that every `setEpochStart(t)` is immediately preceded either by a `paint(..., t, ack)` whose ack has been delivered, or by a `paint(..., t, null)` for a flat window. No other ordering may appear.
+- [ ] **Ordering invariant (the headline test):** across every scenario the suite drives — mount, rollover, activity burst, dormancy, wake — scan the recorded surface trace and assert that every `setEpochStart(t)` is immediately preceded by a `paint(..., t, ack)` whose ack has been delivered (by the surface or by the watchdog). No other ordering may appear, and in particular no `setEpochStart` may follow a `paint` carrying `ack: null`.
 - [ ] **Single-`t0` invariant ([P10](#p10-committed-t0)):** between any two `setEpochStart` calls in a trace, the set of distinct `t0` values across all paints has exactly one member — except for the single rebase paint that proposes the next. Drive this specifically with settle-burst appends landing *while a rebase ack is outstanding*, which is the case a derived-`t0` design would fail.
-- [ ] A rollover with a non-flat tape emits `paint(ack)` and no `setEpochStart` until `onPainted` is called.
-- [ ] A rollover with a flat tape emits no ack and applies `setEpochStart` synchronously.
+- [ ] A rollover emits `paint(ack)` and no `setEpochStart` until `onPainted` is called — for a flat tape exactly as for a busy one, since flatness earns no shortcut.
 - [ ] A superseded rebase: two `rebase` calls back to back, then acks delivered out of order — only the newest `t0` is ever applied.
+- [ ] **A surface that never acks still converges:** drive a rollover, advance the injected timers past `REBASE_ACK_TIMEOUT_MS`, and assert `committedT0` advanced and `setEpochStart` fired exactly once. Run the same case for a `hidden-paused` wake and assert `resume` fired too — a tape stuck paused is the failure this constant exists to prevent.
+- [ ] A late ack arriving *after* the watchdog already committed that sequence is a no-op — no second `setEpochStart`.
+- [ ] `cancelRebase()` orphans the outstanding ack: a subsequent `onPainted` for that sequence does nothing, and the watchdog does not fire.
 - [ ] The 4 Hz settle-burst paints never carry an ack.
 - [ ] A tape paused across an epoch boundary still rolls over on resume — proving the trigger is the clock comparison and not `anim.onfinish`.
 
@@ -760,20 +789,22 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 **Tasks:**
 - [ ] Replace `dormant: boolean` with `state: "live" | "flat-dormant" | "hidden-paused"`, and `inView: boolean` alongside it (the two are orthogonal; Spec S02's table is the authority).
-- [ ] `enterFlatDormancy`: stop both timers, `surface.pause()`, `rebase(proposedT0(now))` — which takes the free path by construction, since flat-dormancy's precondition *is* flatness. Assert that in a dev-log line rather than assuming it.
+- [ ] `enterFlatDormancy`: stop both timers and `surface.pause()`. **Do not rebase on the way in.** `rebase` no-ops unless the epoch actually rolled ([P10](#p10-committed-t0)), and if it did roll the rebase is ack-gated like any other — so there is nothing for dormancy entry to do that the wake path does not already do, and doing it here would only add a rebase to the moment the tape stops mattering.
 - [ ] `enterHiddenPause`: stop both timers, `surface.pause()`, and **change nothing else** — no `t0` move, no repaint, no rebuild.
-- [ ] Wake from `hidden-paused`: `rebuildTape(now)`, then `rebase(proposedT0(now))`. **`resume()` is not called inline** — the rebase may be ack-gated, so set a `resumeAfterRebase` flag and have `onPainted` call `surface.resume()` immediately after `setEpochStart` (see Spec S01's `onPainted`). Only then arm the finishers. Resuming before the origin moves would run the scroll from a stale origin, which is the same defect wearing a different hat.
+- [ ] Wake from `hidden-paused`: `rebuildTape(now)`, then `rebase(proposedT0(now))`. **`resume()` is not called inline** — the rebase is ack-gated, so set a `resumeAfterRebase` flag and have `onPainted` call `surface.resume()` immediately after `setEpochStart` (see Spec S01's `onPainted`). Only then arm the finishers. Resuming before the origin moves would run the scroll from a stale origin, which is the same defect wearing a different hat. Note that this is also why [Risk R05](#r05-lost-ack)'s watchdog is load-bearing rather than paranoid: on this path a lost ack leaves the tape paused, not merely misregistered.
+- [ ] Note in the code that `setEpochStart` clears the animation's hold time and therefore un-pauses on its own; the `resume()` after it makes the state change legible in the trace but is not what restarts the scroll.
 - [ ] Implement `pause()`/`resume()` in the component as `anim.pause()` / `anim.play()`. Remove `anim.cancel()` from every path except unmount cleanup.
 - [ ] Preserve the existing below-deadband short-circuit in `onActivity` for both dormant states.
 - [ ] Note in the code that a tape may now sit `hidden-paused` for longer than one epoch; the rollover trigger is the clock comparison, so resume rolls over correctly however long the pause was ([P10](#p10-committed-t0)).
 
 **Tests:**
-- [ ] A hidden→visible cycle on a **non-flat** tape produces `pause`, then on wake a `paint(ack)`, then `setEpochStart`, then `resume` — in that order — and never `cancelAnimation` or `createAnimation`. Assert `resume` comes strictly after `setEpochStart`.
+- [ ] A hidden→visible cycle produces `pause`, then on wake a `paint(ack)`, then `setEpochStart`, then `resume` — in that order — and never `cancelAnimation` or `createAnimation`. Assert `resume` comes strictly after `setEpochStart`.
 - [ ] A hidden→visible cycle spanning more than `EPOCH_MS` resumes with `committedT0` advanced by the right multiple of `EPOCH_MS`, and with exactly one `setEpochStart`.
-- [ ] A hidden→visible cycle on a flat tape takes the free path and still never tears down.
+- [ ] A hidden→visible cycle on a flat tape takes the same ack-gated path and still never tears down.
+- [ ] `enterFlatDormancy` emits no `paint` and no `setEpochStart` — dormancy entry is a stop, not a rebase.
 - [ ] `enterHiddenPause` emits no `paint` and no `setEpochStart`.
 - [ ] A tape that goes hidden while live and is still hidden when its flat-off deadline passes converges to `flat-dormant` without a second `pause`.
-- [ ] Activity arriving while hidden updates `lastChangeAt` and does not wake — matching today's behaviour — and re-entry then finds a non-flat tape and takes the ack path.
+- [ ] Activity arriving while hidden updates `lastChangeAt` and does not wake — matching today's behaviour — and re-entry then rebuilds and rebases through the ack path.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -801,6 +832,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] Construct the observer with `{ root: nearestScrollableAncestor(container), rootMargin: "160px 0px", threshold: 0 }`. Comment that `rootMargin` expands the *root's* rect, which is why the root has to be the scroller for the margin to buy anything — with the default viewport root it would do nothing for a row clipped by an intermediate scroller.
 - [ ] Set `HIDDEN_PAUSE_DELAY_MS = 500`. The hysteresis is already inside `SparklineTape.setVisible` from [#step-1](#step-1): `false` arms a timer, `true` cancels it and resumes immediately. The component still just forwards raw intersection — no debounce in the DOM layer.
 - [ ] Add a `tugDevLogStore.debug` line on each state transition, tagged `sparkline`, so the dev panel (Opt-Cmd-/) can show churn directly. Never `console.warn`.
+- [ ] **Verify that a Lens row reorder preserves mount identity.** The Cards section re-sorts session rows by activity, so during streaming the rows most likely to move are the ones with live tapes — a second churn source alongside the row-height changes ([Risk R03](#r03-other-causes)). Capture `getAnimations()[0]` on a row's track, drive activity until the row reorders, and confirm it is the same `Animation` object afterwards. If it is not, the row is remounting and this step does not cure the Lens; record that finding and stop rather than tuning the observer further.
 
 **Tests:**
 - [ ] `setVisible(false)` then `setVisible(true)` inside the hysteresis window produces **zero** `pause` calls in the trace — driven through the tape's injected timers, which is possible precisely because the hysteresis lives in the policy module.
@@ -830,7 +862,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 **Tasks:**
 - [ ] Add `REGISTRATION_OK_PX = 1` and `REGISTRATION_NUDGE_MAX_PX = 2` as named constants with the rationale from [P06](#p06-registration-self-check) — a nudge is an *unrepainted* transform move, so the band is capped at what the eye cannot resolve on a 22 px tape.
 - [ ] Implement `checkRegistration`: compute the expected animation position `expected = now - committedT0`, compare against the supplied `animCurrentTimeMs`, convert the difference to CSS px via `pxPerSec`. `|Δpx| < REGISTRATION_OK_PX` → `{ kind: "ok" }`; `< REGISTRATION_NUDGE_MAX_PX` → `{ kind: "nudge", startTimeMs }`; **anything at or above that, in either direction** → `{ kind: "rebase" }`. A paused or missing animation is also `rebase`.
-- [ ] Call it from the settle burst's tick — only while `state === "live"`, so an idle tape still runs zero work.
+- [ ] Call it from the settle burst's tick — only while `state === "live"`, so an idle tape still runs zero work, **and only while `document.visibilityState === "visible"`**. `document.timeline.currentTime` is the current frame time and stops advancing when rendering is suspended, so an ungated check would read an unbounded divergence and escalate to `rebase` every 250 ms for the whole occlusion — each one writing a `startTime` ahead of the stalled timeline, which drops the animation into its before-phase where `fill: "forwards"` does not apply and the element snaps to `translateX(0)`. Comment the gate with that mechanism ([P06](#p06-registration-self-check), [Q01](#q01-timeline-stall)); it reads as defensive until you know what it prevents.
 - [ ] In the component, apply `nudge` as a direct `anim.startTime` write and `rebase` through Spec S01.
 - [ ] Add a `document` `visibilitychange` listener that, on `visible`, re-derives `wallOffset` ([P09](#p09-wall-clock-seam)), runs one `checkRegistration`, and records the observed divergence to `tugDevLogStore` — this is what writes down the answer to [Q01](#q01-timeline-stall). Remove the listener in cleanup ([L27]).
 
@@ -839,6 +871,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] A paused animation always returns `rebase`, never `nudge`.
 - [ ] A `nudge` verdict never appears in the surface trace as a `setEpochStart` — a nudge is not a rebase and must not touch `committedT0`, so the [#step-4](#step-4) ordering invariant and the [P10](#p10-committed-t0) single-`t0` invariant both still hold with the self-check active.
 - [ ] `checkRegistration` is never called while `flat-dormant` or `hidden-paused` (assert via the injected timers: no settle burst is running).
+- [ ] A stalled animation clock — `animCurrentTimeMs` held fixed while the injected clock advances — produces a divergence that would escalate, and the component's gate means at most one `rebase` results (assert on the surface trace with visibility driven hidden, then visible).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -865,13 +898,14 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 - [ ] Add a `useLayoutEffect` that installs `matchMedia('(resolution: ' + dpr + 'dppx)')` and, on `change`, calls `setDprEpoch(n => n + 1)`, re-installing against the new ratio. This is structure-zone state ([L24]) — it changes which canvas element exists — so `useState` is correct and [L06] is not violated.
 - [ ] Read `devicePixelRatio` during render (not inside the effect) so the geometry and the `key` agree, and make it a dependency of the canvas-claim effect.
 - [ ] Change the canvas `key` to `` `${svgWidth}x${height}@${dpr}` `` so a ratio change replaces the element rather than re-transferring a spent one ([L26]). Record the three-input audit from [P07](#p07-dpr-reactivity) in the comment: the key is on the `<canvas>` alone, so `.tug-sparkline` and `.tug-sparkline-track` keep their identity and the tape, the animation, and the observer all survive.
-- [ ] **Force a repaint after re-claiming.** At the end of the canvas-claim effect, call `tapeRef.current?.repaint()`. Without it the new worker entry starts with an empty tape and the *tape* effect does not re-run, so a `flat-dormant` or `hidden-paused` sparkline — most of the Lens, most of the time — would stay blank until its next activity, possibly forever. Comment it as load-bearing, not defensive.
+- [ ] **Force a repaint after re-claiming.** At the end of the canvas-claim effect, call `tapeRef.current?.cancelRebase()` and then `repaint()`. The repaint is load-bearing, not defensive: the new worker entry starts with an empty tape and the *tape* effect does not re-run, so a `flat-dormant` or `hidden-paused` sparkline — most of the Lens, most of the time — would stay blank until its next activity, possibly forever. The cancel is load-bearing for the same reason in a different direction: releasing the old painter unregisters its ack route, so any rebase in flight would otherwise be acked by nobody, and on a hidden-wake that leaves the animation paused forever ([Risk R05](#r05-lost-ack)). The tape re-proposes the rebase on its next tick.
 - [ ] Wrap `canvas.transferControlToOffscreen()` in `try`/`catch`; on failure log via `tugDevLogStore.error` under the `sparkline` tag and fall through to the 2D-context painter.
 - [ ] Re-read the module header of `tug-sparkline.tsx` and rewrite the paragraphs describing `Date.now()`, the cancel/restart epoch, and single dormancy — they are now wrong. Fold in [P01](#p01-one-clock), Spec S01, and Spec S02.
 - [ ] Amend the `sparkline-render-worker.ts` header's "Nothing is ever posted back" claim.
 
 **Tests:**
 - [ ] `repaint()` on a `flat-dormant` tape emits exactly one `paint` carrying `committedT0` and no `setEpochStart` — the only part of this step a DOM-free test can reach, and the part most likely to be dropped.
+- [ ] `cancelRebase()` followed by `repaint()` mid-rebase leaves the tape able to roll over again on its next tick, with no lingering watchdog and no `setEpochStart` from the orphaned sequence.
 - [ ] The rest is covered at the app-test layer in [#step-9](#step-9): DPR and canvas transfer are not observable without a real canvas, and a jsdom stand-in is banned.
 
 **Checkpoint:**
@@ -957,7 +991,8 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 
 - [ ] `Date.now(` appears exactly once across `tug-sparkline.tsx` and `sparkline-tape.ts` — the named `wallOffset` seam (drift-prevention unit test, [Risk R04](#r04-clock-seam-reopened)).
 - [ ] A stalled stream still decays to baseline, in a unit case and in the real app ([#step-9](#step-9)) — the seam's observable behaviour.
-- [ ] The ordering invariant holds in every unit scenario: no `setEpochStart` without a delivered ack or a flat window ([#step-4](#step-4) headline test).
+- [ ] The ordering invariant holds in every unit scenario: no `setEpochStart` without a delivered ack, from the surface or from the watchdog ([#step-4](#step-4) headline test).
+- [ ] A rebase whose ack never arrives still converges, including on the `hidden-paused` wake path where the failure would otherwise leave the tape paused ([Risk R05](#r05-lost-ack)).
 - [ ] The single-`t0` invariant holds: no ordinary paint ever uses a `t0` other than `committedT0`, including while a rebase ack is outstanding ([P10](#p10-committed-t0)).
 - [ ] The nudge band is capped at 2 CSS px and everything above it goes through the ack ([#step-7](#step-7) boundary test).
 - [ ] A canvas re-claim repaints; no tape is ever left blank by a resolution change ([#step-8](#step-8)).
@@ -985,6 +1020,7 @@ The worker posts the response **at the end of** its draw handler, after `paint()
 | One clock, one seam | drift-prevention test (exactly one `Date.now(`); `proposedT0` derivation test; rate-decay test green across Step 2 |
 | Ack protocol lands without semantic change | Step 3's ack-latency-indifference test and its re-entrancy assertion |
 | Rebase never precedes its pixels | Step 4's trace-ordering test and single-`t0` test across all scenarios |
+| A lost ack cannot freeze the tape | Step 4's never-acks convergence test (live and `hidden-paused`); Step 8's cancel-and-re-issue test |
 | Off-screen is a pause | Step 5's no-teardown trace test; `at0370` same-`Animation` assertion |
 | Gate does not flap | Step 6's flap-storm test (hysteresis in the policy module, so it is reachable); quiet dev-log during a hard Lens scroll |
 | Registration self-heals within a capped band | Step 7's boundary test at ±0.4 / ±1.5 / ±2 / ±400 px; `visibilitychange` divergence recorded as a `note()` |
