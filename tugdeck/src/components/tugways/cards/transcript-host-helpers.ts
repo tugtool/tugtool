@@ -21,6 +21,7 @@
 import React, { useCallback, useId, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { LOCAL_SLASH_COMMANDS } from "@/lib/slash-commands";
+import { formatContextualStamp } from "@/lib/contextual-stamp";
 import {
   HighlightSelectionAdapter,
   type TextSelectionAdapter,
@@ -193,37 +194,22 @@ export function useAnnotationContext(
 }
 
 /**
- * Format an absolute millisecond timestamp as a short clock-style
- * string for display next to a transcript row's identifier.
+ * Format an absolute millisecond timestamp as a clock-style string for
+ * display next to a transcript row's identifier.
  *
- * The hour-minute separator uses U+2236 RATIO (`∶`) rather than the
- * standard ASCII colon (U+003A `:`). The RATIO glyph is vertically
- * centered between the digits the way clock-display fonts render
- * the time separator — most text fonts paint the ASCII colon
- * anchored to the baseline, which reads as "too low" between
- * numerals. The substitution is portable across fonts (it's a
- * different character, not a font-feature-settings toggle that
- * many fonts don't ship), and pairs cleanly with the timestamp's
- * `font-variant-numeric: tabular-nums` so each digit cell + the
- * centered separator stays put as the time advances.
+ * The stamp is context-aware ([formatContextualStamp]): a row from
+ * today shows the clock alone, and a row from any other day carries
+ * that day's name ahead of it (`Yesterday`, `Monday`, `Aug 4`) — a
+ * resumed session's early turns must not read as if they happened this
+ * evening. The hour separator is U+2236 RATIO, which pairs with the
+ * timestamp's tabular numerals.
  *
  * Returns the empty string for the special sentinel `0` so a callsite
  * can pass `entry.endedAt` unconditionally without fabricating a
  * "Jan 1 1970" timestamp on rows whose end-time was never recorded.
  */
 export function formatTranscriptTimestamp(ms: number): string {
-  if (ms === 0 || !Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  const raw = d.toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  // Replace the locale-emitted ASCII colon with U+2236 RATIO.
-  // Locales that use a non-colon separator (some European locales
-  // use `.`) pass through unchanged — only the ASCII `:` is
-  // substituted.
-  return raw.replace(/:/g, "∶");
+  return formatContextualStamp(ms, { seconds: true, ratioSeparator: true });
 }
 
 // ---------------------------------------------------------------------------

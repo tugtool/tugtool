@@ -37,6 +37,7 @@ import {
 } from "@/components/tugways/tug-message-editor";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useDeckManager } from "@/deck-manager-context";
+import { formatContextualStamp } from "@/lib/contextual-stamp";
 import {
   gazetteRefIntent,
   runGazetteRefIntent,
@@ -73,20 +74,19 @@ function AuthorGlyph({ author }: { author: GazetteAuthor }): React.ReactElement 
 }
 
 /**
- * A post's clock time, in the reader's locale. The date is deliberately absent:
- * the channel is read as a running feed, and a full stamp on every row would
- * out-weigh the sentence it labels. The full stamp rides the `title`.
+ * A post's time, in the reader's locale, read against today: a post from today
+ * shows its clock alone — the channel is a running feed, and a full stamp on
+ * every row would out-weigh the sentence it labels — while an older post names
+ * its day (`Yesterday`, `Monday`, `Aug 4`) so it can't be misread as this
+ * afternoon's. The full stamp always rides the `title`.
  */
 function useTimeFormats(): {
-  short: Intl.DateTimeFormat;
+  short: (at: Date) => string;
   full: Intl.DateTimeFormat;
 } {
   return useMemo(
     () => ({
-      short: new Intl.DateTimeFormat(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-      }),
+      short: (at: Date) => formatContextualStamp(at.getTime()),
       full: new Intl.DateTimeFormat(undefined, {
         dateStyle: "medium",
         timeStyle: "medium",
@@ -155,7 +155,7 @@ function GazettePostRow({
       <div className="gazette-post-main">
         <div className="gazette-post-meta">
           <time dateTime={at.toISOString()} title={formats.full.format(at)}>
-            {formats.short.format(at)}
+            {formats.short(at)}
           </time>
         </div>
         <p className="gazette-post-body">{post.body}</p>
