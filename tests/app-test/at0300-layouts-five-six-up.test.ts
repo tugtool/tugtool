@@ -2,7 +2,8 @@
  * at0300-layouts-five-six-up.test.ts — the Layouts picker offers every
  * arrangement the imposer defines, and the dense ones reach the geometry.
  *
- * The Cards axis is drawn from `IMPOSITION_KINDS`, one tile per kind, and every
+ * The Cards axis is drawn from `IMPOSITION_KINDS` — one segment per kind, and
+ * one plan preview layer per kind — and every
  * consumer downstream — the miniature, the row slot pickers, the placement
  * math — is written in terms of `slotCount`. So a new arrangement is a list
  * entry and a label, and nothing else. This test is what makes that claim
@@ -36,8 +37,9 @@ const TEST_TIMEOUT_MS = 90_000;
 const LENS_WIDTH = 420;
 const PANE_WIDTH = 260;
 
-const KIND_TILES = '[data-testid="lens-layouts-kind"] [data-radio-value]';
-const SIX_UP_TILE = '[data-testid="lens-layouts-kind"] [data-radio-value="six-up"]';
+const KIND_SEGMENTS = '[data-testid="lens-layouts-kind"] [data-choice-value]';
+const SIX_UP_SEGMENT =
+  '[data-testid="lens-layouts-kind"] [data-choice-value="six-up"]';
 
 /** Every kind the imposer offers, in the order the picker must show them. */
 const EXPECTED_KINDS = [
@@ -110,7 +112,7 @@ describe.skipIf(!SHOULD_RUN)(
           // toggling here would close it.
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(KIND_TILES)}).length > 0`,
+            `document.querySelectorAll(${JSON.stringify(KIND_SEGMENTS)}).length > 0`,
             { timeoutMs: 8_000 },
           );
 
@@ -118,20 +120,22 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             await app.evalJS<string[]>(
               `Array.from(document.querySelectorAll(${JSON.stringify(
-                KIND_TILES,
-              )})).map(function (el) { return el.getAttribute("data-radio-value"); })`,
+                KIND_SEGMENTS,
+              )})).map(function (el) { return el.getAttribute("data-choice-value"); })`,
             ),
           ).toEqual(EXPECTED_KINDS);
 
-          // Each tile is a picture of its own arrangement: as many blocks as
-          // the kind has slots. This is the whole of what the miniature had to
-          // learn about the two new kinds — which is nothing.
+          // Each kind's plan layer is a picture of its own arrangement: as
+          // many blocks as the kind has slots. This is the whole of what the
+          // plan had to learn about the two new kinds — which is nothing.
           expect(
             await app.evalJS<number[]>(
-              `Array.from(document.querySelectorAll(${JSON.stringify(
-                KIND_TILES,
-              )})).map(function (el) {
-                return el.querySelectorAll(".layout-mini-block").length;
+              `${JSON.stringify(EXPECTED_KINDS)}.map(function (kind) {
+                return document.querySelectorAll(
+                  '[data-testid="lens-layouts-plan"] [data-plan-preview-id="kind:' +
+                    kind +
+                    '"] .layout-mini-block',
+                ).length;
               })`,
             ),
           ).toEqual([1, 2, 3, 4, 5, 6]);
@@ -140,7 +144,7 @@ describe.skipIf(!SHOULD_RUN)(
           const fullTravel = await slotSpread(app);
           expect(fullTravel).toBeGreaterThan(100);
 
-          await app.nativeClickAtElement(SIX_UP_TILE);
+          await app.nativeClickAtElement(SIX_UP_SEGMENT);
 
           // Slot 1 of six-up has travelled a fifth of the same travel. The
           // wait is the settle tween landing, read off the geometry itself

@@ -55,7 +55,7 @@ const COMFY = 800;
 const LENS_WIDTH = 412;
 
 const WIDTH_TILE = (preset: string): string =>
-  `[data-testid="lens-layouts-width"] [data-radio-value="${preset}"]`;
+  `[data-testid="lens-layouts-width"] [data-choice-value="${preset}"]`;
 
 /** Four content panes filling four-up, plus the Lens standing at its pin.
  *  Four, deliberately: at slim the chain wants a band of 2715px and at comfy

@@ -67,8 +67,8 @@ const AFTER_LAND_MS = 900;
 /** Frames are measured in device pixels; a rounded pin is within a pixel. */
 const TOL = 1.5;
 
-const FIVE_UP_TILE = '[data-testid="lens-layouts-kind"] [data-radio-value="five-up"]';
-const KIND_TILES = '[data-testid="lens-layouts-kind"] [data-radio-value]';
+const FIVE_UP_TILE = '[data-testid="lens-layouts-kind"] [data-choice-value="five-up"]';
+const KIND_TILES = '[data-testid="lens-layouts-kind"] [data-choice-value]';
 const LENS_FRAME = `.tug-pane[data-pane-id="pLens"]`;
 /** The three chain panes, in slot order. */
 const CHAIN = ["p1", "p2", "p3"];

@@ -1,11 +1,11 @@
 /**
  * layout-miniature.tsx — a scale picture of the deck under one layout.
  *
- * The Layouts picker offers pictures rather than words: every option draws the
- * deck as it would actually stand — the sidebars holding the sides the deck
- * holds them on, and the cards packed between them under the chosen N-up rule.
- * Choosing an option is then recognizing the arrangement you want rather than
- * decoding a label for it, the idiom Windows 11's Snap Layouts established.
+ * The Layouts plan offers a picture rather than words: it draws the deck as it
+ * would actually stand — the sidebars holding the sides the deck holds them
+ * on, and the cards packed between them under the chosen N-up rule. Reading
+ * the picture is recognizing the arrangement rather than decoding a label for
+ * it, the idiom Windows 11's Snap Layouts established.
  *
  * Both edges can carry a rail and either can carry more than one card, because
  * the deck's own default stacks the Lens and Jots on the right. Those cards
@@ -13,16 +13,18 @@
  * paper — the ones behind peeking out at the top — rather than as a divided
  * strip, which is a different arrangement and not the one the deck paints.
  *
- * The blocks divide the field evenly and never overlap: N cards share the band
- * the imposer packs them into, each one slot wide, with the gap between them.
- * This is the imposer's own anchor rule (see `lib/layout-imposer.ts`) at the
- * width that makes the slots meet edge to edge — the arrangement a deck settles
- * into when every card takes its share. Overlapping blocks were legible as
- * neither cards nor slots, so the picture states the count instead.
+ * The geometry is the allocator's settled state (see at0303): the cards tile
+ * the band edge to edge with only the seam between them, and the rail absorbs
+ * what the cards do not take. So the picture is drawn from the parts' own
+ * widths — each card at its content-width preset, each occupied side at the
+ * rail's nominal width — normalized to fill the frame. A wider preset thereby
+ * reads as the cards claiming more of the deck from the rail, which is what
+ * choosing it does; it never reads as gaps opening between cards, which is an
+ * arrangement the settled deck does not hold.
  *
  * Purely presentational: props in, CSS out, no store reads and no state ([L06]).
- * The live Lens side is passed down by the section so every miniature flips
- * together when the side changes.
+ * The live rails are passed down by the section so every drawing flips
+ * together when a side changes.
  *
  * @module components/lens/layout-miniature
  */
@@ -40,8 +42,11 @@ import {
   type SidebarSide,
 } from "@/lib/layout-imposer";
 
-/** One rail's share of the miniature's width, in percent. */
-const RAIL_PCT = 18;
+/** The width a rail contributes to the drawing, in the same nominal pixels the
+ *  content-width presets are stated in — the Lens's customary standing width.
+ *  The proportion between this and the preset is what makes "Slim" and "Wide"
+ *  two different pictures of the same deck. */
+const RAIL_NOMINAL_PX = 420;
 
 /** How many sidebar cards stand on each side. Absent or 0 draws no rail. */
 export type MiniatureRails = Partial<Record<SidebarSide, number>>;
@@ -51,31 +56,29 @@ export type MiniatureRails = Partial<Record<SidebarSide, number>>;
  *  back there" without implying the rail is divided. */
 const RAIL_DEPTH_PCT = 3;
 
-/** A lone free card's width, in percent of the field it stands in. */
+/** A lone free card's width, in percent of the field it stands in — the
+ *  picture for a deck with no imposition at all (`kind: null`). */
 const FREE_CARD_PCT = 46;
 
-/** The imposition gap, in percent of the miniature. */
-const GAP_PCT = 2;
-
-/** The space between two cards, in percent of the miniature. Wider than the
- *  imposition gap: at this scale the seam has to survive a device pixel.
+/** The space between two cards, in percent of the field. Wider than a real
+ *  seam drawn to scale, which would be a fraction of a pixel at this size.
  *
  *  It is a ceiling rather than a constant — see {@link cardGapFor}. */
 const CARD_GAP_PCT = 3.5;
 
 /**
- * The seam between two blocks, given how many share the band.
+ * The seam between two blocks, given how many share the field.
  *
- * The seam is exaggerated because a real imposition gap drawn to scale is a
- * fraction of a pixel. The exaggeration is affordable while the cards are wide;
- * at six-up, five seams at the full width would spend nearly a quarter of the
- * band on air and leave blocks too thin to read as cards. So the seam is capped
- * at a share of each block: it may never grow past a fifth of the space one
- * card gets, which holds it visible in the sparse arrangements and lets it give
- * way in the dense ones.
+ * The seam is exaggerated because a real one drawn to scale is a fraction of a
+ * pixel. The exaggeration is affordable while the cards are wide; at six-up,
+ * five seams at the full width would spend a fifth of the field on air and
+ * leave blocks too thin to read as cards. So the seam is capped at a share of
+ * each block: it may never grow past a fifth of the space one card gets, which
+ * holds it visible in the sparse arrangements and lets it give way in the
+ * dense ones.
  */
-function cardGapFor(count: number, band: number): number {
-  return Math.min(CARD_GAP_PCT, band / (count * 5));
+function cardGapFor(count: number): number {
+  return Math.min(CARD_GAP_PCT, 100 / (count * 5));
 }
 
 export interface LayoutMiniatureProps {
@@ -87,11 +90,10 @@ export interface LayoutMiniatureProps {
    *  picture for a question that is only about which edge a sidebar holds. */
   cards?: boolean;
   /**
-   * Draw the cards at a named content width rather than at their share of the
-   * band. The widths are drawn relative to each other — `wide` fills the share
-   * the arrangement gives a card, and the narrower presets take that share's
-   * fraction of it — so the three options in one group read as three widths of
-   * the same deck.
+   * Draw the cards at a named content width. The preset does not narrow the
+   * blocks within the band — the settled deck holds no such gaps — it sets
+   * how much of the drawing the cards' side of the seam takes against the
+   * rail's. Omitted, the cards are drawn at the widest preset.
    */
   width?: ContentWidth;
   /** Draw the arrangement as the chosen one. */
@@ -99,17 +101,24 @@ export interface LayoutMiniatureProps {
 }
 
 /**
- * One side's rail, holding `count` cards front-to-back.
+ * One side's rail, holding `count` cards front-to-back at `widthPct` of the
+ * drawing.
  *
  * The members are the same size and stand in one place — that IS the geometry —
  * so a stack is drawn the way a stack of paper is: the ones behind peek out by
  * a few percent at the top. Dividing the strip would draw a rail that splits,
  * which is precisely the arrangement this is not.
  */
-function Rail({ count }: { count: number }): React.ReactElement {
+function Rail({
+  count,
+  widthPct,
+}: {
+  count: number;
+  widthPct: number;
+}): React.ReactElement {
   const depth = Math.min(count - 1, 2);
   return (
-    <span className="layout-mini-rail">
+    <span className="layout-mini-rail" style={{ flexBasis: `${widthPct}%` }}>
       {Array.from({ length: depth + 1 }, (_, i) => {
         // Drawn back to front: the last one is the card you are looking at.
         const behind = depth - i;
@@ -131,9 +140,9 @@ function Rail({ count }: { count: number }): React.ReactElement {
 /**
  * LayoutMiniature — the deck, drawn small.
  *
- * Each occupied side is a strip of that side's cards and the content cards fill
- * what is left of the frame, numbered left to right as the real deck numbers
- * them.
+ * Each occupied side is a strip of that side's cards, and the content cards
+ * tile what is left of the frame edge to edge, numbered left to right as the
+ * real deck numbers them.
  */
 export function LayoutMiniature({
   kind,
@@ -145,54 +154,49 @@ export function LayoutMiniature({
   const left = rails.left ?? 0;
   const right = rails.right ?? 0;
   const count = !cards ? 0 : kind === null ? 1 : slotCount(kind);
-  // What is left of the miniature once each side's rail has taken its strip.
-  const field = 100 - (left > 0 ? RAIL_PCT + GAP_PCT : 0) - (right > 0 ? RAIL_PCT + GAP_PCT : 0);
-  // The band the blocks share: the field less the gap outside each end.
-  const band = Math.max(0, field - GAP_PCT * 2);
-  // One card has no share to compute — it keeps its own width, which the
-  // picture states as a lone block rather than a block filling the band.
-  const cardGap = cardGapFor(count, band);
+  // The drawing's parts at their own nominal widths, normalized to the frame:
+  // N cards at the preset, one rail width per occupied side. The rail's
+  // percentage falls as the cards' claim grows — the allocator's trade.
+  const cardUnits =
+    width !== undefined ? CONTENT_WIDTH_PX[width] : CONTENT_WIDTH_WIDE_PX;
+  const railSides = (left > 0 ? 1 : 0) + (right > 0 ? 1 : 0);
+  const totalUnits = Math.max(
+    1,
+    count * cardUnits + railSides * RAIL_NOMINAL_PX,
+  );
+  const railPct = (RAIL_NOMINAL_PX / totalUnits) * 100;
+  // Within the field the cards tile edge to edge: equal shares separated by
+  // the seam, the first flush left and the last flush right. A free card
+  // (no imposition) keeps its own width and the middle of the field instead.
+  const cardGap = cardGapFor(count);
   const share =
-    count < 2
-      ? (band * FREE_CARD_PCT) / 100
-      : (band - cardGap * (count - 1)) / count;
-  // A named width narrows the block within its share rather than replacing it:
-  // the arrangement still says how much room a card gets, and the width says
-  // how much of it the card takes.
-  const cardPct =
-    width === undefined
-      ? share
-      : (share * CONTENT_WIDTH_PX[width]) / CONTENT_WIDTH_WIDE_PX;
-  // The imposer's own anchor rule, `k / (N − 1) × (band − w)`. At the width
-  // that makes the slots meet edge to edge it is exactly `k × (share + gap)`;
-  // at a narrower width the blocks spread across the same band, which is what
-  // the deck does. One card stands in the middle of the field — the imposer's
-  // one-up special case (`travelFraction` gives its single slot half the
-  // travel), and equally the picture for a deck with no imposition at all.
+    kind === null
+      ? FREE_CARD_PCT
+      : count > 0
+        ? (100 - cardGap * (count - 1)) / count
+        : 0;
   const offsetFor = (k: number): number =>
-    count < 2
-      ? (band - cardPct) / 2
-      : (k / (count - 1)) * (band - cardPct);
+    kind === null ? (100 - share) / 2 : k * (share + cardGap);
   return (
     <span
       className="layout-mini"
       data-selected={selected ? "true" : undefined}
       aria-hidden="true"
     >
-      {left > 0 ? <Rail count={left} /> : null}
+      {left > 0 ? <Rail count={left} widthPct={railPct} /> : null}
       <span className="layout-mini-field">
         {Array.from({ length: count }, (_, i) => (
           <span
             key={i}
             className="layout-mini-block"
             style={{
-              left: `${GAP_PCT + offsetFor(i)}%`,
-              width: `${cardPct}%`,
+              left: `${offsetFor(i)}%`,
+              width: `${share}%`,
             }}
           />
         ))}
       </span>
-      {right > 0 ? <Rail count={right} /> : null}
+      {right > 0 ? <Rail count={right} widthPct={railPct} /> : null}
     </span>
   );
 }

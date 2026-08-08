@@ -17,25 +17,30 @@
  * there — so the deck always stands under an imposition and every row's slot
  * picker is live from the first frame.
  *
- * Every group is the same control at the same scale: a named option is a
- * picture of the result ({@link LayoutMiniature}) with its name beside it, two
- * to a row — the gallery card's `P4 · Two-column rows` shape. Each option is a
- * framed tile rather than a dotted row (`TugRadioGroup emphasis="tile"`): the
- * picture is already the answer, so a dot beside it would be a second mark for
- * the same fact. The pictures read the *live* rails, so moving the Lens left
- * flips all of them at once: a tile is a scale drawing of this deck, not an
- * abstract N-up.
+ * The section draws the deck **once**: the plan at the top is a scale picture
+ * of the deck as it stands ({@link LayoutMiniature}), captioned with the
+ * current answers. Every control under it is a compact segmented group
+ * (`TugChoiceGroup`) that writes the plan. The picture-per-option idiom this
+ * replaced spent a full deck drawing on every option and asked the eye to
+ * diff them; here the options are words and numerals, and the *plan* is where
+ * an option shows what it would do — resting a pointer on a segment, or
+ * standing the movement cursor on it, swaps the plan for that option's
+ * arrangement, drawn tentative (tinted blocks) rather than committed (filled).
  *
- * Choosing a layout is the only thing that happens here; putting a card into
- * one of the kind's numbered slots happens on the rows (see
- * `lens/slot-picker.tsx`).
+ * The previews are pre-rendered: React renders one hidden plan layer per
+ * offerable option from the same store read as the committed layer, and the
+ * hover/cursor handlers only toggle DOM attributes to choose which layer
+ * shows. A preview is ephemeral appearance, so no React state is involved in
+ * showing one ([L06]); the layers themselves are semantic data — drawings of
+ * the store's candidate arrangements — and re-render when the store moves.
  *
  * Laws: [L02] the imposition record enters React through `useSyncExternalStore`
  * on the deck store; [L03] the section's content declaration is a
- * `useLayoutEffect`; [L06] the miniatures are pure props → CSS; [L11] every
+ * `useLayoutEffect`; [L06] preview visibility is DOM attributes toggled in
+ * event handlers and a `MutationObserver`, never React state; [L11] every
  * control emits `selectValue` through the responder chain, which this section
  * turns into `set-imposition` / `set-content-width` / `set-sidebar-side`
- * dispatches; [L19] every control is a `TugRadioGroup` and every caption a
+ * dispatches; [L19] every control is a `TugChoiceGroup` and every caption a
  * `TugLabel`, composed rather than hand-rolled; [L30] the section never touches
  * the deck store — it goes through the command funnel like any other door.
  *
@@ -44,7 +49,12 @@
 
 import "./layouts-section.css";
 
-import React, { useLayoutEffect, useSyncExternalStore } from "react";
+import React, {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { Columns3 } from "lucide-react";
 
 import { registerLensSection } from "@/components/lens/lens-section-registry";
@@ -63,6 +73,7 @@ import {
   isImpositionKind,
   isSidebarSide,
   sidebarSide,
+  slotCount,
   DEFAULT_CONTENT_WIDTH,
   DEFAULT_IMPOSITION_KIND,
   DEFAULT_SIDEBAR_SIDE,
@@ -73,10 +84,8 @@ import {
 } from "@/lib/layout-imposer";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { TugLabel } from "@/components/tugways/tug-label";
-import {
-  TugRadioGroup,
-  TugRadioItem,
-} from "@/components/tugways/tug-radio-group";
+import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
+import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -102,8 +111,7 @@ const SIDE_CAPTION_ID_PREFIX = "lens-layouts-side-caption-";
  *  focus key ([Q12]) between them, and the engine resolves a key to exactly one
  *  stop — so the other would be unreachable by any addressed placement. Being
  *  separately ordered is also what makes them separate rows of the Lens's arrow
- *  plane, which derives its rows from the orders registered in each section's
- *  group, so a vertical arrow steps from one group to the next. The sidebar
+ *  plane, so a vertical arrow steps from one group to the next. The sidebar
  *  groups take the orders after these, one each, in registration order. */
 const LAYOUTS_KIND_FOCUS_ORDER = 0;
 const LAYOUTS_WIDTH_FOCUS_ORDER = 1;
@@ -153,14 +161,19 @@ function sidebarEntries(): SidebarEntry[] {
   return entries;
 }
 
-/** How many sidebar cards stand on each side, for the miniatures. */
+/** How many sidebar cards stand on each side. `override` places one card on a
+ *  stated side regardless of the imposition — the rails a side preview draws. */
 function railsOf(
   imposition: DeckImposition,
   sidebars: readonly SidebarEntry[],
+  override?: { componentId: string; side: SidebarSide },
 ): MiniatureRails {
   const rails: MiniatureRails = {};
   for (const entry of sidebars) {
-    const side = sidebarSide(imposition, entry.componentId);
+    const side =
+      override !== undefined && override.componentId === entry.componentId
+        ? override.side
+        : sidebarSide(imposition, entry.componentId);
     rails[side] = (rails[side] ?? 0) + 1;
   }
   return rails;
@@ -188,13 +201,40 @@ function LayoutsCollapsedSummary(): React.ReactElement {
   return <>{KIND_LABELS[kind ?? DEFAULT_IMPOSITION_KIND]}</>;
 }
 
+/** One plan layer: a drawing and the caption naming it. */
+interface PlanLayer {
+  /** `axis:value` — the id a hovered/cursored segment resolves to. */
+  previewId: string;
+  caption: string;
+  kind: ImpositionKind;
+  rails: MiniatureRails;
+  width: ContentWidth;
+}
+
+/**
+ * The preview id a segment stands for, or `null` when the element is not a
+ * previewable segment. The already-active segment resolves to `null` on
+ * purpose: hovering the current answer shows the committed plan, not a
+ * tentative copy of it.
+ */
+function previewIdOf(el: Element | null): string | null {
+  const segment = el?.closest("[data-choice-value]") ?? null;
+  if (segment === null) return null;
+  if (segment.getAttribute("data-state") === "active") return null;
+  const row = segment.closest("[data-preview-axis]");
+  if (row === null) return null;
+  return `${row.getAttribute("data-preview-axis")}:${segment.getAttribute(
+    "data-choice-value",
+  )}`;
+}
+
 function LayoutsSectionBody({
   host,
 }: {
   host: LensSectionHost;
 }): React.ReactElement {
   const imposition = useImposition();
-  const kind = imposition.kind;
+  const kind = imposition.kind ?? DEFAULT_IMPOSITION_KIND;
   const contentWidth = imposition.contentWidth ?? DEFAULT_CONTENT_WIDTH;
   const sidebars = sidebarEntries();
   const rails = railsOf(imposition, sidebars);
@@ -242,6 +282,104 @@ function LayoutsSectionBody({
       });
   }, [host.focusGroup]);
 
+  // ---- The plan's preview switch ([L06]) ----
+  //
+  // Which layer shows is DOM attributes on the plan, toggled here: the layer
+  // whose id matches gets `data-plan-active`, and the plan carries
+  // `data-previewing` whenever one does (which is what hides the committed
+  // layer). No React state — a preview is visible-only and lives exactly as
+  // long as the pointer or cursor that asked for it.
+  const planRef = useRef<HTMLDivElement | null>(null);
+  const rowsRef = useRef<HTMLDivElement | null>(null);
+
+  const setPreview = useCallback((id: string | null) => {
+    const plan = planRef.current;
+    if (plan === null) return;
+    let matched = false;
+    for (const layer of plan.querySelectorAll("[data-plan-preview-id]")) {
+      const on = id !== null && layer.getAttribute("data-plan-preview-id") === id;
+      layer.toggleAttribute("data-plan-active", on);
+      matched = matched || on;
+    }
+    plan.toggleAttribute("data-previewing", matched);
+  }, []);
+
+  // The keyboard cursor previews the same way the pointer does: the engine
+  // marks the ringed group `data-key-view-kbd` and the cursor segment
+  // `data-key-cursor`, so an observer on those attributes resolves the
+  // cursored segment to its preview id whenever either moves. Deferred
+  // commit ([P24]) then reads: arrows audition arrangements in the plan,
+  // Space makes one real.
+  useLayoutEffect(() => {
+    const rows = rowsRef.current;
+    if (rows === null) return;
+    const recompute = () => {
+      const segment = rows.querySelector(
+        "[data-key-view-kbd] [data-key-cursor][data-choice-value]",
+      );
+      setPreview(previewIdOf(segment));
+    };
+    const observer = new MutationObserver(recompute);
+    observer.observe(rows, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-key-cursor", "data-key-view-kbd"],
+    });
+    return () => observer.disconnect();
+  }, [setPreview]);
+
+  // ---- The layers: the committed plan and every offerable answer ----
+
+  const committedCaption = `${KIND_LABELS[kind]} · ${CONTENT_WIDTH_LABELS[contentWidth]}`;
+
+  const layers: PlanLayer[] = [
+    ...IMPOSITION_KINDS.map((k) => ({
+      previewId: `kind:${k}`,
+      caption: `${KIND_LABELS[k]} · ${CONTENT_WIDTH_LABELS[contentWidth]}`,
+      kind: k,
+      rails,
+      width: contentWidth,
+    })),
+    ...CONTENT_WIDTH_PRESETS.map((preset) => ({
+      previewId: `width:${preset}`,
+      caption: `${KIND_LABELS[kind]} · ${CONTENT_WIDTH_LABELS[preset]}`,
+      kind,
+      rails,
+      width: preset,
+    })),
+    ...sidebars.flatMap((entry) =>
+      SIDES.map((side) => ({
+        previewId: `side:${entry.componentId}:${side}`,
+        caption: `${entry.title} ${SIDE_LABELS[side]}`,
+        kind,
+        rails: railsOf(imposition, sidebars, {
+          componentId: entry.componentId,
+          side,
+        }),
+        width: contentWidth,
+      })),
+    ),
+  ];
+
+  // ---- The rows: one compact segmented group per axis ----
+
+  const kindItems: TugChoiceItem[] = IMPOSITION_KINDS.map((k) => ({
+    value: k,
+    label: String(slotCount(k)),
+    "aria-label": KIND_LABELS[k],
+    tooltip: KIND_LABELS[k],
+  }));
+
+  const widthItems: TugChoiceItem[] = CONTENT_WIDTH_PRESETS.map((preset) => ({
+    value: preset,
+    label: CONTENT_WIDTH_LABELS[preset],
+  }));
+
+  const sideItems: TugChoiceItem[] = SIDES.map((side) => ({
+    value: side,
+    label: SIDE_LABELS[side],
+  }));
+
   return (
     <ResponderScope>
       <div
@@ -249,134 +387,125 @@ function LayoutsSectionBody({
         data-testid="lens-layouts-section"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <div className="layouts-section-axis">
-          <TugLabel
-            id={KIND_CAPTION_ID}
-            size="md"
-            emphasis="proposal"
-            className="layouts-section-caption"
-          >
-            Cards
-          </TugLabel>
-          <TugRadioGroup
-            value={kind ?? DEFAULT_IMPOSITION_KIND}
-            senderId={KIND_SENDER_ID}
-            focusGroup={host.focusGroup}
-            focusOrder={LAYOUTS_KIND_FOCUS_ORDER}
-            size="sm"
-            emphasis="tile"
-            columns={2}
-            aria-labelledby={KIND_CAPTION_ID}
-            className="layouts-section-group"
-            data-testid="lens-layouts-kind"
-          >
-            {IMPOSITION_KINDS.map((k) => (
-              <TugRadioItem key={k} value={k}>
-                <span className="layouts-section-option">
-                  <LayoutMiniature
-                    kind={k}
-                    rails={rails}
-                    selected={k === (kind ?? DEFAULT_IMPOSITION_KIND)}
-                  />
-                  <span className="layouts-section-option-label">
-                    {KIND_LABELS[k]}
-                  </span>
-                </span>
-              </TugRadioItem>
-            ))}
-          </TugRadioGroup>
-        </div>
-
-        {/* How wide content reads on this deck. Each option draws the live
-            arrangement with its cards at that width, so the three tiles differ
-            in exactly the thing the question is about. */}
-        <div className="layouts-section-axis">
-          <TugLabel
-            id={WIDTH_CAPTION_ID}
-            size="md"
-            emphasis="proposal"
-            className="layouts-section-caption"
-          >
-            Card Width
-          </TugLabel>
-          <TugRadioGroup
-            value={contentWidth}
-            senderId={WIDTH_SENDER_ID}
-            focusGroup={host.focusGroup}
-            focusOrder={LAYOUTS_WIDTH_FOCUS_ORDER}
-            size="sm"
-            emphasis="tile"
-            columns={2}
-            aria-labelledby={WIDTH_CAPTION_ID}
-            className="layouts-section-group"
-            data-testid="lens-layouts-width"
-          >
-            {CONTENT_WIDTH_PRESETS.map((preset) => (
-              <TugRadioItem key={preset} value={preset}>
-                <span className="layouts-section-option">
-                  <LayoutMiniature
-                    kind={kind ?? DEFAULT_IMPOSITION_KIND}
-                    rails={rails}
-                    width={preset}
-                    selected={preset === contentWidth}
-                  />
-                  <span className="layouts-section-option-label">
-                    {CONTENT_WIDTH_LABELS[preset]}
-                  </span>
-                </span>
-              </TugRadioItem>
-            ))}
-          </TugRadioGroup>
-        </div>
-
-        {/* Which edge each sidebar card holds — one group per registered
-            sidebar. Each option draws the deck with that card on that side and
-            no cards in the band: the question is only which edge, so the chain
-            would be noise in it. */}
-        {sidebars.map((entry, index) => {
-          const side = sidebarSide(imposition, entry.componentId);
-          const captionId = `${SIDE_CAPTION_ID_PREFIX}${entry.componentId}`;
-          return (
-            <div className="layouts-section-axis" key={entry.componentId}>
-              <TugLabel
-                id={captionId}
-                size="md"
-                emphasis="proposal"
-                className="layouts-section-caption"
-              >
-                {entry.title} Position
-              </TugLabel>
-              <TugRadioGroup
-                value={side}
-                senderId={`${SIDE_SENDER_PREFIX}${entry.componentId}`}
-                focusGroup={host.focusGroup}
-                focusOrder={LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER + index}
-                size="sm"
-                emphasis="tile"
-                columns={2}
-                aria-labelledby={captionId}
-                className="layouts-section-group"
-                data-testid={`lens-layouts-side-${entry.componentId}`}
-              >
-                {SIDES.map((option) => (
-                  <TugRadioItem key={option} value={option}>
-                    <span className="layouts-section-option">
-                      <LayoutMiniature
-                        kind={null}
-                        rails={{ [option]: 1 }}
-                        cards={false}
-                        selected={option === side}
-                      />
-                      <span className="layouts-section-option-label">
-                        {SIDE_LABELS[option]}
-                      </span>
-                    </span>
-                  </TugRadioItem>
-                ))}
-              </TugRadioGroup>
+        <div
+          className="layouts-plan"
+          data-testid="lens-layouts-plan"
+          ref={planRef}
+          aria-hidden="true"
+        >
+          <div className="layouts-plan-layer" data-plan-layer="committed">
+            <LayoutMiniature
+              kind={kind}
+              rails={rails}
+              width={contentWidth}
+              selected
+            />
+            <span className="layouts-plan-caption">{committedCaption}</span>
+          </div>
+          {layers.map((layer) => (
+            <div
+              className="layouts-plan-layer"
+              data-plan-preview-id={layer.previewId}
+              key={layer.previewId}
+            >
+              <LayoutMiniature
+                kind={layer.kind}
+                rails={layer.rails}
+                width={layer.width}
+              />
+              <span className="layouts-plan-caption">{layer.caption}</span>
             </div>
-          );
-        })}
+          ))}
+        </div>
+
+        <div
+          className="layouts-section-rows"
+          ref={rowsRef}
+          onPointerOver={(event) =>
+            setPreview(previewIdOf(event.target as Element))
+          }
+          onPointerLeave={() => setPreview(null)}
+          onClick={() => setPreview(null)}
+        >
+          <div className="layouts-section-row" data-preview-axis="kind">
+            <TugLabel
+              id={KIND_CAPTION_ID}
+              size="md"
+              emphasis="proposal"
+              className="layouts-section-caption"
+            >
+              Cards
+            </TugLabel>
+            <TugChoiceGroup
+              items={kindItems}
+              value={kind}
+              senderId={KIND_SENDER_ID}
+              size="xs"
+              sidePadding="xs"
+              reselect
+              focusGroup={host.focusGroup}
+              focusOrder={LAYOUTS_KIND_FOCUS_ORDER}
+              aria-labelledby={KIND_CAPTION_ID}
+              data-testid="lens-layouts-kind"
+            />
+          </div>
+
+          <div className="layouts-section-row" data-preview-axis="width">
+            <TugLabel
+              id={WIDTH_CAPTION_ID}
+              size="md"
+              emphasis="proposal"
+              className="layouts-section-caption"
+            >
+              Card Width
+            </TugLabel>
+            <TugChoiceGroup
+              items={widthItems}
+              value={contentWidth}
+              senderId={WIDTH_SENDER_ID}
+              size="xs"
+              sidePadding="xs"
+              reselect
+              focusGroup={host.focusGroup}
+              focusOrder={LAYOUTS_WIDTH_FOCUS_ORDER}
+              aria-labelledby={WIDTH_CAPTION_ID}
+              data-testid="lens-layouts-width"
+            />
+          </div>
+
+          {sidebars.map((entry, index) => {
+            const side = sidebarSide(imposition, entry.componentId);
+            const captionId = `${SIDE_CAPTION_ID_PREFIX}${entry.componentId}`;
+            return (
+              <div
+                className="layouts-section-row"
+                data-preview-axis={`side:${entry.componentId}`}
+                key={entry.componentId}
+              >
+                <TugLabel
+                  id={captionId}
+                  size="md"
+                  emphasis="proposal"
+                  className="layouts-section-caption"
+                >
+                  {entry.title}
+                </TugLabel>
+                <TugChoiceGroup
+                  items={sideItems}
+                  value={side}
+                  senderId={`${SIDE_SENDER_PREFIX}${entry.componentId}`}
+                  size="xs"
+                  sidePadding="xs"
+                  reselect
+                  focusGroup={host.focusGroup}
+                  focusOrder={LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER + index}
+                  aria-labelledby={captionId}
+                  data-testid={`lens-layouts-side-${entry.componentId}`}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </ResponderScope>
   );

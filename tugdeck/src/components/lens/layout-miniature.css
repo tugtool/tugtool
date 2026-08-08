@@ -1,10 +1,10 @@
 /**
  * layout-miniature.css — the deck, drawn small.
  *
- * A 16/10 frame standing in for the canvas, a strip for the Lens, and one
- * block per card. Blocks are positioned absolutely, at the same anchors the
- * imposer places panes on, so the picture is drawn by the rule it illustrates
- * rather than by a layout that merely resembles it.
+ * A 16/10 frame standing in for the canvas, a strip per occupied side, and one
+ * block per card, tiled edge to edge across the field — the allocator's
+ * settled geometry, drawn by the rule it illustrates rather than by a layout
+ * that merely resembles it.
  */
 
 .layout-mini {
@@ -50,10 +50,11 @@
 
 /* One side's rail. It holds its members rather than being one itself: two
    sidebar cards sharing a side share the rail's width and split its run, so the
-   strip is a container and each member is a block inside it. */
+   strip is a container and each member is a block inside it. Its width is the
+   rail's proportional share of the drawing, set inline by the component. */
 .layout-mini-rail {
   position: relative;
-  flex: 0 0 18%;
+  flex: 0 0 auto;
 }
 
 .layout-mini-rail-member {

@@ -1,6 +1,6 @@
 /* @tug-pairings: none — the section shell sets a text color for inherited
-   content only; the picker's own color comes from `TugRadioGroup` and the
-   miniatures it composes ([L20]). */
+   content only; the controls' own color comes from `TugChoiceGroup` and the
+   miniature the plan composes ([L20]). */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-section {
@@ -10,88 +10,77 @@
   flex-direction: column;
   align-items: stretch;
   gap: 10px;
-  padding: 4px 6px 6px;
+  padding: 6px 8px 8px;
 }
 
-/* One axis: its caption and its tiles, held closer to each other than the two
-   axes are held apart, so the caption reads as belonging to the group under
-   it. */
-.layouts-section-axis {
+/* The plan: the one drawing of the deck, with its caption under it. Exactly
+   one layer shows at a time — the committed layer at rest, or the layer whose
+   `data-plan-preview-id` the hover/cursor handlers marked `data-plan-active`.
+   Every layer has the same structure, so swapping layers never moves the
+   section's height. */
+.layouts-plan {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 3px;
-}
-
-/* The caption lines up with the group's inner edge — the group carries a
-   focus-stop inset of its own (`tug-radio-group.css`), and a caption flush to
-   the section instead would sit outboard of everything it names. */
-.layouts-section-caption {
-  padding-inline-start: var(--tug-space-sm);
-}
-
-/* The local key-view tint override that used to live here is gone: this section
-   rides the shared container wash like every other item-group. It was the wash's
-   prototype — it had already found that the fix was to rebuild the mark from the
-   accent FILL rather than the near-invisible accent TONE — and the global token
-   now carries that idea, tuned. The alpha moved down rather than up in the
-   process: this override sat at 15%, which was calibrated against the invisible
-   default and had begun reading as a filled surface. A host must not draw a
-   component's focus marks on its behalf anyway; that is the component's to draw. */
-
-/* Both axes are the same control at the same scale, so they take one rule.
-   Options run two to a row — the gallery card's `P4 · Two-column rows` shape:
-   a picture and its name on one line, big enough to hit, with the name always
-   legible. The grid goes on the items container, which is the element
-   `TugRadioGroup` lays its children out in; the group root also holds the
-   label above it. */
-.layouts-section-group .tug-radio-group-items {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: stretch;
-  gap: 2px 6px;
-}
-
-/* Each option fills its grid cell so the pictures line up in two columns,
-   rather than shrinking to its caption's width. */
-.layouts-section-group [data-slot="tug-radio-item"],
-.layouts-section-group .tug-radio-item-text,
-.layouts-section-group .tug-button-icon-text {
-  inline-size: 100%;
-  min-inline-size: 0;
-}
-
-/* Picture beside name, on one line. The miniature holds a fixed width — a
-   scale drawing has to be the same scale in every option — and the name takes
-   whatever is left. TUNE the picture's size here.
-
-   The width is set by the DENSEST arrangement offered, not by the roomiest:
-   the six-up picture divides its band into six blocks and the seams between
-   them, and a picture narrow enough to leave those blocks under a couple of
-   device pixels stops reading as cards at all. Every other option is drawn
-   at the same scale because they are drawings of the same deck. */
-.layouts-section-option {
-  display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 7px;
-  inline-size: 100%;
-  min-inline-size: 0;
 }
 
-.layouts-section-option .layout-mini {
-  flex: 0 0 auto;
-  inline-size: 76px;
+.layouts-plan-layer {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
 
-.layouts-section-option-label {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: start;
+.layouts-plan-layer[data-plan-layer="committed"] {
+  display: flex;
+}
+
+.layouts-plan[data-previewing] .layouts-plan-layer[data-plan-layer="committed"] {
+  display: none;
+}
+
+.layouts-plan-layer[data-plan-active] {
+  display: flex;
+}
+
+/* The drawing's size. TUNE here — the plan is singular, so it takes the room
+   the fifteen per-option tiles used to split, and the dense arrangements'
+   blocks stay wide enough to count. */
+.layouts-plan .layout-mini {
+  inline-size: 150px;
+}
+
+.layouts-plan-caption {
   font-size: var(--tug-font-size-xs);
   line-height: var(--tug-line-height-tight);
-  color: var(--tug7-element-global-text-normal-default-rest);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  white-space: nowrap;
+}
+
+/* The axes: two columns — captions and controls — sized to their content and
+   CENTERED under the plan as one block. The captions right-align and the
+   controls left-align, so the two columns meet at one straight seam and each
+   caption sits against the control it names rather than across the section
+   from it. */
+.layouts-section-rows {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: center;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 6px;
+}
+
+/* Each row contributes its caption and its control to the shared columns. */
+.layouts-section-row {
+  display: contents;
+}
+
+.layouts-section-caption {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.layouts-section-row [data-slot="tug-choice-group"] {
+  justify-self: start;
 }

@@ -52,7 +52,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const SECTION = '[data-testid="lens-layouts-section"]';
-const LEFT_SEGMENT = `${SECTION} [data-testid="lens-layouts-side-lens"] [data-radio-value="left"]`;
+const LEFT_SEGMENT = `${SECTION} [data-testid="lens-layouts-side-lens"] [data-choice-value="left"]`;
 
 /** `scheduleSave`'s debounce, with room for the PUT to reach tugbank. */
 const SAVE_SETTLE_MS = 1_500;

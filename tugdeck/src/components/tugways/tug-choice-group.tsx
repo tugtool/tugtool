@@ -207,6 +207,16 @@ export interface TugChoiceGroupProps
    */
   focusPolicy?: FocusPolicy;
   /**
+   * Dispatch `selectValue` when the ALREADY-ACTIVE segment is chosen again.
+   * Off by default: re-choosing the current value is normally a no-op, and
+   * most parents would only re-run a write that changes nothing. Opt in when
+   * re-choosing is itself a gesture — a responder that answers the same value
+   * by re-running its settle (the Layouts picker re-tunes the standing
+   * arrangement). Applies to pointer clicks and to the keyboard commit alike.
+   * @default false
+   */
+  reselect?: boolean;
+  /**
    * Keyboard commit timing ([P24]). `deferred` (default) keeps the law's
    * standard form-selector behavior — arrows rove a cursor, `Space` commits, so
    * navigating past options never mutates the value. `live` makes every arrow
@@ -243,6 +253,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       focusGroup,
       focusOrder = 0,
       focusPolicy,
+      reselect = false,
       commit = "deferred",
       ...rest
     },
@@ -385,7 +396,9 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
       // mode's commit disposition ([P15]), not via a `deferCommit` flag.
       onSelect: (element) => {
         const next = element?.getAttribute("data-choice-value");
-        if (next != null && next !== value) dispatchSelectValue(next);
+        if (next != null && (next !== value || reselect)) {
+          dispatchSelectValue(next);
+        }
       },
       ...(commit === "live"
         ? {
@@ -476,7 +489,7 @@ export const TugChoiceGroup = React.forwardRef<HTMLDivElement, TugChoiceGroupPro
                 if (!isDisabled) {
                   const idx = enabledSegments().findIndex((s) => s.value === item.value);
                   if (idx >= 0) setCursor(idx);
-                  if (!isActive) dispatchSelectValue(item.value);
+                  if (!isActive || reselect) dispatchSelectValue(item.value);
                 }
               }}
             >

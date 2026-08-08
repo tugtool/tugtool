@@ -1,6 +1,6 @@
 /**
  * at0277-lens-row-accessories-keyboard.test.ts — the Lens's row accessories and
- * its tile grids answer the keyboard.
+ * the Layouts segments answer the keyboard.
  *
  * ## What this gates
  *
@@ -15,9 +15,10 @@
  *  - **A row's slot picker.** Same authoring, on the Cards rows'
  *    numbered slots. The deck always stands under an arrangement, so the picker
  *    is always there; a multi-slot kind is what gives it more than one position.
- *  - **The Layouts tiles.** The CARDS axis lays four options out two to a row.
- *    A group whose cursor is a 1D run walks them in DOM order, so Down from
- *    "One Up" landed on "Two Up" — the tile to its RIGHT. Down must mean down.
+ *  - **The Layouts segments.** The CARDS axis is one segment run, and both
+ *    arrow axes walk it without committing — the choice-group contract at0118
+ *    pins. Off the run's END, Down means down: the ring leaves for the group
+ *    below rather than wrapping or sticking.
  *
  * The first two also pin a boundary the accessories created: the jots list
  * declares `commitOnEnter="act"` (Enter opens the jot), and a row that
@@ -103,7 +104,7 @@ async function kbdLabel(app: App): Promise<string | null> {
 
 /** Tab until `selector` holds the keyboard key view; throws if it never does. */
 async function tabUntilKbd(app: App, selector: string): Promise<void> {
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     const on = await app.evalJS<boolean>(
       `document.querySelector(${JSON.stringify(`${selector}[data-key-view-kbd]`)}) !== null`,
     );
@@ -116,7 +117,7 @@ async function tabUntilKbd(app: App, selector: string): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboard", () => {
   test(
-    "Right descends onto a jot row's buttons and onto a slot, and the Layouts tiles walk as a grid",
+    "Right descends onto a jot row's buttons and onto a slot, and the Layouts segments walk as rows",
     async () => {
       const tugbankPath = mkTempTugbank();
       const filesDir = mkdtempSync(join(tmpdir(), "tug-at0277-"));
@@ -146,7 +147,7 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 5_000 },
           );
           // This test spans two surfaces: the Jots card's rows and the Lens's
-          // Layouts tiles. Open both, and start on a jot row — opening a card
+          // Layouts segments. Open both, and start on a jot row — opening a card
           // is not a keyboard entry, so the click is what puts the movement
           // cursor on the row (the Lens band click used to do that here).
           await app.dispatchControlAction("toggle-lens");
@@ -281,21 +282,23 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             { timeoutMs: 4_000 },
           );
 
-          // ---- C. The Layouts CARDS axis walks as the grid it is drawn as.
-          // The tiles live in the LENS, a different card: Tab walks within a
-          // card, so crossing takes a focus gesture, not more Tabs.
+          // ---- C. The Layouts CARDS axis walks as the row it is drawn as.
+          // The segments live in the LENS, a different card: Tab walks within
+          // a card, so crossing takes a focus gesture, not more Tabs.
           await app.dispatchControlAction("focus-lens");
           await tabUntilKbd(app, KIND_GROUP);
           const cursorValue = `(function(){
             var el = document.querySelector('${KIND_GROUP} [data-key-cursor]');
-            return el === null ? null : el.getAttribute('data-radio-value');
+            return el === null ? null : el.getAttribute('data-choice-value');
           })()`;
           await app.waitForCondition<boolean>(
             `(${cursorValue}) === 'one-up'`,
             { timeoutMs: 3_000 },
           );
-          // Right is the neighbor ACROSS the row; Down is the tile BELOW it —
-          // the whole point, and the case a 1D cursor got wrong.
+          // The segments are one run, and both arrow axes walk it ([P01] —
+          // the contract at0118 pins on the choice group itself): Right and
+          // Down step the cursor without committing, and a vertical arrow
+          // leaves the group only off the run's end.
           await app.nativeKey("ArrowRight");
           await app.waitForCondition<boolean>(
             `(${cursorValue}) === 'two-up'`,
@@ -306,14 +309,24 @@ describe.skipIf(!SHOULD_RUN)("at0277 — Lens row accessories answer the keyboar
             `(${cursorValue}) === 'one-up'`,
             { timeoutMs: 3_000 },
           );
-          await app.nativeKey("ArrowDown");
+          for (let i = 0; i < 5; i += 1) await app.nativeKey("ArrowDown");
           await app.waitForCondition<boolean>(
-            `(${cursorValue}) === 'three-up'`,
+            `(${cursorValue}) === 'six-up'`,
             { timeoutMs: 3_000 },
           );
-          await app.nativeKey("ArrowUp");
+          // Off the end of the run, Down means down: the group below takes
+          // the ring (the cross-section walk is at0341's to gate further).
+          await app.nativeKey("ArrowDown");
           await app.waitForCondition<boolean>(
-            `(${cursorValue}) === 'one-up'`,
+            `document.querySelector('[data-testid="lens-layouts-width"][data-key-view-kbd]') !== null`,
+            { timeoutMs: 3_000 },
+          );
+          // Back to the CARDS row by the backward Tab walk — the stops are
+          // one Tab apart. Tab-into parks the cursor on the selected segment,
+          // which is where section D's walk starts.
+          await app.nativeKey("Tab", ["shift"]);
+          await app.waitForCondition<boolean>(
+            `document.querySelector('${KIND_GROUP}[data-key-view-kbd]') !== null`,
             { timeoutMs: 3_000 },
           );
 
