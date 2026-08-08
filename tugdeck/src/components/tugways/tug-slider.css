@@ -31,6 +31,14 @@ body {
   --tugx-slider-thumb-border: var(--tug7-element-global-border-normal-default-rest);
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
   --tugx-slider-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
+  /* Stepped-track tick labels. `line` is the row the control reserves for
+     them: the gap above the text plus the text's own line. */
+  --tugx-slider-tick-label-fg: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-slider-tick-label-size: var(--tug-font-size-2xs);
+  --tugx-slider-tick-label-gap: var(--tug-space-2xs);
+  --tugx-slider-tick-label-line: calc(
+    var(--tugx-slider-tick-label-gap) + var(--tugx-slider-tick-label-size) * 1.3
+  );
 }
 
 
@@ -252,6 +260,39 @@ body {
 
 
 /* ============================================================================
+   Tick labels (.tug-slider-tick-labels) — the stepped track's names
+
+   Their own inset row under the ticks, sharing the ticks' half-thumb insets so
+   a label centers on the tick it names. Each label is centered on its own
+   offset and may be wider than its step without moving any tick.
+   ========================================================================= */
+
+.tug-slider-tick-labels {
+  position: absolute;
+  top: 100%;
+  block-size: var(--tugx-slider-tick-label-line);
+  pointer-events: none;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-slider-tick-label {
+  position: absolute;
+  top: var(--tugx-slider-tick-label-gap);
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: var(--tugx-slider-tick-label-size);
+  line-height: var(--tug-line-height-tight);
+  color: var(--tugx-slider-tick-label-fg);
+}
+
+/* The labels are absolutely positioned, so the control reserves their line
+   explicitly — otherwise they would overlap whatever follows the slider. */
+.tug-slider-ticks-labeled .tug-slider-track-wrapper {
+  margin-block-end: var(--tugx-slider-tick-label-line);
+}
+
+
+/* ============================================================================
    Leading / Trailing Icons (.tug-slider-icon)
    ========================================================================= */
 
@@ -288,7 +329,8 @@ body {
   font-size: var(--tug-font-size-xs);
 }
 
-.tug-slider-sm .tug-slider-ticks {
+.tug-slider-sm .tug-slider-ticks,
+.tug-slider-sm .tug-slider-tick-labels {
   left: 6px;   /* half of 12px thumb */
   right: 6px;
 }
@@ -317,7 +359,8 @@ body {
   font-size: var(--tug-font-size-sm);
 }
 
-.tug-slider-md .tug-slider-ticks {
+.tug-slider-md .tug-slider-ticks,
+.tug-slider-md .tug-slider-tick-labels {
   left: 8px;   /* half of 16px thumb */
   right: 8px;
 }
@@ -346,7 +389,8 @@ body {
   font-size: var(--tug-font-size-md);
 }
 
-.tug-slider-lg .tug-slider-ticks {
+.tug-slider-lg .tug-slider-ticks,
+.tug-slider-lg .tug-slider-tick-labels {
   left: 10px;  /* half of 20px thumb */
   right: 10px;
 }

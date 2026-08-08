@@ -45,15 +45,22 @@
 
 /* The drawing's size. TUNE here — the plan is singular, so it takes the room
    the fifteen per-option tiles used to split, and the dense arrangements'
-   blocks stay wide enough to count. */
+   blocks stay wide enough to count. Sized so a six-up arrangement's blocks
+   still read as separate cards, which is the drawing's densest case — a step
+   up from the original 150px, not a takeover of the section. */
 .layouts-plan .layout-mini {
-  inline-size: 150px;
+  inline-size: 200px;
 }
 
+/* The plan's caption is the section's one statement of what the deck is doing,
+   so it reads as text rather than as a footnote: the arrangement's name at the
+   body size, in the normal text colour. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-plan-caption {
-  font-size: var(--tug-font-size-xs);
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-semibold);
   line-height: var(--tug-line-height-tight);
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  color: var(--tug7-element-global-text-normal-default-rest);
   white-space: nowrap;
 }
 

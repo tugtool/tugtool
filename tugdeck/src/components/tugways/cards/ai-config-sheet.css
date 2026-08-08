@@ -1,6 +1,6 @@
-/* @tug-pairings: none — the sheet shell sets a text color for its own caption
-   and description text only; the rows' color comes from `TugChoiceGroup` and
-   `TugLabel` ([L20]). */
+/* @tug-pairings: none — the sheet shell sets a text color for its own readout
+   and description text only; the controls' color comes from `TugListView`,
+   `TugSlider`, `TugChoiceGroup`, and `TugLabel` ([L20]). */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-sheet {
@@ -9,81 +9,101 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: var(--tug-space-md);
 }
 
-/* The live composite — exactly what OK will commit, in exactly the wording the
-   chip will show afterward. */
-.ai-config-summary {
-  font-size: var(--tug-font-size-md);
-  line-height: var(--tug-line-height-tight);
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* ---------------------------------------------------------------------------
+ * The readout — the pending state, in the largest type on the surface
+ * -------------------------------------------------------------------------*/
 
-/* The rows: two columns — captions and controls — sized to their content and
-   centered as one block, so each caption sits against the row it names and the
-   three controls line up on one seam. */
-.ai-config-rows {
-  display: grid;
-  grid-template-columns: max-content max-content;
+.ai-config-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   justify-content: center;
-  align-items: center;
-  column-gap: 14px;
-  row-gap: 6px;
+  column-gap: var(--tug-space-xs);
+  text-align: center;
 }
 
-.ai-config-row {
-  display: contents;
+/* The model carries the most weight: it is the decision the other two
+   qualify. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-readout-model {
+  font-size: var(--tug-font-size-lg);
+  font-weight: var(--tug-font-weight-bold);
+  line-height: var(--tug-line-height-tight);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-readout-rest {
+  font-size: var(--tug-font-size-md);
+  font-weight: var(--tug-font-weight-semibold);
+  line-height: var(--tug-line-height-tight);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The separators are punctuation, not content — quieter than the values they
+   stand between. Their spacing is the literal spaces around the glyph, not a
+   margin, so the readout's text reads correctly when taken as a string. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-readout-sep {
+  white-space: pre;
+  font-weight: var(--tug-font-weight-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---------------------------------------------------------------------------
+ * The channels — one per parameter: caption, control, description
+ * -------------------------------------------------------------------------*/
+
+.ai-config-channels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+.ai-config-channel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tug-space-xs);
 }
 
 .ai-config-caption {
-  justify-self: end;
   white-space: nowrap;
 }
 
-.ai-config-row [data-slot="tug-choice-group"] {
-  justify-self: start;
-  /* The model row grows with the catalog; a sixth selector wraps to a second
-     line rather than truncating a name into ambiguity. */
-  flex-wrap: wrap;
+/* The choice group hugs its labels rather than stretching to the channel's
+   width — the parent's own flex placement, not a restyle of the child [L20]. */
+.ai-config-channel [data-slot="tug-choice-group"] {
+  align-self: flex-start;
 }
 
-/* The description stack: every layer occupies the same grid cell, so swapping
-   which one shows never moves the sheet's height. Exactly one shows — the
-   default layer at rest, or the layer the pointer/cursor marked active. */
-.ai-config-description {
-  display: grid;
-  min-block-size: calc(var(--tug-font-size-xs) * var(--tug-line-height-normal) * 2);
+/* The track's wrapper. The slider's own ticks are inset by half a thumb, so
+   the first and last tick LABELS overhang it; the inset here keeps them inside
+   the channel's edges. Sizing a composed child belongs on a wrapper, never on
+   the child's own class [L20]. */
+.ai-config-track {
+  display: flex;
+  padding-inline: var(--tug-space-sm);
+}
+
+/* Each channel's own description, under the control it describes. Reserved at
+   two lines so a wrap never moves the sheet's height. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-note {
+  min-block-size: calc(
+    var(--tug-font-size-xs) * var(--tug-line-height-normal) * 2
+  );
   font-size: var(--tug-font-size-xs);
   line-height: var(--tug-line-height-normal);
   color: var(--tug7-element-global-text-normal-muted-rest);
-  text-align: center;
-}
-
-.ai-config-description-layer {
-  grid-area: 1 / 1;
-  visibility: hidden;
-}
-
-.ai-config-description-layer[data-description-layer="default"] {
-  visibility: visible;
-}
-
-.ai-config-description[data-previewing]
-  .ai-config-description-layer[data-description-layer="default"] {
-  visibility: hidden;
-}
-
-.ai-config-description-layer[data-description-active] {
-  visibility: visible;
 }
 
 .ai-config-footer {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--tug-space-xs);
 }

@@ -69,9 +69,10 @@ const SETTINGS_SHEET =
 const CARD_A_SHEET = '[data-pane-id="p1"] [data-slot="tug-sheet"]';
 
 /** The mixer sheet's MODEL row and one of its segments. */
-const MODEL_ROW = '[data-testid="ai-config-model"]';
+/** The model channel is an option list; each row carries its own selector. */
+const MODEL_LIST = '[data-testid="ai-config-model"]';
 const MODEL_SEGMENT = (value: string): string =>
-  `${MODEL_ROW} [data-choice-value="${value}"]`;
+  `${MODEL_LIST} [data-model="${value}"]`;
 
 const cardAiValue = (cardId: string): string =>
   `[data-card-id="${cardId}"] [data-slot="ai-chip"] [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
@@ -268,10 +269,11 @@ describe.skipIf(!SHOULD_RUN)(
           // what is known: "Default" — never a hardcoded model label.
           await waitForModel(app, SETTINGS_AI_VALUE, "Default");
 
-          // ---- Fresh install, no catalog: the MODEL row offers the single
-          //      honest Default segment, and the description line explains that
-          //      the full list arrives after the first request — no invented
-          //      models.
+          // ---- Fresh install, no catalog: the MODEL channel offers the single
+          //      honest Default row, whose own description explains that the
+          //      full list arrives after the first request — no invented
+          //      models. The copy rides the row itself now: every option in the
+          //      list carries its description in place.
           await app.click(SETTINGS_AI_CHIP);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("default")}`)}) !== null`,
@@ -279,18 +281,18 @@ describe.skipIf(!SHOULD_RUN)(
           );
           expect(
             await app.evalJS<number>(
-              `document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_ROW} [data-choice-value]`)}).length`,
+              `document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_LIST} [data-model]`)}).length`,
             ),
-            "no catalog → exactly one Default segment, nothing invented",
+            "no catalog → exactly one Default row, nothing invented",
           ).toBe(1);
           expect(
             await app.evalJS<string>(
               `(function(){
-                var el = document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} [data-description-layer="default"]`)});
+                var el = document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("default")}`)});
                 return el ? el.textContent : "";
               })()`,
             ),
-            "the description line explains why the list is short",
+            "the row's own description explains why the list is short",
           ).toContain("first request");
           await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-cancel"]`);
 
@@ -308,37 +310,13 @@ describe.skipIf(!SHOULD_RUN)(
             })()`,
           );
 
-          // ---- The AI chip opens the mixer: the MODEL row carries one
-          //      segment per catalog row, with the account default marked
-          //      active for the zero-state.
+          // ---- The AI chip opens the mixer, which now offers the live
+          //      catalog's models (Sonnet among them).
           await app.click(SETTINGS_AI_CHIP);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`)}) !== null`,
             { timeoutMs: 4000 },
           );
-          const sheetState = await app.evalJS<{
-            segments: number;
-            active: string[];
-          }>(
-            `(function(){
-              var segs = document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_ROW} [data-choice-value]`)});
-              var active = [];
-              for (var i = 0; i < segs.length; i++) {
-                if (segs[i].getAttribute('data-state') === 'active') {
-                  active.push(segs[i].getAttribute('data-choice-value'));
-                }
-              }
-              return { segments: segs.length, active: active };
-            })()`,
-          );
-          expect(
-            sheetState.segments,
-            "the row offers the catalog's rows",
-          ).toBeGreaterThanOrEqual(3);
-          expect(
-            sheetState.active,
-            "the Default segment is active for the zero-state",
-          ).toEqual(["default"]);
 
           // ---- Pick Sonnet as the deck default. Nothing is written until OK
           //      (the mixer is a transaction), and the chip then shows the

@@ -19,6 +19,7 @@
  *   - **arrows step locally:** ArrowRight increases `aria-valuenow` by one step.
  *
  * @covers tugdeck/src/components/tugways/tug-slider.tsx
+ * @covers tugdeck/src/components/tugways/tug-slider.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/styles/focus-ring.css
  * @covers tugdeck/src/components/tugways/cards/gallery-slider.tsx

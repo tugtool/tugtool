@@ -61,6 +61,7 @@ export function GallerySlider() {
 
   // Section 6: Ticks + icons
   const [ticksValue, setTicksValue] = useState(4);
+  const [steppedValue, setSteppedValue] = useState(2);
   const [volumeValue, setVolumeValue] = useState(6);
 
   // Focus Language: a slider authored into a focus group so the engine drives Tab.
@@ -77,6 +78,7 @@ export function GallerySlider() {
   const integerId = useId();
   const noValueId = useId();
   const ticksId = useId();
+  const steppedId = useId();
   const volumeId = useId();
   const focusId = useId();
 
@@ -93,6 +95,7 @@ export function GallerySlider() {
       [integerId]: setIntegerValue,
       [noValueId]: setNoValueValue,
       [ticksId]: setTicksValue,
+      [steppedId]: setSteppedValue,
       [volumeId]: setVolumeValue,
     },
   });
@@ -303,6 +306,25 @@ export function GallerySlider() {
               showValue={false}
               leadingIcon={<Volume1 size={20} />}
               trailingIcon={<Volume2 size={20} />}
+            />
+          </div>
+          <div className="gs-layout-item">
+            {/* A stepped track: `tickLabel` names each notch, so the scale
+                reads as named ordinal levels rather than as numbers. The
+                consumer maps index → name; the slider stays numeric. */}
+            <span className="gs-demo-label">stepped track (labelled ticks)</span>
+            <TugSlider
+              size="sm"
+              value={steppedValue}
+              senderId={steppedId}
+              min={0}
+              max={4}
+              step={1}
+              showTicks
+              showValue={false}
+              tickLabel={(v) =>
+                ["Low", "Medium", "High", "Extra-High", "Max"][v]
+              }
             />
           </div>
         </div>

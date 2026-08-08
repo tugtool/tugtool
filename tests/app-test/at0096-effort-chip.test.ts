@@ -47,9 +47,11 @@ const CHIP = `${CARD} [data-slot="ai-chip"]`;
 // button content, so read the active variant.
 const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
 const SHEET = '[data-slot="tug-sheet"]';
-const EFFORT_ROW = `${SHEET} [data-testid="ai-config-effort"]`;
-const EFFORT_SEGMENT = (value: string): string =>
-  `${EFFORT_ROW} [data-choice-value="${value}"]`;
+/** The sheet's readout — its own statement of what OK would commit. */
+const READOUT = `${SHEET} [data-slot="ai-config-summary"]`;
+/** The effort channel is a stepped `TugSlider`: a track, ticks, tick labels. */
+const EFFORT_TRACK = `${SHEET} [data-testid="ai-config-effort"]`;
+const EFFORT_THUMB = `${EFFORT_TRACK} .tug-slider-thumb`;
 const OK_BUTTON = `${SHEET} [data-slot="ai-config-ok"]`;
 
 /** Capability payload whose active (default → opus) model supports all five levels. */
@@ -183,43 +185,36 @@ describe.skipIf(!SHOULD_RUN)(
           // Open the mixer (synthetic click — the chip sits at the card's
           // bottom-right edge, below the window's clickable region for a
           // CGEvent, so we drive its real `onClick` directly — the
-          // DOM-driven-chip app-test pattern). The EFFORT row always renders
-          // all five canonical levels; opus supports all five, so none is
-          // disabled, and the effective default ("high") is active.
+          // DOM-driven-chip app-test pattern).
           await app.click(CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(EFFORT_SEGMENT("max"))}) !== null`,
+            `document.querySelector(${JSON.stringify(EFFORT_THUMB)}) !== null`,
             { timeoutMs: 4000 },
           );
-          const rowState = await app.evalJS<{
-            total: number;
-            active: string[];
-            disabled: number;
-          }>(
-            `(function(){
-              var segs = document.querySelectorAll(${JSON.stringify(`${EFFORT_ROW} [data-choice-value]`)});
-              var active = [];
-              var disabled = 0;
-              for (var i = 0; i < segs.length; i++) {
-                if (segs[i].getAttribute('data-state') === 'active') {
-                  active.push(segs[i].textContent.trim());
-                }
-                if (segs[i].hasAttribute('data-disabled') || segs[i].disabled === true) {
-                  disabled++;
-                }
-              }
-              return { total: segs.length, active: active, disabled: disabled };
-            })()`,
-          );
-          expect(rowState.total, "the row renders all five canonical levels").toBe(5);
-          expect(rowState.active, "the current level is active").toEqual(["High"]);
-          expect(rowState.disabled, "opus supports all five — none greyed").toBe(0);
 
-          // Choose "Max", then OK. Nothing is sent before OK (the sheet is a
-          // transaction), and the chip then reflects the new level
+          // Raise the effort to "Max", then OK. Nothing is sent before OK (the
+          // sheet is a transaction), and the chip then reflects the new level
           // optimistically — there is no metadata round-trip on an effort
-          // change ([R07]).
-          await app.click(EFFORT_SEGMENT("max"));
+          // change ([R07]). The track is the sheet's second focus stop, so Tab
+          // off the model list rings it; the thumb rests on the effective
+          // default ("High"), two notches below "Max".
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(EFFORT_THUMB)});
+              return el !== null && el.hasAttribute("data-key-view-kbd");
+            })()`,
+            { timeoutMs: 4000 },
+          );
+          await app.nativeKey("ArrowRight");
+          await app.nativeKey("ArrowRight");
+          await app.waitForCondition<boolean>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(READOUT)});
+              return el !== null && el.textContent.indexOf("Max") >= 0;
+            })()`,
+            { timeoutMs: 4000 },
+          );
           expect(
             await app.evalJS<boolean>(hasEffortTokenExpr("High")),
             "the chip must not move before OK",

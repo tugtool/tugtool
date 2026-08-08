@@ -197,6 +197,17 @@ export interface TugSliderProps
    * @default false
    */
   showTicks?: boolean;
+  /**
+   * Label each tick, turning the track into a **stepped track**: a named
+   * ordinal scale rather than a bare numeric range. Called once per tick with
+   * that tick's value and index; return `undefined` to leave a tick unlabeled
+   * (useful for labelling only the ends of a long scale).
+   *
+   * Requires {@link showTicks}. The labels sit under the track and the control
+   * reserves their line, so turning them on does not overlap the row beneath.
+   * @selector .tug-slider-tick-label
+   */
+  tickLabel?: (value: number, index: number) => string | undefined;
   /** Icon rendered before the track (e.g., quiet speaker). */
   leadingIcon?: React.ReactNode;
   /** Icon rendered after the track (e.g., loud speaker). */
@@ -277,6 +288,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
       layout = "inline",
       showValue = true,
       showTicks = false,
+      tickLabel,
       leadingIcon,
       trailingIcon,
       trackFilled = false,
@@ -543,17 +555,43 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
     // ---- Tick marks ----
 
     const tickCount = showTicks ? Math.round((max - min) / step) + 1 : 0;
+    // A degenerate scale (`min === max`) has exactly one tick, and the even
+    // spread would divide by zero — that lone tick sits at the track's start,
+    // which is also where Radix pins the thumb.
+    const tickOffsetPct = (i: number): number =>
+      tickCount > 1 ? (i / (tickCount - 1)) * 100 : 0;
     const ticks = showTicks ? (
       <div className="tug-slider-ticks" aria-hidden="true">
         {Array.from({ length: tickCount }, (_, i) => (
           <span
             key={i}
             className="tug-slider-tick"
-            style={{ left: `${(i / (tickCount - 1)) * 100}%` }}
+            style={{ left: `${tickOffsetPct(i)}%` }}
           />
         ))}
       </div>
     ) : null;
+
+    // The stepped track's names. Rendered in their own inset row under the
+    // ticks so a label can be wider than the step it names without disturbing
+    // tick spacing; the root reserves the line via `tug-slider-ticks-labeled`.
+    const tickLabels =
+      showTicks && tickLabel !== undefined ? (
+        <div className="tug-slider-tick-labels" aria-hidden="true">
+          {Array.from({ length: tickCount }, (_, i) => {
+            const text = tickLabel(min + i * step, i);
+            return text === undefined ? null : (
+              <span
+                key={i}
+                className="tug-slider-tick-label"
+                style={{ left: `${tickOffsetPct(i)}%` }}
+              >
+                {text}
+              </span>
+            );
+          })}
+        </div>
+      ) : null;
 
     // ---- Track + value input block ----
 
@@ -586,6 +624,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
             />
           </SliderPrimitive.Root>
           {ticks}
+          {tickLabels}
         </div>
 
         {trailingIcon && (
@@ -622,6 +661,7 @@ export const TugSlider = React.forwardRef<HTMLDivElement, TugSliderProps>(
         className={cn(
           "tug-slider",
           `tug-slider-${size}`,
+          tickLabels !== null && "tug-slider-ticks-labeled",
           layoutClass,
           className,
         )}

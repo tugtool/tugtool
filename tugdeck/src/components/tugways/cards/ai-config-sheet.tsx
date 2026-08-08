@@ -3,11 +3,28 @@
  *
  * Model, reasoning effort, and permission mode used to be three chips opening
  * three confirm-style pickers. They are one thought — "how should Claude run
- * for this session?" — and this sheet is that thought's single surface: three
- * labeled rows of segments in the **Layouts idiom** (`TugLabel` + compact
- * `TugChoiceGroup`, the exact composition `layouts-section.tsx` uses), a live
- * composite caption that previews what OK will commit, and one description
- * line under them.
+ * for this session?" — and this sheet is that thought's single surface.
+ *
+ * **The mixer convention.** The pending state is the loudest thing on the
+ * surface: a **readout** in large type at the top, the model name loudest, so what
+ * OK will commit is legible at a glance rather than decoded from which segments
+ * happen to be lit. Under it, one **channel** per parameter, and each channel
+ * gets the control its parameter's shape deserves rather than a uniform row of
+ * equal-weight segments:
+ *
+ *  - **Model** — a `TugListView` option list, because a model is the decision
+ *    people actually deliberate: every option carries its own name AND
+ *    description, at a size worth reading.
+ *  - **Effort** — a `TugSlider` **stepped track** (`showTicks` + `tickLabel`),
+ *    because effort is ordinal. Geometry says "more/less" in a way five equal
+ *    chips cannot, and the track spans exactly the levels the pending model
+ *    offers, so an unreachable level is absent rather than mysteriously greyed.
+ *  - **Mode** — a compact `TugChoiceGroup`, the right control for a small flat
+ *    set of named alternatives.
+ *
+ * Each channel carries its **own** description line, under its own control, so
+ * a description names the thing it sits beneath instead of being deciphered
+ * from a shared line at the far end of the sheet.
  *
  * **It is a transaction.** Nothing reaches the wire until OK. That matters
  * here specifically because an effort change costs a claude respawn: browsing
@@ -22,38 +39,50 @@
  * defaults context, which has no turn to race, writes deck defaults through the
  * same body.
  *
- * Effort is model-gated, so the EFFORT row recomputes as the pending model
- * moves: unsupported levels disable **in place** (the row keeps its shape) and
- * a stranded pending level clamps downward ({@link clampEffortToSupport}). The
- * model↔effort coupling is visible on one screen for the first time; it used
- * to be discoverable only by crossing two dialogs.
+ * Effort is model-gated, so the EFFORT channel recomputes as the pending model
+ * moves: the track spans the pending model's own levels, and a stranded pending
+ * level clamps downward ({@link clampEffortToSupport}). The model↔effort
+ * coupling is visible on one screen for the first time; it used to be
+ * discoverable only by crossing two dialogs.
  *
- * Compositional component — composes `TugSheet`, `TugLabel`, `TugChoiceGroup`,
- * and `TugPushButton`; its own CSS is the row grid and the description-layer
- * stack. Composed children keep their own tokens [L20].
+ * **Choosing is free; committing is not.** Every control selects *live* into
+ * the sheet's pending state — arrows audition a value and the readout and the
+ * channel's own description follow at once — because inside a transaction a
+ * selection has no side effect to defer ([P24]'s deferred form is for controls
+ * whose selection acts). Only OK sends anything.
  *
- * Laws: [L02] store state is read through the store API; [L06] the description
- *       preview is DOM attributes toggled by handlers and a `MutationObserver`,
- *       never React state (the pending SELECTION is dialog-local data, not
+ * Compositional component — composes `TugSheet`, `TugLabel`, `TugListView`,
+ * `TugListRow`, `TugSlider`, `TugChoiceGroup`, and `TugPushButton`; its own CSS
+ * is the readout type scale and the channel stack. Composed children keep their
+ * own tokens [L20].
+ *
+ * Laws: [L02] store state is read through the store API; [L06] no React state
+ *       for appearance (the pending SELECTION is dialog-local data, not
  *       appearance, so it is ordinary `useState`); [L07] the open-time baseline
- *       is read fresh from the store, never from a render closure; [L11] the
- *       rows dispatch `selectValue` through the responder chain — `TugChoiceGroup`
- *       has no change callback; [L19]/[L20] composed `Tug*` components.
+ *       is read fresh from the store, never from a render closure; [L11] every
+ *       control emits through the responder chain — `selectValue` from the
+ *       choice group, `setValue` from the slider, the list's own delegate — and
+ *       none has a change callback; [L19]/[L20] composed `Tug*` components.
  *
  * @module components/tugways/cards/ai-config-sheet
  */
 
 import "./ai-config-sheet.css";
+import "./sheet-option-list.css";
 
-import React, {
-  useCallback,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugSlider } from "@/components/tugways/tug-slider";
+import { TugListRow } from "@/components/tugways/tug-list-row";
+import {
+  TugListView,
+  type TugListViewCellProps,
+  type TugListViewCellRenderer,
+  type TugListViewDataSource,
+  type TugListViewDelegate,
+} from "@/components/tugways/tug-list-view";
 import { TugChoiceGroup } from "@/components/tugways/tug-choice-group";
 import type { TugChoiceItem } from "@/components/tugways/tug-choice-group";
 import { useResponder } from "@/components/tugways/use-responder";
@@ -70,13 +99,10 @@ import { resolvePickerModels } from "@/lib/model-picker-data";
 import {
   compressContextPhrase,
   knownModelRows,
-  modelRowTitle,
   resolveModelLabel,
-  stripDisplayNameParenthetical,
 } from "@/lib/model-label";
 import {
   DEFAULT_EFFORT_LEVEL,
-  EFFORT_LEVELS,
   formatEffortLabel,
   resolveEffortSupport,
 } from "@/lib/effort";
@@ -94,9 +120,9 @@ import {
   AI_CONFIG_DEFAULT_ROW,
   AI_CONFIG_DOMAIN,
   AI_CONFIG_LAST_ROW_KEY,
+  AI_CONFIG_UNKNOWN_MODEL,
   clampEffortToSupport,
   computeAiConfigCommit,
-  formatAiConfigSummary,
   parseAiConfigRow,
   type AiConfigAction,
   type AiConfigBaseline,
@@ -135,8 +161,11 @@ const PERMISSION_MODE_SUBTITLES: Record<string, string> = {
 /** The description shown when a row's pending value has no copy of its own. */
 const NO_DESCRIPTION = "";
 
-/** Stable `event.sender` per row, so the body's one handler tells them apart. */
-const MODEL_SENDER_ID = "ai-config-model";
+/**
+ * Stable `event.sender` per channel, so the body's handlers tell them apart.
+ * The model channel has none: a `TugListView` reports through its delegate, not
+ * through the chain.
+ */
 const EFFORT_SENDER_ID = "ai-config-effort";
 const MODE_SENDER_ID = "ai-config-mode";
 
@@ -326,30 +355,91 @@ export function useAiConfigSheet({
 }
 
 // ---------------------------------------------------------------------------
-// The description line's preview machinery ([L06])
+// The model channel's option list
 // ---------------------------------------------------------------------------
 
 /**
- * The preview id a segment stands for, or `null` when the element is not a
- * previewable segment.
- *
- * A sibling of `layouts-section.tsx`'s resolver, deliberately **without** its
- * `data-state="active"` bail. In Layouts, "no preview" means *show the
- * committed plan*, so hovering the current answer must not draw a tentative
- * copy of it. This sheet has no committed/tentative duality — a description
- * line has one job, describing whatever the pointer is over — so hovering the
- * already-pending segment must still describe it. Keeping the bail would fall
- * through to the default layer and describe a *different row*.
+ * The pending model, published to the cell renderers so the matching row paints
+ * selected. Selection changes live through the list's delegate, so this only
+ * carries the read-only "which row is current" value.
  */
-function previewIdOf(el: Element | null): string | null {
-  const segment = el?.closest("[data-choice-value]") ?? null;
-  if (segment === null) return null;
-  const row = segment.closest("[data-preview-row]");
-  if (row === null) return null;
-  return `${row.getAttribute("data-preview-row")}:${segment.getAttribute(
-    "data-choice-value",
-  )}`;
+const ModelListContext = React.createContext<string | null>(null);
+
+/**
+ * Static, single-section data source over the model options resolved at open
+ * time. The set is fixed for a sheet's lifetime, so `subscribe` is a no-op and
+ * `getVersion` a stable constant.
+ */
+class ModelListDataSource implements TugListViewDataSource {
+  private readonly models: readonly CapabilityModel[];
+
+  constructor(models: readonly CapabilityModel[]) {
+    this.models = models;
+  }
+
+  numberOfItems(): number {
+    return this.models.length;
+  }
+
+  idForIndex(index: number): string {
+    return this.models[index].value;
+  }
+
+  kindForIndex(): string {
+    return "model";
+  }
+
+  /** Cell-renderer accessor — the model at `index`. */
+  modelAt(index: number): CapabilityModel {
+    return this.models[index];
+  }
+
+  subscribe(): () => void {
+    return () => {};
+  }
+
+  getVersion(): unknown {
+    return 0;
+  }
 }
+
+/**
+ * One model row: the display name over its description, with a leading check on
+ * the pending one. `selectedGlyph="check"` reserves the check column on every
+ * row so the names align whether or not a row carries the mark. The verbose
+ * context phrase is compressed to the ` · 1M` idiom and may wrap to a second
+ * line rather than truncate — the description is the reason this channel is a
+ * list instead of a row of chips.
+ */
+const ModelListCell: TugListViewCellRenderer<ModelListDataSource> =
+  function ModelListCell({
+    index,
+    dataSource,
+  }: TugListViewCellProps<ModelListDataSource>): React.ReactElement {
+    const pending = React.useContext(ModelListContext);
+    const model = dataSource.modelAt(index);
+    return (
+      <TugListRow
+        title={model.displayName}
+        subtitle={
+          model.description !== undefined
+            ? compressContextPhrase(model.description)
+            : undefined
+        }
+        subtitleMaxLines={2}
+        selected={model.value === pending}
+        selectedGlyph="check"
+        data-model={model.value}
+      />
+    );
+  };
+
+const MODEL_CELL_RENDERERS: Record<
+  string,
+  TugListViewCellRenderer<ModelListDataSource>
+> = {
+  model: ModelListCell,
+};
 
 // ---------------------------------------------------------------------------
 // Sheet body
@@ -370,27 +460,6 @@ interface AiConfigSheetBodyProps {
   onCommit: (actions: AiConfigAction[]) => boolean;
   renderFooter?: (close: () => void) => React.ReactNode;
   close: () => void;
-}
-
-/** One layer of the description stack. */
-interface DescriptionLayer {
-  previewId: string;
-  text: string;
-}
-
-/** The description copy for a row's value, empty when the row has none. */
-function describe(
-  row: AiConfigRow,
-  value: string,
-  options: CapabilityModel[],
-): string {
-  if (row === "effort") return EFFORT_SUBTITLES[value] ?? NO_DESCRIPTION;
-  if (row === "mode") return PERMISSION_MODE_SUBTITLES[value] ?? NO_DESCRIPTION;
-  const option = options.find((o) => o.value === value);
-  if (option === undefined) return NO_DESCRIPTION;
-  return option.description !== undefined
-    ? compressContextPhrase(option.description)
-    : modelRowTitle(option);
 }
 
 function AiConfigSheetBody({
@@ -417,17 +486,14 @@ function AiConfigSheetBody({
   const [lastChangedRow, setLastChangedRow] = useState<AiConfigRow | null>(null);
 
   // Effort support follows the PENDING model, so choosing a narrower model
-  // greys its missing levels the instant it is chosen rather than at commit.
+  // narrows the track the instant it is chosen rather than at commit.
   const support = resolveEffortSupport(models, pendingModel, catalog);
 
+  // The label rows behind `resolveModelLabel` — the readout's model name comes
+  // through the same single helper the chip uses, so the two always agree.
   const rows = knownModelRows(models, catalog);
-  const summary = formatAiConfigSummary({
-    modelLabel: resolveModelLabel(pendingModel, rows),
-    effortLabel: pendingEffort === null ? null : formatEffortLabel(pendingEffort),
-    modeLabel: formatPermissionMode(pendingMode),
-  });
 
-  // ---- Row selection ([L11]) ----
+  // ---- Channel selection ([L11]) ----
 
   const selectModel = useCallback(
     (value: string) => {
@@ -447,118 +513,58 @@ function AiConfigSheetBody({
       [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
         const value = event.value;
         if (typeof value !== "string") return;
-        switch (event.sender) {
-          case MODEL_SENDER_ID:
-            selectModel(value);
-            return;
-          case EFFORT_SENDER_ID:
-            setPendingEffort(value);
-            setLastChangedRow("effort");
-            return;
-          case MODE_SENDER_ID:
-            if (isPermissionMode(value)) {
-              setPendingMode(value);
-              setLastChangedRow("mode");
-            }
-            return;
-          default:
-            return;
+        if (event.sender === MODE_SENDER_ID && isPermissionMode(value)) {
+          setPendingMode(value);
+          setLastChangedRow("mode");
         }
+      },
+      // The effort track is a `TugSlider`, so it reports a NUMBER — the index
+      // of a notch on the pending model's own level list — through `setValue`
+      // rather than `selectValue`. Every phase is applied, including the drag's
+      // `cancel` (which carries the pre-drag value, i.e. the restore).
+      [TUG_ACTIONS.SET_VALUE]: (event: ActionEvent) => {
+        if (event.sender !== EFFORT_SENDER_ID) return;
+        const index = event.value;
+        if (typeof index !== "number") return;
+        const level = support.levels[index];
+        if (level === undefined) return;
+        setPendingEffort(level);
+        setLastChangedRow("effort");
       },
     },
   });
 
-  // ---- The description line's preview switch ([L06]) ----
+  // ---- The model channel's list ----
 
-  const descriptionRef = useRef<HTMLDivElement | null>(null);
-  const rowsRef = useRef<HTMLDivElement | null>(null);
+  const dataSource = useMemo(() => new ModelListDataSource(options), [options]);
+  const delegate = useMemo<TugListViewDelegate>(
+    () => ({ onSelect: (index) => selectModel(options[index].value) }),
+    [options, selectModel],
+  );
+  const openModelIndex = options.findIndex(
+    (option) => option.value === baseline.modelSelector,
+  );
 
-  const setPreview = useCallback((id: string | null) => {
-    const stack = descriptionRef.current;
-    if (stack === null) return;
-    let matched = false;
-    for (const layer of stack.querySelectorAll("[data-description-preview-id]")) {
-      const on =
-        id !== null && layer.getAttribute("data-description-preview-id") === id;
-      layer.toggleAttribute("data-description-active", on);
-      matched = matched || on;
-    }
-    stack.toggleAttribute("data-previewing", matched);
-  }, []);
+  // ---- The effort channel's track ----
+  //
+  // The track is indexed over the PENDING model's own supported levels, not
+  // over the canonical five. That is what makes an unreachable level
+  // unreachable: there is no notch to land on, so no clamping is needed at the
+  // control layer and a non-contiguous support set (a model offering low and
+  // high but not medium) still cannot produce an invalid pick.
+  const levels = support.levels;
+  const effortIndex = Math.max(
+    0,
+    levels.findIndex((level) => level === pendingEffort),
+  );
+  const effortDescription =
+    levels.length === 0
+      ? `${resolveModelLabel(pendingModel, rows) ?? "This model"} does not offer reasoning effort`
+      : pendingEffort === null
+        ? NO_DESCRIPTION
+        : (EFFORT_SUBTITLES[pendingEffort] ?? NO_DESCRIPTION);
 
-  // The keyboard cursor previews exactly as the pointer does: the engine marks
-  // the ringed group `data-key-view-kbd` and its cursor segment
-  // `data-key-cursor`, so an observer on those attributes resolves the cursored
-  // segment whenever either moves. With deferred commit, arrows read the
-  // options and Space chooses one.
-  useLayoutEffect(() => {
-    const container = rowsRef.current;
-    if (container === null) return;
-    const recompute = (): void => {
-      setPreview(
-        previewIdOf(
-          container.querySelector(
-            "[data-key-view-kbd] [data-key-cursor][data-choice-value]",
-          ),
-        ),
-      );
-    };
-    const observer = new MutationObserver(recompute);
-    observer.observe(container, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["data-key-cursor", "data-key-view-kbd"],
-    });
-    return () => observer.disconnect();
-  }, [setPreview]);
-
-  // ---- The layers ----
-
-  const layers: DescriptionLayer[] = [
-    ...options.map((option) => ({
-      previewId: `model:${option.value}`,
-      text: describe("model", option.value, options),
-    })),
-    ...EFFORT_LEVELS.map((level) => ({
-      previewId: `effort:${level}`,
-      text: describe("effort", level, options),
-    })),
-    ...PERMISSION_MODE_MENU.map((mode) => ({
-      previewId: `mode:${mode}`,
-      text: describe("mode", mode, options),
-    })),
-  ];
-
-  // At rest the line describes the pending value of the row the user last
-  // moved — and before anything has moved, of the row the sheet opened on, so
-  // the line is never blank on the first frame.
-  const defaultRow = lastChangedRow ?? openRow;
-  const defaultValue =
-    defaultRow === "model"
-      ? pendingModel
-      : defaultRow === "effort"
-        ? pendingEffort
-        : pendingMode;
-  const defaultText =
-    defaultValue === null ? NO_DESCRIPTION : describe(defaultRow, defaultValue, options);
-
-  // ---- The rows ----
-
-  const modelItems: TugChoiceItem[] = options.map((option) => ({
-    value: option.value,
-    // The parenthetical ("Default (recommended)") is the one thing that blows
-    // a segment out of a five-across row; the shared stripper exists for
-    // exactly these width-bound contexts.
-    label: stripDisplayNameParenthetical(option.displayName),
-  }));
-
-  const effortItems: TugChoiceItem[] = EFFORT_LEVELS.map((level) => ({
-    value: level,
-    label: formatEffortLabel(level),
-    // Unsupported levels grey IN PLACE — the row keeps its shape, and the
-    // model↔effort coupling reads on one screen.
-    disabled: !support.levels.includes(level),
-  }));
+  // ---- The mode channel's segments ----
 
   const modeItems: TugChoiceItem[] = PERMISSION_MODE_MENU.map((mode) => ({
     value: mode,
@@ -593,93 +599,103 @@ function AiConfigSheetBody({
         data-slot="ai-config-sheet"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <div className="ai-config-summary" data-slot="ai-config-summary">
-          {summary}
+        {/* The readout: what OK will commit, in the largest type on the
+            surface. The model carries the most weight because it is the
+            decision the other two qualify. */}
+        <div className="ai-config-readout" data-slot="ai-config-summary">
+          <span className="ai-config-readout-model">
+            {resolveModelLabel(pendingModel, rows) ?? AI_CONFIG_UNKNOWN_MODEL}
+          </span>
+          <span className="ai-config-readout-rest">
+            {/* The spaces live in the text, not in a margin, so the readout
+                reads correctly when it is taken as a string. */}
+            {pendingEffort !== null && (
+              <>
+                <span className="ai-config-readout-sep"> · </span>
+                {formatEffortLabel(pendingEffort)}
+              </>
+            )}
+            <span className="ai-config-readout-sep"> · </span>
+            {formatPermissionMode(pendingMode)}
+          </span>
         </div>
 
-        <div
-          className="ai-config-rows"
-          ref={rowsRef}
-          onPointerOver={(event) => setPreview(previewIdOf(event.target as Element))}
-          onPointerLeave={() => setPreview(null)}
-        >
-          <div className="ai-config-row" data-preview-row="model">
-            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
+        <div className="ai-config-channels">
+          <div className="ai-config-channel">
+            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
               Model
             </TugLabel>
-            <TugChoiceGroup
-              items={modelItems}
-              value={pendingModel ?? ""}
-              senderId={MODEL_SENDER_ID}
-              size="xs"
-              sidePadding="xs"
-              focusGroup={focusGroup}
-              focusOrder={ROW_FOCUS_ORDER.model}
-              aria-label="Model"
+            {/* The test hook rides the wrapper, not the list: `TugListView`
+                does not forward unknown props to its root. */}
+            <div
+              className="ai-config-model-list sheet-option-list"
               data-testid="ai-config-model"
-            />
+            >
+              <ModelListContext.Provider value={pendingModel}>
+                <TugListView<ModelListDataSource>
+                  dataSource={dataSource}
+                  delegate={delegate}
+                  cellRenderers={MODEL_CELL_RENDERERS}
+                  rowLayout="flush"
+                  inline
+                  focusGroup={focusGroup}
+                  focusOrder={ROW_FOCUS_ORDER.model}
+                  singleSelect
+                  initialSelectedIndex={openModelIndex}
+                />
+              </ModelListContext.Provider>
+            </div>
           </div>
 
-          <div className="ai-config-row" data-preview-row="effort">
-            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
+          <div className="ai-config-channel">
+            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
               Effort
             </TugLabel>
-            <TugChoiceGroup
-              items={effortItems}
-              // A model supporting no effort at all has no level to mark. An
-              // empty value matches no segment, so none paints active and the
-              // indicator measurement bails on its own — inert rather than
-              // mispainted — and the group's `disabled` is what makes the
-              // state legible.
-              value={pendingEffort ?? ""}
-              senderId={EFFORT_SENDER_ID}
-              size="xs"
-              sidePadding="xs"
-              disabled={support.levels.length === 0}
-              focusGroup={focusGroup}
-              focusOrder={ROW_FOCUS_ORDER.effort}
-              aria-label="Reasoning effort"
-              data-testid="ai-config-effort"
-            />
+            {/* The stepped track spans exactly the pending model's levels, so
+                a model that offers none renders a disabled single-notch track
+                and says so in its description rather than presenting five
+                greyed chips to decode. */}
+            <div className="ai-config-track">
+              <TugSlider
+                value={effortIndex}
+                senderId={EFFORT_SENDER_ID}
+                min={0}
+                max={Math.max(0, levels.length - 1)}
+                step={1}
+                size="sm"
+                showTicks
+                showValue={false}
+                tickLabel={(_value, index) => formatEffortLabel(levels[index])}
+                disabled={levels.length === 0}
+                focusGroup={focusGroup}
+                focusOrder={ROW_FOCUS_ORDER.effort}
+                aria-label="Reasoning effort"
+                data-testid="ai-config-effort"
+              />
+            </div>
+            <div className="ai-config-note">{effortDescription}</div>
           </div>
 
-          <div className="ai-config-row" data-preview-row="mode">
-            <TugLabel size="md" emphasis="proposal" className="ai-config-caption">
+          <div className="ai-config-channel">
+            <TugLabel size="sm" emphasis="proposal" className="ai-config-caption">
               Mode
             </TugLabel>
             <TugChoiceGroup
               items={modeItems}
               value={pendingMode}
               senderId={MODE_SENDER_ID}
-              size="xs"
+              size="sm"
               sidePadding="xs"
+              commit="live"
               focusGroup={focusGroup}
               focusOrder={ROW_FOCUS_ORDER.mode}
               aria-label="Permission mode"
               data-testid="ai-config-mode"
             />
-          </div>
-        </div>
-
-        {/* One pre-rendered layer per option; which one shows is DOM
-            attributes, so the preview costs no render ([L06]). */}
-        <div
-          className="ai-config-description"
-          ref={descriptionRef}
-          aria-hidden="true"
-        >
-          <div className="ai-config-description-layer" data-description-layer="default">
-            {defaultText}
-          </div>
-          {layers.map((layer) => (
-            <div
-              className="ai-config-description-layer"
-              data-description-preview-id={layer.previewId}
-              key={layer.previewId}
-            >
-              {layer.text}
+            <div className="ai-config-note">
+              {PERMISSION_MODE_SUBTITLES[pendingMode] ?? NO_DESCRIPTION}
             </div>
-          ))}
+          </div>
         </div>
 
         {renderFooter !== undefined && (

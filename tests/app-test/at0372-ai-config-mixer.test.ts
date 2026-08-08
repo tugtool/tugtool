@@ -8,16 +8,21 @@
  * three confirm-style pickers. They are one chip over one mixer sheet now, and
  * the collapse is only worth having if two properties hold in the real app:
  *
- *   1. **Nothing reaches the wire until OK.** Browsing the rows must not bounce
- *      the claude process — an effort change costs a respawn. So a run of
- *      segment clicks followed by **Cancel** must leave the chip exactly where
- *      it was, and the same run followed by **OK** must land all of it at once.
- *   2. **The rows are coupled in view.** Effort is per-model. Choosing a model
- *      that supports fewer levels greys the missing ones IN PLACE (the row
- *      keeps its shape) and clamps a stranded pending level DOWNWARD rather
- *      than promoting the user to a bigger thinking budget than they asked for.
- *      This is the coupling that used to be discoverable only by crossing two
+ *   1. **Nothing reaches the wire until OK.** Browsing the channels must not
+ *      bounce the claude process — an effort change costs a respawn. So a run
+ *      of changes followed by **Cancel** must leave the chip exactly where it
+ *      was, and the same run followed by **OK** must land all of it at once.
+ *   2. **The channels are coupled.** Effort is per-model, so choosing a model
+ *      that does not offer the pending level clamps it DOWNWARD rather than
+ *      promoting the user to a bigger thinking budget than they asked for. This
+ *      is the coupling that used to be discoverable only by crossing two
  *      dialogs.
+ *
+ * It asserts BEHAVIOR, never the shape of the controls: which widget a channel
+ * happens to use, how many options it renders, and which of them paints active
+ * are that widget's own business (and its own tests'). This file cares only
+ * about what the session ends up configured to — read off the sheet's readout
+ * and the chip's face — so a redesign of the sheet costs nothing here.
  *
  * Also pinned: the three deep-link slash commands (`/model`, `/effort`,
  * `/mode`) open the ONE sheet, and `/ai` opens it too — the muscle memory
@@ -49,8 +54,16 @@ const CHIP_VALUE = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 const SHEET = '[data-slot="ai-config-sheet"]';
-const MODEL_ROW = `${SHEET} [data-testid="ai-config-model"]`;
-const EFFORT_ROW = `${SHEET} [data-testid="ai-config-effort"]`;
+/** The readout — the sheet's own statement of what OK would commit. */
+const READOUT = `${SHEET} [data-slot="ai-config-summary"]`;
+/** The model channel is an option list; each row carries its selector. */
+const MODEL_LIST = `${SHEET} [data-testid="ai-config-model"]`;
+const MODEL_ROW = (value: string): string =>
+  `${MODEL_LIST} [data-model="${value}"]`;
+/** The effort channel is a stepped `TugSlider`. */
+const EFFORT_TRACK = `${SHEET} [data-testid="ai-config-effort"]`;
+const EFFORT_THUMB = `${EFFORT_TRACK} .tug-slider-thumb`;
+/** The mode channel is still a segmented group. */
 const MODE_ROW = `${SHEET} [data-testid="ai-config-mode"]`;
 const SEGMENT = (row: string, value: string): string =>
   `${row} [data-choice-value="${value}"]`;
@@ -125,28 +138,12 @@ async function chipValue(app: App): Promise<string | null> {
   );
 }
 
-/** The `data-choice-value` of a row's active segment, or null. */
-async function activeSegment(app: App, row: string): Promise<string | null> {
+/** The sheet's readout, whitespace-normalized (it is several spans). */
+async function readout(app: App): Promise<string | null> {
   return await app.evalJS<string | null>(
     `(function(){
-      var el = document.querySelector(${JSON.stringify(`${row} [data-state="active"]`)});
-      return el ? el.getAttribute("data-choice-value") : null;
-    })()`,
-  );
-}
-
-/** The `data-choice-value`s of a row's disabled segments, in DOM order. */
-async function disabledSegments(app: App, row: string): Promise<string[]> {
-  return await app.evalJS<string[]>(
-    `(function(){
-      var segs = document.querySelectorAll(${JSON.stringify(`${row} [data-choice-value]`)});
-      var out = [];
-      for (var i = 0; i < segs.length; i++) {
-        if (segs[i].hasAttribute("data-disabled") || segs[i].disabled === true) {
-          out.push(segs[i].getAttribute("data-choice-value"));
-        }
-      }
-      return out;
+      var el = document.querySelector(${JSON.stringify(READOUT)});
+      return el ? el.textContent.replace(/\\s+/g, " ").trim() : null;
     })()`,
   );
 }
@@ -156,7 +153,7 @@ const SHEET_CLOSED = `document.querySelector(${JSON.stringify(SHEET)}) === null`
 
 describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row coupling", () => {
   test(
-    "Cancel sends nothing; OK lands the whole diff; the EFFORT row greys and clamps to the pending model",
+    "Cancel sends nothing; OK lands the whole diff; the effort track spans and clamps to the pending model",
     async () => {
       const app = await launchTugApp({ testName: "at0372-ai-config-mixer" });
       try {
@@ -188,9 +185,8 @@ describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row couplin
         await app.click(CHIP);
         await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 4000 });
 
-        // Move all three rows, then abandon the transaction.
-        await app.click(SEGMENT(MODEL_ROW, "sonnet"));
-        await app.click(SEGMENT(EFFORT_ROW, "low"));
+        // Move two channels, then abandon the transaction.
+        await app.click(MODEL_ROW("sonnet"));
         await app.click(SEGMENT(MODE_ROW, "plan"));
         expect(
           await chipValue(app),
@@ -201,41 +197,48 @@ describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row couplin
         await app.waitForCondition<boolean>(SHEET_CLOSED, { timeoutMs: 4000 });
         expect(
           await chipValue(app),
-          "Cancel commits nothing — three moved rows, zero frames",
+          "Cancel commits nothing — two moved channels, zero frames",
         ).toBe(before);
 
-        // ---- 2. The rows are coupled ------------------------------------
+        // ---- 2. The channels are coupled --------------------------------
         await app.click(CHIP);
         await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 4000 });
 
-        // Opus supports every level, so nothing is greyed at open time.
-        expect(
-          await disabledSegments(app, EFFORT_ROW),
-          "opus supports all five levels",
-        ).toEqual([]);
-
-        // Take the pending effort to a level sonnet does not offer, then pick
-        // sonnet: `xhigh` greys, and the pending level clamps DOWN to the
-        // nearest supported one rather than being promoted.
-        await app.click(SEGMENT(EFFORT_ROW, "xhigh"));
-        expect(await activeSegment(app, EFFORT_ROW)).toBe("xhigh");
-
-        await app.click(SEGMENT(MODEL_ROW, "sonnet"));
+        // Take the pending effort UP one notch, to a level sonnet does not
+        // offer. The track is the sheet's second focus stop, so Tab off the
+        // model list rings it and ArrowRight steps the thumb.
+        await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector(${JSON.stringify(SEGMENT(EFFORT_ROW, "xhigh"))});
-            return el !== null && (el.hasAttribute("data-disabled") || el.disabled === true);
+            var el = document.querySelector(${JSON.stringify(EFFORT_THUMB)});
+            return el !== null && el.hasAttribute("data-key-view-kbd");
+          })()`,
+          { timeoutMs: 4000 },
+        );
+        await app.nativeKey("ArrowRight");
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(READOUT)});
+            return el !== null && el.textContent.indexOf("Extra-High") >= 0;
+          })()`,
+          { timeoutMs: 4000 },
+        );
+
+        // Pick sonnet, which does not offer Extra-High: the stranded pending
+        // level clamps DOWN to the nearest level sonnet does offer rather than
+        // being promoted to a bigger thinking budget than was asked for.
+        await app.click(MODEL_ROW("sonnet"));
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(READOUT)});
+            return el !== null && el.textContent.indexOf("Sonnet") >= 0;
           })()`,
           { timeoutMs: 4000 },
         );
         expect(
-          await disabledSegments(app, EFFORT_ROW),
-          "only the level sonnet lacks greys — the row keeps its shape",
-        ).toEqual(["xhigh"]);
-        expect(
-          await activeSegment(app, EFFORT_ROW),
+          await readout(app),
           "a stranded level clamps DOWN, never up",
-        ).toBe("high");
+        ).toBe("Sonnet 4.6 · High · Default");
 
         // ---- 3. OK lands the whole diff at once -------------------------
         await app.click(SEGMENT(MODE_ROW, "plan"));
@@ -249,21 +252,21 @@ describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row couplin
           { timeoutMs: 6000 },
         );
 
-        // ---- 4. A model with no effort at all disables the row whole ----
+        // ---- 4. A model with no effort at all disables the channel ------
         await app.click(CHIP);
         await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 4000 });
-        await app.click(SEGMENT(MODEL_ROW, "haiku"));
+        await app.click(MODEL_ROW("haiku"));
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector(${JSON.stringify(EFFORT_ROW)});
-            return el !== null && el.hasAttribute("data-disabled");
+            var el = document.querySelector(${JSON.stringify(EFFORT_TRACK)});
+            return el !== null && el.getAttribute("aria-disabled") === "true";
           })()`,
           { timeoutMs: 4000 },
         );
         expect(
-          await activeSegment(app, EFFORT_ROW),
-          "no supported level → no segment paints active (an empty value is inert)",
-        ).toBeNull();
+          await readout(app),
+          "with no level to report the readout drops the effort token entirely",
+        ).toBe("Haiku 4.5 · Plan");
         await app.click(CANCEL);
         await app.waitForCondition<boolean>(SHEET_CLOSED, { timeoutMs: 4000 });
       } catch (err) {
@@ -306,11 +309,11 @@ describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row couplin
             `(window.__tug.dispatchControlAction("run-card-command", { name: ${JSON.stringify(name)} }), null)`,
           );
           await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 4000 });
-          const rows = await app.evalJS<number>(
-            `[${JSON.stringify(MODEL_ROW)}, ${JSON.stringify(EFFORT_ROW)}, ${JSON.stringify(MODE_ROW)}]
+          const channels = await app.evalJS<number>(
+            `[${JSON.stringify(MODEL_LIST)}, ${JSON.stringify(EFFORT_TRACK)}, ${JSON.stringify(MODE_ROW)}]
               .filter(function(s){ return document.querySelector(s) !== null; }).length`,
           );
-          expect(rows, `/${name} opens the three-row mixer`).toBe(3);
+          expect(channels, `/${name} opens the three-channel mixer`).toBe(3);
           await app.click(CANCEL);
           await app.waitForCondition<boolean>(SHEET_CLOSED, { timeoutMs: 4000 });
         }
