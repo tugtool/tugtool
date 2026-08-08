@@ -1,20 +1,21 @@
 /**
- * at0088-permission-mode-chip.test.ts — the Z4B permission-mode chip cycles
- * with `⌃⌥⌘P` and via its behavior sheet ([AT0088]).
+ * at0088-permission-mode-chip.test.ts — the session's permission mode cycles
+ * with `⌃⌥⌘P` and is set from the AI mixer's MODE row ([AT0088]).
  *
  * ## Why this exists
  *
- * The permission-mode chip is a two-line `TugPushButton`. There is no
- * `system_metadata` round-trip on a `set_permission_mode` (claude answers with
- * a control_response only), so the chip reflects the change optimistically via
+ * Mode is one of the three settings the composite AI chip shows (its last
+ * token) and the AI mixer sets. There is no `system_metadata` round-trip on a
+ * `set_permission_mode` (claude answers with a control_response only), so the
+ * chip reflects the change optimistically via
  * `SessionMetadataStore.applyPermissionMode`. Two user paths drive it:
  *
  *   1. **`⌃⌥⌘P`** — the `CYCLE_PERMISSION_MODE` key-card binding →
  *      the session card's card-content responder → `cycle()`. The chip's value
  *      line must advance through default → acceptEdits → plan → auto.
- *   2. **Behavior sheet** — clicking the chip opens a `TugSheet` listing the
- *      behavior options; picking one calls the session card's `setMode`. Picking
- *      an option must update the chip to that mode.
+ *   2. **The mixer's MODE row** — clicking the chip opens the sheet; choosing a
+ *      segment and pressing OK calls the session card's `setMode`. Nothing is
+ *      sent before OK: the sheet is a transaction.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
@@ -22,7 +23,8 @@
  * @covers tugdeck/src/lib/use-permission-mode.ts
  * @covers tugdeck/src/lib/default-permission-mode-store.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-config-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -32,18 +34,21 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
+const CHIP = `${CARD} [data-slot="ai-chip"]`;
 // The shown value only. The value is a `TugStableOverlay`: the visible label
 // lives in the `active` variant, while hidden width-sizer `alternate` variants
-// (one per menu mode) share the `permission-mode-value` wrapper to reserve the
+// (the widest composition) share the `ai-chip-value` wrapper to reserve the
 // widest label. Read the active variant so `textContent` is the shown label
 // alone, not the wrapper's value+sizers concatenation.
-const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
-// Behavior sheet + its option rows (rendered into the pane frame portal).
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+// The mixer sheet + its MODE row (rendered into the pane frame portal).
 const SHEET = '[data-slot="tug-sheet"]';
-const AUTO_OPTION = `${SHEET} [data-mode="auto"]`;
-// The sheet commits on OK, not on row click (two-step select-then-confirm).
-const SHEET_OK = `${SHEET} [data-testid="permission-mode-ok"]`;
+const MODE_ROW = `${SHEET} [data-testid="ai-config-mode"]`;
+const MODE_SEGMENT = (value: string): string =>
+  `${MODE_ROW} [data-choice-value="${value}"]`;
+const AUTO_OPTION = MODE_SEGMENT("auto");
+// The sheet commits on OK, not on segment click — it is a transaction.
+const SHEET_OK = `${SHEET} [data-slot="ai-config-ok"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 function deckShape() {
@@ -65,15 +70,29 @@ function deckShape() {
   };
 }
 
-/** Trimmed text of the chip's value line. `null` if the chip is absent. */
+/**
+ * The MODE the chip is showing — the last token of its composite value line.
+ * `null` if the chip is absent. Mode is always final: an unsupported effort is
+ * omitted rather than dashed, so the mode never shifts position.
+ */
 async function chipMode(app: App): Promise<string | null> {
   return await app.evalJS<string | null>(
     `(function(){
       var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-      return el ? el.textContent.trim() : null;
+      if (el === null) return null;
+      var parts = el.textContent.trim().split(" \\u00b7 ");
+      return parts[parts.length - 1];
     })()`,
   );
 }
+
+/** The same read, as a JS expression for `waitForCondition`. */
+const CHIP_MODE_EXPR = `(function(){
+  var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
+  if (el === null) return null;
+  var parts = el.textContent.trim().split(" \\u00b7 ");
+  return parts[parts.length - 1];
+})()`;
 
 const KNOWN_MODE_LABELS = ["Default", "Accept Edits", "Plan", "Auto", "Bypass"];
 
@@ -88,10 +107,10 @@ async function chipWidth(app: App): Promise<number | null> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0088: permission-mode chip cycles via ⌃⌥⌘P and the behavior sheet",
+  "AT0088: the permission mode cycles via ⌃⌥⌘P and is set from the AI mixer",
   () => {
     test(
-      "⌃⌥⌘P advances the mode; the behavior sheet sets it explicitly",
+      "⌃⌥⌘P advances the mode; the mixer's MODE row sets it explicitly",
       async () => {
         const app = await launchTugApp({ testName: "at0088-permission-mode-chip" });
         try {
@@ -136,10 +155,8 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              if (el === null) return false;
-              var t = el.textContent.trim();
-              return t !== ${JSON.stringify(initialMode)} &&
+              var t = ${CHIP_MODE_EXPR};
+              return t !== null && t !== ${JSON.stringify(initialMode)} &&
                 ${JSON.stringify(KNOWN_MODE_LABELS)}.indexOf(t) !== -1;
             })()`,
             { timeoutMs: 4000 },
@@ -149,70 +166,54 @@ describe.skipIf(!SHOULD_RUN)(
           expect(KNOWN_MODE_LABELS).toContain(afterCycle!);
           const widthAtCycle = await chipWidth(app);
 
-          // 2. Behavior sheet sets the mode explicitly. Click the chip to open
-          //    the sheet, then pick "Auto" by clicking its row (which moves the
-          //    in-sheet checkmark) and committing with OK — the sheet is a
-          //    two-step select-then-confirm, so the full row → select → OK →
-          //    onConfirm → setMode path runs.
+          // 2. The mixer's MODE row sets the mode explicitly. Click the chip to
+          //    open the sheet, choose the Auto segment (which moves the pending
+          //    selection only), and commit with OK — so the full segment →
+          //    selectValue → computeAiConfigCommit → setMode path runs.
           await app.nativeClickAtElement(CHIP);
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(AUTO_OPTION)}) !== null`,
             { timeoutMs: 4000 },
           );
-          // The sheet lists every behavior option, and exactly the current
-          // mode reads as selected.
-          const sheetState = await app.evalJS<{ total: number; selected: string[] }>(
+          // The row offers every mode, and exactly the current one is active.
+          const sheetState = await app.evalJS<{ total: number; active: string[] }>(
             `(function(){
-              var opts = document.querySelectorAll(${JSON.stringify(`${SHEET} [data-mode]`)});
-              var selected = [];
-              for (var i = 0; i < opts.length; i++) {
-                if (opts[i].getAttribute('data-selected') === 'true') {
-                  // Read the title line only — each row also carries a subtitle.
-                  var t = opts[i].querySelector('.tug-list-row-title');
-                  selected.push((t ? t.textContent : opts[i].textContent).trim());
+              var segs = document.querySelectorAll(${JSON.stringify(`${MODE_ROW} [data-choice-value]`)});
+              var active = [];
+              for (var i = 0; i < segs.length; i++) {
+                if (segs[i].getAttribute('data-state') === 'active') {
+                  active.push(segs[i].textContent.trim());
                 }
               }
-              return { total: opts.length, selected: selected };
+              return { total: segs.length, active: active };
             })()`,
           );
-          expect(sheetState.total, "sheet lists every behavior option").toBe(5);
-          expect(sheetState.selected, "exactly the current mode is selected").toEqual([
+          expect(sheetState.total, "the MODE row offers every mode").toBe(5);
+          expect(sheetState.active, "exactly the current mode is active").toEqual([
             afterCycle!,
           ]);
 
-          // Every row reserves a leading check holder (so titles align), and
-          // exactly the current mode shows a checkmark inside it. The rows are
-          // `TugListRow selectedGlyph="check"`: each reserves a
-          // `.tug-list-row-check` column, and only the selected row renders the
-          // check svg inside it (`data-state="shown"`).
-          const checks = await app.evalJS<{ holders: number; marks: number }>(
-            `(function(){
-              return {
-                holders: document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row-check`)}).length,
-                marks: document.querySelectorAll(${JSON.stringify(`${SHEET} .tug-list-row-check svg`)}).length,
-              };
-            })()`,
-          );
-          expect(checks.holders, "every option reserves a check holder").toBe(5);
-          expect(checks.marks, "exactly the current mode is checkmarked").toBe(1);
-
+          // Choosing a segment moves the PENDING selection only — the chip must
+          // not move until OK. This is the whole point of the transaction.
           await app.nativeClickAtElement(AUTO_OPTION);
           await app.waitForCondition<boolean>(
             `(function(){
-              var r = document.querySelector(${JSON.stringify(`${SHEET} [data-mode="auto"]`)});
-              return r !== null && r.getAttribute('data-selected') === 'true';
+              var s = document.querySelector(${JSON.stringify(AUTO_OPTION)});
+              return s !== null && s.getAttribute('data-state') === 'active';
             })()`,
             { timeoutMs: 4000 },
           );
+          expect(
+            await chipMode(app),
+            "the chip must not move before OK — the sheet is a transaction",
+          ).toBe(afterCycle);
+
           await app.nativeClickAtElement(SHEET_OK);
           await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "Auto";
-            })()`,
+            `${CHIP_MODE_EXPR} === "Auto"`,
             { timeoutMs: 4000 },
           );
-          expect(await chipMode(app), "sheet pick must set the chip mode").toBe("Auto");
+          expect(await chipMode(app), "OK must set the chip mode").toBe("Auto");
 
           // 3. Width stabilization: the chip reserves its widest label, so the
           //    mode change above (a different-length value) does not reflow it.
@@ -220,7 +221,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(widthAtCycle, "chip width must be measurable").not.toBeNull();
           expect(
             widthAtAuto,
-            "permission chip must not reflow across mode values ([R01], this chip)",
+            "the AI chip must not reflow across mode values ([R01], this chip)",
           ).toBe(widthAtCycle);
         } catch (err) {
           const tail = app.tailLog(200);

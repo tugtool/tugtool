@@ -10,7 +10,7 @@
  * affected.) `TugButton.handleClick` now ignores any click carrying `ctrlKey`
  * or a non-primary `button`.
  *
- * Pins, on the real permission-mode chip:
+ * Pins, on the real AI chip:
  *   - a Control-click leaves the sheet closed;
  *   - a plain left-click still opens it (the guard didn't break activation).
  *
@@ -19,7 +19,7 @@
  * @covers tugdeck/src/components/tugways/internal/
  * @covers tugdeck/src/components/tugways/tug-push-button.tsx
  * @covers tugdeck/src/components/tugways/tug-icon-button.tsx
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -29,8 +29,8 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
-const CHIP_CONTENT = `${CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
+const CHIP = `${CARD} [data-slot="ai-chip"]`;
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
 const SHEET = '[data-slot="tug-sheet"]';
 const SHEET_PRESENT = `document.querySelector(${JSON.stringify(SHEET)}) !== null`;
 
@@ -86,7 +86,8 @@ describe.skipIf(!SHOULD_RUN)("AT0162: Ctrl-click must not open the chip sheet", 
           "Ctrl-click must NOT open the sheet",
         ).toBe(false);
 
-        // Dismiss any context menu the Ctrl-click raised, then confirm a normal
+        // Dismiss whatever the Ctrl-click raised (on this chip, the drift
+        // report popover), then confirm a normal
         // left-click DOES open the sheet (the fix didn't break activation).
         await app.nativeKey("Escape");
         await new Promise((r) => setTimeout(r, 150));

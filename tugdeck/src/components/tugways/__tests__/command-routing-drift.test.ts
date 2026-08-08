@@ -145,15 +145,14 @@ describe("routing matches the pre-migration mechanism", () => {
   });
 
   test("the per-value families inherit the mechanism their wire used", () => {
-    // Twenty slash bridges and four permission modes were one key-card
-    // re-dispatch each before they were rows.
+    // The slash bridges were one key-card re-dispatch each before they were
+    // rows. The four permission-mode rows were the other such family; they
+    // left with the submenu whose checkmarks were their only reason to exist.
     const perValue = COMMANDS.filter((e) => e.id.includes(":"));
     const slash = perValue.filter((e) => commandWire(e) === TUG_ACTIONS.RUN_SLASH_COMMAND);
-    const modes = perValue.filter((e) => commandWire(e) === TUG_ACTIONS.SET_PERMISSION_MODE);
 
-    expect(slash.length).toBe(20);
-    expect(modes.length).toBe(4);
-    for (const entry of [...slash, ...modes]) {
+    expect(slash.length).toBe(19);
+    for (const entry of slash) {
       expect(entry.routing).toBe("key-card");
       expect(entry.menuItemId).toBeDefined();
     }
@@ -244,7 +243,6 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "show-devtools": "command",
   // The parameter picks the command.
   "run-card-command": { bridgeFor: TUG_ACTIONS.RUN_SLASH_COMMAND },
-  "set-permission-mode": { bridgeFor: TUG_ACTIONS.SET_PERMISSION_MODE },
   "set-pane-width": { bridgeFor: TUG_ACTIONS.SET_PANE_WIDTH },
 };
 
@@ -400,7 +398,9 @@ const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: str
   // The slash bridges that earned a chord. The family is reachable by typing
   // its names, which is why the rest carry none; these two are reached often
   // enough that typing the name is the slow path.
-  ["⌃⌘I", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:model`],
+  // ⌃⌘I opened the model picker until the three AI settings became one sheet;
+  // the chord kept its letter and moved to the sheet that now owns the model.
+  ["⌃⌘I", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:ai`],
   ["⌃⌘U", `${TUG_ACTIONS.RUN_SLASH_COMMAND}:usage`],
   // The card-width row. ⌘ digits are places on the deck, ⌃⌘ digits are
   // sizes for the card — one tier apart, both indexing an ordered set.

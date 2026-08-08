@@ -41,11 +41,9 @@
  * @covers tugdeck/src/lib/model.ts
  * @covers tugdeck/src/lib/model-domains.ts
  * @covers tugdeck/src/lib/model-selector.ts
- * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
- * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/lib/model-label.ts
- * @covers tugdeck/src/components/tugways/cards/model-picker-sheet.tsx
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-config-sheet.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-session-card-body.tsx
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
@@ -57,12 +55,12 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
 const SETTINGS = '[data-testid="settings-session-card"]';
-const SETTINGS_MODEL_CHIP = `${SETTINGS} [data-slot="model-chip"]`;
+// The Assistant box's one control — model, effort, and mode in a single chip
+// over a single mixer sheet, the same pair the Z4B row uses.
+const SETTINGS_AI_CHIP = `${SETTINGS} [data-slot="ai-chip"]`;
 // The overlay's ACTIVE face only — the width stabilizer also renders hidden
 // sizer alternates whose text would pollute a plain textContent read.
-const SETTINGS_MODEL_VALUE = `${SETTINGS_MODEL_CHIP} [data-slot="model-value"] [data-tug-stable="active"]`;
-const SETTINGS_MODE_CHIP = `${SETTINGS} [data-slot="permission-mode-chip"]`;
-const SETTINGS_EFFORT_CHIP = `${SETTINGS} [data-slot="effort-chip"]`;
+const SETTINGS_AI_VALUE = `${SETTINGS_AI_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
 // Sheets portal into their host PANE's frame and linger through the exit
 // animation — scope every sheet read/click to the pane that owns it so a
 // closing sheet in another pane can never swallow a click.
@@ -70,8 +68,34 @@ const SETTINGS_SHEET =
   '.tug-pane:has([data-testid="settings-card"]) [data-slot="tug-sheet"]';
 const CARD_A_SHEET = '[data-pane-id="p1"] [data-slot="tug-sheet"]';
 
-const cardModelValue = (cardId: string): string =>
-  `[data-card-id="${cardId}"] [data-slot="model-chip"] [data-slot="model-value"] [data-tug-stable="active"]`;
+/** The mixer sheet's MODEL row and one of its segments. */
+const MODEL_ROW = '[data-testid="ai-config-model"]';
+const MODEL_SEGMENT = (value: string): string =>
+  `${MODEL_ROW} [data-choice-value="${value}"]`;
+
+const cardAiValue = (cardId: string): string =>
+  `[data-card-id="${cardId}"] [data-slot="ai-chip"] [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+
+/**
+ * The MODEL the composite names — asserted as a prefix rather than a token
+ * split, because a model label can itself contain the `·` separator
+ * (`Opus 4.8 · 1M`), which makes splitting the composite ambiguous. The model
+ * is always the composite's leading run, so a prefix match is exact about the
+ * thing under test and silent about the effort/mode that follow it.
+ */
+async function waitForModel(
+  app: App,
+  selector: string,
+  label: string,
+): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      return el !== null && el.textContent.trim().indexOf(${JSON.stringify(label)}) === 0;
+    })()`,
+    { timeoutMs: 8000 },
+  );
+}
 
 /** Capability payload matching the terminal's three-selector model list. */
 function capabilities() {
@@ -201,7 +225,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0200: Assistant defaults are chip+sheet edited, isolated per card, and guarded by the bulletin",
   () => {
     test(
-      "Settings chips open the rich sheets; a picked default seeds a card with an identical label; per-card picks stay isolated",
+      "the Settings AI chip opens the mixer; a picked default seeds a card with an identical label; per-card picks stay isolated",
       async () => {
         const app = await launchTugApp({ testName: "at0200-assistant-defaults" });
         try {
@@ -224,20 +248,14 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await openSessionCardSection(app);
 
-          // ---- All three Assistant controls are the real chips, and the old
+          // ---- The Assistant control is the real Z4B chip, and the old
           //      Permission Mode dropdown is gone.
-          for (const chip of [
-            SETTINGS_MODE_CHIP,
-            SETTINGS_MODEL_CHIP,
-            SETTINGS_EFFORT_CHIP,
-          ]) {
-            expect(
-              await app.evalJS<boolean>(
-                `document.querySelector(${JSON.stringify(chip)}) !== null`,
-              ),
-              `Assistant renders the chip ${chip}`,
-            ).toBe(true);
-          }
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)}) !== null`,
+            ),
+            "Assistant renders the AI chip",
+          ).toBe(true);
           expect(
             await app.evalJS<boolean>(
               `document.querySelector('.settings-session-card-popup-mode') === null`,
@@ -248,124 +266,107 @@ describe.skipIf(!SHOULD_RUN)(
           // Deck default is the `default` zero-state and NO session has ever
           // reported capabilities → no catalog exists. The chip says exactly
           // what is known: "Default" — never a hardcoded model label.
-          expect(await textAt(app, SETTINGS_MODEL_VALUE)).toBe("Default");
+          await waitForModel(app, SETTINGS_AI_VALUE, "Default");
 
-          // ---- Fresh install, no catalog: the picker offers the single
-          //      honest Default row whose description explains that the full
-          //      list arrives after the first request — no invented models.
-          await app.click(SETTINGS_MODEL_CHIP);
+          // ---- Fresh install, no catalog: the MODEL row offers the single
+          //      honest Default segment, and the description line explains that
+          //      the full list arrives after the first request — no invented
+          //      models.
+          await app.click(SETTINGS_AI_CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} [data-model="default"]`)}) !== null`,
+            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("default")}`)}) !== null`,
             { timeoutMs: 4000 },
           );
-          const placeholderState = await app.evalJS<{
-            rows: number;
-            text: string;
-          }>(
-            `(function(){
-              var rows = document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} [data-model]`)});
-              return {
-                rows: rows.length,
-                text: rows.length === 1 ? rows[0].textContent : "",
-              };
-            })()`,
-          );
           expect(
-            placeholderState.rows,
-            "no catalog → exactly one Default row, nothing invented",
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_ROW} [data-choice-value]`)}).length`,
+            ),
+            "no catalog → exactly one Default segment, nothing invented",
           ).toBe(1);
           expect(
-            placeholderState.text,
-            "the placeholder row explains why the list is short",
+            await app.evalJS<string>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} [data-description-layer="default"]`)});
+                return el ? el.textContent : "";
+              })()`,
+            ),
+            "the description line explains why the list is short",
           ).toContain("first request");
-          await app.click(`${SETTINGS_SHEET} [data-slot="model-picker-cancel"]`);
+          await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-cancel"]`);
 
           // ---- A session reports capabilities → the Session card persists the
           //      live catalog. Every chip now shows the account default's
           //      "name with version" title, derived from claude's own
           //      description wording via the one resolveModelLabel path.
           await app.ingestSessionMetadata("A", capabilities());
-          await waitForText(app, cardModelValue("A"), "Opus 4.8 · 1M");
-          await waitForText(app, SETTINGS_MODEL_VALUE, "Opus 4.8 · 1M");
-          expect(
-            await textAt(app, cardModelValue("A")),
-            "Settings and Z4B render the identical title for the same state",
-          ).toBe(await textAt(app, SETTINGS_MODEL_VALUE));
+          await waitForModel(app, cardAiValue("A"), "Opus 4.8 · 1M");
+          await waitForModel(app, SETTINGS_AI_VALUE, "Opus 4.8 · 1M");
           const settingsChipWidthBefore = await app.evalJS<number | null>(
             `(function(){
-              var el = document.querySelector(${JSON.stringify(SETTINGS_MODEL_CHIP)});
+              var el = document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)});
               return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
             })()`,
           );
 
-          // ---- The model chip opens the rich picker sheet: title +
-          //      description rows with the Default row checkmarked.
-          await app.click(SETTINGS_MODEL_CHIP);
+          // ---- The AI chip opens the mixer: the MODEL row carries one
+          //      segment per catalog row, with the account default marked
+          //      active for the zero-state.
+          await app.click(SETTINGS_AI_CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} [data-model="sonnet"]`)}) !== null`,
+            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`)}) !== null`,
             { timeoutMs: 4000 },
           );
           const sheetState = await app.evalJS<{
-            rows: number;
-            subtitled: number;
-            selected: string[];
+            segments: number;
+            active: string[];
           }>(
             `(function(){
-              var rows = document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} [data-model]`)});
-              var subtitled = 0;
-              var selected = [];
-              for (var i = 0; i < rows.length; i++) {
-                // Rich row = a description line under the title (a second
-                // label inside the row content) — a dropdown item has none.
-                var content = rows[i].querySelector('.tug-list-row-content');
-                if (content && content.children.length > 1) subtitled++;
-                if (rows[i].getAttribute('data-selected') === 'true') {
-                  var t = rows[i].querySelector('.tug-list-row-title');
-                  selected.push((t ? t.textContent : rows[i].textContent).trim());
+              var segs = document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_ROW} [data-choice-value]`)});
+              var active = [];
+              for (var i = 0; i < segs.length; i++) {
+                if (segs[i].getAttribute('data-state') === 'active') {
+                  active.push(segs[i].getAttribute('data-choice-value'));
                 }
               }
-              return { rows: rows.length, subtitled: subtitled, selected: selected };
+              return { segments: segs.length, active: active };
             })()`,
           );
-          expect(sheetState.rows, "the sheet offers the catalog's rows").toBeGreaterThanOrEqual(3);
           expect(
-            sheetState.subtitled,
-            "rows are rich (title + description), not dropdown items",
-          ).toBeGreaterThanOrEqual(2);
+            sheetState.segments,
+            "the row offers the catalog's rows",
+          ).toBeGreaterThanOrEqual(3);
           expect(
-            sheetState.selected,
-            "the Default row is checkmarked for the zero-state",
-          ).toEqual(["Default (recommended)"]);
+            sheetState.active,
+            "the Default segment is active for the zero-state",
+          ).toEqual(["default"]);
 
-          // ---- Pick Sonnet as the deck default. The chip title is the
+          // ---- Pick Sonnet as the deck default. Nothing is written until OK
+          //      (the mixer is a transaction), and the chip then shows the
           //      row's name-with-version, from claude's own wording.
-          await app.click(`${SETTINGS_SHEET} [data-model="sonnet"]`);
-          await app.click(`${SETTINGS_SHEET} [data-slot="model-picker-ok"]`);
-          await waitForText(app, SETTINGS_MODEL_VALUE, "Sonnet 4.6");
+          await app.click(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`);
+          await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-ok"]`);
+          await waitForModel(app, SETTINGS_AI_VALUE, "Sonnet 4.6");
 
           // Width stability: the chip reserves every known row's title, so
           // changing the default never reflows it.
           expect(
             await app.evalJS<number | null>(
               `(function(){
-                var el = document.querySelector(${JSON.stringify(SETTINGS_MODEL_CHIP)});
+                var el = document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)});
                 return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
               })()`,
             ),
-            "the Settings model chip must not reflow across default values",
+            "the Settings AI chip must not reflow across default values",
           ).toBe(settingsChipWidthBefore);
 
           // ---- Card A's session is knowable (capabilities landed above), so
           //      the seed aligns it to the new deck default, and the Z4B label
           //      matches Settings byte-for-byte.
-          await waitForText(app, cardModelValue("A"), "Sonnet 4.6");
-          expect(await textAt(app, cardModelValue("A"))).toBe(
-            await textAt(app, SETTINGS_MODEL_VALUE),
-          );
+          await waitForModel(app, cardAiValue("A"), "Sonnet 4.6");
 
           // Card B seeds from the same default.
           await app.ingestSessionMetadata("B", capabilities());
-          await waitForText(app, cardModelValue("B"), "Sonnet 4.6");
+          await waitForModel(app, cardAiValue("B"), "Sonnet 4.6");
 
           // The seed must STICK: a turn-free, model-less system_metadata
           // (the synthetic session_init emitted right after spawn) says
@@ -377,29 +378,29 @@ describe.skipIf(!SHOULD_RUN)(
             ipc_version: 2,
           });
           expect(
-            await textAt(app, cardModelValue("B")),
+            (await textAt(app, cardAiValue("B")))?.startsWith("Sonnet 4.6"),
             "a model-less metadata frame must not clobber the seeded pick",
-          ).toBe("Sonnet 4.6");
+          ).toBe(true);
 
-          // ---- Isolation: change card A's model via its own Z4B picker.
+          // ---- Isolation: change card A's model via its own Z4B mixer.
           //      The deck default and card B must not move.
-          await app.click(`[data-card-id="A"] [data-slot="model-chip"]`);
+          await app.click(`[data-card-id="A"] [data-slot="ai-chip"]`);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${CARD_A_SHEET} [data-model="haiku"]`)}) !== null`,
+            `document.querySelector(${JSON.stringify(`${CARD_A_SHEET} ${MODEL_SEGMENT("haiku")}`)}) !== null`,
             { timeoutMs: 4000 },
           );
-          await app.click(`${CARD_A_SHEET} [data-model="haiku"]`);
-          await app.click(`${CARD_A_SHEET} [data-slot="model-picker-ok"]`);
-          await waitForText(app, cardModelValue("A"), "Haiku");
+          await app.click(`${CARD_A_SHEET} ${MODEL_SEGMENT("haiku")}`);
+          await app.click(`${CARD_A_SHEET} [data-slot="ai-config-ok"]`);
+          await waitForModel(app, cardAiValue("A"), "Haiku");
 
           expect(
-            await textAt(app, SETTINGS_MODEL_VALUE),
+            (await textAt(app, SETTINGS_AI_VALUE))?.startsWith("Sonnet 4.6"),
             "deck default unchanged by a per-card pick",
-          ).toBe("Sonnet 4.6");
+          ).toBe(true);
           expect(
-            await textAt(app, cardModelValue("B")),
+            (await textAt(app, cardAiValue("B")))?.startsWith("Sonnet 4.6"),
             "other open cards unchanged by a per-card pick",
-          ).toBe("Sonnet 4.6");
+          ).toBe(true);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
@@ -466,7 +467,7 @@ describe.skipIf(!SHOULD_RUN)(
           //      model_change to a concrete pick), so the chip shows the
           //      account default's name-with-version title.
           await app.ingestSessionMetadata("A", capabilities());
-          await waitForText(app, cardModelValue("A"), "Opus 4.8 · 1M");
+          await waitForModel(app, cardAiValue("A"), "Opus 4.8 · 1M");
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
@@ -514,7 +515,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // ---- The saved pick survives: the chip names Fable, not the
           //      account default it would have been reset to.
-          await waitForText(app, cardModelValue("A"), "Fable 5");
+          await waitForModel(app, cardAiValue("A"), "Fable 5");
 
           // ---- And nothing was raised — a respelling is not a breakage.
           const alertPresent = await app.evalJS<boolean>(

@@ -3,8 +3,8 @@
  *
  * No React, no DOM, no I/O — every export is a pure function or constant, so
  * the level ordering and label logic is unit-testable without a store or a
- * rendered component. The chip ([effort-chip.tsx]) and the picker hook
- * ([use-effort.ts] / [effort-picker-sheet.tsx]) consume these; tugbank
+ * rendered component. The chip ([ai-chip.tsx]) and the mixer sheet
+ * ([use-effort.ts] / [ai-config-sheet.tsx]) consume these; tugbank
  * persistence and IPC live in the hook, not here.
  *
  * Reasoning effort is the Claude Code terminal's `/effort` control — "how

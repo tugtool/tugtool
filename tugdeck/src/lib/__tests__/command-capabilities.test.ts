@@ -145,37 +145,37 @@ describe("computeCommandCapabilities", () => {
   });
 
   test("state narrows to a boolean; a value string does not ride the wire", () => {
-    const currentMode = "plan";
+    const currentWidth = "comfy";
     const entries: CommandEntry[] = [
       {
-        id: `${TUG_ACTIONS.SET_PERMISSION_MODE}:plan`,
-        title: "Plan",
+        id: `${TUG_ACTIONS.SET_PANE_WIDTH}:comfy`,
+        title: "Comfy",
         routing: "key-card",
-        action: TUG_ACTIONS.SET_PERMISSION_MODE,
-        payload: "plan",
-        menuItemId: "session.permissionMode.plan",
+        action: TUG_ACTIONS.SET_PANE_WIDTH,
+        payload: "comfy",
+        menuItemId: "window.paneWidth.comfy",
         mirrored: true,
-        state: () => currentMode === "plan",
+        state: () => currentWidth === "comfy",
       },
       {
-        id: `${TUG_ACTIONS.SET_PERMISSION_MODE}:auto`,
-        title: "Auto",
+        id: `${TUG_ACTIONS.SET_PANE_WIDTH}:wide`,
+        title: "Wide",
         routing: "key-card",
-        action: TUG_ACTIONS.SET_PERMISSION_MODE,
-        payload: "auto",
-        menuItemId: "session.permissionMode.auto",
+        action: TUG_ACTIONS.SET_PANE_WIDTH,
+        payload: "wide",
+        menuItemId: "window.paneWidth.wide",
         mirrored: true,
         // The wider return type the hook keeps for off-menu readers: a
         // value, not a check state. The mirror drops it rather than
         // coercing it into a checkmark.
-        state: () => currentMode,
+        state: () => currentWidth,
       },
     ];
     const chain = new ResponderChainManager();
     const gates = computeCommandCapabilities(source(chain), entries);
 
-    expect(gates["session.permissionMode.plan"].state).toBe(true);
-    expect(gates["session.permissionMode.auto"].state).toBeUndefined();
+    expect(gates["window.paneWidth.comfy"].state).toBe(true);
+    expect(gates["window.paneWidth.wide"].state).toBeUndefined();
   });
 
   test("a dynamic title rides the gate, and its absence leaves the item's own", () => {
@@ -233,6 +233,7 @@ describe("computeCommandCapabilities", () => {
       canInterrupt: false,
       canChangeSettings: true,
       permissionMode: "plan",
+      aiSummary: "Opus 5 · High · Plan",
       hasAssistantMessage: false,
       hasTurns: false,
       changesVisible: false,
@@ -246,20 +247,22 @@ describe("computeCommandCapabilities", () => {
     expect(none["session.focusPrompt"].enabled).toBe(false);
     expect(none["session.rewind"].enabled).toBe(false);
 
-    // A bound, idle session: the composer and the mode radios are live, Stop
-    // is not (nothing to interrupt), and Rewind has nowhere to go.
+    // A bound, idle session: the composer and the AI item are live, Stop is
+    // not (nothing to interrupt), and Rewind has nowhere to go.
     const bound = computeCommandCapabilities(
       source(chain, { sessionCardFrontmost: true, session: idle }),
     );
     expect(bound["session.focusPrompt"].enabled).toBe(true);
     expect(bound["session.stop"].enabled).toBe(false);
     expect(bound["session.rewind"].enabled).toBe(false);
-    expect(bound["session.permissionMode.plan"].enabled).toBe(true);
-    expect(bound["session.permissionMode.plan"].state).toBe(true);
-    expect(bound["session.permissionMode.auto"].state).toBe(false);
+    expect(bound["session.ai"].enabled).toBe(true);
+    // The menu item is a state display, not just a door: the gate carries the
+    // same summary the chip shows.
+    expect(bound["session.ai"].title).toBe("AI: Opus 5 · High · Plan…");
 
-    // Mid-turn: Stop lights, and the mode radios go dark so a mode change
-    // cannot race the running turn.
+    // Mid-turn: Stop lights, and the AI item goes dark so a settings change
+    // cannot race the running turn — the honest gate, where the AI Model… item
+    // it replaces stayed enabled and bounced after the fact.
     const running = computeCommandCapabilities(
       source(chain, {
         sessionCardFrontmost: true,
@@ -267,8 +270,18 @@ describe("computeCommandCapabilities", () => {
       }),
     );
     expect(running["session.stop"].enabled).toBe(true);
-    expect(running["session.permissionMode.plan"].enabled).toBe(false);
+    expect(running["session.ai"].enabled).toBe(false);
     expect(running["session.rewind"].enabled).toBe(true);
+
+    // With no summary published yet, the gate carries NO title, so the Swift
+    // item's static "AI…" stands rather than being overwritten with a stub.
+    const unpublished = computeCommandCapabilities(
+      source(chain, {
+        sessionCardFrontmost: true,
+        session: { ...idle, aiSummary: "" },
+      }),
+    );
+    expect(unpublished["session.ai"].title).toBeUndefined();
   });
 
   test("the Show/Hide verbs follow the Shade's live visibility", () => {
@@ -278,6 +291,7 @@ describe("computeCommandCapabilities", () => {
       canInterrupt: false,
       canChangeSettings: true,
       permissionMode: "default",
+      aiSummary: "Opus 5 · High · Default",
       hasAssistantMessage: false,
       hasTurns: false,
       changesVisible: false,
@@ -409,6 +423,7 @@ describe("computeCommandCapabilities", () => {
           canInterrupt: false,
           canChangeSettings: true,
           permissionMode: "default",
+          aiSummary: "Opus 5 · High · Default",
           hasAssistantMessage: true,
           hasTurns: true,
           changesVisible: false,

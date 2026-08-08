@@ -404,6 +404,12 @@ export interface MenuStateSessionBlock {
   canChangeSettings: boolean;
   /** Effective mode: live metadata ?? persisted ?? "default". */
   permissionMode: string;
+  /**
+   * The composite `model · effort · mode` line the AI chip shows — the same
+   * `formatAiConfigSummary` output, so the Session menu's AI item and the chip
+   * cannot word the same state differently. Empty when nothing is known yet.
+   */
+  aiSummary: string;
   /** The transcript holds at least one assistant message. */
   hasAssistantMessage: boolean;
   /** The transcript holds at least one completed turn (rewind gate). */
@@ -910,6 +916,7 @@ export class HostMenuStatePublisher {
               canInterrupt: session.canInterrupt,
               canChangeSettings: session.canChangeSettings,
               permissionMode: session.permissionMode,
+              aiSummary: session.aiSummary,
               hasAssistantMessage: session.hasAssistantMessage,
               hasTurns: session.hasTurns,
               changesVisible: session.changesVisible,

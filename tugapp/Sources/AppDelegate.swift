@@ -1126,31 +1126,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sessionMenu.addItem(sessionCommandItem("Clear Session", "clear", "session.new"))
         sessionMenu.addItem(NSMenuItem.separator())
 
-        // Permission Mode — a native radio submenu over the four
-        // cycle-reachable modes (bypassPermissions is deliberately not
-        // menu-reachable, matching the chip's Shift-Tab cycle). Titles
-        // are hardcoded for label parity with formatPermissionMode; the
-        // mode string rides representedObject. Checkmarks ride each mode
-        // item's registry gate on the menuState push.
-        let permissionModeItem = NSMenuItem(title: "Permission Mode", action: nil, keyEquivalent: "").identified("session.permissionMode")
-        let permissionModeMenu = NSMenu(title: "Permission Mode")
-        permissionModeItem.submenu = permissionModeMenu
-        for (title, mode) in [("Default", "default"), ("Accept Edits", "acceptEdits"), ("Plan", "plan"), ("Auto", "auto")] {
-            let item = NSMenuItem(title: title, action: #selector(setPermissionModeFromMenu(_:)), keyEquivalent: "").identified("session.permissionMode.\(mode)")
-            item.representedObject = mode
-            permissionModeMenu.addItem(item)
-        }
-        permissionModeMenu.addItem(NSMenuItem.separator())
+        // One door for model, reasoning effort, and permission mode — and a
+        // state display: the registry gate pushes a live title, so this item
+        // reads `AI: Fable 5 · High · Auto…` and the menu says what the AI is
+        // set to. The static title here is the pre-push fallback.
+        sessionMenu.addItem(sessionCommandItem("AI…", "ai", "session.ai"))
         // ⌃⌥⌘P — the advanced form of a Tug-tier command
         // (tuglaws/chord-tiers.md); the composer's Prompt route holds ⌃⌘P.
         // This menu item has to carry the same chord as the tugdeck binding
         // or it keeps swallowing it at the menu bar before the web view ever
-        // sees it.
-        permissionModeMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control, .option]).identified("session.permissionMode.cycle"))
-        sessionMenu.addItem(permissionModeItem)
-
-        sessionMenu.addItem(sessionCommandItem("AI Model…", "model", "session.model"))
-        sessionMenu.addItem(sessionCommandItem("Reasoning Effort…", "effort", "session.effort"))
+        // sees it. It keeps a visible home now that the submenu is gone: a
+        // chord without a menu item is not discoverable.
+        sessionMenu.addItem(NSMenuItem(title: "Cycle Permission Mode", action: #selector(cyclePermissionModeFromMenu(_:)), keyEquivalent: "p", modifierMask: [.command, .control, .option]).identified("session.permissionMode.cycle"))
+        // The tool-permission RULES editor — a different surface from the AI
+        // mixer, so it keeps its own row.
         sessionMenu.addItem(sessionCommandItem("Permission Rules…", "permissions", "session.permissionRules"))
         sessionMenu.addItem(sessionCommandItem("Add Working Directory…", "add-dir", "session.addDir"))
         sessionMenu.addItem(NSMenuItem.separator())
@@ -1637,11 +1626,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("show-devtools")
     }
 
-    @objc private func setPermissionModeFromMenu(_ sender: NSMenuItem) {
-        guard let mode = sender.representedObject as? String else { return }
-        sendControl("set-permission-mode", params: ["mode": mode])
-    }
-
     @objc private func cyclePermissionModeFromMenu(_ sender: Any?) {
         sendControl("cycle-permission-mode")
     }
@@ -2028,16 +2012,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             if let title = gate.title { menuItem.title = title }
             if let on = gate.state { menuItem.state = on ? .on : .off }
             if let enabled = gate.enabled { return enabled }
-        }
-
-        // The Permission Mode submenu's PARENT item carries no command — it
-        // is menu structure, so no registry entry gates it — while every
-        // item inside it does. It gates on the same `canChangeSettings`
-        // (canSubmit) its contents do, so the whole submenu dims together
-        // and a mode change can never race a running turn.
-        if id == "session.permissionMode" {
-            return (menuState.session?.sessionBound ?? false)
-                && (menuState.session?.canChangeSettings ?? false)
         }
 
         switch id {
@@ -2562,9 +2536,14 @@ struct MenuState {
     struct Session {
         let cardId: String
         let sessionBound: Bool
-        /// The Mode / Model / Effort settings may be changed (session idle —
-        /// `canSubmit`). Gates the Permission Mode submenu so a mode change
-        /// can never race a running turn, matching the disabled Z4B chips.
+        /// The model / effort / permission-mode settings may be changed
+        /// (session idle — `canSubmit`). Gates the AI item and the Cycle
+        /// Permission Mode item so a change can never race a running turn,
+        /// matching the disabled Z4B chip.
+        ///
+        /// The AI item's live TITLE does not come through here: it is composed
+        /// frontend-side and arrives as the registry gate's `title`, which
+        /// `validateMenuItem` already applies generically to any item.
         let canChangeSettings: Bool
     }
 
@@ -2712,8 +2691,8 @@ struct MenuState {
             session = Session(
                 cardId: cardId,
                 sessionBound: rawSession["sessionBound"] as? Bool ?? false,
-                // Fail open: a parse miss keeps the submenu enabled (its prior
-                // behavior) rather than stranding a dead Permission Mode menu.
+                // Fail open: a parse miss keeps the settings items enabled
+                // rather than stranding a dead AI door.
                 canChangeSettings: rawSession["canChangeSettings"] as? Bool ?? true
             )
         }

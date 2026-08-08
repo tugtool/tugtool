@@ -738,20 +738,6 @@ export function initActionDispatch(
     }
   });
 
-  // set-permission-mode: the Session ▸ Permission Mode submenu's
-  // round-trip. The mode is validated against the four-mode set the native
-  // submenu offers (`bypassPermissions` is deliberately not menu-reachable,
-  // matching the ⌃⌥⌘P cycle) so a malformed frame can never reach the send
-  // path.
-  registerAction(TUG_ACTIONS.SET_PERMISSION_MODE, (payload) => {
-    const mode = payload.mode;
-    if (typeof mode !== "string" || !PERMISSION_MODE_CYCLE.includes(mode as never)) {
-      console.warn(`${TUG_ACTIONS.SET_PERMISSION_MODE}: invalid mode`, payload);
-      return;
-    }
-    dispatchCommand(`${TUG_ACTIONS.SET_PERMISSION_MODE}:${mode}`);
-  });
-
   // set-pane-width: the Window ▸ Slim / Comfy / Wide round-trip. The bare
   // wire name carries the preset as a param; the three commands the user
   // actually invokes are the parameterized ids, so this hands off to them

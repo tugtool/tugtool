@@ -27,7 +27,7 @@
  * @covers tugdeck/src/components/tugways/tug-action-tooltip.tsx
  * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-top-bar.tsx
- * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -44,7 +44,7 @@ const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 // `TugIconButton` names a fixed prop list and drops anything else, so the
 // button carries no test id of its own; its aria-label is the stable handle.
 const SAVE_BUTTON = `${CARD} [data-slot="text-card-top-bar"] button[aria-label="Save"]`;
-const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
+const MODEL_CHIP = `${CARD} [data-slot="ai-chip"]`;
 const BUBBLE = ".tug-tooltip-content";
 const CHIP = ".tug-tooltip-content .tug-tooltip-shortcut";
 
@@ -193,9 +193,9 @@ describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => 
   );
 
   test(
-    "the AI Model chip names the chord the Session menu carries",
+    "the AI chip names the chord the Session menu carries",
     async () => {
-      const app = await launchTugApp({ testName: "at0363-model-chip" });
+      const app = await launchTugApp({ testName: "at0363-ai-chip" });
       try {
         await app.seedDeckState({ state: sessionDeckShape(), focusCardId: "A" });
         await app.waitForCondition<boolean>(
@@ -225,9 +225,9 @@ describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => 
         // The bridge's chord is menu-eligible, so the Session item is where
         // AppKit's scan lands it — and the chip has to agree with that item.
         const chip = await app.getElementText(CHIP);
-        const item = await app.menuItemState("session.model");
+        const item = await app.menuItemState("session.ai");
         expect(item.found).toBe(true);
-        if (!item.found) throw new Error("[at0363] session.model not in the menu");
+        if (!item.found) throw new Error("[at0363] session.ai not in the menu");
         expect(
           item.keyEquivalent,
           "the sweep wrote the bridge's chord onto its menu item",

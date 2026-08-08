@@ -5,9 +5,9 @@
  * Drives the REAL session card (the route group and the chips live there, not
  * in the gallery prompt-entry wrapper) and asserts:
  *
- *   1. **The static Code chip set** — identity · session · project · mode ·
- *      model · effort, always, with no route to vary it. The find cluster is
- *      not among them: it lives in the find bar, which owns the search.
+ *   1. **The static Code chip set** — one AI chip carrying model · effort ·
+ *      mode, always, with no route to vary it. The find cluster is not among
+ *      them: it lives in the find bar, which owns the search.
  *   2. **The Z4A route group** — exactly two segments, labelled Prompt and
  *      Changes, with Prompt selected at rest. Clicking Changes selects it and
  *      raises the Changes shade; clicking Prompt comes back.
@@ -24,7 +24,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/lib/commit-mode-controller.ts
- * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/components/tugways/cards/side-question-overlay.tsx
  * @covers tugdeck/src/components/tugways/tug-find-cluster.tsx
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
@@ -55,16 +55,13 @@ const FIND_CLUSTER = `${CARD} [data-slot="find-cluster"]`;
 const SIDE_Q_ASK = ".side-question-question";
 const SIDE_Q_ANSWER = ".side-question-answer";
 
-// The static Code chip set. The Z4B diet took Session and Project off this
-// route — both names already read in the pane title bar, and they were the
-// cluster's two most expensive variable faces on the one route whose width is
-// tight. Their absence is pinned in at0196.
-const STATIC_CHIPS = [
-  "session-route-indicator-badge",
-  "permission-mode-chip",
-  "model-chip",
-  "effort-chip",
-] as const;
+// The static Code chip set — now a set of one. The Z4B diet took Session and
+// Project off this route (both names already read in the pane title bar, and
+// they were the cluster's two most expensive variable faces on the one route
+// whose width is tight); the AI merge then took the Claude Code, Mode, Model,
+// and Effort chips down to a single composite. Their absence is pinned in
+// at0196.
+const STATIC_CHIPS = ["ai-chip"] as const;
 
 let dir = "";
 
@@ -191,7 +188,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // --- The static Code chip set, with no find cluster in Z4B. ---
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CARD)} + ' [data-slot="effort-chip"]') !== null`,
+            `document.querySelector(${JSON.stringify(CARD)} + ' [data-slot="ai-chip"]') !== null`,
             { timeoutMs: 8000 },
           );
           expect((await mountedChips(app)).sort(), "static Code chip set").toEqual(

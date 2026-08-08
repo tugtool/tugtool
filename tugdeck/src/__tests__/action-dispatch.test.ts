@@ -766,50 +766,6 @@ describe("initActionDispatch: run-card-command", () => {
   });
 });
 
-describe("initActionDispatch: set-permission-mode", () => {
-  beforeEach(() => {
-    _resetForTest();
-  });
-
-  function setupWithStubManager() {
-    const conn = createMockConnection();
-    const deck = createMockDeckManager();
-    initActionDispatch(conn as any, deck as any);
-    const keyCard: ActionEvent[] = [];
-    registerResponderChainManager({
-      sendToKeyCardForContinuation(event: ActionEvent) {
-        keyCard.push(event);
-        return { handled: true };
-      },
-      sendToKeyCard(event: ActionEvent): boolean {
-        keyCard.push(event);
-        return true;
-      },
-    } as any);
-    return keyCard;
-  }
-
-  it("dispatches a valid menu mode key-card-scoped", () => {
-    const keyCard = setupWithStubManager();
-    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "plan" });
-    expect(keyCard.length).toBe(1);
-    expect(keyCard[0]).toEqual({
-      action: TUG_ACTIONS.SET_PERMISSION_MODE,
-      value: "plan",
-      phase: "discrete",
-    });
-  });
-
-  it("rejects modes outside the menu set", () => {
-    const keyCard = setupWithStubManager();
-    // bypassPermissions is a real mode but deliberately not menu-reachable.
-    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "bypassPermissions" });
-    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE, mode: "nonsense" });
-    dispatchAction({ action: TUG_ACTIONS.SET_PERMISSION_MODE });
-    expect(keyCard.length).toBe(0);
-  });
-});
-
 // ---- initActionDispatch: spawn_session_ok ----
 
 describe("initActionDispatch: spawn_session_ok", () => {

@@ -22,7 +22,7 @@
  * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/lib/sheet-lifecycle.ts
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -35,7 +35,7 @@ const SID = "at0178-session";
 
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
-const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
+const MODE_CHIP = `${CARD} [data-slot="ai-chip"]`;
 const SHEET = '[data-slot="tug-sheet"]';
 
 function deckShape() {
@@ -84,8 +84,8 @@ describe.skipIf(!SHOULD_RUN)("AT0178: sheet pushes/pops a focus-trap mode", () =
         const beforeFocusMode = await app.evalJS<boolean>(HAS_FOCUS_MODE);
         expect(beforeFocusMode).toBe(false);
 
-        // Open the permission sheet (clicking the Mode chip) → a trap mode is
-        // pushed and the sheet is shown.
+        // Open the AI configuration sheet (clicking the AI chip) → a trap mode
+        // is pushed and the sheet is shown.
         await app.nativeClickAtElement(MODE_CHIP);
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SHEET)}) !== null`,

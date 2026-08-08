@@ -383,15 +383,15 @@ Domain `dev.tugtool.ai-config`, key `lastRow`, tagged value `{ kind: "string", v
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Pure helpers: lib/ai-config.ts | pending | — |
-| #step-2 | tugcode currentModel on respawn | pending | — |
-| #step-3 | Mixer sheet: ai-config-sheet.tsx | pending | — |
-| #step-4 | Composite chip: ai-chip.tsx | pending | — |
-| #step-5 | Session card wiring swap | pending | — |
-| #step-6 | Settings Assistant reuse | pending | — |
-| #step-7 | Menu collapse: registry + Swift | pending | — |
-| #step-8 | App-test + old-surface deletions | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Pure helpers: lib/ai-config.ts | done | a5c7e29e7 |
+| #step-2 | tugcode currentModel on respawn | done | 1faad2808 |
+| #step-3 | Mixer sheet: ai-config-sheet.tsx | done | 86f536724 |
+| #step-4 | Composite chip: ai-chip.tsx | done | ba6f2f375 |
+| #step-5 | Session card wiring swap | done | ffa1170b7 |
+| #step-6 | Settings Assistant reuse | done | 75f50459b |
+| #step-7 | Menu collapse: registry + Swift | done | 5823a48fe |
+| #step-8 | App-test + old-surface deletions | done | 27b5c948e |
+| #step-9 | Integration checkpoint | done | 4d0e6cfcf |
 
 #### Step 1: Pure helpers: lib/ai-config.ts {#step-1}
 

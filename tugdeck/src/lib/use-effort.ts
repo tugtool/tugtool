@@ -3,7 +3,7 @@
  * persistence and mount-restore, factored out of `session-card.tsx` (mirroring
  * [use-permission-mode.ts]).
  *
- * The chip ([effort-chip.tsx]) only *displays* the level; the behavior —
+ * The chip ([ai-chip.tsx]) only *displays* the level; the behavior —
  * sending the IPC, persisting per card, and restoring on relaunch — lives here
  * so the picker and a future `/effort` command both funnel through one
  * `setEffort`.

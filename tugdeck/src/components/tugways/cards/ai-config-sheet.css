@@ -1,0 +1,89 @@
+/* @tug-pairings: none — the sheet shell sets a text color for its own caption
+   and description text only; the rows' color comes from `TugChoiceGroup` and
+   `TugLabel` ([L20]). */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-sheet {
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-default-rest);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+/* The live composite — exactly what OK will commit, in exactly the wording the
+   chip will show afterward. */
+.ai-config-summary {
+  font-size: var(--tug-font-size-md);
+  line-height: var(--tug-line-height-tight);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rows: two columns — captions and controls — sized to their content and
+   centered as one block, so each caption sits against the row it names and the
+   three controls line up on one seam. */
+.ai-config-rows {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: center;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 6px;
+}
+
+.ai-config-row {
+  display: contents;
+}
+
+.ai-config-caption {
+  justify-self: end;
+  white-space: nowrap;
+}
+
+.ai-config-row [data-slot="tug-choice-group"] {
+  justify-self: start;
+  /* The model row grows with the catalog; a sixth selector wraps to a second
+     line rather than truncating a name into ambiguity. */
+  flex-wrap: wrap;
+}
+
+/* The description stack: every layer occupies the same grid cell, so swapping
+   which one shows never moves the sheet's height. Exactly one shows — the
+   default layer at rest, or the layer the pointer/cursor marked active. */
+.ai-config-description {
+  display: grid;
+  min-block-size: calc(var(--tug-font-size-xs) * var(--tug-line-height-normal) * 2);
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-align: center;
+}
+
+.ai-config-description-layer {
+  grid-area: 1 / 1;
+  visibility: hidden;
+}
+
+.ai-config-description-layer[data-description-layer="default"] {
+  visibility: visible;
+}
+
+.ai-config-description[data-previewing]
+  .ai-config-description-layer[data-description-layer="default"] {
+  visibility: hidden;
+}
+
+.ai-config-description-layer[data-description-active] {
+  visibility: visible;
+}
+
+.ai-config-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}

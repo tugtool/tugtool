@@ -4,7 +4,7 @@
  *
  * No React, no DOM, no I/O — every export is a pure function or a constant, so
  * the parse/seed logic is unit-testable without a store or a rendered
- * component. The model picker ([model-picker-sheet.tsx]) and the set/restore
+ * component. The mixer sheet ([ai-config-sheet.tsx]) and the set/restore
  * hook ([use-model.ts]) consume these; tugbank persistence and IPC live in the
  * hook, not here. Mirrors `permission-mode.ts` / `effort.ts`.
  *

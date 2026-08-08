@@ -42,9 +42,10 @@ describe("fast-refresh boundary oracle", () => {
   });
 
   test("a component-only module is recognized as a boundary", () => {
-    // model-chip.tsx exports only the ModelChip component — the analyzer must
-    // classify it as not-escaping, proving it detects boundaries too.
-    expect(result.escapesPath("src/components/tugways/cards/model-chip.tsx")).toBe(false);
+    // tug-copy-badge.tsx exports only the TugCopyBadge component (plus its
+    // type-only props interface) — the analyzer must classify it as
+    // not-escaping, proving it detects boundaries too.
+    expect(result.escapesPath("src/components/tugways/tug-copy-badge.tsx")).toBe(false);
   });
 
   test("frozen boundary files do not escape", () => {

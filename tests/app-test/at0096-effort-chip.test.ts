@@ -1,20 +1,19 @@
 /**
- * at0096-effort-chip.test.ts — the Z4B reasoning-effort chip mounts only when
- * the active model supports effort, shows the current level, and sets a new
- * level through its picker ([AT0096], [#step-4]).
+ * at0096-effort-chip.test.ts — the AI chip carries the reasoning-effort level
+ * when the active model supports one, and the mixer's EFFORT row sets it
+ * ([AT0096], [#step-4]).
  *
  * ## Why this exists
  *
- * The effort chip is a two-line `TugPushButton`, like the model + permission
- * chips, with two parity-critical differences this test pins:
+ * Effort is one of the three settings the composite AI chip shows and the AI
+ * mixer sets. Two parity-critical properties this test pins:
  *
- *   1. **Always present, value-or-`-`.** The Z4B cluster is a stable row, so
- *      the chip never appears/disappears with data — reasoning effort is
- *      per-model (opus supports five levels, sonnet four, haiku none), and when
- *      the active model has no level to show (unsupported, or none set) the
- *      chip shows the `-` placeholder rather than hiding. Inject
- *      `session_capabilities` with effort support + a level → the chip shows
- *      it; inject one without support → the chip falls back to `-`.
+ *   1. **The token is present or absent, never a placeholder.** Reasoning
+ *      effort is per-model (opus supports five levels, sonnet four, haiku
+ *      none). When the active model has no level, the composite OMITS the
+ *      effort token rather than showing a dash — in a two-token line a dash
+ *      reads as a value. Inject `session_capabilities` with effort support + a
+ *      level → the token appears; inject one without support → it goes.
  *   2. **No live set verb.** Picking a level sends `effort_change` (tugcode
  *      respawns claude with `--effort` + `--resume`, [R07]); there is no
  *      `system_metadata` round-trip, so the chip reflects the pick
@@ -32,8 +31,8 @@
  * @covers tugdeck/src/lib/effort.ts
  * @covers tugdeck/src/lib/use-effort.ts
  * @covers tugdeck/src/lib/default-effort-store.ts
- * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
- * @covers tugdeck/src/components/tugways/cards/effort-picker-sheet.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-config-sheet.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -43,12 +42,15 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
-const CHIP = `${CARD} [data-slot="effort-chip"]`;
+const CHIP = `${CARD} [data-slot="ai-chip"]`;
 // The shown value only — the width-stabilizer sizers also live under the
-// button content, so read the dedicated shown span.
-const CHIP_CONTENT = `${CHIP} [data-slot="effort-value"]`;
+// button content, so read the active variant.
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
 const SHEET = '[data-slot="tug-sheet"]';
-const OK_BUTTON = `${SHEET} [data-slot="effort-picker-ok"]`;
+const EFFORT_ROW = `${SHEET} [data-testid="ai-config-effort"]`;
+const EFFORT_SEGMENT = (value: string): string =>
+  `${EFFORT_ROW} [data-choice-value="${value}"]`;
+const OK_BUTTON = `${SHEET} [data-slot="ai-config-ok"]`;
 
 /** Capability payload whose active (default → opus) model supports all five levels. */
 function effortCapabilities(effort: string | null) {
@@ -80,21 +82,6 @@ function effortCapabilities(effort: string | null) {
   };
 }
 
-/** Capability payload whose only model (haiku) does NOT support effort. */
-function noEffortCapabilities() {
-  return {
-    type: "session_capabilities",
-    models: [{ value: "haiku", displayName: "Haiku" }],
-    commands: [],
-    agents: [],
-    available_output_styles: [],
-    output_style: "default",
-    account: null,
-    effort: null,
-    ipc_version: 2,
-  };
-}
-
 function deckShape() {
   return {
     cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
@@ -114,14 +101,33 @@ function deckShape() {
   };
 }
 
-/** Trimmed text of the chip's value line. `null` if the chip is absent. */
-async function chipLevel(app: App): Promise<string | null> {
-  return await app.evalJS<string | null>(
-    `(function(){
-      var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-      return el ? el.textContent.trim() : null;
-    })()`,
-  );
+/**
+ * Whether the chip's composite carries `label` as its EFFORT token.
+ *
+ * A substring match on ` · <label> · ` rather than a token split, because a
+ * model label can itself contain the separator (`Opus 4.8 · 1M`). Effort is
+ * always followed by the mode, so the flanked form is exact — and no model or
+ * mode label is ever an effort label, so there is nothing to collide with.
+ */
+function hasEffortTokenExpr(label: string): string {
+  return `(function(){
+    var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
+    return el !== null && el.textContent.trim().indexOf(" \\u00b7 " + ${JSON.stringify(label)} + " \\u00b7 ") !== -1;
+  })()`;
+}
+
+/** Whether the composite carries ANY effort token. */
+function hasAnyEffortTokenExpr(): string {
+  return `(function(){
+    var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
+    if (el === null) return false;
+    var t = el.textContent.trim();
+    var labels = ["Low", "Medium", "High", "Extra-High", "Max"];
+    for (var i = 0; i < labels.length; i++) {
+      if (t.indexOf(" \\u00b7 " + labels[i] + " \\u00b7 ") !== -1) return true;
+    }
+    return false;
+  })()`;
 }
 
 /** Outer width of the chip, rounded to 1/100 px. `null` if absent. */
@@ -135,10 +141,10 @@ async function chipWidth(app: App): Promise<number | null> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0096: effort chip is always present, shows the level, and sets it via the picker",
+  "AT0096: the AI chip carries the effort level, and the mixer's EFFORT row sets it",
   () => {
     test(
-      "supported model → picker sets level; unsupported → `-` placeholder, chip stays",
+      "supported model → the row sets the level; unsupported → the token goes, the chip stays",
       async () => {
         const app = await launchTugApp({ testName: "at0096-effort-chip" });
         try {
@@ -150,18 +156,18 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindSession("A");
           await app.awaitEngineReady("A");
 
-          // The effort chip is a permanent Z4B fixture (like Mode / Model), so
-          // it is present from mount. Before any capability lands the active
-          // model's effort support is unknown → the chip shows the `-`
-          // placeholder, never hides.
+          // The AI chip is a permanent Z4B fixture, so it is present from
+          // mount. Before any capability lands the active model's effort
+          // support is unknown → the composite carries no effort token, and
+          // the chip does not hide.
           await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "-";
-            })()`,
+            `document.querySelector(${JSON.stringify(CHIP_CONTENT)}) !== null`,
             { timeoutMs: 8000 },
           );
-          expect(await chipLevel(app), "chip present showing `-` before caps").toBe("-");
+          expect(
+            await app.evalJS<boolean>(hasAnyEffortTokenExpr()),
+            "no effort token before capabilities land",
+          ).toBe(false);
 
           // Capabilities whose active model (default → opus) supports effort,
           // with NO explicit override (`effort: null`) → the chip shows the
@@ -169,56 +175,59 @@ describe.skipIf(!SHOULD_RUN)(
           // high effort). A supported session is never blank — only an
           // unsupported model shows `-`.
           await app.ingestSessionMetadata("A", effortCapabilities(null));
-          await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "High";
-            })()`,
-            { timeoutMs: 6000 },
-          );
-          expect(await chipLevel(app), "supported + unset → default High").toBe("High");
+          await app.waitForCondition<boolean>(hasEffortTokenExpr("High"), {
+            timeoutMs: 6000,
+          });
           const widthAtHigh = await chipWidth(app);
 
-          // Open the picker (synthetic click — the chip sits at the card's
+          // Open the mixer (synthetic click — the chip sits at the card's
           // bottom-right edge, below the window's clickable region for a
           // CGEvent, so we drive its real `onClick` directly — the
-          // DOM-driven-chip app-test pattern). Opus supports
-          // exactly five levels, and the effective default ("high") is
-          // pre-selected.
+          // DOM-driven-chip app-test pattern). The EFFORT row always renders
+          // all five canonical levels; opus supports all five, so none is
+          // disabled, and the effective default ("high") is active.
           await app.click(CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${SHEET} [data-effort="max"]`)}) !== null`,
+            `document.querySelector(${JSON.stringify(EFFORT_SEGMENT("max"))}) !== null`,
             { timeoutMs: 4000 },
           );
-          const sheetState = await app.evalJS<{ total: number; selected: string[] }>(
+          const rowState = await app.evalJS<{
+            total: number;
+            active: string[];
+            disabled: number;
+          }>(
             `(function(){
-              var opts = document.querySelectorAll(${JSON.stringify(`${SHEET} [data-effort]`)});
-              var selected = [];
-              for (var i = 0; i < opts.length; i++) {
-                if (opts[i].getAttribute('data-selected') === 'true') {
-                  var t = opts[i].querySelector('.tug-list-row-title');
-                  selected.push((t ? t.textContent : opts[i].textContent).trim());
+              var segs = document.querySelectorAll(${JSON.stringify(`${EFFORT_ROW} [data-choice-value]`)});
+              var active = [];
+              var disabled = 0;
+              for (var i = 0; i < segs.length; i++) {
+                if (segs[i].getAttribute('data-state') === 'active') {
+                  active.push(segs[i].textContent.trim());
+                }
+                if (segs[i].hasAttribute('data-disabled') || segs[i].disabled === true) {
+                  disabled++;
                 }
               }
-              return { total: opts.length, selected: selected };
+              return { total: segs.length, active: active, disabled: disabled };
             })()`,
           );
-          expect(sheetState.total, "opus picker lists exactly five levels").toBe(5);
-          expect(sheetState.selected, "the current level is selected").toEqual(["High"]);
+          expect(rowState.total, "the row renders all five canonical levels").toBe(5);
+          expect(rowState.active, "the current level is active").toEqual(["High"]);
+          expect(rowState.disabled, "opus supports all five — none greyed").toBe(0);
 
-          // Pick "Max", then OK (confirm-style sheet, like the model picker).
-          // The chip reflects the new level optimistically (no metadata
-          // round-trip on an effort change — [R07]).
-          await app.click(`${SHEET} [data-effort="max"]`);
+          // Choose "Max", then OK. Nothing is sent before OK (the sheet is a
+          // transaction), and the chip then reflects the new level
+          // optimistically — there is no metadata round-trip on an effort
+          // change ([R07]).
+          await app.click(EFFORT_SEGMENT("max"));
+          expect(
+            await app.evalJS<boolean>(hasEffortTokenExpr("High")),
+            "the chip must not move before OK",
+          ).toBe(true);
           await app.click(OK_BUTTON);
-          await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "Max";
-            })()`,
-            { timeoutMs: 4000 },
-          );
-          expect(await chipLevel(app), "picking a level updates the chip").toBe("Max");
+          await app.waitForCondition<boolean>(hasEffortTokenExpr("Max"), {
+            timeoutMs: 4000,
+          });
 
           // Width stabilization: the chip reserves its widest label, so the
           // level change (a different-length value) does not reflow it.
@@ -226,21 +235,28 @@ describe.skipIf(!SHOULD_RUN)(
           expect(widthAtHigh, "chip width must be measurable").not.toBeNull();
           expect(
             widthAtMax,
-            "effort chip must not reflow across level values ([R01], this chip)",
+            "the AI chip must not reflow across level values ([R01], this chip)",
           ).toBe(widthAtHigh);
 
-          // Model gate: capabilities whose active model does NOT support effort
-          // fall back to the `-` placeholder — the chip stays present (a stable
-          // row), it just has no level to show.
-          await app.ingestSessionMetadata("A", noEffortCapabilities());
+          // Model gate: an active model that does NOT support effort drops the
+          // effort token entirely — the chip stays present (a stable row), it
+          // just has no level to name.
+          //
+          // Driven by moving the ACTIVE model within the same capability list,
+          // not by replacing the list: the composite's width is dominated by its
+          // model token, which is reserved against the known catalog, so
+          // swapping the catalog itself legitimately resizes the chip. What
+          // must not resize it is a value change under a fixed catalog — which
+          // is what a user picking haiku actually does.
+          await app.ingestSessionMetadata("A", {
+            type: "system_metadata",
+            model: "haiku",
+            ipc_version: 2,
+          });
           await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "-";
-            })()`,
+            `!${hasAnyEffortTokenExpr()}`,
             { timeoutMs: 4000 },
           );
-          expect(await chipLevel(app), "unsupported model → chip shows `-`").toBe("-");
           expect(
             await app.evalJS<boolean>(
               `document.querySelector(${JSON.stringify(CHIP)}) !== null`,
@@ -248,11 +264,11 @@ describe.skipIf(!SHOULD_RUN)(
             "chip stays present (never hides)",
           ).toBe(true);
           // Width stability across the unsupported transition: the chip
-          // reserves the full canonical level set, so dropping to `-` (an
-          // effort-unsupported model) must not collapse its width.
+          // reserves the widest composition, so losing the effort token must
+          // not collapse its width.
           expect(
             await chipWidth(app),
-            "chip must not reflow when the value drops to `-`",
+            "chip must not reflow when the effort token goes",
           ).toBe(widthAtHigh);
         } catch (err) {
           const tail = app.tailLog(200);
@@ -301,23 +317,19 @@ describe.skipIf(!SHOULD_RUN)(
           // capabilities, so `models[]` stays empty. (The `sessionMode` of the
           // bind is irrelevant to the chip — only `models` + `model` drive its
           // resolution.) The effort chip must resolve support from that known
-          // model via the persisted catalog and repopulate — not sit at `-`.
+          // model via the persisted catalog and repopulate — not go silent.
           await app.ingestSessionMetadata("A", {
             type: "system_metadata",
             model: "claude-opus-4-8[1m]",
             ipc_version: 2,
           });
-          await app.waitForCondition<boolean>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(CHIP_CONTENT)});
-              return el !== null && el.textContent.trim() === "High";
-            })()`,
-            { timeoutMs: 6000 },
-          );
+          await app.waitForCondition<boolean>(hasEffortTokenExpr("High"), {
+            timeoutMs: 6000,
+          });
           expect(
-            await chipLevel(app),
+            await app.evalJS<boolean>(hasEffortTokenExpr("High")),
             "resumed opus session → effort repopulates to the default High",
-          ).toBe("High");
+          ).toBe(true);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {

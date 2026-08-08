@@ -3,7 +3,7 @@
  * and mount-restore, factored out of the model picker (mirroring
  * [use-permission-mode.ts] / [use-effort.ts]).
  *
- * The chip ([model-chip.tsx]) only *displays* the model; the behavior — sending
+ * The chip ([ai-chip.tsx]) only *displays* the model; the behavior — sending
  * the IPC, persisting per card, and restoring on relaunch — lives here so the
  * picker and a future `/model` command both funnel through one `setModel`.
  *

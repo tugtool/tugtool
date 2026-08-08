@@ -285,7 +285,7 @@ export function knownModelRows(
 }
 
 /**
- * THE model-chip label — the one path every surface shares ([P01]-grade:
+ * THE model label — the one path every surface shares ([P01]-grade:
  * consistency by construction, not by parallel implementations).
  *
  *  - `model === null` (session hasn't resolved one): the first row's title —

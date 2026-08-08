@@ -11,10 +11,10 @@
  *      and composes with the per-card magnification.
  *   2. **Prompt Editor** — typography, view toggles, and submit-key
  *      policy for the prompt editor.
- *   3. **Assistant** — the deck-wide default Model / Permission Mode /
- *      Effort new cards adopt on first open, edited through the *same*
- *      chips + sheets as the Session card's Z4B row, bound to the deck
- *      defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
+ *   3. **Assistant** — the deck-wide default model / reasoning effort /
+ *      permission mode new cards adopt on first open, edited through the
+ *      *same* chip + mixer sheet as the Session card's Z4B row, bound to the
+ *      deck defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
  *      no parallel dropdown UI.
  *
  * Self-contained: the panel constructs its own `EditorSettingsStore` /
@@ -45,11 +45,8 @@ import { TugSwitch } from "../tug-switch";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { useResponderForm } from "../use-responder-form";
 import { useTugSheet } from "../tug-sheet";
-import { ModelChip } from "./model-chip";
-import { EffortChip } from "./effort-chip";
-import { useModelPicker } from "./model-picker-sheet";
-import { useEffortPicker } from "./effort-picker-sheet";
-import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
+import { AiChip } from "./ai-chip";
+import { useAiConfigSheet } from "./ai-config-sheet";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { ResponseSettingsStore } from "@/lib/response-settings-store";
 import { DefaultsMetadataAdapter } from "@/lib/defaults-metadata-adapter";
@@ -129,25 +126,35 @@ export function SettingsSessionCardBody() {
     [editorStore, responseStore, defaultsAdapter],
   );
 
-  // One sheet host for the Assistant pickers — the same single-host pattern
-  // the Session card uses, so opening one picker replaces any other open sheet.
+  // One sheet host for the Assistant editor — the same single-host pattern the
+  // Session card uses, so opening it replaces any other open sheet.
+  //
+  // No cardId: this is the defaults context, so the sheet seeds from the
+  // adapter's values (the deck defaults) with no per-card fallback, and no
+  // footer — there is no session cwd for permission rules and no live Claude
+  // Code version to report. And no turn to race, so the commit takes no guard:
+  // the refusal hook is a session concern the injected executor owns, which is
+  // the point of injecting it.
   const assistantSheet = useTugSheet();
-  const { openModelPicker } = useModelPicker({
-    onSelectModel: (selector) => defaultsAdapter.modelStore.set(selector),
+  const { openAiConfigSheet } = useAiConfigSheet({
     sessionMetadataStore: defaultsAdapter,
     showSheet: assistantSheet.showSheet,
-  });
-  const { openEffortPicker } = useEffortPicker({
-    sessionMetadataStore: defaultsAdapter,
-    onSelectEffort: (effort) => defaultsAdapter.effortStore.set(effort),
-    showSheet: assistantSheet.showSheet,
-  });
-  // No cardId: the defaults context — the sheet seeds from the adapter's
-  // mode (the deck default), never a per-card persisted value.
-  const { openPermissionSheet } = usePermissionSheet({
-    sessionMetadataStore: defaultsAdapter,
-    onSelectMode: (mode) => defaultsAdapter.permissionModeStore.set(mode),
-    showSheet: assistantSheet.showSheet,
+    onCommit: (actions) => {
+      for (const action of actions) {
+        switch (action.kind) {
+          case "mode":
+            defaultsAdapter.permissionModeStore.set(action.value);
+            break;
+          case "model":
+            defaultsAdapter.modelStore.set(action.value);
+            break;
+          case "effort":
+            defaultsAdapter.effortStore.set(action.value);
+            break;
+        }
+      }
+      return true;
+    },
   });
 
   const editorSettings = useSyncExternalStore(
@@ -349,21 +356,13 @@ export function SettingsSessionCardBody() {
         >
           {/* Defaults new cards adopt on first open. A card that already
               carries its own remembered value keeps it — changing these only
-              affects freshly-spawned cards. All three controls are the same
-              chips + sheets as the Z4B row, bound to the deck defaults
-              through the adapter — one editor, identical labels. */}
+              affects freshly-spawned cards. The control is the same chip +
+              mixer as the Z4B row, bound to the deck defaults through the
+              adapter — one editor, identical labels. */}
           <div className="settings-session-card-row">
-            <PermissionModeChip
+            <AiChip
               sessionMetadataStore={defaultsAdapter}
-              onOpenSheet={openPermissionSheet}
-            />
-            <ModelChip
-              sessionMetadataStore={defaultsAdapter}
-              onOpenPicker={openModelPicker}
-            />
-            <EffortChip
-              sessionMetadataStore={defaultsAdapter}
-              onOpenPicker={openEffortPicker}
+              onOpenSheet={openAiConfigSheet}
             />
           </div>
         </TugBox>

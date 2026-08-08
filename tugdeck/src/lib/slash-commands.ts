@@ -71,6 +71,12 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Edit tool-permission rules (allow / ask / deny / workspace)",
   },
   {
+    name: "ai",
+    description: "Configure the AI — model, reasoning effort, permission mode",
+  },
+  // The three attribute names survive as deep links into the one sheet, so the
+  // muscle memory keeps working: each opens the mixer focused on its own row.
+  {
     name: "model",
     description: "Switch the active model for this session",
   },

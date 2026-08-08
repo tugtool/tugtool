@@ -1,6 +1,6 @@
 /**
- * at0220-settings-chips-turn-lock.test.ts — the Z4B Mode / Model / Effort
- * controls lock while an assistant turn is in flight ([AT0220]).
+ * at0220-settings-chips-turn-lock.test.ts — the Z4B AI control locks while an
+ * assistant turn is in flight ([AT0220]).
  *
  * ## Why this exists
  *
@@ -16,24 +16,19 @@
  *
  * This drives the **live render + store**:
  *
- *   1. Idle: the Mode and Model chips are enabled `<button>`s (the Effort chip
- *      is capability-gated in a headless session, so it is only asserted
- *      mid-turn where the turn-lock dominates).
- *   2. A turn goes in flight (`send`): Mode, Model, AND Effort chips all go
- *      `disabled`.
+ *   1. Idle: the AI chip is an enabled `<button>`.
+ *   2. A turn goes in flight (`send`): it goes `disabled`.
  *   3. Seam: `⌃⌥⌘P` mid-turn is declined — the permission mode does not change
  *      (the guard runs synchronously in the keydown handler).
- *   4. The turn completes (`turn_complete`): the chips re-enable.
+ *   4. The turn completes (`turn_complete`): the chip re-enables.
  *   5. With the lock lifted, `⌃⌥⌘P` cycles the mode again — proving step 3's
  *      block was the turn-lock, not a dead key.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
- * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/lib/session-lifecycle.ts
- * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
  * @covers tugdeck/src/lib/model-label.ts
  */
 
@@ -47,12 +42,11 @@ const CODE_OUTPUT_FEED = 0x40; // FeedId.CODE_OUTPUT
 const SID = "test-session-A"; // bindSession's synthetic tug_session_id
 
 const CARD = '[data-card-id="A"]';
-const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
-const MODEL_CHIP = `${CARD} [data-slot="model-chip"]`;
-const EFFORT_CHIP = `${CARD} [data-slot="effort-chip"]`;
-// The shown value line of the mode chip (the `active` variant of the
-// width-stabilizing overlay), so `textContent` is the label alone.
-const MODE_VALUE = `${MODE_CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
+// One chip now carries all three settings, so one gate locks all three.
+const AI_CHIP = `${CARD} [data-slot="ai-chip"]`;
+// The shown value line (the `active` variant of the width-stabilizing
+// overlay), so `textContent` is the composite alone. Mode is its last token.
+const AI_VALUE = `${AI_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 // A completed assistant turn: one non-partial assistant message + the
@@ -93,11 +87,14 @@ function deckShape() {
 }
 
 /** Trimmed text of the mode chip's value line. `null` if absent. */
+/** The mode the chip shows — the last token of its composite value. */
 async function modeLabel(app: App): Promise<string | null> {
   return await app.evalJS<string | null>(
     `(function(){
-      var el = document.querySelector(${JSON.stringify(MODE_VALUE)});
-      return el ? el.textContent.trim() : null;
+      var el = document.querySelector(${JSON.stringify(AI_VALUE)});
+      if (el === null) return null;
+      var parts = el.textContent.trim().split(" \\u00b7 ");
+      return parts[parts.length - 1];
     })()`,
   );
 }
@@ -123,7 +120,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.awaitEngineReady("A");
 
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(MODE_CHIP)}) !== null`,
+            `document.querySelector(${JSON.stringify(AI_CHIP)}) !== null`,
             { timeoutMs: 8000 },
           );
 
@@ -131,32 +128,21 @@ describe.skipIf(!SHOULD_RUN)(
           // responder (the same focus step at0088 uses).
           await app.nativeClickAtElement(PROMPT_INPUT);
 
-          // 1. Idle: the mode + model chips are live, enabled buttons.
+          // 1. Idle: the AI chip is a live, enabled button.
           expect(
-            (await app.getElementState(MODE_CHIP)).disabled,
-            "mode chip is enabled at idle",
-          ).toBe(false);
-          expect(
-            (await app.getElementState(MODEL_CHIP)).disabled,
-            "model chip is enabled at idle",
+            (await app.getElementState(AI_CHIP)).disabled,
+            "AI chip is enabled at idle",
           ).toBe(false);
 
           const modeBefore = await modeLabel(app);
 
-          // 2. Start a turn → `canSubmit` is false. All three chips lock.
+          // 2. Start a turn → `canSubmit` is false. The one chip carrying all
+          //    three settings locks, so all three lock together.
           await app.driveSession("A", { op: "send", text: "hello" });
           await app.waitForCondition<boolean>(
-            `window.__tug.getElementState(${JSON.stringify(MODE_CHIP)}).disabled === true`,
+            `window.__tug.getElementState(${JSON.stringify(AI_CHIP)}).disabled === true`,
             { timeoutMs: 4000 },
           );
-          expect(
-            (await app.getElementState(MODEL_CHIP)).disabled,
-            "model chip locks mid-turn",
-          ).toBe(true);
-          expect(
-            (await app.getElementState(EFFORT_CHIP)).disabled,
-            "effort chip locks mid-turn",
-          ).toBe(true);
 
           // 3. Seam: ⌃⌥⌘P mid-turn is declined by the setter guard — the mode
           //    does not change. The guard is synchronous in the keydown
@@ -167,7 +153,7 @@ describe.skipIf(!SHOULD_RUN)(
             "⌃⌥⌘P must not change the mode while a turn is in flight",
           ).toBe(modeBefore);
 
-          // 4. Complete the turn → the chips re-enable.
+          // 4. Complete the turn → the chip re-enables.
           await app.driveSession("A", {
             op: "ingestFrame",
             feedId: CODE_OUTPUT_FEED,
@@ -179,13 +165,9 @@ describe.skipIf(!SHOULD_RUN)(
             decoded: turnDone("m1"),
           });
           await app.waitForCondition<boolean>(
-            `window.__tug.getElementState(${JSON.stringify(MODE_CHIP)}).disabled === false`,
+            `window.__tug.getElementState(${JSON.stringify(AI_CHIP)}).disabled === false`,
             { timeoutMs: 4000 },
           );
-          expect(
-            (await app.getElementState(MODEL_CHIP)).disabled,
-            "model chip re-enables after the turn",
-          ).toBe(false);
 
           // 5. Lock lifted: ⌃⌥⌘P cycles the mode again, proving step 3's block
           //    was the turn-lock and not a dead key.
@@ -193,8 +175,10 @@ describe.skipIf(!SHOULD_RUN)(
           await app.evalJS<void>(PRESS_CYCLE);
           await app.waitForCondition<boolean>(
             `(function(){
-              var el = document.querySelector(${JSON.stringify(MODE_VALUE)});
-              return el !== null && el.textContent.trim() !== ${JSON.stringify(modeBefore)};
+              var el = document.querySelector(${JSON.stringify(AI_VALUE)});
+              if (el === null) return false;
+              var parts = el.textContent.trim().split(" \\u00b7 ");
+              return parts[parts.length - 1] !== ${JSON.stringify(modeBefore)};
             })()`,
             { timeoutMs: 4000 },
           );

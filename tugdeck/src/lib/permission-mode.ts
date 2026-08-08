@@ -4,7 +4,7 @@
  *
  * No React, no DOM, no I/O — every export here is a pure function or a
  * constant, so the cycle and label logic is unit-testable without a store
- * or a rendered component. The chip ([permission-mode-chip.tsx]) and the
+ * or a rendered component. The chip ([ai-chip.tsx]) and the
  * cycle hook ([use-permission-mode.ts]) consume these; tugbank persistence
  * and IPC live in the hook, not here.
  *

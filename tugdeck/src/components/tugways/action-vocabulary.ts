@@ -342,17 +342,6 @@ export const TUG_ACTIONS = {
   //                 card-content responder. Non-dev cards register no
   //                 handler, so the dispatch is a silent no-op
   //                 (`preventDefaultOnMatch` suppresses the macOS beep).
-  // SET_PERMISSION_MODE: payload — `value: string` (a permission mode,
-  //                 validated against the menu mode set before dispatch).
-  //                 The Session ▸ Permission Mode submenu's control-frame
-  //                 round-trip (Both category): Swift sends
-  //                 `set-permission-mode {mode}`, action-dispatch
-  //                 re-dispatches key-card-scoped, and the session card's
-  //                 card-content responder commits through the same
-  //                 mode-set path the permission chip uses (frame +
-  //                 optimistic metadata + per-card persistence). Non-dev
-  //                 key cards register no handler — silent no-op behind
-  //                 the menu's validation gate.
   // INTERRUPT_SESSION: payload — none. Stop the in-flight turn:
   //                 Session ▸ Stop's control-frame round-trip (Both
   //                 category). The session card's card-content responder
@@ -453,7 +442,6 @@ export const TUG_ACTIONS = {
   NEXT_STACK_CARD: "next-stack-card",
   SELECT_COMPOSER_ROUTE: "select-composer-route",
   CYCLE_PERMISSION_MODE: "cycle-permission-mode",
-  SET_PERMISSION_MODE: "set-permission-mode",
   INTERRUPT_SESSION: "interrupt-session",
   CYCLE_FOCUS_MODE: "cycle-focus-mode",
   NEXT_KEYBOARD_FOCUS: "next-keyboard-focus",

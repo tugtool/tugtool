@@ -773,8 +773,12 @@ export function buildContentBlocksFromLegacyJournal(
  */
 export interface ClaudeSpawnConfig {
   pluginDir: string;
-  /** When omitted, the claude CLI uses its own configured default model. */
-  model?: string;
+  /**
+   * Model selector for `--model`. When omitted / null, no `--model` flag is
+   * passed and the claude CLI uses its own configured default model — which
+   * is exactly what the `default` selector means, so it records as null.
+   */
+  model?: string | null;
   permissionMode: string;
   /**
    * Reasoning-effort level for `--effort` ([#step-4]). When omitted / null,
@@ -3158,6 +3162,19 @@ export class SessionManager {
    */
   private currentEffort: string | null = null;
   /**
+   * The model selector the user has chosen (`sonnet`, `fable`, …), or `null`
+   * for the account default (which needs no `--model` flag).
+   *
+   * Unlike model *setting*, which is a live `set_model` control request to the
+   * running process, model *survival* is tugcode's job: every respawn tugcode
+   * performs for its own reasons — an `--effort` change, an `--add-dir`, a
+   * fork, a continue — starts a process that knows nothing of the control
+   * requests the old one received. Without this record those respawns silently
+   * drop the user's model back to the account default. Recorded by
+   * {@link handleModelChange} and re-applied by {@link liveSpawnConfig}.
+   */
+  private currentModel: string | null = null;
+  /**
    * Working directories added via `/add-dir` ([#step-13c]), in add order. Like
    * {@link currentEffort}, tugcode owns the `--add-dir` flags and re-applies
    * these on every (re)spawn (claude has no live add-directory control verb
@@ -3597,6 +3614,31 @@ export class SessionManager {
    * lets claude generate its own session id — used by the fork/new
    * session handlers below.
    */
+  /**
+   * The spawn fields that describe the LIVE session's settings rather than
+   * which conversation to open — plugin dir, permission mode, reasoning
+   * effort, model, and the `/add-dir` roots.
+   *
+   * Every `buildClaudeArgs` caller needs all of them, and each caller differs
+   * only in its session flags (`--resume` / `--session-id` / `--continue` /
+   * `--fork-session`). Threading them by hand at three call sites is how the
+   * model came to be applied at none of them: a field added beside
+   * `currentEffort` reaches only the call site whose author remembered it.
+   * Spread this instead, and the next flag lands everywhere at once.
+   */
+  private liveSpawnConfig(): Pick<
+    ClaudeSpawnConfig,
+    "pluginDir" | "permissionMode" | "effort" | "model" | "additionalDirectories"
+  > {
+    return {
+      pluginDir: this.getPluginDir(),
+      permissionMode: this.permissionManager.getMode(),
+      effort: this.currentEffort,
+      model: this.currentModel,
+      additionalDirectories: this.additionalDirectories,
+    };
+  }
+
   private spawnClaude(
     id: string | null,
     mode: "session-id" | "resume",
@@ -3615,10 +3657,7 @@ export class SessionManager {
     }
 
     const args = buildClaudeArgs({
-      pluginDir: this.getPluginDir(),
-      permissionMode: this.permissionManager.getMode(),
-      effort: this.currentEffort,
-      additionalDirectories: this.additionalDirectories,
+      ...this.liveSpawnConfig(),
       sessionId: mode === "resume" ? id : null,
       sessionIdOverride: mode === "session-id" && id !== null ? id : undefined,
     });
@@ -7016,9 +7055,22 @@ export class SessionManager {
   }
 
   /**
-   * Handle model change: send set_model control_request to claude stdin.
+   * Handle model change: record the selector, then send a `set_model`
+   * control_request to the live claude.
+   *
+   * The record comes FIRST, above the no-process bail, for two reasons. A
+   * model chosen before claude is up must still reach the first spawn (the
+   * shape {@link handleEffortChange} already uses). And when the user commits
+   * a model and an effort together, the effort's respawn follows this frame
+   * immediately — the respawn reads {@link currentModel}, not the control
+   * request, so the record must be written before the process it describes is
+   * killed.
+   *
+   * The `default` selector records as `null`: it names no particular model,
+   * so the honest expression of it is the absence of a `--model` flag.
    */
   handleModelChange(model: string): void {
+    this.currentModel = model === "default" ? null : model;
     if (!this.claudeProcess) {
       console.log("No active claude process for model change");
       return;
@@ -7713,10 +7765,7 @@ export class SessionManager {
     if (!claudePath) throw new Error("claude CLI not found (PATH or ~/.local/bin)");
 
     const args = buildClaudeArgs({
-      pluginDir: this.getPluginDir(),
-      permissionMode: this.permissionManager.getMode(),
-      effort: this.currentEffort,
-      additionalDirectories: this.additionalDirectories,
+      ...this.liveSpawnConfig(),
       sessionId: null,
       continue: true,
       forkSession: true,
@@ -7751,10 +7800,7 @@ export class SessionManager {
     if (!claudePath) throw new Error("claude CLI not found (PATH or ~/.local/bin)");
 
     const args = buildClaudeArgs({
-      pluginDir: this.getPluginDir(),
-      permissionMode: this.permissionManager.getMode(),
-      effort: this.currentEffort,
-      additionalDirectories: this.additionalDirectories,
+      ...this.liveSpawnConfig(),
       sessionId: null,
       continue: true,
     });

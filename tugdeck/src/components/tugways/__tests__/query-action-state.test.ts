@@ -81,12 +81,12 @@ describe("queryActionState", () => {
     chain.register({
       id: "session",
       parentId: null,
-      actions: { [TUG_ACTIONS.SET_PERMISSION_MODE]: () => {} },
-      queryActionState: () => "plan",
+      actions: { [TUG_ACTIONS.SET_PANE_WIDTH]: () => {} },
+      queryActionState: () => "comfy",
     });
     chain.makeFirstResponder("session");
 
-    expect(chain.queryActionState(TUG_ACTIONS.SET_PERMISSION_MODE)).toBe("plan");
+    expect(chain.queryActionState(TUG_ACTIONS.SET_PANE_WIDTH)).toBe("comfy");
   });
 
   test("the advisory canHandle makes a node the answering responder", () => {

@@ -30,9 +30,14 @@ import { clearSessionMenuState, publishSessionMenuState } from "@/lib/host-menu-
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   PERMISSION_MODE_DOMAIN,
+  formatPermissionMode,
   parsePersistedPermissionMode,
   resolvePermissionMode,
 } from "@/lib/permission-mode";
+import { formatAiConfigSummary } from "@/lib/ai-config";
+import { knownModelRows, resolveModelLabel } from "@/lib/model-label";
+import { formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
+import { readModelCatalog } from "@/lib/model-catalog";
 
 /** The transcript facts the menu cares about, derived per reference. */
 function deriveTranscriptFacts(transcript: ReadonlyArray<TurnEntry>): {
@@ -70,15 +75,37 @@ export function useMenuStatePublication(
         getTugbankClient()?.get(PERMISSION_MODE_DOMAIN, cardId),
       );
       const shadeView = shadeViewController.getSnapshot();
+      const metadata = sessionMetadataStore.getSnapshot();
+      const mode = resolvePermissionMode(metadata.permissionMode, persisted);
+      const catalog = readModelCatalog();
+      const effortDisplay = resolveEffortDisplay(
+        metadata.models,
+        metadata.model,
+        // The chip's effort reads `snapshot.effort` and nothing else. This hook
+        // has a per-card tugbank fallback in scope for the MODE, and none for
+        // effort — inventing one here would be a second opinion on the chip's
+        // value, which is exactly what the shared-resolver rule above forbids.
+        metadata.effort,
+        catalog,
+      );
       publishSessionMenuState(cardId, {
         cardId,
         sessionBound: cardSessionBindingStore.getBinding(cardId) !== undefined,
         canInterrupt: snap.canInterrupt,
         canChangeSettings: snap.canSubmit,
-        permissionMode: resolvePermissionMode(
-          sessionMetadataStore.getSnapshot().permissionMode,
-          persisted,
-        ),
+        permissionMode: mode,
+        // Composed from the same three resolvers the chip runs — all pure and
+        // synchronous, so this adds no subscription.
+        aiSummary: formatAiConfigSummary({
+          modelLabel: resolveModelLabel(
+            metadata.model,
+            knownModelRows(metadata.models, catalog),
+          ),
+          effortLabel: effortDisplay.supported
+            ? formatEffortLabel(effortDisplay.level)
+            : null,
+          modeLabel: formatPermissionMode(mode),
+        }),
         changesVisible: shadeView === "changes",
         historyVisible: shadeView === "history",
         commitReady: commitModeController.getSnapshot().commitReady,

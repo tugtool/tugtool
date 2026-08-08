@@ -4,18 +4,20 @@
  *
  * Three live transitions on one bound session card:
  *
- *   1. **Permission-mode checkmark** — the radio submenu's `.on` state
- *      (snapshot `state`, refreshed during the validation sweep)
- *      starts on Default; dispatching the menu's own
- *      `set-permission-mode {mode}` control action moves the chip AND
- *      the checkmark to Plan.
+ *   1. **The AI item's live title** — the Session menu's one AI row is a
+ *      state display, not just a door: its title carries the same composite
+ *      the Z4B chip shows. Dispatching the menu's own
+ *      `cycle-permission-mode` control action moves the chip AND the menu
+ *      title together. (This replaced a radio-submenu checkmark assertion:
+ *      the four mode items were deleted with the submenu, and a title that
+ *      states the mode says more than a checkmark that marked it.)
  *   2. **Stop** — disabled idle, enabled the moment a turn is in
  *      flight (`canInterrupt`), disabled again after `turn_complete`.
  *   3. **Copy Last Response / Rewind** — flip enabled once the
  *      transcript commits a turn carrying an assistant message.
- *   4. **Permission Mode radios + Cycle** — the inverse of Stop: enabled
- *      idle, disabled mid-turn (`canChangeSettings` / `canSubmit`) so a
- *      mode change can never race the running turn, re-enabled at idle.
+ *   4. **AI + Cycle Permission Mode** — the inverse of Stop: enabled idle,
+ *      disabled mid-turn (`canChangeSettings` / `canSubmit`) so a settings
+ *      change can never race the running turn, re-enabled at idle.
  *
  * The turn is driven through the real `CodeSessionStore` wire path
  * (`driveSession` send + ingestFrame — the at0099 pattern); the
@@ -28,7 +30,9 @@
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/lib/session-lifecycle.ts
  * @covers tugdeck/src/lib/card-session-binding-store.ts
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
+ * @covers tugdeck/src/components/tugways/command-registry.ts
+ * @covers tugdeck/src/components/tugways/cards/use-menu-state-publication.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -42,7 +46,7 @@ const FEED_CODE_OUTPUT = 0x40;
 
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
-const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
+const MODE_CHIP = `${CARD} [data-slot="ai-chip"]`;
 
 function deckShape() {
   return {
@@ -64,14 +68,19 @@ function deckShape() {
 }
 
 /**
- * The mode the chip is SHOWING — its width-stabilized active face, which is
- * what the user reads. The chip used to carry a native `title` and this
- * expression read that; the face is the more direct statement of the same
- * fact, and it does not move when the hover copy is reworded.
+ * The mode the chip is SHOWING — the last token of its width-stabilized active
+ * face, which is what the user reads. The chip used to carry a native `title`
+ * and this expression read that; the face is the more direct statement of the
+ * same fact, and it does not move when the hover copy is reworded.
  */
 function chipModeExpr(): string {
-  const value = `${MODE_CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
-  return `(function(){ var e = document.querySelector(${JSON.stringify(value)}); return e ? e.textContent : null; })()`;
+  const value = `${MODE_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+  return `(function(){
+    var e = document.querySelector(${JSON.stringify(value)});
+    if (e === null) return null;
+    var parts = (e.textContent || "").split(" \\u00b7 ");
+    return parts[parts.length - 1];
+  })()`;
 }
 
 /** Poll until the item's validated enabled state matches. */
@@ -97,32 +106,38 @@ async function expectEnabled(app: App, identifier: string, want: boolean): Promi
   expect(state.enabled, `${identifier} enabled=${want}`).toBe(want);
 }
 
-/** Poll until the item's checkmark (`state`, 1 = on) matches. */
-async function waitMenuChecked(
+/**
+ * Poll until the item's live title ends with `suffix`.
+ *
+ * A suffix rather than the whole title: the summary's leading model token
+ * depends on what the session reports, and this test is about the mode moving,
+ * not about which model a headless session resolves to.
+ */
+async function waitMenuTitleEndsWith(
   app: App,
   identifier: string,
-  wantChecked: boolean,
+  suffix: string,
   timeoutMs = 8000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  let lastState: number | undefined;
+  let lastTitle: string | undefined;
   while (Date.now() < deadline) {
     const item = await app.menuItemState(identifier);
     if (item.found) {
-      lastState = item.state;
-      if ((item.state === 1) === wantChecked) return;
+      lastTitle = item.title;
+      if (item.title.startsWith("AI: ") && item.title.endsWith(suffix)) return;
     }
     await new Promise((r) => setTimeout(r, 100));
   }
   expect(
-    (lastState === 1) === wantChecked,
-    `${identifier} checked=${wantChecked} (last state=${lastState})`,
-  ).toBe(true);
+    lastTitle,
+    `${identifier} title should be "AI: …${suffix}"`,
+  ).toBe(`AI: …${suffix}`);
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () => {
   test(
-    "checkmark follows the mode; Stop tracks the turn; copy/rewind flip on a committed turn",
+    "the AI item title follows the mode; Stop tracks the turn; copy/rewind flip on a committed turn",
     async () => {
       const app = await launchTugApp({ testName: "at0172-live-state" });
       try {
@@ -134,27 +149,28 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await app.bindSession("A", { tugSessionId: SID });
         await app.awaitEngineReady("A");
 
-        // ── 1. Permission-mode checkmark ──
-        // Fresh session: chip and checkmark both read Default.
+        // ── 1. The AI item's live title ──
+        // Fresh session: the chip reads Default, and the menu item says so too
+        // rather than carrying only the static "AI…" door label.
         await app.waitForCondition<boolean>(
           `${chipModeExpr()} === "Default"`,
           { timeoutMs: 8000 },
         );
-        await waitMenuChecked(app, "session.permissionMode.default", true);
-        await waitMenuChecked(app, "session.permissionMode.plan", false);
+        await waitMenuTitleEndsWith(app, "session.ai", "Default…");
 
         // Focus the card so the key-card-scoped dispatch resolves it,
         // then fire the exact control action the menu item posts.
         await app.nativeClickAtElement(PROMPT_INPUT);
         await app.evalJS<null>(
-          `(window.__tug.dispatchControlAction("set-permission-mode", { mode: "plan" }), null)`,
+          `(window.__tug.dispatchControlAction("cycle-permission-mode"), null)`,
         );
+        // default → acceptEdits is the cycle's first step.
         await app.waitForCondition<boolean>(
-          `${chipModeExpr()} === "Plan"`,
+          `${chipModeExpr()} === "Accept Edits"`,
           { timeoutMs: 8000 },
         );
-        await waitMenuChecked(app, "session.permissionMode.plan", true);
-        await waitMenuChecked(app, "session.permissionMode.default", false);
+        // The menu title followed the chip — one published summary, two faces.
+        await waitMenuTitleEndsWith(app, "session.ai", "Accept Edits…");
 
         // ── 2 + 3. Stop across a turn; copy/rewind on commit ──
         await expectEnabled(app, "session.stop", false);
@@ -176,10 +192,10 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         await app.driveSession("A", { op: "send", text: "hello there" });
         await expectEnabled(app, "session.stop", true);
 
-        // The Mode control locks mid-turn: the Permission Mode radios and
-        // Cycle gate on canChangeSettings (canSubmit) exactly like the Z4B
-        // chips, so a mode change can never race the running turn.
-        await expectEnabled(app, "session.permissionMode.plan", false);
+        // The AI controls lock mid-turn: the AI item and Cycle gate on
+        // canChangeSettings (canSubmit) exactly like the Z4B chip, so a
+        // settings change can never race the running turn.
+        await expectEnabled(app, "session.ai", false);
         await expectEnabled(app, "session.permissionMode.cycle", false);
 
         // Commit the turn with an assistant message.
@@ -191,7 +207,7 @@ describe.skipIf(!SHOULD_RUN)("AT0172: Session-menu live-state validation", () =>
         // Back to idle: Stop gates off; the committed transcript
         // enables Copy Last Response and Rewind; the Mode control unlocks.
         await expectEnabled(app, "session.stop", false);
-        await expectEnabled(app, "session.permissionMode.plan", true);
+        await expectEnabled(app, "session.ai", true);
         await expectEnabled(app, "session.permissionMode.cycle", true);
         await expectEnabled(app, "edit.copyLastResponse", true);
         await expectEnabled(app, "session.rewind", true);

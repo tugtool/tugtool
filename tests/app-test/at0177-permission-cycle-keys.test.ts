@@ -26,7 +26,7 @@
  * @covers tugdeck/src/lib/permission-mode.ts
  * @covers tugdeck/src/lib/use-permission-mode.ts
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
- * @covers tugdeck/src/components/tugways/cards/permission-mode-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -39,7 +39,7 @@ const SID = "at0177-session";
 
 const CARD = '[data-card-id="A"]';
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
-const MODE_CHIP = `${CARD} [data-slot="permission-mode-chip"]`;
+const MODE_CHIP = `${CARD} [data-slot="ai-chip"]`;
 
 function deckShape() {
   return {
@@ -61,7 +61,10 @@ function deckShape() {
 }
 
 /**
- * The mode the chip is SHOWING — its width-stabilized active face.
+ * The mode the chip is SHOWING — the last token of its width-stabilized active
+ * face. The AI chip's value is the composite `model · effort · mode`, and mode
+ * is always its final token (an unsupported effort is omitted, never dashed,
+ * so the mode never shifts position).
  *
  * Read off the chip's own value rather than a hover string: the chip used to
  * carry a native `title` and this test read that, which meant a rename of the
@@ -69,8 +72,13 @@ function deckShape() {
  * user sees, and it is what the cycle is supposed to move.
  */
 function chipModeExpr(): string {
-  const value = `${MODE_CHIP} [data-slot="permission-mode-value"] [data-tug-stable="active"]`;
-  return `(function(){ var e = document.querySelector(${JSON.stringify(value)}); return e ? e.textContent : null; })()`;
+  const value = `${MODE_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+  return `(function(){
+    var e = document.querySelector(${JSON.stringify(value)});
+    if (e === null) return null;
+    var parts = (e.textContent || "").split(" \\u00b7 ");
+    return parts[parts.length - 1];
+  })()`;
 }
 
 /**

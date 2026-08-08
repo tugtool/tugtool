@@ -282,6 +282,7 @@ describe("HostMenuStatePublisher", () => {
     canInterrupt: false,
     canChangeSettings: true,
     permissionMode: "default",
+    aiSummary: "Opus 5 · High · Default",
     hasAssistantMessage: false,
     hasTurns: false,
     changesVisible: false,

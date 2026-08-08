@@ -1,0 +1,103 @@
+/* @tug-pairings:
+   - the right-click report's title / version / detail text set `color` alone
+     and each carry a `@tug-renders-on` annotation naming the popover surface.
+   The chip itself is a composed `TugPushButton` — it owns its surface and
+   tokens; this file declares none for it. Only the report geometry lives
+   here, under `--tugx-ai-chip-report-*`.
+*/
+
+/**
+ * ai-chip.css — the `AiChip` right-click report's styling. The chip is a
+ * composed `TugPushButton`; only the popover report is dressed here.
+ *
+ * Tuglaw cross-check:
+ *  - [L16] every colour-only text rule carries a `@tug-renders-on` annotation.
+ *  - [L17] `--tugx-ai-chip-report-*` resolves to `--tug-*` in one hop.
+ *  - [L19] file pair; the report node carries `data-slot="ai-chip-report"`.
+ *  - [L20] owns `--tugx-ai-chip-report-*` only; the composed `TugPushButton`,
+ *    `TugCopyBadge`, and `SessionCautionBadge` keep their own tokens.
+ */
+
+/* ---- Component-tier aliases — report geometry [L17] ---- */
+
+body {
+  --tugx-ai-chip-report-gap:       var(--tug-space-xs);
+  --tugx-ai-chip-report-padding:   var(--tug-space-sm);
+  --tugx-ai-chip-report-size:      var(--tug-font-size-xs);
+  --tugx-ai-chip-report-label-gap: var(--tug-space-md);
+}
+
+/* ---- Trigger chip ---- */
+
+/* The chip is a `TugPushButton` (its own surface + tokens); the only thing
+ * this consumer adds is the pointer cursor — a left click opens the mixer. */
+.ai-chip {
+  cursor: pointer;
+}
+
+/* ---- Right-click report (inside TugPopoverContent) ---- */
+
+.ai-chip-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-ai-chip-report-gap);
+  padding: var(--tugx-ai-chip-report-padding);
+  font-size: var(--tugx-ai-chip-report-size);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.ai-chip-report-title {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* Running / validated version rows — a label column and a value. */
+.ai-chip-report-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-chip-report-version-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tugx-ai-chip-report-label-gap);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.ai-chip-report-version-label {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.ai-chip-report-version-value {
+  color: var(--tug7-element-global-text-normal-default-rest);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-chip-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tugx-ai-chip-report-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-chip-report-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
+}
+
+/* @tug-renders-on: --tug7-surface-popover-primary-normal-default-rest */
+.ai-chip-report-detail {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The copy row — the affordance the merged chips carried on right-click. */
+.ai-chip-report-copy {
+  display: flex;
+  justify-content: flex-start;
+}

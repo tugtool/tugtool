@@ -48,11 +48,15 @@ import { SessionChangesView } from "./session-changes/session-changes-view";
 import { SessionHistoryView } from "./session-history/session-history-view";
 import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
-import { SessionRouteIndicatorBadge } from "../chrome/session-route-indicator-badge";
 import { formatPathChipText } from "../chrome/path-chip-format";
-import { PermissionModeChip, usePermissionSheet } from "./permission-mode-chip";
-import { ModelChip } from "./model-chip";
-import { useModelPicker } from "./model-picker-sheet";
+import {
+  AiChip,
+  CC_VERSION_DOMAIN,
+  CC_VERSION_KEY,
+  CLAUDE_CODE_CHANGELOG_URL,
+  parseLastKnownVersion,
+} from "./ai-chip";
+import { useAiConfigSheet } from "./ai-config-sheet";
 import { useModel } from "@/lib/use-model";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
@@ -65,9 +69,7 @@ import { useUsageSheet } from "./usage-sheet";
 import { useHelpSheet } from "./help-sheet";
 import { useRenameSessionSheet } from "./rename-session-sheet";
 import { useResumeSheet } from "./resume-sheet";
-import { EffortChip } from "./effort-chip";
 import { SessionPendingContextStrip } from "./session-pending-context-strip";
-import { useEffortPicker } from "./effort-picker-sheet";
 import { useEffort } from "@/lib/use-effort";
 import { usePermissionRulesSheet } from "./permission-rules-editor";
 import { useSessionCardServices } from "./use-session-card-services";
@@ -82,7 +84,7 @@ import type { InlineCommandMatcher } from "@/lib/inline-command-ghost";
 import type { PastedCommandResolver } from "@/components/tugways/tug-text-editor/clipboard-filters";
 import { usePermissionMode } from "@/lib/use-permission-mode";
 import { isPermissionMode } from "@/lib/permission-mode";
-import { openPathInOS } from "@/lib/os-open";
+import { openPathInOS, openUrlInOS } from "@/lib/os-open";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugCopyBadge } from "../tug-copy-badge";
 import { group } from "../tug-animator";
@@ -296,7 +298,13 @@ const SESSION_CYCLE_GROUP = "session-prompt-cycle";
 // seed lands on the next live stop; a chip a route doesn't show simply
 // unmounts (Table T01), so it is not in the walk at all.
 const SESSION_CYCLE_ORDER_ROUTE = 0;
-const SESSION_CYCLE_ORDER_CLAUDE_CODE = 1;
+// The one AI chip stands where the Claude Code chip did. Mode / Model / Effort
+// (slots 5 and 6, plus 4's Mode reading) merged into it, so those orders now go
+// unclaimed on the code route. Left as gaps rather than renumbered, for the
+// reason stated below for slot 2: the grid describes the SHAPE of the toolbar
+// row and the engine skips unmounted stops, so closing the gaps would churn
+// every constant beneath them to no effect.
+const SESSION_CYCLE_ORDER_AI = 1;
 // 2 was the Session chip's. The Z4B diet unmounted that chip from the code
 // route, its only mount, so nothing claims the order now — but the constant and
 // its place in `cycleSpatialOrder` stay, because that grid describes the SHAPE
@@ -304,15 +312,10 @@ const SESSION_CYCLE_ORDER_CLAUDE_CODE = 1;
 // mounted. Renumbering would churn every constant below it for nothing.
 const SESSION_CYCLE_ORDER_SESSION = 2;
 const SESSION_CYCLE_ORDER_PROJECT = 3;
-const SESSION_CYCLE_ORDER_MODE = 4;
-const SESSION_CYCLE_ORDER_MODEL = 5;
-const SESSION_CYCLE_ORDER_EFFORT = 6;
-// The shell route's Cwd chip shares slot 4 with Mode — the two are never in
-// the same route's Z4B cluster (Table T01), so the Tab walk never sees both.
+// Slot 4 is the off-code-route chip slot: the shell route's Cwd chip and commit
+// mode's Changes chip. Neither is ever co-mounted with the other (Table T01),
+// so the Tab walk never sees two of them.
 const SESSION_CYCLE_ORDER_CWD = 4;
-// Commit mode's Changes chip shares slot 4 as well — the commit cluster
-// (Project + Changes) replaces the whole Code chip set, so Mode is never
-// co-mounted with it (Table T01).
 const SESSION_CYCLE_ORDER_CHANGES = 4;
 const SESSION_CYCLE_ORDER_SUBMIT = 7;
 // The find bar's four controls ([D122]) — query field, option group, Find
@@ -2804,12 +2807,13 @@ export function SessionCardBody({
     return rowGridOrder([
       [
         k(SESSION_CYCLE_ORDER_ROUTE),
-        k(SESSION_CYCLE_ORDER_CLAUDE_CODE),
+        k(SESSION_CYCLE_ORDER_AI),
         k(SESSION_CYCLE_ORDER_SESSION),
         k(SESSION_CYCLE_ORDER_PROJECT),
-        k(SESSION_CYCLE_ORDER_MODE),
-        k(SESSION_CYCLE_ORDER_MODEL),
-        k(SESSION_CYCLE_ORDER_EFFORT),
+        // Slot 4 stays in the row: it is the shell route's Cwd chip and commit
+        // mode's Changes chip, which are still real stops. The three merged
+        // code-route chips' slots (5, 6, and 4's Mode reading) leave with them.
+        k(SESSION_CYCLE_ORDER_CWD),
         k(SESSION_CYCLE_ORDER_SUBMIT),
       ],
       // The find bar's row, present exactly while the bar is (rowGridOrder
@@ -3219,14 +3223,6 @@ export function SessionCardBody({
   // second sheet on top of it ([#step-2b]).
   const cardPickerSheet = useTugSheet();
 
-  const permissionSheet = usePermissionSheet({
-    cardId,
-    sessionMetadataStore,
-    onSelectMode: permissionMode.setMode,
-    showSheet: cardPickerSheet.showSheet,
-    commitDisposition: SESSION_CYCLE_PICKER_COMMIT_DISPOSITION,
-  });
-
   // The `/permissions` rules editor, owned at the card level so the slash
   // command opens it card-scoped ([D15]). Reads the session `cwd` fresh at
   // open time; a no-op until session metadata reports a cwd.
@@ -3278,13 +3274,6 @@ export function SessionCardBody({
     persistedCatalogRef.current = serialized;
     persistModelCatalog(liveModels);
   }, [liveModels]);
-
-  const modelPicker = useModelPicker({
-    sessionMetadataStore,
-    onSelectModel: model.setModel,
-    showSheet: cardPickerSheet.showSheet,
-    commitDisposition: SESSION_CYCLE_PICKER_COMMIT_DISPOSITION,
-  });
 
   // `/rewind` turn picker + restore confirm ([#step-7-3]), card-scoped per
   // [D15]. Reads the transcript fresh at open time; the popup already gates
@@ -3377,13 +3366,6 @@ export function SessionCardBody({
     sessionMetadataStore,
   });
 
-  const effortPicker = useEffortPicker({
-    sessionMetadataStore,
-    onSelectEffort: effort.setEffort,
-    showSheet: cardPickerSheet.showSheet,
-    commitDisposition: SESSION_CYCLE_PICKER_COMMIT_DISPOSITION,
-  });
-
   // Surface for each local slash command, keyed by command name. The
   // `as const satisfies` registry narrows `LocalCommandName` to the literal
   // union, so this `Record` is exhaustive — a registered command without a
@@ -3440,22 +3422,105 @@ export function SessionCardBody({
     return false;
   };
 
+  // The Claude Code version the sheet footer reports: the live one once the
+  // session has reported it, else the last version any session saw ([L02]).
+  const lastKnownCcVersion = useTugbankValue<string | null>(
+    CC_VERSION_DOMAIN,
+    CC_VERSION_KEY,
+    parseLastKnownVersion,
+    null,
+  );
+
+  // The one AI configuration sheet, owned at the card level so the chip press,
+  // `/ai`, and the three deep-link commands all present the same sheet.
+  const aiConfigSheet = useAiConfigSheet({
+    cardId,
+    sessionMetadataStore,
+    showSheet: cardPickerSheet.showSheet,
+    commitDisposition: SESSION_CYCLE_PICKER_COMMIT_DISPOSITION,
+    // Walk the ordered array through the existing single set paths — each
+    // already handles optimistic reflection, per-card persistence, and its
+    // frame, so the transaction adds no send code of its own.
+    //
+    // The guard runs ONCE here, before the first action, and not per action.
+    // Opening the sheet already funnels through it, but the sheet is a
+    // transaction the user can hold open across the start of a turn — and the
+    // set paths' seam declines a mid-turn change individually, which would
+    // half-apply a two-action commit (model sent, effort refused). All or
+    // nothing: refusing here is what a transaction is for.
+    onCommit: (actions) => {
+      if (!guardTurnIdleForSetting("the AI configuration")) return false;
+      for (const action of actions) {
+        switch (action.kind) {
+          case "mode":
+            permissionMode.setMode(action.value);
+            break;
+          case "model":
+            model.setModel(action.value);
+            break;
+          case "effort":
+            effort.setEffort(action.value);
+            break;
+        }
+      }
+      return true;
+    },
+    renderFooter: (close) => (
+      <>
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          role="action"
+          data-slot="ai-config-rules-link"
+          onClick={() => {
+            // One sheet host: close this one before opening the rules editor,
+            // so the two are sequential rather than stacked.
+            close();
+            permissionRulesSheet.openRulesSheet();
+          }}
+        >
+          Edit permission rules…
+        </TugPushButton>
+        <TugPushButton
+          size="sm"
+          emphasis="ghost"
+          role="action"
+          data-slot="ai-config-changelog-link"
+          onClick={() => openUrlInOS(CLAUDE_CODE_CHANGELOG_URL)}
+        >
+          {`Claude Code ${sessionMetadataStore.getSnapshot().version ?? lastKnownCcVersion ?? "?"} · changelog`}
+        </TugPushButton>
+      </>
+    ),
+  });
+
   const slashCommandSurfaces: Record<
     LocalCommandName,
     (args: string, draft?: SlashCommandDraft) => void
   > = {
+    // `/permissions` is the tool-permission RULES editor, a different surface
+    // from the mixer — it keeps its own door.
     permissions: () => permissionRulesSheet.openRulesSheet(),
+    // `/ai` opens on the sticky row; the three attribute names deep-link to
+    // their own row, so the muscle memory lands where it always did.
+    ai: () => {
+      if (guardTurnIdleForSetting("the AI configuration")) {
+        aiConfigSheet.openAiConfigSheet();
+      }
+    },
     model: () => {
-      if (guardTurnIdleForSetting("the model")) modelPicker.openModelPicker();
+      if (guardTurnIdleForSetting("the AI configuration")) {
+        aiConfigSheet.openAiConfigSheet("model");
+      }
     },
     effort: () => {
-      if (guardTurnIdleForSetting("the reasoning effort")) {
-        effortPicker.openEffortPicker();
+      if (guardTurnIdleForSetting("the AI configuration")) {
+        aiConfigSheet.openAiConfigSheet("effort");
       }
     },
     mode: () => {
-      if (guardTurnIdleForSetting("the permission mode")) {
-        permissionSheet.openPermissionSheet();
+      if (guardTurnIdleForSetting("the AI configuration")) {
+        aiConfigSheet.openAiConfigSheet("mode");
       }
     },
     rewind: () => rewindSheet.openRewindSheet(),
@@ -3836,18 +3901,6 @@ export function SessionCardBody({
       [TUG_ACTIONS.CYCLE_PERMISSION_MODE]: (_event: ActionEvent) => {
         if (!guardTurnIdleForSetting("the permission mode")) return;
         permissionMode.cycle();
-      },
-      // A Session ▸ Permission Mode menu pick, round-tripped through the
-      // `set-permission-mode` control frame. Commits through the same
-      // mode-set path the chip and sheet use (frame + optimistic
-      // metadata + per-card persistence), so all entry points agree.
-      // action-dispatch already validated against the menu mode set;
-      // the narrow here is defensive against other dispatchers.
-      [TUG_ACTIONS.SET_PERMISSION_MODE]: (event: ActionEvent) => {
-        const mode = event.value;
-        if (typeof mode !== "string" || !isPermissionMode(mode)) return;
-        if (!guardTurnIdleForSetting("the permission mode")) return;
-        permissionMode.setMode(mode);
       },
       // Session ▸ Stop. Always means interrupt — the menu deliberately
       // bypasses Escape's dismiss-priority walk (popover > drag >
@@ -4628,8 +4681,9 @@ export function SessionCardBody({
                     </TugActionTooltip>
                   </>
                 ) : (
-                // Static Code chip set ([P01]/[P10]): identity · mode · model ·
-                // effort. The find cluster is not here — it lives in the find
+                // Static Code chip set ([P01]/[P10]): one AI chip carrying
+                // model · effort · mode, plus the Claude Code identity it
+                // absorbed. The find cluster is not here — it lives in the find
                 // bar, which owns the search for exactly as long as it is open.
                 //
                 // The Session and Project chips are deliberately absent on THIS
@@ -4641,36 +4695,17 @@ export function SessionCardBody({
                 // space-challenged, and Project means something different in a
                 // commit (where it lands) than as an identity label.
                 <>
-                  <SessionRouteIndicatorBadge
-                    codeSessionStore={codeSessionStore}
-                    sessionMetadataStore={sessionMetadataStore}
-                    focusGroup={SESSION_CYCLE_GROUP}
-                    focusOrder={SESSION_CYCLE_ORDER_CLAUDE_CODE}
-                  />
-                  {/* Disabled while a turn is in flight so a mode/model/effort
-                      change never races the running turn — the chips mirror the
-                      submit button, a live blue arrow exactly when `canSubmit`. */}
-                  <PermissionModeChip
+                  {/* Disabled while a turn is in flight so a model/effort/mode
+                      change never races the running turn — the chip mirrors the
+                      submit button, live exactly when `canSubmit`. */}
+                  <AiChip
                     cardId={cardId}
                     sessionMetadataStore={sessionMetadataStore}
-                    onOpenSheet={permissionSheet.openPermissionSheet}
+                    codeSessionStore={codeSessionStore}
+                    onOpenSheet={aiConfigSheet.openAiConfigSheet}
                     disabled={!codeSnap.canSubmit}
                     focusGroup={SESSION_CYCLE_GROUP}
-                    focusOrder={SESSION_CYCLE_ORDER_MODE}
-                  />
-                  <ModelChip
-                    sessionMetadataStore={sessionMetadataStore}
-                    onOpenPicker={modelPicker.openModelPicker}
-                    disabled={!codeSnap.canSubmit}
-                    focusGroup={SESSION_CYCLE_GROUP}
-                    focusOrder={SESSION_CYCLE_ORDER_MODEL}
-                  />
-                  <EffortChip
-                    sessionMetadataStore={sessionMetadataStore}
-                    onOpenPicker={effortPicker.openEffortPicker}
-                    disabled={!codeSnap.canSubmit}
-                    focusGroup={SESSION_CYCLE_GROUP}
-                    focusOrder={SESSION_CYCLE_ORDER_EFFORT}
+                    focusOrder={SESSION_CYCLE_ORDER_AI}
                   />
                   {effectiveFooterContent}
                 </>

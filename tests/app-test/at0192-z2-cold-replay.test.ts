@@ -34,8 +34,7 @@
  * @covers tugdeck/src/lib/session-restore.ts
  * @covers tugdeck/src/lib/session-metadata-store.ts
  * @covers tugcode/
- * @covers tugdeck/src/components/tugways/cards/effort-chip.tsx
- * @covers tugdeck/src/components/tugways/cards/model-chip.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/lib/model-label.ts
  * @covers tugdeck/src/lib/model-context-max.ts
  * @covers tugdeck/src/components/tugways/cards/session-card-telemetry-renderers.tsx
@@ -233,15 +232,13 @@ describe.skipIf(!SHOULD_RUN)(
           const el = document.querySelector('[data-card-id="A"] [data-slot="tug-status-cell"][data-priority="tokens"] .session-telemetry-status-value');
           return el ? (el.textContent || '').trim() : '';
         })()`;
-        const MODEL_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="model-chip"] [data-slot="model-value"]');
-          return el ? (el.textContent || '').trim() : '';
-        })()`;
-        // The effort chip's ACTIVE value (the visible variant; alternates are
-        // aria-hidden width sizers).
-        const EFFORT_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="effort-chip"] [data-tug-stable="active"] [data-slot="effort-value"]');
-          return el ? (el.textContent || '').trim() : '';
+        // The AI chip's ACTIVE composite value (the visible variant; alternates
+        // are aria-hidden width sizers), split into its `model · effort · mode`
+        // tokens. Effort is OMITTED rather than dashed when unsupported, so the
+        // token COUNT is what says whether a level is known.
+        const AI_TOKENS_JS = `(() => {
+          const el = document.querySelector('[data-card-id="A"] [data-slot="ai-chip"] [data-tug-stable="active"]');
+          return el ? (el.textContent || '').trim().split(" \\u00b7 ") : [];
         })()`;
 
         try {
@@ -297,7 +294,8 @@ describe.skipIf(!SHOULD_RUN)(
           // rests entirely on the family/version floor in
           // [model-context-max.ts]. An exact-id table (what that module used
           // to be) reads 200K here the day a new model ships.
-          const modelText = await app.evalJS<string>(MODEL_JS);
+          const aiTokens = await app.evalJS<string[]>(AI_TOKENS_JS);
+          const modelText = aiTokens[0] ?? "";
           expect(ctxMax).not.toBe("");
           expect(ctxMax.includes("200")).toBe(false);
           expect(ctxMax.includes("1.0") || ctxMax.includes("1M")).toBe(true);
@@ -306,16 +304,15 @@ describe.skipIf(!SHOULD_RUN)(
           // EFFORT: effort support resolves from real data only — the live
           // handshake or the PERSISTED model catalog. This cold replay has
           // neither (a fresh test instance, no session ever reported
-          // capabilities), so support is genuinely unknowable and the chip
-          // honestly shows the `-` placeholder rather than a level invented
-          // from a hardcoded list. A machine that resumes for real has the
-          // prior session's persisted catalog and shows the level — that path
-          // is pinned by at0096's resume test, which seeds the catalog.
-          const effortText = await app.evalJS<string>(EFFORT_JS);
-          expect(effortText).toBe("-");
+          // capabilities), so support is genuinely unknowable and the composite
+          // OMITS the effort token rather than inventing a level from a
+          // hardcoded list — leaving `model · mode`, two tokens. A machine that
+          // resumes for real has the prior session's persisted catalog and shows
+          // the level, giving three.
+          expect(aiTokens.length, "model · mode, with no effort token").toBe(2);
 
           process.stdout.write(
-            `[at0192] CONTEXT ${ctxUsed} ${ctxMax} · TOKENS ${tokensText} · MODEL ${modelText} · EFFORT ${effortText}\n`,
+            `[at0192] CONTEXT ${ctxUsed} ${ctxMax} · TOKENS ${tokensText} · AI ${aiTokens.join(" · ")}\n`,
           );
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {
@@ -341,7 +338,7 @@ describe.skipIf(!SHOULD_RUN)(
               ctxUsed: txt('[data-priority="context"] .session-telemetry-status-context-numerator'),
               ctxMax: txt('[data-priority="context"] .session-telemetry-status-context-denominator'),
               tokens: txt('[data-priority="tokens"] .session-telemetry-status-value'),
-              model: txt('[data-slot="model-value"]'),
+              ai: txt('[data-slot="ai-chip-value"]'),
               cardHtmlHead: card ? (card.outerHTML || '').slice(0, 1200) : null,
             };
           })())`;

@@ -3,7 +3,7 @@
  * plus its per-card persistence and mount-restore, factored out of
  * `session-card.tsx`.
  *
- * The chip itself ([permission-mode-chip.tsx]) only *displays* the mode; the
+ * The chip itself ([ai-chip.tsx]) only *displays* the mode; the
  * behavior — advancing the cycle, sending the IPC, persisting per card, and
  * restoring on relaunch — lives here so the session card's card-content responder
  * can register a single `cycle` handler.

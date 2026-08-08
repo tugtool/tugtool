@@ -5,7 +5,7 @@
  * **rules**, matching the terminal's `/permissions` UI: tabs `Recently denied`
  * / `Allow` / `Ask` / `Deny` / `Workspace`, each rule a tool-matcher string,
  * with search + add-rule + remove. Distinct from the permission *mode* chip
- * ([permission-mode-chip.tsx]) — mode is session behavior, rules are the
+ * ([ai-config-sheet.tsx]) — mode is session behavior, rules are the
  * allow/ask/deny matcher lists in the settings files.
  *
  * Data flows through {@link PermissionRulesStore} over tugcast's

@@ -4,7 +4,7 @@
  *
  * `/rewind` is a turns-within-this-session picker (NOT the `/resume` sessions
  * chooser — [D05]). {@link useRewindSheet} owns the sheet once at the card
- * level (mirroring {@link useModelPicker}): the session card wires `openRewindSheet`
+ * level (mirroring {@link useAiConfigSheet}): the session card wires `openRewindSheet`
  * to its `rewind` `RUN_SLASH_COMMAND` handler and presents it through the
  * shared `cardPickerSheet` host as a **wide** card-scoped overlay ([D15]).
  *

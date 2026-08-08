@@ -1,5 +1,5 @@
 /**
- * model-label.test.ts — pure-logic coverage for the Z4B model-chip label
+ * model-label.test.ts — pure-logic coverage for the Z4B model label
  * formatter ([#step-2]).
  *
  * No store, no DOM — the chip rendering and the live `model_change`

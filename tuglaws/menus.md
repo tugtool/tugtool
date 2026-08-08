@@ -168,7 +168,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌃⌘F | `toggle-full-screen` | Enter Full Screen | menu bar (AppKit's own) |
 | ⌃⌘G | `toggle-gazette` | Show Gazette | menu bar (swept) |
 | ⌃⌘H | `toggle-history-view` | Show Commit History | JS, global |
-| ⌃⌘I | `run-slash-command:model` | AI Model… | menu bar (swept) |
+| ⌃⌘I | `run-slash-command:ai` | AI… | menu bar (swept) |
 | ⌃⌘J | `toggle-jots` | Show Jots | menu bar (swept) |
 | ⌃⌘K | `show-keyboard-shortcuts` | Keyboard Shortcuts… | menu bar (swept) |
 | ⌃⌘L | `toggle-lens` | Show Lens | menu bar (swept) |
@@ -284,26 +284,21 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `maker.reload` | `reload` | registered handler | host tier |
 | `session.addDir` | `run-slash-command:add-dir` | key card | registry gate |
 | `session.agents` | `run-slash-command:agents` | key card | registry gate |
+| `session.ai` | `run-slash-command:ai` | key card | registry gate |
 | `session.commandPicker` | `open-command-picker` | key card | registry gate |
 | `session.commit` | `run-slash-command:commit` | key card | registry gate |
 | `session.compact` | `run-slash-command:compact` | key card | registry gate |
 | `session.context` | `run-slash-command:context` | key card | registry gate |
 | `session.diff` | `run-slash-command:diff` | key card | registry gate |
-| `session.effort` | `run-slash-command:effort` | key card | registry gate |
 | `session.firstTurn` | `first-turn` | key card | registry gate |
 | `session.focusPrompt` | `focus-prompt` | key card | registry gate |
 | `session.hooks` | `run-slash-command:hooks` | key card | registry gate |
 | `session.insertFile` | `insert-file` | first responder | registry gate |
 | `session.lastTurn` | `last-turn` | key card | registry gate |
 | `session.memory` | `run-slash-command:memory` | key card | registry gate |
-| `session.model` | `run-slash-command:model` | key card | registry gate |
 | `session.new` | `run-slash-command:clear` | key card | registry gate |
 | `session.nextTurn` | `next-turn` | key card | registry gate |
-| `session.permissionMode.acceptEdits` | `set-permission-mode:acceptEdits` | key card | registry gate |
-| `session.permissionMode.auto` | `set-permission-mode:auto` | key card | registry gate |
 | `session.permissionMode.cycle` | `cycle-permission-mode` | key card | registry gate |
-| `session.permissionMode.default` | `set-permission-mode:default` | key card | registry gate |
-| `session.permissionMode.plan` | `set-permission-mode:plan` | key card | registry gate |
 | `session.permissionRules` | `run-slash-command:permissions` | key card | registry gate |
 | `session.previousTurn` | `previous-turn` | key card | registry gate |
 | `session.rename` | `run-slash-command:rename` | key card | registry gate |

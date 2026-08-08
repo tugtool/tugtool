@@ -122,6 +122,13 @@ export interface CommandMenuFacts {
     readonly canInterrupt: boolean;
     readonly canChangeSettings: boolean;
     readonly permissionMode: string;
+    /**
+     * The composite `model · effort · mode` line the AI chip shows, so the
+     * Session menu's AI item can say what the AI is set to rather than only
+     * that a setting exists. Empty before the card has published one, which
+     * leaves the Swift item's static title standing.
+     */
+    readonly aiSummary: string;
     readonly hasAssistantMessage: boolean;
     readonly hasTurns: boolean;
     readonly changesVisible: boolean;
@@ -398,6 +405,17 @@ type SlashBridge = readonly [
   menuItemId: string,
   /** Defaults to `sessionBound` — a bound session is what a slash command runs against. */
   validate?: (chain: CommandValidationSource) => boolean,
+  /**
+   * Live menu title, when the item is a state display rather than only a door
+   * — `AI: Fable 5 · High · Auto…`. `undefined` leaves the Swift item's static
+   * title standing, which is the right answer before the first push.
+   *
+   * The tuple carries it rather than the `ai` entry being hand-authored beside
+   * the standalone commands: a standalone entry would have to restate
+   * `routing`, `action`, `payload`, and `mirrored` by hand, and the next
+   * bridge wanting a live title would face the same fork again.
+   */
+  dynamicTitle?: (chain: CommandValidationSource) => string | undefined,
 ];
 
 /**
@@ -415,9 +433,10 @@ type SlashBridge = readonly [
  * doors do not differ in what they run — only in who catches the keystroke.
  */
 const SLASH_BRIDGE_BINDINGS: Readonly<Record<string, readonly CommandBinding[]>> = {
-  // ⌃⌘I for the model picker — I for the name it opens. It held Insert File
-  // until this table took it; that command kept the letter and moved to ⇧⌘I.
-  model: [
+  // ⌃⌘I for the AI mixer — I for the name it opens. It held Insert File until
+  // this table took it; that command kept the letter and moved to ⇧⌘I. It sat
+  // on the model picker until the three settings became one sheet.
+  ai: [
     chord(
       { key: "KeyI", ctrl: true, meta: true, label: "i" },
       { preventDefault: true, menuEligible: true },
@@ -458,8 +477,26 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
     "session.commit",
     (chain) => chain.menu.session?.commitReady ?? false,
   ],
-  ["model", "AI Model…", "session.model"],
-  ["effort", "Reasoning Effort…", "session.effort"],
+  // One door for model, reasoning effort, and permission mode — and a state
+  // display, since the gate pushes the title: the menu says what the AI is set
+  // to, not just that a setting exists. Gated honestly on
+  // `sessionSettingsChangeable`: the AI Model… item this replaces enabled on a
+  // bare bound session and bounced mid-turn after the fact.
+  [
+    "ai",
+    "AI…",
+    "session.ai",
+    sessionSettingsChangeable,
+    (chain) =>
+      chain.menu.session?.aiSummary
+        ? `AI: ${chain.menu.session.aiSummary}…`
+        : undefined,
+  ],
+  // The tool-permission RULES editor — a different surface from the AI mixer,
+  // and it keeps its own row. Removing it would delete the rules editor from
+  // the Keyboard Shortcuts sheet and the keymap UI too, which enumerate this
+  // same table, leaving `/permissions` and the mixer's footer as its only
+  // doors. A fourth row is cheap; deleting a door is a touch.
   ["permissions", "Permission Rules…", "session.permissionRules"],
   // Rewind needs somewhere to rewind to.
   [
@@ -487,7 +524,7 @@ const SLASH_BRIDGES: readonly SlashBridge[] = [
 ];
 
 const SLASH_BRIDGE_COMMANDS: readonly CommandEntry[] = SLASH_BRIDGES.map(
-  ([name, title, menuItemId, validate]) => ({
+  ([name, title, menuItemId, validate, dynamicTitle]) => ({
     id: `${TUG_ACTIONS.RUN_SLASH_COMMAND}:${name}`,
     title,
     routing: "key-card" as const,
@@ -497,33 +534,9 @@ const SLASH_BRIDGE_COMMANDS: readonly CommandEntry[] = SLASH_BRIDGES.map(
     ...(SLASH_BRIDGE_BINDINGS[name] !== undefined
       ? { bindings: SLASH_BRIDGE_BINDINGS[name] }
       : {}),
+    ...(dynamicTitle !== undefined ? { dynamicTitle } : {}),
     mirrored: true,
     validate: validate ?? sessionBound,
-  }),
-);
-
-/** The four modes the native submenu offers; `bypassPermissions` is deliberately not among them. */
-const PERMISSION_MODES: ReadonlyArray<[mode: string, title: string]> = [
-  ["default", "Default"],
-  ["acceptEdits", "Accept Edits"],
-  ["plan", "Plan"],
-  ["auto", "Auto"],
-];
-
-const PERMISSION_MODE_COMMANDS: readonly CommandEntry[] = PERMISSION_MODES.map(
-  ([mode, title]) => ({
-    id: `${TUG_ACTIONS.SET_PERMISSION_MODE}:${mode}`,
-    title,
-    routing: "key-card" as const,
-    action: TUG_ACTIONS.SET_PERMISSION_MODE,
-    payload: mode,
-    menuItemId: `session.permissionMode.${mode}`,
-    mirrored: true,
-    validate: sessionSettingsChangeable,
-    // The radio's mark: one resolver answers the current mode and each
-    // per-value entry narrows it to its own row ([P05], [P07]).
-    state: (chain: CommandValidationSource) =>
-      chain.menu.session?.permissionMode === mode,
   }),
 );
 
@@ -959,7 +972,6 @@ export const COMMANDS: readonly CommandEntry[] = [
     mirrored: true,
     validate: sessionSettingsChangeable,
   },
-  ...PERMISSION_MODE_COMMANDS,
   {
     id: TUG_ACTIONS.TOGGLE_CHANGES_VIEW,
     title: "Show Session Changes",
