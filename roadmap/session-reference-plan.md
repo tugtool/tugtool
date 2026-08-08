@@ -167,6 +167,7 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 | Synopsis quality (labels, staleness) | med | med | reuse the PULSE headline register rules verbatim; `/rename` freeze | tuning in #step-15 |
 | Identity hook over-subscribes and wakes every surface | med | med (it is the easy way to write it) | by-id getters only, and no phase in the record ([P15], Spec S01) | any identity surface re-rendering on transcript traffic |
 | Chrome swap remounts the content region | high | **precluded** — cards portal into an empty `.tug-pane-content`; there is no card subtree for a chrome branch to re-key (Risk R04) | keep the sibling discipline and the one scroll-survival assertion, which pins the invariant rather than guarding a live hazard | anyone moving the pane off portaled content |
+| A post-fork commit cites the parent session | high (a wrong-but-resolvable citation) | med — every commit from a forked card, once forks are used | **not mitigated in this phase**: recorded as Risk R05 and a Phase-C follow-on; the trailer grammar is right, its subject is stale env | a citation chip naming a session the user did not commit from |
 
 **Risk R01: Masthead height regressions** {#r01-masthead-height}
 
@@ -198,6 +199,14 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 - **Risk:** Stripping trailer lines from the displayed body changes what the History filter matches.
 - **Mitigation:** strip only `Tug-Session:` / `Tug-Session-Id:` (and keep `Tug-Dash:` stripping consistent with them); the typed fields remain filterable server-side later; unit-test the stripper on bodies with interleaved trailers.
 - **Residual risk:** none meaningful — the trailer text was never useful filter ink.
+
+**Risk R05: `TUG_SESSION_ID` is not fork-aware, so a post-fork commit cites the parent** {#r05-fork-env-identity}
+
+- **Risk:** The shell route exports `TUG_SESSION_ID = tug_session_id` once, at shell-spawn time (`feeds/shell.rs`), and `session_citation()` (`tugdash-core/src/ops.rs`) resolves the committing session from it. Ledger rows are keyed by **claude's** session id. The two coincide for a plain fresh spawn — tugcode claims the tug id via `--session-id` — and diverge after a rewind fork or a claude id rotation, because the fork respawns inside the same relay and the same shell keeps the env it was born with. A dash-lane commit made from a forked card therefore writes the **parent's** citation and the parent's `Tug-Session-Id`.
+- **Why it matters more now than it did before:** the same mismatch used to cost a slightly wrong display name in a trailer nobody parsed. After #step-6 / #step-7 the trailer is typed, joined against the ledger, and rendered as a citation chip — so the failure mode is no longer a stale label but a **confidently wrong reference**, resolving cleanly to a real session that did not make the commit. [P12] names that outcome as strictly worse than [P13]'s unresolvable atom, which is the argument for treating this as real rather than cosmetic.
+- **Scope, honestly:** pre-existing, out of Phase A's scope, and it needs no citation-grammar change — the citation is right, its *subject* is wrong. It is also the same root cause as the #step-4 auto-title keying bug (a ledger write keyed on the tug id), which was fixed there by reading `entry.claude_session_id`; the env cannot be fixed the same way because it is captured once per shell rather than read per write.
+- **Disposition: a Phase-C item, recorded not fixed** (#roadmap). Two shapes to weigh when it is picked up: re-export the env on the shell when a fork rebinds the card→session binding (narrow, but the shell may be mid-command), or give the ledger a `tug_session_id → current claude id` alias every resolver goes through (wider, and it also repairs `tugutil changes`, `tugutil draft`, and `host ask`, all of which resolve sessions the same way). The second is probably right precisely because the list of callers is longer than this plan.
+- **Trigger to revisit:** any citation chip naming a session the user did not commit from; any `Tug-Session-Id` that joins to a row whose `tag` disagrees with the same commit's `Tug-Session`.
 
 **Risk R04: The 36↔72 swap costs the content region its mount identity — precluded by the pane's existing structure** {#r04-mount-identity}
 
@@ -453,7 +462,24 @@ Contrast: the four tokens need **`ELEMENT_SURFACE_PAIRING_MAP` entries** (`compo
 **Spec S05: Lineage storage and the Rust lexicon** {#s05-lineage-storage}
 
 - `sessions` table gains (self-healing ALTERs): `root_tag TEXT` (the lineage root's tag; NULL for a root session) and `tag_lineage TEXT` (dash-joined segments, e.g. `A1-B2`; NULL for a root). The display tag column keeps the full composed tag (`stocky-pixie-A1-B2`) so existing tag-unique indexing and lookups are unchanged; `root_tag`+`tag_lineage` are the structured record the resolver and future tooling read. **Not** `lineage`: `external_scan_cache.lineage_ancestors` already owns that word for JSONL message ancestry, an unrelated concept, and two `lineage` columns one table apart meaning different things is a trap for the next reader.
-- Fork allocation: the branch-point letter is allocated per (root session, rewind point) — first point forked from is `A`, next distinct point `B`; the number sequences forks from that point. The ledger owns allocation (a query over the root's existing fork rows) so two racing forks cannot collide.
+- Fork allocation: the branch-point letter is allocated per (root session, rewind point) — first point forked from is `A`, next distinct point `B`; the number sequences forks from that point. The ledger owns allocation so two racing forks cannot collide.
+- **Allocation is a table, not a query — `tag_lineage_points` (as shipped, #step-5).** The plan originally said "a query over the root's existing fork rows". That was implemented instead as its own table, and the shipped shape is the better one:
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS tag_lineage_points (
+    root_tag   TEXT NOT NULL,
+    fork_point TEXT NOT NULL,
+    letter     TEXT NOT NULL,
+    allocated  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (root_tag, fork_point)
+  );
+  ```
+
+  One row per rewind point ever forked from within one root's lineage. `letter` is assigned once per point (`COUNT(*)` of the root's existing points → `A`…`Z`, erroring past 26 rather than wrapping, since a wrapped letter would name two points alike); `allocated` counts the numbers issued under it, so two forks from one point read `A1` and `A2`. The `fork_point` key is the **rewound-to prompt uuid**, which is why a point means the same thing everywhere in one lineage: a fork inherits its ancestors' record uuids, so forking a fork at an inherited point resolves to that point's existing letter.
+
+  **This table is append-only for the same reason `minted_tags` is (Spec S08), and the guarantee is the same shape:** a recycled letter or a reissued number would make two unrelated forks share a callsign, which is the [P12] failure wearing a different hat. Nothing deletes from it — not trash, not the cascade paths, not eviction. `a_lineage_tag_is_permanent_like_any_other_callsign` is the test that keeps this true: trash `…-A1` and the next fork from that point is `A2`, never `A1` again.
+
+  Why a table beats the query: the query form has to derive a letter by re-reading sibling `tag`/`tag_lineage` strings, which means the letters live only in parsed display names and a trashed fork's row takes its number with it. The table makes both facts first-class and lets two racing forks serialize on a row inside the same transaction that claims the composed tag.
 - Rust lexicon: `tugrust/crates/tugcast/src/session_tag_lexicon.rs` generated from `tugdeck/src/lib/session-tag-lexicon.ts` by a `just` recipe (checked in, regenerated on lexicon edits); a Rust unit test reads the TS file from the repo at test time and asserts the two lists match — drift fails the build.
 
 **Spec S06: Clipboard flavors** {#s06-clipboard}
@@ -490,6 +516,8 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 - The `PRIMARY KEY` violation is the collision signal the mint retries against — it replaces `sessions_tag` as the arbiter. `sessions_tag` stays as the live-row invariant (a second row must never *display* a tag another live row displays), but it is no longer what "unique" rests on.
 - **"Mine" is not "taken":** an insert whose `(tag, session_id)` already matches is idempotent (`INSERT … ON CONFLICT(tag) DO NOTHING`, then confirm the stored `session_id` equals ours). Only a conflict naming a *different* `session_id` is a real collision and triggers the reroll. Without this, re-spawn/resume of an already-tagged session and the external-adoption carry-over ([Q04]) would both read as collisions and reroll a perfectly good tag.
 - Trash/delete paths need no change beyond *not* touching this table — call that out in their doc comments, since "delete every row for this session" is the obvious wrong instinct.
+- **The arbiter answers "what is this session's callsign?", not only "is this tag taken?" — every mint path must ask it before rolling.** Two tables can lose the tag while `minted_tags` still holds it: `prune_scan_cache_except` deletes an `external_scan_cache` row when its JSONL vanishes, and a session with no `sessions` row has no adopted tag to read. That state is reachable, not theoretical — trashing a session is *recoverable by design* (the JSONL goes to `.tug-trash/` and the user can move it back), so "cache row gone, never adopted" describes any restored session. A mint path that consults only those two tables re-mints, and one session ends up wearing its second callsign while every commit citing the first one names a tag it no longer wears. Immutability broken by a restore is still broken. So `backfill_external_tag` asks three sources in order — cache row, `sessions` row, then `SELECT tag FROM minted_tags WHERE session_id = ?1 ORDER BY minted_at ASC LIMIT 1` — and only a session no table has ever named gets a fresh roll. **Earliest claim wins:** that is the one already written into trailers. Pinned by `a_restored_session_keeps_the_callsign_it_was_minted`, which fails by re-minting when the third consult is removed.
+- **A claim is not a display.** `record_spawn` claims its candidate before the write, and the write may then keep a different tag (`COALESCE` preserves a stored one) or reroll off the `sessions_tag` invariant — so `minted_tags` holds tags no session ever wore. Harmless against 524k combinations and deliberately not "fixed" (the alternative is reading the row before claiming, which buys a race for a hygiene win), but it means the table reads as *every tag ever spent*, never *every tag ever shown*. Anything that wants the latter must join `sessions`.
 - **Scope the guarantee honestly: this is per-ledger, not global.** `sessions.db` is per-instance, so "never recycled" holds against every tag this ledger ever minted — not against every tag ever minted anywhere. Two consequences worth one sentence in the module doc rather than a surprise later: a trailer written on one machine and read against another machine's ledger resolves to [P13]'s slashed atom, which is a *miss* and therefore safe; and a wiped or reinstalled ledger re-opens recycling on that machine. [P12]'s prose ("uniqueness holds against every tag ever minted") should be read with that scope attached. Making the guarantee global would mean a shared registry, which buys nothing [P13] does not already cover.
 
 **Table T01: Stack geometry (measured on the spike, ships as tokens)** {#t01-geometry}
@@ -720,10 +748,12 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 **Tasks:**
 - [ ] In tugcode's stream-json handling (`tugcode/src/session.ts`), recognize the `ai-title` record (`aiTitle` field — the shape the external scan already parses at `external_sessions.rs` ~line 927) and forward it over the existing tugcode→tugcast session-metadata path (locate the path `/rename` uses; reuse it with `user_set: false`).
 - [ ] tugcast ledger write: update `name` only when `name_user_set = 0` (never clobber a `/rename`); broadcast `session_updated`.
+- [ ] **Key the write on `entry.claude_session_id`, never on `tug_session_id`.** Ledger rows are recorded under *claude's* own session id (the `record_id` choice at `session_init`, `agent_bridge.rs`), and the relay's `tug_session_id` is a different string the moment claude rotates its id or a rewind fork respawns inside the same relay — the fork path this phase adds ([P11]) makes that an ordinary occurrence rather than an edge case. Keyed by the tug id, a fork's auto title is written onto the **parent's** row, and `name_user_set = 0` there means nothing refuses it. Follow the `system_metadata` intercept next door, which snapshots `claude_session_id` for the ledger and passes `tug_session_id` for logging only; keep the tug id as the fallback the `record_id` path also falls back on.
 - [ ] Rebuild the tugcode binary.
 
 **Tests:**
 - [ ] Rust: ledger update respects `name_user_set`.
+- [ ] Rust (relay-level): a `session_title` arriving after a `session_init` that names a **different** claude id lands on that id's row and leaves the tug-id row untitled. A test where the two ids coincide proves nothing — it passes against the bug.
 - [ ] tugcode test (existing harness style): an `ai-title` record in the stream produces the forward.
 
 **Checkpoint:**
@@ -769,7 +799,9 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 
 **Tasks:**
 - [ ] `session_trailer()` (`tugdash-core/src/ops.rs` ~line 812): select `tag` (and `name` only for the tagless fallback); return the citation per Spec S03; add a sibling returning the full id; `with_dash_trailers` (~line 844) pushes both.
-- [ ] Main lane: the trailer is appended in `feeds/agent_supervisor.rs` (~line 1592, `append_trailers` over `("Tug-Session", "<name> (<id>)")`; the wire fields land at ~line 1428) — **not** in a changeset-commit handler. It emits the same pair; the client payload (`changeset-verb-store.ts` ~line 539, fed from `changes-route-controller.ts` ~line 269) carries `tag` alongside `{ name, id }` (available since #step-1).
+- [ ] Main lane: the trailer is appended in `feeds/agent_supervisor.rs` (~line 1592, `append_trailers` over `("Tug-Session", "<name> (<id>)")`; the wire fields land at ~line 1428) — **not** in a changeset-commit handler. It emits the same pair.
+
+  **As shipped, the tag is resolved server-side from the ledger rather than carried on the client payload — take the shipped shape, not this task's original wording.** The task said the payload should carry `tag` alongside `{ name, id }`. `do_changeset_commit` instead reads `ledger.get(session_id)?.tag` and hands it to `changeset_commit_message(request, tag)`. That is the correct authority: a callsign is the ledger's word, and the deck may still be holding the optimistic tag it minted at spawn — which, since a collision now rerolls rather than suffixes ([P12]), can differ from the real one for the first seconds of a session. A commit trailer is permanent; it must never record the tag that lost. The payload's `session_name` field goes unread by the trailer path as a result and is a deletion candidate at #step-16.
 - [ ] `tugchanges_core::append_trailers` idempotency: confirm a re-draft doesn't duplicate either line (existing behavior; add the second key to its tests).
 - [ ] Scribe interaction: `scribe.rs`'s `starts_structure` (~line 520) already treats any `Key: value` line as structure, so a second trailer needs no grammar change there — but scribe-authored messages get trailers appended *after* generation, so verify the wrap/reflow logic over a two-line trailer block (the existing `scribe.rs` ~line 875 fixture is the place to extend).
 
@@ -1115,6 +1147,7 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Phase 2: content-annotator pattern-matching for citations in free prose (prerequisites: whole-citation detector claiming the run before the commit-SHA scanner; an `AnnotationScope` on the History card).
+- [ ] **Fork-aware session identity in the environment (Risk R05).** `TUG_SESSION_ID` is captured once per shell and names the tug session id, so after a rewind fork a commit's trailers cite the parent — a wrong-but-resolvable citation, the outcome [P12] calls worse than an unresolvable one. Prefer the ledger-alias shape (`tug_session_id → current claude id`) over re-exporting the env, because the same resolution is done by `tugutil changes`, `tugutil draft`, and `host ask`.
 - [ ] Mastheads for other cards with real content identity (file card path + dirty state).
 - [ ] Opportunistic lexicon growth (more 4–5-letter nouns).
 

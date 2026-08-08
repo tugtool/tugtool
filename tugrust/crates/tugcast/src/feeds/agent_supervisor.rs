@@ -10148,6 +10148,110 @@ mod tests {
         assert_eq!(persisted["cwd"], "/home/user/project");
     }
 
+    /// A live `ai-title` lands on the row of the session that produced it —
+    /// claude's current id — and never on the tug session id ([P07], #step-4).
+    ///
+    /// The two coincide for a plain fresh spawn (tugcode claims the tug id via
+    /// `--session-id`), so a test that lets them coincide proves nothing. They
+    /// diverge exactly when a rewind fork respawns inside this same relay or
+    /// claude rotates its own id: the relay keeps its original
+    /// `tug_session_id` while ledger rows are recorded under claude's. Keyed by
+    /// the tug id, a fork's auto title would be written onto the PARENT's row —
+    /// whose `name_user_set` is 0, so nothing would refuse it.
+    #[tokio::test]
+    async fn an_auto_title_lands_on_claudes_row_not_the_tug_session_id() {
+        let ((sup, _state_rx, _meta_rx, _control_rx), _register_rx) =
+            make_supervisor_with_spawner(stall_spawner_factory());
+
+        // The relay's own id is the PARENT's: this is the post-fork shape.
+        let tug_id = TugSessionId::new("sess-title-parent");
+        let entry_arc = insert_ledger_entry(&sup, &tug_id).await;
+        {
+            let mut entry = entry_arc.lock().await;
+            entry.spawn_state = SpawnState::Spawning;
+        }
+
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let fork_claude_id = "claude-title-fork";
+        // Two untitled rows: the parent the relay is named after, and the fork
+        // claude is actually running. Neither is user-named, so `name_user_set`
+        // cannot mask a misdirected write.
+        for id in ["sess-title-parent", fork_claude_id] {
+            ledger
+                .record_spawn(id, "ws", "/tmp/test-title-fork", "card-1", 1, None)
+                .unwrap();
+        }
+
+        let (bridge_stdin, mut child_stdin_read) = tokio::io::duplex(4096);
+        let (mut child_stdout_write, bridge_stdout) = tokio::io::duplex(4096);
+        let claude_id_for_child = fork_claude_id.to_string();
+        let child_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut child_stdin_read);
+            let mut line = String::new();
+            reader.read_line(&mut line).await.unwrap();
+            assert!(line.contains("protocol_init"));
+
+            child_stdout_write
+                .write_all(b"{\"type\":\"protocol_ack\",\"version\":1}\n")
+                .await
+                .unwrap();
+            // The fork's synthetic init: from here on, claude's id is the
+            // fork's and the relay's `tug_session_id` is the parent's.
+            child_stdout_write
+                .write_all(
+                    format!(
+                        "{{\"type\":\"session_init\",\"session_id\":\"{claude_id_for_child}\"}}\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            child_stdout_write
+                .write_all(b"{\"type\":\"session_title\",\"title\":\"Parser bug hunt\"}\n")
+                .await
+                .unwrap();
+            drop(child_stdout_write);
+        });
+
+        let (_input_tx_bridge, mut input_rx_bridge) = mpsc::channel::<Frame>(4);
+        let (merger_tx, _merger_rx) = mpsc::channel::<Frame>(16);
+        let state_tx = sup.session_state.sender();
+        let cancel = CancellationToken::new();
+
+        let stdin_box: Box<dyn tokio::io::AsyncWrite + Send + Unpin> = Box::new(bridge_stdin);
+        let stdout_box: Box<dyn tokio::io::AsyncRead + Send + Unpin> = Box::new(bridge_stdout);
+        let lines = BufReader::new(stdout_box).lines();
+
+        let recorder = NoopSessionsRecorder;
+        relay_session_io(
+            &tug_id,
+            &entry_arc,
+            &mut input_rx_bridge,
+            &merger_tx,
+            &state_tx,
+            stdin_box,
+            lines,
+            "/tmp/test-title-fork",
+            &recorder,
+            Some(ledger.as_ref()),
+            &crate::feeds::changeset::ChangesetBumper::disconnected(),
+            &cancel,
+        )
+        .await;
+        child_task.await.unwrap();
+
+        assert_eq!(
+            ledger.get(fork_claude_id).unwrap().unwrap().name.as_deref(),
+            Some("Parser bug hunt"),
+            "the title belongs to the session claude is running"
+        );
+        assert_eq!(
+            ledger.get("sess-title-parent").unwrap().unwrap().name,
+            None,
+            "the parent row must not be retitled by its fork's auto title"
+        );
+    }
+
     // ---- SessionKeyRecord schema + dual-read migration ----
 
     // ================================================================

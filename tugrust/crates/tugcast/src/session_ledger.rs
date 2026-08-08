@@ -3235,6 +3235,11 @@ impl SessionLedger {
     /// none ([P12], [Q04]). Returns the tag now on the row — the existing one
     /// when it already had one, so this is safe to call on every scan.
     ///
+    /// Three places are asked before anything is minted, in order: the cache
+    /// row, the `sessions` row (adopted since the last scan), and `minted_tags`
+    /// (the arbiter, which outlives both). Only a session no table has ever
+    /// named gets a fresh roll — a callsign is minted **once** per session.
+    ///
     /// **No `sessions` row is created.** External rows synthesize `state:
     /// "closed"` / `card_id: null` and adopt into the ledger on first resume,
     /// which is exactly what `SessionRow.provenance` reports; minting a
@@ -3275,6 +3280,33 @@ impl SessionLedger {
             .optional()?
             .flatten();
         if let Some(tag) = adopted {
+            tx.execute(
+                "UPDATE external_scan_cache SET tag = ?2 WHERE session_id = ?1",
+                params![session_id, tag],
+            )?;
+            tx.commit()?;
+            return Ok(Some(tag));
+        }
+        // Neither table holds a callsign — but the arbiter may still, and it is
+        // the one table that never forgets. `prune_scan_cache_except` drops the
+        // cache row when the backing JSONL vanishes, and a trashed session is
+        // recoverable by design (the user can `mv` the file back), so
+        // "cache row gone, no `sessions` row" is a reachable state for a
+        // session that was already named. Minting again there would hand one
+        // session a second callsign and leave every commit citing the first one
+        // pointing at a name the session no longer wears — the immutability
+        // [P12] promises, broken by a restore. Earliest claim wins: that is the
+        // one already written into trailers.
+        let claimed: Option<String> = tx
+            .query_row(
+                "SELECT tag FROM minted_tags WHERE session_id = ?1
+                 ORDER BY minted_at ASC, tag ASC
+                 LIMIT 1",
+                params![session_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(tag) = claimed {
             tx.execute(
                 "UPDATE external_scan_cache SET tag = ?2 WHERE session_id = ?1",
                 params![session_id, tag],

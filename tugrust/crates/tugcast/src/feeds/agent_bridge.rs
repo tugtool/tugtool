@@ -1280,26 +1280,6 @@ pub async fn relay_session_io(
             line_result = lines.next_line() => {
                 match line_result {
                     Ok(Some(line)) => {
-                        // `session_init` path: atomic promote. Lock the
-                        // ledger entry once and perform all four side
-                        // effects — populate `claude_session_id`, flip
-                        // `spawn_state` to `Live`, drain the per-session
-                        // queue into `input_tx`, and publish the wire
-                        // `SESSION_STATE = live` frame — so there is no
-                        // intermediate state visible to other tasks where
-                        // `spawn_state == Live` but the queue still holds
-                        // frames that must precede any dispatcher-forwarded
-                        // frame on input_tx.
-                        //
-                        // This is the sole point in the supervisor where
-                        // ledger `Live` and wire `live` are established;
-                        // the two are now semantically identical
-                        // ("handshake done and session_init received").
-                        //
-                        // Guard: only promote if we're still in `Spawning`.
-                        // A racing `close_session` that has already flipped
-                        // us to `Closed`, or a previous iteration that
-                        // already promoted, both short-circuit cleanly.
                         // A rewind-fork announcement ([P11]). It arrives
                         // immediately BEFORE the fork's synthetic
                         // `session_init`, so the lineage is allocated and
@@ -1344,6 +1324,26 @@ pub async fn relay_session_io(
                             }
                         }
 
+                        // `session_init` path: atomic promote. Lock the
+                        // ledger entry once and perform all four side
+                        // effects — populate `claude_session_id`, flip
+                        // `spawn_state` to `Live`, drain the per-session
+                        // queue into `input_tx`, and publish the wire
+                        // `SESSION_STATE = live` frame — so there is no
+                        // intermediate state visible to other tasks where
+                        // `spawn_state == Live` but the queue still holds
+                        // frames that must precede any dispatcher-forwarded
+                        // frame on input_tx.
+                        //
+                        // This is the sole point in the supervisor where
+                        // ledger `Live` and wire `live` are established;
+                        // the two are now semantically identical
+                        // ("handshake done and session_init received").
+                        //
+                        // Guard: only promote if we're still in `Spawning`.
+                        // A racing `close_session` that has already flipped
+                        // us to `Closed`, or a previous iteration that
+                        // already promoted, both short-circuit cleanly.
                         if line.contains("\"type\":\"session_init\"") {
                             let claude_id = parse_claude_session_id(line.as_bytes());
                             tracing::info!(
@@ -1871,13 +1871,30 @@ pub async fn relay_session_io(
                         // (`record_auto_title` gates on `name_user_set`), and
                         // it is best-effort — a ledger error is logged and the
                         // frame still forwards.
+                        //
+                        // Keyed by claude's session id, NOT the tug session id
+                        // — ledger rows are recorded under claude's own id
+                        // (see the `record_id` choice at `session_init`), and
+                        // the two diverge the moment claude rotates its id or
+                        // a rewind fork respawns inside this same relay. Keyed
+                        // by the tug id, a fork's title would land on the
+                        // PARENT's row, whose `name_user_set` is typically 0
+                        // and so would not refuse it. The tug id remains the
+                        // fallback for the malformed-payload case that
+                        // `record_id` also falls back on.
                         if line.contains("\"type\":\"session_title\"") {
                             if let (Some(ledger), Some(title)) =
                                 (session_ledger, parse_session_title(line.as_bytes()))
                             {
-                                match ledger.record_auto_title(tug_session_id.as_str(), &title) {
+                                let row_id = {
+                                    let entry = ledger_entry.lock().await;
+                                    entry.claude_session_id.clone()
+                                }
+                                .unwrap_or_else(|| tug_session_id.as_str().to_owned());
+                                match ledger.record_auto_title(&row_id, &title) {
                                     Ok(true) => info!(
                                         session = %tug_session_id,
+                                        row = %row_id,
                                         "recorded auto session title"
                                     ),
                                     Ok(false) => {}

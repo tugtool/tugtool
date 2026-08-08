@@ -1966,6 +1966,47 @@ mod tests {
     }
 
     #[test]
+    fn a_restored_session_keeps_the_callsign_it_was_minted() {
+        // The cache row is not the arbiter. `prune_scan_cache_except` drops it
+        // when the JSONL vanishes, and trashing a session is recoverable by
+        // design — so a restore must not hand one session a second callsign.
+        // Every commit already citing the first one would otherwise name a tag
+        // the session no longer wears ([P12]).
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        let jsonl = terminated_jsonl(SESSION_A, PROJECT, &["first"]);
+        seed(&projects, PROJECT, SESSION_A, &jsonl);
+        let minted = scan_external_sessions_cached(&ledger, PROJECT).metas[0]
+            .tag
+            .clone()
+            .expect("minted at scan");
+
+        // The file goes away; the next scan prunes its cache row (and with it
+        // the stored tag), and the session stops being listed at all.
+        let file = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        fs::remove_file(&file).unwrap();
+        assert!(
+            scan_external_sessions_cached(&ledger, PROJECT)
+                .metas
+                .is_empty(),
+            "the pruned session is no longer listed"
+        );
+
+        // The user moves it back. `minted_tags` still names it, so the scan
+        // re-reads that callsign rather than rolling a fresh one.
+        fs::write(&file, &jsonl).unwrap();
+        let restored = scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(
+            restored.metas[0].tag.as_deref(),
+            Some(minted.as_str()),
+            "a restored session wears the callsign it was minted"
+        );
+    }
+
+    #[test]
     fn rewritten_prefix_falls_back_to_full_parse() {
         let root = tempfile::tempdir().unwrap();
         let ledger = ledger_with_root(root.path());

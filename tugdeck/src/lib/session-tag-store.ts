@@ -10,8 +10,16 @@
  * Populated from three sources (see `action-dispatch.ts`): a client spawn sets
  * it **optimistically** to the provisional tag so the chip shows one instantly
  * "from the drop"; `session_updated` pushes and `list_sessions_ok` / card-binding
- * rows make it **authoritative** (the server's claimed-or-suffixed tag). A blank
+ * rows make it **authoritative** (the callsign the ledger claimed). A blank
  * tag clears the entry.
+ *
+ * **The authoritative answer can differ from the optimistic one, and this store
+ * is where the swap lands.** A tag any session ever minted is spent forever (the
+ * ledger's append-only `minted_tags` arbiter), so a collision does not get a
+ * numeric suffix — the ledger rerolls a complete fresh pair. A callsign shown
+ * "from the drop" may therefore change **once**, seconds after spawn, when
+ * {@link SessionTagStore.seedTag} takes the ledger's word; after that it is
+ * immutable for the life of the session. See `session-tag.ts`'s header.
  *
  * A faithful clone of `session-name-store.ts` — no reverse `tag → session_id`
  * map in v1; the deferred typed-`/resume <tag>` command adds one when it needs
@@ -71,8 +79,10 @@ class SessionTagStore {
    * once minted it never legitimately becomes blank — so a `null`/blank push
    * (a row read before the tag landed, or a stale echo) must NOT wipe a good
    * cached tag back to the id-hash fallback. Only a real value writes; a blank
-   * is a no-op. A different real value still overwrites (server suffixed a
-   * collision). Explicit clears go through `setTag`.
+   * is a no-op. A different real value still overwrites — that is the ledger
+   * rerolling a collided mint, and adopting it here is what keeps the optimistic
+   * tag from outliving its one chance to be wrong. Explicit clears go through
+   * `setTag`.
    */
   seedTag(tugSessionId: string, tag: string | null): void {
     if ((tag?.trim() ?? "").length === 0) return;
