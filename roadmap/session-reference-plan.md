@@ -40,7 +40,7 @@ Root cause: [D123] ("a pane's name is one string produced in one place", `lib/pa
 #### Strategy {#strategy}
 
 - **Data layer first.** The Rust repairs (tag arm, mint hardening, external backfill, live ai-title, fork lineage, trailers) unblock the client work and are independently landable.
-- **Resolver before components.** `resolveSessionIdentity` consolidates the five rules and deletes them; every later step consumes it, so it lands before any pixel moves.
+- **Resolver before components — and the hook with the resolver.** `resolveSessionIdentity` consolidates the five rules and deletes them; every later step consumes it, so it lands before any pixel moves. `useSessionIdentity` ships in the same commit, because a resolver that reads stores imperatively is a stale-render bug waiting for its first consumer ([L02], Spec S01).
 - **Component before surfaces.** `TugSessionIdentity` (chip/line tiers, then row, then masthead) ships with its tokens and the session color; surfaces then adopt tier by tier.
 - **The masthead and the strip removal are one arc**: the masthead lands carrying the PULSE, then the Z2 strip comes out with every one of its owned behaviors re-homed in the same step range — never a window where the voice speaks in two places or in none.
 - **The synopsis is last among features** — it rides existing `SharedAgent` infrastructure and only changes what the description *line* says; every surface renders correctly before it exists (honest empty line).
@@ -55,13 +55,16 @@ Root cause: [D123] ("a pane's name is one string produced in one place", `lib/pa
 - A commit made from the Changes card carries both `Tug-Session: <tag> (<shortid>)` and `Tug-Session-Id: <uuid>` trailers, the History card renders the citation chip beside the SHA, and neither trailer line appears in the rendered body. (Rust unit test + app-test.)
 - A fork's tag is `<root>-<Letter><Number>`, recorded in the ledger, and the original session keeps its tag. (Rust unit test + tugcode test.)
 - No mint path can land a NULL tag; the ledger's bare-`-N` suffix path is gone. (Rust unit tests.)
+- A trashed session's tag is **never** re-minted for a different session. (Rust unit test over the trash and cascade-delete paths — Spec S08.)
+- A `/rename` repaints every live surface showing that session with no reload. (App-test — the [L02] hook contract, Spec S01.)
+- No component calls `resolveSessionIdentity` directly. (Verify by grep over `tugdeck/src/components`.)
 - `bun run audit:theme-contrast` passes with the session color present in all six themes.
 - `cd tugrust && cargo nextest run` green; `bunx vite build` green; `just app-test-changed` green at each step.
 
 #### Scope {#scope}
 
-1. `resolveSessionIdentity` resolver; deletion of the five parallel rules.
-2. `TugSessionIdentity` component family (chip / line / row / masthead tiers) and its tokens.
+1. `resolveSessionIdentity` resolver + the `useSessionIdentity` subscription hook; deletion of the five parallel rules.
+2. `TugSessionIdentity` component family (chip / line / row / masthead tiers), the `SessionMasthead` the pane mounts, and their tokens.
 3. The session color role token, hand-authored in the six theme files.
 4. `TugSessionRow` growth to the four-line identity stack; picker and Lens adoption.
 5. The masthead tier in `TugPane`; `--tug-masthead-height`; the telemetry placard.
@@ -69,7 +72,7 @@ Root cause: [D123] ("a pane's name is one string produced in one place", `lib/pa
 7. The synopsis job on `SharedAgent`'s Summarize lane, with persistence and `/rename` precedence.
 8. The citation flat-text form; commit-trailer write and read paths; History card rendering.
 9. The session atom as a real Tug atom: clipboard flavors + wire marker.
-10. Fork lineage grammar carried through spawn and ledger; mint hardening; external-session tag backfill; live `ai-title` capture; tag arm in the Rust feed.
+10. Fork lineage grammar carried through spawn and ledger; the `minted_tags` all-time arbiter and mint hardening; external-session tag backfill; live `ai-title` capture; tag arm in the Rust feed.
 11. `tag → session_id` resolution and `/resume <tag>`.
 12. Adoption at every surface in Table T02.
 13. The doctrine entry and companion tuglaws updates.
@@ -93,7 +96,8 @@ Root cause: [D123] ("a pane's name is one string produced in one place", `lib/pa
 #### Constraints {#constraints}
 
 - Rust workspace: **warnings are errors** (`-D warnings`).
-- `changes.db` schema changes require bumping `CHANGES_SCHEMA_VERSION` with a registered migration. `sessions.db` (per-instance) uses the self-healing `ALTER TABLE` pattern (`migrate_sessions_add_name_user_set`, `session_ledger.rs` ~line 2046) — follow it for new columns. Every writable ledger open goes through `tugcore::ledger_db` (`no_ad_hoc_ledger_opens` test).
+- `changes.db` schema changes require bumping `CHANGES_SCHEMA_VERSION` with a registered migration. `sessions.db` (per-instance) uses the self-healing `ALTER TABLE` pattern (`migrate_sessions_add_name_user_set`, `session_ledger.rs` ~line 2046) — follow it for new columns; new *tables* go in the CREATE batch (`CREATE TABLE IF NOT EXISTS`, the pattern `external_scan_cache` uses). Every writable ledger open goes through `tugcore::ledger_db` (`no_ad_hoc_ledger_opens` test).
+- **`minted_tags` is append-only** (Spec S08). No trash, cascade-delete, or eviction path may delete from it; that is what makes [P12]'s "never recycle" true rather than aspirational.
 - Tugdeck laws: [L02] external state via `useSyncExternalStore` only; [L06] appearance via CSS/DOM; [L19] `.tsx`/`.css` pairs with `data-slot`; [L20] token sovereignty — compose `TugPulse` through its published knobs, never reach inside. Read `tuglaws/tuglaws.md`, `tuglaws/pane-model.md`, `tuglaws/component-authoring.md` before tugdeck steps and name the laws in commits.
 - Theme tokens are hand-authored in `tugdeck/styles/themes/{brio,nocturne,bravura,harmony,aria,vivace}.css`; validate with `bun run audit:theme-contrast` (no theme may exceed the `brio` budget).
 - Verify tugdeck changes with `bunx vite build`; app-tests via `just app-test-changed` (`@covers` headers mandatory on new tests); Rust tests via `cd tugrust && cargo nextest run`.
@@ -139,13 +143,23 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 
 **Resolution: DECIDED** — the stop is **retired**, not moved. The masthead's PULSE line is chrome and takes no card-cycle focus stop; the telemetry placard widget is the masthead's one interactive affordance and participates as pane-chrome control like the close button, not in the card's cycle. `SESSION_CYCLE_ORDER_PULSE` and its `CycleScope` registration are deleted with the strip — no dangling order entry. Recorded in [P09]. If review during #step-14 finds a real keyboard path lost, reopen there with the keyboard-focus-nav subsystem's owner (that subsystem is tabled; propose no new chords).
 
+#### [Q04] Where an external session's backfilled tag lives (DECIDED here) {#q04-external-tag-storage}
+
+**Question:** [P12] mints a real tag for an external session at scan time. External rows have **no `sessions` row** — they are synthesized from `external_scan_cache` with `state: "closed"` / `card_id: null` and only adopt into the ledger on first resume, which is exactly what `SessionRow.provenance` (`"tug"` vs `"external"`) reports. `external_scan_cache` has no `tag` column, and `sessions_tag` indexes only `sessions`. So there is nowhere to put the tag and nothing to make it unique.
+
+**Why it matters:** the obvious shortcut — create a `sessions` row at scan time — silently flips every discovered session from `external` to `tug` provenance, changing what the picker shows and when adoption happens. That is a behavior change smuggled in under a naming fix.
+
+**Resolution: DECIDED** — add `tag TEXT` to `external_scan_cache` and let **`minted_tags` ([P12], Spec S08)** carry uniqueness, which it can because it is keyed by tag and indifferent to which table holds the session. Provenance is untouched: the row stays external until first resume, and adoption carries the already-minted tag onto the `sessions` row rather than minting a second one (`record_spawn` receives it as the candidate; `minted_tags` already holds it for that `session_id`, so the re-insert is a no-op rather than a collision — the mint's retry path must distinguish "this tag is mine" from "this tag is taken"). Recorded in Spec S08 and implemented in #step-3.
+
 ---
 
 ### Risks and Mitigations {#risks}
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Masthead height breaks geometry math | high | med | one fixed token + mirrored JS constant + pane-scoped `--tugx-pane-chrome-height` re-pointing scrim/sheet/banner | any layout that measures chrome |
+| Identity resolves but never re-renders | high | high (it is the default failure of an imperative resolver) | `useSessionIdentity` is the only React entry point (Spec S01); grep gate + a rename app-test | any surface showing a stale name |
+| A trashed session's tag is re-minted | high | low per event, certain over time | append-only `minted_tags` as the all-time arbiter (Spec S08) | a citation resolving to the wrong session |
+| Masthead height breaks geometry math | high | med | one fixed token + mirrored JS constant + pane-scoped `--tugx-pane-chrome-height` re-pointing the five Risk R01 sites (tab bar excluded) | any layout that measures chrome |
 | Strip removal drops a pacing behavior | med | med | explicit re-home inventory (List L01) walked in #step-14 | a PULSE line that strobes or a dead compaction stretch |
 | TS/Rust lexicon drift | med | low | generated Rust lexicon + drift test reading the TS source (Spec S05) | lexicon edits |
 | Legacy trailer breaks History parse | med | high (legacy commits are everywhere) | Spec S03 legacy grammar; unit tests over both forms | any unparsed `Tug-Session` ink in History |
@@ -153,8 +167,21 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 
 **Risk R01: Masthead height regressions** {#r01-masthead-height}
 
-- **Risk:** Surfaces that assume 36px chrome mis-measure a 72px masthead. The JS side is small — exactly two consumers of `CARD_TITLE_BAR_HEIGHT` (`tug-pane.tsx` ~line 87 and `TITLE_BAR_VISIBLE_MIN_Y` ~line 825). The real fan-out is the CSS token `--tug-chrome-height`, which positions everything below the title bar: the pane scrim (`tug-pane.css` ~line 610 — under a 72px masthead it would dim and deaden the masthead's bottom half, telemetry placard included, whenever a sheet is up), the sheet panel top (`tug-sheet.css` ~line 63 — the Changes sheet lives on the Session card), and the pane banner (`tug-pane-banner.css` ~line 59 — the Session card mounts `TugPaneBanner` via `session-card-banner-spec.ts`).
-- **Mitigation:** `--tug-masthead-height` declared identically in all six themes; a `MASTHEAD_HEIGHT = 72` JS constant beside `CARD_TITLE_BAR_HEIGHT = 36` (`tug-pane.tsx` ~line 87); a pane-scoped `--tugx-pane-chrome-height` published on the `.tug-pane` element — `var(--tug-masthead-height)` when the masthead is up, `var(--tug-chrome-height)` otherwise — with scrim, sheet, and banner re-pointed to it in #step-13; the masthead never reflows (overflow truncates via `TugLabel`).
+- **Risk:** Surfaces that assume 36px chrome mis-measure a 72px masthead. The JS side is small — exactly two consumers of `CARD_TITLE_BAR_HEIGHT` (`tug-pane.tsx` ~line 87 and `TITLE_BAR_VISIBLE_MIN_Y` ~line 825). The real fan-out is the CSS token `--tug-chrome-height`, and the inventory is **eight sites in four files**, not three. Each is classified — this table is the #step-13 worklist:
+
+| Site | What it is | Disposition |
+|---|---|---|
+| `tug-pane.css` ~257–258 | `.tug-pane-title-bar` `height` / `min-height` | **re-point** — this is the bar that *becomes* the masthead; every other row here is downstream of it |
+| `tug-pane.css` ~610 | pane scrim `top` | **re-point** — at 36 it dims the masthead's bottom half, telemetry placard included, whenever a sheet is up |
+| `tug-sheet.css` ~63 | sheet panel `top` | **re-point** — the Changes sheet lives on the Session card |
+| `tug-sheet.css` ~133 | sheet `max-height: calc(100vh - var(--tug-chrome-height) - 32px)` | **re-point** — missed at 36 the sheet overflows the viewport by exactly the extra 36px |
+| `tug-pane-banner.css` ~59 | banner `top` (`var(--tug-chrome-height, 36px)`) | **re-point** — the Session card mounts `TugPaneBanner` via `session-card-banner-spec.ts`; carry the fallback across as `36px` |
+| `tug-tab-bar.css` ~86 | tab bar row `height` | **leave** — a tab is 36px whatever the title bar does |
+| `tug-tab-bar.css` ~286 | a square control's `width` | **leave** — the token is being used as a square-button metric, not a chrome offset |
+| `tug-tab-bar.css` ~367, ~402 | drag ghost height, drop-target `min-height` | **leave** — both must match the tab row, not the masthead |
+
+  **The masthead and the tab bar stack; they do not merge.** A multi-tab Session pane's chrome is **72 + 36 = 108px**: masthead on top, tab row beneath it, unchanged. Anything re-pointed above measures *the title-bar tier only*, which is why the four `tug-tab-bar.css` sites stay on `--tug-chrome-height` — re-pointing them would give a masthead pane 72px-tall tabs.
+- **Mitigation:** `--tug-masthead-height` declared identically in all six themes (and `tugdeck/src/generated/tug-token-names.ts` regenerated — see #step-8); a `MASTHEAD_HEIGHT = 72` JS constant beside `CARD_TITLE_BAR_HEIGHT = 36` (`tug-pane.tsx` ~line 87); a pane-scoped `--tugx-pane-chrome-height` published on the `.tug-pane` element — `var(--tug-masthead-height)` when the masthead is up, `var(--tug-chrome-height)` otherwise — with the five **re-point** rows above pointed at it in #step-13; the masthead never reflows (overflow truncates via `TugLabel`).
 - **Residual risk:** app-tests with hard-coded chrome offsets on the Session card; fix as they surface via `just app-test-changed`.
 
 **Risk R02: The strip owns more than a line of text** {#r02-strip-behaviors}
@@ -223,7 +250,7 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 
 #### [P08] The masthead is a fixed 72px second chrome tier (DECIDED) {#p08-masthead}
 
-**Decision:** The Session card's chrome becomes a three-line masthead — `project/callsign` + pane controls; description; PULSE (inline) — with a trailing pulse/info widget opening a `TugPlacard` (state, turns, created/compacted stamps, branch, citation + copy). `--tug-masthead-height: 72px`, **ratified**, declared in all six themes, mirrored as a JS constant; overflow truncates; the masthead never reflows. Chrome remains the Pane's ([L09]/[L25]); `cardTitleStore`'s override keeps its string and gains a masthead sidecar (Spec S02); `TugPane` renders masthead density when the pane's **active** card publishes one, one-line bar otherwise — in a multi-tab pane the chrome follows the frontmost tab, swapping 36↔72 on tab switch ([P14]).
+**Decision:** The Session card's chrome becomes a three-line masthead — `project/callsign` + pane controls; description; PULSE (inline) — with a trailing pulse/info widget opening a `TugPlacard` (state, turns, created/compacted stamps, branch, citation + copy). `--tug-masthead-height: 72px`, **ratified**, declared in all six themes, mirrored as a JS constant; overflow truncates; the masthead never reflows. Chrome remains the Pane's ([L09]/[L25]); `cardTitleStore`'s override keeps its string and gains a masthead sidecar (Spec S02); `TugPane` renders masthead density when the pane's **active** card publishes one, one-line bar otherwise — in a multi-tab pane the chrome follows the frontmost tab, swapping 36↔72 on tab switch ([P14]). The pane owns the slot and its geometry; the three lines and every store behind them live in a tugways `SessionMasthead` the pane mounts by `sessionId` (Spec S02) — chrome stays the Pane's without session-domain machinery moving into it.
 
 **Implications:** branch leaves identity — the `(branch)` title suffix retires; branch lives only in the placard. The load-control bar's "Session created …" line is an absorption candidate (placard).
 
@@ -241,7 +268,11 @@ This plan uses the devise-skeleton conventions (`tuglaws/devise-skeleton.md`): e
 
 #### [P12] Tag space and immutability (DECIDED) {#p12-tag-space}
 
-**Decision:** Two words, keep the lexicon; grow opportunistically, never structurally. **Never recycle a tag** — uniqueness holds against every row ever held, including trashed. No `/retag`. External sessions get real minted tags backfilled at scan time; `deriveStableTag` retires from production. The deferred `tag → session_id` resolver and `/resume <tag>` land as part of this work.
+**Decision:** Two words, keep the lexicon; grow opportunistically, never structurally. **Never recycle a tag** — uniqueness holds against every tag ever minted, including one whose session was trashed. No `/retag`. External sessions get real minted tags backfilled at scan time; `deriveStableTag` retires from production. The deferred `tag → session_id` resolver and `/resume <tag>` land as part of this work.
+
+**The `sessions_tag` index cannot carry "never recycle."** `sessions` rows are hard-`DELETE`d — explicit trash (`session_ledger.rs` ~line 2600), the cascade paths (~2644 / ~2752 / ~2797), and the cap/age eviction the module header documents. A unique index over a table that loses rows frees the tag when the row dies. That was tolerable when a tag was a friendly face; it is not tolerable once [P10] writes tags into commit trailers, because a recycled tag makes a two-year-old commit's citation resolve to a *different* session — a confidently wrong answer, strictly worse than the [P13] slashed atom.
+
+**Mechanism (Spec S08): one `minted_tags` table is the all-time arbiter.** Every mint — spawn, fork, external backfill — inserts `(tag, session_id, minted_at)` into `minted_tags` inside the same transaction as the row it names, and **nothing ever deletes from it**. Its `PRIMARY KEY` is the collision signal the mint retries against, so it is also the race-breaker; the `sessions_tag` index stays as the live-row invariant but is no longer the thing uniqueness rests on. This is also what gives an external-session tag ([Q04]) somewhere to be unique *before* a `sessions` row exists.
 
 #### [P13] The unresolvable citation (DECIDED) {#p13-unresolvable}
 
@@ -284,11 +315,15 @@ Two writers, one grammar:
 
 #### The masthead in the pane {#masthead-in-pane}
 
-`TugPane` consults `cardTitleStore` for the active card's override (`tug-pane.tsx` ~line 1371) and composes via `lib/pane-title.ts` (`composePaneTitleBarText` / `paneTitleBarTextFor`, [D123]/[D125]). The evolution: the string stays and the masthead rides beside it as a sidecar (Spec S02) — the card's re-`set` on every identity change is what keeps every list consumer notified. `paneTitleBarTextFor` keeps returning the one-line string for every list surface (tab strip, Window menu, slot-stack picker — the **Line** tier is exactly this string) with no change at all, while `TugPane` renders masthead chrome when the active card carries the sidecar ([P14]: the chrome follows the frontmost tab). The pane owns the masthead DOM (chrome is the Pane's); the card publishes only data. The JS audit is the two `CARD_TITLE_BAR_HEIGHT` consumers (`TITLE_BAR_VISIBLE_MIN_Y` ~line 825 plus grep); the CSS audit is `--tug-chrome-height`'s consumers per Risk R01 (scrim, sheet, banner).
+`TugPane` consults `cardTitleStore` for the active card's override (`tug-pane.tsx` ~line 1371) and composes via `lib/pane-title.ts` (`composePaneTitleBarText` / `paneTitleBarTextFor`, [D123]/[D125]). The evolution: the string stays and the masthead rides beside it as a sidecar (Spec S02). Note what the string channel is and is not after this work — it is **reader compatibility** (`get(): string | null` is what four call sites and the tab bar's `overrideKey` join already consume), not a notification path. `<project>/<tag>` is constant for the life of a binding once [P04] drops the name, [P08] drops the branch, and [P12] freezes the tag, so `set` no-ops after the first call and identity changes travel through `useSessionIdentity` instead (Spec S01). `paneTitleBarTextFor` keeps returning the one-line string for every list surface (tab strip, Window menu, slot-stack picker — the **Line** tier is exactly this string) with no change at all, while `TugPane` opens a masthead-height chrome slot when the active card carries the sidecar ([P14]: the chrome follows the frontmost tab) and mounts `SessionMasthead` into it. The pane owns the slot and its geometry; the session family owns what is inside it, which is what keeps the PULSE feeder, dwell queue, and placard out of chrome code. The JS audit is the two `CARD_TITLE_BAR_HEIGHT` consumers (`TITLE_BAR_VISIBLE_MIN_Y` ~line 825 plus grep); the CSS audit is `--tug-chrome-height`'s **eight** consumers across four files, five re-pointed and three left alone, enumerated site by site in Risk R01.
 
 #### Tag mint hardening {#tag-mint-hardening}
 
-`record_spawn`'s claim-or-suffix (~line 2353): on `sessions_tag` unique violation it suffixes `-2`, `-3`… up to `TAG_SUFFIX_CAP`, then lands NULL silently (~line 2412). The change: on violation, reroll a complete fresh `adjective-noun` from a Rust copy of the lexicon (Spec S05), retry against the ledger (bounded attempts, then extend with more rerolls — never NULL, never a bare `-N`). `tag_base` (~line 4909) and `is_tag_unique_violation` survive only as far as the reroll loop needs them; the `-N`-stripping semantics retire. Lineage suffixes (`-A1`) must pass the mint untouched — the reroll never fires for them because a lineage tag is minted unique by construction (root tag unique + point/sequence allocated from the ledger's own lineage rows).
+`record_spawn`'s claim-or-suffix (~line 2353): on `sessions_tag` unique violation it suffixes `-2`, `-3`… up to `TAG_SUFFIX_CAP`, then lands NULL silently (~line 2412). The change is two-part.
+
+**The arbiter moves.** `sessions_tag` indexes a table that loses rows — trash (~line 2600), the cascade deletes (~2644 / ~2752 / ~2797), cap/age eviction — so it can enforce "unique among live sessions" but not [P12]'s "never recycle", which commit trailers now depend on. The append-only `minted_tags` table (Spec S08) becomes the thing a mint claims against; its `PRIMARY KEY` violation is the collision signal, and it distinguishes "already mine" (re-spawn, resume, external adoption) from "taken by another session" (a real collision). `sessions_tag` stays as the live-row invariant.
+
+**The collision response changes.** On a genuine collision, reroll a complete fresh `adjective-noun` from a Rust copy of the lexicon (Spec S05) and re-claim (bounded attempts, then error — never NULL, never a bare `-N`). `tag_base` (~line 4909) and `is_tag_unique_violation` survive only as far as the reroll loop needs them; the `-N`-stripping semantics retire. Lineage suffixes (`-A1`) must pass the mint untouched, and a colliding lineage candidate **errors instead of rerolling** — a reroll would write an unrelated `adjective-noun` into `tag` while `root_tag`/`tag_lineage` still name the lineage, a contradiction the resolver would render straight to the user. That a lineage tag is unique by construction (root tag unique + point/sequence allocated from the ledger's own lineage rows) is why the guard should never fire; it is not a reason to omit it.
 
 ---
 
@@ -306,7 +341,7 @@ export interface SessionIdentity {
   branch: string | null;
   /** The callsign, including any lineage suffix; null only for a legacy tagless row. */
   tag: string | null;
-  /** Parsed lineage segments, e.g. ["A1","B2"]; empty for a root session. */
+  /** Parsed lineage segments, e.g. ["A1","B2"] (from `tag_lineage`); empty for a root session. */
   lineage: readonly string[];
   /** The description: /rename name if user-set, else synopsis, else null. */
   title: string | null;
@@ -319,14 +354,21 @@ export interface SessionIdentity {
   /** First 8 chars of id — THE short id; computed here and nowhere else. */
   shortId: string;
 }
+/** Imperative read — a SNAPSHOT with no subscription. Non-React callers only. */
 export function resolveSessionIdentity(sessionId: string): SessionIdentity;
+/** The React entry point — subscribes, then resolves. Every component uses THIS. */
+export function useSessionIdentity(sessionId: string | null): SessionIdentity | null;
 /** The Line-tier / pane-title string: `<project>/<tag>` (no branch suffix — [P08]). */
 export function sessionIdentityLine(identity: SessionIdentity): string;
 /** The citation: `<tag> (<shortId>)`, optionally project-prefixed. */
 export function sessionCitation(identity: SessionIdentity, opts?: { project?: boolean }): string;
 ```
 
-Reads `sessionNameStore`, `sessionTagStore`, the synopsis (rides `SessionRow`, cached in a small store per [L02]), and the card-binding project dir. Pure formatting helpers are exported separately for unit tests. Fallback rule everywhere: tag; a legacy tagless session degrades to `shortId` — never the full UUID.
+Reads `sessionNameStore`, `sessionTagStore`, `sessionSynopsisStore`, the session phase store, and the card-binding project dir. Pure formatting helpers are exported separately for unit tests. Fallback rule everywhere: tag; a legacy tagless session degrades to `shortId` — never the full UUID.
+
+**The reactivity contract ([L02]) is part of this spec, not an implementation detail.** `resolveSessionIdentity` reads four stores imperatively; called bare from a render it hands back a snapshot with **no subscription**, and a rename or synopsis write would update the stores while the surface repaints never. That failure is invisible in a unit test and lands hardest on the masthead, where Spec S02 deliberately keeps the sidecar a key rather than a snapshot precisely so the pane re-resolves at render.
+
+So `useSessionIdentity(sessionId)` is the sanctioned entry point for every React consumer — masthead, row, chip, line — and it composes `useSyncExternalStore` over each backing store's version token (`sessionNameStore.getVersion`, `sessionTagStore.getVersion`, and the same shape on the synopsis and phase stores; each of those stores already publishes both a by-id getter and a monotonic version for exactly this reason, and their headers say so) before delegating to the pure `resolveSessionIdentity`. The bare function stays exported for non-React callers (clipboard writes, export filenames, command routes) and for the unit tests. **No component may call `resolveSessionIdentity` directly** — that is a grep gate in #step-19.
 
 **Spec S02: `TugSessionIdentity` and the masthead payload** {#s02-component}
 
@@ -337,7 +379,13 @@ New pair `tugdeck/src/components/tugways/tug-session-identity.tsx` / `.css` ([L1
 - Line: icon + one bold run, no enclosure.
 - Row/Masthead: the identity stack (callsign; description; `TugPulse layout="inline"`; row adds metadata line) with geometry per Table T01. Composes `TugSessionRow`, `TugProgressIndicator`, `TugPulse` through published knobs only ([L20]).
 - Owned tokens (`--tugx-session-identity-*`): `icon-gap`, `lead-gap: 5px`, `line-gap: 1px`, `row-dot-size: 16px`, `row-indent: 10px`, `row-pad: 12px`; CSS knob defaults live as `var(--x, default)` fallbacks at point of use.
-- `cardTitleStore` evolution: the card **keeps publishing the resolved Line string** — `version()` bumps only on `set`/`clear`, so a never-changing key would sever the notification contract every list consumer rides (a rename/synopsis/tag change would notify the identity stores and leave `deck-canvas.tsx` ~315, `host-menu-state.ts` ~1016, `tug-pane.tsx` ~1378, and `tug-tab-bar.tsx` ~198 stale; the tab bar's `overrideKey` string join would also stop discriminating on an object). The masthead rides as a **sidecar**: `set(cardId, title: string, masthead?: SessionMastheadPayload)` with `SessionMastheadPayload = { kind: "session-masthead"; sessionId: string }`; `get()` stays `string | null` (no reader changes anywhere) and a new `getMasthead(cardId)` serves the pane. The Session card re-`set`s on every identity change exactly as today, which is what keeps the store self-notifying; the pane still resolves display data via the resolver at render, so the sidecar stays a key, not a snapshot.
+- `cardTitleStore` evolution: the card **keeps publishing the resolved Line string**, and the masthead rides beside it as a **sidecar**: `set(cardId, title: string, masthead?: SessionMastheadPayload)` with `SessionMastheadPayload = { kind: "session-masthead"; sessionId: string }`; `get()` stays `string | null` (no reader changes anywhere at `deck-canvas.tsx` ~315, `host-menu-state.ts` ~1016, `tug-pane.tsx` ~1378, `tug-tab-bar.tsx` ~198/~442/~803) and a new `getMasthead(cardId)` serves the pane. The sidecar is a **key, not a snapshot** — the pane resolves display data through `useSessionIdentity` at render.
+
+  **Why the string channel survives: reader compatibility, not notification.** It is tempting to say the card's re-`set` on every identity change is what keeps list consumers fresh — that was true when the override carried the name and the `(branch)` suffix. It is **not** true after this work: [P04] makes the Line string `<project>/<tag>`, [P08] retires the branch suffix, and [P12] makes the tag immutable, so the string is **constant for the life of a session binding**. A `/rename` no longer changes it, and `set` no-ops. Identity changes reach every surface through the identity stores via `useSessionIdentity` (Spec S01) — that is the notification path, and it is the only one. The string stays because `get(): string | null` is what four call sites and the tab bar's `overrideKey` join already consume, and changing that shape buys nothing.
+
+  **The equality guard must widen.** `CardTitleStore.set` currently early-returns on `this._overrides.get(cardId) === title`. With a sidecar, an unchanged title carrying a *changed* masthead payload would return early: the sidecar would never be stored and no listener would fire. The guard compares the string **and** the payload (by `sessionId`); a change in either notifies.
+
+- **Who owns the masthead's moving parts.** The pane composes chrome ([L09]) but must not grow session-domain machinery: the PULSE headline feed, the dwell queue, `compactionProgressStore`, the sparkline series, and the `pulse/enabled` tugbank default all live inside a card-owned component today (`session-pulse-strip.tsx`). **Decision:** `TugPane` mounts a tugways component — `SessionMasthead` (`components/tugways/session-masthead.tsx` / `.css`), keyed by the sidecar's `sessionId` — into a chrome slot it owns and sizes. The pane owns the slot's geometry and the 36↔72 swap; `SessionMasthead` owns the three lines, the placard widget, and every store subscription behind them. The precedent is the Session card rendering `TugPaneBanner`: pane-class chrome furniture, session-class content inside it. This is what #step-14's "move the dwell queue as code" moves *into* — a real destination, not the pane's render body.
 
 **Spec S03: Citation and trailer grammar** {#s03-citation-grammar}
 
@@ -360,7 +408,7 @@ Each of `brio,nocturne,bravura,harmony,aria,vivace`.css gains, hand-authored bes
 
 **Spec S05: Lineage storage and the Rust lexicon** {#s05-lineage-storage}
 
-- `sessions` table gains (self-healing ALTERs): `root_tag TEXT` (the lineage root's tag; NULL for a root session) and `lineage TEXT` (dash-joined segments, e.g. `A1-B2`; NULL for a root). The display tag column keeps the full composed tag (`stocky-pixie-A1-B2`) so existing tag-unique indexing and lookups are unchanged; `root_tag`+`lineage` are the structured record the resolver and future tooling read.
+- `sessions` table gains (self-healing ALTERs): `root_tag TEXT` (the lineage root's tag; NULL for a root session) and `tag_lineage TEXT` (dash-joined segments, e.g. `A1-B2`; NULL for a root). The display tag column keeps the full composed tag (`stocky-pixie-A1-B2`) so existing tag-unique indexing and lookups are unchanged; `root_tag`+`tag_lineage` are the structured record the resolver and future tooling read. **Not** `lineage`: `external_scan_cache.lineage_ancestors` already owns that word for JSONL message ancestry, an unrelated concept, and two `lineage` columns one table apart meaning different things is a trap for the next reader.
 - Fork allocation: the branch-point letter is allocated per (root session, rewind point) — first point forked from is `A`, next distinct point `B`; the number sequences forks from that point. The ledger owns allocation (a query over the root's existing fork rows) so two racing forks cannot collide.
 - Rust lexicon: `tugrust/crates/tugcast/src/session_tag_lexicon.rs` generated from `tugdeck/src/lib/session-tag-lexicon.ts` by a `just` recipe (checked in, regenerated on lexicon edits); a Rust unit test reads the TS file from the repo at test time and asserts the two lists match — drift fails the build.
 
@@ -382,6 +430,22 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 - Output: written to `sessions.synopsis`, broadcast on the existing `session_updated` push so `SessionRow.synopsis` reaches the client.
 - Precedence enforced at write: a row with `name_user_set = 1` never runs the job (frozen); the client resolver prefers `name` when `name_user_set`, else `synopsis`, else empty.
 - Trigger: [Q01] — start "on turn completion, debounced ≥60s", tune in #step-15.
+
+**Spec S08: `minted_tags` — the all-time tag arbiter** {#s08-minted-tags}
+
+```sql
+CREATE TABLE IF NOT EXISTS minted_tags (
+  tag        TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  minted_at  INTEGER NOT NULL
+);
+```
+
+- Created in `session_ledger.rs`'s CREATE batch (`sessions.db`, per-instance); rows are **never deleted** — not by trash, not by the cascade paths, not by cap/age eviction. A tag outlives its session by design ([P12]).
+- Every mint path inserts here **in the same transaction** as the row it names: `record_spawn` (#step-2), the fork allocation (#step-5), the external backfill (#step-3).
+- The `PRIMARY KEY` violation is the collision signal the mint retries against — it replaces `sessions_tag` as the arbiter. `sessions_tag` stays as the live-row invariant (a second row must never *display* a tag another live row displays), but it is no longer what "unique" rests on.
+- **"Mine" is not "taken":** an insert whose `(tag, session_id)` already matches is idempotent (`INSERT … ON CONFLICT(tag) DO NOTHING`, then confirm the stored `session_id` equals ours). Only a conflict naming a *different* `session_id` is a real collision and triggers the reroll. Without this, re-spawn/resume of an already-tagged session and the external-adoption carry-over ([Q04]) would both read as collisions and reroll a perfectly good tag.
+- Trash/delete paths need no change beyond *not* touching this table — call that out in their doc comments, since "delete every row for this session" is the obvious wrong instinct.
 
 **Table T01: Stack geometry (measured on the spike, ships as tokens)** {#t01-geometry}
 
@@ -416,10 +480,11 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
 | synopsis text | external (ledger) | rides `SessionRow` → small `sessionSynopsisStore` (clone of `session-name-store.ts`), `useSyncExternalStore` | [L02] |
-| masthead payload | structure (pane/card channel) | `cardTitleStore` string + masthead sidecar; the card's re-`set` on identity change keeps `version()` firing | [L02], [L24] |
+| **resolved identity (read path)** | external (derived) | `useSessionIdentity` composes `useSyncExternalStore` over the name / tag / synopsis / phase store version tokens, then derives; the bare resolver is a snapshot and is never called from a render (Spec S01) | [L02] |
+| masthead payload | structure (pane/card channel) | `cardTitleStore` string + masthead sidecar, keyed by `sessionId`; a key, not a snapshot — identity changes travel the store path above, not this one | [L02], [L24] |
 | atom hover placard open | appearance | `TugPlacard`'s own mechanism (existing component) | [L06] |
 | phase dot pulse | appearance | CSS animation via `TugProgressIndicator` (existing) | [L06], [L13] |
-| PULSE dwell queue | local-data (timers) | refs + timers inside the masthead PULSE feeder (as in the strip today) | [L22] |
+| PULSE dwell queue | local-data (timers) | refs + timers inside `SessionMasthead` (moved as code from the strip, Spec S02) — not in the pane's render body | [L22] |
 | tag → id reverse map | external | grows on `sessionTagStore` (documented follow-on in its header) | [L02] |
 
 ---
@@ -434,6 +499,7 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 | `tugdeck/src/lib/__tests__/session-identity.test.ts` | resolver unit tests |
 | `tugdeck/src/lib/session-synopsis-store.ts` | [L02] store for `SessionRow.synopsis` |
 | `tugdeck/src/components/tugways/tug-session-identity.tsx` / `.css` | Spec S02 component family |
+| `tugdeck/src/components/tugways/session-masthead.tsx` / `.css` | the three-line masthead the pane mounts by `sessionId` (Spec S02) — owns the PULSE feeder, dwell queue, compaction pin, sparkline, placard |
 | `tugrust/crates/tugcast/src/session_tag_lexicon.rs` | generated Rust lexicon (Spec S05) |
 
 #### Symbols to add / modify {#symbols}
@@ -441,16 +507,20 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 | Symbol | Kind | Location | Notes |
 |--------|------|----------|-------|
 | `resolveSessionIdentity`, `sessionIdentityLine`, `sessionCitation` | fn | `session-identity.ts` | Spec S01 |
+| `useSessionIdentity` | hook | `session-identity.ts` | Spec S01 — **the** React entry point; `useSyncExternalStore` over the four backing stores [L02] |
 | `TugSessionIdentity` | component | `tug-session-identity.tsx` | Spec S02 |
-| `SessionMastheadPayload` | type | `card-title-store.ts` | Spec S02 — sidecar beside the string; `getMasthead(cardId)` |
+| `SessionMasthead` | component | `session-masthead.tsx` | Spec S02 — mounted by the pane into its chrome slot |
+| `SessionMastheadPayload` | type | `card-title-store.ts` | Spec S02 — sidecar beside the string; `getMasthead(cardId)`; equality guard widens to cover it |
 | `cardTitleTextFor` | fn | `lib/pane-title.ts` | per-tab label for the tab strip (#step-16) |
 | `MASTHEAD_HEIGHT` | const | `tug-pane.tsx` | mirrors `--tug-masthead-height` |
 | `--tugx-pane-chrome-height` | CSS property | `tug-pane.css` (+ scrim/sheet/banner re-points) | Risk R01, [P14] |
-| `SessionRow.synopsis` | field | `tugdeck/src/protocol.ts` + Rust `SessionRow` | lockstep comment like `tag` |
+| `SessionRow.synopsis`, `.root_tag`, `.tag_lineage` | fields | `tugdeck/src/protocol.ts` + Rust `SessionRow` | lockstep comments like `tag`; all default null for older tugcast |
 | `GitLogCommit.tug_session`, `.tug_session_id` | fields | `tugcast-core/src/types.rs` | Spec S03 |
 | `session_row_title` | fn | `feeds/changeset.rs` | gains tag arm (#step-1) |
 | `record_spawn` reroll | fn | `session_ledger.rs` | Spec S05 / [P11] |
-| `sessions.root_tag`, `sessions.lineage`, `sessions.synopsis` | columns | `session_ledger.rs` | self-healing ALTERs |
+| `minted_tags` table + `claim_tag` | table / fn | `session_ledger.rs` | Spec S08 — all-time arbiter; never deleted from |
+| `sessions.root_tag`, `sessions.tag_lineage`, `sessions.synopsis` | columns | `session_ledger.rs` | self-healing ALTERs (**not** `lineage` — [Q04]/Spec S05) |
+| `external_scan_cache.tag` | column | `session_ledger.rs` | [Q04] — the backfilled external tag; uniqueness lives in `minted_tags` |
 | `session_trailer` | fn | `tugdash-core/src/ops.rs` | citation + id pair |
 | deleted: `sessionChipDisplay`, `sessionRowTitle`, `sessionEntryTitle`, `deriveStableTag` (production), `sessionCardTitleOverride`, `SessionPulseStrip`, `SESSION_CYCLE_ORDER_PULSE` | — | various | [P02], [P09], [P12] |
 
@@ -463,13 +533,14 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 | Category | Purpose | When to use |
 |----------|---------|-------------|
 | **Unit (bun test)** | pure resolver/citation/lineage string logic | `session-identity.test.ts`, marker/clipboard parsing |
-| **Unit (cargo nextest)** | mint reroll, lineage allocation, trailer write/parse/strip, synopsis precedence, lexicon drift | all Rust steps |
+| **Unit (cargo nextest)** | mint reroll, tag permanence across delete, lineage allocation, trailer write/parse/strip, synopsis precedence, lexicon drift | all Rust steps |
 | **App-test (selective)** | real surfaces on the real app: masthead, picker rows, tab strip, Gazette chip, History line, strip removal | every tugdeck step; `just app-test-changed` via `@covers` |
 | **Contract** | TS↔Rust lockstep: `SessionRow` fields, lexicon drift test | #step-2, #step-15 |
 
 #### What stays out of tests {#test-non-goals}
 
 - Synopsis wording quality — tuned by eye against real output ([Q01]); the register rules are enforced by the existing grounding code, not new tests.
+- The `useSessionIdentity` hook in isolation — a render test would be the banned pattern. Its contract ("a `/rename` repaints every live surface") is an app-test on the real app, in #step-9.
 - jsdom render tests / mock stores — banned pattern; surfaces are covered by app-tests on the real app.
 - Sparkline pixel output — covered by existing at0205 pinning; only the constant-pairing docstring moves.
 - Full app-test sweeps — selection is derived (`@covers`); core tier only if a change lands in pre-assertion harness files.
@@ -512,6 +583,8 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Artifacts:** `session_row_title` and `session_display_name` in `tugrust/crates/tugcast/src/feeds/changeset.rs` gain the tag arm; `prior_owner_name` and `display_name` speak tag before short id.
 
+**Two visible behavior changes ride this one line — both intended, neither incidental.** (a) The tag outranks the `last_user_prompt` snippet, so a tagged session's Changes-card rows and bucket headers stop showing prompt-derived text and start showing the callsign. Expect app-test expectation churn proportional to that, and read it as the change landing, not a regression. (b) `session_row_title` today accepts *any* `name`, including an auto `aiTitle`; gating on `name_user_set` means an auto title stops fronting — at the same moment #step-4 makes auto-title capture live. That pairing is deliberate: the field becomes accurate and stops being load-bearing for display in the same phase, which is what lets [P07] retire it as the description source without losing it.
+
 **Tasks:**
 - [ ] `session_row_title(row)` precedence becomes: user-set `name` → `tag` → last-prompt snippet → 8-char id. (Note today's rule takes *any* `name` including auto ai-title; per the brief the callsign leads — only a user-set name outranks the tag. Check `name_user_set` on `SessionRow`.)
 - [ ] `session_display_name(pfe)` gains the tag between user-set name and the id hash; plumb `owner_tag` onto `ProjectFileEvent` from the ledger join (the pattern of `owner_name` / `owner_name_user_set`, `session_ledger.rs` ~line 651).
@@ -529,23 +602,27 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Commit:** `tugcast(session-identity): retire the -N suffix backstop for a full mint reroll`
 
-**References:** [P11] Fork lineage, [P12] Tag space, Spec S05, (#tag-mint-hardening)
+**References:** [P11] Fork lineage, [P12] Tag space, Spec S05, Spec S08, (#tag-mint-hardening)
 
-**Artifacts:** generated `session_tag_lexicon.rs` + `just` recipe + drift test; `record_spawn`'s collision path rerolls; NULL-tag landing removed.
+**Artifacts:** the `minted_tags` table (Spec S08); generated `session_tag_lexicon.rs` + `just` recipe + drift test; `record_spawn`'s collision path rerolls; NULL-tag landing removed.
 
 **Tasks:**
+- [ ] `minted_tags` per Spec S08 in the CREATE batch, plus a `claim_tag(tx, tag, session_id) -> Claimed | TakenByOther` helper implementing the "mine is not taken" rule. Every mint path in this plan goes through it; nothing deletes from the table, and the trash / cascade / eviction paths get a doc-comment line saying so explicitly (the obvious instinct there is to delete every row naming the session, which would silently restore recycling).
 - [ ] Add the `just` recipe generating `tugrust/crates/tugcast/src/session_tag_lexicon.rs` from `tugdeck/src/lib/session-tag-lexicon.ts`; check in the output.
 - [ ] Drift test: read the TS lexicon from the repo at test time; assert list equality.
-- [ ] Rework the claim-or-suffix loop (`session_ledger.rs` ~line 2353): on `sessions_tag` unique violation, reroll a fresh `adjective-noun` (seeded RNG acceptable, must exclude nothing — the unique index is the arbiter) and retry; bound attempts generously (e.g. 64) and on exhaustion return an error rather than landing NULL — with 524k combinations this is unreachable in practice.
-- [ ] Retire `tag_base` `-N` semantics and the `TAG_SUFFIX_CAP` NULL fallback; update the `[P03]/Spec S02` doc comments that describe them.
+- [ ] Rework the claim-or-suffix loop (`session_ledger.rs` ~line 2353): claim through `claim_tag`; on `TakenByOther`, reroll a fresh `adjective-noun` (seeded RNG acceptable — `minted_tags` is the arbiter, so the roller needs no exclusion set) and retry; bound attempts generously (e.g. 64) and on exhaustion return an error rather than landing NULL — with 524k combinations this is unreachable in practice.
+- [ ] Retire `tag_base` `-N` semantics and the `TAG_SUFFIX_CAP` NULL fallback; update the `[P03]/Spec S02` doc comments that describe them. `sessions_tag` stays as the live-row invariant but stops being the thing the retry reads.
 - [ ] Lineage-suffixed tags (`-A1`, `-A1-B2`) pass through the mint untouched (they arrive pre-composed from the fork path, #step-5).
-- [ ] A candidate carrying lineage segments **never rerolls** — a reroll would write an unrelated `adjective-noun` into `tag` while `root_tag`/`lineage` still name the lineage, a silent contradiction the resolver would render. On a unique violation for a lineage-suffixed candidate, return an error (the fork path re-allocates the segment instead, #step-5); "unreachable by construction" is an argument, not a guard.
+- [ ] A candidate carrying lineage segments **never rerolls** — a reroll would write an unrelated `adjective-noun` into `tag` while `root_tag`/`tag_lineage` still name the lineage, a silent contradiction the resolver would render. On a `TakenByOther` for a lineage-suffixed candidate, return an error (the fork path re-allocates the segment instead, #step-5); "unreachable by construction" is an argument, not a guard.
+- [ ] **The reroll is user-visible; say what the user sees.** The old `-N` path kept the minted word pair; a reroll replaces the callsign outright, and the client has already shown its optimistic tag "from the drop". The client adopts the server's tag on the `session_updated` / spawn-ack path it already rides (`session-tag-store.ts` calls this out as its authoritative source), so the callsign may change once, seconds after spawn, and is then immutable forever ([P12]). Confirm no surface caches the optimistic tag past that ack; document the behavior in `session-tag.ts`'s header rather than leaving it to be discovered.
 
 **Tests:**
 - [ ] Reroll on collision lands a different valid tag (deterministic RNG injection).
 - [ ] Existing suffix tests (`record_spawn_suffixes_a_taken_tag`, `record_spawn_suffixes_a_backfill_that_collides`, ~line 5256/5329) rewritten to the reroll contract.
 - [ ] No path lands `tag = NULL` for a fresh spawn.
 - [ ] Negative: a colliding lineage-suffixed candidate errors rather than rerolling.
+- [ ] **Permanence:** mint a tag, trash the session (and separately, run the cascade-delete path), then attempt to mint the same tag for a new session → collision + reroll. This is the test that keeps [P12] true; without it the property is a comment.
+- [ ] Idempotence: re-claiming a tag for the **same** `session_id` (re-spawn / resume) succeeds without rerolling.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -558,16 +635,21 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Commit:** `tugcast(session-identity): mint real tags for external sessions at scan time`
 
-**References:** [P12] Tag space, (#context)
+**References:** [P12] Tag space, [Q04] External tag storage, Spec S08, (#context)
 
-**Artifacts:** `scan_external_sessions` (`external_sessions.rs` ~line 1123) mints and persists a real tag for each discovered session lacking one.
+**Artifacts:** `external_scan_cache.tag`; `scan_external_sessions` (`external_sessions.rs` ~line 1123) mints and persists a real tag for each discovered session lacking one, **without** creating a `sessions` row.
 
 **Tasks:**
-- [ ] At scan/adoption, for an external row with no ledger tag: mint via the Rust lexicon + ledger uniqueness (the #step-2 machinery) and persist, so the tag is stable ever after and unique like any other.
+- [ ] Self-healing ALTER adding `tag TEXT` to `external_scan_cache`. Per [Q04] this is where an external session's tag lives until adoption; `minted_tags` (Spec S08) carries uniqueness, which it can precisely because it is keyed by tag and indifferent to which table holds the session.
+- [ ] At scan, for an external row with no tag: mint via the Rust lexicon, claim through `claim_tag` (rerolling on `TakenByOther`), and persist to `external_scan_cache.tag` in the same transaction. **Do not create a `sessions` row** — external rows synthesize `state: "closed"` / `card_id: null` and adopt on first resume, and `SessionRow.provenance` reports exactly that boundary. Minting rows at scan time would flip every discovered session from `external` to `tug` — a behavior change with nothing to do with naming.
+- [ ] Adoption carry-over: when an external session is first resumed, `record_spawn` receives the already-minted tag as its candidate. `claim_tag` sees `(tag, same session_id)` and returns `Claimed` idempotently rather than rerolling a perfectly good tag — the "mine is not taken" rule in Spec S08 exists for this path.
+- [ ] The external row's projection onto `SessionRow` reads `external_scan_cache.tag` so the picker sees a real tag before adoption.
 - [ ] Remove the `deriveStableTag` fallbacks in `session-picker-data-source.ts` (~line 95) and `session-picker-cells.tsx` (~line 210); rows now always carry a real tag after first scan. `deriveStableTag` itself (and its remaining test usage) dies in #step-9's deletion pass.
 
 **Tests:**
 - [ ] Rust: a scan over a fixture JSONL dir lands unique persisted tags; a rescan does not re-mint.
+- [ ] Rust: scanning does **not** create `sessions` rows — provenance stays `external` until first resume.
+- [ ] Rust: adopt a scanned external session → the `sessions` row carries the tag minted at scan time, unchanged.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -607,17 +689,17 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **References:** [P11] Fork lineage, Spec S05, (#context)
 
-**Artifacts:** the rewind-fork path threads `<root>-<Letter><Number>`; ledger records `root_tag` + `lineage`; the original session keeps its row and tag.
+**Artifacts:** the rewind-fork path threads `<root>-<Letter><Number>`; ledger records `root_tag` + `tag_lineage`; the original session keeps its row and tag.
 
 **Tasks:**
-- [ ] Self-healing ALTERs for `sessions.root_tag` / `sessions.lineage` (`migrate_sessions_add_name_user_set` pattern).
-- [ ] Ledger allocation API: given the root session id and the rewind point (identify a point by the truncation position/message id the fork used), return the next `<Letter><Number>` — letter per distinct point, number sequencing within it — from the root's existing fork rows.
+- [ ] Self-healing ALTERs for `sessions.root_tag` / `sessions.tag_lineage` (`migrate_sessions_add_name_user_set` pattern). The column is `tag_lineage`, **not** `lineage` — `external_scan_cache.lineage_ancestors` already owns that word for JSONL message ancestry (Spec S05).
+- [ ] Ledger allocation API: given the root session id and the rewind point (identify a point by the truncation position/message id the fork used), return the next `<Letter><Number>` — letter per distinct point, number sequencing within it — from the root's existing fork rows. The composed tag claims through `claim_tag` (Spec S08) like any other mint, so a fork's tag is permanent on the same terms.
 - [ ] tugcode rewind-fork (`session.ts` ~line 7337): after minting `newId`, request the lineage tag from tugcast (or send the fork metadata with the rebind it already performs — "tell tugcast so the card→session binding is rebound + persisted") so `record_spawn` for the fork carries the composed tag + lineage fields instead of minting fresh.
-- [ ] Resolver-side lineage parsing lands in #step-9 (display derives from `tag`; `lineage` segments ride `SessionRow` — add the fields to `tugdeck/src/protocol.ts` in lockstep now, defaulted null).
+- [ ] Resolver-side lineage parsing lands in #step-9 (display derives from `tag`; `root_tag` / `tag_lineage` ride `SessionRow` — add the fields to `tugdeck/src/protocol.ts` in lockstep now, defaulted null).
 
 **Tests:**
 - [ ] Rust: two forks from one point → `A1`, `A2`; a fork from a second point → `B1`; fork-of-fork → `A1-B2`; racing allocations cannot collide (ledger-serialized).
-- [ ] A forced lineage-tag collision re-allocates the segment; `tag` never contradicts `root_tag`+`lineage` (#step-2's guard).
+- [ ] A forced lineage-tag collision re-allocates the segment; `tag` never contradicts `root_tag`+`tag_lineage` (#step-2's guard).
 - [ ] tugcode: fork rebind carries the lineage tag; original row untouched.
 
 **Checkpoint:**
@@ -639,10 +721,12 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 - [ ] `session_trailer()` (`tugdash-core/src/ops.rs` ~line 812): select `tag` (and `name` only for the tagless fallback); return the citation per Spec S03; add a sibling returning the full id; `with_dash_trailers` (~line 844) pushes both.
 - [ ] Main lane: the trailer is appended in `feeds/agent_supervisor.rs` (~line 1592, `append_trailers` over `("Tug-Session", "<name> (<id>)")`; the wire fields land at ~line 1428) — **not** in a changeset-commit handler. It emits the same pair; the client payload (`changeset-verb-store.ts` ~line 539, fed from `changes-route-controller.ts` ~line 269) carries `tag` alongside `{ name, id }` (available since #step-1).
 - [ ] `tugchanges_core::append_trailers` idempotency: confirm a re-draft doesn't duplicate either line (existing behavior; add the second key to its tests).
+- [ ] Scribe interaction: `scribe.rs`'s `starts_structure` (~line 520) already treats any `Key: value` line as structure, so a second trailer needs no grammar change there — but scribe-authored messages get trailers appended *after* generation, so verify the wrap/reflow logic over a two-line trailer block (the existing `scribe.rs` ~line 875 fixture is the place to extend).
 
 **Tests:**
 - [ ] Rust: trailer pair content on both lanes; tagless legacy fallback; no-session-env omits both (existing `no session env` test extended).
 - [ ] The old-grammar fixtures in `feeds/agent_supervisor.rs` (~line 6683) and `feeds/changeset.rs` (~line 1975) move to the new pair.
+- [ ] App-test: a commit made from the **Shell route** carries both trailers. `session_trailer()` resolves through `TUG_SESSION_ID`, and env parity on that route is exactly what `dc9263805` had to repair — it is the lane most likely to silently omit the pair, and a Rust unit test cannot see it.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run`
@@ -661,11 +745,13 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tasks:**
 - [ ] Extend the `--format` string in `feeds/git.rs` (~line 407) with `%(trailers:key=Tug-Session,valueonly,separator=%x1e)` and the id key; extend the record parse (~line 438) and keep only the first `%x1e` value, as `tug_dash` does.
+- [ ] **Move the field-count discriminator with the format string — this is the one way to break `parse_git_log` silently.** `-z` puts commit records and `--name-only` path chunks in the same stream, and the two are told apart by `%x1f` count: the docstring pins "a record always carries eight of them" and the parser skips records with "fewer than seven fields" (no subject), dropping their paths with `collecting = false`. Two more trailer fields make those numbers **ten** and **nine**. Update the constants, the `warn!` guard, and the docstring's field map in the same edit; a stale count doesn't error, it misfiles one commit's files onto the commit before it.
 - [ ] Strip `Tug-Session:` / `Tug-Session-Id:` lines from the `%b` body before shipping (and align `Tug-Dash:` stripping so History bodies carry no Tug trailer ink at all).
 - [ ] Mirror the fields in `tugproto` / the TS `GitLogCommit` shape.
 
 **Tests:**
 - [ ] Rust: new-form pair parses; legacy one-line form lands in `tug_session` with `tug_session_id` None; body stripping preserves non-trailer lines and interleaved trailers.
+- [ ] Rust: a commit **with files** parses with the widened record — the path chunks land on their own commit, and a subject-less record still skips its paths rather than donating them to its predecessor.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -680,14 +766,15 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tasks:**
 - [ ] Hand-author the session role value in all six theme files, seeded from each theme's `agent` family (in `brio` the violet of `--tug7-*-agent-rest`); expose one knob the component derives ground/border/ink/icon from.
-- [ ] Add `--tug-masthead-height: 72px` beside `--tug-chrome-height` in all six.
+- [ ] Add `--tug-masthead-height: 72px` beside `--tug-chrome-height` in all six (they declare it at ~line 38 today).
+- [ ] Regenerate the token inventory: `bun run extract:tug-token-names` rewrites `tugdeck/src/generated/tug-token-names.ts` from `styles/themes/*.css`, and `src/__tests__/extract-tug-token-names.test.ts` covers the extraction. New theme tokens that skip this land the file stale.
 - [ ] Audition on the spike card against live fixtures (swap `--gsi-session-color` to the real token).
 
 **Tests:**
 - [ ] `bun run audit:theme-contrast` — no theme exceeds the `brio` budget.
 
 **Checkpoint:**
-- [ ] `bun run audit:theme-contrast` && `bunx vite build`
+- [ ] `bun run audit:theme-contrast` && `bunx vite build` && `bun test tugdeck/src/__tests__/extract-tug-token-names.test.ts`
 
 ---
 
@@ -702,18 +789,22 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 **Artifacts:** `lib/session-identity.ts` + tests; `session-card-title.ts` absorbed; `session-name.ts` deleted; `deriveStableTag` production-dead.
 
 **Tasks:**
-- [ ] Implement Spec S01 (including lineage parse from `tag`/`lineage` fields and the synopsis-aware title precedence — synopsis store wired but empty until #step-15).
-- [ ] Re-point consumers: `cards-data-source.ts` `sessionLabel` (drop the `(branch)` composition — `sessionIdentityLine` has no branch), `session-picker-cells.tsx` (`sessionRowTitle` call ~line 200), the Lens session cell, the Session card's title publication, any `sessionChipDisplay` remnants.
+- [ ] Implement Spec S01 (including lineage parse from `tag` / `root_tag` / `tag_lineage` and the synopsis-aware title precedence — synopsis store wired but empty until #step-15).
+- [ ] Implement `useSessionIdentity` in the same module and the same commit — `useSyncExternalStore` over the name / tag / synopsis / phase version tokens, delegating to the pure resolver ([L02], Spec S01). It is not a follow-on: every consumer re-pointed below is re-pointed **onto the hook**, and shipping the bare resolver first would seed exactly the stale-render bug the hook exists to prevent.
+- [ ] `session-synopsis-store.ts` lands here (empty until #step-15) so the hook has its fourth store from the start rather than growing a subscription later.
+- [ ] Re-point consumers **through the hook**: `cards-data-source.ts` `sessionLabel` (drop the `(branch)` composition — `sessionIdentityLine` has no branch), `session-picker-cells.tsx` (`sessionRowTitle` call ~line 200), the Lens session cell, the Session card's title publication, any `sessionChipDisplay` remnants. Non-React callers (clipboard, export filename, command routes) take the bare resolver.
 - [ ] Delete `session-name.ts` and **both** its test files (`lib/session-name.test.ts` and `lib/__tests__/session-name.test.ts`), `sessionCardTitleOverride`, the picker's `deriveStableTag` import, and the `deriveStableTag` usage in `lib/__tests__/session-picker-data-source.test.ts` (~line 102); keep `mintTag` (client optimistic mint stays).
 - [ ] Fix the Lens filter-projection `branch: null` inconsistency by removing branch from the label entirely (it was only ever in the string via the suffix).
 
 **Tests:**
-- [ ] `session-identity.test.ts`: precedence (user name → tag → shortId), lineage parse, citation forms incl. tagless fallback, line form has no branch.
+- [ ] `session-identity.test.ts`: precedence (user name → tag → shortId), lineage parse, citation forms incl. tagless fallback, line form has no branch. (Pure derivation only — the hook is covered by the app-test below, not by a render test.)
+- [ ] App-test: `/rename` a session with the picker and the Lens both visible → **both repaint without a reload**. This is the [L02] assertion; a resolver called bare would pass every unit test above and fail this one.
 
 **Checkpoint:**
 - [ ] `bun test tugdeck/src/lib/__tests__/session-identity.test.ts` && `bunx vite build`
 - [ ] `just app-test-changed` (title bar reads `project/tag` with no `(branch)`; picker/Lens agree)
 - [ ] `git grep -n "sessionChipDisplay\|sessionRowTitle\|sessionEntryTitle" tugdeck/src` → nothing
+- [ ] `git grep -n "resolveSessionIdentity" tugdeck/src/components` → nothing (components use `useSessionIdentity`; the bare resolver is for `lib/` and non-React callers)
 
 ---
 
@@ -753,7 +844,7 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tests:**
 - [ ] Unit: marker wrap/parse round-trip for a session mention.
-- [ ] App-test: copy from the gallery atom → paste into the Session card composer → chip re-materializes; paste of the plain flavor elsewhere yields the citation.
+- [ ] App-test: copy from the gallery atom → paste into the Session card composer → chip re-materializes; paste of the plain flavor elsewhere yields the citation. **First confirm the harness already round-trips the native clipboard for an existing atom kind** — `writeClipboardViaNative` crosses into AppKit, and if no current app-test exercises that path, this assertion needs a harness affordance before it needs a test. If it turns out unreachable, cover the flavor composition as a unit test over the payload builder and say so here rather than leaving a test that cannot pass.
 
 **Checkpoint:**
 - [ ] `bunx vite build` && `just app-test-changed`
@@ -772,7 +863,7 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tasks:**
 - [ ] Grow `TugSessionRow` per Table T01 — explicit tight line-height on every stack line; `TugPulse` knobs set to 18px bar / 13px baseline from outside ([L20]); dot ring-box overhang per the `inset` fit at 16px; 5px lead gap / 1px line gaps; 12px block padding. The Lens keeps its 28px indicator where it stands today — the size is a caller choice, not a component change.
-- [ ] Picker adoption (`session-picker-cells.tsx`): four lines — callsign (dot leads, no icon), description, PULSE, metadata (`time · turns · size` from `SessionRow`); id leaves ink for tooltip/trash-label as today.
+- [ ] Picker adoption (`session-picker-cells.tsx`): four lines — callsign (dot leads, no icon), description, PULSE, metadata (`time · turns` from `SessionRow`'s `last_used_at` / `turn_count`); id leaves ink for tooltip/trash-label as today. **There is no size field on `SessionRow`** in either the TS or the Rust shape — if a size belongs on the metadata line, name its real source (the picker's own row projection, which reads the JSONL file size at scan) before writing the line; otherwise it is two facts, not three.
 - [ ] Lens Sessions group adoption via the resolver.
 
 **Tests:**
@@ -791,21 +882,24 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **References:** [P08] Masthead, [P14] Frontmost tab, [Q03] focus stop, Spec S02, Table T01, Risk R01, (#masthead-in-pane)
 
-**Artifacts:** structured `cardTitleStore` payload; `TugPane` masthead rendering; `MASTHEAD_HEIGHT` constant; telemetry placard widget.
+**Artifacts:** `cardTitleStore` sidecar; `SessionMasthead` (tugways) mounted by `TugPane` into a chrome slot; `MASTHEAD_HEIGHT` constant; telemetry placard widget.
 
 **Tasks:**
-- [ ] `card-title-store.ts`: the sidecar per Spec S02 — `set(cardId, title, masthead?)` + `getMasthead(cardId)`; `get()` stays `string | null`, so the read sites need no change (verify the inventory: `tug-tab-bar.tsx` ~198/~442/~803, `deck-canvas.tsx` ~315, `host-menu-state.ts` ~1016, `tug-pane.tsx` ~1378). `paneTitleBarTextFor` keeps returning the line string for list surfaces unchanged.
-- [ ] `tug-pane.tsx`: render masthead chrome when the **active** card carries the sidecar ([P14]: the chrome follows the frontmost tab, 36↔72 on tab switch) — lead line (`TugSessionIdentity` line tier + existing pane controls), description line, PULSE line (`TugPulse layout="inline"`, knobs per Table T01), trailing wave widget → `TugPlacard` with state, turns, created/compacted stamps, **branch**, and the citation + `TugCopyBadge`.
-- [ ] `MASTHEAD_HEIGHT = 72` beside `CARD_TITLE_BAR_HEIGHT`; audit every `CARD_TITLE_BAR_HEIGHT` consumer (`TITLE_BAR_VISIBLE_MIN_Y` and grep) for masthead-height awareness.
-- [ ] Publish `--tugx-pane-chrome-height` on the `.tug-pane` element (`var(--tug-masthead-height)` when the masthead is up, else `var(--tug-chrome-height)`); re-point the scrim (`tug-pane.css` ~line 610), the sheet top (`tug-sheet.css` ~line 63), and the banner top (`tug-pane-banner.css` ~line 59) to it (Risk R01) — a sheet, scrim, or banner on a masthead pane must seat below all 72px.
-- [ ] Session card publishes the sidecar **beside** the Line string (the string keeps re-`set`ting on every identity change — that is the notification contract); absorb the load-control bar's "Session created …" line into the placard.
+- [ ] `card-title-store.ts`: the sidecar per Spec S02 — `set(cardId, title, masthead?)` + `getMasthead(cardId)`; `get()` stays `string | null`, so the read sites need no change (verify the inventory: `tug-tab-bar.tsx` ~198/~442/~803, `deck-canvas.tsx` ~315, `host-menu-state.ts` ~1016, `tug-pane.tsx` ~1378). **Widen the equality guard** — `set` early-returns today on `this._overrides.get(cardId) === title`, which would drop a changed sidecar under an unchanged title and notify nobody; compare string *and* payload. `paneTitleBarTextFor` keeps returning the line string for list surfaces unchanged.
+- [ ] `session-masthead.tsx` / `.css` ([L19]): the three lines and everything behind them — lead line (`TugSessionIdentity` line tier), description line, PULSE line (`TugPulse layout="inline"`, knobs per Table T01), trailing wave widget → `TugPlacard` with state, turns, created/compacted stamps, **branch**, and the citation + `TugCopyBadge`. It takes a `sessionId` and subscribes to everything itself via `useSessionIdentity` and the PULSE stores. **Session-domain state stays in the session family; only the slot is the pane's** (Spec S02).
+- [ ] `tug-pane.tsx`: when the **active** card carries the sidecar ([P14]: the chrome follows the frontmost tab, 36↔72 on tab switch), the pane renders its chrome slot at masthead height, keeps its own pane controls in the lead line, and mounts `SessionMasthead` by `sessionId`. The pane does not read a session store.
+- [ ] `MASTHEAD_HEIGHT = 72` beside `CARD_TITLE_BAR_HEIGHT`; audit both `CARD_TITLE_BAR_HEIGHT` consumers (`tug-pane.tsx` ~87, `TITLE_BAR_VISIBLE_MIN_Y` ~825, plus grep) for masthead-height awareness.
+- [ ] Publish `--tugx-pane-chrome-height` on the `.tug-pane` element (`var(--tug-masthead-height)` when the masthead is up, else `var(--tug-chrome-height)`) and re-point **the five sites Risk R01 marks re-point**: `.tug-pane-title-bar` height/min-height (`tug-pane.css` ~257–258), the scrim top (~610), the sheet top (`tug-sheet.css` ~63) **and the sheet `max-height` calc (~133)**, and the banner top (`tug-pane-banner.css` ~59, carrying its `36px` fallback across). The four `tug-tab-bar.css` sites (~86, ~286, ~367, ~402) **stay on `--tug-chrome-height`** — a tab row is 36px whatever the title bar does, and a masthead pane's chrome is 72 + 36 stacked, not 72 merged.
+- [ ] Session card publishes the sidecar beside the Line string. Note the string is now **constant for the binding's life** ([P04] drops the name, [P08] drops the branch, [P12] freezes the tag), so `set` is effectively once per binding and identity changes reach surfaces through `useSessionIdentity` instead (Spec S02) — do not build anything on a re-`set` that will not fire. Absorb the load-control bar's "Session created …" line into the placard.
+- [ ] If the 36↔72 swap animates, it is `TugAnimator` ([L13]) — and background app-test windows run **no rAF**, so no assertion below may hang off the animation; assert the settled geometry.
 - [ ] Overflow: middle-truncation via `TugLabel`; the masthead never reflows. `pulse/enabled` off → PULSE line absent, height unchanged.
 - [ ] During this step the Z2 strip still exists — the PULSE speaks twice for the life of one step range; #step-14 lands immediately after (do not commit gaps to main between 13 and 14 without noting the duplication).
 
 **Tests:**
 - [ ] App-test: masthead height exactly 72; three lines with Table T01 leading; placard opens with citation + branch; one-line bar unchanged on non-session cards.
-- [ ] App-test: sheet, scrim, and banner seat below the 72px masthead (Risk R01); a rename while the masthead is up repaints the tab strip, Window menu, and slot-stack picker (the string re-`set` contract).
-- [ ] App-test ([P14]): a multi-tab pane stacking [Session, Text] swaps chrome 36↔72 with the active tab, both directions.
+- [ ] App-test: sheet, scrim, and banner seat below the 72px masthead, **and the sheet's bottom stays inside the viewport** (the `max-height` calc at `tug-sheet.css` ~133 — the site most likely to be missed, and the one whose failure looks like an unrelated scroll bug).
+- [ ] App-test: a `/rename` while the masthead is up repaints **the masthead's description line** (the `useSessionIdentity` contract). The tab strip / Window menu / slot-stack picker are *not* asserted to change — the Line string no longer carries the name, so they correctly show `project/tag` before and after. Asserting a repaint there would be asserting a bug.
+- [ ] App-test ([P14]): a multi-tab pane stacking [Session, Text] swaps chrome 36↔72 with the active tab, both directions — **and the tab row stays 36px across the swap** (the four `tug-tab-bar.css` sites left alone; total chrome 108 on the Session tab, 72 on the Text tab).
 
 **Checkpoint:**
 - [ ] `bunx vite build` && `just app-test-changed`
@@ -821,9 +915,10 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 **References:** [P09] Strip removal, [Q03] focus stop, List L01, Risk R02
 
 **Tasks:**
-- [ ] Move the dwell queue and compaction pin as code into the masthead's PULSE feeder (pane side, fed by the same stores).
-- [ ] Delete `session-pulse-strip.tsx` / `.css` and the mount at `session-card.tsx` ~line 4423; delete `SESSION_CYCLE_ORDER_PULSE` and its `CycleScope` registration.
+- [ ] Move the dwell queue (`MIN_DWELL_MS`, `lastSwapAtRef` coalescing, submit-clears-immediately) and the compaction pin **as code** into `SessionMasthead` (#step-13's component, Spec S02) — not into the pane's render body. Same stores, same pacing constants, same file-local shape; this is a move, not a rewrite.
+- [ ] Delete `session-pulse-strip.tsx` / `.css` and the mount at `session-card.tsx` ~line 4423; delete `SESSION_CYCLE_ORDER_PULSE` (`session-card.tsx` ~line 333) and **both** its use sites (~2834 in the cycle-order composition, ~4427 on the strip's `focusOrder`) so no dangling order entry survives.
 - [ ] Sparkline rides the masthead PULSE's `trailing` accessory; update the `TUG_SESSION_ROW_SPARK_WIDTH`/`_HEIGHT` pairing docstrings in `tug-session-row.tsx` to point at the new home.
+- [ ] `pulse/enabled` off: the tugbank read moves with the rest; the PULSE line is absent and the masthead keeps its 72px (List L01 item 3).
 - [ ] Status row: content/layout/tokens untouched; correct its seat against the prompt entry with spacing alone.
 
 **Tests:**
@@ -868,6 +963,7 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tasks:**
 - [ ] Tab strip: `paneTitleBarTextFor` is the wrong shape here — it resolves the pane's **active** card, and a tab label is per-tab. `TabView` (~line 445) and the overflow menu (~line 803) in `tug-tab-bar.tsx` drop the `componentId === "text"` gate and compose per tab: `composePaneTitleBarText({ metaTitle: tab.title, titleOverride: cardTitleStore.get(tab.id) })`, hoisted as `cardTitleTextFor(cardId, registryTitle)` in `lib/pane-title.ts` beside the existing pair so the rule stays in one place.
+- [ ] Widen `overrideKey` (`tug-tab-bar.tsx` ~line 198) with the same change. It snapshots `cards.map((c) => cardTitleStore.get(c.id) ?? "").join("|")` — fine while only Text tabs had overrides, but once every tab composes its label the key must fold in the registry title too, or two override-less tabs of different types produce identical keys and the strip stops re-composing when one of them changes.
 - [ ] Gazette: `RefChip` gains a session case (the `gazette-ref-action.ts` `case "session"` intent already exists) rendering the chip via the resolver; the raw-UUID label dies.
 - [ ] Changes card: the orphan hint (and bucket headers where useful) renders the chip instead of the `prior_owner_name` feed string.
 - [ ] History: `tug-history-list.tsx` renders the citation chip beside the SHA + dash badge from the typed fields, resolution per Spec S03 (unresolved → [P13] slashed inert atom); trailer ink is gone from bodies (server-stripped in #step-7).
@@ -932,7 +1028,7 @@ Written through `writeClipboardViaNative(text, atoms)`; paste re-materialization
 
 **Tasks:**
 - [ ] Walk every Success Criteria item; walk Table T02 surface by surface in the running app.
-- [ ] Grep gates: no `sessionChipDisplay|sessionRowTitle|sessionEntryTitle|deriveStableTag|sessionCardTitleOverride` production references; no `SessionPulseStrip`.
+- [ ] Grep gates: no `sessionChipDisplay|sessionRowTitle|sessionEntryTitle|deriveStableTag|sessionCardTitleOverride` production references; no `SessionPulseStrip`; no `resolveSessionIdentity` under `tugdeck/src/components` ([L02], Spec S01); no `DELETE FROM minted_tags` anywhere (Spec S08).
 
 **Tests:**
 - [ ] `cd tugrust && cargo nextest run` (full workspace)
