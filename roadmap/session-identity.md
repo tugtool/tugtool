@@ -36,7 +36,7 @@ Two findings from the code survey make server work unavoidable, and both were co
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- A Session card's masthead shows three rows — `[dot] <title>  [wave] [x]`, the description, and the activity line with its tape — with **no** width-control icon and **no** `project/` prefix on the title. (Verify: app-test asserts `[data-slot="session-masthead"]` has exactly one dot, no `[data-testid="tug-pane-title-bar-width-button"]` inside a masthead pane, and three text rows.)
+- A Session card's masthead shows three rows — `[dot] <title>  [wave]`, the description, and the activity line with its tape — with **no** width-control icon and **no** `project/` prefix on the title. The pane's own controls beside it are untouched: the slot-stack badge, the `…` section menu, and the close X all stay ([P15]). (Verify: app-test asserts `[data-slot="session-masthead"]` has exactly one dot and three text rows, and that no `[data-testid="tug-pane-title-bar-width-button"]` exists inside a masthead pane — an *absence* assertion, never an exact button list, which would go red the moment a Session card joins a stack and the badge appears.)
 - A session with a user-set name renders `<name> : <callsign>` on the masthead, the Lens row, the picker row, and the atom; a session without one renders the bare callsign. (Verify: unit tests on the formatter `sessionTitleParts`; app-test reads the rendered runs on all four.)
 - Under a width squeeze on a named session, the **callsign** is the run that ellipsizes and the user's name survives intact. (Verify: app-test measures `scrollWidth`/`clientWidth` on the two runs in a narrowed pane.)
 - No surface renders the string `PULSE`. (Verify: a unit-test grep gate over `tugdeck/src/components/` and `tugdeck/src/lib/` asserting no user-facing `PULSE` literal outside gallery cards and internal identifiers.)
@@ -62,6 +62,8 @@ Two findings from the code survey make server work unavoidable, and both were co
 - Reviving the `text/html` clipboard flavor (struck in the earlier round and staying struck).
 - Adding the short id to the atom's sidecar segment — see [Q01].
 - Changing the Changes card's `session_row_title` in `tugrust/crates/tugcast/src/feeds/changeset.rs` to the new grammar — see [Q02].
+- The composer's pasted atom. It is a CodeMirror `AtomWidget` rendering a baked `<img>`, and it stays one — see [P14] for why that is a medium constraint rather than a styling choice. No step touches `atom-decoration.ts`.
+- The `session_updated` push's clobber of `origin` and `terminal_live` (`normalizeSessionRow` defaults them, `patchRow` replaces the row wholesale). A real pre-existing bug in the same seam as [R06], deliberately not fixed here — see [#roadmap].
 - Fork-lineage grammar, the `minted_tags` arbiter, or anything about how callsigns are minted.
 - The `/resume <tag>` resolution path (still client-cache-backed while citations are ledger-authoritative) — untouched here.
 - Any change to `sessionIdentityLine`'s output. It is the pane-title channel and is deliberately constant for the life of a binding; see [P05].
@@ -145,7 +147,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 | R03 Masthead reflow / height drift | med | med | Fixed height token; every row truncates; app-test asserts the height is content-independent | Any masthead row wrapping |
 | R04 `identity.title` rename fanout misses a caller | med | med | Remove the field entirely so the compiler finds every reader | `tsc` clean but a surface renders empty |
 | R05 Identity app-tests assert the retired form | high | high | Update `at0374` in the same commit as the component | at0374 red after [#step-5] |
-| R06 `session_updated` push clobbers a known `file_size` with null | med | high | Every push looks the size up from the scan cache, not just the turn-end one | Picker size readout blanking after an unrelated push |
+| R06 `session_updated` push clobbers a known `file_size` **or `turn_count`** | med | high | Every push looks both facts up from the scan cache, not just the turn-end one | Picker size or turn readout blanking after an unrelated push |
 
 **Risk R02: Turn-end re-parse cost** {#r02-turn-end-parse-cost}
 
@@ -156,13 +158,17 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
   - Skip entirely when `stat_size_mtime` reports the file unchanged since the cached `(file_size, file_mtime)`.
 - **Residual risk:** A turn that lands a compaction or a history edit does force a full re-stream, by the engine's own rules. That is correct and rare.
 
-**Risk R06: Push clobbering a known size** {#r06-push-clobbers-size}
+**Risk R06: Push clobbering a known size or turn count** {#r06-push-clobbers-size}
 
-- **Risk:** `file_size` is optional on the wire and `normalizeSessionRow` maps a missing one to `null`. If only the turn-end push carries a size, every *other* `session_updated` push (a rename, a state change, a card bind) would overwrite a known size with null and blank the readout.
+- **Risk:** The client's `SessionLedgerStore.patchRow` **replaces the cached row wholesale** — `nextRows[existingIdx] = row` — so a push carries the whole row or downgrades what it omits. Two facts are at stake, not one:
+  - **`file_size`** is optional on the wire and `normalizeSessionRow` maps a missing one to `null`. If only the turn-end push carries a size, every *other* `session_updated` push (a rename, a state change, a card bind) blanks the readout.
+  - **`turn_count`** is the same hazard one layer down, and the codebase already knows it: the `list_sessions` merge path deliberately guards a **sparse phase-1 `0`** (the real count for that session lives in the scan cache and lands at phase 2), keeping the prior settle's count rather than flickering to "0 turns". `patchRow` has no such guard, and `build_session_updated_frame` reads `row.turn_count` straight off the `sessions` table — so a rename push for a session whose count only ever came from a scan knocks it to 0. [P08] is about to put that number on the masthead, which turns a latent picker wobble into a visible lie.
 - **Mitigation:**
-  - `build_session_updated_frame` reads the scan-cache size for the row on **every** push, so no push is a downgrade.
-  - A unit test asserts a rename-triggered push still carries the size.
+  - `build_session_updated_frame` reads **both** the scan-cache size and the scan-cache turn count for the row on **every** push — one lookup, both facts — so no push is a downgrade. Server-side, because that is the seam both facts already pass through; a second client-side guard would be a rule to keep in sync.
+  - The lookup answers `None` when there is no scan-cache row, and the frame then falls back to `row.turn_count` for the count (the ledger's own value is right for a session the scanner has never seen) and to `null` for the size.
+  - Unit tests assert a rename-triggered push still carries both.
 - **Residual risk:** A session with no scan-cache row at all (never scanned, never had a turn) reports no size, which is honest — the activity grammar drops the segment ([S03]).
+- **Adjacent, and out of scope:** the same wholesale replacement also resets `origin` to `"tug"` and `terminal_live` to `null` on every push, because `normalizeSessionRow` defaults them and pushes never carry them. That is a pre-existing bug with its own blast radius (the picker's `terminal` badge and its in-use rows), noted here so it is recognized rather than rediscovered mid-step. It is not fixed by this plan.
 
 ---
 
@@ -282,15 +288,16 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 #### [P10] Turn count and size refresh at turn end and ride every push (DECIDED) {#p10-turn-end-freshness}
 
-**Decision:** On turn completion, tugcast re-derives `engine(file)` and the on-disk size for that session incrementally, writes both (`reconcile_turn_count_from_engine` + `upsert_scan_cache`), and broadcasts `session_updated`. `build_session_updated_frame` gains a `file_size` field sourced from the scan cache on **every** push.
+**Decision:** On turn completion, tugcast re-derives `engine(file)` and the on-disk size for that session incrementally, writes both (`reconcile_turn_count_from_engine` + `upsert_scan_cache`), and broadcasts `session_updated`. `build_session_updated_frame` gains a `file_size` field and a scan-cache-sourced `turn_count`, both read on **every** push.
 
 **Rationale:**
 - The activity line's rest form is read the instant a turn ends, which is exactly when the old numbers were most stale.
-- Sourcing the size on every push rather than only the turn-end one avoids the clobber described in [R06].
+- Sourcing both facts on every push rather than only the turn-end one avoids the clobber described in [R06].
 - The engine is the single count authority (`tuglaws/turn-metric.md`); this reuses it rather than adding a second counter.
 
 **Implications:**
 - Composed from existing public entry points in `external_sessions.rs`: `stat_size_mtime` → skip if unchanged; else `resume_seed_from_cache` + `parse_candidate` for an incremental parse.
+- **`build_session_updated_frame` needs a signature change, and it is the one piece of fanout in this step.** It is today a pure `pub fn(&SessionRow) -> Frame` with callers in `agent_supervisor.rs` (three, one of them a test) and one in `feeds/session_overview.rs`. It gains a second parameter — `metrics: Option<SessionScanMetrics>` carrying `(file_size, turn_count)` — rather than a `&SessionLedger` handle, so the function stays pure and its test stays a plain value assertion. Each caller does its own scan-cache lookup beside the `ledger.get` it already performs; the test passes `None`.
 - `tugdeck/src/protocol.ts`'s `file_size` doc comment — which currently states pushes never carry it — must be corrected.
 
 #### [P11] One row shape: `TugSessionRow` absorbs the masthead's form (DECIDED) {#p11-one-row-shape}
@@ -331,26 +338,33 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 #### [P14] The atom is a live component (DECIDED) {#p14-atom-is-live}
 
-**Decision:** A session atom renders as a subscribed component wherever it appears — pasted into a composer, in a Gazette ref, on a History line. Its dot reads the session's phase this second and its name tracks renames. It is never a static string or a baked image.
+**Decision:** Wherever a session atom is a **mounted React chip**, it is a subscribed one: its dot reads the session's phase this second and its name tracks renames. That is every `TugSessionCitation` mount — the Gazette ref, the History line, the Changes list row — and it is what this plan delivers. **The composer's pasted atom is explicitly excluded** and stays baked ink.
 
 **Rationale:**
-- The user's direction: the dot must be live and the custom name must change live as the user changes it.
-- Identity liveness already exists via `useSessionIdentity`; [P03] supplies the phase half.
+- The user's direction: the dot must be live and the custom name must change live as the user changes it. Identity liveness already exists via `useSessionIdentity`; [P03] supplies the phase half. For a mounted chip, both halves are already in hand — the chip is live for the price of the hook.
+- **The composer is a different medium and cannot take this.** An atom in the prompt editor is a CodeMirror `AtomWidget` whose `toDOM` returns an `HTMLImageElement` from `createAtomImgElement` (`tug-text-editor/atom-decoration.ts`). The bake is not a styling choice that could be swapped for a component: it is how an atom survives being *editor ink* — one `root.render` for the app's life ([L01]), a replaced inline element with caret and selection semantics CodeMirror owns, and a copy/paste round trip through document text. There is no mechanism in this tree for mounting a live subtree there, and inventing one is a larger piece of work than this whole rollout.
 
 **Implications:**
-- Rules out the Canvas→PNG bake used for some atom chips (see the SVG-in-img constraint recorded for `at0205`) — a session atom must stay a mounted component.
+- A pasted composer atom's dot is a **snapshot at paste time**, and its name is the name as of paste. That is honest for a thing that is now text in a draft, and it is the same contract every other atom in the composer already keeps.
+- The four live mount sites are `gazette-card.tsx`, `tug-history-list.tsx`, `tug-changes-list.tsx`, and the masthead's telemetry popover ([P16]). All four go live for free once [#step-5] lands, because all four compose `TugSessionCitation`.
+- `tug-changes-list.tsx` mounts one chip **per row**, so the Changes card acquires one `useSessionPhase` subscription per visible citation. [P03]'s key-return is what makes that affordable; see the watch-item in [#step-5].
+- Nothing here reaches the editor's atom pipeline, so no step touches `atom-decoration.ts` and the `at0205` SVG-in-img constraint is untouched.
 
 #### [P15] The width control leaves masthead-bearing panes (DECIDED) {#p15-no-width-control}
 
-**Decision:** The card-width control in `tugdeck/src/components/chrome/tug-pane.tsx` is not rendered when the pane wears a masthead. Non-masthead content panes keep it.
+**Decision:** The card-width control in `tugdeck/src/components/chrome/tug-pane.tsx` is not rendered when the pane wears a masthead. Non-masthead content panes keep it. **Nothing else in the controls cluster changes.**
+
+**The full title-row inventory, since the gallery prototype's frame does not show it.** The masthead occupies the title bar's leading run; the pane's controls cluster (`[data-testid="tug-pane-title-bar-controls"]`) sits beside it and is rendered *outside* the masthead, unconditionally. It holds, in order: the **slot-stack badge** (`Layers` + the depth, whenever `slotStack.length > 1`), the **`…` section menu** (whenever the active card contributes title-bar menu items), the **width control**, and the **close X**. Only the width control leaves. The stack badge in particular stays: it describes the *slot*, not the card, and a Session card standing in a stack is entitled to say so — it is the only way into the panes behind it.
 
 **Rationale:**
-- The masthead's first row is identity and its two chrome affordances (telemetry, close); a third control competes with the name.
-- Width remains reachable by its command and by the Lens's width presets, so the affordance is relocated rather than removed.
+- The masthead's first row is identity plus its own telemetry wave; the width control is the one member of the cluster that competes with the name for a row that is now three lines of ink.
+- Width remains reachable by its command and by the Lens's width presets, so the affordance is relocated rather than removed. The stack badge and the section menu have no such second door, which is the other half of why they stay.
 
 **Implications:**
 - The condition is the masthead's presence, not the card family — one predicate, already available where the control is rendered.
-- Any app-test asserting `tug-pane-title-bar-width-button` on a Session card must move to a non-masthead pane.
+- **The control flips on a tab switch, and that is accepted.** `masthead` is derived from the pane's *active* card, so a pane holding a Session card and a non-Session card in one stack shows the width button on one tab and not the other. Suppressing on "any card in this stack wears a masthead" was considered and rejected: it would take a cross-card fact the title bar does not hold, to buy consistency for a control whose whole point is that it acts on the pane you are looking at. Record it in [D132] so it is not filed as a bug.
+- Every assertion about this is an *absence* assertion on the width button. Never pin the cluster's exact button list on a masthead pane.
+- `at0156-title-bar-controls.test.ts` — the one test that pins the cluster's exact list — already drives a `gallery-input` card in a non-masthead pane, so it needs no change. Confirm rather than move it.
 
 #### [P16] Right-clicking the masthead title copies the atom (DECIDED) {#p16-masthead-right-click-copy}
 
@@ -394,9 +408,9 @@ Two independent facts, both scan-derived:
 | Two levels under the title | `tug-session-row.tsx`, all three surfaces | [P06] |
 | No `PULSE` ink | `tug-pulse.tsx` + grep gate | [P07] |
 | Activity grammar with `Last updated:` | new formatter + Rust freshness | [P08], [P10] |
-| Masthead: 3 rows, no width control | `session-masthead.tsx`, `tug-pane.tsx` | [P11], [P15] |
+| Masthead: 3 rows, width control only leaves | `session-masthead.tsx`, `tug-pane.tsx` | [P11], [P15] |
 | Rows: Lens keeps the tape, picker does not | `cards-session-cell.tsx`, `session-picker-cells.tsx` | [P11], [P12] |
-| Atom: text ink, live, right-click copy | `tug-session-identity.tsx` | [P13], [P14] |
+| Atom: text ink, live, right-click copy | `tug-session-identity.tsx` (and the four `TugSessionCitation` mounts, free) | [P13], [P14] |
 | Atom in the telemetry popover; right-click the title | `session-masthead.tsx` | [P16] |
 | Citation, clipboard flavors, lineage unchanged | — | [#non-goals] |
 
@@ -416,10 +430,17 @@ Two independent facts, both scan-derived:
 
 **Spec S02: The description line** {#s02-description-line}
 
-- Renders `identity.description` when non-null.
-- Otherwise renders `Created <stamp>`, formatted by `formatRestingStamp` from `tugdeck/src/lib/pulse-line/resting-line.ts`, painted a step quieter than a real description to mark it as a fact standing in.
+Three candidates, in order — the line takes the first that exists:
+
+1. `identity.description` — the agent's synopsis.
+2. The session's `last_user_prompt`, truncated for display. **This rung is load-bearing and must not be dropped.** The shipped picker already falls back to it (`identity.title ?? fullPrompt`), and for a never-summarized session — every external session the scanner has just found, every session whose first turn is still in flight — the user's own first prompt is the only human-meaningful text the row has. A creation stamp in its place is strictly less.
+3. `Created <stamp>`, formatted by `formatRestingStamp` from `tugdeck/src/lib/pulse-line/resting-line.ts`.
+
+Rungs 2 and 3 are painted a step quieter than a real description, marked with `data-stamp`, to say they are facts standing in.
+
 - Never blank, never a placeholder word, never italic (the theme sans has no italic face — an italic run paints nothing).
 - The line always occupies its height so a description arriving does not move the row beneath it.
+- **Filter highlighting applies to whatever rung rendered.** The picker and the Lens both paint `renderFilterHighlight` over the string the row actually shows, so the highlight is computed against the resolved line, never against the description that wasn't there. See [S08].
 
 **Spec S03: The activity line** {#s03-activity-line}
 
@@ -429,9 +450,10 @@ Two independent facts, both scan-derived:
 - `<turns>` pluralizes (`1 turn`). Omitted entirely when `turn_count` is 0.
 - `<size>` uses the existing `formatByteSize` from `session-picker-format.ts`. The whole `, <size>` segment drops when `file_size` is null or 0.
 - `Last updated: <stamp>.` drops when `turn_count` is 0 (a session never used has nothing to date) or `last_used_at` is absent. `<stamp>` uses `formatRestingStamp`.
-- `Ready.` always closes.
-- Degenerate case — nothing known — is exactly `Ready.`
+- `Ready.` closes the line **only when the session has a bound card**. A closed session in the picker is not "ready" for anything — it is a file on disk — so its line ends after the stamp. `useCardIdForSession(sessionId) !== null` is the predicate, already in hand beside the dot.
+- Degenerate case — nothing known, card bound — is exactly `Ready.`; nothing known, no card, is the empty string, and [S02]'s stamp rung is what keeps the row from looking hollow.
 - **During a turn** the line is replaced by the live beat, which keeps its existing dwell pacing and middle-truncation behavior.
+- The line is a composed sentence, so filter highlighting paints over the composed result — see [S08].
 
 **Spec S04: The dot vocabulary** {#s04-dot-vocabulary}
 
@@ -456,7 +478,7 @@ Sizes: `TUG_SESSION_ROW_INDICATOR_SIZE` (28) for the Lens; 16 for the masthead a
 
 **Spec S06: `session_updated` and the turn-end refresh** {#s06-push-and-refresh}
 
-- `build_session_updated_frame` gains `"file_size": Option<i64>`, read from the `external_scan_cache` row for the session on every push. Absent row → `null`.
+- `build_session_updated_frame(row, metrics)` gains a second parameter, `metrics: Option<SessionScanMetrics>` — the `(file_size, turn_count)` pair read from the `external_scan_cache` row for the session, looked up by each caller on every push. It emits `"file_size"` from `metrics` (absent row → `null`) and `"turn_count"` from `metrics` when present, falling back to `row.turn_count` when there is no scan-cache row.
 - On `turn_complete`, after the frame is forwarded: `stat_size_mtime(path)`; if `(size, mtime)` equals the cached pair, stop. Else `resume_seed_from_cache` + `parse_candidate` for an incremental parse; write `reconcile_turn_count_from_engine(session_id, count)` and `upsert_scan_cache(row)`; broadcast.
 - `turn_cancelled` takes the same path (a cancelled turn still appended records).
 
@@ -472,6 +494,15 @@ description: string | null;
 ```
 
 `composeSessionIdentity` sets `customName` from `name` and `description` from `synopsis`, with no fallback between them.
+
+**Spec S08: Filter highlighting survives the reshape** {#s08-filter-highlighting}
+
+Both list surfaces paint the Lens/picker filter query over their rows with `renderFilterHighlight`, and both do it against **the strings the row actually renders** — a row that matched on a field it does not display shows no mark, which is the shipped and correct behavior. This rollout changes the shape of all three rows underneath that rule, so each line states where the highlight lands:
+
+- **Title.** Now two runs ([S01]), so the highlight is applied **per run** — `renderFilterHighlight(name, q)` and `renderFilterHighlight(callsign, q)` — never to a pre-joined string. Joining first and highlighting after would put the separator inside a mark and defeat the truncation rule, since the two runs are separately sized ([P05]).
+- **Description.** Applied to the rung that actually rendered ([S02]) — description, prompt snippet, or stamp — after truncation, as today.
+- **Activity.** Applied to the composed rest sentence ([S03]). During a turn the line is the live beat and takes no highlight, as the beat is not a searchable fact.
+- The row's `name` / `description` / `activity` props therefore keep taking `React.ReactNode`, not `string`; the mount sites compose the highlight and the row renders what it is handed.
 
 #### State Zone Mapping {#state-zone-mapping}
 
@@ -515,14 +546,17 @@ description: string | null;
 | `SessionMasthead` | component | `tugdeck/src/components/tugways/session-masthead.tsx` | Composes the row; popover atom; title right-click ([P16]) |
 | `HEADLINE_FALLBACK` | const | `tugdeck/src/components/tugways/tug-pulse.tsx` | **Removed** ([P07]) |
 | `record_synopsis` | fn | `tugrust/crates/tugcast/src/session_ledger.rs` | Freeze clause removed ([P09]) |
-| `build_session_updated_frame` | fn | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | Carries `file_size` ([S06]) |
+| `build_session_updated_frame` | fn | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | Gains a `metrics` parameter; carries `file_size` and a scan-sourced `turn_count` ([S06]); four call sites updated |
+| `SessionScanMetrics` | struct | `tugrust/crates/tugcast/src/session_ledger.rs` | New — the `(file_size, turn_count)` pair from `external_scan_cache` ([S06]) |
+| `scan_metrics_for` | fn | same | New — one statement, both facts ([R06]) |
 | `refresh_session_metrics` | fn | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` | New turn-end refresh ([P10]) |
 
 ---
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Amend `[D132]` in `tuglaws/design-decisions.md`: the dot as the session mark, the title grammar and its truncation rule, the two-level stack, `PULSE` as an internal name, the `customName`/`description` split, and the lifted synopsis freeze.
+- [ ] Amend `[D132]` in `tuglaws/design-decisions.md`: the dot as the session mark, the title grammar and its truncation rule, the two-level stack, `PULSE` as an internal name, the `customName`/`description` split, the lifted synopsis freeze, and the masthead pane's suppressed width control (including the tab-switch flip, [P15]).
+- [ ] **Strike, do not append to, `[D132]`'s claim that "the callsign leads it, everywhere."** That clause is in the decision's own headline sentence and [P05] reverses it: a user-set name now leads and the callsign follows. An amendment that adds the new grammar while leaving the old sentence standing turns the curated doctrine surface into two answers to one question — the exact failure D132 was written to end.
 - [ ] Correct the `synopsis` doc comments in `tugrust/crates/tugcast/src/session_ledger.rs` and `tugdeck/src/protocol.ts` — both currently state the freeze as the contract.
 - [ ] Correct the `file_size` doc comment in `tugdeck/src/protocol.ts` — it states pushes never carry it.
 - [ ] Update the gallery card's docstring to record what shipped, and retire its "shipped today, for contrast" frame.
@@ -612,7 +646,8 @@ description: string | null;
 - `tugdeck/src/protocol.ts` — corrected `file_size` doc comment
 
 **Tasks:**
-- [ ] Add a scan-cache size lookup to the ledger (a small `file_size_for(session_id) -> Option<i64>` reading `external_scan_cache`), and have `build_session_updated_frame` include `"file_size"` from it on **every** push. This is what prevents an unrelated push from nulling a known size ([R06]).
+- [ ] Add a scan-cache metrics lookup to the ledger — `scan_metrics_for(session_id) -> Option<SessionScanMetrics>` reading `file_size` **and** `turn_count` from `external_scan_cache` in one statement.
+- [ ] Give `build_session_updated_frame` a second parameter, `metrics: Option<SessionScanMetrics>`, and emit `"file_size"` and `"turn_count"` from it on **every** push (falling back to `row.turn_count` when there is no scan-cache row). Keep the function pure — no `&SessionLedger` handle — and update its four call sites: three in `agent_supervisor.rs` (`broadcast_row`, the rename push, and the unit test) and one in `feeds/session_overview.rs`. Each production caller does the lookup beside the `ledger.get` it already performs; the test passes `None`. This is what prevents an unrelated push from nulling a known size **or knocking a scan-derived turn count to 0** ([R06]).
 - [ ] Add `refresh_session_metrics(session_id, path)`: `stat_size_mtime` first and return early when `(size, mtime)` matches the cached pair; otherwise `resume_seed_from_cache` → `parse_candidate` with the seed → `reconcile_turn_count_from_engine` + `upsert_scan_cache`. Never a naive full parse ([R02]).
 - [ ] Call it from the existing `turn_complete` / `turn_cancelled` interception in the supervisor, **after** the frame is forwarded, so the refresh is off the turn's critical path.
 - [ ] Broadcast `session_updated` after the write so the client sees both new numbers together.
@@ -620,7 +655,8 @@ description: string | null;
 
 **Tests:**
 - [ ] `build_session_updated_frame` includes `file_size` when a scan-cache row exists and `null` when it does not.
-- [ ] A rename-triggered push still carries the size (the [R06] regression).
+- [ ] `build_session_updated_frame` prefers the scan-cache `turn_count` when present and falls back to `row.turn_count` when `metrics` is `None`.
+- [ ] A rename-triggered push still carries **both** the size and a non-zero turn count for a session whose count came from a scan and whose `sessions` row holds a sparse `0` (the [R06] regression, both halves).
 - [ ] `refresh_session_metrics` is a no-op when `(size, mtime)` is unchanged.
 - [ ] After appending a turn to a fixture JSONL, the refresh writes the new engine count and the new size.
 
@@ -702,6 +738,7 @@ description: string | null;
 
 **Artifacts:**
 - `tugdeck/src/components/tugways/tug-session-identity.tsx` / `.css`
+- The four chip mount sites inherit the new face with no edit of their own, and all four must be looked at once the component lands: `components/gazette/gazette-card.tsx`, `components/tugways/tug-history-list.tsx`, `components/tugways/tug-changes-list.tsx`, and the masthead's telemetry popover ([#step-7]). The Changes list is the one not previously named in this plan and the only one that mounts a chip **per row**.
 - `tests/app-test/at0374-session-identity-tiers.test.ts` — assertions updated to the shipped form
 - `gallery-session-identity.tsx` — the contrast frame retired
 
@@ -712,10 +749,13 @@ description: string | null;
 - [ ] Keep right-click → Copy exactly as it is (`useCopyableText` with `writeSessionAtomToClipboard`). It already satisfies [P14]'s copy half.
 - [ ] Update `at0374`: the run is now two elements not one text node; the chip's ground is transparent rather than session-tinted; the missing chip has no slashed icon. Assert what the design now claims — a dot is present, the callsign run is the one that truncates, both sizes still differ.
 - [ ] Retire the gallery card's "shipped today, for contrast" frame, which becomes a duplicate of the proposed form.
+- [ ] Look at all four `TugSessionCitation` mounts with the new face on — Gazette, History, **Changes**, and the popover — and confirm none of them assumed the icon's advance in its own layout. The Changes list is the per-row mount and the one to check first ([P14]).
+- [ ] Watch the per-row subscription cost on the Changes card: one `useSessionPhase` per visible citation. [P03]'s key-return is the mitigation and it is why the hook returns a string rather than the snapshot — confirm on a Changes card with many rows that a transcript event on one session does not re-render the list. This is live ground for the typing-lag work; if it reads badly, the answer is a shared session→phase projection, not abandoning the dot.
 
 **Tests:**
 - [ ] `at0374` — the two-run title, the callsign truncating first under a narrow mount, the transparent chip ground, the inert missing atom, both chip sizes.
 - [ ] `at0376` — the atom clipboard round trip still passes unchanged (payloads are untouched).
+- [ ] `at0378` / `at0381` — the History and citation-surface suites still pass with the dot-led chip; they are the standing coverage for two of the four mounts.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
@@ -739,6 +779,8 @@ description: string | null;
 **Tasks:**
 - [ ] Write `sessionActivityRestLine` per [S03], reusing `formatByteSize` from `session-picker-format.ts` and `formatRestingStamp` from `resting-line.ts`. Do not modify `resting-line.ts` — it composes a different sentence for its own callers.
 - [ ] Reshape `TugSessionRow` to title / description / activity with an optional trailing tape on the activity row. Remove the `metadata` prop and the `intent` prop's role in these mounts ([P06]).
+- [ ] Rewrite the **`description` prop's own doc comment**, not just the module docstring: it currently reads "the session's `/rename` name, else its synopsis", which is precisely the merge [P04] deletes. Under the new record it is the synopsis and its stand-ins ([S02]) and nothing else.
+- [ ] Keep `name` / `description` / `activity` typed as `React.ReactNode` so mount sites can hand in filter-highlighted runs ([S08]); the row renders what it is given and composes no highlight of its own.
 - [ ] Prune `TugSessionRowFit` to the one fit that ships (`inset`), deleting the audition fits and their CSS. Rewrite the module docstring, which currently documents five fits and a PULSE three-part split.
 - [ ] Publish the dot advance and the text inset as tokens so the two lines under the title hang off the *title*, not the dot — one source, read by both the row's CSS and any mount site that needs it.
 - [ ] Per [S02], the description row renders the creation stamp when there is no description, marked with a `data-stamp` attribute for the quieter treatment ([L06]).
@@ -770,11 +812,14 @@ description: string | null;
 - [ ] Lift the tape so it reads visually centered across rows two and three, as the gallery settled — a relative offset, so the flow box does not move anything beneath it. Pin the tape's color to the chrome foreground and raise its line/area alphas: the masthead's ground is the tinted chrome band, not the pane background, and the instrument's pane-ground defaults wash out against a saturated light-theme band.
 - [ ] Add the title's right-click → Copy writing the atom's full flavor set ([P16]), via `useCopyableButton`.
 - [ ] Add the rendered atom to the telemetry popover above the citation, pulled left by the pill's inline padding so its run aligns with the other values' column.
-- [ ] In `tug-pane.tsx`, suppress the width control when the pane wears a masthead ([P15]). Move any app-test asserting `tug-pane-title-bar-width-button` to a non-masthead pane.
+- [ ] In `tug-pane.tsx`, suppress the width control when the pane wears a masthead ([P15]) — **and touch nothing else in the controls cluster.** The slot-stack badge, the `…` section menu, and the close X all keep rendering exactly as they do now; the stack badge in particular is how a stacked Session card reaches the panes behind it.
+- [ ] Confirm `at0156-title-bar-controls.test.ts` still passes untouched: it pins the cluster's exact button list, but drives a `gallery-input` card in a non-masthead pane, so it is out of this change's path. Confirm, do not move it.
 - [ ] Confirm the masthead's height token is unchanged and content-independent ([R03]).
 
 **Tests:**
-- [ ] App-test: the masthead renders exactly one dot, three text rows, and no width-control button; a named session shows both runs; the height is identical for a named and an unnamed session.
+- [ ] App-test: the masthead renders exactly one dot and three text rows; a named session shows both runs; the height is identical for a named and an unnamed session.
+- [ ] App-test: **no** `tug-pane-title-bar-width-button` inside a masthead pane. Write it as an absence assertion on that one testid — never as an equality check on the cluster's button list, which is legitimately longer or shorter depending on whether the Session card stands in a stack ([P15]).
+- [ ] App-test: a Session card stacked with a second card still renders `tug-pane-title-bar-stack-badge` in its title bar. This is the regression that would otherwise ship silently.
 - [ ] App-test: right-clicking the title offers Copy and writes the atom (extend `at0376`).
 
 **Checkpoint:**
@@ -800,12 +845,16 @@ description: string | null;
 - [ ] Lens: stop rendering `usePulseOverview` as the middle line ([P06]); the description takes that row.
 - [ ] Picker: the same three rows at the 16px dot, **no** tape ([P12]). Drop the separate `metadata` line — `formatSessionRowSubtitle`'s facts are the activity grammar's rest form now.
 - [ ] Picker: keep the state-replaces-the-line rule for rows that are not simply resumable (live elsewhere, in use in a terminal, failed) — those rows have one thing to say and it is not their turn count.
+- [ ] Picker: keep the `last_user_prompt` rung in the description line ([S02]). It is what the shipped cell falls back to today, and dropping it would leave every freshly-scanned external session describing itself by its creation date.
 - [ ] Picker: render a dot for every row now that a cardless session reads idle rather than danger ([P02]).
-- [ ] Confirm the picker's cells stay pure render functions — `useSessionPhase` and `useSessionIdentity` are subscription reads, which the rule permits.
+- [ ] Both surfaces: rewire `renderFilterHighlight` per [S08] — per-run on the two-run title, on the resolved description rung, on the composed activity sentence. The shipped rule that highlights are computed against what the row *renders* is preserved, not weakened.
+- [ ] Confirm the picker's cells stay pure render functions — `useSessionPhase` and `useSessionIdentity` are subscription reads, which the rule permits, and the cell already calls `useSessionIdentity` today.
 
 **Tests:**
 - [ ] App-test: a Lens session row shows the title grammar, a description row, and an activity row; a named session's callsign is the run that truncates.
 - [ ] App-test: a picker row for a closed session shows an idle (non-danger) dot and no tape.
+- [ ] App-test: a filter query matching a session's **custom name** marks only the name run, and one matching its **callsign** marks only the callsign run ([S08]).
+- [ ] App-test: a picker row for a session with no synopsis shows its prompt snippet, not a creation stamp ([S02] rung 2).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
@@ -852,6 +901,9 @@ description: string | null;
 - [ ] Walk every success criterion in [#success-criteria] against the running app and record the result.
 - [ ] Confirm the five surfaces agree: masthead, Lens row, picker row, atom, and citation all name the same session the same way.
 - [ ] Confirm no surface renders `PULSE`, no width control sits on a masthead pane, and no closed session shows a red dot.
+- [ ] Confirm a **stacked** Session card still shows its slot-stack badge and can still reach the panes behind it ([P15]).
+- [ ] Confirm the four chip mounts — Gazette, History, Changes, and the telemetry popover — all wear the live dot-led face, and that a rename on a live session changes the name on all of them without a reload ([P14]).
+- [ ] Confirm a rename push does not blank a session's turn count or size in the picker ([R06], both halves).
 
 **Tests:**
 - [ ] The identity app-test suite (`at0373`–`at0381`) plus the surfaces touched here.
@@ -879,7 +931,10 @@ description: string | null;
 
 **Tasks:**
 - [ ] Amend `[D132]` per [#documentation-plan]: the dot as the mark, the title grammar and its truncation rule, the two-level stack, `PULSE` as internal, the `customName`/`description` split, the lifted freeze, and the turn-end freshness contract.
+- [ ] **Strike `[D132]`'s "and the callsign leads it, everywhere"** from its headline sentence and replace it with the [P05] grammar. This is a deletion, not an addition — see [#documentation-plan].
 - [ ] Record the retirements so they are not re-proposed: the chatbox session icon, the three-level stack, the four-line row, the audition fits, the session-colored atom, red-for-idle, and the masthead width control.
+- [ ] Record what was **kept**, so it is not re-litigated as an oversight: the slot-stack badge and the `…` section menu stay in a masthead pane's title bar ([P15]), the two masthead popovers stay ([Q03]), and the composer's pasted atom stays baked ink ([P14]).
+- [ ] Correct the gallery card's masthead prototype frame, which draws the title row as dot + title + wave + close and taught this plan the wrong control inventory. It must show, or say in its caption, that the pane's stack badge and section menu stand beside the masthead.
 - [ ] Update the gallery card's docstring from "proposed" to "shipped", and note the two deferred questions ([Q01], [Q02]) as the surviving open items.
 - [ ] Record the deferred items in `roadmap/session-reference-plan.md`.
 
@@ -898,7 +953,7 @@ description: string | null;
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] The masthead shows three rows with no width control and no `project/` prefix (app-test).
+- [ ] The masthead shows three rows with no width control and no `project/` prefix, and the pane's stack badge, section menu, and close X are all still there (app-test).
 - [ ] `<name> : <callsign>` renders on all four graphical surfaces, and the callsign is the run that truncates (app-test + unit).
 - [ ] No user-facing `PULSE` ink anywhere (grep gate).
 - [ ] A closed or cardless session shows an idle dot, never a red one (unit + app-test).
@@ -919,6 +974,8 @@ description: string | null;
 - [ ] `/resume <tag>` resolving through the client cache while citations are ledger-authoritative — consider a tag arm on `resolve_sessions`.
 - [ ] R05 — post-fork commits cite the parent session (`TUG_SESSION_ID` is not fork-aware).
 - [ ] Retire the theme session-color tokens if nothing else adopts them after [P13].
+- [ ] `session_updated` pushes reset `origin` to `"tug"` and `terminal_live` to `null`, because `patchRow` replaces the cached row wholesale and pushes never carry either field. Fix at the same seam [R06] is fixed at, once that shape is proven.
+- [ ] A live session atom inside the composer, if the editor ever grows a way to host a subscribed subtree in a widget without a second React root ([P14]).
 
 | Checkpoint | Verification |
 |------------|--------------|
