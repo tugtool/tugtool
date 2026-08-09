@@ -1,65 +1,77 @@
 /**
  * gallery-session-identity.tsx — the session-reference design spike.
  *
- * The brief is `roadmap/session-reference-brief.md`: one identity model
- * (callsign / title / context / plumbing), one resolver, one component
- * family — `TugSessionIdentity` at its two tiers (`chip` / `line`), with
- * `TugSessionRow` and `SessionMasthead` composing the row and masthead
- * densities — plus a text-only citation form and a fork-lineage grammar.
- * This card auditions the visual decisions that brief left open.
+ * The brief is `roadmap/session-reference-brief.md`: one identity model, one
+ * resolver, one component family. Earlier rounds settled the two registers
+ * (presence vs citation), the session atom's shape and color, the flat-text
+ * citation, and the fork-lineage grammar. This round — the seventh — is the
+ * CONTENT round: what the surfaces actually say, and in what order.
  *
- * The card's organizing distinction, from the first review round: PRESENCE
- * vs CITATION. A surface that IS the session — its own masthead, the row
- * about to become it — renders the callsign as typography: the session
- * icon (the chatbox, the app's existing session mark), bold sans, no
- * enclosure. A surface that REFERS to a session from foreign context — a
- * Gazette post, the Changes orphan hint, a History commit — wraps the same
- * identity in a badge, because there a chip correctly reads as "a link to
- * the thing elsewhere." One identity, two registers.
+ * Decided in the seventh review round:
  *
- * The citation register wears the SESSION ATOM: a rounded, specialized
- * pill — deliberately not the squared house badge — painted in one
- * theme-authored *session color* (a new role token, one value per theme),
- * so the pill's shape and color together always mean exactly one thing:
- * "a session, referenced from elsewhere." Decided by the third review
- * round: the session color seeds from the AGENT role (auditioned against
- * accent / link / success on this card), and the atom's form is always
- * `<project>/<callsign>` in a single bold run — one face, one weight, one
- * color, no muted context mixing. The branch suffix was dropped from the
- * visual form in the fourth round: a ghost badge beside the callsign read
- * as an unexplained signal, and branch is workspace state rather than
- * session identity. It survives in the telemetry placard.
+ * - **The dot is the mark.** The chatbox icon retires from every surface that
+ *   names a session; the pulsing phase dot replaces it — in the masthead, the
+ *   rows, and the atom itself. One mark, everywhere, and the mark is ALIVE:
+ *   it says what the session is doing, not just what kind of thing it is.
+ * - **Red means errors.** The dot's idle form is the quiet white/inherit
+ *   rung, and it is also the DOUBT form: a session whose live data is
+ *   unreachable — closed, external, unbound — wears the idle dot, never a
+ *   red one. Red is reserved for genuine failure: an errored turn, a dead
+ *   wire under a live card.
+ * - **The user's name leads.** A custom name is the user explicitly telling
+ *   us what the session is called, and it cannot ride below a callsign we
+ *   minted ourselves. The title grammar is `<custom-name> : <callsign>` when
+ *   a name exists, bare `<callsign>` when not — in the masthead, the rows,
+ *   the picker, and the atom, all four. This obliges the resolver to stop
+ *   conflating: `SessionIdentity.title` (the `name ?? synopsis` merge)
+ *   retires in favor of `customName` and `description` as separate fields.
+ * - **Two levels under the title, not three.** The stack is title /
+ *   description / activity. The standing-intent line (the old headline
+ *   level) is cut as chrome ink — the description already says what the
+ *   session is for, and two goal-shaped lines read as an echo. The intent
+ *   survives in the history popover, where it heads its run of beats.
+ * - **The word PULSE never prints.** It is the feature's internal name —
+ *   stores, files, tests — and no longer a label, a legend, or a stand-in
+ *   anywhere a user reads. The activity line always has something true to
+ *   say instead (see the grammar below), so nothing needs a placeholder.
+ * - **The activity line has a grammar.** At rest:
+ *   `<turns> turns, <size>. <last-updated>. Ready.` — with the stamp omitted
+ *   at zero turns. During a turn it carries the live beat, and the sparkline
+ *   beside it animates. A fresh or resumed session with no description yet
+ *   shows its creation stamp on the description line, so the line is never
+ *   blank and never a placeholder word.
+ * - **The masthead slims its controls.** The width-control icon leaves the
+ *   title row; the wave (telemetry) widget and close remain. Right-clicking
+ *   the title copies the session ATOM — all flavors — and the telemetry
+ *   popover displays the atom itself alongside the flat citation.
+ * - **The atom is live.** It renders `[dot] <callsign>` or
+ *   `[dot] <custom-name> : <callsign>`, and both the dot and the name track
+ *   the running app — a rename mid-conversation repaints every mounted atom.
+ *   So the atom is a COMPONENT with subscriptions, never a static string or
+ *   a baked image. The liveness plumbing is designed in the atom section's
+ *   prose: identity through `useSessionIdentity`, phase through a new
+ *   session-keyed `useSessionPhase` that resolves card-bound sessions to
+ *   their card's `codeSessionStore` and everything else to the idle dot.
+ * - **The missing atom loses its slash.** With the icon gone, the
+ *   unresolvable citation states its failure by shape alone: dashed border,
+ *   muted ink, the still idle dot, inert. Same tooltip sentence as before.
  *
- * The atom is a real Tug ATOM, not a look-alike: copying one writes all
- * three clipboard flavors Tug already speaks
- * (`lib/tug-native-clipboard.ts` — the private `dev.tug.prompt-atoms`
- * sidecar, `text/plain`, `text/html`) plus the wire marker
- * (`lib/atom-mention-marker.ts`), so pasting into a Tug surface pastes
- * the atom and pasting anywhere else yields the citation.
+ * Retired by this round, recorded so they are not re-proposed: the chatbox
+ * session icon (`MessageSquareText`) as the session mark; the three-level
+ * description + intent + activity stack; the `PULSE` legend/stand-in as
+ * user-facing ink; the four-line row (its metadata line folds into the
+ * activity grammar); the masthead width control; red for anything but
+ * errors. Still standing from earlier rounds: one theme-authored session
+ * color; no per-session hashed tint; no monospace in session chrome; the
+ * citation `<tag> (<shortid>)` as the only flat-text form; the fork-lineage
+ * grammar; the three clipboard flavors (`text/html` stays struck).
  *
- * The fifth review round settled the stack: the masthead's three lines and
- * the row tier's four are ONE leading scheme in one place ({@link
- * IdentityStack}) — identity on the first line, then a tight group of the
- * lines that say what the session is doing. The row is Lens-like, led by
- * the pulsing phase dot. And the unresolvable citation gets a form: the
- * atom keeps its shape, drops the session color, and slashes its icon.
- *
- * Two directions were auditioned here and retired by review, recorded so
- * they are not re-proposed: a hashed PER-SESSION tint (color is a semantic
- * channel in Tug — role tokens mean things — and a hash-derived hue reads
- * as meaning and means nothing; the lexicon words already carry the
- * distinctiveness — one fixed session color is fine, per-item hue is not),
- * and MONOSPACE for the callsign in graphical surfaces (mono is for flat
- * text — the commit trailer — not for session chrome).
- *
- * Everything that exists as a Tug* component is the real component: both
- * identity registers are {@link TugSessionIdentity} at its `chip` and `line`
- * tiers, the rows are {@link TugSessionRow} and {@link TugListRow}, the
- * one-line title bar the masthead is judged against is the real
- * {@link CardTitleBar}, and the PULSE in the three-line masthead is the
- * real {@link TugPulse}. One prototype remains, styled by this card's own
- * CSS: the masthead band (on the real pane-chrome tokens) — nothing in
- * `gallery-session-identity.css` is a rule the app inherits.
+ * Everything that shipped as a Tug* component is mounted real where the
+ * audition allows it (`TugProgressIndicator`, `TugSparkline`, and one
+ * shipped-`TugSessionIdentity` contrast frame). The proposed forms — the
+ * dot-led title, the new masthead, the dot-atom — are prototypes styled by
+ * this card's own CSS, because they are exactly what has not shipped yet.
+ * Nothing in `gallery-session-identity.css` is a rule the app inherits.
  *
  * @module components/tugways/cards/gallery-session-identity
  */
@@ -67,33 +79,23 @@
 import "./gallery-session-identity.css";
 
 import React from "react";
-import {
-  ArrowLeftRight,
-  Copy,
-  MessageSquare,
-  Newspaper,
-  Waves,
-  X,
-} from "lucide-react";
+import { Waves, X } from "lucide-react";
 
-import { CardTitleBar } from "@/components/chrome/tug-pane";
+import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
+import {
+  TUG_SESSION_ROW_INDICATOR_SIZE,
+  TUG_SESSION_SPARK_CURVE,
+  TUG_SESSION_SPARK_FULL_SCALE_CHARS,
+} from "@/components/tugways/tug-session-row";
+import { TugSparkline } from "@/components/tugways/tug-sparkline";
+import { ACTIVITY_BIN_MS } from "@/lib/session-activity-store";
+import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 import {
   composeSessionIdentity,
   type SessionIdentity,
 } from "@/lib/session-identity";
-import { TugBadge } from "@/components/tugways/tug-badge";
-import { TugLabel } from "@/components/tugways/tug-label";
-import { TugListRow } from "@/components/tugways/tug-list-row";
-import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
-import { TugPulse } from "@/components/tugways/tug-pulse";
-import { TugPushButton } from "@/components/tugways/tug-push-button";
-import { TugSeparator } from "@/components/tugways/tug-separator";
-import {
-  TUG_SESSION_ROW_INDICATOR_SIZE,
-  TugSessionRow,
-} from "@/components/tugways/tug-session-row";
-import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 
 // ---------------------------------------------------------------------------
 // Fixtures — the roster every section draws from
@@ -104,18 +106,22 @@ interface IdentityFixture {
   tag: string;
   project: string;
   branch: string | null;
-  /** The description — user `/rename` or scraped ai-title; null when unnamed. */
-  name: string | null;
+  /** The user's own name for the session — `/rename`. Null when never named. */
+  userName: string | null;
+  /** The SharedAgent's description. Null before the first summary exists. */
+  description: string | null;
   shortId: string;
-  /** The picker's metadata line, as the ledger would supply it. */
-  meta: string;
-  /** Phase for the progress indicator. */
+  /** Phase key for the dot (`session-phase-visual` vocabulary). */
   phase: string;
-  /** The PULSE's standing intent. */
-  intent: string;
-  /** The PULSE's current activity. */
-  activity: string;
-  /** One-word situation label for section captions. */
+  /** The live activity beat, for fixtures caught mid-turn. */
+  beat: string | null;
+  turns: number;
+  /** Session size on disk, already humanized. */
+  size: string;
+  createdAt: string;
+  /** Last-updated stamp; null only while `turns` is zero. */
+  lastUsed: string | null;
+  /** One-phrase situation label for frame captions. */
   note: string;
 }
 
@@ -124,73 +130,106 @@ const ROSTER: readonly IdentityFixture[] = [
     tag: "stocky-pixie",
     project: "tugtool",
     branch: null,
-    name: null,
+    userName: null,
+    description: null,
     shortId: "7c21d3aa",
-    meta: "2m ago · 4 turns · 1.2 MB",
     phase: "idle",
-    intent: "Trace the slot-picker's keyboard route",
-    activity: "Idle",
-    note: "un-renamed",
+    beat: null,
+    turns: 0,
+    size: "8 KB",
+    createdAt: "Aug 9, 9:41 AM",
+    lastUsed: null,
+    note: "fresh — no turns, no description yet",
   },
   {
     tag: "syrupy-beam",
     project: "tugtool",
     branch: null,
-    name: "Explain commitImposition in deck manager",
+    userName: null,
+    description: "Explaining commitImposition in the deck manager",
     shortId: "f6e43925",
-    meta: "6m ago · 2 turns · 885 KB",
     phase: "streaming",
-    intent: "Scaling panes on the FLIP tween",
-    activity: "Edit pane-flip.ts",
-    note: "live, ai-titled",
+    beat: "Edit pane-flip.ts",
+    turns: 2,
+    size: "885 KB",
+    createdAt: "Aug 9, 8:12 AM",
+    lastUsed: "Aug 9, 9:37 AM",
+    note: "un-renamed, mid-turn",
   },
   {
     tag: "bendy-sweet",
     project: "tugtool",
     branch: "content-width",
-    name: "Add animation to card resize in Lens layouts",
+    userName: "card resize animation",
+    description: "Animating card resize in Lens layouts",
     shortId: "ab7579ac",
-    meta: "39m ago · 11 turns · 4.7 MB",
     phase: "tool_work",
-    intent: "Animate card resize in Lens layouts",
-    activity: "Bash just app-test-changed",
-    note: "off-main branch",
+    beat: "Bash just app-test-changed",
+    turns: 11,
+    size: "4.7 MB",
+    createdAt: "Aug 8, 7:02 AM",
+    lastUsed: "Aug 9, 10:44 AM",
+    note: "custom-named, mid-turn",
   },
   {
     tag: "juicy-silt",
     project: "tugtool",
     branch: null,
-    name: "Make message dates context-aware relative to current date",
+    userName: "message dates",
+    description: "Making message dates context-aware relative to today",
     shortId: "26b43a66",
-    meta: "3h ago · 7 turns · 2.1 MB",
     phase: "idle",
-    intent: "Make message dates context-aware",
-    activity: "Idle",
-    note: "renamed",
+    beat: null,
+    turns: 7,
+    size: "2.1 MB",
+    createdAt: "Aug 8, 3:20 PM",
+    lastUsed: "Aug 9, 11:02 AM",
+    note: "custom-named, at rest",
   },
   {
     tag: "brisk-otter",
     project: "tugdash",
     branch: null,
-    name: null,
+    userName: null,
+    description: "Wiring the dash join resolver",
     shortId: "9e02c1b4",
-    meta: "2d ago · 19 turns · 8.9 MB",
     phase: "idle",
-    intent: "Wire the dash join resolver",
-    activity: "Idle",
-    note: "external, tag backfilled",
+    beat: null,
+    turns: 19,
+    size: "8.9 MB",
+    createdAt: "Aug 5, 9:15 AM",
+    lastUsed: "Aug 7, 4:48 PM",
+    note: "external — live data unreachable, so the idle dot",
   },
   {
     tag: "stocky-pixie-A1",
     project: "tugtool",
     branch: null,
-    name: null,
+    userName: null,
+    description: "Tracing the slot-picker's keyboard route",
     shortId: "d41c77e0",
-    meta: "1m ago · 1 turn · 214 KB",
     phase: "streaming",
-    intent: "Trace the slot-picker's keyboard route",
-    activity: "Read tug-slot-picker.tsx",
-    note: "fork of stocky-pixie",
+    beat: "Read tug-slot-picker.tsx",
+    turns: 1,
+    size: "214 KB",
+    createdAt: "Aug 9, 11:20 AM",
+    lastUsed: "Aug 9, 11:21 AM",
+    note: "fork of stocky-pixie, mid-turn",
+  },
+  {
+    tag: "dented-prism",
+    project: "tugtool",
+    branch: null,
+    userName: null,
+    description: "Rebuilding the tokenizer wasm embed",
+    shortId: "41be09c7",
+    phase: "errored",
+    beat: null,
+    turns: 5,
+    size: "1.4 MB",
+    createdAt: "Aug 9, 6:58 AM",
+    lastUsed: "Aug 9, 7:31 AM",
+    note: "errored — the one red on this card",
   },
 ] as const;
 
@@ -208,142 +247,313 @@ function citation(f: IdentityFixture): string {
   return `${f.tag} (${f.shortId})`;
 }
 
-// ---------------------------------------------------------------------------
-// The two registers
-// ---------------------------------------------------------------------------
+/** Phases during which a turn is in flight and the tape animates. */
+const RUNNING_PHASES: ReadonlySet<string> = new Set([
+  "submitting",
+  "awaiting_first_token",
+  "streaming",
+  "tool_work",
+  "waking",
+]);
 
-/**
- * A fixture identity for the shipping component. The card's sections name a
- * session by its callsign and project, which is what a bench needs; the
- * resolver's other fields are filled in around them.
- */
-function fixtureIdentity(
-  tag: string,
-  project: string,
-  over: Partial<SessionIdentity> = {},
-): SessionIdentity {
-  return composeSessionIdentity({
-    sessionId: `${tag}-0000-4000-8000-000000000000`.padEnd(36, "0"),
-    name: null,
-    synopsis: null,
-    tag,
-    projectDir: `/Users/tester/src/${project}`,
-    ...over,
-  });
+function isRunning(f: IdentityFixture): boolean {
+  return RUNNING_PHASES.has(f.phase);
 }
 
 /**
- * PRESENCE — the session rendered as itself. The real component at its `line`
- * tier; this wrapper exists only to take the card's fixture shape.
+ * The activity line at rest — the grammar, in one place:
+ * `<turns> turns, <size>. <last-updated>. Ready.` The stamp appears only for
+ * a session with turns to have been updated by; a fresh session's line is
+ * `0 turns, 8 KB. Ready.` and nothing more.
  */
-function CallsignText({
-  tag,
-  context,
-  icon = true,
+function restLine(f: IdentityFixture): string {
+  const turns = `${f.turns} ${f.turns === 1 ? "turn" : "turns"}, ${f.size}.`;
+  const stamp = f.turns > 0 && f.lastUsed !== null ? ` ${f.lastUsed}.` : "";
+  return `${turns}${stamp} Ready.`;
+}
+
+/** What the activity line says right now: the beat mid-turn, the rest line
+ *  otherwise. */
+function activityLine(f: IdentityFixture): string {
+  return isRunning(f) && f.beat !== null ? f.beat : restLine(f);
+}
+
+/** What the description line says: the description, else the birth stamp —
+ *  never blank, never a placeholder word. */
+function descriptionLine(f: IdentityFixture): string {
+  return f.description ?? `Created ${f.createdAt}`;
+}
+
+// ---------------------------------------------------------------------------
+// The dot — the one session mark
+// ---------------------------------------------------------------------------
+
+/** The masthead's and the picker's dot box. Ring box, not glyph box: the dot
+ *  paints at 60% of it and the ring overhangs into the line's padding. */
+const SMALL_DOT_SIZE = 16;
+
+/** The atom's dot box, per chip size. */
+const ATOM_DOT_SIZE = { sm: 12, "2xs": 10 } as const;
+
+function Dot({
+  phase,
+  size,
 }: {
-  tag: string;
-  context: string;
-  icon?: boolean;
+  phase: string;
+  size: number;
 }): React.ReactElement {
   return (
-    <TugSessionIdentity
-      identity={fixtureIdentity(tag, context)}
-      tier="line"
-      icon={icon}
+    <TugProgressIndicator
+      variant="pulsing-dot"
+      size={size}
+      phase={phase}
+      phaseVisual={sessionSessionPhaseVisual}
+      aria-hidden
     />
   );
 }
 
+// ---------------------------------------------------------------------------
+// The title grammar — the user's name leads
+// ---------------------------------------------------------------------------
+
 /**
- * CITATION — the session referred to from foreign context, as an ATOM: the
- * rounded, specialized pill that gives session references their own look
- * and feel, distinct from the squared house badge. The form is fixed:
- * `<project>/<callsign>`, one bold run — no font-style mixing. Painted from
- * the `session` tone on the `atom` slot — the theme-authored *session
- * color*, hue-seeded from the AGENT family — so the pill always means the
- * same thing: "this is a session, elsewhere." This is the chip tier of the
- * future `TugSessionIdentity`, which aliases the same tokens when it ships.
+ * The title run: `<custom-name> : <callsign>` when the user has named the
+ * session, bare `<callsign>` when not. The custom name carries the title
+ * weight — it is the user's explicit word on what this session is called —
+ * and the callsign steps back to a quieter regular-weight run beside it,
+ * still present because it is the session's permanent, citable handle.
  */
-function SessionAtom({
-  tag,
-  context,
+function TitleRun({ f }: { f: IdentityFixture }): React.ReactElement {
+  if (f.userName === null) {
+    return (
+      <span className="gsi-title">
+        <span className="gsi-title-name">{f.tag}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="gsi-title">
+      <span className="gsi-title-name">{f.userName}</span>
+      <span className="gsi-title-callsign">{` : ${f.tag}`}</span>
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The live tape — a synthetic series so the audition ANIMATES
+// ---------------------------------------------------------------------------
+
+/** Deterministic pseudo-noise per bin: bursty above a floor of murmur. */
+function synthRate(bin: number, seed: number): number {
+  const raw = Math.sin((bin + seed) * 12.9898) * 43758.5453;
+  const r = raw - Math.floor(raw);
+  return r > 0.6 ? r * TUG_SESSION_SPARK_FULL_SCALE_CHARS : r * 60;
+}
+
+/** How many bins the fixture series carries — comfortably past the window. */
+const SYNTH_BINS = 40;
+
+/**
+ * The real `TugSparkline` on a synthetic series, so the masthead frames show
+ * the actual instrument scrolling smoothly rather than a still picture of
+ * one. An inactive tape gets an empty series and no wake — which is exactly
+ * how the real instrument sits on a quiet session.
+ */
+function FixtureTape({
+  seed,
+  active,
+  width,
+  height,
+}: {
+  seed: number;
+  active: boolean;
+  width: number;
+  height: number;
+}): React.ReactElement {
+  const getSeries = React.useCallback(
+    (nowMs: number): number[] => {
+      if (!active) return [];
+      const current = Math.floor(nowMs / ACTIVITY_BIN_MS);
+      const out: number[] = [];
+      for (let i = SYNTH_BINS - 1; i >= 0; i -= 1) {
+        out.push(synthRate(current - i, seed));
+      }
+      return out;
+    },
+    [seed, active],
+  );
+  const subscribeActivity = React.useCallback(
+    (wake: () => void): (() => void) => {
+      if (!active) return () => {};
+      const timer = window.setInterval(wake, 400);
+      return () => window.clearInterval(timer);
+    },
+    [active],
+  );
+  return (
+    <TugSparkline
+      getSeries={getSeries}
+      subscribeActivity={subscribeActivity}
+      binMs={ACTIVITY_BIN_MS}
+      fullScale={TUG_SESSION_SPARK_FULL_SCALE_CHARS}
+      curve={TUG_SESSION_SPARK_CURVE}
+      width={width}
+      height={height}
+      title="Session activity (fixture series)"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PROTOTYPE: the masthead — three rows, two naming states
+// ---------------------------------------------------------------------------
+
+/** The masthead tape's cut of the instrument — wider than the row's, same
+ *  window, as the shipped masthead already sizes it. */
+const MASTHEAD_TAPE_WIDTH = 128;
+const MASTHEAD_TAPE_HEIGHT = 18;
+
+function ProtoMasthead({
+  f,
+  seed,
+}: {
+  f: IdentityFixture;
+  seed: number;
+}): React.ReactElement {
+  return (
+    <div className="gsi-masthead">
+      <div className="gsi-masthead-lead">
+        <span className="gsi-masthead-dot">
+          <Dot phase={f.phase} size={SMALL_DOT_SIZE} />
+        </span>
+        <TitleRun f={f} />
+        <span className="gsi-spacer" />
+        <span className="gsi-masthead-widget" title="Telemetry">
+          <Waves size={14} aria-hidden />
+        </span>
+        <span className="gsi-masthead-widget" title="Close">
+          <X size={14} aria-hidden />
+        </span>
+      </div>
+      <div
+        className="gsi-masthead-description"
+        data-stamp={f.description === null ? "true" : undefined}
+      >
+        {descriptionLine(f)}
+      </div>
+      <div className="gsi-masthead-activity">
+        <span className="gsi-activity-run">{activityLine(f)}</span>
+        <FixtureTape
+          seed={seed}
+          active={isRunning(f)}
+          width={MASTHEAD_TAPE_WIDTH}
+          height={MASTHEAD_TAPE_HEIGHT}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PROTOTYPE: the row — the masthead model on a list ground
+// ---------------------------------------------------------------------------
+
+/**
+ * One session as a row: the same three lines the masthead wears, with the
+ * dot size exchanged — the Lens keeps its across-the-room
+ * {@link TUG_SESSION_ROW_INDICATOR_SIZE}; the picker reads up close and
+ * takes the masthead's {@link SMALL_DOT_SIZE}. The old fourth line is gone:
+ * its facts (time, turns, size) live in the activity grammar now.
+ */
+function ProtoRow({
+  f,
+  seed,
+  dot,
+}: {
+  f: IdentityFixture;
+  seed: number;
+  dot: "lens" | "picker";
+}): React.ReactElement {
+  const dotSize =
+    dot === "lens" ? TUG_SESSION_ROW_INDICATOR_SIZE : SMALL_DOT_SIZE;
+  return (
+    <div className="gsi-prow" data-dot={dot}>
+      <div className="gsi-prow-lead">
+        <span className="gsi-prow-dot">
+          <Dot phase={f.phase} size={dotSize} />
+        </span>
+        <TitleRun f={f} />
+      </div>
+      <div className="gsi-prow-description">{descriptionLine(f)}</div>
+      <div className="gsi-prow-activity">
+        <span className="gsi-activity-run">{activityLine(f)}</span>
+        <FixtureTape
+          seed={seed}
+          active={isRunning(f)}
+          width={64}
+          height={16}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PROTOTYPE: the atom — a live pill, dot-led
+// ---------------------------------------------------------------------------
+
+/**
+ * The proposed atom face: `[dot] <callsign>`, or
+ * `[dot] <custom-name> : <callsign>` once the user names the session. The
+ * pill keeps the session color and the rounded shape from the shipped chip;
+ * the chatbox icon gives way to the dot, and the dot is LIVE. A missing
+ * (unresolvable) atom forces the idle dot, drops the session color, and
+ * dashes its border — shape states the failure now that there is no icon to
+ * slash.
+ */
+function ProtoAtom({
+  f,
   size = "sm",
   missing = false,
 }: {
-  tag: string;
-  context: string;
+  f: IdentityFixture;
   size?: "sm" | "2xs";
-  /**
-   * The citation resolved to nothing — a post or a commit naming a session
-   * this ledger has no record of. The atom keeps its shape, so a reader still
-   * knows what kind of thing is being named, and states its failure in the ONE
-   * place that already carries the meaning "session" — the icon, which gains a
-   * slash. It is inert: no link, no raise, and the tooltip says why rather
-   * than repeating the tag.
-   */
   missing?: boolean;
 }): React.ReactElement {
   return (
-    <TugSessionIdentity
-      identity={fixtureIdentity(tag, context)}
-      tier="chip"
-      size={size}
-      missing={missing}
-    />
+    <span
+      className="gsi-atom"
+      data-size={size}
+      data-missing={missing ? "true" : undefined}
+      title={missing ? "Session not found" : citation(f)}
+    >
+      <span className="gsi-atom-dot">
+        <Dot phase={missing ? "idle" : f.phase} size={ATOM_DOT_SIZE[size]} />
+      </span>
+      <span className="gsi-atom-run">
+        {f.userName === null ? (
+          <span className="gsi-atom-name">{f.tag}</span>
+        ) : (
+          <>
+            <span className="gsi-atom-name">{f.userName}</span>
+            <span className="gsi-atom-callsign">{` : ${f.tag}`}</span>
+          </>
+        )}
+      </span>
+    </span>
   );
 }
 
-/**
- * The four-line identity stack — DECIDED in the fifth review round as the
- * ROW tier, and the same leading scheme the masthead uses.
- *
- * The masthead's three lines plus the metadata line: callsign, description,
- * PULSE, then time / turns / size. The row is Lens-like — the phase dot
- * leads, pulsing while the session runs and settling small and quiet when it
- * does not — because the picker and the Lens are showing the same thing and
- * had no business showing it two ways. It is not Lens-SIZED, though (sixth
- * review round): the dot takes {@link GSI_ROW_DOT_SIZE}, it rides the row's
- * left margin, and the three lines beneath it take a small indent.
- *
- * `variant` selects only where it is mounted (chrome ground vs list ground)
- * and whether the fourth line is present. The leading between lines is one
- * scheme in one place: identity on top, then a group of three that describe
- * what the session is doing.
- */
-function IdentityStack({
-  f,
-  variant,
-  trailing,
-}: {
-  f: IdentityFixture;
-  variant: "masthead" | "row";
-  trailing?: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <div className="gsi-stack" data-variant={variant}>
-      <div className="gsi-stack-lead">
-        {variant === "row" ? (
-          <PhaseDot phase={f.phase} size={GSI_ROW_DOT_SIZE} />
-        ) : null}
-        <CallsignText
-          tag={f.tag}
-          context={f.project}
-          icon={variant === "masthead"}
-        />
-        {trailing !== undefined ? (
-          <>
-            <span className="gsi-stack-spacer" />
-            {trailing}
-          </>
-        ) : null}
-      </div>
-      <div className="gsi-stack-title">{f.name ?? "No prompts yet"}</div>
-      <TugPulse layout="inline" headline={f.intent} activity={f.activity} />
-      {variant === "row" ? (
-        <div className="gsi-stack-meta">{f.meta}</div>
-      ) : null}
-    </div>
-  );
+/** A fixture identity for the one shipped-component contrast frame. */
+function fixtureIdentity(f: IdentityFixture): SessionIdentity {
+  return composeSessionIdentity({
+    sessionId: `${f.shortId}-0000-4000-8000-000000000000`.padEnd(36, "0"),
+    name: f.userName,
+    synopsis: f.description,
+    tag: f.tag,
+    projectDir: `/Users/tester/src/${f.project}`,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -383,110 +593,325 @@ function Frame({
   );
 }
 
-/**
- * The row tier's dot, DECIDED in the sixth review round.
- *
- * The Lens's {@link TUG_SESSION_ROW_INDICATOR_SIZE} (28) is sized for its
- * job there: to catch the eye when something changes, legibly from across
- * the room. A list row is read up close and deliberately, so it does not
- * need — or want — that size: at 28 the dot is furniture the callsign has
- * to work around. Smaller lets the dot and the name sit together as one
- * mark. Mirrors `--gsi-row-dot-size`, which the overhang math reads.
- */
-const GSI_ROW_DOT_SIZE = 16;
-
-function PhaseDot({
-  phase,
-  size = TUG_SESSION_ROW_INDICATOR_SIZE,
-}: {
-  phase: string;
-  size?: number;
-}): React.ReactElement {
-  return (
-    <TugProgressIndicator
-      variant="pulsing-dot"
-      size={size}
-      phase={phase}
-      phaseVisual={sessionSessionPhaseVisual}
-      aria-hidden
-    />
-  );
-}
-
 // ---------------------------------------------------------------------------
 // The card
 // ---------------------------------------------------------------------------
 
+const FRESH = ROSTER[0];
 const LIVE = ROSTER[1];
-const BRANCHED = ROSTER[2];
-const UNNAMED = ROSTER[0];
+const NAMED_LIVE = ROSTER[2];
+const NAMED_REST = ROSTER[3];
+const EXTERNAL = ROSTER[4];
+const FORK = ROSTER[5];
+const ERRORED = ROSTER[6];
+
+/** The dot vocabulary strip: every reading the mark can give, in one place. */
+const DOT_VOCABULARY: readonly {
+  phase: string;
+  label: string;
+  meaning: string;
+}[] = [
+  {
+    phase: "idle",
+    label: "Idle",
+    meaning: "quiet — and also unknown, closed, or unreachable",
+  },
+  { phase: "streaming", label: "Working", meaning: "a turn is in flight" },
+  {
+    phase: "awaiting_approval",
+    label: "Awaiting",
+    meaning: "parked on the user's answer",
+  },
+  {
+    phase: "background",
+    label: "Active",
+    meaning: "no turn, but agents still working",
+  },
+  {
+    phase: "errored",
+    label: "Error",
+    meaning: "genuine failure — the only red",
+  },
+];
 
 export function GallerySessionIdentity(): React.ReactElement {
   return (
     <div className="gsi-root" data-testid="gallery-session-identity">
       <p className="gsi-blurb">
-        One identity, two registers. <strong>Presence</strong>: a surface
-        that <em>is</em> the session — the masthead, the row about to open —
-        renders the callsign as typography: chatbox icon, bold sans, no
-        enclosure. <strong>Citation</strong>: a surface that <em>refers</em>{" "}
-        to a session from foreign context — a Gazette post, an orphan hint,
-        a commit — wraps the same identity in a badge, where a chip
-        correctly reads as a link to the thing elsewhere. The callsign
-        leads in both; the title never leads; the UUID never paints. The
-        model is <code>roadmap/session-reference-brief.md</code>.
+        A session is referred to five ways — UUID, 8-char short id, minted{" "}
+        <code>adjective-noun</code> callsign, agent-written description, and
+        an optional user name — across five surfaces: the card masthead, the
+        picker, the Lens rows, the atom, and the flat-text citation. This
+        round decides the <strong>content</strong>: the pulsing dot replaces
+        the session icon everywhere, the user&apos;s name leads the title,
+        the stack under the title is two levels (description, then
+        activity), and the word PULSE never prints again.
       </p>
 
       <TugSeparator />
 
       {/* ================================================================ */}
       <Section
-        title="The two registers — one callsign, both faces"
+        title="The dot is the mark"
         blurb={
           <>
-            Left of the rule: presence, the session as itself. Right: the
-            citation badge (a real <code>TugBadge</code> with the session
-            icon), in the emphases a foreign surface might carry it at.
+            The chatbox icon retires. Every surface that names a session
+            leads with the pulsing phase dot — a mark that says what the
+            session is <em>doing</em>, not just what kind of thing it is.
+            Two rules govern it. <strong>White means idle, and idle is the
+            default:</strong> a quiet session, a closed one, an external
+            one, any session whose live data cannot be reached — all wear
+            the still idle dot. <strong>Red means errors:</strong> an
+            errored turn, a dead wire under a live card. Red never says
+            &quot;idle&quot;, and doubt never says red.
+          </>
+        }
+      >
+        <Frame label="the vocabulary — every reading, at the Lens size and the masthead size">
+          <div className="gsi-dot-table">
+            {DOT_VOCABULARY.map((entry) => (
+              <div className="gsi-dot-row" key={entry.phase}>
+                <span className="gsi-dot-cell">
+                  <Dot
+                    phase={entry.phase}
+                    size={TUG_SESSION_ROW_INDICATOR_SIZE}
+                  />
+                </span>
+                <span className="gsi-dot-cell">
+                  <Dot phase={entry.phase} size={SMALL_DOT_SIZE} />
+                </span>
+                <span className="gsi-dot-label">{entry.label}</span>
+                <span className="gsi-dot-meaning">{entry.meaning}</span>
+              </div>
+            ))}
+          </div>
+        </Frame>
+        <p className="gsi-blurb">
+          The mapping is the shipped one (<code>session-phase-visual</code>):
+          idle draws the quiet inherit rung at half the box, work pulses in
+          the key tone, awaiting pulses caution, background breathes, danger
+          is red. What changes is the <em>reach</em> — the dot becomes the
+          session mark on every surface, including ones with no live card,
+          which is where the doubt rule does its work.
+        </p>
+      </Section>
+
+      <TugSeparator />
+
+      {/* ================================================================ */}
+      <Section
+        title="The title grammar — the user's name leads"
+        blurb={
+          <>
+            When a user names a session they are explicitly telling us what
+            it is called, and that name cannot sit below a callsign we
+            minted. The grammar: <code>{"<custom-name> : <callsign>"}</code>{" "}
+            when named, bare <code>{"<callsign>"}</code> when not. The custom
+            name takes the title weight; the callsign steps back to a
+            quieter run — still present, because it is the permanent citable
+            handle a rename never changes. This obliges the resolver to
+            stop conflating: <code>SessionIdentity.title</code> (the{" "}
+            <code>name ?? synopsis</code> merge) splits into{" "}
+            <code>customName</code> and <code>description</code>.
           </>
         }
       >
         <div className="gsi-candidate-grid">
-          <Frame label="presence">
-            <CallsignText tag={UNNAMED.tag} context={UNNAMED.project} />
+          <Frame label="un-named — the callsign is the title">
+            <div className="gsi-title-sample">
+              <Dot phase={LIVE.phase} size={SMALL_DOT_SIZE} />
+              <TitleRun f={LIVE} />
+            </div>
           </Frame>
-          <Frame label="presence — a longer callsign">
-            <CallsignText tag={BRANCHED.tag} context={BRANCHED.project} />
+          <Frame label="custom-named — the user's word leads, the callsign steps back">
+            <div className="gsi-title-sample">
+              <Dot phase={NAMED_REST.phase} size={SMALL_DOT_SIZE} />
+              <TitleRun f={NAMED_REST} />
+            </div>
           </Frame>
-          <Frame label="citation — the session atom">
-            <SessionAtom tag={UNNAMED.tag} context={UNNAMED.project} />
-          </Frame>
-          <Frame label="the squared house badge, for contrast — what the atom is NOT">
-            <TugBadge
-              emphasis="tinted"
-              role="data"
-              size="sm"
-              icon={<MessageSquare />}
-            >
-              {UNNAMED.project}/{UNNAMED.tag}
-            </TugBadge>
+          <Frame label="a longer pair, under a narrow budget — the name truncates, the callsign survives">
+            <div className="gsi-title-sample gsi-title-narrow">
+              <Dot phase={NAMED_LIVE.phase} size={SMALL_DOT_SIZE} />
+              <TitleRun f={NAMED_LIVE} />
+            </div>
           </Frame>
         </div>
+      </Section>
 
+      <TugSeparator />
+
+      {/* ================================================================ */}
+      <Section
+        title="The masthead — three rows, two naming states"
+        blurb={
+          <>
+            Row one: the dot, the title, the telemetry wave, close — the
+            width control is gone. Row two: the description, or the creation
+            stamp while no description exists yet, so the line is never
+            blank. Row three: the activity line and the tape. At rest the
+            activity reads{" "}
+            <code>{"<turns> turns, <size>. <last-updated>. Ready."}</code>;
+            mid-turn it carries the live beat and the tape animates.
+            Right-clicking the title copies the session <em>atom</em> — all
+            flavors.
+          </>
+        }
+      >
+        <Frame label={`fresh session — no turns: the creation stamp holds the description line (${FRESH.note})`}>
+          <div className="gsi-pane-mock">
+            <ProtoMasthead f={FRESH} seed={11} />
+          </div>
+        </Frame>
+        <Frame label={`resumed, un-named, at rest (${EXTERNAL.note})`}>
+          <div className="gsi-pane-mock">
+            <ProtoMasthead f={EXTERNAL} seed={23} />
+          </div>
+        </Frame>
+        <Frame label={`custom-named, at rest (${NAMED_REST.note})`}>
+          <div className="gsi-pane-mock">
+            <ProtoMasthead f={NAMED_REST} seed={31} />
+          </div>
+        </Frame>
+        <Frame label={`custom-named, mid-turn — live beat, animated tape (${NAMED_LIVE.note})`}>
+          <div className="gsi-pane-mock">
+            <ProtoMasthead f={NAMED_LIVE} seed={47} />
+          </div>
+        </Frame>
+        <Frame label={`errored (${ERRORED.note})`}>
+          <div className="gsi-pane-mock">
+            <ProtoMasthead f={ERRORED} seed={53} />
+          </div>
+        </Frame>
         <p className="gsi-blurb">
-          The atom across the roster — a treatment is judged on many
-          callsigns, not one:
+          Two deltas from the shipped masthead, both deliberate. The{" "}
+          <code>project/</code> prefix leaves the title ink — the masthead
+          is inside the project&apos;s own card, and the prefix survives in
+          the tooltip, the citation, and the telemetry popover. And the
+          standing-intent line is cut: the stack is two levels under the
+          title, description then activity, because the description already
+          says what the session is for and two goal-shaped lines read as an
+          echo. The intent survives in the activity history popover, heading
+          its run of beats. Mid-turn the description stays the description —
+          it updates when the agent rewrites it, on its own clock — and the
+          activity line alone carries the turn&apos;s live beat.
         </p>
+      </Section>
+
+      <TugSeparator />
+
+      {/* ================================================================ */}
+      <Section
+        title="The rows — the Lens and the picker wear the masthead model"
+        blurb={
+          <>
+            One stack, three mounts. The Lens exchanges the small dot for
+            its across-the-room 28px indicator; the picker keeps the
+            masthead&apos;s 16. The old fourth line is gone — its facts
+            (time, turns, size) are the activity grammar&apos;s rest form
+            now, so a row at rest carries them and a row mid-turn shows the
+            beat instead, exactly like the masthead.
+          </>
+        }
+      >
+        <Frame label="the Lens Sessions section — large dot, same three lines">
+          <div className="gsi-list">
+            {[LIVE, NAMED_REST, EXTERNAL, ERRORED].map((f, i) => (
+              <ProtoRow key={f.tag} f={f} seed={60 + i} dot="lens" />
+            ))}
+          </div>
+        </Frame>
+        <Frame label="the new-session picker — small dot, same three lines">
+          <div className="gsi-list">
+            {[FRESH, LIVE, NAMED_LIVE, NAMED_REST, FORK].map((f, i) => (
+              <ProtoRow key={f.tag} f={f} seed={70 + i} dot="picker" />
+            ))}
+          </div>
+        </Frame>
+      </Section>
+
+      <TugSeparator />
+
+      {/* ================================================================ */}
+      <Section
+        title="The atom — a live pill"
+        blurb={
+          <>
+            The atom face becomes <code>{"[dot] <callsign>"}</code> — or{" "}
+            <code>{"[dot] <custom-name> : <callsign>"}</code> once the user
+            names the session. Both parts are <strong>live</strong>: the dot
+            reads the session&apos;s phase this second, and a rename
+            repaints every mounted atom. So the atom is a component with
+            subscriptions, never a static string or a baked image — pasted
+            atoms, Gazette refs, and History chips all stay current for as
+            long as they are on screen.
+          </>
+        }
+      >
+        <p className="gsi-blurb">The atom across the roster, phases live:</p>
         <div className="gsi-chip-row">
           {ROSTER.map((f) => (
-            <SessionAtom key={f.tag} tag={f.tag} context={f.project} />
+            <ProtoAtom key={f.tag} f={f} />
           ))}
         </div>
+        <div className="gsi-candidate-grid">
+          {/* The shipped component at every state it renders. This frame is
+              load-bearing beyond the contrast: the gallery is the fixture
+              bench the identity app-tests (at0374, at0376) drive, so the
+              line tier, both chip sizes, and the missing chip must stay
+              mounted here until the proposed forms ship INTO the component. */}
+          <Frame label="shipped today, for contrast — the real TugSessionIdentity: line, chip, 2xs, missing">
+            <div className="gsi-chip-row">
+              <TugSessionIdentity identity={fixtureIdentity(LIVE)} tier="line" />
+              <TugSessionIdentity identity={fixtureIdentity(LIVE)} tier="chip" />
+              <TugSessionIdentity
+                identity={fixtureIdentity(LIVE)}
+                tier="chip"
+                size="2xs"
+              />
+              <TugSessionIdentity
+                identity={fixtureIdentity(EXTERNAL)}
+                tier="chip"
+                missing
+              />
+            </div>
+          </Frame>
+          <Frame label="proposed — dot-led, name-first">
+            <ProtoAtom f={LIVE} />
+          </Frame>
+          <Frame label="missing — dashed shape, idle dot, inert (the slash retired with the icon)">
+            <ProtoAtom f={EXTERNAL} missing />
+          </Frame>
+          <Frame label="dense list ink — the 2xs cut">
+            <div className="gsi-chip-row">
+              <ProtoAtom f={LIVE} size="2xs" />
+              <ProtoAtom f={NAMED_REST} size="2xs" />
+            </div>
+          </Frame>
+          <Frame label="a named atom under a narrow budget — the name gives way, the callsign survives">
+            <span className="gsi-chip-narrow">
+              <ProtoAtom f={NAMED_LIVE} />
+            </span>
+          </Frame>
+        </div>
         <p className="gsi-blurb">
-          The session color is one theme-authored value — a role, like
-          danger or success, seeded from the <strong>agent</strong> family
-          (decided here after an audition against accent, link, and
-          success): the model&apos;s color, because a session is an agent
-          surface. The shipped token is hand-authored into the six theme
-          files and contrast-audited.
+          <strong>How the liveness works.</strong> Identity is already live:
+          the atom subscribes through <code>useSessionIdentity</code>, so a
+          rename or a callsign reroll repaints it with no new machinery.
+          Phase needs one new door: <code>useSessionPhase(sessionId)</code>,
+          a session-keyed hook that resolves the dot&apos;s reading in
+          precedence order — a card bound to the session answers from that
+          card&apos;s <code>codeSessionStore</code> (via{" "}
+          <code>cardSessionBindingStore</code> →{" "}
+          <code>cardServicesStore</code>); no bound card answers idle,
+          which the doubt rule makes correct rather than approximate. The
+          hook&apos;s snapshot is the flattened phase <em>key</em>, so the
+          per-card store&apos;s transcript-event churn wakes the
+          subscription but re-renders the atom only when the key actually
+          changes — the same discipline that keeps [P15]&apos;s identity
+          path quiet. All of it enters React through{" "}
+          <code>useSyncExternalStore</code> ([L02]), and the identity record
+          itself still carries no phase field — liveness and identity remain
+          two subscriptions with two keys that meet in the component.
         </p>
       </Section>
 
@@ -494,260 +919,56 @@ export function GallerySessionIdentity(): React.ReactElement {
 
       {/* ================================================================ */}
       <Section
-        title="Chip tier — the Gazette ref, before and after"
+        title="The telemetry popover — where the atom shows itself"
         blurb={
           <>
-            The Gazette is app-wide, so its citation carries project
-            context. The &quot;before&quot; is what ships today: the ref
-            chip&apos;s path-shaped label rule is a no-op on a UUID, so the
-            post prints all 36 characters.
+            The wave widget&apos;s popover keeps its facts and gains the
+            atom: the rendered pill, live, right above the flat citation —
+            so the two copyable forms of the session sit together, each
+            labeled by what a paste of it yields.
           </>
         }
       >
-        <Frame label="today — the raw UUID">
-          <div className="gsi-gazette-post">
-            <span className="gsi-gazette-glyph">
-              <Newspaper size={14} aria-hidden />
-            </span>
-            <div className="gsi-gazette-body">
-              <span className="gsi-gazette-stamp">2:14 PM</span>
-              <p>
-                Landed the FLIP width-scale change: panes now scale on the
-                tween instead of snapping at the settle.
-              </p>
-              <div className="gsi-gazette-refs">
-                <TugPushButton size="2xs" emphasis="outlined" role="data">
-                  4ad2f45e-f9af-46d6-ad4e-97f577156be1
-                </TugPushButton>
-                <TugPushButton size="2xs" emphasis="outlined" role="data">
-                  pane-flip.ts
-                </TugPushButton>
-              </div>
-            </div>
-          </div>
-        </Frame>
-        <Frame label="proposed — the citation badge, project context included">
-          <div className="gsi-gazette-post">
-            <span className="gsi-gazette-glyph">
-              <Newspaper size={14} aria-hidden />
-            </span>
-            <div className="gsi-gazette-body">
-              <span className="gsi-gazette-stamp">2:14 PM</span>
-              <p>
-                Landed the FLIP width-scale change: panes now scale on the
-                tween instead of snapping at the settle.
-              </p>
-              <div className="gsi-gazette-refs">
-                <SessionAtom
-                  tag={LIVE.tag}
-                  context={LIVE.project}
-                  size="2xs"
-                />
-                <TugPushButton size="2xs" emphasis="outlined" role="data">
-                  pane-flip.ts
-                </TugPushButton>
-              </div>
-            </div>
-          </div>
-        </Frame>
-        <Frame label="Changes card — the orphan hint adopts the same citation">
-          <div className="gsi-orphan-hint">
-            <TugLabel size="sm" emphasis="calm">
-              from
-            </TugLabel>
-            <SessionAtom
-              tag={BRANCHED.tag}
-              context={BRANCHED.project}
-              size="2xs"
-            />
-          </div>
-        </Frame>
-      </Section>
-
-      <TugSeparator />
-
-      {/* ================================================================ */}
-      <Section
-        title="Line tier — tab strip and menus"
-        blurb={
-          <>
-            One line, no chrome: <code>project/callsign</code>, the same
-            single run as everywhere else. The &quot;before&quot; is the
-            tab strip&apos;s current blind spot — a stacked Session card is
-            labeled by its registry title.
-          </>
-        }
-      >
-        <div className="gsi-candidate-grid">
-          <Frame label="tab strip today">
-            <span className="gsi-line">Session</span>
-          </Frame>
-          <Frame label="tab strip proposed">
-            <span className="gsi-line">
-              {UNNAMED.project}/{UNNAMED.tag}
-            </span>
-          </Frame>
-          <Frame label="window menu / slot picker">
-            <span className="gsi-line">
-              {BRANCHED.project}/{BRANCHED.tag}
-            </span>
-          </Frame>
-          <Frame label="line with the session icon — presence at one-line budget">
-            <CallsignText tag={UNNAMED.tag} context={UNNAMED.project} />
-          </Frame>
-        </div>
-      </Section>
-
-      <TugSeparator />
-
-      {/* ================================================================ */}
-      <Section
-        title="Row tier — the picker, callsign-first"
-        blurb={
-          <>
-            Today&apos;s picker leads with the incipit and buries the tag in
-            the metadata line at the timestamp&apos;s size and color. DECIDED
-            in the fifth round: the row is the masthead&apos;s three lines{" "}
-            <em>plus</em> the metadata line — <strong>four lines</strong>,{" "}
-            <em>Lens-like</em>. The phase dot leads and pulses while the
-            session runs; it settles small and quiet when it does not (that
-            dot is row furniture, not part of the reference — it never rides
-            a citation). The callsign leads the text in the presence register
-            without its icon, since the dot is already the row&apos;s leading
-            mark. The id is gone from ink — tooltip and trash-button label,
-            as today. The leading is the masthead&apos;s, exactly.
-          </>
-        }
-      >
-        <Frame label="today — incipit-first, tag buried (real TugListRow, current format)">
-          <div className="gsi-list">
-            {[LIVE, UNNAMED].map((f) => (
-              <TugListRow
-                key={f.tag}
-                title={f.name ?? "No prompts yet"}
-                subtitle={`${f.tag} · ${f.meta} · id ${f.shortId}`}
-              />
-            ))}
-          </div>
-        </Frame>
-        <Frame label="three lines — the current TugSessionRow, callsign-first (what the four-line form is judged against)">
-          <div className="gsi-list">
-            {[LIVE, UNNAMED, BRANCHED].map((f) => (
-              <TugSessionRow
-                key={f.tag}
-                indicator={<PhaseDot phase={f.phase} />}
-                name={
-                  <CallsignText tag={f.tag} context={f.project} icon={false} />
-                }
-                intent={f.name ?? "No prompts yet"}
-                activity={f.meta}
-              />
-            ))}
-          </div>
-        </Frame>
-        <Frame label="proposed — four lines: callsign, description, PULSE, metadata (same leading as the masthead)">
-          <div className="gsi-list">
-            {ROSTER.map((f) => (
-              <IdentityStack key={f.tag} f={f} variant="row" />
-            ))}
-          </div>
-        </Frame>
-      </Section>
-
-      <TugSeparator />
-
-      {/* ================================================================ */}
-      <Section
-        title="Masthead — the title bar grows up"
-        blurb={
-          <>
-            The baseline is the real <code>CardTitleBar</code> at{" "}
-            <code>--tug-chrome-height</code>. The masthead is DECIDED: the
-            three-line form — callsign, description, PULSE — at a fixed
-            second tier (<code>--tug-masthead-height</code>, one number,
-            never content-driven). It renders the callsign in the PRESENCE
-            register: the title bar is not a citation; it <em>is</em> the
-            session, so there is no chip to click through to anywhere.
-            Identity-only chrome, with telemetry one hover away behind the
-            wave widget. Overflow truncates; the bar never reflows.
-          </>
-        }
-      >
-        <Frame label="today — one line, 36px, one string">
-          <div className="gsi-pane-mock">
-            <CardTitleBar
-              title={`${LIVE.project}/${LIVE.tag}`}
-              icon="MessageSquare"
-              onClose={() => {}}
-            />
-          </div>
-        </Frame>
-
-        {[LIVE, BRANCHED].map((f) => (
-          <Frame
-            key={f.tag}
-            label={`masthead — callsign, description, PULSE (${f.note})`}
-          >
-            <div className="gsi-pane-mock">
-              <div className="gsi-masthead">
-                <IdentityStack
-                  f={f}
-                  variant="masthead"
-                  trailing={
-                    <>
-                      <span className="gsi-masthead-widget" title="Telemetry">
-                        <Waves size={14} aria-hidden />
-                      </span>
-                      <span className="gsi-masthead-control" title="Move">
-                        <ArrowLeftRight size={14} aria-hidden />
-                      </span>
-                      <span className="gsi-masthead-control" title="Close">
-                        <X size={14} aria-hidden />
-                      </span>
-                    </>
-                  }
-                />
-              </div>
-            </div>
-          </Frame>
-        ))}
-
-        <Frame label="the telemetry placard — what the wave widget opens">
+        <Frame label="the popover, updated — atom above citation; no PULSE ink anywhere in it">
           <div className="gsi-placard">
             <div className="gsi-placard-row">
               <span className="gsi-placard-key">STATE</span>
-              <span className="gsi-placard-value">live · streaming</span>
+              <span className="gsi-placard-value">live · working</span>
             </div>
             <div className="gsi-placard-row">
               <span className="gsi-placard-key">TURNS</span>
-              <span className="gsi-placard-value">11 · 4.7 MB</span>
+              <span className="gsi-placard-value">
+                {NAMED_LIVE.turns} · {NAMED_LIVE.size}
+              </span>
             </div>
             <div className="gsi-placard-row">
               <span className="gsi-placard-key">CREATED</span>
-              <span className="gsi-placard-value">Aug 8, 7:02 AM</span>
+              <span className="gsi-placard-value">{NAMED_LIVE.createdAt}</span>
             </div>
-            {/* Branch lives here, not in the identity: it is workspace
-                state that changes under a session, not part of its name. */}
             <div className="gsi-placard-row">
               <span className="gsi-placard-key">BRANCH</span>
-              <span className="gsi-placard-value">{BRANCHED.branch}</span>
+              <span className="gsi-placard-value">{NAMED_LIVE.branch}</span>
             </div>
             <div className="gsi-placard-row">
-              <span className="gsi-placard-key">SESSION</span>
+              <span className="gsi-placard-key">ATOM</span>
               <span className="gsi-placard-value">
-                {citation(BRANCHED)}
-                <span className="gsi-placard-copy" title="Copy citation">
-                  <Copy size={11} aria-hidden />
-                </span>
+                <ProtoAtom f={NAMED_LIVE} size="2xs" />
               </span>
             </div>
-            <TugPulse
-              layout="stacked"
-              headline="Scaling panes on the FLIP tween"
-              activity="Edit pane-flip.ts"
-            />
+            <div className="gsi-placard-row">
+              <span className="gsi-placard-key">CITATION</span>
+              <span className="gsi-placard-value gsi-placard-citation">
+                {citation(NAMED_LIVE)}
+              </span>
+            </div>
           </div>
         </Frame>
+        <p className="gsi-blurb">
+          Copy paths, after this round: click the atom row&apos;s pill or
+          the citation&apos;s copy badge here; or right-click the
+          masthead&apos;s title anywhere, which writes the atom&apos;s full
+          flavor set without opening anything.
+        </p>
       </Section>
 
       <TugSeparator />
@@ -757,90 +978,54 @@ export function GallerySessionIdentity(): React.ReactElement {
         title="The citation — flat text, and the History card"
         blurb={
           <>
-            <code>{"<tag> (<short-id>)"}</code> is the only sanctioned
-            flat-text form — mono belongs here, in actual flat text, and
-            nowhere in session chrome. The commit carries the human trailer
-            plus a machine <code>Tug-Session-Id</code> line; the History
-            card parses both out server-side, strips them from the body,
-            and renders the citation resolved — the badge when the ledger
-            knows the session, quiet text when it does not.
+            Unchanged in grammar: <code>{"<tag> (<short-id>)"}</code> is the
+            only flat-text form, mono belongs to it alone, and the commit
+            carries the human trailer plus the machine{" "}
+            <code>Tug-Session-Id</code>. What changes is the chip the
+            History card resolves it into — the dot-led atom, live like
+            every other mount.
           </>
         }
       >
-        <Frame label="trailer today — truncated incipit + full UUID, unparsed body ink">
-          <pre className="gsi-trailer">
-            {
-              "Tug-Session: When I click *Cards* or *Card Width* controls in the *Layouts* s…\n(4ad2f45e-f9af-46d6-ad4e-97f577156be1)"
-            }
-          </pre>
-        </Frame>
-        <Frame label="trailer proposed — citation + machine id">
+        <Frame label="the trailer pair — citation + machine id">
           <pre className="gsi-trailer">
             {`Tug-Session: ${citation(LIVE)}\nTug-Session-Id: 4ad2f45e-f9af-46d6-ad4e-97f577156be1`}
           </pre>
         </Frame>
-        <Frame label="History identity line — the citation badge beside the sha, trailer stripped from the body">
+        <Frame label="History identity line — the atom beside the sha">
           <div className="gsi-history-line">
             <code className="gsi-history-sha">8ab71840</code>
             <span className="gsi-history-subject">
               tugdeck(content-width-scale): scale panes on the FLIP tween
             </span>
-            <SessionAtom tag={LIVE.tag} context={LIVE.project} size="2xs" />
+            <ProtoAtom f={LIVE} size="2xs" />
           </div>
         </Frame>
-        <Frame label="History identity line — session unknown to this ledger: the slashed atom, inert">
+        <Frame label="History identity line — session unknown to this ledger: dashed, idle-dotted, inert">
           <div className="gsi-history-line">
             <code className="gsi-history-sha">b8b7f0c1</code>
             <span className="gsi-history-subject">
               tugdeck(content-width): let Settings follow content width
             </span>
-            <SessionAtom
-              tag={BRANCHED.tag}
-              context={BRANCHED.project}
-              size="2xs"
-              missing
-            />
+            <ProtoAtom f={EXTERNAL} size="2xs" missing />
           </div>
         </Frame>
-        <p className="gsi-blurb">
-          The unresolvable citation, DECIDED in the fifth round. The atom
-          keeps its shape — a reader should still know what <em>kind</em> of
-          thing is named — and states the failure in the one mark that
-          already carries the meaning &quot;session&quot;: the icon gains a
-          slash. It is <strong>inert</strong>: no link, no raise, no hover
-          placard; the tooltip says <em>Session not found</em> rather than
-          repeating the tag. Resolved beside unresolved, at both sizes:
-        </p>
-        <div className="gsi-chip-row">
-          <SessionAtom tag={LIVE.tag} context={LIVE.project} />
-          <SessionAtom tag={LIVE.tag} context={LIVE.project} missing />
-          <SessionAtom tag={LIVE.tag} context={LIVE.project} size="2xs" />
-          <SessionAtom
-            tag={LIVE.tag}
-            context={LIVE.project}
-            size="2xs"
-            missing
-          />
-        </div>
       </Section>
 
       <TugSeparator />
 
       {/* ================================================================ */}
       <Section
-        title="The atom on the clipboard — copy a session, paste a session"
+        title="The atom on the clipboard — unchanged flavors, live face"
         blurb={
           <>
-            A session atom is a real Tug <strong>atom</strong>, so copying
-            one and pasting it into a Tug surface pastes the{" "}
-            <em>atom</em>, not a string. Tug already has the machinery: the
-            native clipboard writes three flavors at once (
-            <code>lib/tug-native-clipboard.ts</code>), and atoms round-trip
-            through prompt text as a wire marker (
-            <code>lib/atom-mention-marker.ts</code>). The session atom
-            joins that system rather than inventing one — which is also
-            what makes the flat-text citation earn its keep: it is the
-            plain-text flavor.
+            Copying an atom still writes the flavors Tug already speaks —
+            the private sidecar, the plain-text citation, and the wire
+            marker at submit; <code>text/html</code> stays struck. The
+            change is on the paste side: what re-materializes in a Tug
+            surface is the live dot-led component, so a pasted atom&apos;s
+            dot starts reporting the session&apos;s phase the moment it
+            lands.
           </>
         }
       >
@@ -849,27 +1034,21 @@ export function GallerySessionIdentity(): React.ReactElement {
             [
               [
                 "dev.tug.prompt-atoms",
-                "the Tug-private sidecar",
-                `{"kind":"session","tag":"${LIVE.project}/${LIVE.tag}","id":"${LIVE.shortId}"}`,
-                "Paste into a Tug composer, a Jot, a Gazette reply → the atom re-materializes as the pill, live and clickable.",
+                "the Tug-private sidecar (one session segment; whether it should also carry the short id is open)",
+                `{"version":1,"text":"￼","atoms":[{"position":0,"segment":{"kind":"atom","type":"session","label":"${LIVE.project}/${LIVE.tag}","value":"${LIVE.project}/${LIVE.tag}"}}]}`,
+                "Paste into a Tug composer, a Jot, a Gazette reply → the live atom re-materializes.",
               ],
               [
                 "text/plain",
                 "the citation — the flat-text form",
                 `${LIVE.project}/${LIVE.tag} (${LIVE.shortId})`,
-                "Paste into a terminal, a commit message, another app → the citation, which is exactly the trailer grammar.",
-              ],
-              [
-                "text/html",
-                "the styled fallback",
-                `<span data-tug-session="${LIVE.shortId}">${LIVE.project}/${LIVE.tag}</span>`,
-                "Paste into a rich-text surface that is not Tug → the callsign, styled, carrying its id in a data attribute.",
+                "Paste into a terminal, a commit message, another app → the citation, exactly the trailer grammar.",
               ],
               [
                 "wire marker",
                 "what the model reads, and what replay re-mints",
                 `\`@${LIVE.project}/${LIVE.tag}\``,
-                "Submitted prompt text keeps the mention's structural identity, so a replayed transcript shows a chip and not prose.",
+                "Submitted prompt text keeps the mention's structural identity, so a replayed transcript shows the atom and not prose.",
               ],
             ] as const
           ).map(([flavor, role, payload, effect]) => (
@@ -881,16 +1060,14 @@ export function GallerySessionIdentity(): React.ReactElement {
             </div>
           ))}
         </div>
-
-        <Frame label="the round trip — copied from a Gazette post, pasted into a composer">
+        <Frame label="the round trip — copied from a History line, pasted into a composer">
           <div className="gsi-roundtrip">
-            <SessionAtom tag={LIVE.tag} context={LIVE.project} />
+            <ProtoAtom f={LIVE} />
             <span className="gsi-roundtrip-arrow" aria-hidden="true">
               →
             </span>
             <span className="gsi-roundtrip-composer">
-              Pick up where <SessionAtom tag={LIVE.tag} context={LIVE.project} />{" "}
-              left off
+              Pick up where <ProtoAtom f={LIVE} /> left off
             </span>
           </div>
         </Frame>
@@ -900,26 +1077,20 @@ export function GallerySessionIdentity(): React.ReactElement {
 
       {/* ================================================================ */}
       <Section
-        title="Lineage — the fork grammar at chip size"
+        title="Lineage — the fork grammar at atom size"
         blurb={
           <>
             <code>{"<root>-<Letter><Number>"}</code>: the letter names the
-            branch point, the number sequences forks from it, chains
-            extend. Deep chains truncate under a narrow budget; the tooltip
-            carries the whole line.
+            branch point, the number sequences forks from it, chains extend.
+            Unchanged by this round except for the face it rides on.
           </>
         }
       >
         <div className="gsi-chip-row">
           {LINEAGE.map((tag) => (
-            <SessionAtom key={tag} tag={tag} context="tugtool" />
+            <ProtoAtom key={tag} f={{ ...FRESH, tag }} />
           ))}
         </div>
-        <Frame label="a deep chain under a narrow budget (prototype ellipsizes at the end; production middle-truncates so root and leaf survive)">
-          <span className="gsi-chip-narrow">
-            <SessionAtom tag="stocky-pixie-A1-B2-C1" context="tugtool" />
-          </span>
-        </Frame>
       </Section>
     </div>
   );
