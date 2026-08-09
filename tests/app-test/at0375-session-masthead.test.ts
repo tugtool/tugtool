@@ -742,4 +742,130 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "clicking the pulse line opens its history without flashing the title bar",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375d-"));
+      const app = await launchTugApp({
+        testName: "at0375-session-masthead-flash",
+      });
+      try {
+        await app.seedDeckState({ state: deckShape(["S"], "S"), focusCardId: "S" });
+        await app.bindSession("S", {
+          tugSessionId: SESSION_ID,
+          projectDir: dir,
+        });
+        await app.evalJS<boolean>(
+          `window.__tug.publishSessionUpdated(${JSON.stringify(
+            sessionUpdated({ tag: TAG, name: null, name_user_set: false }),
+          )})`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        // Sampled across the click rather than read after it. The regression
+        // this guards was a TRANSIENT: a `:hover` wash on the line rose over
+        // its transition and faded straight back out, because opening the
+        // history popover takes `:hover` off everything outside the popover
+        // while the cursor never moves. Both endpoints read transparent; only
+        // the ~100ms between them ever showed the tint, which is precisely
+        // what a reader sees as the title bar flashing under the pointer.
+        // 16ms ticks on `setInterval`, never rAF — a background app-test
+        // window runs no rAF at all.
+        await app.evalJS<boolean>(
+          `(function(){
+            var stage = document.querySelector('.session-masthead-stage');
+            window.__washes = [];
+            window.__washId = setInterval(function(){
+              window.__washes.push(getComputedStyle(stage).backgroundColor);
+            }, 16);
+            return true;
+          })()`,
+        );
+        const point = await app.evalJS<{ x: number; y: number }>(
+          `(function(){
+            var b = document.querySelector('.session-masthead-stage')
+              .getBoundingClientRect();
+            return {
+              x: Math.round(b.left + b.width / 3),
+              y: Math.round(b.top + b.height / 2),
+            };
+          })()`,
+        );
+        await app.nativeClick(point, { activateFirst: false });
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll('[data-radix-popper-content-wrapper]').length > 0`,
+          { timeoutMs: 5000 },
+        );
+        // The popover mounting is not the end of the window: the wash faded
+        // over the transition AFTER hover was revoked, so the samples that
+        // caught the regression are the ones taken past this point.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const washes = await app.evalJS<string[]>(
+          `(function(){ clearInterval(window.__washId); return window.__washes; })()`,
+        );
+        // Every sample is a fully transparent color, whatever notation the
+        // engine chose for it: `rgba(0, 0, 0, 0)` at rest, `oklab(… / 0)` once
+        // a transition has ever touched the property.
+        const painted = washes.filter(
+          (w) => !/\/\s*0\)$/.test(w) && w !== "rgba(0, 0, 0, 0)" && w !== "transparent",
+        );
+        note("pulse-line wash samples", `${washes.length} (painted: ${painted.length})`);
+        if (painted.length > 0) note("painted wash", painted.join(" | "));
+        expect(painted).toEqual([]);
+
+        // ---- And the PRESS pose, which is the loud one. -------------------
+        // `TugSessionRow` is a list row, and a list row answers pointer-down
+        // with an accent layer. Here the row IS the chrome tier, so that layer
+        // filled the entire title bar accent-blue on every press — including
+        // the press that starts a card drag, which is most of them.
+        //
+        // Read on the ROW's `::after` while the button is genuinely down, and
+        // that detail is the whole test: the press is `:active`, which no
+        // synthetic event produces, and the layer is a pseudo-element, which
+        // `getComputedStyle(el)` does not report. A probe that polled the
+        // row's own computed style across a click saw nothing at all.
+        await app.nativeKey("Escape");
+        const barPoint = await app.evalJS<{ x: number; y: number }>(
+          `(function(){
+            var b = document.querySelector(${JSON.stringify(TITLE_BAR)})
+              .getBoundingClientRect();
+            return {
+              x: Math.round(b.left + b.width * 0.6),
+              y: Math.round(b.top + b.height / 2),
+            };
+          })()`,
+        );
+        await app.nativeMouseDown(barPoint);
+        try {
+          const press = await app.evalJS<{ active: boolean; bg: string; opacity: string }>(
+            `(function(){
+              var row = document.querySelector(
+                ${JSON.stringify(MASTHEAD)} + ' .tug-list-row');
+              var cs = getComputedStyle(row, '::after');
+              return {
+                active: row.matches(':active'),
+                bg: cs.backgroundColor,
+                opacity: cs.opacity,
+              };
+            })()`,
+          );
+          note("masthead row press layer", JSON.stringify(press));
+          // The press must actually be in force, or the assertion below is
+          // vacuous — this is the guard that keeps the test honest.
+          expect(press.active).toBe(true);
+          expect(press.bg).toMatch(/\/\s*0\)$|^rgba\(0, 0, 0, 0\)$|^transparent$/);
+        } finally {
+          await app.nativeMouseUp(barPoint);
+        }
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

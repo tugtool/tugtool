@@ -78,6 +78,16 @@
      3px of it would push the dot off the vertical the pane's own title sits on. */
   --tugx-list-row-indicator-gutter: 0px;
   --tugx-list-row-flush-hover-bg: transparent;
+  /* And the PRESS pose goes with the hover wash, for the same reason and one
+     more. A list row paints an accent press layer on pointer-down because a row
+     whose click acts without leaving a selection behind would otherwise answer
+     the press with nothing. This row's click does not act: the title bar is the
+     pane's ACTIVATION/DRAG surface, so the press belongs to the card being
+     picked up, not to the row. Left on, the layer is the width of the chrome
+     tier — every click anywhere in the title bar, including the one that starts
+     a drag, filled the whole bar accent-blue and let it fade. */
+  --tugx-list-row-pressed-bg: transparent;
+  --tugx-list-row-selected-pressed-bg: transparent;
   --tugx-session-row-leading-inset: 0px;
   --tugx-session-row-trailing-inset: 0px;
   /* The three-level stack's block padding stands its block off the RULES
@@ -207,17 +217,18 @@
 
    The line is the trigger because the `PULSE` pill it used to be is now a
    placeholder rather than a permanent label. A whole run of prose is a large
-   click target for a popover, so it declares nothing but the pointer and the
-   faintest hover wash — enough to answer "is this clickable?" without turning
-   a line of chrome into a button. */
+   click target for a popover, so it declares nothing but the pointer.
+
+   It carries NO hover wash, and the reason is that a wash here could only ever
+   blink. The wash was a bare `:hover` rule, and the click that would justify it
+   opens the history popover — whose dismissable layer takes `:hover` off
+   everything outside itself while the cursor never moves. So the tint rose over
+   its transition and faded straight back out again inside ~100ms, every click:
+   a flash on a title bar, in exchange for feedback that was gone by the time
+   the popover it announced had finished opening. The pointer is the whole
+   affordance. */
 .session-masthead-stage {
   cursor: pointer;
-  border-radius: var(--tug-radius-sm, 4px);
-  transition: background-color 0.1s ease;
-}
-
-.session-masthead-stage:hover {
-  background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
 }
 
 /* The tape's trigger wears the same ghost tint as the legend, so both entry
