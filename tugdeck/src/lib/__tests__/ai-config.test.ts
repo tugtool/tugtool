@@ -13,8 +13,12 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { CapabilityModel } from "@/lib/session-metadata-store";
+import type {
+  CapabilityModel,
+  SessionMetadataSnapshot,
+} from "@/lib/session-metadata-store";
 import { modelIdToSelector } from "@/lib/model-picker-data";
+import { DEFAULT_EFFORT_LEVEL } from "@/lib/effort";
 import {
   AI_CONFIG_DOMAIN,
   AI_CONFIG_LAST_ROW_KEY,
@@ -22,6 +26,7 @@ import {
   computeAiConfigCommit,
   formatAiConfigSummary,
   parseAiConfigRow,
+  resolveAiConfigSources,
   type AiConfigBaseline,
 } from "@/lib/ai-config";
 
@@ -212,6 +217,71 @@ describe("selector collapse against the default row", () => {
     expect(computeAiConfigCommit(baseline, pending)).toEqual([
       { kind: "model", value: "sonnet" },
     ]);
+  });
+});
+
+/**
+ * The one resolution both editing surfaces read through — the mixer sheet's
+ * open-time baseline and the Settings card's AI Model box. What is pinned here
+ * is what stops those two from resolving "current" differently.
+ */
+describe("resolveAiConfigSources", () => {
+  const CATALOG: CapabilityModel[] = [
+    {
+      value: "default",
+      displayName: "Default (recommended)",
+      description: "Opus 5 · Best for everyday, complex tasks",
+      supportsEffort: true,
+      supportedEffortLevels: ["low", "medium", "high", "xhigh", "max"],
+    },
+    {
+      value: "haiku",
+      displayName: "Haiku",
+      description: "Haiku 4.5 · Fastest for quick answers",
+    },
+  ];
+
+  function snapshot(
+    over: Partial<SessionMetadataSnapshot> = {},
+  ): SessionMetadataSnapshot {
+    return {
+      sessionId: null,
+      model: "default",
+      permissionMode: "default",
+      cwd: null,
+      version: null,
+      slashCommands: [],
+      models: CATALOG,
+      effort: null,
+      ...over,
+    };
+  }
+
+  test("an unset effort resolves to the EFFECTIVE level, not to null", () => {
+    const sources = resolveAiConfigSources(snapshot(), CATALOG, null);
+    expect(sources.value.modelSelector).toBe("default");
+    expect(sources.value.effortLevel).toBe(DEFAULT_EFFORT_LEVEL);
+    expect(sources.options).toBe(CATALOG);
+  });
+
+  test("a model offering no effort resolves the level to null", () => {
+    const sources = resolveAiConfigSources(
+      snapshot({ model: "haiku", effort: "high" }),
+      CATALOG,
+      null,
+    );
+    expect(sources.value.effortLevel).toBeNull();
+  });
+
+  test("the persisted per-card mode is the fallback, and null means none", () => {
+    expect(
+      resolveAiConfigSources(snapshot({ permissionMode: null }), CATALOG, "plan")
+        .value.mode,
+    ).toBe("plan");
+    expect(
+      resolveAiConfigSources(snapshot({ permissionMode: "auto" }), CATALOG, "plan")
+        .value.mode,
+    ).toBe("auto");
   });
 });
 

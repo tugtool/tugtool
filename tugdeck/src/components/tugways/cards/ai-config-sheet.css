@@ -1,6 +1,6 @@
-/* @tug-pairings: none — the sheet shell sets a text color for its own readout
-   and description text only; the controls' color comes from `TugListView`,
-   `TugSlider`, `TugChoiceGroup`, and `TugLabel` ([L20]). */
+/* @tug-pairings: none — the sheet is a frame around `AiConfigEditor` and adds
+   only the doors below it; every color inside comes from the editor and the
+   composed `Tug*` controls ([L20]). */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-sheet {
@@ -9,122 +9,14 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  /* The channel stack carries the sheet's rhythm (`.ai-config-channels`); the
-     gaps at THIS level only separate the readout, the stack, the scope note,
-     and the doors, so they stay a step tighter — the sheet's whole height is
-     what decides whether it scrolls. */
+  /* The editor carries its own internal rhythm; the gaps at THIS level only
+     separate the editor from the doors and the action row, so they stay a
+     step tighter — the sheet's whole height is what decides whether it
+     scrolls. */
   gap: var(--tug-space-sm);
 }
 
-/* ---------------------------------------------------------------------------
- * The readout — the pending state, in the largest type on the surface
- * -------------------------------------------------------------------------*/
-
-/* One type size for the whole line — the three values are one sentence, so a
-   size step between them reads as a size accident rather than a hierarchy.
-   Weight alone carries the emphasis. The size is the sheet TITLE's own knob:
-   the readout is the loudest thing in the sheet's body, but it never out-shouts
-   the sheet's name. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.ai-config-readout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  column-gap: var(--tug-space-xs);
-  text-align: center;
-  font-size: var(--tugx-header-title-size);
-  line-height: var(--tugx-header-title-lh);
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* The model carries the most weight: it is the decision the other two
-   qualify. */
-.ai-config-readout-model {
-  font-weight: var(--tug-font-weight-bold);
-}
-
-.ai-config-readout-rest {
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-/* The separators are punctuation, not content — quieter than the values they
-   stand between. Their spacing is the literal spaces around the glyph, not a
-   margin, so the readout's text reads correctly when taken as a string. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.ai-config-readout-sep {
-  white-space: pre;
-  font-weight: var(--tug-font-weight-normal);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* ---------------------------------------------------------------------------
- * The channels — one per parameter: caption, control, description
- * -------------------------------------------------------------------------*/
-
-.ai-config-channels {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-md);
-}
-
-.ai-config-channel {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--tug-space-xs);
-}
-
-.ai-config-caption {
-  white-space: nowrap;
-}
-
-/* The model channel is the only one without a description under it, so it
-   alone has to spell out the separation from the channel below — and it is
-   spelling out a gap the space scale has no step for (`lg` is 12px), hence
-   the multiple. */
-.ai-config-channel-model {
-  margin-block-end: calc(var(--tug-space-lg) * 2.5);
-}
-
-/* The track's wrapper. The slider's own ticks are inset by half a thumb, so
-   the first and last tick LABELS overhang it; the inset here keeps them inside
-   the channel's edges. Sizing a composed child belongs on a wrapper, never on
-   the child's own class [L20]. */
-.ai-config-track {
-  display: flex;
-  padding-inline: var(--tug-space-sm);
-}
-
-/* Each channel's own description, centered under the control it describes.
-   Reserved at one line so swapping between two one-line descriptions never
-   moves the sheet's height. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.ai-config-note {
-  min-block-size: calc(
-    var(--tug-font-size-sm) * var(--tug-line-height-normal)
-  );
-  font-size: var(--tug-font-size-sm);
-  line-height: var(--tug-line-height-normal);
-  text-align: center;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* The scope note: whose settings these are. It sits directly under the readout
-   because it qualifies the readout — the readout says WHAT OK commits, this
-   says WHERE it lands — and quieter than a channel description because it
-   describes the whole sheet rather than one control. */
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.ai-config-scope {
-  /* The same size as a channel's description: both are the sheet's explanatory
-     voice, one about the whole sheet and one about a single control. */
-  font-size: var(--tug-font-size-sm);
-  line-height: var(--tug-line-height-normal);
-  text-align: center;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
-/* The doors below the channels are ghost buttons: each hugs its own label
+/* The doors below the editor are ghost buttons: each hugs its own label
    rather than stretching to the sheet's width, so they read as links in a
    column and not as a stack of full-width bars. */
 .ai-config-footer {

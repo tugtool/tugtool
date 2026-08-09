@@ -3,7 +3,7 @@
  *
  * The editor/response preferences that previously lived behind the Dev
  * card's title-bar `…` sheet, now hosted by the Settings card's
- * "Session Card" tab. Three stacked sections:
+ * "Sessions" tab. Three stacked sections:
  *
  *   1. **Response** — Magnification (CSS `zoom` on the transcript
  *      root, per card) and the inter-entry vertical gap. The macOS
@@ -12,10 +12,14 @@
  *   2. **Prompt Editor** — typography, view toggles, and submit-key
  *      policy for the prompt editor.
  *   3. **AI Model** — the deck-wide default model / reasoning effort /
- *      permission mode new cards adopt on first open, edited through the
- *      *same* chip + mixer sheet as the Session card's Z4B row, bound to the
- *      deck defaults via `DefaultsMetadataAdapter` — one editor, rich labels,
- *      no parallel dropdown UI.
+ *      permission mode new cards adopt on first open. The control is
+ *      {@link AiConfigEditor} — the very component the Session card's mixer
+ *      sheet shows, not a copy of it — bound to the deck defaults via
+ *      `DefaultsMetadataAdapter` and rendered on the page rather than behind a
+ *      button, because a settings panel shows its settings. Only the scope
+ *      line differs. There is no OK because there is nothing to batch: a deck
+ *      default respawns nothing, so each move writes at once, like every other
+ *      control on this panel.
  *
  * Self-contained: the panel constructs its own `EditorSettingsStore` /
  * `ResponseSettingsStore` instances at mount and disposes them on
@@ -44,12 +48,15 @@ import { TugSlider } from "../tug-slider";
 import { TugSwitch } from "../tug-switch";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { useResponderForm } from "../use-responder-form";
-import { useTugSheet } from "../tug-sheet";
-import { AiChip } from "./ai-chip";
-import { useAiConfigSheet } from "./ai-config-sheet";
+import { AiConfigEditor } from "./ai-config-editor";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { ResponseSettingsStore } from "@/lib/response-settings-store";
 import { DefaultsMetadataAdapter } from "@/lib/defaults-metadata-adapter";
+import {
+  computeAiConfigCommit,
+  resolveAiConfigSources,
+  type AiConfigBaseline,
+} from "@/lib/ai-config";
 import { createNumberFormatter } from "@/lib/tug-format";
 import "./settings-session-card-body.css";
 
@@ -126,38 +133,6 @@ export function SettingsSessionCardBody() {
     [editorStore, responseStore, defaultsAdapter],
   );
 
-  // One sheet host for the Assistant editor — the same single-host pattern the
-  // Session card uses, so opening it replaces any other open sheet.
-  //
-  // No cardId: this is the defaults context, so the sheet seeds from the
-  // adapter's values (the deck defaults) with no per-card fallback, and no
-  // footer — there is no session cwd for permission rules and no live Claude
-  // Code version to report. And no turn to race, so the commit takes no guard:
-  // the refusal hook is a session concern the injected executor owns, which is
-  // the point of injecting it.
-  const assistantSheet = useTugSheet();
-  const { openAiConfigSheet } = useAiConfigSheet({
-    sessionMetadataStore: defaultsAdapter,
-    showSheet: assistantSheet.showSheet,
-    onCommit: (actions) => {
-      for (const action of actions) {
-        switch (action.kind) {
-          case "mode":
-            defaultsAdapter.permissionModeStore.set(action.value);
-            break;
-          case "model":
-            defaultsAdapter.modelStore.set(action.value);
-            break;
-          case "effort":
-            defaultsAdapter.effortStore.set(action.value);
-            break;
-        }
-      }
-      return true;
-    },
-    scopeNote: "Settings for every new session",
-  });
-
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
@@ -166,6 +141,46 @@ export function SettingsSessionCardBody() {
     responseStore.subscribe,
     responseStore.getSnapshot,
   );
+
+  // ---- The AI Model channels, bound live to the deck defaults ----
+  //
+  // The adapter's snapshot is the persisted catalog plus the three default
+  // selections, read into channel sources by the same `resolveAiConfigSources`
+  // the mixer sheet reads a live session with — one resolution, so "which row
+  // is active, which effort is in effect, which mode applies" cannot come to
+  // mean two things. The live list and the catalog are the same array here:
+  // there is no session behind the defaults to report a narrower one, and no
+  // per-card mode to fall back to — this IS the deck-wide value.
+  const defaults = useSyncExternalStore(
+    defaultsAdapter.subscribe,
+    defaultsAdapter.getSnapshot,
+  );
+  const aiSources = resolveAiConfigSources(defaults, defaults.models, null);
+
+  // No transaction: a deck default costs nothing to change — nothing respawns,
+  // no session moves — so each move writes at once, like every other control
+  // on this panel. The mixer sheet's OK exists because a *session's*
+  // model+effort change costs a respawn; there is none to batch here. It still
+  // goes through `computeAiConfigCommit`, so a move carrying two changes (a
+  // model that clamps the effort under it) applies exactly the actions, in
+  // exactly the order, that OK would.
+  const onAiChange = (next: AiConfigBaseline): void => {
+    for (const action of computeAiConfigCommit(aiSources.value, next)) {
+      switch (action.kind) {
+        case "mode":
+          defaultsAdapter.permissionModeStore.set(action.value);
+          break;
+        case "model":
+          defaultsAdapter.modelStore.set(action.value);
+          break;
+        case "effort":
+          defaultsAdapter.effortStore.set(action.value);
+          break;
+      }
+    }
+  };
+
+  const aiFocusGroup = useId();
 
   // Stable senders for the controls; the chain dispatches land on the
   // responder scope registered below.
@@ -355,23 +370,21 @@ export function SettingsSessionCardBody() {
           variant="bordered"
           className="settings-session-card-group"
         >
-          {/* Defaults new cards adopt on first open. A card that already
-              carries its own remembered value keeps it — changing these only
-              affects freshly-spawned cards. The control is the same chip +
-              mixer as the Z4B row, bound to the deck defaults through the
-              adapter — one editor, identical labels. */}
-          <div className="settings-session-card-row">
-            <AiChip
-              sessionMetadataStore={defaultsAdapter}
-              onOpenSheet={openAiConfigSheet}
+          {/* Defaults new cards adopt on first open — a card already carrying
+              its own remembered value keeps it. The mixer's editor itself,
+              on the page: a panel whose whole job is showing settings has no
+              business hiding three of them behind a button, and the scope
+              line is the one thing it says differently from the sheet. */}
+          <div className="settings-session-card-ai">
+            <AiConfigEditor
+              sources={aiSources}
+              value={aiSources.value}
+              onChange={onAiChange}
+              scopeNote="Defaults for new sessions. Existing sessions keep their settings."
+              focusGroup={aiFocusGroup}
             />
           </div>
-          <TugLabel size="sm" emphasis="calm">
-            Applied as the defaults to every new session card. Cards already
-            open keep the settings they carry.
-          </TugLabel>
         </TugBox>
-        {assistantSheet.renderSheet()}
       </div>
     </ResponderScope>
   );

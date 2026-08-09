@@ -68,12 +68,12 @@ interface SettingsSectionSpec {
 }
 
 const SECTIONS: readonly SettingsSectionSpec[] = [
-  // "General" wears a sliders icon for app-wide preferences; "Session Card"
+  // "General" wears a sliders icon for app-wide preferences; "Sessions"
   // wears the session card's own icon; "Text Card" a file icon.
   { id: "general", label: "General", Icon: Settings2, Body: SettingsGeneralBody },
   {
     id: "sessionCard",
-    label: "Session Card",
+    label: "Sessions",
     Icon: MessageSquareText,
     Body: SettingsSessionCardBody,
   },

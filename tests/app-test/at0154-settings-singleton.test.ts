@@ -22,6 +22,7 @@
  * without `TUGAPP_APP_TEST=1` skip every test.
  *
  * @covers tugdeck/src/components/tugways/cards/settings-card.tsx
+ * @covers tugdeck/src/components/tugways/cards/settings-card.css
  * @covers tugdeck/src/components/tugways/tug-tab-view.tsx
  * @covers tugdeck/src/card-registry.ts
  * @covers tugdeck/src/action-dispatch.ts
@@ -69,7 +70,28 @@ describe.skipIf(!SHOULD_RUN)("at0154: Settings card is a singleton", () => {
             (el.querySelector(".tug-tab-view-tab-label")?.textContent || "").trim(),
           )`,
         ),
-      ).toEqual(["General", "Session Card", "Text Card"]);
+      ).toEqual(["General", "Sessions", "Text Card"]);
+
+      // The sidebar is sized by its own names: narrower than the tab view's
+      // 190px default, and still wide enough that no label is clipped.
+      const sidebar = await app.evalJS<{ width: number; clipped: boolean }>(
+        `(function(){
+          var list = document.querySelector(
+            '[data-testid="settings-card"] .tug-tab-view-list',
+          );
+          var labels = Array.from(
+            list.querySelectorAll(".tug-tab-view-tab-label"),
+          );
+          return {
+            width: list.getBoundingClientRect().width,
+            clipped: labels.some(function (el) {
+              return el.scrollWidth > el.clientWidth;
+            }),
+          };
+        })()`,
+      );
+      expect(sidebar.width).toBeLessThan(190);
+      expect(sidebar.clipped).toBe(false);
       expect(
         await app.evalJS<number>(
           `document.querySelectorAll(

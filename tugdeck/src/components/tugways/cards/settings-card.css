@@ -21,3 +21,13 @@
   flex: 1;
   min-height: 0;
 }
+
+/* The sidebar is sized by its own names, not by a number. Three short labels
+   never needed the tab view's 190px default, and the leftover was read as a
+   column of empty chrome; `max-content` takes exactly the widest row (icon +
+   gap + label + the row's padding) and the extra trailing inset keeps the
+   longest label off the detail edge. */
+.settings-card .tug-tab-view-list {
+  --tugx-tab-view-list-width: max-content;
+  padding-inline-end: var(--tug-space-lg);
+}

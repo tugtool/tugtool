@@ -20,6 +20,10 @@
  *  - {@link clampEffortToSupport} — effort is model-gated, so picking a model
  *    in the sheet can strand the pending effort on a level that model does not
  *    offer.
+ *  - {@link resolveAiConfigSources} — the ONE reading of a metadata snapshot
+ *    into "which options, and what is currently set". Every surface that edits
+ *    these three settings resolves them here, so none of them can resolve them
+ *    slightly differently.
  *
  * Plus the sticky-row constants: the sheet remembers which row the user last
  * changed and opens focused there.
@@ -29,7 +33,17 @@
 
 import type { TaggedValue } from "@/lib/tugbank-client";
 import type { PermissionMode } from "@tugproto/inbound";
-import { EFFORT_LEVELS } from "@/lib/effort";
+import type {
+  CapabilityModel,
+  SessionMetadataSnapshot,
+} from "@/lib/session-metadata-store";
+import {
+  DEFAULT_EFFORT_LEVEL,
+  EFFORT_LEVELS,
+  resolveEffortSupport,
+} from "@/lib/effort";
+import { resolvePickerModels } from "@/lib/model-picker-data";
+import { resolvePermissionMode } from "@/lib/permission-mode";
 
 /** The three rows of the mixer sheet, in display order. */
 export const AI_CONFIG_ROWS = ["model", "effort", "mode"] as const;
@@ -147,6 +161,63 @@ export function computeAiConfigCommit(
     actions.push({ kind: "effort", value: pending.effortLevel });
   }
   return actions;
+}
+
+/**
+ * Everything the channel stack needs to render, derived from one metadata
+ * snapshot — see {@link resolveAiConfigSources}.
+ */
+export interface AiConfigSources {
+  /** The model rows to offer. */
+  options: CapabilityModel[];
+  /** The live capability list, for recomputing effort support per model. */
+  models: CapabilityModel[];
+  /** The persisted catalog behind the live list. */
+  catalog: CapabilityModel[] | null;
+  /** What the three channels currently read. */
+  value: AiConfigBaseline;
+}
+
+/**
+ * The ONE reading of "how is the AI configured" — options plus the resolved
+ * triple — for whatever store is behind it.
+ *
+ * Both surfaces that edit these three settings call this and nothing else: the
+ * session card's mixer sheet, which reads it once at open time to fix its
+ * baseline, and the Settings card's AI Model box, which reads it every render
+ * off the deck defaults. The resolution is not a thing either of them may do
+ * for itself — a second copy of "which row is active, what effort is in
+ * effect, which mode applies" is a second copy that drifts.
+ *
+ * `persistedMode` is the per-card fallback consulted before the first
+ * `system_metadata` round-trip ([D07]); pass `null` in the defaults context,
+ * where the store's own mode stands alone.
+ */
+export function resolveAiConfigSources(
+  snapshot: SessionMetadataSnapshot,
+  catalog: CapabilityModel[] | null,
+  persistedMode: string | null,
+): AiConfigSources {
+  const { options, activeValue } = resolvePickerModels(
+    snapshot.models,
+    snapshot.model,
+    catalog,
+  );
+  const support = resolveEffortSupport(snapshot.models, snapshot.model, catalog);
+  return {
+    options,
+    models: snapshot.models,
+    catalog,
+    value: {
+      modelSelector: activeValue,
+      // The EFFECTIVE level, matching what the chip shows — so re-confirming
+      // the model's default never costs a respawn.
+      effortLevel: support.supported
+        ? (snapshot.effort ?? DEFAULT_EFFORT_LEVEL)
+        : null,
+      mode: resolvePermissionMode(snapshot.permissionMode, persistedMode),
+    },
+  };
 }
 
 /**

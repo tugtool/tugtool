@@ -81,6 +81,13 @@
   min-width: 0;
 }
 
+/* The AI Model channels, inline. The box body packs its children to the
+   start, so the stack has to claim the width itself for the model list and
+   the effort track to span the box. */
+.settings-session-card-ai {
+  width: 100%;
+}
+
 /* Typography popups on one row. */
 .settings-session-card-row {
   display: flex;

@@ -1,21 +1,21 @@
 /**
- * at0200-assistant-defaults.test.ts — Settings → Assistant edits the deck
- * defaults through the same rich chips + sheets as the Z4B row, per-card
- * changes never disturb the defaults or other cards, and a saved model the
- * catalog no longer offers raises the card bulletin ([AT0200]).
+ * at0200-assistant-defaults.test.ts — Settings → AI Model edits the deck
+ * defaults through the mixer's own channels, inline; per-card changes never
+ * disturb the defaults or other cards, and a saved model the catalog no longer
+ * offers raises the card bulletin ([AT0200]).
  *
  * ## What this pins
  *
- *   1. **One editor, honest data.** The Assistant box renders the actual
- *      `ModelChip` / `PermissionModeChip` / `EffortChip` (no `TugPopupButton`
- *      remains for these three), and pressing one opens the same rich sheet
- *      the Z4B chip opens — title + description rows, not a dropdown. Before
- *      any session has ever reported capabilities there is NO model catalog
- *      and NO hardcoded list: the picker offers the single Default row with
- *      an explanation, and fills with real rows once capabilities persist.
- *   2. **Label parity + seeding.** Picking a default (Sonnet) updates the
- *      Settings chip AND seeds a card whose session then reports readiness —
- *      the two chips show the byte-identical label.
+ *   1. **One editor, honest data.** The AI Model box renders the mixer's
+ *      channel stack itself — the model option list, the effort track, the
+ *      mode group — with no chip and no sheet to press through (and no
+ *      `TugPopupButton` for these three). Before any session has ever reported
+ *      capabilities there is NO model catalog and NO hardcoded list: the list
+ *      offers the single Default row with an explanation, and fills with real
+ *      rows once capabilities persist.
+ *   2. **Live writes + seeding.** Picking a default (Sonnet) writes it with the
+ *      click — no OK — and seeds a card whose session then reports readiness,
+ *      whose own chip shows the row's label.
  *   3. **Isolation.** Changing one card's model through its own Z4B picker
  *      leaves the deck default and every other open card unchanged.
  *   4. **Bulletin.** A persisted per-card selector no catalog row could be
@@ -44,6 +44,7 @@
  * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  * @covers tugdeck/src/lib/model-label.ts
  * @covers tugdeck/src/components/tugways/cards/ai-config-sheet.tsx
+ * @covers tugdeck/src/components/tugways/cards/ai-config-editor.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-session-card-body.tsx
  * @covers tugdeck/src/components/tugways/tug-alert-sheet.tsx
  */
@@ -55,23 +56,19 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
 
 const SETTINGS = '[data-testid="settings-session-card"]';
-// The Assistant box's one control — model, effort, and mode in a single chip
-// over a single mixer sheet, the same pair the Z4B row uses.
-const SETTINGS_AI_CHIP = `${SETTINGS} [data-slot="ai-chip"]`;
-// The chip's composite face.
-const SETTINGS_AI_VALUE = `${SETTINGS_AI_CHIP} [data-slot="ai-chip-value"]`;
+// The AI Model box holds the mixer's channels themselves — no chip, no sheet.
+const SETTINGS_AI = `${SETTINGS} [data-slot="ai-config-editor"]`;
 // Sheets portal into their host PANE's frame and linger through the exit
 // animation — scope every sheet read/click to the pane that owns it so a
 // closing sheet in another pane can never swallow a click.
-const SETTINGS_SHEET =
-  '.tug-pane:has([data-testid="settings-card"]) [data-slot="tug-sheet"]';
 const CARD_A_SHEET = '[data-pane-id="p1"] [data-slot="tug-sheet"]';
 
-/** The mixer sheet's MODEL row and one of its segments. */
 /** The model channel is an option list; each row carries its own selector. */
 const MODEL_LIST = '[data-testid="ai-config-model"]';
 const MODEL_SEGMENT = (value: string): string =>
   `${MODEL_LIST} [data-model="${value}"]`;
+/** The row the channel marks as current — the deck default, read back. */
+const SETTINGS_MODEL_SELECTED = `${SETTINGS_AI} ${MODEL_LIST} [data-model][data-selected="true"]`;
 
 const cardAiValue = (cardId: string): string =>
   `[data-card-id="${cardId}"] [data-slot="ai-chip"] [data-slot="ai-chip-value"]`;
@@ -184,10 +181,20 @@ async function textAt(app: App, selector: string): Promise<string | null> {
   );
 }
 
+/** Wait for the model channel to mark `value`'s row as the current one. */
+async function waitForSelectedModel(app: App, value: string): Promise<void> {
+  await app.waitForCondition<boolean>(
+    `document.querySelector(${JSON.stringify(
+      `${SETTINGS_AI} ${MODEL_LIST} [data-model="${value}"][data-selected="true"]`,
+    )}) !== null`,
+    { timeoutMs: 8000 },
+  );
+}
+
 /**
- * Bring up the Settings card's **Session Card** section — where the Assistant
- * box lives. Only the selected section's body exists, so this clicks the
- * sidebar tab and waits for the panel.
+ * Bring up the Settings card's **Sessions** section — where the AI Model box
+ * lives. Only the selected section's body exists, so this clicks the sidebar
+ * tab and waits for the panel.
  */
 async function openSessionCardSection(app: App): Promise<void> {
   await app.waitForCondition<boolean>(
@@ -225,7 +232,7 @@ describe.skipIf(!SHOULD_RUN)(
   "AT0200: Assistant defaults are chip+sheet edited, isolated per card, and guarded by the bulletin",
   () => {
     test(
-      "the Settings AI chip opens the mixer; a picked default seeds a card with an identical label; per-card picks stay isolated",
+      "the Settings AI channels edit the defaults inline; a picked default seeds a card with an identical label; per-card picks stay isolated",
       async () => {
         const app = await launchTugApp({ testName: "at0200-assistant-defaults" });
         try {
@@ -248,14 +255,27 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await openSessionCardSection(app);
 
-          // ---- The Assistant control is the real Z4B chip, and the old
+          // ---- The AI Model box IS the mixer's channels — all three on the
+          //      page, no chip to press and no sheet to raise — and the old
           //      Permission Mode dropdown is gone.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(SETTINGS_AI)}) !== null`,
+            { timeoutMs: 8000 },
+          );
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)}) !== null`,
+              `document.querySelector(${JSON.stringify(`${SETTINGS} [data-slot="ai-chip"]`)}) === null`,
             ),
-            "Assistant renders the AI chip",
+            "no chip stands between the reader and the settings",
           ).toBe(true);
+          for (const channel of ["ai-config-model", "ai-config-effort", "ai-config-mode"]) {
+            expect(
+              await app.evalJS<boolean>(
+                `document.querySelector(${JSON.stringify(`${SETTINGS_AI} [data-testid="${channel}"]`)}) !== null`,
+              ),
+              `${channel} is on the page`,
+            ).toBe(true);
+          }
           expect(
             await app.evalJS<boolean>(
               `document.querySelector('.settings-session-card-popup-mode') === null`,
@@ -263,60 +283,51 @@ describe.skipIf(!SHOULD_RUN)(
             "no TugPopupButton remains for the permission-mode default",
           ).toBe(true);
 
-          // Deck default is the `default` zero-state and NO session has ever
-          // reported capabilities → no catalog exists. The chip says exactly
-          // what is known: "Default" — never a hardcoded model label.
-          await waitForModel(app, SETTINGS_AI_VALUE, "Default");
-
-          // ---- Fresh install, no catalog: the MODEL channel offers the single
-          //      honest Default row, whose own description explains that the
-          //      full list arrives after the first request — no invented
-          //      models. The copy rides the row itself now: every option in the
-          //      list carries its description in place.
-          await app.click(SETTINGS_AI_CHIP);
-          await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("default")}`)}) !== null`,
-            { timeoutMs: 4000 },
-          );
+          // ---- Fresh install, no catalog: the deck default is the `default`
+          //      zero-state, and the MODEL channel offers that single honest
+          //      row — nothing invented — whose own description explains that
+          //      the full list arrives after the first request.
+          await waitForSelectedModel(app, "default");
           expect(
             await app.evalJS<number>(
-              `document.querySelectorAll(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_LIST} [data-model]`)}).length`,
+              `document.querySelectorAll(${JSON.stringify(`${SETTINGS_AI} ${MODEL_LIST} [data-model]`)}).length`,
             ),
             "no catalog → exactly one Default row, nothing invented",
           ).toBe(1);
           expect(
             await app.evalJS<string>(
               `(function(){
-                var el = document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("default")}`)});
+                var el = document.querySelector(${JSON.stringify(`${SETTINGS_AI} ${MODEL_SEGMENT("default")}`)});
                 return el ? el.textContent : "";
               })()`,
             ),
             "the row's own description explains why the list is short",
           ).toContain("first request");
-          await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-cancel"]`);
 
           // ---- A session reports capabilities → the Session card persists the
-          //      live catalog. Every chip now shows the account default's
+          //      live catalog. The card's chip shows the account default's
           //      "name with version" title, derived from claude's own
-          //      description wording via the one resolveModelLabel path.
+          //      description wording via the one resolveModelLabel path, and
+          //      the Settings list fills with the same rows.
           await app.ingestSessionMetadata("A", capabilities());
           await waitForModel(app, cardAiValue("A"), "Opus 4.8 · 1M");
-          await waitForModel(app, SETTINGS_AI_VALUE, "Opus 4.8 · 1M");
-
-          // ---- The AI chip opens the mixer, which now offers the live
-          //      catalog's models (Sonnet among them).
-          await app.click(SETTINGS_AI_CHIP);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`)}) !== null`,
-            { timeoutMs: 4000 },
+            `document.querySelector(${JSON.stringify(`${SETTINGS_AI} ${MODEL_SEGMENT("sonnet")}`)}) !== null`,
+            { timeoutMs: 8000 },
           );
+          await waitForSelectedModel(app, "default");
 
-          // ---- Pick Sonnet as the deck default. Nothing is written until OK
-          //      (the mixer is a transaction), and the chip then shows the
-          //      row's name-with-version, from claude's own wording.
-          await app.click(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`);
-          await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-ok"]`);
-          await waitForModel(app, SETTINGS_AI_VALUE, "Sonnet 4.6");
+          // ---- Pick Sonnet as the deck default. The click IS the write —
+          //      there is no OK here, because a deck default costs nothing to
+          //      change — and the row takes the mark at once.
+          await app.click(`${SETTINGS_AI} ${MODEL_SEGMENT("sonnet")}`);
+          await waitForSelectedModel(app, "sonnet");
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(SETTINGS_MODEL_SELECTED)}).length`,
+            ),
+            "exactly one row carries the mark",
+          ).toBe(1);
 
           // ---- Card A's session is knowable (capabilities landed above), so
           //      the seed aligns it to the new deck default, and the Z4B label
@@ -353,9 +364,14 @@ describe.skipIf(!SHOULD_RUN)(
           await waitForModel(app, cardAiValue("A"), "Haiku");
 
           expect(
-            (await textAt(app, SETTINGS_AI_VALUE))?.startsWith("Sonnet 4.6"),
+            await app.evalJS<string | null>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(SETTINGS_MODEL_SELECTED)});
+                return el ? el.getAttribute("data-model") : null;
+              })()`,
+            ),
             "deck default unchanged by a per-card pick",
-          ).toBe(true);
+          ).toBe("sonnet");
           expect(
             (await textAt(app, cardAiValue("B")))?.startsWith("Sonnet 4.6"),
             "other open cards unchanged by a per-card pick",

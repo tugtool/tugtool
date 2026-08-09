@@ -1,0 +1,132 @@
+/* ----------------------------------------------------------------------------
+   .ai-config-editor — readout, scope line, channel stack
+   ----------------------------------------------------------------------------
+   ONE presentation, worn identically by the session card's mixer sheet and the
+   Settings card's AI Model box — there is no per-host variant here, and none is
+   wanted: the two surfaces set the same three things and must look like it.
+   The hosts supply only their frame (a sheet's doors and OK, a box's legend)
+   and their own scope line.
+
+   @tug-pairings: none for the controls — color comes from `TugListView`,
+   `TugSlider`, `TugChoiceGroup`, and `TugLabel` ([L20]); the readout, the scope
+   line, and the channel notes are what this file colors.
+   ----------------------------------------------------------------------------- */
+
+.ai-config-editor {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  font-family: var(--tug-font-family-sans);
+  /* The channel stack carries its own rhythm; this level only separates the
+     readout, the scope line, and the stack, so it stays a step tighter. */
+  gap: var(--tug-space-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * The readout — the triple as it stands, in the largest type on the surface
+ * -------------------------------------------------------------------------*/
+
+/* One type size for the whole line — the three values are one sentence, so a
+   size step between them reads as a size accident rather than a hierarchy.
+   Weight alone carries the emphasis. The size is the header TITLE knob: the
+   readout is the loudest thing in the editor, but in the sheet it never
+   out-shouts the sheet's name. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-readout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  column-gap: var(--tug-space-xs);
+  text-align: center;
+  font-size: var(--tugx-header-title-size);
+  line-height: var(--tugx-header-title-lh);
+  color: var(--tug7-element-global-text-normal-default-rest);
+}
+
+/* The model carries the most weight: it is the decision the other two
+   qualify. */
+.ai-config-readout-model {
+  font-weight: var(--tug-font-weight-bold);
+}
+
+.ai-config-readout-rest {
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* The separators are punctuation, not content — quieter than the values they
+   stand between. Their spacing is the literal spaces around the glyph, not a
+   margin, so the readout's text reads correctly when taken as a string. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-readout-sep {
+  white-space: pre;
+  font-weight: var(--tug-font-weight-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The scope note: whose settings these are. It sits directly under the readout
+   because it qualifies the readout — the readout says WHAT is set, this says
+   WHERE it lands — and quieter than a channel description because it describes
+   the whole editor rather than one control. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-scope {
+  /* The same size as a channel's description: both are the editor's
+     explanatory voice, one about the whole of it and one about a control. */
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-normal);
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---------------------------------------------------------------------------
+ * The channels — one per parameter: caption, control, description
+ * -------------------------------------------------------------------------*/
+
+.ai-config-channels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+.ai-config-channel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--tug-space-xs);
+}
+
+.ai-config-caption {
+  white-space: nowrap;
+}
+
+/* The model channel is the only one without a description under it, so it
+   alone has to spell out the separation from the channel below — and it is
+   spelling out a gap the space scale has no step for (`lg` is 12px), hence
+   the multiple. */
+.ai-config-channel-model {
+  margin-block-end: calc(var(--tug-space-lg) * 2.5);
+}
+
+/* The track's wrapper. The slider's own ticks are inset by half a thumb, so
+   the first and last tick LABELS overhang it; the inset here keeps them inside
+   the channel's edges. Sizing a composed child belongs on a wrapper, never on
+   the child's own class [L20]. */
+.ai-config-track {
+  display: flex;
+  padding-inline: var(--tug-space-sm);
+}
+
+/* Each channel's own description, under the control it describes. Reserved at
+   one line so swapping between two one-line descriptions never moves the
+   surface's height. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.ai-config-note {
+  min-block-size: calc(
+    var(--tug-font-size-sm) * var(--tug-line-height-normal)
+  );
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-normal);
+  text-align: center;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+

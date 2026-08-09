@@ -32,10 +32,12 @@ body {
   --tugx-slider-label-fg: var(--tug7-element-field-text-normal-label-rest);
   --tugx-slider-icon-fg: var(--tug7-element-global-text-normal-muted-rest);
   /* Stepped-track tick labels. `line` is the row the control reserves for
-     them: the gap above the text plus the text's own line. */
+     them: the gap above the text plus the text's own line. The gap has to
+     clear the tick mark itself, not just the track — at the 2px step the
+     names sat on their ticks. */
   --tugx-slider-tick-label-fg: var(--tug7-element-global-text-normal-muted-rest);
   --tugx-slider-tick-label-size: var(--tug-font-size-xs);
-  --tugx-slider-tick-label-gap: var(--tug-space-2xs);
+  --tugx-slider-tick-label-gap: var(--tug-space-sm);
   --tugx-slider-tick-label-line: calc(
     var(--tugx-slider-tick-label-gap) + var(--tugx-slider-tick-label-size) * 1.3
   );
