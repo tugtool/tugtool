@@ -11,10 +11,17 @@
  *      if the height tracked its content, every pulse would move the card
  *      beneath it.
  *
- *   B. **The three surfaces that seat below the title bar seat below the
+ *   B. **The surfaces that seat below the title bar seat below the
  *      MASTHEAD.** The scrim, the sheet's clip, and the banner all measured
  *      against a 36px chrome before this; at 36 the scrim dims the masthead's
- *      own bottom half. Three measured `top` reads, one per re-pointed site.
+ *      own bottom half. The scrim and the sheet clip are MEASURED `top` reads
+ *      against a raised sheet — measured rather than inferred from
+ *      `--tugx-pane-chrome-height`, because a regression that re-hardcodes
+ *      `var(--tug-chrome-height)` leaves the property reading 72 and the
+ *      surface seating at 36, which a property assertion cannot see. The
+ *      banner is the one re-point left on the property alone: raising a real
+ *      pane banner needs a genuine transport error, and staging one here
+ *      would import a second subsystem's failure path to assert a `top`.
  *      The sheet's *bottom* is deliberately not asserted — the in-pane clamp
  *      measures the clip rect, so it follows the clip top for free and an
  *      assertion there would pass whether or not the work was done.
@@ -42,6 +49,7 @@
  * @covers tugdeck/src/components/tugways/session-masthead.css
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/tugways/tug-pane.css
+ * @covers tugdeck/src/components/tugways/tug-sheet.css
  * @covers tugdeck/src/lib/card-title-store.ts
  */
 
@@ -50,7 +58,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -65,6 +73,10 @@ const TITLE_BAR = `${PANE} [data-slot="tug-pane-title-bar"]`;
 const MASTHEAD = `${PANE} [data-slot="session-masthead"]`;
 const SCRIM = `${PANE} [data-testid="tug-pane-scrim"]`;
 const TAB_ROW = `${PANE} .tug-tab-bar`;
+/** The Z4B AI chip — the cheapest way to raise a real sheet on this card. */
+const AI_CHIP = '[data-card-id="S"] [data-slot="ai-chip"]';
+const SHEET_CLIP = `${PANE} .tug-sheet-clip`;
+const SHEET_CANCEL = '[data-slot="ai-config-sheet"] [data-slot="ai-config-cancel"]';
 
 function deckShape(cardIds: string[], activeCardId: string) {
   return {
@@ -197,15 +209,38 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         expect(scrimTop).toBeGreaterThanOrEqual(MASTHEAD_HEIGHT);
         expect(scrimTop).toBeLessThanOrEqual(MASTHEAD_HEIGHT + 2);
 
-        // The pane publishes the tier as a custom property; the sheet clip and
-        // the banner are positioned from it and mount only when their surface
-        // is up, so the property itself is what the remaining two re-points
-        // resolve through. Reading it is reading what they will get.
+        // The pane publishes the tier as a custom property, and the two
+        // remaining re-points resolve through it.
         const chromeVar = await app.evalJS<string>(
           `getComputedStyle(document.querySelector(${JSON.stringify(PANE)}))
              .getPropertyValue('--tugx-pane-chrome-height').trim()`,
         );
         expect(chromeVar).toBe(`${MASTHEAD_HEIGHT}px`);
+
+        // The sheet clip, MEASURED — not inferred from the property above.
+        // The distinction is the whole point: a regression that re-hardcodes
+        // `var(--tug-chrome-height)` in `tug-sheet.css` leaves the property
+        // reading 72px and the clip seating at 36, so the property assertion
+        // alone would stay green while the sheet climbed over the masthead.
+        // The AI config chip opens a real sheet on this real Session card,
+        // which is the cheapest in-pane sheet to raise.
+        await app.click(AI_CHIP);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET_CLIP)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        const clipTop = await app.evalJS<number>(topWithinPane(SHEET_CLIP));
+        // `calc(var(--tugx-pane-chrome-height) + 1px)` — the tier plus the
+        // chrome's 1px border, the same relationship the scrim has.
+        expect(clipTop).toBeGreaterThanOrEqual(MASTHEAD_HEIGHT);
+        expect(clipTop).toBeLessThanOrEqual(MASTHEAD_HEIGHT + 2);
+        note("sheet clip top within pane", clipTop);
+
+        await app.click(SHEET_CANCEL);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET_CLIP)}) === null`,
+          { timeoutMs: 8000 },
+        );
 
         // ---- C. Chrome follows the frontmost tab, both directions. ---------
         await app.seedDeckState({

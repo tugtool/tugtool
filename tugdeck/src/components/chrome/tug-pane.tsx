@@ -513,7 +513,19 @@ function CardTitleBar({
           icon plus a duplicate title beside them would be two answers to one
           question. The pane's controls below are untouched. */}
       {masthead !== null ? (
-        <SessionMasthead sessionId={masthead.sessionId} cardId={activeCardId} />
+        // Keyed by session, so a payload naming a DIFFERENT session remounts
+        // rather than reconciling. A new session is a new entity, which is
+        // what [L26]'s test asks: the masthead holds the PULSE dwell queue's
+        // current line and an open telemetry placard, and reconciling would
+        // carry both across — the previous session's line reading under the
+        // new session's callsign for a dwell window. Reachable two ways:
+        // resuming a different session in the same card, and switching
+        // between two stacked Session tabs.
+        <SessionMasthead
+          key={masthead.sessionId}
+          sessionId={masthead.sessionId}
+          cardId={activeCardId}
+        />
       ) : (
         <>
           {IconComponent && (

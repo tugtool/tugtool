@@ -7,10 +7,13 @@
  *     list's `leadingContent`. It is the transcript's first scrolling row:
  *     off-screen when scrolled down, the first thing reached at the top, and
  *     the topmost row as older turns prepend below it. Resting content only —
- *     "Session created <datetime>" on the left, "Turns displayed X of Y" + a
- *     "Load N more" / "All loaded" status on the right — so it never changes
- *     height and the transcript never hops. With nothing to "reveal", the
- *     keyboard scroll-to-top (Opt-Shift-Up) just lands on it.
+ *     "Turns displayed X of Y" + a "Load N more" / "All loaded" status,
+ *     flush right — so it never changes height and the transcript never hops.
+ *     With nothing to "reveal", the keyboard scroll-to-top (Opt-Shift-Up)
+ *     just lands on it. The bar is about the LOAD WINDOW and nothing else:
+ *     it once opened with "Session created <datetime>", which is session
+ *     telemetry rather than load state and now reads once in the masthead's
+ *     telemetry placard.
  *   - {@link SessionLoadOverlay} — the determinate progress band + modal (inert +
  *     scrimmed) region, shown only while a cold restore or load-previous is
  *     in flight (plus the {@link PROGRESS_DWELL_MS} dwell tail). An ABSOLUTE
@@ -43,8 +46,6 @@ import {
   type CodeSessionStore,
   type CodeSessionSnapshot,
 } from "@/lib/code-session-store";
-import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
-import { useSessionLedger } from "@/lib/session-ledger-store";
 import { deriveColdRestoreActive } from "./session-card-restore-gate";
 import {
   countClaudeTurns,
@@ -87,12 +88,8 @@ export interface SessionLoadControlBarProps {
  */
 export function SessionTranscriptTopRow({
   codeSessionStore,
-  cardId,
 }: {
   codeSessionStore: CodeSessionStore;
-  /** Owning card id — resolves this card's bound `projectDir` (binding
-   *  store) so the metadata row can read its session's ledger `created_at`. */
-  cardId: string;
 }): React.ReactElement {
   const onLoad = React.useCallback(
     (amount: number) => {
@@ -106,11 +103,7 @@ export function SessionTranscriptTopRow({
   // `session-card-transcript.tsx`.
   return (
     <div className="session-transcript-top-row" data-slot="session-transcript-top-row">
-      <ControlBarMetadata
-        codeSessionStore={codeSessionStore}
-        cardId={cardId}
-        onLoad={onLoad}
-      />
+      <ControlBarMetadata codeSessionStore={codeSessionStore} onLoad={onLoad} />
     </div>
   );
 }
@@ -344,68 +337,26 @@ function formatLoadPreviousValue(value: number, max: number): string {
 }
 
 /**
- * Format the session-created wall-clock as "Jun 17, 6:11 AM" — month/day
- * (unambiguous across days, since a resumed session may be old) + short
- * clock, locale-formatted. Appearance only ([L06]); not unit-tested
- * (locale/timezone dependent).
- */
-function formatSessionCreated(ms: number): string {
-  return new Date(ms).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-/**
- * Metadata state — the strip's resting content. Left: "Session created:
- * <datetime>" (omitted until the creation time is known). Right: "Turns
- * displayed: X of Y" + a fixed-step "Load N more" action, "All loaded" when
- * nothing remains, or "No turns" on a fresh zero-turn session. All
- * self-subscribed ([L02]) so the slot needs only the card id (to resolve its
- * ledger row) and the load callback, and stays mounted across mode swaps.
+ * Metadata state — the strip's resting content: "Turns displayed: X of Y" + a
+ * fixed-step "Load N more" action, "All loaded" when nothing remains, or "No
+ * turns" on a fresh zero-turn session. All self-subscribed ([L02]) so the slot
+ * needs only the store and the load callback, and stays mounted across mode
+ * swaps.
  *
- * **Session-created source — the ledger is the authority.** The dev session
- * ledger carries each session's `created_at`: the spawn time for sessions
- * Tug created, and the JSONL-derived transcript birth for externally bridged
- * (terminal) sessions. That value is present at zero turns — before any
- * replay anchor exists — so it's the primary source, with the replay-derived
- * `sessionCreatedAtMs` (the first turn's wall-clock) as the fallback for the
- * brief window before the ledger row loads.
+ * **The bar is about the load window, and only that.** It used to open with
+ * "Session created: <datetime>" on the left. That is session telemetry, not
+ * load state, and it now reads once in the masthead's telemetry placard
+ * alongside the branch, the state, the turn count, and the citation — where
+ * the compacted-vs-created verb comes off the same `compactionSeed` this
+ * component used to read. What is left here is what the bar can act on.
  */
 function ControlBarMetadata({
   codeSessionStore,
-  cardId,
   onLoad,
 }: {
   codeSessionStore: CodeSessionStore;
-  cardId: string;
   onLoad: (amount: number) => void;
 }): React.ReactElement {
-  const replayCreatedAtMs = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().sessionCreatedAtMs,
-  );
-  const tugSessionId = React.useSyncExternalStore(
-    codeSessionStore.subscribe,
-    () => codeSessionStore.getSnapshot().tugSessionId,
-  );
-  // This card's bound project dir keys the ledger fetch ([L02]). Empty until
-  // a session is bound — `useSessionLedger` then short-circuits to idle.
-  const projectDir = React.useSyncExternalStore(
-    cardSessionBindingStore.subscribe,
-    React.useCallback(
-      () => cardSessionBindingStore.getBinding(cardId)?.projectDir ?? "",
-      [cardId],
-    ),
-  );
-  const ledger = useSessionLedger(projectDir);
-  const ledgerCreatedAtMs =
-    ledger.rows.find((r) => r.session_id === tugSessionId)?.created_at ?? null;
-  // Ledger wins (stable, present at zero turns); replay anchor backfills the
-  // pre-load window.
-  const createdAtMs = ledgerCreatedAtMs ?? replayCreatedAtMs;
   // Claude turns, not rows: shell exchanges ride the same transcript as
   // `#s` non-context ink ([D111]), while the `of Y` denominator is the
   // segmentation engine's Claude-turn count.
@@ -417,16 +368,6 @@ function ControlBarMetadata({
     codeSessionStore.subscribe,
     () => codeSessionStore.getSnapshot().replayWindow,
   );
-  // A `/compact`-born session relabels the header "Session compacted" — it
-  // is a "fake new" session (an implementation detail of compaction), not a
-  // genuinely new card/session. The date/time is the same source (the fresh
-  // session's created-at); only the verb changes.
-  const isCompacted =
-    React.useSyncExternalStore(
-      codeSessionStore.subscribe,
-      () => codeSessionStore.getSnapshot().compactionSeed,
-    ) !== null;
-  const sessionVerb = isCompacted ? "Session compacted" : "Session created";
   const focusGroup = React.useId();
 
   const status = deriveLoadStatus({
@@ -438,17 +379,11 @@ function ControlBarMetadata({
 
   return (
     <div className="session-load-control-bar-metadata">
-      <div className="session-load-control-bar-meta-left">
-        {createdAtMs !== null ? (
-          <TugLabel emphasis="proposal" className="session-load-control-bar-label">
-            {`${sessionVerb}: ${formatSessionCreated(createdAtMs)}`}
-          </TugLabel>
-        ) : isCompacted ? (
-          <TugLabel emphasis="proposal" className="session-load-control-bar-label">
-            {sessionVerb}
-          </TugLabel>
-        ) : null}
-      </div>
+      {/* The left end used to carry "Session created: <datetime>". That fact
+          moved to the masthead's telemetry placard, which is where session
+          telemetry lives now — the bar keeps only what is about the LOAD
+          WINDOW, which is the one thing it can act on. `space-between` puts
+          the remaining end flush right on its own. */}
       <div className="session-load-control-bar-meta-right">
         {status.total === 0 ? (
           // A fresh session with no committed turns yet: the "0 of 0 · All

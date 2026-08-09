@@ -101,7 +101,6 @@ import {
 } from "../tug-inline-alert";
 import { AlertTriangle, Trash2 } from "lucide-react";
 
-import { usePulseEnabled } from "@/lib/pulse-store";
 import { TugLabel } from "../tug-label";
 import {
   TugConfirmPopover,

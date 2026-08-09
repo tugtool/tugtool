@@ -97,7 +97,13 @@ export interface SessionIdentityContext {
   projectDir?: string | null;
   branch?: string | null;
   state?: SessionRow["state"] | null;
-  rootTag?: string | null;
+  /**
+   * The ledger's structured lineage record (`SessionRow.tag_lineage`), when
+   * the caller holds one. There is deliberately no `rootTag` beside it: the
+   * root's callsign is the composed `tag` with its lineage tail removed, so a
+   * second field would be a second spelling of a fact the record already
+   * carries — and the two could disagree.
+   */
   tagLineage?: string | null;
 }
 
@@ -190,7 +196,6 @@ export function sessionIdentityContextFrom(
   return {
     projectDir: row.project_dir,
     state: row.state,
-    rootTag: row.root_tag,
     tagLineage: row.tag_lineage,
   };
 }
@@ -237,7 +242,20 @@ export function resolveSessionIdentity(
  * tokens, but those exist for consumers deriving across many sessions at once
  * (the Lens's filter projection). Reading a version token here would wake every
  * identity surface in the app on any session's rename.
+ *
+ * Overloaded on the argument, so a caller that already holds a session id gets
+ * a record rather than a maybe-record and writes no branch for a state its own
+ * types forbid. The nullable arm exists for callers whose binding may not have
+ * resolved yet.
  */
+export function useSessionIdentity(
+  sessionId: string,
+  context?: SessionIdentityContext,
+): SessionIdentity;
+export function useSessionIdentity(
+  sessionId: string | null,
+  context?: SessionIdentityContext,
+): SessionIdentity | null;
 export function useSessionIdentity(
   sessionId: string | null,
   context?: SessionIdentityContext,

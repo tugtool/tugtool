@@ -215,10 +215,11 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // the `last_user_prompt` snippet standing in until a session has either.
   const description = truncateForDisplay(identity?.title ?? fullPrompt ?? "", 96);
 
-  // The metadata line: `time · turns`, and the state when a row is not simply
-  // resumable. There is no SIZE here — `SessionRow` carries no size field in
-  // either the TS or the Rust shape, and the picker's own projection is where
-  // one would have to come from, so this line is two facts and says two.
+  // The metadata line, composed by `formatSessionRowSubtitle`: the relative
+  // timestamp, the turn count, the on-disk JSONL size, and the short id, with
+  // whatever is unknown for this row dropping out. The state replaces the whole
+  // line when a row is not simply resumable — a row you cannot resume has one
+  // thing to say, and it is not how many turns it has.
   const metadata = isLive
     ? "Live in another card"
     : isTerminalLive

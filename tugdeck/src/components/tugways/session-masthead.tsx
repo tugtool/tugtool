@@ -70,6 +70,7 @@ import {
   sparklineCurves,
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
+import { cardServicesStore } from "@/lib/card-services-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import {
@@ -444,6 +445,49 @@ function stamp(ms: number | null | undefined): string {
   return new Date(ms).toLocaleString();
 }
 
+/**
+ * The birth stamp, and what to call it.
+ *
+ * A `/compact`-born session is a "fake new" session — an implementation
+ * detail of compaction rather than a genuinely new one — so its birth reads
+ * "Compacted" rather than "Created". The date is the same fact either way;
+ * only the verb changes.
+ *
+ * A LEAF, and that is the point: `compactionSeed` lives on the per-card
+ * `codeSessionStore`, whose snapshot is the whole session state. Reading it
+ * up in `SessionMasthead` would wake the masthead on every transcript event —
+ * the exact churn [P15] keeps out of the identity path. Here the subscription
+ * is a boolean selector inside the placard body, and `TugPlacard` renders no
+ * children while closed, so it exists only while the placard is open.
+ */
+function PlacardBirthRow({
+  cardId,
+  createdAtMs,
+}: {
+  cardId: string | undefined;
+  createdAtMs: number | null | undefined;
+}): React.ReactElement {
+  const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
+    cardId === undefined ? null : cardServicesStore.getServices(cardId),
+  );
+  const store = services?.codeSessionStore ?? null;
+  const compacted = useSyncExternalStore(
+    store?.subscribe ?? NOOP_SUBSCRIBE,
+    store !== null
+      ? () => store.getSnapshot().compactionSeed !== null
+      : () => false,
+    () => false,
+  );
+  return (
+    <PlacardRow label={compacted ? "Compacted" : "Created"}>
+      {stamp(createdAtMs)}
+    </PlacardRow>
+  );
+}
+
+/** Stable no-op subscribe for a card whose services aren't constructed yet. */
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
 export function SessionMasthead({
   sessionId,
   cardId,
@@ -505,13 +549,9 @@ export function SessionMasthead({
     current.placeholder ? "" : composeLineCopy(overview?.text, current.text),
   );
 
-  // A pane whose card has not bound a session yet still gets a masthead-height
-  // slot — the pane sized it from the sidecar, and a slot that collapsed
-  // while identity resolved would move the card twice.
-  if (identity === null) {
-    return <div className="session-masthead" data-slot="session-masthead" />;
-  }
-
+  // No null branch: `sessionId` is a string here, and `useSessionIdentity`'s
+  // non-null overload answers with a record. A fallback would be dead code
+  // claiming to handle a state the prop type forbids.
   const description = identity.title;
 
   return (
@@ -637,7 +677,10 @@ export function SessionMasthead({
           <PlacardRow label="Branch">{identity.branch ?? "—"}</PlacardRow>
           <PlacardRow label="State">{row?.state ?? identity.state ?? "—"}</PlacardRow>
           <PlacardRow label="Turns">{row?.turn_count ?? "—"}</PlacardRow>
-          <PlacardRow label="Created">{stamp(row?.created_at)}</PlacardRow>
+          {/* The card's Z0 load-control bar used to carry this same line;
+              the placard is where session telemetry lives now, so it says it
+              once. */}
+          <PlacardBirthRow cardId={cardId} createdAtMs={row?.created_at} />
           <PlacardRow label="Last used">{stamp(row?.last_used_at)}</PlacardRow>
           <PlacardRow label="Citation">
             {/* The citation is the sanctioned flat-text form, and the only

@@ -84,8 +84,10 @@
   pointer-events: none;
 }
 
-/* The metadata row spans the strip: session-created flush left, the turns
-   status + load action flush right. */
+/* The metadata row spans the strip, with the turns status + load action flush
+   right. `space-between` is what puts them there and stays correct with one
+   child — the left end carried "Session created" until that fact moved to the
+   masthead's telemetry placard. */
 .session-load-control-bar-metadata {
   display: flex;
   align-items: center;
@@ -94,10 +96,7 @@
   width: 100%;
 }
 
-/* The two ends of the metadata row; each keeps its own items tight. The
-   left collapses to nothing when the created anchor is unknown (a brand-new
-   session), leaving the right end flush-right via `space-between`. */
-.session-load-control-bar-meta-left,
+/* The status end of the metadata row; keeps its own items tight. */
 .session-load-control-bar-meta-right {
   display: flex;
   align-items: center;

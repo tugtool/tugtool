@@ -2548,10 +2548,7 @@ export const SessionTranscriptHost = forwardRef<
               // with the content (off-screen when scrolled down, first at the
               // top) and stays topmost as older turns prepend below it.
               leadingContent={
-                <SessionTranscriptTopRow
-                  codeSessionStore={codeSessionStore}
-                  cardId={cardId}
-                />
+                <SessionTranscriptTopRow codeSessionStore={codeSessionStore} />
               }
               // Freeze the per-commit scroll battery across the restore
               // replay, each load-previous bracket, and the post-reveal
