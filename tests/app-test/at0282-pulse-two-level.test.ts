@@ -17,12 +17,15 @@
  *      renders whole. This is the entire reason the headline is flex-pinned,
  *      and the failure it prevents — a goal clipped to make room for a file
  *      path — is invisible to anything but a real browser at a real width.
- *   3. **A level nobody wrote still holds its line.** A session with no
- *      overview shows the same three lines in the Lens as the one beside it
- *      that has one, with `PULSE` standing in for the goal — so rows do not
- *      resize themselves as sessions come and go quiet. Measured against a
- *      present sibling in the same list at the same moment, so "it holds"
- *      cannot pass by the feature being broken outright.
+ *   3. **A level nobody wrote still holds its line, and says the same thing
+ *      on both surfaces.** A session with no overview shows the same three
+ *      lines in the Lens as the one beside it that has one, with `PULSE`
+ *      standing in for the goal — so rows do not resize themselves as sessions
+ *      come and go quiet. Measured against a present sibling in the same list
+ *      at the same moment, so "it holds" cannot pass by the feature being
+ *      broken outright. The masthead answers identically: `PULSE` is a
+ *      placeholder in the headline run, not a label pinned to the head of the
+ *      line, so a card and a row report an unstated goal the same way.
  *   4. **The row's three lines start on one vertical, and the phase dot tops
  *      out with the name.** Both are geometry a screenshot shows and nothing
  *      else here would catch: a zero-width strut still collects its
@@ -310,9 +313,18 @@ describe.skipIf(!SHOULD_RUN)("AT0282: the PULSE reads at two levels", () => {
           { timeoutMs: 20_000 },
         );
 
-        // Baseline: no frames yet, so neither card has a headline and the
-        // strip already measures its one band.
-        expect(await count(app, HEADLINE_A)).toBe(0);
+        // Baseline: no frames yet, so neither card has a goal to state — and
+        // the masthead says so the same way the Lens row does, with the word
+        // `PULSE` standing IN the headline run. The band already measures its
+        // one line. (The `PULSE` pill that used to sit at the head of this
+        // line is gone: the word is a placeholder, not a permanent label, so
+        // the two surfaces now answer "no goal yet" identically.)
+        expect(await count(app, HEADLINE_A)).toBe(1);
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(HEADLINE_A)}).textContent`,
+          ),
+        ).toBe("PULSE");
         expect(await heightOf(app, STRIP_A)).toBe(STRIP_HEIGHT);
 
         // Session A gets both levels; session B gets only a beat, so it stays

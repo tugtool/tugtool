@@ -17,6 +17,16 @@
  * is doing. Line height is stated explicitly on every line and never
  * inherited — inherited body leading (~1.45) puts a 13px run in a 19px box,
  * and no margin can take that back.
+ *
+ * The block is TOP-ALIGNED, not centered in its tier. Centering three lines in
+ * 72px put the callsign a few pixels from the pane's top edge, where every
+ * other card's title sits ten down — a Session card read as though its title
+ * had been shoved against the chrome. So the lead line is seated exactly where
+ * a ONE-LINE title bar seats its title: centered in the first
+ * `--tug-chrome-height` band. The pane's own controls already center in that
+ * same band (a 28px box in 36px, 4px down), so the callsign, the chevron, the
+ * close box, and the telemetry widget all sit on one row, and the two lines
+ * below hang into the tier's remaining room.
  */
 .session-masthead {
   position: relative;
@@ -27,7 +37,13 @@
   flex: 1 1 auto;
   /* The slot is a fixed height; this fills it and never asks for more. */
   block-size: 100%;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-block-start: calc(
+    (
+        var(--tug-chrome-height) - var(--tug-font-size-sm) *
+          var(--tug-line-height-tight)
+      ) / 2
+  );
   overflow: hidden;
 }
 
@@ -40,6 +56,31 @@
   min-width: 0;
   margin-block-end: var(--tugx-session-identity-lead-gap, 5px);
   line-height: var(--tug-line-height-tight);
+}
+
+/* The mark is the card's title icon, so it wears the pane's title-icon color
+   and follows the pane's focus exactly as every other card's does. Painting it
+   in the identity component's default muted ink left the one card family whose
+   title icon had no tint. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-inactive) */
+.session-masthead-lead {
+  --tugx-session-identity-icon-color: var(--tugx-pane-title-bar-icon-inactive);
+}
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.tug-pane[data-focused="true"] .session-masthead-lead {
+  --tugx-session-identity-icon-color: var(--tugx-pane-title-bar-icon-active);
+}
+
+/* ── The two lines below the callsign start where the CALLSIGN does ──────
+   Not where its mark does. The lead line is `mark + gap + run`, and a
+   description flush with the mark hangs a glyph's width to the left of the
+   name it describes — three lines with two different left edges. The inset is
+   the mark's own advance, published by the masthead from the identity
+   component's line-tier icon size so the number has one source. */
+.session-masthead-description,
+.session-masthead-pulse {
+  margin-inline-start: var(--tugx-session-masthead-text-inset, 0px);
 }
 
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
@@ -70,49 +111,25 @@
 }
 
 /* ── The PULSE line's two controls ──────────────────────────────────────
-   Both are pointer-only chrome affordances: the label opens the recent-pulses
-   history, the tape opens the expanded Activity card. Neither is a card-cycle
-   focus stop — that stop retired with the Z2 strip, because chrome is the
-   pane's and a card-cycle stop walking into it would cross an ownership
-   boundary. */
+   Both are pointer-only chrome affordances: the LINE ITSELF opens the
+   recent-pulses history, the tape opens the expanded Activity card. Neither is
+   a card-cycle focus stop — that stop retired with the Z2 strip, because
+   chrome is the pane's and a card-cycle stop walking into it would cross an
+   ownership boundary.
 
-/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.session-masthead-legend {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  block-size: 16px;
-  padding-block: 0;
-  padding-inline: 5px;
-  margin: 0;
-  border: none;
-  border-radius: var(--tug-radius-sm, 4px);
-  background-color: transparent;
-  /* The label's VOICE is the PULSE's, not the masthead's — size, tracking, and
-     tone all come from `tug-pulse.css`, so this and the Lens row's stand-in
-     say the same word in the same voice. What is left here is the pill: its
-     box and its hover. */
-  color: var(--tugx-pulse-legend-color);
-  font-family: inherit;
-  font-size: var(--tugx-pulse-legend-size);
-  letter-spacing: var(--tugx-pulse-legend-tracking);
-  /* The trailing letter-spacing pads the right edge, so a matching start
-     indent keeps the glyph run optically centered. */
-  text-indent: 0.18em;
-  line-height: 1;
+   The line is the trigger because the `PULSE` pill it used to be is now a
+   placeholder rather than a permanent label. A whole run of prose is a large
+   click target for a popover, so it declares nothing but the pointer and the
+   faintest hover wash — enough to answer "is this clickable?" without turning
+   a line of chrome into a button. */
+.session-masthead-stage {
   cursor: pointer;
+  border-radius: var(--tug-radius-sm, 4px);
   transition: background-color 0.1s ease;
 }
 
-.session-masthead-legend:hover {
+.session-masthead-stage:hover {
   background-color: var(--tug7-surface-control-primary-ghost-accent-hover);
-}
-
-/* While the popover is open the trigger stays lit (Radix sets data-state). */
-.session-masthead-legend[data-state="open"] {
-  background-color: var(--tug7-surface-control-primary-ghost-accent-active);
 }
 
 /* The tape's trigger wears the same ghost tint as the legend, so both entry
@@ -257,13 +274,17 @@
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
 .session-masthead-widget {
   position: absolute;
-  inset-block-start: 0;
+  /* Squared to the pane controls standing immediately beside it: the same
+     14px glyph in the same 28px box, centered in the same first chrome band.
+     At 22px in a box pinned to the tier's top it read 7px high of the chevron
+     and the close box — one row of controls that did not line up. */
+  inset-block-start: calc((var(--tug-chrome-height) - 28px) / 2);
   inset-inline-end: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 28px;
+  block-size: 28px;
   padding: 0;
   border: 0;
   border-radius: var(--tug-radius-sm);
@@ -276,35 +297,38 @@
   background-color: color-mix(in oklab, currentcolor 12%, transparent);
 }
 
-/* ── The placard body ──────────────────────────────────────────────────── */
+/* ── The telemetry panel ────────────────────────────────────────────────
+   Composed on the same `TugPopupListFrame` the recent-pulses history uses, so
+   the masthead's two popovers read as one family. The frame owns the titlebar
+   and the padding; this sets the width and the rows inside it. */
 
-.session-masthead-placard {
+.session-masthead-telemetry {
   inline-size: 320px;
 }
 
-.session-masthead-placard-body {
+.session-masthead-telemetry-body {
   display: flex;
   flex-direction: column;
   gap: var(--tug-space-xs);
   padding: var(--tug-space-sm) var(--tug-space-md);
 }
 
-.session-masthead-placard-row {
+.session-masthead-telemetry-row {
   display: flex;
   align-items: baseline;
   gap: var(--tug-space-sm);
   min-width: 0;
 }
 
-/* @tug-renders-on var(--tug7-surface-global-primary-normal-overlay-rest) */
-.session-masthead-placard-label {
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-masthead-telemetry-label {
   flex: none;
   inline-size: 84px;
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: var(--tug-font-size-xs);
 }
 
-.session-masthead-placard-value {
+.session-masthead-telemetry-value {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -313,6 +337,6 @@
 }
 
 /* The citation is flat text, and flat text is where monospace belongs. */
-.session-masthead-placard-citation {
+.session-masthead-telemetry-citation {
   font-family: var(--tug-font-family-mono);
 }

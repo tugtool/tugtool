@@ -156,6 +156,19 @@ const MIN_SENTENCE_CHARS: usize = 20;
 /// A tuning value; the live matrix may move it.
 const MAX_HEADLINE_CHARS: usize = 56;
 
+/// The standing description's budget, and it is deliberately not the
+/// headline's.
+///
+/// The headline is a *headline* — it has one bright line of a strip to live in
+/// and 56 characters is the room. The description is a *summary*: it sits under
+/// the callsign on a card-wide chrome line, it is read days later, and it is
+/// the only line that ever gets to say what the whole session is about. At 56
+/// it could not say that — it could only produce a second headline, in the same
+/// register, one line above the first, which is what it was doing. Room for a
+/// clause and its qualifier is what makes the two lines read as two levels
+/// rather than as one sentence printed twice.
+const MAX_SYNOPSIS_CHARS: usize = 110;
+
 /// Joiners a headline's dispensable tail hangs from.
 ///
 /// Past the budget, what a model has added is almost always the parts list a
@@ -340,7 +353,28 @@ struct PromptCache {
     first: Option<String>,
     /// The most recent prompts, oldest evicted.
     recent: VecDeque<String>,
+    /// The SESSION's opening ask — the first prompt in the transcript, set
+    /// once and never cleared.
+    ///
+    /// Deliberately not `first`, which is the *stretch's* opener and is wiped
+    /// at every idle barrier. That distinction is the whole difference between
+    /// the two things this cache feeds: the headline is about the stretch, so
+    /// it wants `first`; the standing description is about the session, and a
+    /// "standing" goal that resets every time the user pauses for coffee is
+    /// not standing at all. Reading the headline's own notion of a goal was
+    /// what made the description and the headline print the same sentence.
+    opening: Option<String>,
+    /// The opening ask of each FINISHED stretch, oldest evicted — the shape of
+    /// the session so far. Pushed by [`Self::barrier`] as each stretch closes,
+    /// so the description can say what the whole session has been about rather
+    /// than what its newest few minutes are about.
+    arc: VecDeque<String>,
 }
+
+/// Finished stretches carried in the arc. Enough to show a session that has
+/// turned — an audit that became a repair that became a doc pass — bounded so
+/// a day-long session's opening asks cannot outvote its present.
+const MAX_ARC_STRETCHES: usize = 6;
 
 impl PromptCache {
     /// Fold any newly appended complete lines into the cache. Runs blocking
@@ -360,6 +394,11 @@ impl PromptCache {
             self.primed = false;
             self.first = None;
             self.recent.clear();
+            // A rewritten transcript is a different history, so the
+            // session-lifetime memory goes with it rather than describing a
+            // file that no longer exists.
+            self.opening = None;
+            self.arc.clear();
         }
         if len == self.offset {
             self.primed = true;
@@ -393,13 +432,27 @@ impl PromptCache {
             let Some(prompt) = crate::scribe::prompt_from_jsonl_line(line, 0, MAX_PROMPT_CHARS)
             else {
                 if priming {
-                    self.first = None;
-                    self.recent.clear();
+                    // A response, so every ask above it was answered: a
+                    // barrier this cache did not watch being crossed. Taking
+                    // it through `barrier` rather than clearing the two fields
+                    // by hand is what reconstructs the ARC across a restart —
+                    // the session's finished stretches are all sitting in the
+                    // file, and reading them is free.
+                    self.barrier();
                 }
                 continue;
             };
             if self.first.is_none() {
                 self.first = Some(prompt.clone());
+            }
+            // The session's own opener, and the one field priming does NOT
+            // discard: a first look reads the whole file, so the very first
+            // ask in it is the session's opening ask whatever number of
+            // barriers have been crossed since. Losing it to a process restart
+            // is the difference between a description that knows what the
+            // session set out to do and one that only knows this afternoon.
+            if self.opening.is_none() {
+                self.opening = Some(prompt.clone());
             }
             if self.recent.len() == MAX_RECENT_PROMPTS {
                 self.recent.pop_front();
@@ -414,8 +467,19 @@ impl PromptCache {
     /// behind an idle barrier belong to a finished request; the preserved
     /// offset means they are gone for good rather than re-read on the next
     /// refresh.
+    /// The stretch that just ended keeps its opening ask in the arc on the way
+    /// out — the barrier is what ends a stretch, so it is the only place that
+    /// knows one has ended. `opening` is untouched: it belongs to the session,
+    /// not to any stretch of it.
     fn barrier(&mut self) {
-        self.first = None;
+        if let Some(goal) = self.first.take() {
+            if self.arc.back() != Some(&goal) {
+                if self.arc.len() == MAX_ARC_STRETCHES {
+                    self.arc.pop_front();
+                }
+                self.arc.push_back(goal);
+            }
+        }
         self.recent.clear();
     }
 
@@ -1021,6 +1085,117 @@ fn push_prompt_sections(out: &mut String, prompts: &[String]) {
     }
 }
 
+/// Compose the digest the STANDING DESCRIPTION is written from — a different
+/// question, asked of different evidence ([P07]).
+///
+/// The headline's digest is about a stretch: it leads with the stretch's
+/// opening ask under "The standing goal", narrows to the newest ask, and closes
+/// on what is running this second. Handing that same digest to the description
+/// and telling the model to "describe the standing goal" produced exactly what
+/// you would expect — the description and the headline, one under the other,
+/// saying the same sentence in the same words. The two lines were never asked
+/// different questions; they were asked the same question about the same
+/// paragraph, and the model answered honestly twice.
+///
+/// So the description gets evidence the headline cannot see:
+///
+///  - **The session's opening ask** — `PromptCache::opening`, which survives
+///    every idle barrier. This is what the session set out to do.
+///  - **The arc** — the opening ask of each finished stretch, in order. A
+///    session that began as an audit, became a repair, and ended in a doc pass
+///    is *about* that movement, and no single stretch contains it.
+///  - **Where it stands now** — the current stretch's goal and the live
+///    headline, LABELLED AS THE PRESENT and explicitly not the subject. They
+///    are here so the description is current, not so it is about them.
+///  - **The description it is replacing**, when there is one, so a re-run
+///    revises a standing line rather than composing a new one from scratch
+///    every minute. It is also what keeps the line still: a model handed its
+///    own last answer mostly agrees with it, which is the correct behavior for
+///    a line that is supposed to stand.
+///
+/// Returns `None` when the session has said nothing yet — with no opening ask,
+/// no arc, and no goal there is no undertaking to describe, and an honestly
+/// empty description line is the right answer.
+pub fn compose_synopsis_digest(
+    opening: Option<&str>,
+    arc: &[String],
+    current_goal: Option<&str>,
+    headline: Option<&str>,
+    previous: Option<&str>,
+) -> Option<String> {
+    if opening.is_none() && arc.is_empty() && current_goal.is_none() {
+        return None;
+    }
+    let mut out = String::new();
+    if let Some(opening) = opening {
+        out.push_str(SESSION_OPENING_HEADING);
+        out.push_str("\n- ");
+        out.push_str(&clip(opening.trim(), 240));
+        out.push('\n');
+    }
+    // The arc omits a stretch that merely restates the opener, and the opener
+    // itself: a session with one stretch has no arc to show, and printing its
+    // one ask twice would weight it as though it did.
+    let turns: Vec<&String> = arc
+        .iter()
+        .filter(|goal| Some(goal.as_str()) != opening)
+        .collect();
+    if !turns.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(SESSION_ARC_HEADING);
+        out.push('\n');
+        for goal in turns {
+            out.push_str("- ");
+            out.push_str(&clip(goal.trim(), 160));
+            out.push('\n');
+        }
+    }
+    // The present, under a heading that says so. Both lines are background:
+    // the wording tells the model in as many words that this section is
+    // evidence the work is live, never the subject.
+    let now: Vec<&str> = [current_goal, headline]
+        .into_iter()
+        .flatten()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if !now.is_empty() {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(SESSION_PRESENT_HEADING);
+        out.push('\n');
+        let mut seen: Vec<&str> = Vec::new();
+        for line in now {
+            let line = line.trim();
+            if seen.contains(&line) {
+                continue;
+            }
+            seen.push(line);
+            out.push_str("- ");
+            out.push_str(&clip(line, 160));
+            out.push('\n');
+        }
+    }
+    if let Some(previous) = previous.map(str::trim).filter(|p| !p.is_empty()) {
+        out.push('\n');
+        out.push_str(SESSION_PREVIOUS_HEADING);
+        out.push_str("\n- ");
+        out.push_str(&clip(previous, 240));
+        out.push('\n');
+    }
+    Some(out)
+}
+
+/// Headings the synopsis digest states its evidence under. Separate constants
+/// because the prompt names each one verbatim, and a heading the wording does
+/// not name is a section the model has no instruction about.
+const SESSION_OPENING_HEADING: &str = "What the session set out to do:";
+const SESSION_ARC_HEADING: &str = "What it turned to after that, in order:";
+const SESSION_PRESENT_HEADING: &str = "Where it stands right now (background, not the subject):";
+const SESSION_PREVIOUS_HEADING: &str = "The description you are revising:";
+
 /// Compose the digest a settled session is summarized from: the same intent
 /// sections, then every activity line the stretch produced under one heading.
 ///
@@ -1123,6 +1298,24 @@ pub struct HeadlineReport {
 ///
 /// Total: any input, including empty or whitespace-only, yields a string.
 pub fn headline_register_report(raw: &str) -> HeadlineReport {
+    register_report(raw, MAX_HEADLINE_CHARS, true)
+}
+
+/// Impose the STANDING DESCRIPTION's register: the same mechanical cleanup at
+/// the description's own budget, and without the joiner trim.
+///
+/// The joiner trim is a headline rule and only a headline rule. It exists
+/// because past 56 characters what a model has added is the parts list a label
+/// headline drags behind it, so `and` marks a dispensable tail. A description
+/// is allowed to be a sentence with two halves — "Rework how a session names
+/// itself **and** adopt it at every surface that cites one" is the description
+/// doing its job, and cutting it at `and` would throw away the half that says
+/// how far the work reaches.
+pub fn synopsis_register_report(raw: &str) -> HeadlineReport {
+    register_report(raw, MAX_SYNOPSIS_CHARS, false)
+}
+
+fn register_report(raw: &str, budget: usize, trim_joiner_tail: bool) -> HeadlineReport {
     let mut text = raw.trim();
 
     // Matched wrapping quotes, straight or curly. A model asked for one line
@@ -1155,8 +1348,12 @@ pub fn headline_register_report(raw: &str) -> HeadlineReport {
     }
 
     let collapsed = collapsed.trim();
-    let trimmed_text = trim_tail_to_char_budget(collapsed);
-    let text = clip(&trimmed_text, MAX_HEADLINE_CHARS);
+    let trimmed_text = if trim_joiner_tail {
+        trim_tail_to_char_budget(collapsed)
+    } else {
+        collapsed.to_string()
+    };
+    let text = clip(&trimmed_text, budget);
     HeadlineReport {
         normalized: text != raw.trim(),
         trimmed: trimmed_text != collapsed,
@@ -1816,10 +2013,13 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                             &config.pulse_tx,
                             config.ledger.as_ref(),
                         );
-                        if let Some(digest) = digest {
+                        // The description rides the emit's CADENCE, not its
+                        // evidence: an emit having happened is what says the
+                        // session moved, and `take_synopsis_job` then composes
+                        // the session-lifetime digest of its own.
+                        if digest.is_some() {
                             if let Some(job) = take_synopsis_job(
                                 &session_id,
-                                &digest,
                                 &mut sessions,
                                 &config,
                                 &cancel,
@@ -2276,7 +2476,10 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
 struct SynopsisJob {
     /// The tug session id — what the loop keys by, and what the resolver takes.
     session_id: String,
-    /// The digest the headline was just composed from.
+    /// The session-lifetime evidence, everything except the description this
+    /// ask is revising — that one is read from the ledger row inside the job,
+    /// in the same read that enforces the freeze rule, so the two facts come
+    /// from one look at the row rather than two.
     digest: String,
     shared_agent: crate::shared_agent::SharedAgentHandle,
     ledger: Arc<crate::session_ledger::SessionLedger>,
@@ -2302,9 +2505,12 @@ struct SynopsisJob {
 /// job if it is. Runs on the loop so the debounce clock is read and written in
 /// one place; the ask itself runs detached, because it must not occupy the
 /// single emit slot that paces every session's headline.
+///
+/// The digest is composed HERE, from the session's own lifetime evidence, and
+/// is not the headline's digest under a different question — see
+/// [`compose_synopsis_digest`] for why that distinction is the whole point.
 fn take_synopsis_job(
     session_id: &str,
-    digest: &str,
     sessions: &mut HashMap<String, SessionState>,
     config: &SessionOverviewConfig,
     cancel: &CancellationToken,
@@ -2323,13 +2529,23 @@ fn take_synopsis_job(
             return None;
         }
     }
+    let arc: Vec<String> = state.prompts.arc.iter().cloned().collect();
+    let digest = compose_synopsis_digest(
+        state.prompts.opening.as_deref(),
+        &arc,
+        state.prompts.first.as_deref(),
+        state.last_headline.as_deref(),
+        None,
+    )?;
     // Marked on the ask, not on the answer: a model that fails or a row that
-    // turns out to be frozen must not make every subsequent emit retry.
+    // turns out to be frozen must not make every subsequent emit retry. Marked
+    // AFTER the digest, so a session with nothing to describe yet has not
+    // burned its window on a question that was never put.
     state.last_synopsis = Some(now);
     Some(SynopsisJob {
         row_id,
         session_id: session_id.to_owned(),
-        digest: digest.to_owned(),
+        digest,
         shared_agent: config.shared_agent.clone(),
         ledger: Arc::clone(ledger),
         control_tx: config.control_tx.clone(),
@@ -2361,12 +2577,16 @@ async fn run_synopsis(job: SynopsisJob) {
     // renamed session must cost nothing at all, not an inference whose answer
     // is then discarded. `record_synopsis` enforces the same rule in SQL, which
     // is what closes the window between this read and that write.
-    match ledger.get(&row_id) {
+    //
+    // The same read also yields the description this ask is revising, which is
+    // the last section of the digest: a re-run should revise a standing line,
+    // not compose a fresh one every minute against slightly different evidence.
+    let previous = match ledger.get(&row_id) {
         Ok(Some(row)) if row.name_user_set => {
             debug!(session = %session_id, "session synopsis: frozen by rename");
             return;
         }
-        Ok(Some(_)) => {}
+        Ok(Some(row)) => row.synopsis,
         Ok(None) => {
             debug!(session = %session_id, row = %row_id, "session synopsis: no ledger row");
             return;
@@ -2375,7 +2595,13 @@ async fn run_synopsis(job: SynopsisJob) {
             warn!(%error, session = %session_id, "session synopsis: ledger read failed");
             return;
         }
-    }
+    };
+    let digest = match previous.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        Some(previous) => {
+            format!("{digest}\n{SESSION_PREVIOUS_HEADING}\n- {}\n", clip(previous, 240))
+        }
+        None => digest,
+    };
     let Some(agent) = shared_agent else {
         return;
     };
@@ -2394,10 +2620,11 @@ async fn run_synopsis(job: SynopsisJob) {
             }
         },
     };
-    // Same register and same grounding gate as the headline: the description is
-    // read at the same size in the same places, and a description the digest
-    // does not support is the invention the gate exists to refuse.
-    let report = headline_register_report(&answer);
+    // The description's OWN register — a summary's budget, and no joiner trim
+    // — and the headline's grounding gate unchanged: a description the digest
+    // does not support is the invention the gate exists to refuse, and that is
+    // true whatever length the line is allowed to be.
+    let report = synopsis_register_report(&answer);
     match ground_headline(&report.text, &digest, GroundingMode::Intent) {
         GroundingVerdict::Grounded => {}
         GroundingVerdict::Ungrounded { rule, detail } => {
@@ -4096,6 +4323,18 @@ mod tests {
         .to_string()
     }
 
+    /// Any record the prompt extractor does not read as an ask. Under the
+    /// barrier doctrine a non-prompt record IS a response, which is what
+    /// closes a stretch during a priming pass.
+    fn assistant_line(text: &str) -> String {
+        serde_json::json!({
+            "type": "assistant",
+            "timestamp": "2026-07-29T00:00:00.000Z",
+            "message": { "role": "assistant", "content": text },
+        })
+        .to_string()
+    }
+
     fn cache_tmp(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "tugcast-prompt-cache-{name}-{}-{:?}",
@@ -4185,8 +4424,142 @@ mod tests {
             Some("the new request"),
             "the new stretch's opening ask takes the pinned slot"
         );
+        // The barrier is the STRETCH's boundary, not the session's. What the
+        // session set out to do outlives it, and the stretch that just ended
+        // goes into the arc on its way out — this pair is what the standing
+        // description is written from, and what the headline's digest has no
+        // way to see.
+        assert_eq!(
+            cache.opening.as_deref(),
+            Some("the finished request"),
+            "the session's opening ask survives every barrier"
+        );
+        assert_eq!(
+            cache.arc.iter().cloned().collect::<Vec<_>>(),
+            ["the finished request"].map(String::from),
+            "the closed stretch's goal is kept as the session's arc"
+        );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A restart reads the whole transcript at once, and the barrier doctrine
+    /// discards every ask above a response. It must not discard the SESSION's
+    /// memory with them: a priming pass reconstructs the opening ask and the
+    /// arc from exactly the file it is already reading, so a tugcast restart
+    /// does not cost a session its description's subject.
+    #[test]
+    fn priming_reconstructs_the_session_arc_from_the_transcript() {
+        let path = cache_tmp("priming-arc");
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n{}\n{}\n{}\n",
+                user_line("audit the ledger's migrations"),
+                assistant_line("looked at them"),
+                user_line("now repair the wedge it found"),
+                assistant_line("repaired"),
+                user_line("write the doctrine entry"),
+            ),
+        )
+        .unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
+
+        // The live stretch is the trailing run of unanswered asks — unchanged.
+        assert_eq!(
+            cache.first.as_deref(),
+            Some("write the doctrine entry"),
+            "the stretch's goal is still the trailing unanswered ask"
+        );
+        // And the session's own history came back with it.
+        assert_eq!(
+            cache.opening.as_deref(),
+            Some("audit the ledger's migrations"),
+            "the file's first ask is the session's opening ask"
+        );
+        assert_eq!(
+            cache.arc.iter().cloned().collect::<Vec<_>>(),
+            ["audit the ledger's migrations", "now repair the wedge it found"]
+                .map(String::from),
+            "each answered stretch's opener is an entry in the arc"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The bug this whole rework exists for: the description and the headline
+    /// used to be one question asked twice. The two digests must now differ in
+    /// their SUBJECT — the description's leads with the session, the
+    /// headline's leads with the stretch — and the description's must file the
+    /// live headline under a heading that says it is background.
+    #[test]
+    fn the_description_digest_is_about_the_session_not_the_stretch() {
+        let digest = compose_synopsis_digest(
+            Some("audit the ledger's migrations"),
+            &["audit the ledger's migrations".to_string(), "now repair the wedge".to_string()],
+            Some("write the doctrine entry"),
+            Some("Draft doctrine entry for ledger wedge"),
+            Some("Audit and repair the ledger's migrations"),
+        )
+        .expect("a session with an opening ask has something to describe");
+
+        assert!(digest.starts_with(SESSION_OPENING_HEADING));
+        assert!(digest.contains("audit the ledger's migrations"));
+        // The arc carries the turn, and does NOT repeat the opener it already
+        // stated — a one-stretch session would otherwise be weighted twice.
+        assert!(digest.contains(SESSION_ARC_HEADING));
+        assert_eq!(digest.matches("audit the ledger's migrations").count(), 1);
+        assert!(digest.contains("now repair the wedge"));
+        // The present is present, and labelled as background.
+        let present = digest
+            .split_once(SESSION_PRESENT_HEADING)
+            .expect("the present section")
+            .1;
+        assert!(present.contains("Draft doctrine entry for ledger wedge"));
+        assert!(present.contains("write the doctrine entry"));
+        // The standing line the model is revising closes it out.
+        assert!(digest.contains(SESSION_PREVIOUS_HEADING));
+        assert!(digest.contains("Audit and repair the ledger's migrations"));
+
+        // Nothing said yet is nothing to describe: an honestly empty
+        // description line beats a composed one about no evidence.
+        assert!(compose_synopsis_digest(None, &[], None, Some("Fix things"), None).is_none());
+    }
+
+    /// The description's register is a SUMMARY's, and the difference from the
+    /// headline's is load-bearing: at the headline's budget, under the
+    /// headline's joiner trim, the line cannot say more than a headline can —
+    /// which is how it ended up printing one.
+    #[test]
+    fn the_description_register_keeps_what_a_headline_would_lose() {
+        let long = "Rework how a session names itself and adopt the new identity at every surface that cites one";
+        let as_headline = headline_register_report(long);
+        let as_description = synopsis_register_report(long);
+
+        // The headline cuts at the joiner and clips; the description keeps the
+        // whole sentence, because the half past `and` is the half that says how
+        // far the work reaches.
+        assert!(as_headline.text.chars().count() <= MAX_HEADLINE_CHARS);
+        assert!(!as_headline.text.contains("every surface"));
+        assert_eq!(as_description.text, long);
+        assert!(as_description.text.chars().count() <= MAX_SYNOPSIS_CHARS);
+
+        // Everything mechanical is still imposed: quotes, filler openers, the
+        // leading article, the terminal period.
+        let messy = "\"The user is working on the wedge recovery path.\"";
+        assert_eq!(
+            synopsis_register_report(messy).text,
+            "wedge recovery path",
+        );
+
+        // And the budget really does clip — the line is chrome, not prose.
+        let overlong = "x".repeat(MAX_SYNOPSIS_CHARS + 40);
+        assert_eq!(
+            synopsis_register_report(&overlong).text.chars().count(),
+            MAX_SYNOPSIS_CHARS + 1,
+            "clip marks what it dropped with one ellipsis"
+        );
     }
 
     /// An emit that crossed the idle barrier in flight lands nothing: its
@@ -4367,6 +4740,8 @@ mod tests {
             primed: true,
             first: Some("pinned".to_string()),
             recent: VecDeque::from(["recent".to_string()]),
+            opening: Some("pinned".to_string()),
+            arc: VecDeque::new(),
         };
         cache.refresh(std::path::Path::new("/nonexistent/tugcast/prompts.jsonl"));
         assert_eq!(cache.offset, 42);
@@ -4383,6 +4758,8 @@ mod tests {
             primed: true,
             first: Some("the goal".to_string()),
             recent: VecDeque::from(["the goal".to_string()]),
+            opening: Some("the goal".to_string()),
+            arc: VecDeque::new(),
         };
         assert_eq!(cache.digest_prompts(), ["the goal"].map(String::from));
 
@@ -4395,6 +4772,8 @@ mod tests {
                 "a course correction".to_string(),
                 "and a refinement".to_string(),
             ]),
+            opening: Some("the goal".to_string()),
+            arc: VecDeque::new(),
         };
         assert_eq!(
             cache.digest_prompts(),
@@ -4740,6 +5119,17 @@ mod tests {
         }
     }
 
+    /// A session state carrying just enough for a description to be composable:
+    /// an opening ask. Without one there is no undertaking to describe and
+    /// `take_synopsis_job` correctly declines, which is a different thing from
+    /// the debounce these tests are about.
+    fn described_session(now: Instant, opening: &str) -> SessionState {
+        let mut state = SessionState::new(now);
+        state.prompts.opening = Some(opening.to_string());
+        state.prompts.first = Some(opening.to_string());
+        state
+    }
+
     #[test]
     fn the_description_asks_far_more_slowly_than_the_headline() {
         let ledger = Arc::new(
@@ -4749,25 +5139,52 @@ mod tests {
         let cancel = CancellationToken::new();
         let start = Instant::now();
         let mut sessions = HashMap::new();
-        sessions.insert("s1".to_string(), SessionState::new(start));
-
-        // The first emit's digest asks.
-        assert!(
-            take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, start).is_some()
+        sessions.insert(
+            "s1".to_string(),
+            described_session(start, "bundle tmux statically from source"),
         );
+
+        // The first emit asks.
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, start).is_some());
         // Every emit inside the window is refused — the headline moves on its
         // own 8s floor and the description must not follow it.
         let soon = start + SYNOPSIS_MIN_INTERVAL - Duration::from_secs(1);
-        assert!(take_synopsis_job("s1", "d2", &mut sessions, &config, &cancel, soon).is_none());
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, soon).is_none());
         // Past the window it asks again.
         let later = start + SYNOPSIS_MIN_INTERVAL;
-        let job = take_synopsis_job("s1", "d3", &mut sessions, &config, &cancel, later)
+        let job = take_synopsis_job("s1", &mut sessions, &config, &cancel, later)
             .expect("due past the interval");
-        assert_eq!(job.digest, "d3");
+        // The digest is the SESSION's, composed here — not the headline's
+        // digest handed over under a different question.
+        assert!(job.digest.contains(SESSION_OPENING_HEADING));
+        assert!(job.digest.contains("bundle tmux statically from source"));
         // The row key is claude's id, not the tug id: a fork's description must
         // not land on its parent's row.
         assert_eq!(job.row_id, "claude-1");
         assert_eq!(job.session_id, "s1");
+    }
+
+    #[test]
+    fn a_session_with_nothing_to_describe_is_not_asked_and_keeps_its_window() {
+        let ledger = Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().expect("in-memory ledger"),
+        );
+        let config = synopsis_config(Some(ledger), Some("claude-1"));
+        let cancel = CancellationToken::new();
+        let now = Instant::now();
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), SessionState::new(now));
+        // No opening ask, no arc, no goal: there is no undertaking, and an
+        // honestly empty description line is the right answer.
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_none());
+        // And the debounce was not spent on a question that was never put — the
+        // moment the session says something, the very next emit asks.
+        sessions
+            .get_mut("s1")
+            .expect("seeded")
+            .prompts
+            .opening = Some("audit the ledger's migrations".to_string());
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_some());
     }
 
     #[test]
@@ -4779,11 +5196,11 @@ mod tests {
         let cancel = CancellationToken::new();
         let now = Instant::now();
         let mut sessions = HashMap::new();
-        sessions.insert("s1".to_string(), SessionState::new(now));
+        sessions.insert("s1".to_string(), described_session(now, "port the shell router"));
         // The resolver answers `None` both for "no such entry" and for a
         // contended lock, so there is no row this description is known to
         // belong to. Guessing the tug id would name a fork's PARENT row.
-        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, now).is_none());
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_none());
         // And the window was not spent: the moment the resolver can answer, the
         // very next emit asks rather than waiting out a minute it never used.
         let config = synopsis_config(
@@ -4792,7 +5209,7 @@ mod tests {
             )),
             Some("claude-1"),
         );
-        let job = take_synopsis_job("s1", "d2", &mut sessions, &config, &cancel, now)
+        let job = take_synopsis_job("s1", &mut sessions, &config, &cancel, now)
             .expect("due as soon as the row is known");
         assert_eq!(job.row_id, "claude-1");
     }
@@ -4803,8 +5220,8 @@ mod tests {
         let cancel = CancellationToken::new();
         let now = Instant::now();
         let mut sessions = HashMap::new();
-        sessions.insert("s1".to_string(), SessionState::new(now));
-        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, now).is_none());
+        sessions.insert("s1".to_string(), described_session(now, "trace the wedge"));
+        assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_none());
         // A session the sweep has already dropped is likewise nothing to do.
         let config = synopsis_config(
             Some(Arc::new(
@@ -4812,9 +5229,7 @@ mod tests {
             )),
             Some("claude-1"),
         );
-        assert!(
-            take_synopsis_job("gone", "d1", &mut sessions, &config, &cancel, now).is_none()
-        );
+        assert!(take_synopsis_job("gone", &mut sessions, &config, &cancel, now).is_none());
     }
 
     /// Await one PULSE frame, or `None` if none arrives promptly. The window

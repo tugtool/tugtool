@@ -53,9 +53,15 @@
 }
 
 /* The mark is quieter than the name it marks — it says what kind of thing
-   this is, and the name is the thing. */
+   this is, and the name is the thing. A mount site that seats the line on
+   chrome of its own overrides the knob: the masthead points it at the pane's
+   title-bar icon color, because there the mark IS the card's title icon and
+   has to read like every other card's. */
 .tug-session-identity[data-tier="line"] .tug-session-identity-icon {
-  color: var(--tug7-element-global-text-normal-muted-rest);
+  color: var(
+    --tugx-session-identity-icon-color,
+    var(--tug7-element-global-text-normal-muted-rest)
+  );
 }
 
 /* ── Citation: the session atom. A rounded pill, deliberately not the

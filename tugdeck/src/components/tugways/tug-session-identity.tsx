@@ -12,8 +12,14 @@
  * Both registers print `<project>/<callsign>` as ONE bold run: one face, one
  * weight, one color, one text node. Two spans opened a flex gap after the
  * slash and let each half truncate on its own; one run can do neither. The
- * mark is the chatbox icon, and the icon gap is one token across both
- * registers and every tier.
+ * mark is the ruled chatbox — `MessageSquareText`, the bubble carrying lines
+ * of talk, which is the app's session mark everywhere a session is named — and
+ * the icon gap is one token across both registers and every tier.
+ *
+ * The mark's COLOR is the mount site's: the line tier publishes
+ * `--tugx-session-identity-icon-color`, muted by default, and the masthead
+ * points it at the pane's own title-bar icon color so a Session card's mark
+ * reads in the theme tint every other card's title icon wears.
  *
  * The chip's hover carries the full identity and the citation as a
  * `TugTooltip`, not a placard: `TugTooltip` is explicitly non-interactive and
@@ -38,7 +44,7 @@
 import "./tug-session-identity.css";
 
 import React from "react";
-import { MessageSquare, MessageSquareOff } from "lucide-react";
+import { MessageSquareOff, MessageSquareText } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useCopyableText } from "@/components/tugways/use-copyable-text";
@@ -67,8 +73,15 @@ export type TugSessionIdentitySize = "sm" | "2xs";
 /** Icon box per size, in px — the mark reads at the same weight as the run. */
 const ICON_SIZE: Record<TugSessionIdentitySize, number> = { sm: 12, "2xs": 11 };
 
-/** The line tier's mark, which sits beside body-size text. */
-const LINE_ICON_SIZE = 14;
+/**
+ * The line tier's mark, which sits beside body-size text.
+ *
+ * Exported because a mount site stacking lines UNDER the identity has to know
+ * what the mark advances by to start them at the callsign rather than at the
+ * glyph — the masthead's description and PULSE lines do exactly that. One
+ * source, two readers.
+ */
+export const TUG_SESSION_IDENTITY_LINE_ICON_SIZE = 14;
 
 export interface TugSessionIdentityProps
   extends Omit<React.ComponentPropsWithoutRef<"span">, "children" | "onClick"> {
@@ -151,7 +164,7 @@ export const TugSessionIdentity = React.forwardRef<
 ) {
   const isChip = tier === "chip";
   const isMissing = isChip && missing;
-  const Glyph = isMissing ? MessageSquareOff : MessageSquare;
+  const Glyph = isMissing ? MessageSquareOff : MessageSquareText;
   // Inert when the citation resolves to nothing, and when the caller has no
   // intent to offer. Both are the same rendering: no cursor, no handler.
   const interactive = isChip && !isMissing && onOpen !== undefined;
@@ -201,7 +214,7 @@ export const TugSessionIdentity = React.forwardRef<
     >
       {isChip || icon ? (
         <Glyph
-          size={isChip ? ICON_SIZE[size] : LINE_ICON_SIZE}
+          size={isChip ? ICON_SIZE[size] : TUG_SESSION_IDENTITY_LINE_ICON_SIZE}
           className="tug-session-identity-icon"
           aria-hidden
         />

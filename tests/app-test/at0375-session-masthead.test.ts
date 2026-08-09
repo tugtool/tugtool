@@ -42,6 +42,15 @@
  *      "the pane portals its content" into a contract with a failing test
  *      behind it.
  *
+ *   E. **The three lines are one block.** They share a left edge — the
+ *      CALLSIGN's, not the mark's in front of it — the lead line seats where a
+ *      one-line title bar seats its title, the telemetry widget stands on that
+ *      same row as the pane's own controls, and the tape holds the trailing
+ *      edge with the PULSE runs reaching it. Every one of these is a claim
+ *      about pixels in a live pane against real content, so the test drives a
+ *      real overview and a real beat through the production pulse parser
+ *      rather than measuring an empty band.
+ *
  * Nothing here hangs off an animation: background app-test windows run no
  * rAF, so every assertion reads settled geometry.
  *
@@ -51,6 +60,9 @@
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/components/tugways/tug-sheet.css
  * @covers tugdeck/src/lib/card-title-store.ts
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-identity.css
+ * @covers tugdeck/src/components/tugways/tug-pulse.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -67,6 +79,22 @@ const SESSION_ID = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
 const TAG = "stocky-pixie";
 const MASTHEAD_HEIGHT = 72;
 const CHROME_HEIGHT = 36;
+
+/** Long enough that every line has to give way somewhere. */
+const SYNOPSIS =
+  "Rework how a session names itself across the masthead, the Lens, and every surface that cites one";
+const OVERVIEW = "Audit the masthead's three lines";
+const ACTIVITY =
+  "Running rg -n 'session-masthead' /Users/somebody/src/project/tugdeck/src/components/tugways | head -40";
+
+/**
+ * The most air permitted between a TRUNCATED activity run and the tape beside
+ * it: the component's own trailing gap, the tape trigger's hover padding, and
+ * a character of search granularity in the middle truncation. Past that the
+ * run gave up width nothing is using — which is what the reader sees as a
+ * sentence that stopped early for no reason.
+ */
+const TAPE_GAP_MAX = 24;
 
 const PANE = '.tug-pane[data-pane-id="p1"]';
 const TITLE_BAR = `${PANE} [data-slot="tug-pane-title-bar"]`;
@@ -329,6 +357,177 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
           })()`,
         );
         expect(after).toBe(before);
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "the three lines share one left edge, seat on the pane's own title row, and give the PULSE every pixel up to the tape",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375b-"));
+      const app = await launchTugApp({
+        testName: "at0375-session-masthead-lines",
+      });
+      try {
+        await app.seedDeckState({
+          state: deckShape(["S"], "S"),
+          focusCardId: "S",
+        });
+        await app.bindSession("S", {
+          tugSessionId: SESSION_ID,
+          projectDir: dir,
+        });
+        await app.evalJS<boolean>(
+          `window.__tug.publishSessionUpdated(${JSON.stringify(
+            sessionUpdated({
+              tag: TAG,
+              name: null,
+              name_user_set: false,
+              synopsis: SYNOPSIS,
+            }),
+          )})`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        // A real overview and a real beat, through the production parser and
+        // folds — the masthead cannot be measured with its runs empty.
+        await app.evalJS<boolean>(
+          `window.__tug.publishPulseFrame(${JSON.stringify(
+            JSON.stringify({
+              type: "pulse",
+              kind: "overview",
+              text: OVERVIEW,
+              scopes: [SESSION_ID],
+              beat: 1,
+              at: 1_700_000_000_000,
+            }),
+          )})`,
+        );
+        await app.evalJS<boolean>(
+          `window.__tug.publishPulseFrame(${JSON.stringify(
+            JSON.stringify({
+              type: "pulse",
+              text: ACTIVITY,
+              scopes: [SESSION_ID],
+              beat: 2,
+              at: 1_700_000_000_001,
+            }),
+          )})`,
+        );
+        await app.waitForCondition<boolean>(
+          `(document.querySelector(
+             ${JSON.stringify(MASTHEAD)} + ' [data-slot="tug-pulse-headline"]')
+             || { textContent: "" }).textContent.length > 0`,
+          { timeoutMs: 8_000 },
+        );
+
+        // ---- One left edge for all three lines. ---------------------------
+        // The description and the PULSE start at the CALLSIGN, not at the mark
+        // in front of it — three lines on two verticals read as a stack that
+        // was assembled rather than set.
+        const edges = await app.evalJS<{
+          run: number;
+          desc: number;
+          pulse: number;
+          mark: number;
+        }>(
+          `(function(){
+            var m = document.querySelector(${JSON.stringify(MASTHEAD)});
+            var left = function(sel){
+              var el = m.querySelector(sel);
+              return el === null ? -1
+                : Math.round(el.getBoundingClientRect().left);
+            };
+            return {
+              run: left('.tug-session-identity-run'),
+              desc: left('.session-masthead-description'),
+              pulse: left('.tug-pulse-stage'),
+              mark: left('.tug-session-identity-icon'),
+            };
+          })()`,
+        );
+        note("masthead left edges", JSON.stringify(edges));
+        expect(edges.desc).toBe(edges.run);
+        expect(edges.pulse).toBe(edges.run);
+        // And the mark really is out to the left of them — otherwise the three
+        // could agree by the inset having quietly become zero.
+        expect(edges.mark).toBeLessThan(edges.run);
+
+        // ---- The lead line seats on the pane's own title row. -------------
+        // Its box centers in the FIRST chrome band, exactly where a one-line
+        // title bar seats its title and where the pane's controls already sit.
+        const seat = await app.evalJS<{ lead: number; height: number }>(
+          `(function(){
+            var bar = document.querySelector(${JSON.stringify(TITLE_BAR)});
+            var lead = bar.querySelector('.session-masthead-lead');
+            var r = lead.getBoundingClientRect();
+            return {
+              lead: Math.round(r.top - bar.getBoundingClientRect().top),
+              height: Math.round(r.height),
+            };
+          })()`,
+        );
+        note("lead line seat", JSON.stringify(seat));
+        const expectedSeat = Math.round((CHROME_HEIGHT - seat.height) / 2);
+        expect(Math.abs(seat.lead - expectedSeat)).toBeLessThanOrEqual(1);
+
+        // ---- The telemetry widget stands on that same row. ----------------
+        const widget = await app.evalJS<{ widget: number; controls: number }>(
+          `(function(){
+            var pane = document.querySelector(${JSON.stringify(PANE)});
+            var mid = function(sel){
+              var el = pane.querySelector(sel);
+              if (el === null) return -1;
+              var r = el.getBoundingClientRect();
+              return Math.round(r.top + r.height / 2);
+            };
+            return {
+              widget: mid('[data-slot="session-masthead-widget"]'),
+              controls: mid('.tug-pane-title-bar-controls .tug-button'),
+            };
+          })()`,
+        );
+        note("widget vs controls center", JSON.stringify(widget));
+        expect(Math.abs(widget.widget - widget.controls)).toBeLessThanOrEqual(1);
+
+        // ---- The tape is flush right, and the runs reach it. --------------
+        // The sparkline holds the trailing edge and the PULSE gets everything
+        // else: a truncated activity that stops well short of the tape has
+        // thrown away width nothing else is using.
+        const band = await app.evalJS<{
+          slack: number;
+          tapeGap: number;
+          truncated: boolean;
+        }>(
+          `(function(){
+            var m = document.querySelector(${JSON.stringify(MASTHEAD)});
+            var pulse = m.querySelector('.session-masthead-pulse');
+            var tape = pulse.querySelector('.tug-pulse-trailing');
+            var run = pulse.querySelector('[data-slot="tug-pulse-activity"]');
+            var pr = pulse.getBoundingClientRect();
+            var tr = tape.getBoundingClientRect();
+            var rr = run.getBoundingClientRect();
+            return {
+              slack: Math.round(pr.right - tr.right),
+              tapeGap: Math.round(tr.left - rr.right),
+              truncated: run.dataset.truncated === "true",
+            };
+          })()`,
+        );
+        note("pulse band", JSON.stringify(band));
+        // The tape sits at the line's trailing edge.
+        expect(band.slack).toBeLessThanOrEqual(2);
+        // A truncated run is the only case this can be read from: an activity
+        // that fits leaves whatever slack it likes.
+        expect(band.truncated).toBe(true);
+        expect(band.tapeGap).toBeLessThanOrEqual(TAPE_GAP_MAX);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

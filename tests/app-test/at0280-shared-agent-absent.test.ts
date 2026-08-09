@@ -26,8 +26,11 @@
  * correlation in `shell-classify-store.test.ts`.
  *
  * Three claims:
- *   1. The PULSE strip renders its single activity run and NO headline run —
- *      not an empty one, not a reserved one. Absent means absent.
+ *   1. The PULSE line renders its activity run, and its headline run says the
+ *      PLACEHOLDER and nothing else. With no agent no goal is ever composed,
+ *      and the reading for that is the same word an idle session shows in the
+ *      Lens — never an invented goal, and never a line that quietly fabricates
+ *      one from the activity beside it.
  *   2. Typing lines that open with a PATH executable — `make test`, `git
  *      status` — leaves the composer holding plain text: no routing chip, no
  *      atom of any kind. Routing is a submit-time decision over the whole
@@ -120,6 +123,21 @@ async function count(app: App, selector: string): Promise<number> {
 }
 
 /**
+ * What the masthead's headline run says, or `""` when there is no run at all.
+ *
+ * Read as TEXT rather than counted: the run is always present — with no goal
+ * composed it carries the word `PULSE` as a stand-in, which is exactly the
+ * state this file is about. Counting it would pass whether the placeholder or
+ * a fabricated goal were showing.
+ */
+async function headlineText(app: App): Promise<string> {
+  return app.evalJS<string>(
+    `(document.querySelector(${JSON.stringify(HEADLINE)})
+       || { textContent: "" }).textContent`,
+  );
+}
+
+/**
  * Type `text` into the composer and block until the document reads exactly it.
  *
  * The wait is the point: anything the composer materializes on its own does so
@@ -172,12 +190,15 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 20_000 },
           );
 
-          // 1. The PULSE line is there, and it carries no headline run.
+          // 1. The PULSE line is there, and its headline run says only the
+          //    placeholder — no agent means no goal was ever composed. The run
+          //    itself is always present (it is the word `PULSE` standing in),
+          //    so the claim is about what it SAYS, not whether it exists.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(STRIP)}) !== null`,
             { timeoutMs: 20_000 },
           );
-          expect(await count(app, HEADLINE)).toBe(0);
+          expect(await headlineText(app)).toBe("PULSE");
 
           // 2. Two lines that open with a real PATH executable — the exact
           //    shape that would be put to the agent when one is available.
@@ -187,8 +208,8 @@ describe.skipIf(!SHOULD_RUN)(
           await typeLine(app, "git status", true);
           expect(await count(app, ATOM)).toBe(0);
 
-          // Still no headline after all that activity.
-          expect(await count(app, HEADLINE)).toBe(0);
+          // Still no composed goal after all that activity.
+          expect(await headlineText(app)).toBe("PULSE");
 
           // 3. The Lens says the same thing. The strip and the Lens row are
           //    two separate readers of the same overview, so a regression can

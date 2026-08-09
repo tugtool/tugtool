@@ -1346,29 +1346,52 @@ DIGEST:"
 /// what a session is *about*, as against the headline that says what it is
 /// doing this minute.
 ///
-/// The register rules are `headline_rules!` verbatim, because the description
-/// is read in the same places and at the same size as the headline and a second
-/// register would just be drift. What changes is the subject: the headline is
-/// made to move, so `SUMMARIZE_INSTRUCTIONS` points the model at "what it is
-/// doing right now"; the description is made to *stand*, so this wording points
-/// at the standing goal and tells the model in as many words to ignore the
-/// current motion. A description that re-wrote itself with every tool call
-/// would be the incipit's failure inverted — always current, never about
-/// anything.
+/// **This is not a second headline, and the wording's whole job is to stop it
+/// becoming one.** It shipped asking for `headline_rules!` verbatim against the
+/// headline's own digest, and the result was exactly what that describes: the
+/// description and the headline, one line above the other on the same card,
+/// printing the same sentence. Two things changed together, and neither works
+/// without the other:
+///
+///  - **The evidence.** The digest is now `compose_synopsis_digest`'s —
+///    session-lifetime, with the opening ask and the arc of finished stretches
+///    as the subject and the live headline explicitly labelled background. The
+///    old digest's "standing goal" was the current *stretch's* opening ask,
+///    wiped at every idle barrier, which is the same thing the headline is
+///    written about.
+///  - **The register.** `headline_rules!` is dropped for a summary's rules:
+///    articles and conjunctions are allowed, the budget is
+///    `MAX_SYNOPSIS_CHARS` rather than 56, and the line is asked to name the
+///    undertaking *and* its reach. A line held to headline register beside a
+///    headline reads as a headline however carefully its subject was chosen —
+///    the two levels have to differ in voice, not only in scope.
+///
+/// What is kept from the headline wording is the extractive instruction, for
+/// the same reason it is there: `ground_headline` refuses a description whose
+/// words are not in the digest, so telling the model to reuse the digest's own
+/// words is what keeps the refusal rate down.
 const SYNOPSIS_INSTRUCTIONS: &str = concat!(
     "\
-You write the standing description of a coding session — one line naming what the whole session is about. It sits under the session's name and is read days later, so it must still be true then.
+You write the standing description of a coding session — ONE sentence saying what the whole session is about. It sits under the session's name, on the line under it a headline says what the session is doing this minute, and it is read days later, so it must still be true then.
 
-The digest comes in labeled sections. \"The standing goal\" is the subject: describe THAT. \"The current ask\" narrows it when the goal is vague or absent. \"What it is doing right now\" is evidence that the work is real — never the subject. Do not describe the step in progress; describe the undertaking the steps belong to.
+The digest comes in labeled sections, and they are not equal.
 
-Newspaper headline style. The rules are strict:
+\"What the session set out to do\" and \"What it turned to after that\" are THE SUBJECT. Together they are the session: where it started and how far it has moved. Describe the undertaking those add up to — if the session began in one place and turned, say the thing that covers both, not the newest half.
 
-START WITH A VERB, in the plain command form: Fix, Author, Draft, Wire, Trace, Port, Audit, Bundle, Salvage, Explain. Not \"Fixing\", not \"Building\" — Fix, Build.
-",
-    headline_rules!(),
-    "
+\"Where it stands right now\" is BACKGROUND. It is there so you know the work is live and what it currently touches. It is never the subject. The line above yours already says it, and a description that repeats it says nothing.
 
-Prefer the wider, older aim over the newest one: a description that changes every few minutes is describing the wrong thing.
+\"The description you are revising\" is your own last answer. If it is still true, stay close to it — change it only as much as the newer evidence requires. This line is supposed to stand.
+
+Write it as a sentence, not as a headline:
+
+START WITH A VERB, in the plain command form: Rework, Repair, Trace, Port, Audit, Bundle, Investigate, Extend. Not \"Fixing\", not \"Working on\" — Rework, Repair.
+ARTICLES AND CONJUNCTIONS ARE ALLOWED. \"the\", \"a\", \"and\" — use them where the sentence wants them. This is the one line that gets to read as English.
+NAME THE WORK AND ITS REACH: what is being done, and to what — the subsystem, the surfaces, the span. That second half is what makes it a description rather than a title.
+ROOM FOR ABOUT 110 CHARACTERS — one sentence, no second sentence.
+SENTENCE CASE. Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
+No period at the end. No quotes.
+
+USE THE DIGEST'S OWN WORDS. Build the line out of words that appear in the digest you were given; do not reach for a synonym when the digest has the word. Never name a tool — Bash, Edit, Read, Write, Grep — and never write a path or a file's location.
 
 Answer only from the digest below. Output only the line.
 

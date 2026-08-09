@@ -3,12 +3,17 @@
  *
  *   <project>/<callsign>          ← identity, the Line tier
  *   <description>                 ← the /rename name, else the synopsis
- *   PULSE  goal › activity   ~~~  ← the voice, with its activity sparkline
+ *   goal › activity          ~~~  ← the voice, with its activity sparkline
+ *
+ * Three levels of the same session, widening as they go down: what it IS, what
+ * it is FOR, and what it is doing this second. The word `PULSE` appears on the
+ * third line only as a stand-in, while there is no goal to state — it is a
+ * placeholder, not a label.
  *
  * The pane owns the chrome SLOT and its geometry; this component owns what is
  * inside it and every store behind those lines. That split is what keeps
  * session-domain machinery — the PULSE feed, the activity series, the
- * `pulse/enabled` default, the telemetry the placard reports — out of pane
+ * `pulse/enabled` default, the telemetry the popover reports — out of pane
  * code while chrome stays the pane's ([L09]). The precedent is the Session
  * card mounting `TugPaneBanner`: pane-class furniture, session-class content
  * inside it.
@@ -23,10 +28,12 @@
  * fixed token — a chrome tier that changed height with its content would move
  * the card beneath it on every pulse.
  *
- * The trailing widget opens the telemetry placard: branch, state, turns,
- * stamps, and the citation with a copy affordance. The placard is where the
- * copy lives rather than a hover surface, because a hover-dismissed panel puts
- * its own button out of the pointer's reach.
+ * The trailing widget opens the telemetry popover: branch, state, turns,
+ * stamps, and the citation with a copy affordance. A popover is where the copy
+ * lives rather than a hover surface, because a hover-dismissed panel puts its
+ * own button out of the pointer's reach — and rather than a `TugPlacard`,
+ * which renders in place and needs its caller to own the vertical axis inside
+ * a positioned ancestor, a contract a clipping 72px chrome tier cannot honour.
  *
  * Laws: [L02] every store enters through `useSyncExternalStore`;
  *       [L06] appearance via CSS/DOM, never React state;
@@ -47,9 +54,9 @@ import React, {
 import { Waves } from "lucide-react";
 
 import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
-import { TugPlacard } from "@/components/tugways/tug-placard";
 import {
   TugPopover,
+  TugPopoverAnchor,
   TugPopoverContent,
   TugPopoverTrigger,
 } from "@/components/tugways/tug-popover";
@@ -65,7 +72,10 @@ import { TugPulse } from "@/components/tugways/tug-pulse";
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
-import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
+import {
+  TUG_SESSION_IDENTITY_LINE_ICON_SIZE,
+  TugSessionIdentity,
+} from "@/components/tugways/tug-session-identity";
 import {
   sparklineCurves,
   TugSparkline,
@@ -218,7 +228,7 @@ export interface SessionMastheadProps {
   /** Which session the chrome is about. The only key the pane supplies. */
   sessionId: string;
   /**
-   * The card wearing this chrome. Supplies the project dir for the placard's
+   * The card wearing this chrome. Supplies the project dir for the panel's
    * workspace facts — a pane fact the pane already holds, not session state.
    */
   cardId?: string;
@@ -268,8 +278,19 @@ function MastheadSparkline({
   );
 }
 
-/** How many recent pulses the PULSE-label popover lists. */
+/** How many recent pulses the PULSE-line popover lists. */
 const PULSE_HISTORY_COUNT = 8;
+
+/**
+ * What the description and the PULSE line hang off, so both start at the
+ * CALLSIGN rather than at the mark in front of it. The mark's own advance:
+ * its box plus the one icon gap the identity component publishes — read from
+ * that component rather than typed here, because it is that component's
+ * number.
+ */
+const TEXT_INSET_STYLE = {
+  "--tugx-session-masthead-text-inset": `calc(${TUG_SESSION_IDENTITY_LINE_ICON_SIZE}px + var(--tugx-session-identity-icon-gap, 6px))`,
+} as React.CSSProperties;
 
 /**
  * Raw-text form of a line for the clipboard: "intent › text". Two callers with
@@ -423,8 +444,8 @@ function PulseLineText({
   );
 }
 
-/** One placard row: a quiet label and its value. */
-function PlacardRow({
+/** One telemetry row: a quiet label and its value. */
+function TelemetryRow({
   label,
   children,
 }: {
@@ -432,9 +453,9 @@ function PlacardRow({
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="session-masthead-placard-row">
-      <span className="session-masthead-placard-label">{label}</span>
-      <span className="session-masthead-placard-value">{children}</span>
+    <div className="session-masthead-telemetry-row">
+      <span className="session-masthead-telemetry-label">{label}</span>
+      <span className="session-masthead-telemetry-value">{children}</span>
     </div>
   );
 }
@@ -457,10 +478,10 @@ function stamp(ms: number | null | undefined): string {
  * `codeSessionStore`, whose snapshot is the whole session state. Reading it
  * up in `SessionMasthead` would wake the masthead on every transcript event —
  * the exact churn [P15] keeps out of the identity path. Here the subscription
- * is a boolean selector inside the placard body, and `TugPlacard` renders no
- * children while closed, so it exists only while the placard is open.
+ * is a boolean selector inside the telemetry panel, and a closed popover
+ * mounts no content, so it exists only while the panel is open.
  */
-function PlacardBirthRow({
+function TelemetryBirthRow({
   cardId,
   createdAtMs,
 }: {
@@ -479,9 +500,9 @@ function PlacardBirthRow({
     () => false,
   );
   return (
-    <PlacardRow label={compacted ? "Compacted" : "Created"}>
+    <TelemetryRow label={compacted ? "Compacted" : "Created"}>
       {stamp(createdAtMs)}
-    </PlacardRow>
+    </TelemetryRow>
   );
 }
 
@@ -505,7 +526,7 @@ export function SessionMasthead({
       [cardId],
     ),
   );
-  // The branch is telemetry: it rides the record for the placard and never
+  // The branch is telemetry: it rides the record for the panel and never
   // reaches a rendered name.
   const branch = useSessionBranch(projectDir.length > 0 ? projectDir : null);
   const identity = useSessionIdentity(sessionId, {
@@ -525,7 +546,16 @@ export function SessionMasthead({
     compactionProgressStore.subscribe,
     compactionProgressStore.getSnapshot,
   );
-  const [placardOpen, setPlacardOpen] = React.useState(false);
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  /*
+    The PULSE line's own DOM node, so the recent-pulses popover can anchor to
+    the run the reader is looking at. An ANCHOR rather than a trigger: the
+    stage already carries a right-click copy and its own click toggle, and
+    composing Radix's trigger onto an element with click choreography of its
+    own is exactly the pointerdown/pointerup fight `TugPopoverAnchor` exists
+    to avoid.
+  */
+  const stageElRef = useRef<HTMLElement | null>(null);
 
   // Lines cleared by this card's last submit stay hidden; the next turn's
   // voice repopulates the line.
@@ -541,12 +571,22 @@ export function SessionMasthead({
       : NONE_ENTRY;
   const { current } = useDwellDisplay(target);
   const row = ledger.rows.find((r) => r.session_id === sessionId) ?? null;
-  // The last few pulses for this session — shown in the legend popover.
+  // The last few pulses for this session — shown in the PULSE line's popover.
   const history = linesForScope(pulse.lines, sessionId, PULSE_HISTORY_COUNT);
   // Right-click → Copy the current line's raw text (not the placeholder),
   // headline included so the copy carries the whole two-level reading.
   const copyLine = useCopyableButton(
     current.placeholder ? "" : composeLineCopy(overview?.text, current.text),
+  );
+  // One node, two readers: the copy hook's own callback ref and the popover's
+  // anchor ref.
+  const copyRef = copyLine.ref;
+  const stageRef = useCallback(
+    (el: HTMLElement | null): void => {
+      stageElRef.current = el;
+      copyRef(el);
+    },
+    [copyRef],
   );
 
   // No null branch: `sessionId` is a string here, and `useSessionIdentity`'s
@@ -555,7 +595,11 @@ export function SessionMasthead({
   const description = identity.title;
 
   return (
-    <div className="session-masthead" data-slot="session-masthead">
+    <div
+      className="session-masthead"
+      data-slot="session-masthead"
+      style={TEXT_INSET_STYLE}
+    >
       <div className="session-masthead-lead">
         <TugSessionIdentity identity={identity} tier="line" />
       </div>
@@ -577,38 +621,14 @@ export function SessionMasthead({
         <TugPulse
           className="session-masthead-pulse"
           layout="inline"
-          legend={
-            /*
-              dismissOnChainActivity=false: a row's right-click → Copy
-              dispatches the `copy` action through the responder chain, which
-              would otherwise read as foreign chain activity and close this
-              popover mid-copy. The copy originates from WITHIN the popover, so
-              it must not dismiss it; Escape, click-outside, and the trigger
-              toggle still close it.
-            */
-            <TugPopover dismissOnChainActivity={false}>
-              <TugPopoverTrigger>
-                <button
-                  type="button"
-                  className="session-masthead-legend"
-                  data-slot="session-pulse-legend"
-                  // Pane chrome: pointer-only. The label's card-cycle stop is
-                  // retired with the strip it belonged to — chrome is the
-                  // pane's, and a stop that walked out of the card's cycle
-                  // into its chrome would cross an ownership boundary.
-                  tabIndex={-1}
-                  data-tug-focus="refuse"
-                  data-no-activate=""
-                  aria-label="Recent pulses"
-                >
-                  PULSE
-                </button>
-              </TugPopoverTrigger>
-              <TugPopoverContent side="bottom" align="start" sideOffset={8} arrow>
-                <SessionPulseHistory lines={history} />
-              </TugPopoverContent>
-            </TugPopover>
-          }
+          // NO LEGEND. The word PULSE is a PLACEHOLDER, not a label: a session
+          // that has said what it is doing does not also need the band it said
+          // it in named, and printing the word beside every headline made two
+          // of the masthead's three lines open with furniture. Omitting the
+          // legend hands the job to `TugPulse`'s own headline stand-in, which
+          // prints PULSE in the label's voice exactly while there is no
+          // headline — the same reading the Lens row has always had for a
+          // session with nothing to say yet. One rule, both surfaces.
           headline={overview !== null ? overview.text : undefined}
           activity={
             <PulseLineText
@@ -641,57 +661,96 @@ export function SessionMasthead({
             </TugPopover>
           }
           stageProps={{
-            ref: copyLine.ref as React.Ref<HTMLSpanElement>,
+            ref: stageRef as React.Ref<HTMLSpanElement>,
             onContextMenu: copyLine.onContextMenu,
+            onClick: () => setHistoryOpen((open) => !open),
+            className: "session-masthead-stage",
           }}
         />
       ) : null}
       {copyLine.contextMenu}
 
-      {/* The telemetry widget: everything identity deliberately does not say. */}
-      <button
-        type="button"
-        className="session-masthead-widget"
-        data-slot="session-masthead-widget"
-        // Chrome, like the close button — never a card-cycle focus stop, and
-        // never steals first responder from the card's content.
-        tabIndex={-1}
-        data-tug-focus="refuse"
-        data-no-activate=""
-        aria-label="Session telemetry"
-        title="Session telemetry"
-        onClick={() => setPlacardOpen((open) => !open)}
-      >
-        <Waves size={14} aria-hidden />
-      </button>
+      {/*
+        The recent-pulses history, anchored on the line it is the history OF.
+        This used to hang off the `PULSE` pill, and the pill is now a
+        placeholder rather than a permanent label — so the affordance moves to
+        the reading itself: click what you are reading to see more of it.
 
-      <TugPlacard
-        open={placardOpen}
-        onClose={() => setPlacardOpen(false)}
-        dismiss="auto"
-        triggerSelector='[data-slot="session-masthead-widget"]'
-        title="Session"
-        className="session-masthead-placard"
+        dismissOnChainActivity=false: a row's right-click → Copy dispatches the
+        `copy` action through the responder chain, which would otherwise read as
+        foreign chain activity and close this popover mid-copy. The copy
+        originates from WITHIN the popover, so it must not dismiss it; Escape,
+        click-outside, and a second click on the line still close it.
+      */}
+      <TugPopover
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        dismissOnChainActivity={false}
       >
-        <div className="session-masthead-placard-body">
-          <PlacardRow label="Branch">{identity.branch ?? "—"}</PlacardRow>
-          <PlacardRow label="State">{row?.state ?? identity.state ?? "—"}</PlacardRow>
-          <PlacardRow label="Turns">{row?.turn_count ?? "—"}</PlacardRow>
-          {/* The card's Z0 load-control bar used to carry this same line;
-              the placard is where session telemetry lives now, so it says it
-              once. */}
-          <PlacardBirthRow cardId={cardId} createdAtMs={row?.created_at} />
-          <PlacardRow label="Last used">{stamp(row?.last_used_at)}</PlacardRow>
-          <PlacardRow label="Citation">
-            {/* The citation is the sanctioned flat-text form, and the only
-                place monospace appears in session identity. */}
-            <TugCopyBadge
-              value={sessionCitation(identity, { project: true })}
-              className="session-masthead-placard-citation"
-            />
-          </PlacardRow>
-        </div>
-      </TugPlacard>
+        <TugPopoverAnchor virtualRef={stageElRef} />
+        <TugPopoverContent side="bottom" align="start" sideOffset={8} arrow>
+          <SessionPulseHistory lines={history} />
+        </TugPopoverContent>
+      </TugPopover>
+
+      {/*
+        The telemetry widget: everything identity deliberately does not say.
+
+        A POPOVER, not a placard. `TugPlacard` renders in place and asks its
+        caller to own the vertical axis inside a positioned ancestor — a
+        contract a 72px chrome tier with `overflow: hidden` cannot honour, so
+        the panel opened clipped by the bar it was mounted in and painted over
+        the lines beside it. The popover portals to the deck's canvas overlay
+        and positions itself against this button, which is what every other
+        chrome affordance in the masthead already does.
+      */}
+      <TugPopover dismissOnChainActivity={false}>
+        <TugPopoverTrigger>
+          <button
+            type="button"
+            className="session-masthead-widget"
+            data-slot="session-masthead-widget"
+            // Chrome, like the close button — never a card-cycle focus stop,
+            // and never steals first responder from the card's content.
+            tabIndex={-1}
+            data-tug-focus="refuse"
+            data-no-activate=""
+            aria-label="Session telemetry"
+            title="Session telemetry"
+          >
+            <Waves size={14} aria-hidden />
+          </button>
+        </TugPopoverTrigger>
+        <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>
+          <TugPopupListFrame
+            title="Session"
+            kind="item"
+            className="session-masthead-telemetry"
+            data-slot="session-masthead-telemetry"
+          >
+            <div className="session-masthead-telemetry-body">
+              <TelemetryRow label="Branch">{identity.branch ?? "—"}</TelemetryRow>
+              <TelemetryRow label="State">
+                {row?.state ?? identity.state ?? "—"}
+              </TelemetryRow>
+              <TelemetryRow label="Turns">{row?.turn_count ?? "—"}</TelemetryRow>
+              {/* The card's Z0 load-control bar used to carry this same line;
+                  the telemetry panel is where session telemetry lives now, so
+                  it says it once. */}
+              <TelemetryBirthRow cardId={cardId} createdAtMs={row?.created_at} />
+              <TelemetryRow label="Last used">{stamp(row?.last_used_at)}</TelemetryRow>
+              <TelemetryRow label="Citation">
+                {/* The citation is the sanctioned flat-text form, and the only
+                    place monospace appears in session identity. */}
+                <TugCopyBadge
+                  value={sessionCitation(identity, { project: true })}
+                  className="session-masthead-telemetry-citation"
+                />
+              </TelemetryRow>
+            </div>
+          </TugPopupListFrame>
+        </TugPopoverContent>
+      </TugPopover>
     </div>
   );
 }
