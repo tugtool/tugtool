@@ -386,12 +386,15 @@ function ControlBarMetadata({
           the remaining end flush right on its own. */}
       <div className="session-load-control-bar-meta-right">
         {status.total === 0 ? (
-          // A fresh session with no committed turns yet: the "0 of 0 · All
-          // loaded" math reads as a stuck empty page rather than a new
-          // session, so show a purpose-built waiting state instead.
-          <TugLabel emphasis="proposal" className="session-load-control-bar-label">
-            No turns
-          </TugLabel>
+          // A fresh session with no committed turns yet. The bar says NOTHING:
+          // the "0 of 0 · All loaded" math would read as a stuck empty page
+          // rather than a new session, and the `No turns` label that used to
+          // stand in its place is now the first words of the masthead's own
+          // activity line, two tiers above and unmissable. Saying it twice on
+          // one card made a new session look like it had a status problem.
+          // The bar is about the LOAD WINDOW; a session with nothing loaded
+          // has no window to speak of.
+          null
         ) : (
           <>
             <TugLabel emphasis="proposal" className="session-load-control-bar-label">

@@ -686,6 +686,7 @@ export function SessionMasthead({
         indicator={
           <SessionPhaseDot sessionId={sessionId} size={MASTHEAD_DOT_SIZE} />
         }
+        indicatorSize={MASTHEAD_DOT_SIZE}
         name={
           // The row's dot leads the line, so the identity renders its runs
           // only. Right-click on the title copies the atom.

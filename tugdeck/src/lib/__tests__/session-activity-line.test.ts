@@ -1,8 +1,8 @@
 /**
  * The activity line's rest grammar — the gallery's form.
  *
- * The turns segment always prints (`0 turns` included: a fresh session's line
- * is `0 turns, 8 KB. Ready.`), the labeled stamp appears only for a session
+ * The turns segment always prints (zero reads `No turns`: a fresh session's line
+ * is `No turns, 8 KB. Ready.`), the labeled stamp appears only for a session
  * with turns to have been updated by, an unknown size drops its segment, and
  * `Ready.` always closes the line.
  */
@@ -37,7 +37,7 @@ describe("sessionActivityRestLine", () => {
 
   test("a fresh session prints its zero — and no stamp, nothing to date", () => {
     expect(line({ turnCount: 0, fileSize: 8_192, lastUsedAtMs: AT_MS })).toBe(
-      "0 turns, 8.0 KB. Ready.",
+      "No turns, 8.0 KB. Ready.",
     );
   });
 
@@ -61,7 +61,7 @@ describe("sessionActivityRestLine", () => {
 
   test("nothing known — the count still prints and Ready still closes", () => {
     expect(line({ turnCount: 0, fileSize: null, lastUsedAtMs: null })).toBe(
-      "0 turns. Ready.",
+      "No turns. Ready.",
     );
   });
 });

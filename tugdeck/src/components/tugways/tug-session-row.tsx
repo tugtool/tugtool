@@ -52,6 +52,7 @@ import "./tug-session-row.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
+import { sizeGeometry } from "./internal/tug-progress-pulsing-dot";
 import { sparklineCurves } from "./tug-sparkline";
 import { TugLabel } from "./tug-label";
 import { TugListRow, type TugListRowProps } from "./tug-list-row";
@@ -182,6 +183,49 @@ const SPARK_ADVANCE_STYLE = {
   "--tugx-session-row-spark-advance": `${TUG_SESSION_ROW_SPARK_WIDTH}px`,
 } as React.CSSProperties;
 
+/**
+ * The empty room between the dot's INK and the trailing edge of the advance
+ * it is centered in — what the title is charged for and the dot does not use.
+ *
+ * The stylesheet's 20px advance was measured against the Lens's 28px dot,
+ * whose ink very nearly fills it. The denser mounts pass 16 — and the glyph's
+ * own geometry drops the dot's share of its box from 0.6 to 0.5 down there —
+ * so 16px of box is 8px of ink centered in a 20px column with six pixels of
+ * nothing on each side. On top of the row's 8px of deliberate air the title
+ * then stood 14px off a mark that is meant to be leading it, and it did so on
+ * two of the three mounts.
+ *
+ * The DOT does not move: its box, its center, and its ring are all where they
+ * were, and the row's leading edge is unchanged. Only what follows it closes
+ * up, by the trailing half of that slack ({@link TugSessionRowProps.indicatorSize}).
+ * The ratio is read from {@link sizeGeometry} — the glyph's own function, not
+ * a second copy of its numbers — so a change to the dot's proportions moves
+ * this with it.
+ */
+function dotInkSlack(size: number, advance: number): number {
+  const trailing = Math.max(0, (advance - size * sizeGeometry(size).ratio) / 2);
+  return trailing * DOT_SLACK_RECLAIMED;
+}
+
+/**
+ * How much of that slack the title actually takes back.
+ *
+ * Not all of it, by eye. Closing the whole gap seats the name flush against a
+ * mark that is still breathing — the ring reaches well past the ink it is
+ * measured from, so a title pulled to the ink's edge is periodically pressed
+ * by the ring rather than led by it. Half puts the title where the reader
+ * reads it as belonging to the dot, with room left for the breath.
+ */
+const DOT_SLACK_RECLAIMED = 0.5;
+
+/**
+ * The advance the slack is measured against — the stylesheet's own default,
+ * mirrored here because only script can do the arithmetic. A mount that
+ * overrides `--tugx-session-row-dot-advance` also owns the gap that follows
+ * it, so it should not pass `indicatorSize`.
+ */
+const DOT_ADVANCE = 20;
+
 export interface TugSessionRowProps
   extends Omit<React.ComponentPropsWithoutRef<"div">, "children" | "title"> {
   /**
@@ -196,6 +240,19 @@ export interface TugSessionRowProps
 
   /** Phase indicator — the caller's progress dot. */
   indicator?: React.ReactNode;
+
+  /**
+   * The glyph box `indicator` was built at — the same number the mount site
+   * hands `SessionPhaseDot`.
+   *
+   * Given, the row closes the title up against the ink that box actually
+   * paints ({@link dotInkSlack}) instead of against the stylesheet's one-size
+   * advance, which is how the title comes to sit the same distance off its
+   * mark on every mount rather than only on the one the advance was measured
+   * against. The dot itself does not move. Omitted, the line packs exactly as
+   * it did.
+   */
+  indicatorSize?: number;
 
   /**
    * The session's title — the two runs of {@link sessionTitleParts}, usually
@@ -269,6 +326,7 @@ export const TugSessionRow = React.forwardRef<
     fit = TUG_SESSION_ROW_DEFAULT_FIT,
     preset,
     indicator,
+    indicatorSize,
     name,
     slots,
     description,
@@ -290,7 +348,18 @@ export const TugSessionRow = React.forwardRef<
     <TugListRow
       ref={ref}
       className={cn("tug-session-row", className)}
-      style={{ ...SPARK_ADVANCE_STYLE, ...style }}
+      style={{
+        ...SPARK_ADVANCE_STYLE,
+        ...(indicatorSize !== undefined
+          ? {
+              ["--tugx-session-row-dot-slack" as string]: `${dotInkSlack(
+                indicatorSize,
+                DOT_ADVANCE,
+              ).toFixed(2)}px`,
+            }
+          : null),
+        ...style,
+      }}
       data-slot="tug-session-row"
       data-fit={fit}
       selected={selected}

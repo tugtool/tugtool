@@ -93,7 +93,8 @@
      the dot's advance plus the gap after it. Both numbers are the row's, read
      rather than retyped. */
   --tugx-session-identity-row-indent: calc(
-    var(--tugx-session-row-dot-advance) + var(--tugx-session-row-name-gap)
+    var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-slack, 0px) +
+      var(--tugx-session-row-name-gap)
   );
   min-width: 0;
   /* The masthead's column STRETCHES its children, and a list row is

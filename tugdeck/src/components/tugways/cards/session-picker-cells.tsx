@@ -354,6 +354,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
           size={TUG_SESSION_ROW_STACK_DOT_SIZE}
         />
       }
+      indicatorSize={TUG_SESSION_ROW_STACK_DOT_SIZE}
       selected={isSelected}
       disabled={isLive || isTerminalLive}
       trailing={trailing}

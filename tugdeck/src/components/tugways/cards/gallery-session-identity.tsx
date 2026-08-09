@@ -295,10 +295,15 @@ function isRunning(f: IdentityFixture): boolean {
  * The activity line at rest — the grammar, in one place:
  * `<turns> turns, <size>. Last updated: <last-updated>. Ready.` The labeled
  * stamp appears only for a session with turns to have been updated by; a
- * fresh session's line is `0 turns, 8 KB. Ready.` and nothing more.
+ * fresh session's line is `No turns, 8 KB. Ready.` and nothing more — the
+ * zero is spelled as prose, never as a digit.
  */
 function restLine(f: IdentityFixture): string {
-  const turns = `${f.turns} ${f.turns === 1 ? "turn" : "turns"}, ${f.size}.`;
+  const count =
+    f.turns === 0
+      ? "No turns"
+      : `${f.turns} ${f.turns === 1 ? "turn" : "turns"}`;
+  const turns = `${count}, ${f.size}.`;
   const stamp =
     f.turns > 0 && f.lastUsed !== null ? ` Last updated: ${f.lastUsed}.` : "";
   return `${turns}${stamp} Ready.`;

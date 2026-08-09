@@ -195,6 +195,7 @@ export function CardsSessionRow({
           drift
         />
       }
+      indicatorSize={TUG_SESSION_ROW_INDICATOR_SIZE}
       name={
         identity === null ? null : (
           // The row's own dot leads the line, so the identity renders its runs

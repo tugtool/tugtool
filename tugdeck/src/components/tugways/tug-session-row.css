@@ -145,7 +145,19 @@ body {
   inline-size: var(--tugx-session-row-dot-advance);
   block-size: 1em;
   overflow: visible;
-  margin-inline-end: var(--tugx-session-row-name-gap);
+  /* The air after the mark, less the room inside the advance the mark's INK
+     does not use (`--tugx-session-row-dot-slack`, published by the component
+     from the glyph size the mount site declares; 0 when it declares none).
+
+     A negative TRAILING margin, deliberately: the box, the dot centered in it,
+     and the row's leading edge all stay exactly where they are, and only what
+     follows closes up. The gap the reader sees is then measured from the ink
+     rather than from a column sized for the largest dot any mount uses — which
+     is what left the title 14px off its mark on the two mounts that pass a
+     smaller glyph than the advance was measured against. */
+  margin-inline-end: calc(
+    var(--tugx-session-row-name-gap) - var(--tugx-session-row-dot-slack, 0px)
+  );
 }
 
 .tug-session-row-slots {

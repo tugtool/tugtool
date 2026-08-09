@@ -8,8 +8,10 @@
  *   `7 turns, 48.2 KB. Last updated: Aug 9, 9:41 AM. Ready.`
  *
  * The turns segment always prints — a fresh session's line is
- * `0 turns, 8 KB. Ready.` and nothing more, because "no conversation yet" is a
- * fact worth a reader's glance, not an absence. Only genuinely unknown values
+ * `No turns, 8 KB. Ready.` and nothing more, because "no conversation yet" is a
+ * fact worth a reader's glance, not an absence. It is spelled `No turns` rather
+ * than `0 turns`: the segment is prose, and a leading zero reads as a
+ * measurement that came back empty. Only genuinely unknown values
  * drop out: an unknown size drops its segment, and the labeled stamp appears
  * only for a session with turns to have been updated by. `Last updated:` is
  * labeled because a bare date-time beside a size and a count is ambiguous
@@ -37,7 +39,7 @@ import {
 
 /** The facts the rest line is made of — a `SessionRow`'s, or a fixture's. */
 export interface SessionActivityFacts {
-  /** The engine's turn count. Always printed, `0 turns` included. */
+  /** The engine's turn count. Always printed; zero reads `No turns`. */
   turnCount: number;
   /** On-disk JSONL size in bytes. `null` or 0 drops the size segment. */
   fileSize: number | null;
@@ -60,7 +62,12 @@ export function sessionActivityRestLine(facts: SessionActivityFacts): string {
     facts.fileSize !== null && facts.fileSize > 0
       ? `, ${formatByteSize(facts.fileSize)}`
       : "";
-  segments.push(`${turns} ${turns === 1 ? "turn" : "turns"}${size}.`);
+  // `No turns`, never `0 turns`: the count is prose here, and a leading zero
+  // reads as a measurement that came back empty rather than as a session
+  // waiting for its first prompt.
+  const count =
+    turns === 0 ? "No turns" : `${turns} ${turns === 1 ? "turn" : "turns"}`;
+  segments.push(`${count}${size}.`);
 
   if (turns > 0 && facts.lastUsedAtMs !== null) {
     segments.push(`Last updated: ${formatRestingStamp(facts.lastUsedAtMs)}.`);
