@@ -17,13 +17,15 @@
  * quiet idle dot rather than a red one.
  *
  * **The title is two runs, not one.** The user's own name leads, then a quieter
- * ` : <callsign>` ({@link sessionTitleParts}). Under a width squeeze the
- * callsign is the run that elides and the name survives intact — a name the
- * user typed outranks a callsign Tug minted for itself, and the callsign is the
- * run that can be sacrificed because the tooltip and every copy path still
- * carry it whole. A session with no name renders the bare callsign, which may
- * then elide since it is the only run there is. No `project/` prefix: that is
- * `sessionIdentityLine`'s channel and it survives in the tooltip and citation.
+ * ` : <callsign>` ({@link sessionTitleParts}). Which run gives way under a
+ * width squeeze depends on the register, and both rules are the gallery's: on
+ * a title surface (the line tier) the callsign is the permanent citable handle
+ * the reader scans a list by, so it survives and the name elides; on the atom
+ * (the chip tier) the user's own words survive and the minted handle elides —
+ * the tooltip and every copy path still carry it whole. A session with no name
+ * renders the bare callsign, which may then elide since it is the only run
+ * there is. No `project/` prefix: that is `sessionIdentityLine`'s channel and
+ * it survives in the tooltip and citation.
  *
  * **The atom paints in text ink.** The pill's run and border take the ordinary
  * text color and a `currentcolor` mix; the dot is its only color channel,
@@ -266,8 +268,9 @@ export const TugSessionIdentity = React.forwardRef<
           )}
         </span>
       ) : null}
-      {/* Two runs, sized separately, so the callsign is the one that elides.
-          The filter mark is painted inside each run, never across both. */}
+      {/* Two runs, sized separately, so the tier's truncation rule can pick
+          which one elides. The filter mark is painted inside each run, never
+          across both. */}
       <span className="tug-session-identity-run">
         <span className="tug-session-identity-name">
           {renderFilterHighlight(title.name, highlight)}

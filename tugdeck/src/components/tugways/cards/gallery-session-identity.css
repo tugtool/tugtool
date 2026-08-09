@@ -137,13 +137,12 @@
 
 /* ── PROTOTYPE: the title run ─────────────────────────────────────────
    `<custom-name> : <callsign>` when named, bare `<callsign>` when not.
-   The name carries the title weight and NEVER gives way; the callsign is a
-   quieter regular-weight run and it is the one that elides under a narrow
-   budget — the user typed the name, Tug minted the callsign, and the tooltip
-   and every copy path still carry the callsign whole. (These two rules were
-   inverted here through the review round, disagreeing with this card's own
-   `.gsi-atom-*` rules a few hundred lines down. The atom's were right and the
-   shipped component follows them.) */
+   The name carries the title weight and is the run that gives way under a
+   narrow budget; the callsign is a quieter regular-weight run that never
+   truncates — it is the permanent citable handle a reader scans a list by.
+   Deliberately the REVERSE of this card's `.gsi-atom-*` rules below: on a
+   citation the user's own words survive and the minted handle elides. Two
+   registers, two rules, and the shipped component carries both. */
 
 .gsi-title {
   display: inline-flex;
@@ -153,25 +152,15 @@
   font-size: var(--tug-font-size-sm);
 }
 
-/* Never gives way beside a callsign; standing alone — an unnamed session, where
-   the callsign fills this span — it may elide, since it is then the only run
-   there is. */
 .gsi-title-name {
-  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: var(--tug-font-weight-semibold);
 }
 
-.gsi-title-name:only-child {
-  flex: initial;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .gsi-title-callsign {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
   white-space: pre;
   font-weight: var(--tug-font-weight-regular, 400);
   opacity: 0.72;

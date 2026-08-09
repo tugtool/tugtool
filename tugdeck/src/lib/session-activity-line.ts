@@ -3,15 +3,19 @@
  *
  * The row was a placeholder much of the time it was on screen. These are facts
  * the ledger already holds and a reader actually wants: how much conversation
- * there has been, how big it has grown, when it last moved, and whether it is
- * open for another turn.
+ * there has been, how big it has grown, when it last moved.
  *
  *   `7 turns, 48.2 KB. Last updated: Aug 9, 9:41 AM. Ready.`
  *
- * Every segment drops out when it has no value, so a session the scanner has
- * never seen does not print `0 turns` or an empty size. `Last updated:` is
- * labeled because a bare date-time beside a size and a count is ambiguous about
- * which of the three it dates.
+ * The turns segment always prints — a fresh session's line is
+ * `0 turns, 8 KB. Ready.` and nothing more, because "no conversation yet" is a
+ * fact worth a reader's glance, not an absence. Only genuinely unknown values
+ * drop out: an unknown size drops its segment, and the labeled stamp appears
+ * only for a session with turns to have been updated by. `Last updated:` is
+ * labeled because a bare date-time beside a size and a count is ambiguous
+ * about which of the three it dates. `Ready.` always closes the line — the
+ * session is on disk and one gesture from another turn wherever the row is
+ * read.
  *
  * **During a turn this line is not used at all** — the live beat replaces it,
  * with its own dwell pacing and middle truncation. This is the rest form only.
@@ -30,54 +34,36 @@ import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 
 /** The facts the rest line is made of — a `SessionRow`'s, or a fixture's. */
 export interface SessionActivityFacts {
-  /** The engine's turn count. 0 drops the whole turns segment. */
+  /** The engine's turn count. Always printed, `0 turns` included. */
   turnCount: number;
   /** On-disk JSONL size in bytes. `null` or 0 drops the size segment. */
   fileSize: number | null;
   /** When the session was last used, in ms. `null` drops the stamp. */
   lastUsedAtMs: number | null;
-  /**
-   * Whether a card is bound to this session.
-   *
-   * `Ready.` closes the line only when one is. A closed session in the picker
-   * is not "ready" for anything — it is a file on disk — so its line ends after
-   * the stamp.
-   */
-  hasCard: boolean;
 }
 
 /**
  * The activity line's rest form.
  *
- * The degenerate cases are deliberate, not accidents of the composition: with
- * nothing known and a card bound the line is exactly `Ready.`, and with nothing
- * known and no card it is the empty string. An empty line is honest for a
- * session there is nothing to say about — the description row above it carries
- * the creation stamp that keeps the row from looking hollow.
+ * `<turns> turns, <size>. Last updated: <stamp>. Ready.` — the stamp omitted
+ * at zero turns (a session never used has nothing to date), the size omitted
+ * when unknown, the turns and the closing `Ready.` always present.
  */
 export function sessionActivityRestLine(facts: SessionActivityFacts): string {
   const segments: string[] = [];
 
   const turns = facts.turnCount > 0 ? facts.turnCount : 0;
-  if (turns > 0) {
-    const size =
-      facts.fileSize !== null && facts.fileSize > 0
-        ? `, ${formatByteSize(facts.fileSize)}`
-        : "";
-    segments.push(`${turns} ${turns === 1 ? "turn" : "turns"}${size}.`);
-  } else if (facts.fileSize !== null && facts.fileSize > 0) {
-    // A size with no turns still says something true about the file, and the
-    // grammar has to open with a capital rather than a bare `, 8 KB.`
-    segments.push(`${formatByteSize(facts.fileSize)}.`);
-  }
+  const size =
+    facts.fileSize !== null && facts.fileSize > 0
+      ? `, ${formatByteSize(facts.fileSize)}`
+      : "";
+  segments.push(`${turns} ${turns === 1 ? "turn" : "turns"}${size}.`);
 
-  // A session never used has nothing to date, so the stamp goes with the count
-  // rather than standing alone beside a size.
   if (turns > 0 && facts.lastUsedAtMs !== null) {
     segments.push(`Last updated: ${formatRestingStamp(facts.lastUsedAtMs)}.`);
   }
 
-  if (facts.hasCard) segments.push("Ready.");
+  segments.push("Ready.");
 
   return segments.join(" ");
 }

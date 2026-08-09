@@ -46,32 +46,55 @@
   min-width: 0;
 }
 
-/* The user's name is the precious run: it never gives way beside a callsign.
-   Standing alone — an unnamed session, where the callsign fills this span — it
-   may elide, since it is then the only run there is. */
+/* Which run gives way differs by REGISTER — the gallery draws both rules and
+   they are deliberate, not a contradiction. On a TITLE surface (the line tier:
+   the masthead, the rows) the callsign is the permanent citable handle the
+   reader scans a list by, so it never gives way; the user's name is the run
+   that elides. On the ATOM (the chip tier) it inverts: a citation is the
+   user's word in foreign context, so their own words survive and the minted
+   handle elides — the tooltip and every copy path still carry it whole. */
 .tug-session-identity-name {
-  flex: none;
   font-weight: var(--tug-font-weight-semibold);
 }
 
-.tug-session-identity-name:only-child {
+/* `white-space: pre` keeps the ` : ` separator, which belongs to this run so
+   it disappears with it. */
+.tug-session-identity-callsign {
+  white-space: pre;
+  font-weight: var(--tug-font-weight-regular, 400);
+}
+
+/* Title contexts: the name elides, the callsign survives. An unnamed session's
+   bare callsign fills the name span and may elide — it is the only run. */
+.tug-session-identity[data-tier="line"] .tug-session-identity-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tug-session-identity[data-tier="line"] .tug-session-identity-callsign {
+  flex: none;
+  opacity: 0.72;
+}
+
+/* The atom: the name never gives way beside a callsign. Standing alone — an
+   unnamed session, where the callsign fills this span — it may elide, since it
+   is then the only run there is. */
+.tug-session-identity[data-tier="chip"] .tug-session-identity-name {
+  flex: none;
+}
+
+.tug-session-identity[data-tier="chip"] .tug-session-identity-name:only-child {
   flex: initial;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* The callsign after a custom name: quieter, and the run that gives way. Under
-   a narrow budget the user's own words survive and the minted handle elides;
-   the tooltip and every copy path still carry it whole. `white-space: pre`
-   keeps the ` : ` separator, which belongs to this run so it disappears with
-   it. */
-.tug-session-identity-callsign {
+.tug-session-identity[data-tier="chip"] .tug-session-identity-callsign {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: pre;
-  font-weight: var(--tug-font-weight-regular, 400);
   opacity: 0.78;
 }
 

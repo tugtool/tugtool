@@ -152,13 +152,11 @@ export function CardsSessionRow({
   // a finished turn's bare `Done` marker, and a session with no beats at all —
   // become the REST SENTENCE: how much conversation there has been, how big it
   // has grown, when it last moved, and that it is open for another turn. The row
-  // is a monitor, so that is what it wears most of the time. Every row here is a
-  // bound live card, so `Ready.` always closes the line.
+  // is a monitor, so that is what it wears most of the time.
   const restLine = sessionActivityRestLine({
     turnCount: row?.turn_count ?? 0,
     fileSize: row?.file_size ?? null,
     lastUsedAtMs: row?.last_used_at ?? null,
-    hasCard: true,
   });
   const beat = pulse.enabled ? latest : null;
   const pulseText = isCompactingCard(compaction, cardId)

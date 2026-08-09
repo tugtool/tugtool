@@ -5,10 +5,10 @@
 
 /**
  * @tug-pairings
- * | Element                                       | Surface                          | Role          | Context                                     |
- * |-----------------------------------------------|----------------------------------|---------------|---------------------------------------------|
- * | --tugx-pane-title-fg-active                   | --tugx-pane-title-bar-bg-active  | display       | .session-masthead-title; the tape (color)   |
- * | --tug7-element-global-text-normal-muted-rest  | --tugx-pane-title-bar-bg-active  | informational | the row's description line; the widget      |
+ * | Element                                       | Surface                          | Role          | Context                                                      |
+ * |-----------------------------------------------|----------------------------------|---------------|--------------------------------------------------------------|
+ * | --tugx-pane-title-fg-active                   | --tugx-pane-title-bar-bg-active  | display       | .session-masthead-title; the description, activity, and tape |
+ * | --tug7-element-global-text-normal-muted-rest  | --tugx-pane-title-bar-bg-active  | informational | the widget                                                   |
  */
 
 /**
@@ -121,10 +121,30 @@
   );
 }
 
+/* The masthead's ground is the tinted chrome band, so its text paints from the
+   chrome foreground at stepped strengths rather than the gray muted token the
+   rail rows use — title full, description 85%, activity 65%, exactly the
+   gallery's ladder. A stand-in description (the prompt, the creation stamp)
+   drops to 60%: a fact standing in reads a step quieter than the session's own
+   words. Mixes rather than opacity so a filter highlight inside the run keeps
+   its own paint. */
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
 .session-masthead-row .tug-session-row-description {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: var(--tug-font-size-xs);
+  color: color-mix(
+    in oklab,
+    var(--tugx-pane-title-fg-active) 85%,
+    transparent
+  );
+  font-size: var(--tug-font-size-sm);
+}
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.session-masthead-row .tug-session-row-description[data-stamp="true"] {
+  color: color-mix(
+    in oklab,
+    var(--tugx-pane-title-fg-active) 60%,
+    transparent
+  );
 }
 
 /* The title run inherits the pane's title color, exactly as every other card's
@@ -142,6 +162,13 @@
 .session-masthead-row .tug-pulse {
   --tugx-pulse-bar-height: 18px;
   --tugx-pulse-baseline: 13px;
+  /* The activity run rides the chrome band too: chrome foreground at 65%,
+     the third step of the masthead's ladder. */
+  --tugx-pulse-activity-color: color-mix(
+    in oklab,
+    var(--tugx-pane-title-fg-active) 65%,
+    transparent
+  );
 }
 
 /* ── The tape, lifted to read across rows two and three ─────────────────
@@ -153,8 +180,8 @@
    alphas come up. */
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
 .session-masthead-row .tug-pulse-trailing {
-  --tugx-sparkline-line-alpha: 0.75;
-  --tugx-sparkline-area-alpha: 0.28;
+  --tugx-sparkline-line-alpha: 1;
+  --tugx-sparkline-area-alpha: 0.3;
 
   position: relative;
   inset-block-start: var(--tugx-session-masthead-tape-lift, -9px);

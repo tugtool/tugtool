@@ -86,6 +86,7 @@ import {
 } from "./session-picker-format";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import { latestLineForScope, usePulse } from "@/lib/pulse-store";
 import { sessionActivityRestLine } from "@/lib/session-activity-line";
 import {
   sessionIdentityContextFrom,
@@ -224,25 +225,35 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   const descriptionStandIn = identity.description === null;
 
   // The activity line: the session's rest facts — how many turns, how big, when
-  // it last moved. No `Ready.`: a closed session in this list is not ready for
-  // anything, it is a file on disk. The STATE replaces the whole line when a row
-  // is not simply resumable — a row you cannot resume has one thing to say, and
-  // it is not how many turns it has.
-  const activity = isLive
-    ? "Live in another card"
-    : isTerminalLive
-      ? row.terminal_live?.status === "busy"
-        ? "In use in a terminal — busy"
-        : row.terminal_live?.status === "idle"
-          ? "In use in a terminal — idle"
-          : "In use in a terminal"
-      : isFailed
-        ? formatFailedRowSubtitle(row)
+  // it last moved — closing `Ready.` like every other mount of this row. A row
+  // live in a card and mid-turn wears the live beat instead, exactly like the
+  // masthead (the `live` badge and the disabled state already say where it is).
+  // The STATE still replaces the line for rows this app cannot see into — a
+  // terminal holds no pulse feed — and for failed rows, whose one fact is the
+  // failure. A pure subscription read, so the pure-renderer rule holds.
+  const pulse = usePulse();
+  const beat =
+    isLive && pulse.enabled
+      ? latestLineForScope(
+          pulse.lines,
+          row.session_id,
+          pulse.cleared.get(row.session_id),
+        )
+      : null;
+  const activity = isTerminalLive
+    ? row.terminal_live?.status === "busy"
+      ? "In use in a terminal — busy"
+      : row.terminal_live?.status === "idle"
+        ? "In use in a terminal — idle"
+        : "In use in a terminal"
+    : isFailed
+      ? formatFailedRowSubtitle(row)
+      : beat !== null
+        ? beat.text
         : sessionActivityRestLine({
             turnCount: row.turn_count,
             fileSize: row.file_size ?? null,
             lastUsedAtMs: row.last_used_at,
-            hasCard: row.card_id !== null,
           });
 
   const idShort = identity.shortId;
@@ -321,7 +332,11 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
       }
       description={renderFilterHighlight(description, filterQuery)}
       descriptionStandIn={descriptionStandIn}
-      activity={renderFilterHighlight(activity, filterQuery)}
+      // The live beat takes no highlight — it is not a searchable fact; the
+      // composed rest sentence and the state lines do.
+      activity={
+        beat !== null ? activity : renderFilterHighlight(activity, filterQuery)
+      }
       // Every row gets a dot, including the closed ones — which is most of
       // them. A session whose live state cannot be reached reads idle, so the
       // dot is quiet rather than absent or red, and the column of marks says

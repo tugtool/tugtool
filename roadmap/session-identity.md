@@ -1001,3 +1001,18 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 | Resolver and grammar | `cd tugdeck && bun test` |
 | Component and surfaces | `just app-test-changed` after `just build-app` |
 | Whole-app health | `bunx tsc --noEmit && bunx vite build` |
+
+
+
+
+
+
+
+
+**NOTES**
+- Sparkline/tape sometimes vanishes. It must not.
+- Sparkline/tape is too die in the session card title bar.
+- Sparkline/tape sometimes stops updating and is shown as *truncated* in the Lens (observed in the Lens). It must not do this, but must always display a *flatline* when there is no data/activity to show
+
+
+

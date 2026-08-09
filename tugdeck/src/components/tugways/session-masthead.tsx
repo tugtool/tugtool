@@ -84,6 +84,7 @@ import {
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
+import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 import { sessionActivityRestLine } from "@/lib/session-activity-line";
@@ -612,13 +613,11 @@ export function SessionMasthead({
   // project nothing has listed yet — exactly the state the stamp rung is for.
   const createdAtMs = useSessionCreatedAtMs(cardId, sessionId, projectDir);
   // At rest the activity line reports the session's own facts — the turn count,
-  // the on-disk size, when it last moved, and whether it is open for another
-  // turn. `Ready.` needs a bound card, and a masthead always has one.
+  // the on-disk size, when it last moved — and closes `Ready.`
   const restLine = sessionActivityRestLine({
     turnCount: row?.turn_count ?? 0,
     fileSize: row?.file_size ?? null,
     lastUsedAtMs: row?.last_used_at ?? null,
-    hasCard: cardId !== undefined,
   });
   const target: DisplayEntry = isCompactingCard(compaction, cardId)
     ? COMPACTING_ENTRY
@@ -796,9 +795,26 @@ export function SessionMasthead({
             data-slot="session-masthead-telemetry"
           >
             <div className="session-masthead-telemetry-body">
-              {/* The two copyable forms side by side, each labeled by what a
-                  paste of it yields: the atom returns the chip, the citation is
-                  flat text for anywhere outside Tug. */}
+              <TelemetryRow label="State">
+                {row?.state ?? identity.state ?? "—"}
+              </TelemetryRow>
+              <TelemetryRow label="Turns">
+                {row === null
+                  ? "—"
+                  : row.file_size != null && row.file_size > 0
+                    ? `${row.turn_count} · ${formatByteSize(row.file_size)}`
+                    : row.turn_count}
+              </TelemetryRow>
+              {/* The card's Z0 load-control bar used to carry this same line;
+                  the telemetry panel is where session telemetry lives now, so
+                  it says it once. */}
+              <TelemetryBirthRow cardId={cardId} createdAtMs={createdAtMs} />
+              <TelemetryRow label="Last used">{stamp(row?.last_used_at)}</TelemetryRow>
+              <TelemetryRow label="Branch">{identity.branch ?? "—"}</TelemetryRow>
+              {/* The two copyable forms sit TOGETHER, the atom directly above
+                  the flat citation, each labeled by what a paste of it yields:
+                  the atom returns the chip, the citation is flat text for
+                  anywhere outside Tug. */}
               <TelemetryRow label="Atom">
                 <TugSessionIdentity
                   identity={identity}
@@ -807,16 +823,6 @@ export function SessionMasthead({
                   className="session-masthead-telemetry-atom"
                 />
               </TelemetryRow>
-              <TelemetryRow label="Branch">{identity.branch ?? "—"}</TelemetryRow>
-              <TelemetryRow label="State">
-                {row?.state ?? identity.state ?? "—"}
-              </TelemetryRow>
-              <TelemetryRow label="Turns">{row?.turn_count ?? "—"}</TelemetryRow>
-              {/* The card's Z0 load-control bar used to carry this same line;
-                  the telemetry panel is where session telemetry lives now, so
-                  it says it once. */}
-              <TelemetryBirthRow cardId={cardId} createdAtMs={createdAtMs} />
-              <TelemetryRow label="Last used">{stamp(row?.last_used_at)}</TelemetryRow>
               <TelemetryRow label="Citation">
                 {/* The citation is the sanctioned flat-text form, and the only
                     place monospace appears in session identity. */}

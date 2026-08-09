@@ -90,8 +90,9 @@
  * tape are the real `TugProgressIndicator` and `TugSparkline` throughout. The
  * masthead mock and the `.gsi-*` title/atom prototypes remain as DRAWINGS of the
  * settled decisions, kept because a design surface that showed only the shipped
- * component could no longer show why it looks the way it does — but they are
- * drawings, and where one disagrees with the component the component is right.
+ * component could no longer show why it looks the way it does — and they are the
+ * reference: where the component disagrees with a drawing, the component is the
+ * bug.
  * Nothing in `gallery-session-identity.css` is a rule the app inherits.
  *
  * The masthead mock's title row draws dot + title + wave + close. That frame is
