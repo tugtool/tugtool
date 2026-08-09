@@ -205,6 +205,11 @@
 .gsi-masthead {
   --gsi-masthead-height: 72px;
   --gsi-masthead-dot-size: 16px;
+  /* Mirrors `MASTHEAD_TAPE_WIDTH` — the row's cut, which the masthead now
+     shares. Declared here because the DESCRIPTION has to reserve it: the tape
+     is lifted into that line's band, so a long description with only the
+     controls reserved ends underneath the graph. */
+  --gsi-masthead-tape-width: 64px;
   /* The two lines under the title hang off the TITLE, not the dot: the
      dot's advance plus the lead gap. */
   --gsi-masthead-text-inset: calc(
@@ -249,6 +254,11 @@
 .gsi-masthead-description {
   margin-top: 5px;
   margin-inline-start: var(--gsi-masthead-text-inset);
+  /* The lifted tape overhangs this line's band, so the description stops
+     short of it — the same reserve the activity run beneath already keeps. */
+  padding-inline-end: calc(
+    var(--gsi-masthead-tape-width) + var(--tug-space-md)
+  );
   font-size: var(--tug-font-size-sm);
   white-space: nowrap;
   overflow: hidden;

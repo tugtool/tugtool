@@ -95,10 +95,6 @@
   --tugx-session-identity-row-indent: calc(
     var(--tugx-session-row-dot-advance) + var(--tugx-session-row-name-gap)
   );
-  /* The masthead's tape is a wider cut on a shorter bar than the rail's, so the
-     activity run reserves that width instead. */
-  --tugx-session-row-spark-advance: 128px;
-
   min-width: 0;
   /* The masthead's column STRETCHES its children, and a list row is
      `align-items: center` — so a stretched row would center its three lines in
@@ -121,10 +117,19 @@
 /* The description's band starts a hair under the controls' bottom edge, so a
    long description running the extended box would end pressed against the close
    box. It stops where the cluster starts; only the activity line beneath runs
-   the full width. */
+   the full width.
+
+   And the tape is LIFTED into this band — that is the whole point of the lift,
+   so it reads centered on rows two and three together rather than seated on row
+   three alone — which means the description has a second thing to stop short
+   of. `max()` because which one intrudes further is a live question: the
+   cluster's width is measured at runtime and grows with a stack badge, and the
+   tape's advance is the instrument's. Reserving only the cluster left a long
+   description ending under the graph. */
 .session-masthead-row .tug-session-row-description {
-  padding-inline-end: calc(
-    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)
+  padding-inline-end: max(
+    calc(var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)),
+    calc(var(--tugx-session-row-spark-advance) + var(--tugx-pulse-trailing-gap))
   );
 }
 

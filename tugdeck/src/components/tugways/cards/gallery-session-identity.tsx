@@ -115,6 +115,8 @@ import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import {
   TUG_SESSION_ROW_INDICATOR_SIZE,
+  TUG_SESSION_ROW_SPARK_HEIGHT,
+  TUG_SESSION_ROW_SPARK_WIDTH,
   TUG_SESSION_SPARK_CURVE,
   TUG_SESSION_SPARK_FULL_SCALE_CHARS,
 } from "@/components/tugways/tug-session-row";
@@ -439,10 +441,13 @@ function FixtureTape({
 // PROTOTYPE: the masthead — three rows, two naming states
 // ---------------------------------------------------------------------------
 
-/** The masthead tape's cut of the instrument — wider than the row's, same
- *  window, as the shipped masthead already sizes it. */
-const MASTHEAD_TAPE_WIDTH = 128;
-const MASTHEAD_TAPE_HEIGHT = 18;
+/** The masthead tape's cut of the instrument — the ROW's, exactly. The two
+ *  surfaces draw the same window of the same series, and a tape is read at a
+ *  glance; a wider cut on the masthead bought resolution nobody was reading
+ *  and spent it out of the description's measure. Mirrored in the stylesheet
+ *  as `--gsi-masthead-tape-width`, which is what the description reserves. */
+const MASTHEAD_TAPE_WIDTH = TUG_SESSION_ROW_SPARK_WIDTH;
+const MASTHEAD_TAPE_HEIGHT = TUG_SESSION_ROW_SPARK_HEIGHT;
 
 function ProtoMasthead({
   f,

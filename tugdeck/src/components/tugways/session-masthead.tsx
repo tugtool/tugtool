@@ -95,6 +95,8 @@ import {
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
 import {
+  TUG_SESSION_ROW_SPARK_HEIGHT,
+  TUG_SESSION_ROW_SPARK_WIDTH,
   TUG_SESSION_ROW_STACK_DOT_SIZE,
   TUG_SESSION_SPARK_CURVE,
   TUG_SESSION_SPARK_FULL_SCALE_CHARS,
@@ -127,13 +129,14 @@ import {
 } from "@/lib/session-ledger-store";
 
 /**
- * Sparkline box in the masthead's PULSE line. The line runs the full card
- * width, and the tape is its only graphic, so it takes twice the Lens row's
- * 64 — the span shown is the same (`VISIBLE_SECONDS`); width buys resolution.
- * The height rides the line's `--tugx-pulse-bar-height: 18px` bar.
+ * Sparkline box in the masthead's PULSE line — the SAME cut the Lens's session
+ * rows wear, read off their constants rather than retyped, so the two tapes
+ * cannot drift into two instruments. An earlier double-width cut bought
+ * resolution the line never needed and took the width out of the description
+ * beside it; a tape is a glance, and the glance is the same on both surfaces.
  */
-const SPARKLINE_WIDTH = 128;
-const SPARKLINE_HEIGHT = 18;
+const SPARKLINE_WIDTH = TUG_SESSION_ROW_SPARK_WIDTH;
+const SPARKLINE_HEIGHT = TUG_SESSION_ROW_SPARK_HEIGHT;
 
 /**
  * The masthead's dot box. The row's denser cut, not the Lens's 28: the masthead
