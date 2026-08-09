@@ -129,13 +129,35 @@ body {
   width: calc(100% - 2 * var(--tugx-sheet-space-b));
   max-width: 460px;
   pointer-events: auto;
-  /* Uniform padding like alert: B on all sides */
-  padding: var(--tugx-sheet-space-b);
+  /* Uniform padding like alert: B on all sides — except the bottom, which is
+     a spacer element instead (see `::after`). WebKit does not include a scroll
+     container's bottom padding in its scrollable area, so the moment a sheet
+     overflows by even a rounded pixel that padding vanishes and the action row
+     ends up flush against the sheet's edge. A block in the flow cannot be
+     dropped that way, so the standard bottom margin under Cancel / OK holds
+     whether the sheet scrolls or not. */
+  padding: var(--tugx-sheet-space-b) var(--tugx-sheet-space-b) 0;
   /* Fallback cap for the standalone (no-pane) case; in a pane the JS clamp
      overrides this with an inline `max-height` measured against the canvas
      bottom (32px gap, `SHEET_CANVAS_GAP`), so the footer is always reachable. */
   max-height: calc(100vh - var(--tug-chrome-height) - 32px);
   overflow-y: auto;
+  /* No scrollbar, ever. A sheet is a panel, not a document: the bar reads as
+     chrome on a surface that is supposed to be one glance. The scroll itself
+     stays (wheel and keyboard still reach a sheet taller than its pane), but
+     it is never advertised — and a sheet that fits, which is the normal case,
+     no longer shows a bar over the fractional pixel it rounds past its box. */
+  scrollbar-width: none;
+}
+
+/* The bottom padding, as content — see the `padding` note above. `flex: none`
+   for the resizable variant, where the content box is a flex column and the
+   spacer would otherwise be shrunk away. */
+.tug-sheet-content::after {
+  content: "";
+  display: block;
+  flex: none;
+  block-size: var(--tugx-sheet-space-b);
   /* Box model */
   box-sizing: border-box;
   /* user-select inherits none from body. Form inputs inside the sheet
