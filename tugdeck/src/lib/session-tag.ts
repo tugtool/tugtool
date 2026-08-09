@@ -14,9 +14,25 @@
  * seconds after spawn, and is then immutable for the life of the session.
  * Nothing may cache the optimistic tag past that ack.
  *
+ * **The suffix grammar, and the one suffix there is.** A collision NEVER
+ * produces `azure-heron-2`: the bare `-N` backstop is retired, along with the
+ * silent NULL tag it landed on at exhaustion. The only sanctioned suffix is a
+ * fork's lineage — `<root>-<Letter><Number>`, where the letter names the rewind
+ * point forked from (the first point ever forked from within a lineage is `A`)
+ * and the number sequences the forks taken from that point, extending for a
+ * fork of a fork: `stocky-pixie-A1-B2`. That grammar is unambiguous against a
+ * root callsign precisely because a root is two lowercase words, so any
+ * trailing `<Letter><Number>` run is lineage and nothing else can be mistaken
+ * for it — which is what lets `parseTagLineage` read the segments off a tag
+ * when the structured `tag_lineage` column is absent. The ledger allocates
+ * letters and numbers from `tag_lineage_points`, which is append-only for the
+ * same reason `minted_tags` is: a reissued letter or number would make two
+ * unrelated forks share a callsign. See [D132].
+ *
  * Pure logic — no React, no DOM, no store. Unit-testable in isolation. The
- * exact-match `resolveTag` + a `tag → session_id` reverse map are deferred to
- * the typed-`/resume <tag>` command follow-on that consumes them.
+ * exact-match `tag → session_id` resolution this header once deferred now lives
+ * on `session-tag-store.ts` as `resolveTag`, because it needs the live index
+ * rather than a pure function.
  *
  * @module lib/session-tag
  */

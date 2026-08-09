@@ -647,11 +647,11 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 | #step-12 | Z2 strip removal and re-homing | done | `c410e1466` |
 | #step-13 | The atom on the clipboard | done | `7d8ed2c2b` |
 | #step-14 | Row tier: `TugSessionRow` grows; picker + Lens adopt | done | `045cab247` |
-| #step-15 | The synopsis | pending | — |
-| #step-16 | Citation surfaces: tab strip, Gazette, Changes, History | pending | — |
-| #step-17 | `tag → session_id` and `/resume <tag>` | pending | — |
-| #step-18 | Doctrine | pending | — |
-| #step-19 | Integration checkpoint | pending | — |
+| #step-15 | The synopsis | done | `f04ef942d` |
+| #step-16 | Citation surfaces: tab strip, Gazette, Changes, History | done | `bf4fb4096` |
+| #step-17 | `tag → session_id` and `/resume <tag>` | done | `1c21eefa9` |
+| #step-18 | Doctrine | done | `2af33d726` |
+| #step-19 | Integration checkpoint | done | `ad2187bfc` (verification only) |
 
 #### Step 1: Tag arm in the Rust changeset feed {#step-1}
 
@@ -1137,12 +1137,12 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Every Success Criteria item verified (#success-criteria).
-- [ ] Step Status Ledger fully `done` with commits recorded.
-- [ ] `[D##]` doctrine entry landed; pane-model masthead amendment landed.
+- [x] Every Success Criteria item verified (#success-criteria).
+- [x] Step Status Ledger fully `done` with commits recorded.
+- [x] `[D132]` doctrine entry landed; pane-model masthead amendment landed. (**D132**, not the D131 this plan guessed — that number went to Bullseye between vetting and landing, which is why the step said to re-check.)
 
 **Acceptance tests:**
-- [ ] The #step-19 integration pass.
+- [x] The #step-19 integration pass.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

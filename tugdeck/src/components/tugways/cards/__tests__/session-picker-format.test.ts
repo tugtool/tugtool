@@ -28,6 +28,7 @@ function row(over: Partial<SessionRow>): SessionRow {
     tag: null,
     root_tag: null,
     tag_lineage: null,
+    synopsis: null,
     origin: "external",
     terminal_live: null,
     ...over,

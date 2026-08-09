@@ -147,6 +147,12 @@ export interface SessionRow {
    *  session. Defaults to `null` for older tugcast. Keep in lockstep with the
    *  Rust `SessionRow.tag_lineage`. */
   tag_lineage: string | null;
+  /** The rolling generated description — a standing line saying what the
+   *  session is about, composed on tugcast's Summarize lane. `null` until the
+   *  first one is written, and never written while `name_user_set` is true: a
+   *  `/rename` freezes the description line. Defaults to `null` for older
+   *  tugcast. Keep in lockstep with the Rust `SessionRow.synopsis`. */
+  synopsis: string | null;
   /**
    * Provenance of the row: `"tug"` rows come from the sqlite ledger
    * (sessions Tug spawned or adopted); `"external"` rows were
@@ -192,6 +198,7 @@ export function normalizeSessionRow(
     | "tag"
     | "root_tag"
     | "tag_lineage"
+    | "synopsis"
   > &
     Partial<
       Pick<
@@ -202,6 +209,7 @@ export function normalizeSessionRow(
         | "tag"
         | "root_tag"
         | "tag_lineage"
+        | "synopsis"
       >
     >,
 ): SessionRow {
@@ -214,6 +222,7 @@ export function normalizeSessionRow(
     tag: row.tag ?? null,
     root_tag: row.root_tag ?? null,
     tag_lineage: row.tag_lineage ?? null,
+    synopsis: row.synopsis ?? null,
   };
 }
 
@@ -279,6 +288,10 @@ export interface CardBinding {
   /** Mnemonic tag; seeds the chip on card rebind (parity with `name`). Absent on
    *  older tugcast → treated as `null`. Keep in lockstep with the Rust binding row. */
   tag?: string | null;
+  /** The rolling generated description; seeds the description line on card
+   *  rebind (parity with `name`). Absent on older tugcast → treated as `null`.
+   *  Keep in lockstep with the Rust binding row. */
+  synopsis?: string | null;
 }
 
 /** Frame flags */

@@ -1658,6 +1658,7 @@ async fn main() {
             submission_tx: code_submission_tx.clone(),
             pulse_tx,
             ledger: Some(Arc::clone(&ledger)),
+            control_tx: Some(client_action_tx.clone()),
             tenant_enabled: overview_tenant,
             pulse_enabled: Arc::clone(&pulse_enabled),
             shared_agent: feed_router.shared_agent.clone(),

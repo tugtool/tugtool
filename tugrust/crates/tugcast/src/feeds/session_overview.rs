@@ -89,6 +89,27 @@ const IDLE_COLLAPSE_AFTER: Duration = Duration::from_secs(30);
 /// per tick into the model that also serves the `$` route's classify calls.
 const FORCED_EMIT_FLOOR: Duration = Duration::from_secs(4);
 
+/// Minimum spacing between two asks for one session's standing description
+/// ([P07], [Q01]).
+///
+/// The description rides the emit's digest rather than accumulating its own
+/// evidence — an emit has already composed the sections the description needs,
+/// and composing them twice would buy nothing but a second read of the JSONL.
+/// The two clocks are deliberately far apart: the headline is meant to move
+/// (`EMIT_FLOOR`, 8s), and the description is meant to stand, so it re-asks at
+/// most once a minute even while the headline is changing every few seconds.
+///
+/// Why sixty seconds specifically: it is the shortest interval at which the
+/// line does not visibly strobe under sustained work, and at one Haiku call per
+/// session-minute the cost sits well under the headline's own. It is a tuned
+/// starting point, not a derived constant — raise it if descriptions read as
+/// restless, lower it if they read as stale.
+///
+/// One coupling worth stating: because it rides the emit outcome, the
+/// description inherits the emit's gates. With PULSE or the overview tenant
+/// switched off, no digest is composed and no description is written.
+const SYNOPSIS_MIN_INTERVAL: Duration = Duration::from_secs(60);
+
 /// Sessions with no frames for this long are dropped at the sweep. The map is
 /// a rolling picture, not an archive: a closed or abandoned session's state
 /// would otherwise ride in memory for the life of the process.
@@ -483,6 +504,10 @@ struct SessionState {
     /// stretch with none has nothing new to say it did, which is what keeps a
     /// session that merely reconnects from re-announcing old work.
     activity_since_collapse: usize,
+    /// When this session's standing description was last asked for ([P07]).
+    /// `None` until the first ask. The description rides the emit's digest but
+    /// on its own, much slower clock — see [`SYNOPSIS_MIN_INTERVAL`].
+    last_synopsis: Option<Instant>,
 }
 
 impl SessionState {
@@ -507,6 +532,7 @@ impl SessionState {
             rested: false,
             barrier_epoch: 0,
             activity_since_collapse: 0,
+            last_synopsis: None,
         }
     }
 
@@ -1597,6 +1623,11 @@ pub struct SessionOverviewConfig {
     /// from a relaunch still wearing its headline. Absent in tests and in
     /// a ledger-less build, where an overview is broadcast and forgotten.
     pub ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+    /// The CONTROL broadcast, for the `session_updated` push that carries a
+    /// written description to every surface showing that session ([P07]).
+    /// Absent in tests and in a ledger-less build; the write still lands, and
+    /// the next listing picks it up.
+    pub control_tx: Option<broadcast::Sender<Frame>>,
     /// The `pulse-overview` tenant switch, read per tick so a flip is live.
     pub tenant_enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     /// PULSE's own switch, same closure shape the bridge uses.
@@ -1771,15 +1802,32 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                 let (session_id, _) = in_flight.take().expect("guarded by is_some");
                 active.remove(&session_id);
                 match done {
-                    Ok(outcome) => apply_emit_outcome(
-                        outcome,
-                        &mut sessions,
-                        &mut backoff,
-                        &mut queue,
-                        &mut active,
-                        &config.pulse_tx,
-                        config.ledger.as_ref(),
-                    ),
+                    Ok(outcome) => {
+                        // The digest the model saw, borrowed before the outcome
+                        // is consumed: the standing description is composed from
+                        // the same evidence, on its own much slower clock.
+                        let digest = outcome.seen_digest.clone();
+                        apply_emit_outcome(
+                            outcome,
+                            &mut sessions,
+                            &mut backoff,
+                            &mut queue,
+                            &mut active,
+                            &config.pulse_tx,
+                            config.ledger.as_ref(),
+                        );
+                        if let Some(digest) = digest {
+                            if let Some(job) = take_synopsis_job(
+                                &session_id,
+                                &digest,
+                                &mut sessions,
+                                &config,
+                                Instant::now(),
+                            ) {
+                                tokio::spawn(run_synopsis(job));
+                            }
+                        }
+                    }
                     Err(error) => {
                         warn!(%error, session = %session_id, "session overview: emit task failed");
                     }
@@ -2221,6 +2269,144 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
         "session overview: headline reask",
     );
     outcome
+}
+
+/// Everything one description ask needs, snapshotted on the loop.
+struct SynopsisJob {
+    /// The tug session id — what the loop keys by, and what the resolver takes.
+    session_id: String,
+    /// The digest the headline was just composed from.
+    digest: String,
+    shared_agent: crate::shared_agent::SharedAgentHandle,
+    ledger: Arc<crate::session_ledger::SessionLedger>,
+    control_tx: Option<broadcast::Sender<Frame>>,
+    /// The row the description belongs to. Ledger rows are keyed by *claude's*
+    /// session id, which is the tug id for a plain fresh spawn and something
+    /// else after a rewind fork or an id rotation — so the resolver answers
+    /// this, and the tug id is only the fallback for a session it cannot
+    /// resolve yet. Keyed by the tug id, a fork's description would land on the
+    /// parent's row.
+    row_id: String,
+}
+
+/// Decide whether this session's standing description is due, and snapshot the
+/// job if it is. Runs on the loop so the debounce clock is read and written in
+/// one place; the ask itself runs detached, because it must not occupy the
+/// single emit slot that paces every session's headline.
+fn take_synopsis_job(
+    session_id: &str,
+    digest: &str,
+    sessions: &mut HashMap<String, SessionState>,
+    config: &SessionOverviewConfig,
+    now: Instant,
+) -> Option<SynopsisJob> {
+    let ledger = config.ledger.as_ref()?;
+    let state = sessions.get_mut(session_id)?;
+    if let Some(last) = state.last_synopsis {
+        if now.duration_since(last) < SYNOPSIS_MIN_INTERVAL {
+            return None;
+        }
+    }
+    // Marked on the ask, not on the answer: a model that fails or a row that
+    // turns out to be frozen must not make every subsequent emit retry.
+    state.last_synopsis = Some(now);
+    Some(SynopsisJob {
+        row_id: (config.identity.resolver)(session_id)
+            .unwrap_or_else(|| session_id.to_owned()),
+        session_id: session_id.to_owned(),
+        digest: digest.to_owned(),
+        shared_agent: config.shared_agent.clone(),
+        ledger: Arc::clone(ledger),
+        control_tx: config.control_tx.clone(),
+    })
+}
+
+/// Ask for one session's standing description and persist it ([P07], Spec S07).
+///
+/// Detached from the emit loop: the answer is wanted but nothing waits on it,
+/// and a description held at the transport timeout must not delay the next
+/// session's headline. Every failure is a silent skip — the debounce was
+/// already marked, so the next ask comes a minute later either way.
+async fn run_synopsis(job: SynopsisJob) {
+    let SynopsisJob {
+        session_id,
+        digest,
+        shared_agent,
+        ledger,
+        control_tx,
+        row_id,
+    } = job;
+    // The freeze rule, read before the model call rather than after it: a
+    // renamed session must cost nothing at all, not an inference whose answer
+    // is then discarded. `record_synopsis` enforces the same rule in SQL, which
+    // is what closes the window between this read and that write.
+    match ledger.get(&row_id) {
+        Ok(Some(row)) if row.name_user_set => {
+            debug!(session = %session_id, "session synopsis: frozen by rename");
+            return;
+        }
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            debug!(session = %session_id, row = %row_id, "session synopsis: no ledger row");
+            return;
+        }
+        Err(error) => {
+            warn!(%error, session = %session_id, "session synopsis: ledger read failed");
+            return;
+        }
+    }
+    let Some(agent) = shared_agent else {
+        return;
+    };
+    let started = Instant::now();
+    let answer = match agent.run("synopsis", digest.clone()).await {
+        Ok(text) => text,
+        Err(error) => {
+            warn!(%error, session = %session_id, "session synopsis: ask failed");
+            return;
+        }
+    };
+    // Same register and same grounding gate as the headline: the description is
+    // read at the same size in the same places, and a description the digest
+    // does not support is the invention the gate exists to refuse.
+    let report = headline_register_report(&answer);
+    match ground_headline(&report.text, &digest, GroundingMode::Intent) {
+        GroundingVerdict::Grounded => {}
+        GroundingVerdict::Ungrounded { rule, detail } => {
+            info!(
+                session = %session_id,
+                rule = %rule,
+                synopsis = ?report.text,
+                detail = ?detail,
+                "session synopsis: refused",
+            );
+            return;
+        }
+    }
+    if report.text.is_empty() {
+        return;
+    }
+    match ledger.record_synopsis(&row_id, &report.text) {
+        Ok(true) => {
+            info!(
+                session = %session_id,
+                row = %row_id,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                synopsis = %report.text,
+                "session synopsis: written",
+            );
+            if let (Some(tx), Ok(Some(row))) = (control_tx, ledger.get(&row_id)) {
+                let _ = tx.send(crate::feeds::agent_supervisor::build_session_updated_frame(
+                    &row,
+                ));
+            }
+        }
+        // Unchanged, or frozen between the read above and the write.
+        Ok(false) => {}
+        Err(error) => {
+            warn!(%error, session = %session_id, "session synopsis: ledger write failed");
+        }
+    }
 }
 
 /// Land an emit outcome back on the loop's state: restore the cache, settle
@@ -4472,6 +4658,7 @@ mod tests {
             submission_tx: submission_tx.clone(),
             pulse_tx,
             ledger: None,
+            control_tx: None,
             tenant_enabled: Arc::new(move || tenant_on),
             pulse_enabled: Arc::new(move || pulse_on),
             shared_agent: Some(agent.pool()),
@@ -4494,6 +4681,92 @@ mod tests {
             cancel,
             _tmp: tmp,
         }
+    }
+
+    /// A config carrying nothing but what `take_synopsis_job` reads: a ledger
+    /// (its presence is the gate) and a resolver (its answer is the row key).
+    fn synopsis_config(
+        ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
+        claude_id: Option<&'static str>,
+    ) -> SessionOverviewConfig {
+        let (code_tx, _) = broadcast::channel(4);
+        let (shell_tx, _) = broadcast::channel(4);
+        let (submission_tx, _) = broadcast::channel(4);
+        let (pulse_tx, _) = broadcast::channel(4);
+        SessionOverviewConfig {
+            code_tx,
+            shell_tx,
+            submission_tx,
+            pulse_tx,
+            ledger,
+            control_tx: None,
+            tenant_enabled: Arc::new(|| true),
+            pulse_enabled: Arc::new(|| true),
+            shared_agent: None,
+            identity: SessionIdentity {
+                resolver: Arc::new(move |_| claude_id.map(str::to_owned)),
+                project_dir: Arc::new(|_| Some("/tmp/project".to_string())),
+                claude_projects_root: PathBuf::from("/tmp/tugcast-tests"),
+            },
+            cadence: Cadence::default(),
+        }
+    }
+
+    #[test]
+    fn the_description_asks_far_more_slowly_than_the_headline() {
+        let ledger = Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().expect("in-memory ledger"),
+        );
+        let config = synopsis_config(Some(ledger), Some("claude-1"));
+        let start = Instant::now();
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), SessionState::new(start));
+
+        // The first emit's digest asks.
+        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, start).is_some());
+        // Every emit inside the window is refused — the headline moves on its
+        // own 8s floor and the description must not follow it.
+        let soon = start + SYNOPSIS_MIN_INTERVAL - Duration::from_secs(1);
+        assert!(take_synopsis_job("s1", "d2", &mut sessions, &config, soon).is_none());
+        // Past the window it asks again.
+        let later = start + SYNOPSIS_MIN_INTERVAL;
+        let job = take_synopsis_job("s1", "d3", &mut sessions, &config, later)
+            .expect("due past the interval");
+        assert_eq!(job.digest, "d3");
+        // The row key is claude's id, not the tug id: a fork's description must
+        // not land on its parent's row.
+        assert_eq!(job.row_id, "claude-1");
+        assert_eq!(job.session_id, "s1");
+    }
+
+    #[test]
+    fn an_unresolvable_session_writes_against_its_own_id() {
+        let ledger = Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().expect("in-memory ledger"),
+        );
+        let config = synopsis_config(Some(ledger), None);
+        let now = Instant::now();
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), SessionState::new(now));
+        let job = take_synopsis_job("s1", "d1", &mut sessions, &config, now).expect("due");
+        assert_eq!(job.row_id, "s1");
+    }
+
+    #[test]
+    fn no_ledger_means_no_description_to_persist() {
+        let config = synopsis_config(None, Some("claude-1"));
+        let now = Instant::now();
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), SessionState::new(now));
+        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, now).is_none());
+        // A session the sweep has already dropped is likewise nothing to do.
+        let config = synopsis_config(
+            Some(Arc::new(
+                crate::session_ledger::SessionLedger::open_in_memory().expect("ledger"),
+            )),
+            Some("claude-1"),
+        );
+        assert!(take_synopsis_job("gone", "d1", &mut sessions, &config, now).is_none());
     }
 
     /// Await one PULSE frame, or `None` if none arrives promptly. The window

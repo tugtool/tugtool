@@ -29,6 +29,9 @@ import {
   sessionIdentityLine,
   type SessionIdentity,
 } from "@/lib/session-identity";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { transferFocusForActivation } from "@/focus-transfer";
+import type { IDeckManagerStore } from "@/deck-manager-store";
 import { writeClipboardViaNative } from "@/lib/tug-native-clipboard";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
 
@@ -77,4 +80,39 @@ export function writeSessionAtomToClipboard(identity: SessionIdentity): boolean 
     sessionCitation(identity, { project: true }),
     JSON.stringify(sessionAtomClipboardPayload(identity)),
   );
+}
+
+/**
+ * Clicking a session atom: raise the card bound to it.
+ *
+ * The one behavior behind every citation chip's click, so the Gazette's refs,
+ * the Changes card's orphan hint, and the History card's commit line cannot
+ * mean three different things by the same gesture. A session with no card open
+ * is a no-op rather than an error — that is a real and ordinary state, and the
+ * chip's own tooltip already says what the reference is.
+ *
+ * The raise goes through `transferFocusForActivation`, which is the real
+ * z-raise: activation carries focus, so the card the reader raised is also the
+ * one the keyboard is talking to.
+ */
+export function raiseSessionCard(
+  sessionId: string,
+  store: IDeckManagerStore | null,
+): void {
+  if (store === null) return;
+  let cardId: string | null = null;
+  for (const [id, binding] of cardSessionBindingStore.getSnapshot()) {
+    if (binding.tugSessionId === sessionId) {
+      cardId = id;
+      break;
+    }
+  }
+  if (cardId === null) return;
+  const incomingCardId = cardId;
+  transferFocusForActivation({
+    outgoingCardId: store.getFirstResponderCardId(),
+    incomingCardId,
+    store,
+    commitMutation: () => store.activateCard(incomingCardId),
+  });
 }

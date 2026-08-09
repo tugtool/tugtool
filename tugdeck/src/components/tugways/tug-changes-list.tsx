@@ -66,6 +66,10 @@ import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badg
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
+import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
+import { useDeckManager } from "@/deck-manager-context";
+import type { IDeckManagerStore } from "@/deck-manager-store";
+import { raiseSessionCard } from "@/lib/session-atom";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -569,8 +573,14 @@ export interface FileBlockData {
   op: string;
   origin: string;
   shared: boolean;
-  /** Bracket-hint provenance text ([P13]), when a bracket saw this path. */
-  hint?: string;
+  /**
+   * The row's provenance mark ([P13]) — a bracket hint's terse text, or, for an
+   * orphaned row, the citation chip naming the session that left the file
+   * behind. A node rather than a string because a session reference is rendered
+   * by `TugSessionIdentity` everywhere in the app, and the orphan hint is a
+   * reference like any other.
+   */
+  hint?: React.ReactNode;
   /** The hunks the server places this session in ([P12]); present only on a
    *  contended path, where they are the default election. */
   own_hunks?: readonly string[];
@@ -620,15 +630,33 @@ function unattributedFileData(
  * Orphaned row data ([D120]): a file stranded on a dead session, shown with a
  * `from <prior owner>` hint so the reclaim reads as adoption. Keeps the dead
  * owner's op/origin provenance.
+ *
+ * The prior owner is named by a citation chip rather than by the feed's
+ * `prior_owner_name` string. The string was a name with no identifier behind
+ * it — two sessions that had been renamed alike read identically, and neither
+ * could be followed. The chip resolves the id the feed already sends, so the
+ * row says which session and lets the reader go to it.
  */
-function orphanedFileData(file: OrphanedFile): FileBlockData {
+function orphanedFileData(
+  file: OrphanedFile,
+  store: IDeckManagerStore | null,
+): FileBlockData {
   return {
     path: file.path,
     git_status: file.git_status,
     op: file.op,
     origin: file.origin,
     shared: false,
-    hint: `from ${file.prior_owner_name}`,
+    hint: (
+      <span className="tug-changes-list-file-hint-from">
+        from{" "}
+        <TugSessionCitation
+          sessionId={file.prior_owner_id}
+          context={{ recordedTag: file.prior_owner_name }}
+          onOpen={() => raiseSessionCard(file.prior_owner_id, store)}
+        />
+      </span>
+    ),
   };
 }
 
@@ -953,6 +981,10 @@ function EntryFiles({
   onElectHunks?: (path: string, ids: readonly string[] | null) => void;
 }) {
   const projectRoot = entry.project.project_dir;
+  // The deck, for an orphan hint's citation chip to raise the prior owner's
+  // card. Null outside a deck (the gallery), which the chip reads as "nowhere
+  // to go" — the same outcome as a session whose card is closed.
+  const deck = useDeckManager();
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(entry.id, descriptor);
   useEffect(() => {
@@ -966,7 +998,7 @@ function EntryFiles({
     entry.kind === "session"
       ? entry.entry.files.map(changesetFileData)
       : entry.kind === "orphaned"
-        ? entry.files.map(orphanedFileData)
+        ? entry.files.map((file) => orphanedFileData(file, deck))
         : entry.files.map((file) => unattributedFileData(file, ownSessionId));
 
   return (

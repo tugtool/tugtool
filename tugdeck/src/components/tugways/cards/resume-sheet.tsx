@@ -61,6 +61,7 @@ import { getConnection } from "@/lib/connection-singleton";
 import { provisionSpawnTag, sendSpawnSession } from "@/lib/session-lifecycle";
 import { fireRestore } from "@/lib/session-restore";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { sessionTagStore } from "@/lib/session-tag-store";
 
 // Mirrors `session-card.tsx`'s sheet exit duration: defer the wire send so the
 // binding flip (which rebinds + re-renders the card) doesn't unmount the sheet
@@ -77,7 +78,28 @@ export interface ResumeSheetController {
   /** Present the sessions overlay. A no-op when the card has no bound project
    *  (the popup gates `/resume` on a bound session). */
   openResumeSheet: () => void;
+  /**
+   * Resume the session wearing `tag`, with no overlay in between ([P12]) —
+   * `/resume stocky-pixie` typed straight into the composer.
+   *
+   * Returns why it could not, or `null` on success, so the caller can say so in
+   * the card rather than failing silently. It reaches the same `fireRestore`
+   * the overlay's pick reaches; the overlay is a way to CHOOSE a session, and
+   * naming one is another.
+   */
+  resumeByTag: (tag: string) => ResumeByTagFailure | null;
 }
+
+/** Why a `/resume <tag>` could not proceed. */
+export type ResumeByTagFailure =
+  /** No session in this run's ledger cache wears that callsign. */
+  | { kind: "unknown-tag"; tag: string }
+  /** It resolved to the session this card is already showing. */
+  | { kind: "already-bound"; tag: string }
+  /** Another process holds it — the same rule the overlay's rows enforce. */
+  | { kind: "live-elsewhere"; tag: string }
+  /** No transport. */
+  | { kind: "disconnected"; tag: string };
 
 export function useResumeSheet({
   cardId,
@@ -104,7 +126,34 @@ export function useResumeSheet({
     });
   }, [showSheet, cardId, projectDir]);
 
-  return { openResumeSheet };
+  // The ledger rows for this card's project — the same source the overlay
+  // lists, so a tag and a pick answer to one truth about a session's state.
+  const sessionLedger = useSessionLedger(projectDir);
+
+  const resumeByTag = useCallback(
+    (tag: string): ResumeByTagFailure | null => {
+      const sessionId = sessionTagStore.resolveTag(tag);
+      if (sessionId === null) return { kind: "unknown-tag", tag };
+      if (cardSessionBindingStore.getBinding(cardId)?.tugSessionId === sessionId) {
+        return { kind: "already-bound", tag };
+      }
+      // A session another process holds is unresumable, exactly as the overlay's
+      // rows are. Not finding a row at all is NOT that: a callsign this store
+      // knows but this project's listing has not returned yet is resumable, and
+      // refusing it would make the command depend on scan timing.
+      const row = sessionLedger.rows.find((r) => r.session_id === sessionId);
+      if (row !== undefined && row.state === "live") {
+        return { kind: "live-elsewhere", tag };
+      }
+      const connection = getConnection();
+      if (!connection) return { kind: "disconnected", tag };
+      fireRestore(cardId, sessionId, projectDir, connection);
+      return null;
+    },
+    [cardId, projectDir, sessionLedger],
+  );
+
+  return { openResumeSheet, resumeByTag };
 }
 
 interface ResumeSheetBodyProps {

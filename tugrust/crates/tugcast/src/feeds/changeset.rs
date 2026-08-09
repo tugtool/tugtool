@@ -1846,6 +1846,7 @@ mod tests {
             tag: None,
             root_tag: None,
             tag_lineage: None,
+            synopsis: None,
         }
     }
 

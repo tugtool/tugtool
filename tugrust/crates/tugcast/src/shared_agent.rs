@@ -1184,6 +1184,12 @@ pub static HAIKU_AGENT_JOBS: &[JobSpec] = &[
         slow: Some(SUMMARIZE_SLOW),
         instructions: SUMMARIZE_DONE_INSTRUCTIONS,
     },
+    JobSpec {
+        name: "synopsis",
+        timeout: SUMMARIZE_TIMEOUT,
+        slow: Some(SUMMARIZE_SLOW),
+        instructions: SYNOPSIS_INSTRUCTIONS,
+    },
 ];
 
 /// Classify's ceiling is one of **three** constants that must agree:
@@ -1330,6 +1336,39 @@ START WITH A PAST-TENSE VERB: Fixed, Authored, Drafted, Wired, Traced, Ported, A
     "
 
 Never restate one line of the digest; say what the lines add up to.
+
+Answer only from the digest below. Output only the line.
+
+DIGEST:"
+);
+
+/// The session's standing description ([P07], Spec S07) — the line that names
+/// what a session is *about*, as against the headline that says what it is
+/// doing this minute.
+///
+/// The register rules are `headline_rules!` verbatim, because the description
+/// is read in the same places and at the same size as the headline and a second
+/// register would just be drift. What changes is the subject: the headline is
+/// made to move, so `SUMMARIZE_INSTRUCTIONS` points the model at "what it is
+/// doing right now"; the description is made to *stand*, so this wording points
+/// at the standing goal and tells the model in as many words to ignore the
+/// current motion. A description that re-wrote itself with every tool call
+/// would be the incipit's failure inverted — always current, never about
+/// anything.
+const SYNOPSIS_INSTRUCTIONS: &str = concat!(
+    "\
+You write the standing description of a coding session — one line naming what the whole session is about. It sits under the session's name and is read days later, so it must still be true then.
+
+The digest comes in labeled sections. \"The standing goal\" is the subject: describe THAT. \"The current ask\" narrows it when the goal is vague or absent. \"What it is doing right now\" is evidence that the work is real — never the subject. Do not describe the step in progress; describe the undertaking the steps belong to.
+
+Newspaper headline style. The rules are strict:
+
+START WITH A VERB, in the plain command form: Fix, Author, Draft, Wire, Trace, Port, Audit, Bundle, Salvage, Explain. Not \"Fixing\", not \"Building\" — Fix, Build.
+",
+    headline_rules!(),
+    "
+
+Prefer the wider, older aim over the newest one: a description that changes every few minutes is describing the wrong thing.
 
 Answer only from the digest below. Output only the line.
 

@@ -29,6 +29,7 @@ import React, {
 } from "react";
 import { cn } from "@/lib/utils";
 import { cardTitleStore } from "@/lib/card-title-store";
+import { cardTitleTextFor } from "@/lib/pane-title";
 import { icons } from "lucide-react";
 import type { CardState } from "@/layout-tree";
 import { getAllRegistrations } from "@/card-registry";
@@ -190,11 +191,16 @@ function useTabOverflow(
   const rafIdRef = useRef<number | null>(null);
 
   // Serialised title key for dependency tracking -- triggers re-measurement
-  // when any tab title changes. Text tabs draw their label from
-  // `cardTitleStore` (the static `card.title` is just "File"), so fold the
-  // per-card override in and subscribe to it — otherwise binding a file
-  // (label "File" → "foo.py") would widen the tabs without recomputing
-  // overflow, leaving them clipped until an unrelated resize.
+  // when any tab title changes. A tab draws its label from `cardTitleStore`
+  // whenever the card publishes one (the static `card.title` is just "File" or
+  // "Session"), so fold the per-card override in and subscribe to it —
+  // otherwise binding a file (label "File" → "foo.py") would widen the tabs
+  // without recomputing overflow, leaving them clipped until an unrelated
+  // resize.
+  //
+  // This key is deliberately a superset of what `cardTitleTextFor` reads: the
+  // registry titles are already folded in below, so two override-less tabs of
+  // different types cannot collide on it. Nothing more is needed here.
   const overrideKey = useSyncExternalStore(cardTitleStore.subscribe, () =>
     cards.map((c) => cardTitleStore.get(c.id) ?? "").join("|"),
   );
@@ -433,18 +439,23 @@ function TabView({
   onSelect,
   onClose,
 }: TabViewProps) {
-  // Text cards publish their basename through `cardTitleStore` (the
-  // static registry title is just "File"); consult it live so a file
-  // tab shows the leaf filename. Scoped to text cards so a Session card's
-  // projectDir override never leaks into its tab label.
-  const titleOverride = useSyncExternalStore(
+  // A card with a name of its own publishes it through `cardTitleStore` — a
+  // Text card's basename, a Session card's `project/callsign` — and the tab
+  // wears that name rather than the static registry title. Composed through
+  // `cardTitleTextFor` so the tab strip and the title bar cannot name the same
+  // card differently; the old `componentId === "text"` gate is what made a
+  // stacked Session card's tab read the literal word "Session".
+  //
+  // Subscribed rather than read: the override lands after the card resolves
+  // its identity, and a bare read would leave the tab on "Session" forever.
+  const label = useSyncExternalStore(
     cardTitleStore.subscribe,
-    useCallback(() => cardTitleStore.get(tab.id), [tab.id]),
+    useCallback(
+      () => cardTitleTextFor(tab.id, tab.title),
+      [tab.id, tab.title],
+    ),
   );
-  const fullTitle =
-    tab.componentId === "text" && titleOverride !== null
-      ? titleOverride
-      : tab.title;
+  const fullTitle = label;
   const displayTitle = centerTruncate(fullTitle, TAB_TITLE_MAX);
 
   const handleTabClick = () => {
@@ -795,15 +806,14 @@ export const TugTabBar = React.forwardRef<HTMLDivElement, TugTabBarProps>(functi
   })();
 
   // Build overflow dropdown items from overflowTabs (icon + label each). [D07]
-  // Text tabs draw their label from `cardTitleStore` (the basename), same
-  // as the visible tabs — the static `card.title` is just "File".
+  // Same rule as the visible tabs: a card that publishes a name of its own
+  // wears it, whatever its type. The menu is rebuilt on every render of this
+  // bar, which `overrideKey` already subscribes to.
   const overflowDropdownItems: TugPopupMenuItem[] = overflowTabs.map((tab) => {
     const iconName = getAllRegistrations().get(tab.componentId)?.defaultMeta.icon;
-    const override =
-      tab.componentId === "text" ? cardTitleStore.get(tab.id) : null;
     return {
       id: tab.id,
-      label: centerTruncate(override ?? tab.title, TAB_TITLE_MAX),
+      label: centerTruncate(cardTitleTextFor(tab.id, tab.title), TAB_TITLE_MAX),
       icon: renderIcon(iconName),
     };
   });

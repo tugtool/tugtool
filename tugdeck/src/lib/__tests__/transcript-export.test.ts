@@ -16,6 +16,7 @@ import {
   transcriptToMarkdown,
 } from "../transcript-export";
 import type { Message, TurnEntry } from "@/lib/code-session-store/types";
+import { sessionTagStore } from "@/lib/session-tag-store";
 
 let seq = 0;
 function assistantText(text: string): Message {
@@ -82,8 +83,14 @@ describe("filenames", () => {
     expect(exportExtension("jsonl")).toBe("jsonl");
   });
 
-  test("base name includes a short session slice, with a fallback", () => {
-    expect(exportBaseName("0123456789abcdef")).toBe("tug-session-01234567");
+  test("base name leads with the callsign, keeping the short id after it", () => {
+    sessionTagStore.setTag("0123456789abcdef", "stocky-pixie");
+    expect(exportBaseName("0123456789abcdef")).toBe(
+      "tug-session-stocky-pixie-01234567",
+    );
+    // A legacy session with no callsign degrades to the short id alone —
+    // exactly what this produced before the callsign led.
+    expect(exportBaseName("fedcba9876543210")).toBe("tug-session-fedcba98");
     expect(exportBaseName(null)).toBe("tug-session");
   });
 });

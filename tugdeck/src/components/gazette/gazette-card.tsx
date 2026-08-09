@@ -36,6 +36,7 @@ import {
   type TugMessageEditorHandle,
 } from "@/components/tugways/tug-message-editor";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
 import { useDeckManager } from "@/deck-manager-context";
 import { formatContextualStamp } from "@/lib/contextual-stamp";
 import {
@@ -108,12 +109,30 @@ function useTimeFormats(): {
  */
 function RefChip({ chipRef }: { chipRef: GazetteRef }): React.ReactElement {
   const store = useDeckManager();
+  const intent = gazetteRefIntent(chipRef);
+  const inert = intent.kind === "inert";
+  // A session ref is a CITATION, and it renders as one: the session atom, the
+  // callsign, the same chip every foreign surface shows. It used to fall
+  // through to the generic label rule below — `target.split("/").pop()`, which
+  // is a no-op on a UUID — so the Gazette printed all thirty-six characters of
+  // an id nobody can read. The atom carries the click intent that was already
+  // resolved above; a session with no card open resolves to `inert` there,
+  // which reaches the chip as no `onOpen`.
+  if (chipRef.kind === "session") {
+    return (
+      <TugSessionCitation
+        sessionId={chipRef.target}
+        className="gazette-ref-chip"
+        onOpen={
+          inert ? undefined : () => runGazetteRefIntent(intent, store)
+        }
+      />
+    );
+  }
   const label =
     chipRef.kind === "commit"
       ? chipRef.target.slice(0, 9)
       : (chipRef.target.split("/").pop() ?? chipRef.target);
-  const intent = gazetteRefIntent(chipRef);
-  const inert = intent.kind === "inert";
   return (
     <TugPushButton
       size="2xs"

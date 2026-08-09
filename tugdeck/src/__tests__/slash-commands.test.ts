@@ -50,6 +50,25 @@ describe("matchLocalSlashCommand", () => {
     expect(matchLocalSlashCommand("/permissions foo")).toBeNull();
   });
 
+  test("/resume takes a callsign, and still matches bare", () => {
+    // Both forms are one command: bare opens the picker, an argument names the
+    // session ([P12]). Without `takesArgs` the argument form would not match at
+    // all and `/resume stocky-pixie` would be sent to claude as prose.
+    expect(matchLocalSlashCommand("/resume")).toEqual({
+      name: "resume",
+      args: "",
+    });
+    expect(matchLocalSlashCommand("/resume stocky-pixie")).toEqual({
+      name: "resume",
+      args: "stocky-pixie",
+    });
+    // A lineage callsign is a callsign; nothing here parses its shape.
+    expect(matchLocalSlashCommand("/resume petit-thaw-A1")).toEqual({
+      name: "resume",
+      args: "petit-thaw-A1",
+    });
+  });
+
   test("unregistered names and non-command text return null", () => {
     for (const input of ["/vim", "/theme", "permissions", "hello /permissions", "", "/"]) {
       expect(matchLocalSlashCommand(input)).toBeNull();

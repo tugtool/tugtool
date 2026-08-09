@@ -86,6 +86,34 @@ export function composePaneTitleBarText(args: {
 }
 
 /**
+ * One **card's** label, by the same rule — for a caller naming a card rather
+ * than a pane.
+ *
+ * The tab strip is the caller this exists for, and the distinction matters:
+ * {@link paneTitleBarTextFor} resolves the pane's *active* card, while a tab
+ * label is per-tab, so a stacked Session card behind another tab would read
+ * the frontmost card's name. It also carries no pane group name — a group name
+ * prefixes the pane, and repeating it on every tab in that pane would say it
+ * once per tab.
+ *
+ * There is no card-type gate here, and that is the point. The tab strip used
+ * to consult the override only for `componentId === "text"`, so a stacked
+ * Session card's tab read the literal registry title "Session" while its own
+ * title bar read `tugtool/stocky-pixie`. Every card that publishes an override
+ * has a name of its own; the composition rule is what decides whether it wins,
+ * and it lives here rather than at each caller.
+ */
+export function cardTitleTextFor(
+  cardId: string,
+  registryTitle: string,
+): string {
+  return composePaneTitleBarText({
+    metaTitle: registryTitle,
+    titleOverride: cardTitleStore.get(cardId),
+  });
+}
+
+/**
  * The same string, resolved for a caller that holds deck state rather than
  * the composed parts — the deck canvas building a slot-stack picker, or the
  * host menu-state projection naming panes for the Window menu.

@@ -218,3 +218,14 @@
   font-style: italic;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
+
+/* An orphaned row's `from <session>` hint. The word stays hint-sized muted ink;
+   the chip beside it is a citation and keeps its own type and color ([L20]), so
+   only the alignment between them is stated here. Upright rather than italic:
+   the theme's sans has no italic face, and a slanted chip would paint nothing. */
+.tug-changes-list-file-hint-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-style: normal;
+}

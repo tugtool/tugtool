@@ -52,12 +52,25 @@ import {
 /** The dir the fixtures' shas belong to; the file lists resolve against it. */
 const FIXTURE_ROOT = "/Users/dev/src/tugtool";
 
+/**
+ * The session trailers are TYPED FIELDS here, not body ink ([P10], Spec S03).
+ * tugcast parses `Tug-Session:` / `Tug-Session-Id:` server-side and strips both
+ * lines from the body before it ships, so a fixture that still spelled them in
+ * `body` would be showing a shape the app can no longer receive — and the
+ * gallery would be a lie about the surface it exists to show.
+ *
+ * The last entry deliberately keeps the **legacy one-line form**: a display
+ * name rather than a callsign, a full uuid rather than a short id, and no
+ * `tug_session_id` beside it. Legacy commits live in history forever, so the
+ * bench needs one to render.
+ */
 const COMMITS: GitLogCommit[] = [
   {
     sha: "a14a3efc58f87ec7060122fab3c0843b47154e6a",
     subject:
       "tugdash(list-filtering): TugFilterField + fuzzy list filtering across picker, /resume, and Lens sections",
-    body: "Tug-Session: list-filtering (248401c8-e9fd-4001-9a55-51ed3ff47c43)",
+    tug_session: "stocky-pixie (248401c8)",
+    tug_session_id: "248401c8-e9fd-4001-9a55-51ed3ff47c43",
     author: "Ken Kocienda",
     date: "2026-07-24",
     committer: "Ken Kocienda",
@@ -67,7 +80,8 @@ const COMMITS: GitLogCommit[] = [
   {
     sha: "45a56a144fc9e6546e673a7da632f6564f8a674b",
     subject: "tugways(commit-receipt): promote commit sha into header identity slot",
-    body: "Tug-Session: commit-xp (2fff7b8e-41cf-489c-86a6-bc65d7eacf3a)",
+    tug_session: "syrupy-beam (2fff7b8e)",
+    tug_session_id: "2fff7b8e-41cf-489c-86a6-bc65d7eacf3a",
     author: "Ken Kocienda",
     date: "2026-07-24",
     committer: "Ken Kocienda",
@@ -79,8 +93,9 @@ const COMMITS: GitLogCommit[] = [
     subject: "tugways(progress-wave): keep tail-cell wave animating under offscreen-skip",
     body:
       "- reword tug-progress-wave.css comment to point at the content-visibility gap instead of restating layer-promotion rationale\n" +
-      "- add `:last-child` opt-out in tug-list-view.css so the streaming tail cell stays content-visibility: visible and its wave keeps animating\n\n" +
-      "Tug-Session: tail-row skip (da17da2c-635e-44da-9e02-75d5e67ada92)",
+      "- add `:last-child` opt-out in tug-list-view.css so the streaming tail cell stays content-visibility: visible and its wave keeps animating",
+    tug_session: "petit-thaw-A1 (da17da2c)",
+    tug_session_id: "da17da2c-635e-44da-9e02-75d5e67ada92",
     author: "Ken Kocienda",
     date: "2026-07-24",
     committer: "Ken Kocienda",
@@ -93,8 +108,9 @@ const COMMITS: GitLogCommit[] = [
     body:
       "- ghost-emphasize commit stat/hash badges in commit-block.tsx and session-commit-receipt-block.tsx (was outlined)\n" +
       '- add "git" participant (icon, color token, data-participant CSS) to tug-transcript-entry\n' +
-      "- session-card-transcript.tsx: detect commit rows via exported matchesCommitReceipt\n\n" +
-      "Tug-Session: commit-xp (2fff7b8e-41cf-489c-86a6-bc65d7eacf3a)",
+      "- session-card-transcript.tsx: detect commit rows via exported matchesCommitReceipt",
+    tug_session: "syrupy-beam (2fff7b8e)",
+    tug_session_id: "2fff7b8e-41cf-489c-86a6-bc65d7eacf3a",
     author: "Ken Kocienda",
     date: "2026-07-24",
     committer: "Ken Kocienda",
@@ -107,8 +123,9 @@ const COMMITS: GitLogCommit[] = [
       "tugways(progress-motion): promote indeterminate spinners/waves to compositor layers",
     body:
       "- swap `background-position-x` scroll for a `translateX`'d `::before` stripe layer on tug-progress-bar so WebKit compositors the scroll\n" +
-      "- add scoped `will-change` (transform/opacity) to running/indeterminate states across gallery petals, session-changes spinner, tug-progress-pie/ring/spinner/pulsing-dot/wave\n\n" +
-      "Tug-Session: perf (536ef459-cdbd-47ab-937a-43bce5d39eac)",
+      "- add scoped `will-change` (transform/opacity) to running/indeterminate states across gallery petals, session-changes spinner, tug-progress-pie/ring/spinner/pulsing-dot/wave",
+    tug_session: "brisk-cairn (536ef459)",
+    tug_session_id: "536ef459-cdbd-47ab-937a-43bce5d39eac",
     author: "Ken Kocienda",
     date: "2026-07-24",
     committer: "Ken Kocienda",
@@ -118,7 +135,11 @@ const COMMITS: GitLogCommit[] = [
   {
     sha: "8ceec91d0f2a1a7f2ac4a1a8f6b7a45f0d3e21c9",
     subject: "roadmap(list-filtering): add TugFilterField plan for long-list fuzzy filtering",
-    body: "Tug-Session: list-filtering (248401c8-e9fd-4001-9a55-51ed3ff47c43)",
+    // THE LEGACY SPECIMEN — kept deliberately (Spec S03). One trailer, a
+    // display name where a callsign now goes, and a full uuid where a short id
+    // now goes. It still resolves, because the parenthesized token is a uuid
+    // and that is an exact join.
+    tug_session: "list-filtering (248401c8-e9fd-4001-9a55-51ed3ff47c43)",
     author: "Ken Kocienda",
     date: "2026-07-23",
     committer: "Ken Kocienda",

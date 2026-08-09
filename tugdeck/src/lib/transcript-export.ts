@@ -22,6 +22,7 @@
 
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import { turnEntryToMarkdown } from "@/components/tugways/cards/turn-entry-markdown";
+import { resolveSessionIdentity } from "@/lib/session-identity";
 
 /** The export formats `/export` offers. */
 export type ExportFormat = "markdown" | "jsonl";
@@ -82,11 +83,22 @@ export function exportExtension(format: ExportFormat): string {
 }
 
 /**
- * Suggested base filename (no extension) for an export. Includes a short slice
- * of the session id when known so multiple exports don't all collide on one
- * default name.
+ * Suggested base filename (no extension) for an export:
+ * `tug-session-<callsign>-<shortid>` ([P10]).
+ *
+ * The callsign leads because a file named after a hash is a file nobody can
+ * find again — the short id stays after it so two exports of two sessions never
+ * collide, which is the job the hash was doing alone. A legacy session with no
+ * callsign degrades to `tug-session-<shortid>`, which is exactly what this
+ * produced before.
+ *
+ * Resolved through the bare resolver rather than the hook: an export is a
+ * command, not a render, and there is nothing to keep subscribed.
  */
 export function exportBaseName(sessionId: string | null): string {
   if (sessionId === null || sessionId === "") return "tug-session";
-  return `tug-session-${sessionId.slice(0, 8)}`;
+  const identity = resolveSessionIdentity(sessionId);
+  return identity.tag === null
+    ? `tug-session-${identity.shortId}`
+    : `tug-session-${identity.tag}-${identity.shortId}`;
 }

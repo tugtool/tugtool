@@ -55,6 +55,43 @@
 //! recreate it. See [DM08] in the mid-turn-replay plan for the
 //! no-migration policy.
 //!
+//! # Callsigns: permanence, and the one suffix ([D132])
+//!
+//! Every session wears a mnemonic `adjective-noun` **callsign** in
+//! `sessions.tag`. Two rules govern it, and both are load-bearing because
+//! commit trailers cite callsigns.
+//!
+//! **It is never recycled.** `sessions` rows are hard-`DELETE`d — trash, the
+//! cascade paths, cap/age eviction — so the `sessions_tag` unique index frees a
+//! callsign the moment its row dies, and a recycled callsign would make an old
+//! commit's citation resolve to a *different* session: a confidently wrong
+//! answer, strictly worse than an unresolvable one. So the arbiter is the
+//! append-only **`minted_tags`** table. Every mint path inserts into it in the
+//! same transaction as the row it names, its `PRIMARY KEY` violation is the
+//! collision signal a mint retries against, and **nothing may ever delete from
+//! it** — not trash, not the cascades, not eviction. Deleting rows there
+//! silently restores recycling. `sessions_tag` stays only as the live-row
+//! invariant. The guarantee is per-ledger: `sessions.db` is per-instance, so a
+//! trailer written on another machine simply misses, which is safe.
+//!
+//! **A collision rerolls; it never suffixes.** The bare `-2`, `-3`… backstop is
+//! retired, along with the silent NULL tag it landed on at exhaustion. On a
+//! genuine collision the mint rolls a complete fresh pair and re-claims.
+//!
+//! **The only sanctioned suffix is fork lineage:** `<root>-<Letter><Number>`,
+//! the letter naming the rewind point forked from (`A` for the first point ever
+//! forked from within a lineage) and the number sequencing forks from that
+//! point, extending for a fork of a fork (`stocky-pixie-A1-B2`). Letters and
+//! numbers are allocated from **`tag_lineage_points`**, one row per point ever
+//! forked from within a root's lineage — a table rather than a query over
+//! sibling names, because a query would have to re-derive letters from parsed
+//! display strings and a trashed fork would take its number with it. That table
+//! is append-only for the same reason `minted_tags` is: a reissued letter or
+//! number would make two unrelated forks share a callsign. A colliding lineage
+//! candidate **errors rather than rerolling** — a reroll would write an
+//! unrelated word pair into `tag` while `root_tag`/`tag_lineage` still named the
+//! lineage, a contradiction the client's resolver would render to the user.
+//!
 //! # Concurrency
 //!
 //! Writes serialize through a single `Mutex<Connection>` inside the ledger.
@@ -294,6 +331,14 @@ pub struct SessionRow {
     /// session. Keep in lockstep with the TS `SessionRow.tag_lineage`.
     #[serde(default)]
     pub tag_lineage: Option<String>,
+    /// The rolling generated description ([P07]) — a standing line saying what
+    /// this session is about, composed on the SharedAgent's Summarize lane and
+    /// re-composed as the work moves. `None` until the first one is written,
+    /// and never written at all while `name_user_set` is true: a `/rename` is
+    /// the user's word and it freezes the description line. Keep in lockstep
+    /// with the TS `SessionRow.synopsis`.
+    #[serde(default)]
+    pub synopsis: Option<String>,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -1392,6 +1437,7 @@ impl SessionLedger {
         Self::migrate_sessions_add_name_user_set(conn)?;
         Self::migrate_sessions_add_tag(conn)?;
         Self::migrate_sessions_add_lineage(conn)?;
+        Self::migrate_sessions_add_synopsis(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
         conn.execute_batch(
@@ -1413,7 +1459,11 @@ impl SessionLedger {
                 -- dash-joined segments (`A1`, `A1-B2`). Both NULL for a root
                 -- session. `tag` keeps the full composed callsign.
                 root_tag          TEXT,
-                tag_lineage       TEXT
+                tag_lineage       TEXT,
+                -- The rolling generated description ([P07]). NULL until the
+                -- Summarize lane writes one; frozen (never written) once the
+                -- user has renamed the session.
+                synopsis          TEXT
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -2182,6 +2232,29 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.synopsis` column ([P07], [Q02]).
+    ///
+    /// The description is per-session ledger state exactly like `name`, so it
+    /// lives beside it rather than in tugbank (whose defaults are per-user
+    /// knobs, not per-session data). Pre-column rows read `NULL` — no
+    /// description — and acquire one the next time the Summarize lane runs for
+    /// them. No-op on a fresh DB (the CREATE TABLE defines it) or when already
+    /// migrated.
+    fn migrate_sessions_add_synopsis(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "synopsis") {
+            match conn.execute("ALTER TABLE sessions ADD COLUMN synopsis TEXT", []) {
+                Ok(_) => {}
+                Err(err) if is_duplicate_column(&err) => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        Ok(())
+    }
+
     /// Self-healing add of the `pulse_lines.intent` column — the retained
     /// high-level thought behind a low-level beat ("intent • action" in
     /// the strip). Pre-column rows read `NULL` (no intent), which is
@@ -2289,7 +2362,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage
+                    root_tag, tag_lineage, synopsis
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -2312,7 +2385,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage
+                    root_tag, tag_lineage, synopsis
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -2344,7 +2417,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage
+                    root_tag, tag_lineage, synopsis
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -2374,7 +2447,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage
+                    root_tag, tag_lineage, synopsis
              FROM sessions
              WHERE (?1 IS NULL OR last_used_at >= ?1)
                AND (?2 IS NULL OR last_used_at <= ?2)
@@ -2409,7 +2482,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage
+                    root_tag, tag_lineage, synopsis
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -2757,6 +2830,37 @@ impl SessionLedger {
              WHERE session_id = ?1
                AND name_user_set = 0
                AND COALESCE(name, '') != ?2",
+            params![session_id, trimmed],
+        )?;
+        if affected > 0 {
+            drop(conn);
+            self.notify_sessions_changed();
+        }
+        Ok(affected > 0)
+    }
+
+    /// Record the rolling generated description ([P07]).
+    ///
+    /// Writes `synopsis` **only** when `name_user_set = 0`. That is the freeze
+    /// rule, and it lives here rather than only at the caller because this is
+    /// the one statement every writer goes through: a `/rename` is the user's
+    /// word about what the session is, and a generated line must never speak
+    /// over it. Returns whether a row actually changed, so the caller can skip
+    /// a pointless broadcast. An unknown session id or a frozen row is a no-op
+    /// rather than an error — the description arrives on a best-effort lane and
+    /// must never fail anything upstream of it.
+    pub fn record_synopsis(&self, session_id: &str, synopsis: &str) -> Result<bool, LedgerError> {
+        let trimmed = synopsis.trim();
+        if trimmed.is_empty() {
+            return Ok(false);
+        }
+        let conn = self.db.lock().expect("ledger mutex");
+        let affected = conn.execute(
+            "UPDATE sessions
+             SET synopsis = ?2
+             WHERE session_id = ?1
+               AND name_user_set = 0
+               AND COALESCE(synopsis, '') != ?2",
             params![session_id, trimmed],
         )?;
         if affected > 0 {
@@ -5313,6 +5417,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let tag: Option<String> = row.get(11)?;
     let root_tag: Option<String> = row.get(12)?;
     let tag_lineage: Option<String> = row.get(13)?;
+    let synopsis: Option<String> = row.get(14)?;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -5332,6 +5437,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         tag,
         root_tag,
         tag_lineage,
+        synopsis,
     }))
 }
 
@@ -6310,6 +6416,112 @@ mod tests {
         assert!(!l.record_auto_title("no-such-session", "A title").unwrap());
         assert!(!l.record_auto_title("s1", "   ").unwrap());
         assert_eq!(l.get("s1").unwrap().unwrap().name, None);
+    }
+
+    // ── sessions.synopsis: the rolling description ───────────────────────────
+
+    #[test]
+    fn a_synopsis_persists_and_a_rename_freezes_it() {
+        let l = fresh();
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+
+        // An unnamed row takes the description and reads it back.
+        assert!(l.record_synopsis("s1", "Repair tag minting").unwrap());
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().synopsis.as_deref(),
+            Some("Repair tag minting")
+        );
+
+        // An identical re-write is not a change — no needless broadcast.
+        assert!(!l.record_synopsis("s1", "Repair tag minting").unwrap());
+        // A newer description supersedes the older one.
+        assert!(l.record_synopsis("s1", "Trace mint collisions").unwrap());
+
+        // Once the user has named the session, the line is theirs: the
+        // description freezes at whatever it last said and no generated line
+        // speaks over it again.
+        l.rename("s1", Some("the mint work")).unwrap();
+        assert!(!l.record_synopsis("s1", "Something else entirely").unwrap());
+        let row = l.get("s1").unwrap().unwrap();
+        assert_eq!(row.synopsis.as_deref(), Some("Trace mint collisions"));
+        assert!(row.name_user_set);
+
+        // Clearing the name thaws it again — the user withdrew their word.
+        l.rename("s1", None).unwrap();
+        assert!(l.record_synopsis("s1", "Audit the reroll loop").unwrap());
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().synopsis.as_deref(),
+            Some("Audit the reroll loop")
+        );
+    }
+
+    #[test]
+    fn a_synopsis_for_an_unknown_or_blank_case_is_a_no_op() {
+        let l = fresh();
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        // The description rides a best-effort lane; neither case may fail.
+        assert!(!l.record_synopsis("no-such-session", "A line").unwrap());
+        assert!(!l.record_synopsis("s1", "   ").unwrap());
+        assert_eq!(l.get("s1").unwrap().unwrap().synopsis, None);
+    }
+
+    #[test]
+    fn a_ledger_predating_the_synopsis_column_migrates_in_place() {
+        // A table built without the column — every ledger on disk before this
+        // work. The self-healing ALTER adds it, existing rows read NULL, and a
+        // second pass is a no-op rather than an error.
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE sessions (
+                 session_id        TEXT PRIMARY KEY,
+                 workspace_key     TEXT NOT NULL,
+                 project_dir       TEXT NOT NULL,
+                 created_at        INTEGER NOT NULL,
+                 last_used_at      INTEGER NOT NULL,
+                 turn_count        INTEGER NOT NULL DEFAULT 0,
+                 last_user_prompt  TEXT,
+                 state             TEXT NOT NULL,
+                 card_id           TEXT,
+                 name              TEXT,
+                 name_user_set     INTEGER NOT NULL DEFAULT 0,
+                 tag               TEXT,
+                 root_tag          TEXT,
+                 tag_lineage       TEXT
+             );
+             INSERT INTO sessions
+                 (session_id, workspace_key, project_dir, created_at,
+                  last_used_at, state)
+             VALUES ('legacy', 'ws', '/proj', 0, 0, 'closed');",
+        )
+        .expect("legacy schema");
+
+        let has_synopsis = |conn: &Connection| {
+            SessionLedger::table_columns(conn, "sessions")
+                .expect("columns")
+                .iter()
+                .any(|(n, _)| n == "synopsis")
+        };
+        assert!(!has_synopsis(&conn));
+        SessionLedger::migrate_sessions_add_synopsis(&conn).expect("migrate");
+        assert!(has_synopsis(&conn));
+        // Idempotent: a second open of the same database must not fail.
+        SessionLedger::migrate_sessions_add_synopsis(&conn).expect("re-migrate");
+
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT synopsis FROM sessions WHERE session_id = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read");
+        assert_eq!(existing, None);
+
+        // And on a database with no `sessions` table at all — a fresh install,
+        // where the CREATE batch defines the column directly.
+        let empty = Connection::open_in_memory().expect("in-memory db");
+        SessionLedger::migrate_sessions_add_synopsis(&empty).expect("no-op");
     }
 
     // ── pulse_lines: capped rolling log + tail read ──────────────────────────

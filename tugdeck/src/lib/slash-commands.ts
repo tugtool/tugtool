@@ -95,6 +95,10 @@ export const LOCAL_SLASH_COMMANDS = [
   {
     name: "resume",
     description: "Resume a different session for this project in this card",
+    // Bare `/resume` opens the picker; `/resume <callsign>` names the session
+    // and skips it ([P12] — the tag is addressable). Without this the argument
+    // form does not match the registry at all and falls through as prose.
+    takesArgs: true,
   },
   {
     name: "diff",

@@ -21,15 +21,27 @@
  * {@link SessionTagStore.seedTag} takes the ledger's word; after that it is
  * immutable for the life of the session. See `session-tag.ts`'s header.
  *
- * A faithful clone of `session-name-store.ts` — no reverse `tag → session_id`
- * map in v1; the deferred typed-`/resume <tag>` command adds one when it needs
- * it.
+ * A faithful clone of `session-name-store.ts`, plus the reverse `tag →
+ * session_id` index its header once deferred: {@link SessionTagStore.resolveTag}
+ * is what makes `/resume <tag>` possible, and it is exact-match only ([P12]).
  *
  * @module lib/session-tag-store
  */
 
 class SessionTagStore {
   private tags = new Map<string, string>();
+  /**
+   * The reverse index, `tag → tugSessionId` — what makes the callsign
+   * ADDRESSABLE ([P12]): `/resume stocky-pixie` and any other command that
+   * takes a callsign resolve through here.
+   *
+   * Maintained in `setTag` beside the forward map rather than derived on
+   * demand, because the one case a scan would get wrong is the case that
+   * actually happens: the ledger rerolls a collided mint, so a session's tag
+   * CHANGES once, seconds after spawn, and the tag it wore for those seconds
+   * must stop resolving. Dropping the old key here is what does that.
+   */
+  private byTag = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
 
@@ -56,18 +68,49 @@ class SessionTagStore {
   knownTags = (): ReadonlySet<string> => new Set(this.tags.values());
 
   /**
+   * Every session id this store has seen — what a commit trailer's 8-char short
+   * id is expanded against ([P10], Spec S03). A commit records the short id and
+   * the reader needs the whole one to resolve the reference, and this is the
+   * client's nearest thing to "the ids this ledger holds".
+   */
+  knownSessionIds = (): ReadonlySet<string> => new Set(this.tags.keys());
+
+  /**
    * Set (trimmed) or clear (`null` / blank) the tag for `tugSessionId`. No-op
    * + no notify when unchanged, so a redundant wire echo doesn't churn React.
    */
+  /**
+   * The session wearing `tag` right now, or `null` — the callsign resolved
+   * back to an id ([P12]).
+   *
+   * **Exact match, deliberately.** A callsign is a name, not a query: `/resume
+   * stocky-pix` is a typo, and answering it with `stocky-pixie` would resume a
+   * session the user did not name. Lineage callsigns need no special case —
+   * `stocky-pixie-A1` is a tag like any other and matches as itself, never as
+   * its root.
+   *
+   * The answer is only as complete as this cache: a session no listing, push,
+   * or binding has mentioned in this run is unknown here even though the ledger
+   * holds it. That is the honest failure — the caller says so rather than
+   * guessing.
+   */
+  resolveTag = (tag: string): string | null =>
+    this.byTag.get(tag.trim()) ?? null;
+
   setTag(tugSessionId: string, tag: string | null): void {
     const trimmed = tag?.trim() ?? "";
     const current = this.tags.get(tugSessionId) ?? null;
     if (trimmed.length === 0) {
       if (current === null) return;
       this.tags.delete(tugSessionId);
+      this.byTag.delete(current);
     } else {
       if (current === trimmed) return;
       this.tags.set(tugSessionId, trimmed);
+      // The reroll case: the callsign this session wore a moment ago names
+      // nothing now, so it must stop resolving.
+      if (current !== null) this.byTag.delete(current);
+      this.byTag.set(trimmed, tugSessionId);
     }
     this.version += 1;
     for (const listener of this.listeners) listener();

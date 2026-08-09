@@ -105,6 +105,18 @@ export interface SessionIdentityContext {
    * carries — and the two could disagree.
    */
   tagLineage?: string | null;
+  /**
+   * A callsign recorded **elsewhere**, at write time — the tag inside a commit's
+   * `Tug-Session:` trailer. Used only when this ledger has none of its own, so
+   * the ledger stays authoritative and a rerolled callsign is never overruled by
+   * an older commit's copy of it.
+   *
+   * It exists because a citation can be unresolvable and still informative: a
+   * commit made on another machine names a session this ledger has no record of,
+   * and the honest rendering is the callsign that commit actually recorded,
+   * slashed and inert ([P13]), rather than a bare hash the commit never said.
+   */
+  recordedTag?: string | null;
 }
 
 /**
@@ -225,7 +237,7 @@ export function resolveSessionIdentity(
     sessionId,
     name: sessionNameStore.getName(sessionId),
     synopsis: sessionSynopsisStore.getSynopsis(sessionId),
-    tag: sessionTagStore.getTag(sessionId),
+    tag: sessionTagStore.getTag(sessionId) ?? context?.recordedTag ?? null,
     projectDir: context?.projectDir ?? boundProjectDirFor(sessionId),
     branch: context?.branch ?? null,
     state: context?.state ?? null,
@@ -299,7 +311,7 @@ export function useSessionIdentity(
     sessionId,
     name,
     synopsis,
-    tag,
+    tag: tag ?? context?.recordedTag ?? null,
     projectDir: context?.projectDir ?? boundProjectDir,
     branch: context?.branch ?? null,
     state: context?.state ?? null,
@@ -347,6 +359,78 @@ export function sessionCitation(
     ? `${identity.project}/${identity.tag}`
     : identity.tag;
   return `${head} (${identity.shortId})`;
+}
+
+/** The parenthesized token of a citation: `<tag> (<token>)`. */
+const CITATION_TOKEN = /\(([0-9a-fA-F-]+)\)\s*$/;
+
+/** A full session UUID — the legacy trailer's token, and `Tug-Session-Id`'s. */
+const FULL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A short id: exactly {@link SESSION_SHORT_ID_LENGTH} hex chars. */
+const SHORT_ID = /^[0-9a-f]{8}$/i;
+
+/**
+ * What a commit's session trailers name (Spec S03) — the id to resolve against,
+ * and the callsign the commit itself recorded.
+ */
+export interface CitedSession {
+  /**
+   * The best id available. A full uuid when the commit carries one (or a legacy
+   * trailer spelled one); otherwise the short id, expanded against this ledger
+   * when it knows a session with that prefix and left short when it does not.
+   * A short id here means the reference will render unresolvable, which is the
+   * honest outcome for a commit made against a ledger this machine never had.
+   */
+  sessionId: string;
+  /** The callsign the trailer recorded, or null for a legacy tagless commit. */
+  tag: string | null;
+}
+
+/**
+ * Resolve a commit's session trailers to the session they name.
+ *
+ * Precedence per Spec S03, and the order is the point:
+ *
+ *  1. **`Tug-Session-Id`** — the machine field, a full uuid, an exact join.
+ *     Every commit written after the trailer pair shipped carries it.
+ *  2. **The citation's parenthesized token.** A 36-char uuid means a *legacy*
+ *     one-line trailer (`<display> (<full-uuid>)`), which therefore resolves
+ *     exactly too — legacy commits live in history forever and must not degrade
+ *     to unresolvable. An 8-hex token is a short id, expanded by prefix against
+ *     the ids this ledger knows.
+ *  3. Neither parses → `null`, and the caller renders nothing at all.
+ *
+ * The callsign is read off the citation's head in both forms. For a legacy
+ * trailer that head is a *display name*, not a tag — which is why it is only
+ * ever a fallback ({@link SessionIdentityContext.recordedTag}) and never
+ * overrules what this ledger says the session is called.
+ */
+export function resolveCitedSession(
+  citation: string | null | undefined,
+  sessionId?: string | null,
+  knownIds: () => Iterable<string> = () => sessionTagStore.knownSessionIds(),
+): CitedSession | null {
+  const raw = citation?.trim() ?? "";
+  const machineId = sessionId?.trim() ?? "";
+  const match = CITATION_TOKEN.exec(raw);
+  // The tagless citation form is the bare short id with no parentheses, so a
+  // trailer that is nothing but a token IS the token, and carries no callsign.
+  const parenthesized = match !== null;
+  const head = parenthesized ? raw.slice(0, match.index).trim() : "";
+  const token = parenthesized ? match[1] : raw;
+  const tag = head.length > 0 ? head : null;
+
+  if (FULL_UUID.test(machineId)) return { sessionId: machineId, tag };
+  if (FULL_UUID.test(token)) return { sessionId: token, tag };
+  if (SHORT_ID.test(token)) {
+    const short = token.toLowerCase();
+    for (const id of knownIds()) {
+      if (id.startsWith(short)) return { sessionId: id, tag };
+    }
+    return { sessionId: short, tag };
+  }
+  return null;
 }
 
 /**

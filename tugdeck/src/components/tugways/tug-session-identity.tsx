@@ -46,7 +46,9 @@ import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import {
   sessionCitation,
   sessionIdentityLine,
+  useSessionIdentity,
   type SessionIdentity,
+  type SessionIdentityContext,
 } from "@/lib/session-identity";
 import { cn } from "@/lib/utils";
 
@@ -207,3 +209,50 @@ export const TugSessionIdentity = React.forwardRef<
     </>
   );
 });
+
+/**
+ * A citation chip resolved from a session **id** — the shape every foreign
+ * surface wants.
+ *
+ * The Gazette's refs, the Changes card's orphan hint, and the History card's
+ * commit line all hold an id and nothing else, and all three have to answer
+ * the same question before they can render: does this ledger know that
+ * session? Answering it three times would mean three answers, so it is
+ * answered once, here.
+ *
+ * **The rule:** a session is resolvable when something in this ledger names
+ * it — a callsign in the tag store, or a live card binding that supplies its
+ * project. Neither, and the reference is [P13]'s slashed inert atom. Note what
+ * this does NOT test: liveness. A closed session resolves; a trashed one whose
+ * tag is still in the store resolves; a citation written on another machine
+ * does not. Sessions are never dead, only unfindable — which is exactly the
+ * distinction the slashed atom draws.
+ */
+export function TugSessionCitation({
+  sessionId,
+  context,
+  size = "2xs",
+  onOpen,
+  className,
+}: {
+  /** The tug session id the citation names. */
+  sessionId: string;
+  /** Facts the caller already holds — a row's project dir, state, lineage. */
+  context?: SessionIdentityContext;
+  size?: TugSessionIdentitySize;
+  onOpen?: () => void;
+  className?: string;
+}): React.ReactElement {
+  const identity = useSessionIdentity(sessionId, context);
+  const missing = identity.tag === null && identity.project.length === 0;
+  return (
+    <TugSessionIdentity
+      identity={identity}
+      tier="chip"
+      size={size}
+      missing={missing}
+      onOpen={missing ? undefined : onOpen}
+      className={className}
+    />
+  );
+}

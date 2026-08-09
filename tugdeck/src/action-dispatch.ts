@@ -39,6 +39,7 @@ import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
+import { sessionSynopsisStore } from "./lib/session-synopsis-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
 import { requestLogout } from "./lib/logout-store";
 import { requestConfigureTug } from "./lib/configure-tug-request-store";
@@ -825,8 +826,14 @@ export function initActionDispatch(
     const ackName = typeof payload.name === "string" ? payload.name : null;
     const ackNameUserSet = payload.name_user_set === true;
     const ackTag = typeof payload.tag === "string" ? payload.tag : null;
+    const ackSynopsis =
+      typeof payload.synopsis === "string" ? payload.synopsis : null;
     sessionNameStore.seedName(tugSessionId, ackNameUserSet ? ackName : null);
     sessionTagStore.seedTag(tugSessionId, ackTag);
+    // The description is the second half of the identity's description line;
+    // it seeds beside the name for the same reason (a resume binds via this
+    // ack alone).
+    sessionSynopsisStore.seedSynopsis(tugSessionId, ackSynopsis);
   });
 
   // session_updated: tugcast supervisor broadcasts these on every
@@ -855,6 +862,14 @@ export function initActionDispatch(
       // row read before the tag landed carries `null`, which must not wipe the
       // optimistic tag back to the id-hash.
       sessionTagStore.seedTag(decoded.session_id, decoded.fields.tag);
+      // The description, unlike the callsign, is authoritative on every push:
+      // the Summarize lane rewrites it as the work moves and the ledger row is
+      // the only truth, so a push carrying `null` means it really is empty
+      // (a rename froze it, or none has been written yet).
+      sessionSynopsisStore.setSynopsis(
+        decoded.session_id,
+        decoded.fields.synopsis,
+      );
     }
     publishSessionUpdated(decoded);
   });
@@ -889,6 +904,7 @@ export function initActionDispatch(
       // Seed the chip's tag cache from the listed rows so a bound session reads
       // its ledger tag once listed (or re-resumed after a legacy backfill).
       sessionTagStore.seedTag(row.session_id, row.tag);
+      sessionSynopsisStore.seedSynopsis(row.session_id, row.synopsis);
     }
     publishListSessionsOk({
       project_dir: projectDir,
@@ -963,6 +979,7 @@ export function initActionDispatch(
       // Seed the chip's tag cache on restore so a session's mnemonic shows the
       // moment its card rebinds (parity with the name seed).
       sessionTagStore.seedTag(b.session_id, b.tag ?? null);
+      sessionSynopsisStore.seedSynopsis(b.session_id, b.synopsis ?? null);
     }
     publishListCardBindingsOk({ bindings: rows });
   });

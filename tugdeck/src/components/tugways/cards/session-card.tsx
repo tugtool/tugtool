@@ -3513,7 +3513,34 @@ export function SessionCardBody({
       }
     },
     rewind: () => rewindSheet.openRewindSheet(),
-    resume: () => resumeSheet.openResumeSheet(),
+    // `/resume` opens the overlay to choose a session; `/resume <callsign>`
+    // names one and skips it ([P12] — the tag is addressable). An unresolvable
+    // callsign is answered in this card rather than swallowed: a silent no-op
+    // on a typed command reads as the app being broken.
+    resume: (args) => {
+      const tag = args.trim();
+      if (tag.length === 0) {
+        resumeSheet.openResumeSheet();
+        return;
+      }
+      const failure = resumeSheet.resumeByTag(tag);
+      if (failure === null) return;
+      const notify = paneBulletinRef.current;
+      switch (failure.kind) {
+        case "unknown-tag":
+          notify?.caution(`No session called ${failure.tag}`);
+          break;
+        case "already-bound":
+          notify?.caution(`${failure.tag} is already open in this card`);
+          break;
+        case "live-elsewhere":
+          notify?.caution(`${failure.tag} is open elsewhere`);
+          break;
+        case "disconnected":
+          notify?.danger("Not connected");
+          break;
+      }
+    },
     // `/diff` opens the Project Diff card — the repo-wide `git diff HEAD`
     // for this card's project, descriptor-keyed so a re-run reuses (and
     // refreshes) the already-open card ([P20]). Session-scoped review lives

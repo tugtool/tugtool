@@ -69,7 +69,11 @@ import {
   type CommitChangesFile,
 } from "@/components/tugways/tug-changes-list";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
+import { useDeckManager } from "@/deck-manager-context";
 import { dashNameFromTrailer } from "@/lib/landing-receipt";
+import { raiseSessionCard } from "@/lib/session-atom";
+import { resolveCitedSession } from "@/lib/session-identity";
 import {
   DEFAULT_COMMIT_FILTER_SCOPE,
   type CommitFilterScope,
@@ -342,6 +346,15 @@ function CommitRow({
   // A commit that landed as a dash join carries the `Tug-Dash:` trailer;
   // History badges it so joins read differently from hand commits ([P09]).
   const dashName = dashNameFromTrailer(commit.tug_dash);
+  // Which session made this commit, from its `Tug-Session*` trailers (Spec
+  // S03). `null` for a commit made outside Tug, or one predating the trailers
+  // — the row then simply carries no chip, which is the honest rendering of a
+  // commit that never said.
+  const cited = useMemo(
+    () => resolveCitedSession(commit.tug_session, commit.tug_session_id),
+    [commit.tug_session, commit.tug_session_id],
+  );
+  const store = useDeckManager();
   const shortSha = commit.sha.slice(0, SHA_DISPLAY_LEN);
   const context = useMemo(
     () => matchedContext(commit, shortSha, filterQuery, filterScope),
@@ -418,17 +431,32 @@ function CommitRow({
             )}
             className="tug-history-list-commit-header"
             badge={
-              dashName !== null ? (
-                <span
-                  className="tug-history-list-join-badge"
-                  data-testid="session-history-join-badge"
-                >
-                  {renderFilterHighlight(
-                    joinBadgeText(dashName),
-                    scopedQuery(filterQuery, filterScope, "message"),
-                  )}
-                </span>
-              ) : undefined
+              <>
+                {dashName !== null ? (
+                  <span
+                    className="tug-history-list-join-badge"
+                    data-testid="session-history-join-badge"
+                  >
+                    {renderFilterHighlight(
+                      joinBadgeText(dashName),
+                      scopedQuery(filterQuery, filterScope, "message"),
+                    )}
+                  </span>
+                ) : null}
+                {/* Which session made this commit, as a citation chip beside
+                    the sha ([P10]). The trailer lines themselves are gone from
+                    the body — tugcast strips them server-side — so this chip is
+                    the only place the attribution reads, and it resolves rather
+                    than merely printing an id. */}
+                {cited !== null ? (
+                  <TugSessionCitation
+                    sessionId={cited.sessionId}
+                    context={{ recordedTag: cited.tag }}
+                    className="tug-history-list-session-chip"
+                    onOpen={() => raiseSessionCard(cited.sessionId, store)}
+                  />
+                ) : null}
+              </>
             }
           />
         </TugListRow>

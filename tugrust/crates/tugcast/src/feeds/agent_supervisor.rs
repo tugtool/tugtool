@@ -864,6 +864,7 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "tag": row.tag,
             "root_tag": row.root_tag,
             "tag_lineage": row.tag_lineage,
+            "synopsis": row.synopsis,
         },
     });
     Frame::new(
@@ -1295,6 +1296,9 @@ fn build_listed_union(
                     // A scanned session is a root until it is forked from.
                     root_tag: None,
                     tag_lineage: None,
+                    // The description is ledger state; a session with no
+                    // `sessions` row has none until it is adopted.
+                    synopsis: None,
                 },
                 origin: "external",
                 terminal_live,
@@ -3459,12 +3463,12 @@ impl AgentSupervisor {
         // spawn's row doesn't exist yet (the bridge writes it on
         // `session_init`) — `None`/`false` here, which the client seeds
         // non-clobberingly so it can't wipe the optimistic tag.
-        let (row_name, row_name_user_set, row_tag) = self
+        let (row_name, row_name_user_set, row_tag, row_synopsis) = self
             .session_ledger
             .as_ref()
             .and_then(|ledger| ledger.get(tug_session_id.as_str()).ok().flatten())
-            .map(|row| (row.name, row.name_user_set, row.tag))
-            .unwrap_or((None, false, None));
+            .map(|row| (row.name, row.name_user_set, row.tag, row.synopsis))
+            .unwrap_or((None, false, None, None));
         let ack = serde_json::json!({
             "action": "spawn_session_ok",
             "card_id": card_id,
@@ -3479,6 +3483,10 @@ impl AgentSupervisor {
             "name": row_name,
             "name_user_set": row_name_user_set,
             "tag": row_tag,
+            // The description rides the ack for the same reason the callsign
+            // does: a resumed card must not sit on an empty line waiting for
+            // the next listing.
+            "synopsis": row_synopsis,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
@@ -4836,6 +4844,7 @@ impl AgentSupervisor {
                     "name": row.name,
                     "name_user_set": row.name_user_set,
                     "tag": row.tag,
+                    "synopsis": row.synopsis,
                 }))
             })
             .collect();
@@ -6858,10 +6867,17 @@ mod tests {
             tag: Some("azure-heron".to_owned()),
             root_tag: None,
             tag_lineage: None,
+            synopsis: Some("Repair ligature fallback in monospace".to_owned()),
         };
         let frame = build_session_updated_frame(&row);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
         assert_eq!(body["fields"]["tag"], "azure-heron");
+        // The description rides the same push as the callsign, so a written
+        // synopsis reaches every live surface without a re-listing.
+        assert_eq!(
+            body["fields"]["synopsis"],
+            "Repair ligature fallback in monospace"
+        );
     }
 
     // ---- Test-only ChildSpawner fakes ----
