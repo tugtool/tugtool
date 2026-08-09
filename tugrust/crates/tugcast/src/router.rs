@@ -641,11 +641,6 @@ async fn intercept_session_control(
         ControlOutcome::Error(ControlError::Malformed) => ControlIntercept::HandledError {
             detail: "malformed_payload",
         },
-        ControlOutcome::Error(ControlError::PersistenceFailure(_)) => {
-            ControlIntercept::HandledError {
-                detail: "persistence_failure",
-            }
-        }
         ControlOutcome::Error(ControlError::InvalidProjectDir { reason }) => {
             ControlIntercept::HandledError { detail: reason }
         }

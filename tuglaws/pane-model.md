@@ -104,11 +104,11 @@ Both derived modes resolve at render, in CSS, from custom properties (`--tug-imp
 
 #### Chrome has two heights, and the taller one is a masthead
 
-A Pane's title bar is normally one 36px tier. A card whose identity is worth three lines can ask for a **72px masthead** instead ([D132]), and today exactly one does: the Session card, whose masthead carries `project/callsign` with the Pane controls, the session's description, the PULSE line, and a trailing telemetry placard.
+A Pane's title bar is normally one 36px tier. A card whose identity is worth three lines can ask for a **72px masthead** instead ([D132]), and today exactly one does: the Session card, whose masthead carries `project/callsign` with the Pane controls, the session's description, the PULSE line, and a trailing telemetry popover.
 
 **The height is fixed and ratified, never content-driven.** The masthead never reflows; overflow truncates. Chrome that changed height as its text changed would move every card in the Pane while the user was reading.
 
-**The Pane owns the slot; the card's own family owns what is inside it.** `TugPane` opens the taller tier and sizes it, then mounts a tugways `SessionMasthead` into it, keyed by session id. That split is the point: chrome stays the Pane's ([L09]) without the PULSE feeder, the dwell queue, the compaction pin, the sparkline series and the placard moving into chrome code. The precedent is the Session card already rendering `TugPaneBanner` — Pane-class furniture, card-class content inside it.
+**The Pane owns the slot; the card's own family owns what is inside it.** `TugPane` opens the taller tier and sizes it, then mounts a tugways `SessionMasthead` into it, keyed by session id. That split is the point: chrome stays the Pane's ([L09]) without the PULSE feeder, the dwell queue, the compaction pin, the sparkline series and the telemetry popover moving into chrome code. The precedent is the Session card already rendering `TugPaneBanner` — Pane-class furniture, card-class content inside it.
 
 **Which card the Pane asks is the ACTIVE one.** A card publishes a masthead sidecar beside its `cardTitleStore` string, and the Pane wears the masthead exactly when its frontmost tab publishes one — so the chrome swaps 36↔72 on tab switch and the content region reflows with it. A pinned 72px chrome over a Text tab would caption one card with another card's identity. A stacked Session card contributes nothing to the chrome; its identity still reads on its tab and in the stack picker.
 

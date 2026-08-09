@@ -23,11 +23,6 @@
 //! single atomic critical section so a concurrent close/spawn cannot
 //! interleave between the ledger mutation and the affinity mutation.
 //!
-//! Downstream steps still rely on `#[allow(dead_code)]` for types whose
-//! consumers have not yet landed in the router wiring.
-
-#![allow(dead_code)]
-
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
@@ -164,16 +159,19 @@ impl<T> BoundedQueue<T> {
     }
 
     /// Maximum number of items the queue will hold.
+    #[cfg(test)]
     pub fn capacity(&self) -> usize {
         self.cap
     }
 
     /// Current item count.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
     /// `true` if empty.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
@@ -320,8 +318,6 @@ pub struct LedgerEntry {
     /// absolute time that self-corrects on the next live broadcast, so a
     /// stale value need not survive a tugcast restart.
     pub latest_rate_limit: Option<Frame>,
-    /// Owned subprocess handle when `Live`.
-    pub child: Option<tokio::process::Child>,
     /// OS pid of the live tugcode child, captured at spawn as the activity
     /// sampler's subtree root ([P08]). `None` between spawns (before the
     /// bridge spawns, and after the relay tears the child down).
@@ -399,7 +395,6 @@ impl LedgerEntry {
             latest_metadata: None,
             latest_capabilities: None,
             latest_rate_limit: None,
-            child: None,
             child_pid: None,
             child_start_time: None,
             turn_active: false,
@@ -506,11 +501,6 @@ pub trait SessionsRecorder: Send + Sync {
     /// as a diagnostic crumb until age eviction or explicit Trash.
     fn mark_failed(&self, session_id: &str);
 
-    /// Delete the row for `session_id`. Used by the Trash UX (step 6).
-    /// The bridge does not call this; lifecycle endings use `mark_closed` or
-    /// `mark_failed` instead.
-    fn remove(&self, session_id: &str);
-
     /// Cap-evict the oldest non-live row in `workspace_key` if the cap is
     /// exceeded. The bridge calls this after each successful `record` so a
     /// fresh spawn never pushes the workspace's non-live row count above
@@ -573,6 +563,7 @@ pub struct LedgerSessionsRecorder {
 }
 
 impl LedgerSessionsRecorder {
+    #[cfg(test)]
     pub fn new(ledger: Arc<crate::session_ledger::SessionLedger>) -> Self {
         Self {
             ledger,
@@ -653,30 +644,6 @@ impl LedgerSessionsRecorder {
         }
     }
 
-    /// Drop every non-live row whose `project_dir` matches the given path.
-    /// Used by the recents-eviction → ledger-eviction coupling: when a
-    /// path falls off the dev recent-projects tail, the matching ledger
-    /// rows go too. Broadcasts a removed push per dropped id.
-    pub fn trash_for_project_dir(&self, project_dir: &str) -> usize {
-        match self.ledger.trash_for_project_dir(project_dir) {
-            Ok(dropped) => {
-                for id in &dropped {
-                    self.broadcast_removed(id);
-                    tracing::info!(
-                        target: "dev::session-lifecycle",
-                        event = "ledger.trash_project_dir",
-                        session_id = id.as_str(),
-                        project_dir,
-                    );
-                }
-                dropped.len()
-            }
-            Err(err) => {
-                warn!(error = %err, project_dir, "ledger trash_for_project_dir failed");
-                0
-            }
-        }
-    }
 }
 
 impl SessionsRecorder for LedgerSessionsRecorder {
@@ -781,20 +748,6 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             session_id,
         );
         self.broadcast_row(session_id);
-    }
-
-    fn remove(&self, session_id: &str) {
-        match self.ledger.trash(session_id) {
-            Ok(_) => {
-                tracing::info!(
-                    target: "dev::session-lifecycle",
-                    event = "ledger.remove",
-                    session_id,
-                );
-                self.broadcast_removed(session_id);
-            }
-            Err(err) => warn!(error = %err, session_id, "ledger trash failed"),
-        }
     }
 
     fn evict_for_workspace(&self, workspace_key: &str, cap: usize) {
@@ -1022,9 +975,6 @@ impl ControlOutcome {
         matches!(self, ControlOutcome::Handled)
     }
 
-    pub(crate) fn is_pass_through(&self) -> bool {
-        matches!(self, ControlOutcome::PassThrough)
-    }
 }
 
 /// Errors returned from [`AgentSupervisor::handle_control`]. Consumed by
@@ -1038,8 +988,6 @@ pub enum ControlError {
     MissingSessionId,
     #[error("control payload is not valid JSON")]
     Malformed,
-    #[error("tugbank persistence failed: {0}")]
-    PersistenceFailure(String),
     /// The payload's `project_dir` field is missing or fails validation.
     /// `reason` is a compile-time string from the set defined in
     /// `"missing_project_dir"`, `"does_not_exist"`, `"permission_denied"`,
@@ -1482,9 +1430,9 @@ struct ChangesetCommitPayload {
     project_dir: String,
     files: Vec<String>,
     message: String,
-    /// Optional session display name for the `Tug-Session:` trailer (Spec S01).
-    session_name: Option<String>,
-    /// Optional session id for the `Tug-Session:` trailer (Spec S01).
+    /// Optional session id for the `Tug-Session:` trailer (Spec S01). The
+    /// trailer's display name is resolved from the ledger by id — the client
+    /// stopped sending a `session_name` beside it.
     session_id: Option<String>,
     /// Optional per-path hunk election (Spec S03): repo-relative path → the
     /// ids of the hunks to land. Absent means whole-file staging for every
@@ -1519,11 +1467,6 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
         .and_then(|v| v.as_str())
         .ok_or(ControlError::Malformed)?
         .to_string();
-    let session_name = value
-        .get("session_name")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
     let session_id = value
         .get("session_id")
         .and_then(|v| v.as_str())
@@ -1534,7 +1477,6 @@ fn parse_changeset_commit_payload(payload: &[u8]) -> Result<ChangesetCommitPaylo
         project_dir,
         files,
         message,
-        session_name,
         session_id,
         hunks,
     })
@@ -2402,6 +2344,7 @@ impl AgentSupervisor {
     /// recorder, and a spawner factory. Returns `(supervisor,
     /// merger_register_rx)` — the caller is expected to `tokio::spawn`
     /// [`AgentSupervisor::merger_task`] with the returned receiver.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         session_state: SessionScopedFeed,
@@ -6695,7 +6638,6 @@ impl SessionsRecorder for NoopSessionsRecorder {
     fn record_user_prompt(&self, _session_id: &str, _prompt: &str) {}
     fn mark_closed(&self, _session_id: &str) {}
     fn mark_failed(&self, _session_id: &str) {}
-    fn remove(&self, _session_id: &str) {}
     fn evict_for_workspace(&self, _workspace_key: &str, _cap: usize) {}
     fn insert_pending_turn(
         &self,
@@ -6827,7 +6769,6 @@ mod tests {
             project_dir: "/p".to_string(),
             files: vec!["a.txt".to_string()],
             message: "commit a".to_string(),
-            session_name: Some("web".to_string()),
             session_id: session_id.map(str::to_owned),
             hunks: None,
         }
@@ -6867,14 +6808,14 @@ mod tests {
 
     #[test]
     fn parse_changeset_commit_payload_reads_optional_session_fields() {
+        // A legacy client may still send `session_name` beside the id; the
+        // parser ignores it — the trailer's name resolves from the ledger.
         let payload = br#"{"project_dir":"/p","files":["a.txt"],"message":"m","session_name":"web","session_id":"sess-1"}"#;
         let parsed = parse_changeset_commit_payload(payload).expect("parse");
-        assert_eq!(parsed.session_name.as_deref(), Some("web"));
         assert_eq!(parsed.session_id.as_deref(), Some("sess-1"));
         // Absent fields parse to None (back-compat with today's callers).
         let bare = br#"{"project_dir":"/p","files":["a.txt"],"message":"m"}"#;
         let parsed_bare = parse_changeset_commit_payload(bare).expect("parse");
-        assert_eq!(parsed_bare.session_name, None);
         assert_eq!(parsed_bare.session_id, None);
         assert_eq!(parsed_bare.hunks, None);
     }
@@ -9498,23 +9439,6 @@ mod tests {
 
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
-    /// Spawner that returns an `io::Error` on every call. Used by the
-    /// crash-budget test to drive `run_session_bridge` through its retry
-    /// loop without spinning up a real subprocess.
-    struct CrashingSpawner;
-    impl ChildSpawner for CrashingSpawner {
-        fn spawn_child(
-            &self,
-            _project_dir: &std::path::Path,
-            _session_id: &str,
-            _session_mode: SessionMode,
-            _resume_claude_session_id: Option<&str>,
-            _permission_mode: Option<&str>,
-        ) -> SpawnFuture {
-            Box::pin(async { Err(std::io::Error::other("injected crash")) })
-        }
-    }
-
     #[tokio::test]
     async fn test_merger_fans_in_two_sessions() {
         // Spin up two per-session output mpscs, register both with the
@@ -10886,22 +10810,6 @@ mod tests {
     }
 
     #[test]
-    fn ledger_recorder_remove_drops_closed_row() {
-        let (ledger, recorder) = fresh_ledger_recorder();
-        recorder.record(SessionRecord {
-            session_id: "claude-abc",
-            workspace_key: "ws-1",
-            project_dir: "/proj/x",
-            card_id: "card-1",
-            tag: None,
-        });
-        recorder.mark_closed("claude-abc");
-        recorder.remove("claude-abc");
-
-        assert!(ledger.get("claude-abc").unwrap().is_none());
-    }
-
-    #[test]
     fn ledger_recorder_record_turn_no_op_after_close() {
         // Late `result` events that arrive after the user closes the card
         // must not mutate the ledger row — the row is "done."
@@ -11479,7 +11387,6 @@ mod tests {
             project_dir: repo.to_string_lossy().into_owned(),
             files: vec!["a.txt".to_string()],
             message: "Add a second line".to_string(),
-            session_name: Some("web".to_string()),
             session_id: Some("sess".to_string()),
             hunks: None,
         };
@@ -11504,7 +11411,6 @@ mod tests {
             project_dir: repo.to_string_lossy().into_owned(),
             files: vec!["a.txt".to_string()],
             message: "Add a third line".to_string(),
-            session_name: None,
             session_id: None,
             hunks: None,
         };

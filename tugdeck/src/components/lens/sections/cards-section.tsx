@@ -89,7 +89,6 @@ import { getCardCloseGuard } from "@/lib/card-close-guard";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { classifyFileKind } from "@/lib/file-kinds";
 import { lensStore } from "@/lib/lens-store/lens-store";
-import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
 
 import {

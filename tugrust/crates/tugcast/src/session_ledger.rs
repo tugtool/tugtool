@@ -47,13 +47,18 @@
 //! "Trash cascades to journal" contract without coupling INSERT
 //! ordering across the dispatch and bridge code paths.
 //!
-//! Bootstrap creates both tables and the cascade trigger via
-//! `CREATE … IF NOT EXISTS`. There is no `migrations` table and no
-//! versioning machinery: tugtool is a single-developer dogfooding tool
-//! with no production users, so the right move when the schema changes
-//! is to delete the on-disk `sessions.db` and let the next open
-//! recreate it. See [DM08] in the mid-turn-replay plan for the
-//! no-migration policy.
+//! Bootstrap creates every table, index, and trigger via
+//! `CREATE … IF NOT EXISTS`, and additive schema changes ride
+//! **self-healing migrations**: idempotent `ALTER TABLE … ADD COLUMN`
+//! passes (`migrate_sessions_add_name` and its siblings) that tolerate
+//! the duplicate-column race, so an existing on-disk `sessions.db` is
+//! upgraded in place on open. There is no `migrations` table and no
+//! version counter — per-instance state needs neither, and **never
+//! delete the database to "migrate" it**: `minted_tags` and
+//! `tag_lineage_points` are append-only arbiters whose loss silently
+//! re-opens callsign recycling. (The shared `changes.db` is a different
+//! regime entirely — its schema changes bump `CHANGES_SCHEMA_VERSION`
+//! with a registered migration.)
 //!
 //! # Callsigns: permanence, and the one suffix ([D132])
 //!
@@ -102,11 +107,6 @@
 //! `delete_oldest_pending_for_session`) are single-statement and don't
 //! need explicit transactions; sqlite's per-statement implicit
 //! transaction is enough.
-
-// The ledger surface is authored ahead of the supervisor wiring that consumes
-// it; suppress dead-code warnings for the public API until the bridge swap
-// lands. Same pattern `agent_supervisor.rs` uses for phased rollouts.
-#![allow(dead_code)]
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -907,6 +907,7 @@ impl SessionLedger {
     /// the on-disk test constructor: per-file isolation with reopen
     /// persistence. No production caller uses this; production is
     /// [`SessionLedger::open`].
+    #[cfg(test)]
     pub fn open_with_claude_root(
         path: impl AsRef<Path>,
         claude_projects_root: PathBuf,
@@ -1061,6 +1062,7 @@ impl SessionLedger {
     /// Test-only convenience; never used by production callers. Uses a
     /// placeholder claude root that no test should write through (tests
     /// using trash should use `open_with_claude_root` against a tempdir).
+    #[cfg(test)]
     pub fn open_in_memory() -> Result<Self, LedgerError> {
         let conn = Connection::open_in_memory()?;
         Self::attach_changes(&conn, None, false)?;
@@ -1361,22 +1363,6 @@ impl SessionLedger {
         ("parent_tool_use_id", "TEXT"),
         ("project_dir", "TEXT"),
         ("at", "INTEGER"),
-    ];
-
-    /// The `(name, declared-type)` columns the current
-    /// `changes.changeset_drafts` `CREATE TABLE` defines, in order. Drafts
-    /// are advisory and fully-regenerable (the maintained-draft engine
-    /// recomposes on the next cycle), so a drifted on-disk shape is resolved
-    /// by the same DROP-and-recreate guard as `file_events`, not a migration.
-    const CHANGESET_DRAFTS_SCHEMA: &'static [(&'static str, &'static str)] = &[
-        ("owner_kind", "TEXT"),
-        ("owner_id", "TEXT"),
-        ("project_dir", "TEXT"),
-        ("fingerprint", "TEXT"),
-        ("message", "TEXT"),
-        ("updated_at", "INTEGER"),
-        ("edited", "INTEGER"),
-        ("selection", "TEXT"),
     ];
 
     /// The column shape of the legacy per-instance `changeset_drafts` table
@@ -2509,11 +2495,16 @@ impl SessionLedger {
     /// that is neither shape is skipped — the caller's grammar already refused
     /// it, and this is not the place to invent a spelling.
     ///
-    /// Answers only from `sessions`, deliberately: a citation is written by a
-    /// commit made from a Tug session, which is a `sessions` row by
-    /// construction, and an external session carries no commits until it adopts
-    /// into that same table. `external_scan_cache` therefore has nothing to add
-    /// here.
+    /// Answers from `sessions` first, then from `external_scan_cache`. A
+    /// citation is written by a commit made from a Tug session, which is a
+    /// `sessions` row at commit time — but `sessions` rows are hard-deleted by
+    /// cap eviction and the age sweep, while the transcript stays on disk and
+    /// the picker keeps listing it from the scan cache. A citation must not go
+    /// dark on a session the picker can still resume, so an id the `sessions`
+    /// table cannot answer falls back to the scan cache, synthesized the same
+    /// way the picker union synthesizes an external row (`Closed`, no card, a
+    /// scanned `aiTitle` never a rename, no synopsis). An ambiguous prefix in
+    /// either table is still a refusal, never a guess.
     ///
     /// Ids absent from the result are absent from the ledger — a negative
     /// answer the client caches, so an unresolvable citation is a fact rather
@@ -2525,6 +2516,30 @@ impl SessionLedger {
         const COLUMNS: &str = "session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
                     root_tag, tag_lineage, synopsis";
+        // The scan cache's own columns, projected into the same row shape the
+        // picker union synthesizes for an unadopted session.
+        const SCAN_COLUMNS: &str = "session_id, project_dir, created_at, last_used_at,
+                    turn_count, last_user_prompt, name, tag";
+        fn scan_row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRow> {
+            let project_dir: String = row.get(1)?;
+            Ok(SessionRow {
+                session_id: row.get(0)?,
+                workspace_key: encode_claude_project_name(&project_dir),
+                project_dir,
+                created_at: row.get(2)?,
+                last_used_at: row.get(3)?,
+                turn_count: row.get(4)?,
+                last_user_prompt: row.get(5)?,
+                state: SessionState::Closed,
+                card_id: None,
+                name: row.get(6)?,
+                name_user_set: false,
+                tag: row.get(7)?,
+                root_tag: None,
+                tag_lineage: None,
+                synopsis: None,
+            })
+        }
         let conn = self.db.lock().expect("ledger mutex");
         let mut exact =
             conn.prepare(&format!("SELECT {COLUMNS} FROM sessions WHERE session_id = ?1 LIMIT 1"))?;
@@ -2534,6 +2549,14 @@ impl SessionLedger {
         let mut prefixed = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM sessions WHERE session_id LIKE ?1 || '%' LIMIT 2"
         ))?;
+        let mut scan_exact = conn.prepare(&format!(
+            "SELECT {SCAN_COLUMNS} FROM external_scan_cache
+             WHERE session_id = ?1 AND excluded = 0 LIMIT 1"
+        ))?;
+        let mut scan_prefixed = conn.prepare(&format!(
+            "SELECT {SCAN_COLUMNS} FROM external_scan_cache
+             WHERE session_id LIKE ?1 || '%' AND excluded = 0 LIMIT 2"
+        ))?;
         let mut seen = HashSet::new();
         let mut resolved = Vec::new();
         for id in ids {
@@ -2542,7 +2565,8 @@ impl SessionLedger {
                 continue;
             }
             let needle = queried.to_ascii_lowercase();
-            let rows = if is_full_session_uuid(&needle) {
+            let full = is_full_session_uuid(&needle);
+            let rows = if full {
                 exact
                     .query_map(params![needle], row_from_query)?
                     .collect::<Result<Vec<_>, _>>()?
@@ -2553,11 +2577,31 @@ impl SessionLedger {
             } else {
                 continue;
             };
-            if rows.len() != 1 {
+            if rows.len() == 1 {
+                let row = rows.into_iter().next().expect("length checked");
+                resolved.push((queried.to_owned(), row?));
                 continue;
             }
-            let row = rows.into_iter().next().expect("length checked");
-            resolved.push((queried.to_owned(), row?));
+            if !rows.is_empty() {
+                // Two `sessions` rows share the prefix — refuse, never guess.
+                continue;
+            }
+            // The eviction fallback: the `sessions` table has no answer, but
+            // the transcript may still be on disk and listed by the picker.
+            let scan_rows = if full {
+                scan_exact
+                    .query_map(params![needle], scan_row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                scan_prefixed
+                    .query_map(params![needle], scan_row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            if scan_rows.len() != 1 {
+                continue;
+            }
+            let row = scan_rows.into_iter().next().expect("length checked");
+            resolved.push((queried.to_owned(), row));
         }
         Ok(resolved)
     }
@@ -2585,13 +2629,19 @@ impl SessionLedger {
     ) -> Result<(), LedgerError> {
         let mut conn = self.db.lock().expect("ledger mutex");
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let existing_created_at: Option<i64> = tx
+        let existing: Option<(i64, Option<String>)> = tx
             .query_row(
-                "SELECT created_at FROM sessions WHERE session_id = ?1",
+                "SELECT created_at, tag FROM sessions WHERE session_id = ?1",
                 params![session_id],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
+        let existing_created_at: Option<i64> = existing.as_ref().map(|(created, _)| *created);
+        // A row that already wears a tag keeps it (the COALESCE below), so any
+        // differing candidate would be claimed and then never displayed — a
+        // `minted_tags` row spent on nothing. Claim the row's own tag instead:
+        // an idempotent re-claim, never a fresh spend.
+        let existing_tag: Option<String> = existing.and_then(|(_, tag)| tag);
         // Adoption carry-over ([Q04]): a session discovered by the scan already
         // has a callsign minted against `minted_tags`, so the adoption reuses
         // it rather than minting a second one. Read outside the epoch gate —
@@ -2643,7 +2693,8 @@ impl SessionLedger {
         // optimistic tag, and adopts the ledger's on the `session_updated` /
         // spawn-ack path. A callsign may therefore change once, seconds after
         // spawn, and is immutable forever after ([P12]).
-        let mut candidate: Option<String> = scanned_tag.or_else(|| tag.map(str::to_owned));
+        let mut candidate: Option<String> =
+            existing_tag.or(scanned_tag).or_else(|| tag.map(str::to_owned));
         let mut attempt: u32 = 0;
         loop {
             // Claim before the write so a tag spent by a dead session rerolls
@@ -3758,6 +3809,10 @@ impl SessionLedger {
     /// user gesture (a `Claim all` over N files) is one durable record, one
     /// forwarder unit, and one replay unit, so a partial write is not a
     /// state the receipt has to describe. A no-op for an empty batch.
+    /// Production writes carry Bash spans and go through
+    /// [`SessionLedger::record_file_events_with_spans`]; this span-less form
+    /// remains for tests.
+    #[cfg(test)]
     pub fn record_file_events(&self, rows: &[FileEventRow]) -> Result<(), LedgerError> {
         self.record_file_events_with_spans(rows, &[])
     }
@@ -6335,6 +6390,42 @@ mod tests {
     }
 
     #[test]
+    fn a_resume_with_a_differing_candidate_spends_no_tag() {
+        // A resumed row already wears its callsign, and the COALESCE keeps it.
+        // A client racing the listing can still offer a fresh optimistic
+        // candidate — claiming that candidate would spend a `minted_tags` row
+        // on a tag no session will ever display.
+        let l = fresh();
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), Some("azure-heron"))
+            .unwrap();
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(1), Some("coral-otter"))
+            .unwrap();
+        assert_eq!(
+            l.get("s1").unwrap().unwrap().tag.as_deref(),
+            Some("azure-heron")
+        );
+        let conn = l.db.lock().expect("ledger mutex");
+        let minted: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM minted_tags WHERE session_id = 's1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(minted, 1);
+        // The offered-but-unused candidate stays mintable for another session.
+        let taken: Option<String> = conn
+            .query_row(
+                "SELECT session_id FROM minted_tags WHERE tag = 'coral-otter'",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert_eq!(taken, None);
+    }
+
+    #[test]
     fn record_spawn_allows_many_null_tags() {
         let l = fresh();
         // NULLs are distinct in the unique index — legacy tagless rows coexist.
@@ -6658,6 +6749,88 @@ mod tests {
         assert_eq!(answered.len(), 2);
         assert_eq!(answered[0].0, a);
         assert_eq!(answered[1].0, b);
+    }
+
+    #[test]
+    fn an_evicted_session_still_on_disk_resolves_from_the_scan_cache() {
+        // Cap eviction and the age sweep hard-delete `sessions` rows while the
+        // transcript stays on disk and listed — a citation must not go dark on
+        // a session the picker can still resume. The scan cache answers, in
+        // the same synthesized shape the picker union uses.
+        let l = fresh();
+        let evicted = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let scan_row = |id: &str, tag: Option<&str>| ScanCacheRow {
+            session_id: id.into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 42,
+            last_user_prompt: Some("the last prompt".into()),
+            name: Some("Scanned title".into()),
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
+            tag: tag.map(str::to_owned),
+        };
+        // The real path to an evicted-but-on-disk session: scanned, adopted
+        // with a callsign, the callsign backfilled onto the cache row, and
+        // then the `sessions` row hard-deleted by eviction. `upsert_scan_cache`
+        // never writes `tag` itself, so the backfill step is load-bearing.
+        l.upsert_scan_cache(&scan_row(evicted, None)).unwrap();
+        l.record_spawn(evicted, WS_A, "/proj/alpha", "card-9", millis(2), Some("stocky-pixie"))
+            .unwrap();
+        assert_eq!(
+            l.backfill_external_tag(evicted, millis(3)).unwrap().as_deref(),
+            Some("stocky-pixie")
+        );
+        l.db
+            .lock()
+            .expect("ledger mutex")
+            .execute("DELETE FROM sessions WHERE session_id = ?1", params![evicted])
+            .unwrap();
+
+        // No `sessions` row — the eviction took it. Both spellings still
+        // resolve, carrying the scanned callsign and never a rename.
+        for asked in [evicted, "f6e43925"] {
+            let answered = l.resolve_session_ids(&[asked.to_owned()]).unwrap();
+            assert_eq!(answered.len(), 1, "{asked} should resolve");
+            assert_eq!(answered[0].1.session_id, evicted);
+            assert_eq!(answered[0].1.tag.as_deref(), Some("stocky-pixie"));
+            assert_eq!(answered[0].1.state, SessionState::Closed);
+            assert!(!answered[0].1.name_user_set);
+        }
+
+        // An adopted session answers from `sessions`, not the fallback: the
+        // ledger row owns lifecycle and the rename bit.
+        let adopted = "aabbccdd-1111-2222-3333-444455556666";
+        l.upsert_scan_cache(&scan_row(adopted, Some("coral-otter")))
+            .unwrap();
+        l.record_spawn(adopted, WS_A, "/proj/alpha", "card-1", millis(9), None)
+            .unwrap();
+        let answered = l.resolve_session_ids(&["aabbccdd".to_owned()]).unwrap();
+        assert_eq!(answered.len(), 1);
+        assert_eq!(answered[0].1.state, SessionState::Live);
+
+        // An excluded cache row is not an answer, and an ambiguous prefix in
+        // the cache is a refusal on the same terms as in `sessions`.
+        let excluded = "0badf00d-dead-4bee-8fee-000000000000";
+        let mut row = scan_row(excluded, None);
+        row.excluded = true;
+        l.upsert_scan_cache(&row).unwrap();
+        assert!(l.resolve_session_ids(&["0badf00d".to_owned()]).unwrap().is_empty());
+        let twin = "f6e43925-9999-4c3d-8e9f-0a1b2c3d4e5f";
+        l.upsert_scan_cache(&scan_row(twin, None)).unwrap();
+        assert!(l.resolve_session_ids(&["f6e43925".to_owned()]).unwrap().is_empty());
     }
 
     #[test]

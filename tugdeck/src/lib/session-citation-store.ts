@@ -90,18 +90,28 @@ class SessionCitationStore {
   private flushScheduled = false;
   private readonly listeners = new Set<() => void>();
   private disposers: (() => void)[] = [];
+  private reconnectHooked = false;
 
-  constructor() {
+  /**
+   * Attach the reconnect observer on the first ask rather than at construction.
+   * This singleton is constructed during static-import evaluation, which runs
+   * before `main.tsx`'s module body calls `registerConnectionLifecycle` — a
+   * constructor-time lookup would always find null and the hook would silently
+   * never attach. By the first `request()` the lifecycle exists in the app; in
+   * tests and in the gallery it stays absent, and the hook is skipped rather
+   * than required.
+   */
+  private ensureReconnectHook(): void {
+    if (this.reconnectHooked) return;
     // A bounce may have crossed a spawn or a trash, so every cached answer —
     // the misses especially — is suspect. Dropping them re-asks lazily as the
-    // surfaces repaint. The lifecycle singleton is absent in tests and in the
-    // gallery; skip the hook rather than requiring it.
+    // surfaces repaint.
     const lifecycle = getConnectionLifecycle();
-    if (lifecycle !== null) {
-      this.disposers.push(
-        lifecycle.observeConnectionDidReconnect(() => this.forgetAll()),
-      );
-    }
+    if (lifecycle === null) return;
+    this.reconnectHooked = true;
+    this.disposers.push(
+      lifecycle.observeConnectionDidReconnect(() => this.forgetAll()),
+    );
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -124,6 +134,7 @@ class SessionCitationStore {
    * Called from an effect ([L02]); safe to call on every render of every chip.
    */
   request(citedId: string): void {
+    this.ensureReconnectHook();
     const id = citedId.trim();
     if (id.length === 0) return;
     if (this.answers.has(id) || this.queued.has(id)) return;
@@ -186,6 +197,31 @@ class SessionCitationStore {
     if (changed) this.notify();
   }
 
+  /**
+   * Drop every answer that speaks for `sessionId` — called when a
+   * `session_updated` push carries `removed: true`. A trashed session's cached
+   * `found` would otherwise keep its chips resolvable (and raisable) for the
+   * rest of the run. Dropping rather than settling to `unknown`: the next
+   * repaint re-asks, and the ledger's post-trash answer is authoritative.
+   * Answers are keyed by the spelling that was asked, so this matches both the
+   * resolved full id and any short-id key that prefixes it.
+   */
+  forgetSession(sessionId: string): void {
+    const full = sessionId.trim();
+    if (full.length === 0) return;
+    let changed = false;
+    for (const [asked, answer] of this.answers) {
+      const speaks =
+        (answer.status === "found" && answer.sessionId === full) ||
+        full.startsWith(asked);
+      if (!speaks) continue;
+      this.answers.delete(asked);
+      this.queued.delete(asked);
+      changed = true;
+    }
+    if (changed) this.notify();
+  }
+
   /** Drop every cached answer. Called on reconnect. */
   forgetAll(): void {
     if (this.answers.size === 0 && this.queued.size === 0) return;
@@ -198,6 +234,7 @@ class SessionCitationStore {
   dispose(): void {
     for (const off of this.disposers) off();
     this.disposers = [];
+    this.reconnectHooked = false;
     this.listeners.clear();
   }
 

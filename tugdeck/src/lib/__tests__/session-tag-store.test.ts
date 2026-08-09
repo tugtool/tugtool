@@ -86,4 +86,25 @@ describe("resolveTag — the callsign is addressable ([P12])", () => {
     sessionTagStore.setTag("r-4", null);
     expect(sessionTagStore.resolveTag("gone-soon")).toBeNull();
   });
+
+  test("a reroll never deletes another session's mapping", () => {
+    // The collision scenario the reroll exists for: session B legitimately
+    // wears the tag session A optimistically minted. When A's reroll lands,
+    // withdrawing A's spent callsign must not knock out B's entry — B's own
+    // later re-seed would short-circuit on "unchanged" and never repair it.
+    sessionTagStore.setTag("r-owner", "contested-tag");
+    sessionTagStore.setTag("r-optimist", "contested-tag"); // steals the index
+    expect(sessionTagStore.resolveTag("contested-tag")).toBe("r-optimist");
+    // The ledger re-seeds the rightful owner, then rerolls the optimist.
+    sessionTagStore.setTag("r-owner", "contested-tag");
+    expect(sessionTagStore.resolveTag("contested-tag")).toBe("r-owner");
+    sessionTagStore.setTag("r-optimist", "fresh-reroll");
+    expect(sessionTagStore.resolveTag("contested-tag")).toBe("r-owner");
+    expect(sessionTagStore.resolveTag("fresh-reroll")).toBe("r-optimist");
+    // Clearing the optimist outright is likewise ownership-checked.
+    sessionTagStore.setTag("r-optimist-2", "shared-tag");
+    sessionTagStore.setTag("r-owner-2", "shared-tag");
+    sessionTagStore.setTag("r-optimist-2", null);
+    expect(sessionTagStore.resolveTag("shared-tag")).toBe("r-owner-2");
+  });
 });

@@ -1,5 +1,5 @@
 /**
- * session-tag.ts — pure minting + filtering for mnemonic session tags.
+ * session-tag.ts — pure minting for mnemonic session tags.
  *
  * A tag is an `adjective-noun` pair (e.g. `azure-heron`) drawn from the curated
  * lexicon (`session-tag-lexicon.ts`). The client mints one "from the drop" and
@@ -37,7 +37,6 @@
  * @module lib/session-tag
  */
 
-import type { SessionRow } from "@/protocol";
 import { TAG_ADJECTIVES, TAG_NOUNS } from "@/lib/session-tag-lexicon";
 
 /** Re-roll attempts before giving up and letting the ledger reroll the tag. */

@@ -14,6 +14,11 @@
 
 import { beforeEach, describe, expect, test } from "bun:test";
 
+import {
+  ConnectionLifecycle,
+  getConnectionLifecycle,
+  registerConnectionLifecycle,
+} from "@/lib/connection-lifecycle";
 import { sessionCitationStore } from "@/lib/session-citation-store";
 import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionSynopsisStore } from "@/lib/session-synopsis-store";
@@ -174,5 +179,69 @@ describe("what the ledger said", () => {
     expect(sessionCitationStore.getAnswer("never-asked")).toBe(
       sessionCitationStore.getAnswer("also-never-asked"),
     );
+  });
+
+  test("a trash drops every answer that speaks for the session", () => {
+    sessionCitationStore.applyResolved({
+      found: [
+        { queried: FULL, session: row() },
+        { queried: SHORT, session: row() },
+        {
+          queried: "aabbccdd",
+          session: row({ session_id: "aabbccdd-1111-2222-3333-444455556666" }),
+        },
+      ],
+      unknown: ["0badf00d"],
+    });
+    sessionCitationStore.forgetSession(FULL);
+    // Both spellings of the trashed session drop back to "nobody has looked",
+    // so the next repaint re-asks and gets the ledger's post-trash answer.
+    expect(sessionCitationStore.getAnswer(FULL)).toEqual({ status: "pending" });
+    expect(sessionCitationStore.getAnswer(SHORT)).toEqual({
+      status: "pending",
+    });
+    // Other sessions' answers — hits and misses alike — are untouched.
+    expect(sessionCitationStore.getAnswer("aabbccdd").status).toBe("found");
+    expect(sessionCitationStore.getAnswer("0badf00d")).toEqual({
+      status: "unknown",
+    });
+  });
+
+  test("a reconnect drops the cache even when the lifecycle registered late", () => {
+    // The store singleton is constructed during static-import evaluation,
+    // before `main.tsx`'s module body registers the lifecycle — so the
+    // reconnect hook must attach lazily on the first ask, not in the
+    // constructor. A constructor-time hook would leave every cached miss
+    // standing across a wire bounce for the rest of the app run.
+    // Another test file in the same process may have hooked the singleton to
+    // its own lifecycle already; release that registration so the first ask
+    // below attaches fresh. And another file's `mock.module` on the lifecycle
+    // module may leak into this run (bun mocks are process-global), pinning
+    // `getConnectionLifecycle` to its own instance and no-op'ing the register
+    // — so drive whichever lifecycle the store will actually see.
+    sessionCitationStore.dispose();
+    const own = new ConnectionLifecycle();
+    registerConnectionLifecycle(own);
+    const lifecycle = getConnectionLifecycle() ?? own;
+    try {
+      sessionCitationStore.applyResolved({
+        found: [{ queried: FULL, session: row() }],
+        unknown: ["0badf00d"],
+      });
+      // The first ask after registration attaches the hook.
+      sessionCitationStore.request("11112222");
+      lifecycle.notifyConnectionDidOpen();
+      lifecycle.notifyConnectionDidClose();
+      lifecycle.notifyConnectionDidOpen(); // fires connectionDidReconnect
+      expect(sessionCitationStore.getAnswer(FULL)).toEqual({
+        status: "pending",
+      });
+      expect(sessionCitationStore.getAnswer("0badf00d")).toEqual({
+        status: "pending",
+      });
+    } finally {
+      sessionCitationStore.dispose();
+      registerConnectionLifecycle(null);
+    }
   });
 });

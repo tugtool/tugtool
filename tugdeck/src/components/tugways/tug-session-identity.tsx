@@ -46,15 +46,12 @@ import "./tug-session-identity.css";
 import React from "react";
 import { MessageSquareOff, MessageSquareText } from "lucide-react";
 
+import { dispatchCommand } from "@/command-dispatch";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useCopyableText } from "@/components/tugways/use-copyable-text";
-import { useDeckManager } from "@/deck-manager-context";
 import { useCardIdForSession } from "@/lib/card-session-binding-store";
 import { useCitedSession } from "@/lib/session-citation-store";
-import {
-  raiseSessionCard,
-  writeSessionAtomToClipboard,
-} from "@/lib/session-atom";
+import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import {
   sessionCitation,
   sessionIdentityLine,
@@ -298,7 +295,6 @@ export function TugSessionCitation({
   className?: string;
 }): React.ReactElement {
   const cited = useCitedSession(citedId);
-  const deck = useDeckManager();
   // Once the ledger answers, its row is the identity's context — a citation has
   // no card binding to borrow a project dir from, so without this a resolvable
   // session would render its callsign with no project in front of it.
@@ -320,14 +316,21 @@ export function TugSessionCitation({
   // Subscribed, so the click appears when the session's card opens and goes
   // away when it closes, with no repaint of the surrounding surface needed.
   const cardId = useCardIdForSession(sessionId);
-  const canRaise = !missing && !pending && cardId !== null && deck !== null;
+  const canRaise = !missing && !pending && cardId !== null;
   return (
     <TugSessionIdentity
       identity={identity}
       tier="chip"
       size={size}
       missing={missing}
-      onOpen={canRaise ? () => raiseSessionCard(sessionId, deck) : undefined}
+      // The raise rides the registry's own `focus-session-card` — the same
+      // funnel the Lens rows dispatch — so a chip's click and a row's click
+      // cannot drift into two raises ([L30]).
+      onOpen={
+        canRaise
+          ? () => dispatchCommand("focus-session-card", { cardId })
+          : undefined
+      }
       className={className}
     />
   );

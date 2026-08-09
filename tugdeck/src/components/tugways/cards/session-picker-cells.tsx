@@ -208,12 +208,12 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
     row.session_id,
     sessionIdentityContextFrom(row),
   );
-  const titleText = identity?.tag ?? row.session_id.slice(0, 8);
+  const titleText = identity.tag ?? identity.shortId;
   const snippet = truncateForDisplay(titleText, 64);
 
   // The description line — the `/rename` name, else the rolling synopsis, with
   // the `last_user_prompt` snippet standing in until a session has either.
-  const description = truncateForDisplay(identity?.title ?? fullPrompt ?? "", 96);
+  const description = truncateForDisplay(identity.title ?? fullPrompt ?? "", 96);
 
   // The metadata line, composed by `formatSessionRowSubtitle`: the relative
   // timestamp, the turn count, the on-disk JSONL size, and the short id, with
@@ -232,7 +232,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
         ? formatFailedRowSubtitle(row)
         : formatSessionRowSubtitle(row);
 
-  const idShort = row.session_id.slice(0, 8);
+  const idShort = identity.shortId;
 
   // Trailing accessory: a live/in-use/failed status badge, a
   // provenance badge for terminal-created sessions, a trash action, or

@@ -39,9 +39,8 @@
  *  - `wash` — `inset`, plus the sparkline leaves the flow: it paints behind
  *    the PULSE lines at the trailing edge, so the activity keeps the width
  *    the tape was spending.
- *  - `duplex` — `inset`, plus the two PULSE levels share ONE line, read as
- *    the Z2 strip reads them (`intent › activity`). The row is two lines
- *    instead of three.
+ *  - `duplex` — `inset`, plus the two PULSE levels share ONE line
+ *    (`intent › activity`). The row is two lines instead of three.
  *
  * Only the shape changes. Every fit renders the same nodes, the PULSE's own
  * typography and leading come from `tug-pulse.css` in every one of them, and
@@ -62,6 +61,7 @@ import "./tug-session-row.css";
 import React from "react";
 
 import { cn } from "@/lib/utils";
+import { sparklineCurves } from "./tug-sparkline";
 import { TugLabel } from "./tug-label";
 import { TugListRow, type TugListRowProps } from "./tug-list-row";
 import { TugPulse, type TugPulsePreset } from "./tug-pulse";
@@ -178,6 +178,16 @@ export const TUG_SESSION_ROW_SPARK_WIDTH = Math.round(
 export const TUG_SESSION_ROW_SPARK_HEIGHT = Math.round(
   SPARK_BASE_HEIGHT * TUG_SESSION_ROW_SPARK_SCALE,
 );
+
+/**
+ * The tape's SHAPE — full-scale in characters, and the perceptual curve.
+ * Declared once, here, for every surface that draws a session's activity
+ * (the Lens row and the card's masthead): two tapes showing the same session
+ * must agree on what "full" means and how loud a burst reads, or the same
+ * work would draw two different graphs.
+ */
+export const TUG_SESSION_SPARK_FULL_SCALE_CHARS = 1200;
+export const TUG_SESSION_SPARK_CURVE = sparklineCurves.gamma(0.6);
 
 /**
  * The tape's width, published to this component's own stylesheet.

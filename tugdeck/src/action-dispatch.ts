@@ -856,6 +856,16 @@ export function initActionDispatch(
     // (or any ledger write) pushes the post-write row. Only a user `/rename`
     // feeds the chip — an auto `aiTitle` (name_user_set false) clears it so the
     // chip falls back to the hash.
+    // A trash must reach every identity cache, not just the ledger store: a
+    // lingering tag entry would let `/resume <tag>` hand back a trashed
+    // session's id, and a lingering citation answer would keep its chips
+    // resolvable for the rest of the run.
+    if (decoded.removed === true) {
+      sessionNameStore.setName(decoded.session_id, null);
+      sessionTagStore.setTag(decoded.session_id, null);
+      sessionSynopsisStore.setSynopsis(decoded.session_id, null);
+      sessionCitationStore.forgetSession(decoded.session_id);
+    }
     if (decoded.fields !== undefined) {
       sessionNameStore.setName(
         decoded.session_id,

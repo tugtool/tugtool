@@ -2,10 +2,11 @@
  * gallery-session-identity.tsx — the session-reference design spike.
  *
  * The brief is `roadmap/session-reference-brief.md`: one identity model
- * (callsign / title / context / plumbing), one resolver, one component —
- * `TugSessionIdentity` — rendered at four density tiers, plus a text-only
- * citation form and a fork-lineage grammar. This card auditions the visual
- * decisions that brief left open.
+ * (callsign / title / context / plumbing), one resolver, one component
+ * family — `TugSessionIdentity` at its two tiers (`chip` / `line`), with
+ * `TugSessionRow` and `SessionMasthead` composing the row and masthead
+ * densities — plus a text-only citation form and a fork-lineage grammar.
+ * This card auditions the visual decisions that brief left open.
  *
  * The card's organizing distinction, from the first review round: PRESENCE
  * vs CITATION. A surface that IS the session — its own masthead, the row

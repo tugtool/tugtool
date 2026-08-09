@@ -38,18 +38,11 @@ import {
   TUG_SESSION_ROW_INDICATOR_SIZE,
   TUG_SESSION_ROW_SPARK_HEIGHT,
   TUG_SESSION_ROW_SPARK_WIDTH,
+  TUG_SESSION_SPARK_CURVE,
+  TUG_SESSION_SPARK_FULL_SCALE_CHARS,
 } from "@/components/tugways/tug-session-row";
-import {
-  sparklineCurves,
-  TugSparkline,
-} from "@/components/tugways/tug-sparkline";
+import { TugSparkline } from "@/components/tugways/tug-sparkline";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
-import {
-  sessionSessionPhaseKey,
-  sessionSessionPhaseVisual,
-  type SessionPhaseInput,
-} from "@/lib/code-session-store/session-phase-visual";
-import { countRunningJobs } from "@/lib/code-session-store/select-jobs";
 import {
   COMPACTING_PULSE_TEXT,
   compactionProgressStore,
@@ -72,14 +65,6 @@ import {
   getSessionActivityStore,
   isRateChannel,
 } from "@/lib/session-activity-store";
-
-// Sparkline shape — the same constants the card's `session-masthead` uses,
-// so a session reads identically in the Lens and on its card. Its SIZE is the
-// row's, not this section's: the tape's width comes off the activity run's, so
-// `TugSessionRow` declares it and the gallery's audition rows read the same
-// number.
-const SPARKLINE_FULL_SCALE_CHARS = 1200;
-const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
@@ -143,8 +128,8 @@ function RowSparkline({
       getSeries={getSeries}
       subscribeActivity={subscribeActivity}
       binMs={ACTIVITY_BIN_MS}
-      fullScale={SPARKLINE_FULL_SCALE_CHARS}
-      curve={SPARKLINE_CURVE}
+      fullScale={TUG_SESSION_SPARK_FULL_SCALE_CHARS}
+      curve={TUG_SESSION_SPARK_CURVE}
       width={TUG_SESSION_ROW_SPARK_WIDTH}
       height={TUG_SESSION_ROW_SPARK_HEIGHT}
       className="sessions-monitor-spark"

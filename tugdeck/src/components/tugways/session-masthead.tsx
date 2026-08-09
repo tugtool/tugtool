@@ -77,9 +77,12 @@ import {
   TugSessionIdentity,
 } from "@/components/tugways/tug-session-identity";
 import {
-  sparklineCurves,
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
+import {
+  TUG_SESSION_SPARK_CURVE,
+  TUG_SESSION_SPARK_FULL_SCALE_CHARS,
+} from "@/components/tugways/tug-session-row";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionBranch } from "@/lib/changeset-all-store";
@@ -103,13 +106,6 @@ import {
 } from "@/lib/session-activity-store";
 import { sessionCitation, useSessionIdentity } from "@/lib/session-identity";
 import { useSessionLedger } from "@/lib/session-ledger-store";
-
-/**
- * Sparkline shape — the same two constants the Z2 strip and the Lens row use,
- * so one session's activity reads identically wherever it is drawn.
- */
-const SPARKLINE_FULL_SCALE_CHARS = 1200;
-const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 
 /**
  * Sparkline box in the masthead's PULSE line. The line runs the full card
@@ -274,8 +270,8 @@ function MastheadSparkline({
       getSeries={getSeries}
       subscribeActivity={subscribeActivity}
       binMs={ACTIVITY_BIN_MS}
-      fullScale={SPARKLINE_FULL_SCALE_CHARS}
-      curve={SPARKLINE_CURVE}
+      fullScale={TUG_SESSION_SPARK_FULL_SCALE_CHARS}
+      curve={TUG_SESSION_SPARK_CURVE}
       width={SPARKLINE_WIDTH}
       height={SPARKLINE_HEIGHT}
       title="Session activity — text, tokens, tools, and subagents"

@@ -92,16 +92,26 @@ class SessionTagStore {
   setTag(tugSessionId: string, tag: string | null): void {
     const trimmed = tag?.trim() ?? "";
     const current = this.tags.get(tugSessionId) ?? null;
+    // The reverse index is deleted only when this session still owns the
+    // entry: during a reroll the spent callsign may already have been
+    // re-seeded onto the session that legitimately wears it, and an
+    // unconditional delete would knock out that session's mapping — an
+    // un-repairable loss, since its own later re-seed short-circuits on
+    // "unchanged".
+    const ownsReverse = (key: string): boolean =>
+      this.byTag.get(key) === tugSessionId;
     if (trimmed.length === 0) {
       if (current === null) return;
       this.tags.delete(tugSessionId);
-      this.byTag.delete(current);
+      if (ownsReverse(current)) this.byTag.delete(current);
     } else {
-      if (current === trimmed) return;
+      if (current === trimmed && ownsReverse(trimmed)) return;
       this.tags.set(tugSessionId, trimmed);
       // The reroll case: the callsign this session wore a moment ago names
       // nothing now, so it must stop resolving.
-      if (current !== null) this.byTag.delete(current);
+      if (current !== null && current !== trimmed && ownsReverse(current)) {
+        this.byTag.delete(current);
+      }
       this.byTag.set(trimmed, tugSessionId);
     }
     this.version += 1;
