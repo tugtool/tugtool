@@ -1822,6 +1822,7 @@ pub async fn session_overview_task(config: SessionOverviewConfig, cancel: Cancel
                                 &digest,
                                 &mut sessions,
                                 &config,
+                                &cancel,
                                 Instant::now(),
                             ) {
                                 tokio::spawn(run_synopsis(job));
@@ -2280,12 +2281,20 @@ struct SynopsisJob {
     shared_agent: crate::shared_agent::SharedAgentHandle,
     ledger: Arc<crate::session_ledger::SessionLedger>,
     control_tx: Option<broadcast::Sender<Frame>>,
-    /// The row the description belongs to. Ledger rows are keyed by *claude's*
-    /// session id, which is the tug id for a plain fresh spawn and something
-    /// else after a rewind fork or an id rotation — so the resolver answers
-    /// this, and the tug id is only the fallback for a session it cannot
-    /// resolve yet. Keyed by the tug id, a fork's description would land on the
-    /// parent's row.
+    /// Ends the ask when the process is going down — the job runs detached, so
+    /// this is the only thing that stops it writing after the loop is gone.
+    cancel: CancellationToken,
+    /// The row the description belongs to, always the resolver's answer.
+    ///
+    /// Ledger rows are keyed by **claude's** session id, which is the tug id
+    /// for a plain fresh spawn and something else after a rewind fork or an id
+    /// rotation. There is deliberately **no fallback to the tug id**: the
+    /// resolver returns `None` both for a session it has no entry for and for a
+    /// momentarily contended lock (it reads through `try_lock`), and those two
+    /// are indistinguishable here. Guessing the tug id would, for a fork, name
+    /// the *parent's* row — writing one session's description onto another's,
+    /// which is the confidently-wrong outcome [D132] ranks below saying nothing.
+    /// An unresolvable session simply waits for the next window.
     row_id: String,
 }
 
@@ -2298,9 +2307,16 @@ fn take_synopsis_job(
     digest: &str,
     sessions: &mut HashMap<String, SessionState>,
     config: &SessionOverviewConfig,
+    cancel: &CancellationToken,
     now: Instant,
 ) -> Option<SynopsisJob> {
     let ledger = config.ledger.as_ref()?;
+    // The row this description belongs to, resolved BEFORE the debounce is
+    // marked: a session whose row cannot be identified is not "asked and
+    // failed", it is not asked at all, and the next emit should try again
+    // rather than wait out a window it never used. See `SynopsisJob::row_id`
+    // for why there is no fallback.
+    let row_id = (config.identity.resolver)(session_id)?;
     let state = sessions.get_mut(session_id)?;
     if let Some(last) = state.last_synopsis {
         if now.duration_since(last) < SYNOPSIS_MIN_INTERVAL {
@@ -2311,13 +2327,13 @@ fn take_synopsis_job(
     // turns out to be frozen must not make every subsequent emit retry.
     state.last_synopsis = Some(now);
     Some(SynopsisJob {
-        row_id: (config.identity.resolver)(session_id)
-            .unwrap_or_else(|| session_id.to_owned()),
+        row_id,
         session_id: session_id.to_owned(),
         digest: digest.to_owned(),
         shared_agent: config.shared_agent.clone(),
         ledger: Arc::clone(ledger),
         control_tx: config.control_tx.clone(),
+        cancel: cancel.clone(),
     })
 }
 
@@ -2327,6 +2343,10 @@ fn take_synopsis_job(
 /// and a description held at the transport timeout must not delay the next
 /// session's headline. Every failure is a silent skip — the debounce was
 /// already marked, so the next ask comes a minute later either way.
+///
+/// Detached does not mean unowned. The task holds a ledger handle and would
+/// otherwise outlive the loop that spawned it, so the ask races the loop's own
+/// cancellation token and a shutdown that lands mid-flight writes nothing.
 async fn run_synopsis(job: SynopsisJob) {
     let SynopsisJob {
         session_id,
@@ -2334,6 +2354,7 @@ async fn run_synopsis(job: SynopsisJob) {
         shared_agent,
         ledger,
         control_tx,
+        cancel,
         row_id,
     } = job;
     // The freeze rule, read before the model call rather than after it: a
@@ -2359,12 +2380,19 @@ async fn run_synopsis(job: SynopsisJob) {
         return;
     };
     let started = Instant::now();
-    let answer = match agent.run("synopsis", digest.clone()).await {
-        Ok(text) => text,
-        Err(error) => {
-            warn!(%error, session = %session_id, "session synopsis: ask failed");
+    let answer = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => {
+            debug!(session = %session_id, "session synopsis: cancelled mid-ask");
             return;
         }
+        answered = agent.run("synopsis", digest.clone()) => match answered {
+            Ok(text) => text,
+            Err(error) => {
+                warn!(%error, session = %session_id, "session synopsis: ask failed");
+                return;
+            }
+        },
     };
     // Same register and same grounding gate as the headline: the description is
     // read at the same size in the same places, and a description the digest
@@ -4718,19 +4746,22 @@ mod tests {
             crate::session_ledger::SessionLedger::open_in_memory().expect("in-memory ledger"),
         );
         let config = synopsis_config(Some(ledger), Some("claude-1"));
+        let cancel = CancellationToken::new();
         let start = Instant::now();
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), SessionState::new(start));
 
         // The first emit's digest asks.
-        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, start).is_some());
+        assert!(
+            take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, start).is_some()
+        );
         // Every emit inside the window is refused — the headline moves on its
         // own 8s floor and the description must not follow it.
         let soon = start + SYNOPSIS_MIN_INTERVAL - Duration::from_secs(1);
-        assert!(take_synopsis_job("s1", "d2", &mut sessions, &config, soon).is_none());
+        assert!(take_synopsis_job("s1", "d2", &mut sessions, &config, &cancel, soon).is_none());
         // Past the window it asks again.
         let later = start + SYNOPSIS_MIN_INTERVAL;
-        let job = take_synopsis_job("s1", "d3", &mut sessions, &config, later)
+        let job = take_synopsis_job("s1", "d3", &mut sessions, &config, &cancel, later)
             .expect("due past the interval");
         assert_eq!(job.digest, "d3");
         // The row key is claude's id, not the tug id: a fork's description must
@@ -4740,25 +4771,40 @@ mod tests {
     }
 
     #[test]
-    fn an_unresolvable_session_writes_against_its_own_id() {
+    fn an_unresolvable_session_is_not_asked_at_all() {
         let ledger = Arc::new(
             crate::session_ledger::SessionLedger::open_in_memory().expect("in-memory ledger"),
         );
         let config = synopsis_config(Some(ledger), None);
+        let cancel = CancellationToken::new();
         let now = Instant::now();
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), SessionState::new(now));
-        let job = take_synopsis_job("s1", "d1", &mut sessions, &config, now).expect("due");
-        assert_eq!(job.row_id, "s1");
+        // The resolver answers `None` both for "no such entry" and for a
+        // contended lock, so there is no row this description is known to
+        // belong to. Guessing the tug id would name a fork's PARENT row.
+        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, now).is_none());
+        // And the window was not spent: the moment the resolver can answer, the
+        // very next emit asks rather than waiting out a minute it never used.
+        let config = synopsis_config(
+            Some(Arc::new(
+                crate::session_ledger::SessionLedger::open_in_memory().expect("ledger"),
+            )),
+            Some("claude-1"),
+        );
+        let job = take_synopsis_job("s1", "d2", &mut sessions, &config, &cancel, now)
+            .expect("due as soon as the row is known");
+        assert_eq!(job.row_id, "claude-1");
     }
 
     #[test]
     fn no_ledger_means_no_description_to_persist() {
         let config = synopsis_config(None, Some("claude-1"));
+        let cancel = CancellationToken::new();
         let now = Instant::now();
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), SessionState::new(now));
-        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, now).is_none());
+        assert!(take_synopsis_job("s1", "d1", &mut sessions, &config, &cancel, now).is_none());
         // A session the sweep has already dropped is likewise nothing to do.
         let config = synopsis_config(
             Some(Arc::new(
@@ -4766,7 +4812,9 @@ mod tests {
             )),
             Some("claude-1"),
         );
-        assert!(take_synopsis_job("gone", "d1", &mut sessions, &config, now).is_none());
+        assert!(
+            take_synopsis_job("gone", "d1", &mut sessions, &config, &cancel, now).is_none()
+        );
     }
 
     /// Await one PULSE frame, or `None` if none arrives promptly. The window

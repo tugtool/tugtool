@@ -220,8 +220,8 @@ describe.skipIf(!SHOULD_RUN)("AT0169: deck-tier menu validation", () => {
         // gallery-input, so every session-card command surface is disabled.
         await expectEnabled(app, "session.focusPrompt", false);
         await expectEnabled(app, "session.stop", false);
-        await expectEnabled(app, "session.model", false);
-        await expectEnabled(app, "session.permissionMode.default", false);
+        await expectEnabled(app, "session.ai", false);
+        await expectEnabled(app, "session.permissionMode.cycle", false);
         await expectEnabled(app, "edit.copyLastResponse", false);
         await expectEnabled(app, "file.exportTranscript", false);
         await expectEnabled(app, "help.shortcuts", false);

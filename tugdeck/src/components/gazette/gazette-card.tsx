@@ -109,26 +109,27 @@ function useTimeFormats(): {
  */
 function RefChip({ chipRef }: { chipRef: GazetteRef }): React.ReactElement {
   const store = useDeckManager();
-  const intent = gazetteRefIntent(chipRef);
-  const inert = intent.kind === "inert";
   // A session ref is a CITATION, and it renders as one: the session atom, the
   // callsign, the same chip every foreign surface shows. It used to fall
   // through to the generic label rule below — `target.split("/").pop()`, which
   // is a no-op on a UUID — so the Gazette printed all thirty-six characters of
-  // an id nobody can read. The atom carries the click intent that was already
-  // resolved above; a session with no card open resolves to `inert` there,
-  // which reaches the chip as no `onOpen`.
+  // an id nobody can read.
+  //
+  // The chip owns the whole gesture, including whether to offer it: it asks the
+  // ledger whether the session is findable and the binding store whether a card
+  // is open, which is the same pair `gazetteRefIntent` decides the other kinds
+  // on. Passing an intent in as well would be a second opinion about a session
+  // ref, and the two would drift.
   if (chipRef.kind === "session") {
     return (
       <TugSessionCitation
-        sessionId={chipRef.target}
+        citedId={chipRef.target}
         className="gazette-ref-chip"
-        onOpen={
-          inert ? undefined : () => runGazetteRefIntent(intent, store)
-        }
       />
     );
   }
+  const intent = gazetteRefIntent(chipRef);
+  const inert = intent.kind === "inert";
   const label =
     chipRef.kind === "commit"
       ? chipRef.target.slice(0, 9)

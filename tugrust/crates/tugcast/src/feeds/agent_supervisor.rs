@@ -1432,6 +1432,38 @@ fn parse_project_dir_payload(payload: &[u8]) -> Result<String, ControlError> {
     Ok(pd)
 }
 
+/// The ids a `resolve_sessions` request asks about ([D132]).
+///
+/// Capped rather than unbounded: the caller is a History card asking about the
+/// commits on screen, and a request naming ten thousand ids is a bug on the
+/// other side of the wire, not a query. Over the cap the extra ids are dropped
+/// with a warning rather than the whole request refused — a truncated answer
+/// renders as a few unresolved chips, where a refusal renders as none at all.
+fn parse_session_ids_payload(payload: &[u8]) -> Result<Vec<String>, ControlError> {
+    /// The most ids one request may name.
+    const MAX_IDS: usize = 512;
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let ids = value
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .ok_or(ControlError::Malformed)?;
+    if ids.len() > MAX_IDS {
+        warn!(
+            asked = ids.len(),
+            cap = MAX_IDS,
+            "resolve_sessions: request over the cap, answering the first {MAX_IDS}"
+        );
+    }
+    Ok(ids
+        .iter()
+        .filter_map(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .take(MAX_IDS)
+        .map(str::to_owned)
+        .collect())
+}
+
 /// The changeset scribe's runtime wiring ([P11]): the spawner (production:
 /// `ClaudeScribeSpawner`; tests: a fake) plus the model resolver (tugbank
 /// default `dev.tugtool.changeset`/`scribe_model`, fallback `sonnet` —
@@ -2586,6 +2618,13 @@ impl AgentSupervisor {
                 self.do_list_card_bindings().await;
                 Ok(())
             }
+            "resolve_sessions" => match parse_session_ids_payload(payload) {
+                Ok(ids) => {
+                    self.do_resolve_sessions(&ids).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
             "changeset_git_init" => match parse_project_dir_payload(payload) {
                 Ok(project_dir) => {
                     self.do_changeset_git_init(&project_dir).await;
@@ -4755,6 +4794,68 @@ impl AgentSupervisor {
     /// reconnect to re-assert per-card bindings. Multiple rows can
     /// share a `card_id` (sequential sessions on that card); the
     /// client picks the newest per card.
+    /// Answer "which of these sessions does this ledger hold?" ([D132]).
+    ///
+    /// The read path behind every citation chip. A commit's trailers name a
+    /// session by full uuid or by the citation's 8-char short id, and whether
+    /// that session is *findable* has to be a ledger answer: deciding it from
+    /// whatever the client happened to have cached makes the same commit's chip
+    /// resolvable or slashed depending on which listings ran this run, which is
+    /// not a fact about the reference.
+    ///
+    /// Answers positively and negatively in one frame — the `unknown` list is
+    /// what lets the client cache a miss instead of re-asking forever. A
+    /// ledger-less build answers everything unknown rather than staying silent,
+    /// for the same reason `list_card_bindings` answers empty: a client sitting
+    /// on `pending` forever is the one outcome with no rendering.
+    async fn do_resolve_sessions(&self, ids: &[String]) {
+        let mut sessions = Vec::new();
+        let mut unknown: Vec<&str> = Vec::new();
+        match self.session_ledger.as_ref() {
+            Some(ledger) => match ledger.resolve_session_ids(ids) {
+                Ok(resolved) => {
+                    for (queried, row) in &resolved {
+                        sessions.push(serde_json::json!({
+                            // Keyed by what was asked, so the client can match
+                            // an answer back to the citation it read — a short
+                            // id and the row's full id are different strings.
+                            "queried": queried,
+                            "session": row,
+                        }));
+                    }
+                    for id in ids {
+                        if !resolved.iter().any(|(queried, _)| queried == id.trim()) {
+                            unknown.push(id.as_str());
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(error = %err, "resolve_sessions: ledger read failed");
+                    let body = serde_json::json!({
+                        "action": "resolve_sessions_err",
+                        "ids": ids,
+                        "reason": "ledger_read_failed",
+                    });
+                    let _ = self.control_tx.send(Frame::new(
+                        FeedId::CONTROL,
+                        serde_json::to_vec(&body).expect("resolve_sessions_err serializes"),
+                    ));
+                    return;
+                }
+            },
+            None => unknown.extend(ids.iter().map(String::as_str)),
+        }
+        let body = serde_json::json!({
+            "action": "resolve_sessions_ok",
+            "sessions": sessions,
+            "unknown": unknown,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("resolve_sessions_ok serializes"),
+        ));
+    }
+
     async fn do_list_card_bindings(&self) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             // No ledger wired — emit an empty response so a confused
@@ -11058,6 +11159,81 @@ mod tests {
         // must still appear on the wire (consumers gate on it).
         assert_eq!(empty["is_alive"], false);
         assert_eq!(real["is_alive"], false);
+    }
+
+    /// `resolve_sessions { ids }` answers both ways in one frame — the found
+    /// rows keyed by what was asked, and the misses named as misses so the
+    /// client can cache a negative instead of re-asking on every repaint
+    /// ([D132]).
+    #[tokio::test]
+    async fn resolve_sessions_answers_hits_and_misses_in_one_frame() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+        let full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        ledger
+            .record_spawn(
+                full,
+                "ws-1",
+                "/proj/alpha",
+                "card-A",
+                1_000,
+                Some("stocky-pixie"),
+            )
+            .unwrap();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "resolve_sessions",
+            // The full uuid a `Tug-Session-Id` carries, the 8-char token a
+            // citation carries, and a session written on another machine.
+            "ids": [full, "f6e43925", "0badf00d"],
+        }))
+        .unwrap();
+        sup.handle_control("resolve_sessions", &payload, 10)
+            .await
+            .expect_handled();
+
+        let response = drain_until_action(&mut rx, "resolve_sessions_ok");
+        let sessions = response["sessions"].as_array().expect("sessions array");
+        assert_eq!(sessions.len(), 2, "response: {response}");
+        // Keyed by the asked-for spelling; the row carries the whole identity,
+        // callsign included, so the chip renders the ledger's own word.
+        assert_eq!(sessions[0]["queried"], full);
+        assert_eq!(sessions[0]["session"]["session_id"], full);
+        assert_eq!(sessions[0]["session"]["tag"], "stocky-pixie");
+        assert_eq!(sessions[1]["queried"], "f6e43925");
+        assert_eq!(sessions[1]["session"]["session_id"], full);
+        // The miss is stated rather than merely omitted.
+        assert_eq!(
+            response["unknown"].as_array().expect("unknown array"),
+            &vec![serde_json::json!("0badf00d")],
+        );
+    }
+
+    /// A malformed request is refused, and a well-formed one naming nothing is
+    /// answered — a client sitting on `pending` forever is the one outcome with
+    /// no rendering at all.
+    #[tokio::test]
+    async fn resolve_sessions_refuses_a_malformed_payload_and_answers_an_empty_one() {
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger();
+        let bad = serde_json::to_vec(&serde_json::json!({
+            "action": "resolve_sessions",
+        }))
+        .unwrap();
+        assert!(matches!(
+            sup.handle_control("resolve_sessions", &bad, 10).await,
+            ControlOutcome::Error(_),
+        ));
+
+        let empty = serde_json::to_vec(&serde_json::json!({
+            "action": "resolve_sessions",
+            "ids": [],
+        }))
+        .unwrap();
+        sup.handle_control("resolve_sessions", &empty, 10)
+            .await
+            .expect_handled();
+        let response = drain_until_action(&mut rx, "resolve_sessions_ok");
+        assert!(response["sessions"].as_array().expect("array").is_empty());
+        assert!(response["unknown"].as_array().expect("array").is_empty());
     }
 
     /// `list_shell_exchanges { tug_session_id }` broadcasts

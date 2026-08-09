@@ -13,6 +13,8 @@
  * @module lib/card-session-binding-store
  */
 
+import { useCallback, useSyncExternalStore } from "react";
+
 /**
  * User's choice of session mode when the card was opened. Populated from
  * the `spawn_session_ok` CONTROL ack, which echoes the value tugdeck sent
@@ -80,3 +82,34 @@ export class CardSessionBindingStore {
 
 /** Module-scope singleton — mirrors FeedStore's usage shape. */
 export const cardSessionBindingStore = new CardSessionBindingStore();
+
+/**
+ * The card currently bound to `sessionId`, or `null` when none is open — the
+ * reverse of {@link CardSessionBindingStore.getBinding}, and the one place that
+ * walk lives.
+ *
+ * The store is keyed by card because that is the direction the feed plumbing
+ * reads it; a session reference needs the other direction, and the walk is
+ * cheap (a deck holds a handful of cards). Every "go to that session" gesture
+ * in the app — a Gazette ref, a citation chip — asks this, so it answers once
+ * rather than in each caller.
+ */
+export function cardIdForSession(sessionId: string): string | null {
+  for (const [cardId, binding] of cardSessionBindingStore.getSnapshot()) {
+    if (binding.tugSessionId === sessionId) return cardId;
+  }
+  return null;
+}
+
+/**
+ * The subscribed form, for a component deciding whether to *offer* the gesture
+ * ([L02]). A chip that reads this unsubscribed would keep offering a click into
+ * a card that has since closed, or withhold one from a card that has since
+ * opened.
+ */
+export function useCardIdForSession(sessionId: string): string | null {
+  return useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(() => cardIdForSession(sessionId), [sessionId]),
+  );
+}

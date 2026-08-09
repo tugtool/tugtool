@@ -67,9 +67,6 @@ import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
-import { useDeckManager } from "@/deck-manager-context";
-import type { IDeckManagerStore } from "@/deck-manager-store";
-import { raiseSessionCard } from "@/lib/session-atom";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -637,10 +634,7 @@ function unattributedFileData(
  * could be followed. The chip resolves the id the feed already sends, so the
  * row says which session and lets the reader go to it.
  */
-function orphanedFileData(
-  file: OrphanedFile,
-  store: IDeckManagerStore | null,
-): FileBlockData {
+function orphanedFileData(file: OrphanedFile): FileBlockData {
   return {
     path: file.path,
     git_status: file.git_status,
@@ -651,9 +645,8 @@ function orphanedFileData(
       <span className="tug-changes-list-file-hint-from">
         from{" "}
         <TugSessionCitation
-          sessionId={file.prior_owner_id}
-          context={{ recordedTag: file.prior_owner_name }}
-          onOpen={() => raiseSessionCard(file.prior_owner_id, store)}
+          citedId={file.prior_owner_id}
+          recordedTag={file.prior_owner_name}
         />
       </span>
     ),
@@ -981,10 +974,6 @@ function EntryFiles({
   onElectHunks?: (path: string, ids: readonly string[] | null) => void;
 }) {
   const projectRoot = entry.project.project_dir;
-  // The deck, for an orphan hint's citation chip to raise the prior owner's
-  // card. Null outside a deck (the gallery), which the chip reads as "nowhere
-  // to go" — the same outcome as a session whose card is closed.
-  const deck = useDeckManager();
   const descriptor = useMemo(() => entryDiffDescriptor(entry), [entry]);
   const { snapshot: diffSnapshot, ensureRequested } = useEntryDiff(entry.id, descriptor);
   useEffect(() => {
@@ -998,7 +987,7 @@ function EntryFiles({
     entry.kind === "session"
       ? entry.entry.files.map(changesetFileData)
       : entry.kind === "orphaned"
-        ? entry.files.map((file) => orphanedFileData(file, deck))
+        ? entry.files.map(orphanedFileData)
         : entry.files.map((file) => unattributedFileData(file, ownSessionId));
 
   return (

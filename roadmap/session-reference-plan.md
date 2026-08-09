@@ -1147,7 +1147,7 @@ CREATE TABLE IF NOT EXISTS minted_tags (
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Phase 2: content-annotator pattern-matching for citations in free prose (prerequisites: whole-citation detector claiming the run before the commit-SHA scanner; an `AnnotationScope` on the History card).
-- [ ] **Fork-aware session identity in the environment (Risk R05).** `TUG_SESSION_ID` is captured once per shell and names the tug session id, so after a rewind fork a commit's trailers cite the parent — a wrong-but-resolvable citation, the outcome [P12] calls worse than an unresolvable one. Prefer the ledger-alias shape (`tug_session_id → current claude id`) over re-exporting the env, because the same resolution is done by `tugutil changes`, `tugutil draft`, and `host ask`.
+- [ ] **Fork-aware session identity in the environment (Risk R05).** `TUG_SESSION_ID` is captured once per shell and names the tug session id, so after a rewind fork a commit's trailers cite the parent — a wrong-but-resolvable citation, the outcome [P12] calls worse than an unresolvable one. Prefer the ledger-alias shape (`tug_session_id → current claude id`) over re-exporting the env, because the same resolution is done by `tugutil changes`, `tugutil draft`, and `host ask`. **The synopsis writer's instance of this root cause is closed** (a post-audit fixup): `take_synopsis_job` now skips a session the resolver cannot key rather than falling back to the tug id, which is the same "guessing names the parent's row" hazard one write earlier. The alias, when it lands, is what lets it stop skipping.
 - [ ] Mastheads for other cards with real content identity (file card path + dirty state).
 - [ ] Opportunistic lexicon growth (more 4–5-letter nouns).
 

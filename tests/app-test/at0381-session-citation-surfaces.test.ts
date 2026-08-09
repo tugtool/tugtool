@@ -23,12 +23,15 @@
  *   C. **An unresolvable citation is inert, and looks it.** A ref naming a
  *      session this ledger has no record of keeps the atom's shape, slashes its
  *      icon, and takes no click ([P13]) — a reference that resolved to nothing
- *      must not look like one that resolves.
+ *      must not look like one that resolves. That verdict comes from the
+ *      ledger, over `resolve_sessions`, which is why the assertion waits for
+ *      the answer rather than for the chip.
  *
  * @covers tugdeck/src/lib/pane-title.ts
  * @covers tugdeck/src/components/tugways/tug-tab-bar.tsx
  * @covers tugdeck/src/components/gazette/gazette-card.tsx
  * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
+ * @covers tugdeck/src/lib/session-citation-store.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -159,6 +162,18 @@ describe.skipIf(!SHOULD_RUN)("at0381 — every citation surface names the sessio
           `document.querySelectorAll(
             ${JSON.stringify(GAZETTE)} +
             ' .gazette-post [data-slot="tug-session-identity"]').length === 2`,
+          { timeoutMs: 10_000 },
+        );
+        // Wait for the LEDGER to have answered, not merely for the chips to
+        // mount. Resolvability is a `resolve_sessions` round trip, and a chip
+        // that has not heard back is deliberately neither resolved nor slashed —
+        // reading `data-missing` before the answer lands would be reading a
+        // state the test is not about.
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(
+            ${JSON.stringify(GAZETTE)} +
+            ' .gazette-post [data-slot="tug-session-identity"][data-missing="true"]'
+          ).length === 1`,
           { timeoutMs: 10_000 },
         );
         const chips = await app.evalJS<

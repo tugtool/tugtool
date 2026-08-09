@@ -84,6 +84,7 @@ export const CONTROL_ACTION_CLOSE_SESSION = "close_session";
 export const CONTROL_ACTION_RESET_SESSION = "reset_session";
 export const CONTROL_ACTION_LIST_SESSIONS = "list_sessions";
 export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
+export const CONTROL_ACTION_RESOLVE_SESSIONS = "resolve_sessions";
 export const CONTROL_ACTION_TRASH_SESSION = "trash_session";
 export const CONTROL_ACTION_RENAME_SESSION = "rename_session";
 export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
@@ -644,6 +645,26 @@ export function encodeListSessions(projectDir: string): Frame {
   });
 }
 
+/**
+ * Build a `resolve_sessions` CONTROL request frame — "which of these sessions
+ * does the ledger hold?" ([D132]).
+ *
+ * The read behind every citation chip. Each id is either a full session uuid
+ * (from `Tug-Session-Id`, or a legacy one-line trailer) or the 8-char short id
+ * a citation records, which the **server** expands against the whole ledger —
+ * the client's caches only know the sessions this run happened to list, and
+ * resolvability is a fact about the reference rather than about that.
+ *
+ * The response broadcasts `resolve_sessions_ok { sessions: [{ queried,
+ * session }], unknown: string[] }`, keyed by the asked-for spelling because a
+ * short id and the row's full id are different strings. `unknown` is the
+ * negative answer, and it is load-bearing: it is what lets a caller cache a
+ * miss rather than re-ask on every repaint.
+ */
+export function encodeResolveSessions(ids: readonly string[]): Frame {
+  return controlFrame(CONTROL_ACTION_RESOLVE_SESSIONS, { ids });
+}
+
 
 /**
  * Build a `trash_session` CONTROL request frame.
@@ -1179,4 +1200,50 @@ export function decodeSessionUpdated(payload: unknown): SessionUpdatedPush | nul
     | undefined;
   const fields = rawFields === undefined ? undefined : normalizeSessionRow(rawFields);
   return removed ? { session_id: sessionId, removed: true } : { session_id: sessionId, fields };
+}
+
+/**
+ * Decoded `resolve_sessions_ok` response payload ([D132]).
+ *
+ * `found` maps the id as **asked** to the ledger row that answers it — the two
+ * differ whenever the ask was a citation's 8-char short id. `unknown` names the
+ * ids this ledger holds no row for, which is a durable answer rather than a
+ * silence: a citation written on another machine is unresolvable, and saying so
+ * is what stops the client asking again forever.
+ */
+export interface ResolveSessionsOk {
+  found: readonly { queried: string; session: SessionRow }[];
+  unknown: readonly string[];
+}
+
+/**
+ * Type guard + decoder for `resolve_sessions_ok`. Entries missing a `queried`
+ * string or a `session` object are dropped rather than failing the frame — a
+ * partial answer resolves the chips it can and leaves the rest pending, which
+ * is strictly better than discarding every answer over one bad row.
+ */
+export function decodeResolveSessionsOk(payload: unknown): ResolveSessionsOk | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const obj = payload as Record<string, unknown>;
+  if (obj.action !== "resolve_sessions_ok") return null;
+  const found: { queried: string; session: SessionRow }[] = [];
+  if (Array.isArray(obj.sessions)) {
+    for (const entry of obj.sessions) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const e = entry as Record<string, unknown>;
+      const queried = e.queried;
+      if (typeof queried !== "string" || queried.length === 0) continue;
+      if (typeof e.session !== "object" || e.session === null) continue;
+      found.push({
+        queried,
+        session: normalizeSessionRow(
+          e.session as Parameters<typeof normalizeSessionRow>[0],
+        ),
+      });
+    }
+  }
+  const unknown = Array.isArray(obj.unknown)
+    ? obj.unknown.filter((id): id is string => typeof id === "string" && id.length > 0)
+    : [];
+  return { found, unknown };
 }

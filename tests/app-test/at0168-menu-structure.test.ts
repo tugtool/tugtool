@@ -102,16 +102,16 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "session.new" },
   { id: "session.resume" },
   { id: "session.rename" },
-  // The two slash bridges that carry a chord. Both are menu-eligible, so the
-  // key equivalent has to be ON the item — the sweep writing it here is the
-  // whole mechanism, and an empty string would mean the chord reaches nothing.
-  { id: "session.model", key: "i", mods: MOD.command | MOD.control },
-  { id: "session.effort" },
-  { id: "session.permissionMode" },
-  { id: "session.permissionMode.default" },
-  { id: "session.permissionMode.acceptEdits" },
-  { id: "session.permissionMode.plan" },
-  { id: "session.permissionMode.auto" },
+  // The slash bridges that carry a chord are menu-eligible, so the key
+  // equivalent has to be ON the item — the sweep writing it here is the whole
+  // mechanism, and an empty string would mean the chord reaches nothing.
+  //
+  // `session.ai` is one door for model, reasoning effort, AND permission mode.
+  // The per-mode submenu (`session.permissionMode` + its four modes) is
+  // RETIRED — the mixer sets the mode now. Cycle keeps its own row precisely
+  // because it kept its chord, and a chord with no menu item is not
+  // discoverable.
+  { id: "session.ai", key: "i", mods: MOD.command | MOD.control },
   { id: "session.permissionMode.cycle", key: "p", mods: MOD.command | MOD.control | MOD.option },
   { id: "session.permissionRules" },
   { id: "session.rewind" },

@@ -108,6 +108,7 @@
 // lands. Same pattern `agent_supervisor.rs` uses for phased rollouts.
 #![allow(dead_code)]
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -2494,6 +2495,71 @@ impl SessionLedger {
             Some(r) => Ok(Some(r?)),
             None => Ok(None),
         }
+    }
+
+    /// Resolve citation ids to the rows they name ([D132]) — the server-side
+    /// answer to "does this ledger hold the session that commit cited?".
+    ///
+    /// Each requested id is either a full session uuid (an exact lookup) or the
+    /// 8-char short id a `Tug-Session:` citation records (a prefix lookup). The
+    /// prefix arm demands a **unique** match: two rows sharing eight hex chars
+    /// resolve to nothing rather than to the first one found, because a
+    /// citation that resolves to the wrong session is the confidently-wrong
+    /// answer [D132] calls strictly worse than an unresolvable one. Anything
+    /// that is neither shape is skipped — the caller's grammar already refused
+    /// it, and this is not the place to invent a spelling.
+    ///
+    /// Answers only from `sessions`, deliberately: a citation is written by a
+    /// commit made from a Tug session, which is a `sessions` row by
+    /// construction, and an external session carries no commits until it adopts
+    /// into that same table. `external_scan_cache` therefore has nothing to add
+    /// here.
+    ///
+    /// Ids absent from the result are absent from the ledger — a negative
+    /// answer the client caches, so an unresolvable citation is a fact rather
+    /// than a symptom of which listings happened to run.
+    pub fn resolve_session_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<(String, SessionRow)>, LedgerError> {
+        const COLUMNS: &str = "session_id, workspace_key, project_dir, created_at, last_used_at,
+                    turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
+                    root_tag, tag_lineage, synopsis";
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut exact =
+            conn.prepare(&format!("SELECT {COLUMNS} FROM sessions WHERE session_id = ?1 LIMIT 1"))?;
+        // `LIMIT 2` is the ambiguity probe: one row is an answer, two are a
+        // refusal. The pattern is safe to interpolate into LIKE because the
+        // short-id shape is validated first — eight hex chars carry no `%`/`_`.
+        let mut prefixed = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM sessions WHERE session_id LIKE ?1 || '%' LIMIT 2"
+        ))?;
+        let mut seen = HashSet::new();
+        let mut resolved = Vec::new();
+        for id in ids {
+            let queried = id.trim();
+            if queried.is_empty() || !seen.insert(queried.to_owned()) {
+                continue;
+            }
+            let needle = queried.to_ascii_lowercase();
+            let rows = if is_full_session_uuid(&needle) {
+                exact
+                    .query_map(params![needle], row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            } else if is_short_session_id(&needle) {
+                prefixed
+                    .query_map(params![needle], row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                continue;
+            };
+            if rows.len() != 1 {
+                continue;
+            }
+            let row = rows.into_iter().next().expect("length checked");
+            resolved.push((queried.to_owned(), row?));
+        }
+        Ok(resolved)
     }
 
     /// Insert a new live row, or transition an existing row back to live and
@@ -5441,6 +5507,28 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     }))
 }
 
+/// Whether `s` is a full session uuid — the `Tug-Session-Id` trailer's shape,
+/// and the legacy one-line trailer's parenthesized token.
+fn is_full_session_uuid(s: &str) -> bool {
+    let groups = [8usize, 4, 4, 4, 12];
+    let mut parts = s.split('-');
+    for len in groups {
+        match parts.next() {
+            Some(part) if part.len() == len && part.bytes().all(|b| b.is_ascii_hexdigit()) => {}
+            _ => return false,
+        }
+    }
+    parts.next().is_none()
+}
+
+/// Whether `s` is a short session id — exactly the leading run a citation
+/// records. The length comes from the trailer writer's own constant rather than
+/// a second copy of the number.
+fn is_short_session_id(s: &str) -> bool {
+    s.len() == tugchanges_core::SHORT_SESSION_ID_LEN
+        && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// A fork's allocated identity ([P11]) — the composed callsign plus the
 /// structured record behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6465,6 +6553,111 @@ mod tests {
         assert!(!l.record_synopsis("no-such-session", "A line").unwrap());
         assert!(!l.record_synopsis("s1", "   ").unwrap());
         assert_eq!(l.get("s1").unwrap().unwrap().synopsis, None);
+    }
+
+    // ── resolve_session_ids: what a commit's citation names ──────────────────
+
+    #[test]
+    fn a_citation_resolves_by_full_uuid_and_by_short_id() {
+        let l = fresh();
+        let full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        l.record_spawn(full, WS_A, "/proj", "card-1", millis(0), Some("stocky-pixie"))
+            .unwrap();
+
+        // The machine field's exact join.
+        let by_uuid = l.resolve_session_ids(&[full.to_owned()]).unwrap();
+        assert_eq!(by_uuid.len(), 1);
+        assert_eq!(by_uuid[0].0, full);
+        assert_eq!(by_uuid[0].1.session_id, full);
+
+        // The citation's 8-char token, expanded here rather than against
+        // whatever the client happened to have cached. Case is the trailer's,
+        // not the ledger's.
+        let by_short = l
+            .resolve_session_ids(&["F6E43925".to_owned()])
+            .unwrap();
+        assert_eq!(by_short.len(), 1);
+        // The answer is keyed by what was ASKED, so a caller can match it back
+        // to the citation it read.
+        assert_eq!(by_short[0].0, "F6E43925");
+        assert_eq!(by_short[0].1.session_id, full);
+
+        // The row travels whole — the callsign is what the chip renders, and
+        // resolving is what puts the ledger's own word on it.
+        assert_eq!(by_uuid[0].1.tag.as_deref(), Some("stocky-pixie"));
+    }
+
+    #[test]
+    fn an_id_this_ledger_does_not_hold_resolves_to_nothing() {
+        let l = fresh();
+        l.record_spawn(
+            "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            None,
+        )
+        .unwrap();
+        // A commit written against another machine's ledger. The absence IS the
+        // answer — the client caches it and renders the slashed atom.
+        assert!(
+            l.resolve_session_ids(&["0badf00d-dead-4bee-8fee-000000000000".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(l.resolve_session_ids(&["0badf00d".to_owned()]).unwrap().is_empty());
+        // Neither shape: the grammar refused it upstream and nothing here
+        // invents a spelling for it.
+        assert!(l.resolve_session_ids(&["some free prose".to_owned()]).unwrap().is_empty());
+        assert!(l.resolve_session_ids(&["".to_owned()]).unwrap().is_empty());
+        // A `%` cannot become a wildcard: the short-id shape is validated
+        // before the LIKE pattern is built.
+        assert!(l.resolve_session_ids(&["f6e439%%".to_owned()]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_ambiguous_short_id_resolves_to_nothing_rather_than_to_the_first_row() {
+        let l = fresh();
+        // Two sessions sharing eight hex chars — vanishingly unlikely and
+        // therefore exactly the case nobody would notice going wrong.
+        let a = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let b = "f6e43925-9999-4c3d-8e9f-0a1b2c3d4e5f";
+        l.record_spawn(a, WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        l.record_spawn(b, WS_A, "/proj", "card-2", millis(1), None)
+            .unwrap();
+        // A wrong-but-resolvable citation is strictly worse than an
+        // unresolvable one ([D132]), so an ambiguous prefix answers nothing.
+        assert!(l.resolve_session_ids(&["f6e43925".to_owned()]).unwrap().is_empty());
+        // Each full uuid still resolves exactly — ambiguity is the prefix's
+        // problem alone.
+        assert_eq!(l.resolve_session_ids(&[a.to_owned()]).unwrap().len(), 1);
+        assert_eq!(l.resolve_session_ids(&[b.to_owned()]).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_batch_answers_once_per_distinct_id() {
+        let l = fresh();
+        let a = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let b = "aabbccdd-1111-2222-3333-444455556666";
+        l.record_spawn(a, WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        l.record_spawn(b, WS_A, "/proj", "card-2", millis(1), None)
+            .unwrap();
+        // A History card asks for every commit on screen at once, and the same
+        // session cites many commits — the duplicate is answered once.
+        let answered = l
+            .resolve_session_ids(&[
+                a.to_owned(),
+                b.to_owned(),
+                a.to_owned(),
+                "0badf00d".to_owned(),
+            ])
+            .unwrap();
+        assert_eq!(answered.len(), 2);
+        assert_eq!(answered[0].0, a);
+        assert_eq!(answered[1].0, b);
     }
 
     #[test]

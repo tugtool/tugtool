@@ -40,6 +40,7 @@ import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
 import { sessionSynopsisStore } from "./lib/session-synopsis-store";
+import { sessionCitationStore } from "./lib/session-citation-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
 import { requestLogout } from "./lib/logout-store";
 import { requestConfigureTug } from "./lib/configure-tug-request-store";
@@ -49,7 +50,11 @@ import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
 import { keyboardAccessStore } from "./keyboard-access-store";
-import { decodeSessionUpdated, normalizeSessionRow } from "./protocol";
+import {
+  decodeResolveSessionsOk,
+  decodeSessionUpdated,
+  normalizeSessionRow,
+} from "./protocol";
 import type {
   CardBinding,
   GazettePostWire,
@@ -990,6 +995,30 @@ export function initActionDispatch(
       return;
     }
     publishListCardBindingsErr({ reason });
+  });
+
+  // resolve_sessions_ok / _err: the ledger's answer to "which of these cited
+  // sessions do you hold?" ([D132]). The store settles both the hits and the
+  // misses — a named miss is what lets an unresolvable citation be a cached
+  // fact instead of a re-ask on every repaint — and seeds the identity stores
+  // from the rows, which is how a citation names a session no card is bound to.
+  registerAction("resolve_sessions_ok", (payload) => {
+    const decoded = decodeResolveSessionsOk(payload);
+    if (decoded === null) {
+      console.warn("resolve_sessions_ok: undecodable payload", payload);
+      return;
+    }
+    sessionCitationStore.applyResolved(decoded);
+  });
+  registerAction("resolve_sessions_err", (payload) => {
+    // A read error says nothing about the sessions, so the asks are dropped
+    // rather than cached as misses: caching one would slash a resolvable
+    // citation until the next reconnect.
+    const ids = Array.isArray(payload.ids)
+      ? payload.ids.filter((id): id is string => typeof id === "string")
+      : [];
+    console.warn("resolve_sessions_err", payload.reason, ids.length);
+    sessionCitationStore.applyFailed(ids);
   });
 
   // trash_session_ok / _err

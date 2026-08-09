@@ -38,6 +38,13 @@
  * for the masthead's placard and never appears in a rendered name. The old
  * `(<branch>)` title suffix is retired.
  *
+ * **Resolvability is a field, not an inference from `tag`.** A citation may name
+ * a session this ledger has never held, and the honest rendering still shows the
+ * callsign that citation recorded ([P13]) — so `tag` alone cannot answer "can
+ * this be found", and {@link SessionIdentity.resolved} does. Whether the ledger
+ * holds a cited session is asked over the wire by
+ * `session-citation-store.ts`; this module only records the answer.
+ *
  * Laws: [L02] external state enters React through `useSyncExternalStore` only.
  *
  * @module lib/session-identity
@@ -80,6 +87,24 @@ export interface SessionIdentity {
   id: string;
   /** First {@link SESSION_SHORT_ID_LENGTH} chars of `id` — THE short id. */
   shortId: string;
+  /**
+   * Whether this identity is the LEDGER's word about a session it actually
+   * holds, as against a reference reconstructed from what a commit recorded.
+   *
+   * This is the resolvable/unresolvable distinction, and it has to live on the
+   * record because `tag` cannot carry it: {@link SessionIdentityContext.recordedTag}
+   * fills the callsign for a citation the ledger has never heard of, precisely
+   * so an unresolvable reference can still say what it named ([P13]). A reader
+   * of `tag` alone therefore cannot tell the two apart, and one that tried
+   * would call every foreign commit's session findable.
+   *
+   * `true` when some ledger-fed source named this session: a callsign in the
+   * tag store, a card binding supplying its project, or a `resolve_sessions`
+   * answer. Note what it is NOT: liveness. A closed session is resolved; a
+   * commit from another machine is not. Sessions are never dead, only
+   * unfindable ([P13], [P15]).
+   */
+  resolved: boolean;
 }
 
 /**
@@ -115,8 +140,24 @@ export interface SessionIdentityContext {
    * commit made on another machine names a session this ledger has no record of,
    * and the honest rendering is the callsign that commit actually recorded,
    * slashed and inert ([P13]), rather than a bare hash the commit never said.
+   *
+   * It fills `tag` and deliberately does **not** touch
+   * {@link SessionIdentity.resolved} — that separation is the whole point. A
+   * recorded callsign is what the reference *said*, never evidence that this
+   * ledger can find what it named.
    */
   recordedTag?: string | null;
+  /**
+   * The ledger's own answer that it holds this session, from a
+   * `resolve_sessions` round trip (`session-citation-store.ts`).
+   *
+   * A citation surface has no card binding and may sit outside any listing, so
+   * without this the two local signals would call every foreign commit's
+   * session unfindable — and every locally-known one findable only by accident
+   * of what had been listed. Omitted by callers who hold no such answer, which
+   * leaves resolvability to those local signals exactly as before.
+   */
+  ledgerKnown?: boolean;
 }
 
 /**
@@ -175,13 +216,24 @@ export function composeSessionIdentity(input: {
   sessionId: string;
   name: string | null;
   synopsis: string | null;
+  /** The callsign THIS LEDGER holds for the session, or null. */
   tag: string | null;
+  /**
+   * The callsign a commit recorded, used only when the ledger has none. It
+   * fills `tag` without making the identity {@link SessionIdentity.resolved} —
+   * see the field's own note.
+   */
+  recordedTag?: string | null;
   projectDir?: string | null;
   branch?: string | null;
   state?: SessionRow["state"] | null;
   tagLineage?: string | null;
+  /** The ledger's explicit answer that it holds this session. */
+  ledgerKnown?: boolean;
 }): SessionIdentity {
-  const tag = input.tag?.trim() || null;
+  const ledgerTag = input.tag?.trim() || null;
+  const recordedTag = input.recordedTag?.trim() || null;
+  const tag = ledgerTag ?? recordedTag;
   const name = input.name?.trim() || null;
   const synopsis = input.synopsis?.trim() || null;
   const projectDir = input.projectDir?.trim() ?? "";
@@ -190,6 +242,11 @@ export function composeSessionIdentity(input: {
     project: projectDir.length > 0 ? projectLeafName(projectDir) : "",
     branch,
     tag,
+    // Resolvability rests only on ledger-fed facts. `recordedTag` is
+    // conspicuously absent from this expression: a commit's own copy of a
+    // callsign tells the reader what was named, never that it can be found.
+    resolved:
+      input.ledgerKnown === true || ledgerTag !== null || projectDir.length > 0,
     lineage: parseTagLineage(tag, input.tagLineage),
     // The `/rename` name wins and freezes the line; the rolling synopsis fills
     // it otherwise; an honest empty line when neither exists. The store holds
@@ -237,11 +294,13 @@ export function resolveSessionIdentity(
     sessionId,
     name: sessionNameStore.getName(sessionId),
     synopsis: sessionSynopsisStore.getSynopsis(sessionId),
-    tag: sessionTagStore.getTag(sessionId) ?? context?.recordedTag ?? null,
+    tag: sessionTagStore.getTag(sessionId),
+    recordedTag: context?.recordedTag ?? null,
     projectDir: context?.projectDir ?? boundProjectDirFor(sessionId),
     branch: context?.branch ?? null,
     state: context?.state ?? null,
     tagLineage: context?.tagLineage ?? null,
+    ledgerKnown: context?.ledgerKnown ?? false,
   });
 }
 
@@ -311,11 +370,13 @@ export function useSessionIdentity(
     sessionId,
     name,
     synopsis,
-    tag: tag ?? context?.recordedTag ?? null,
+    tag,
+    recordedTag: context?.recordedTag ?? null,
     projectDir: context?.projectDir ?? boundProjectDir,
     branch: context?.branch ?? null,
     state: context?.state ?? null,
     tagLineage: context?.tagLineage ?? null,
+    ledgerKnown: context?.ledgerKnown ?? false,
   });
 }
 
@@ -376,13 +437,17 @@ const SHORT_ID = /^[0-9a-f]{8}$/i;
  */
 export interface CitedSession {
   /**
-   * The best id available. A full uuid when the commit carries one (or a legacy
-   * trailer spelled one); otherwise the short id, expanded against this ledger
-   * when it knows a session with that prefix and left short when it does not.
-   * A short id here means the reference will render unresolvable, which is the
-   * honest outcome for a commit made against a ledger this machine never had.
+   * The id the commit named, exactly as it named it: a full uuid when it
+   * carries one (or a legacy trailer spelled one), else the citation's 8-char
+   * short id.
+   *
+   * A short id is **not** expanded here. Expansion needs a view of every
+   * session and the ability to notice that two share a prefix, and only the
+   * ledger has both — `session-citation-store.ts` asks it, and hands back the
+   * full id. A client-side prefix scan over whatever happened to be cached
+   * would answer differently depending on which listings had run.
    */
-  sessionId: string;
+  citedId: string;
   /** The callsign the trailer recorded, or null for a legacy tagless commit. */
   tag: string | null;
 }
@@ -397,19 +462,20 @@ export interface CitedSession {
  *  2. **The citation's parenthesized token.** A 36-char uuid means a *legacy*
  *     one-line trailer (`<display> (<full-uuid>)`), which therefore resolves
  *     exactly too — legacy commits live in history forever and must not degrade
- *     to unresolvable. An 8-hex token is a short id, expanded by prefix against
- *     the ids this ledger knows.
+ *     to unresolvable. An 8-hex token is a short id, which the ledger expands.
  *  3. Neither parses → `null`, and the caller renders nothing at all.
  *
  * The callsign is read off the citation's head in both forms. For a legacy
  * trailer that head is a *display name*, not a tag — which is why it is only
  * ever a fallback ({@link SessionIdentityContext.recordedTag}) and never
  * overrules what this ledger says the session is called.
+ *
+ * Pure grammar: no store reads, so a caller may memoize it on the trailer text
+ * alone. Turning the id into a *session* is the citation store's job.
  */
 export function resolveCitedSession(
   citation: string | null | undefined,
   sessionId?: string | null,
-  knownIds: () => Iterable<string> = () => sessionTagStore.knownSessionIds(),
 ): CitedSession | null {
   const raw = citation?.trim() ?? "";
   const machineId = sessionId?.trim() ?? "";
@@ -421,15 +487,9 @@ export function resolveCitedSession(
   const token = parenthesized ? match[1] : raw;
   const tag = head.length > 0 ? head : null;
 
-  if (FULL_UUID.test(machineId)) return { sessionId: machineId, tag };
-  if (FULL_UUID.test(token)) return { sessionId: token, tag };
-  if (SHORT_ID.test(token)) {
-    const short = token.toLowerCase();
-    for (const id of knownIds()) {
-      if (id.startsWith(short)) return { sessionId: id, tag };
-    }
-    return { sessionId: short, tag };
-  }
+  if (FULL_UUID.test(machineId)) return { citedId: machineId, tag };
+  if (FULL_UUID.test(token)) return { citedId: token, tag };
+  if (SHORT_ID.test(token)) return { citedId: token.toLowerCase(), tag };
   return null;
 }
 

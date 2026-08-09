@@ -444,6 +444,69 @@ describe("session ledger CONTROL encoders / decoders", () => {
     expect(decodeSessionUpdated(null)).toBeNull();
     expect(decodeSessionUpdated({ action: "session_updated" })).toBeNull();
   });
+
+  test("decodeResolveSessionsOk keys hits by the asked-for spelling", async () => {
+    const { decodeResolveSessionsOk } = await import("../protocol");
+    const full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+    const decoded = decodeResolveSessionsOk({
+      action: "resolve_sessions_ok",
+      sessions: [
+        {
+          // A citation's 8-char token; the row it names is the full id.
+          queried: "f6e43925",
+          session: {
+            session_id: full,
+            workspace_key: "ws-1",
+            project_dir: "/proj",
+            created_at: 1,
+            last_used_at: 2,
+            turn_count: 3,
+            last_user_prompt: null,
+            state: "closed",
+            card_id: null,
+            name: null,
+            tag: "stocky-pixie",
+          },
+        },
+      ],
+      unknown: ["0badf00d"],
+    });
+    expect(decoded?.found).toHaveLength(1);
+    expect(decoded?.found[0]?.queried).toBe("f6e43925");
+    expect(decoded?.found[0]?.session.session_id).toBe(full);
+    expect(decoded?.found[0]?.session.tag).toBe("stocky-pixie");
+    // Bare rows carry no origin/lineage/synopsis; the row normalizer fills the
+    // same defaults it does for a listing.
+    expect(decoded?.found[0]?.session.origin).toBe("tug");
+    expect(decoded?.found[0]?.session.synopsis).toBeNull();
+    // The miss is carried through — it is the answer that lets a caller stop
+    // asking.
+    expect(decoded?.unknown).toEqual(["0badf00d"]);
+  });
+
+  test("decodeResolveSessionsOk drops a bad entry rather than the whole frame", async () => {
+    const { decodeResolveSessionsOk } = await import("../protocol");
+    const decoded = decodeResolveSessionsOk({
+      action: "resolve_sessions_ok",
+      // No `queried`, no `session`, and a non-string miss: a partial answer
+      // resolves what it can, because discarding every answer over one bad row
+      // would leave every chip on the surface pending forever.
+      sessions: [{ session: {} }, { queried: "abc" }, null],
+      unknown: ["0badf00d", 7],
+    });
+    expect(decoded?.found).toEqual([]);
+    expect(decoded?.unknown).toEqual(["0badf00d"]);
+  });
+
+  test("decodeResolveSessionsOk returns null for wrong action, and empty for a bare ok", async () => {
+    const { decodeResolveSessionsOk } = await import("../protocol");
+    expect(decodeResolveSessionsOk({ action: "session_updated" })).toBeNull();
+    expect(decodeResolveSessionsOk(null)).toBeNull();
+    expect(decodeResolveSessionsOk({ action: "resolve_sessions_ok" })).toEqual({
+      found: [],
+      unknown: [],
+    });
+  });
 });
 
 describe("parsePulseFrame — the overview kind", () => {

@@ -70,9 +70,7 @@ import {
 } from "@/components/tugways/tug-changes-list";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
-import { useDeckManager } from "@/deck-manager-context";
 import { dashNameFromTrailer } from "@/lib/landing-receipt";
-import { raiseSessionCard } from "@/lib/session-atom";
 import { resolveCitedSession } from "@/lib/session-identity";
 import {
   DEFAULT_COMMIT_FILTER_SCOPE,
@@ -350,11 +348,12 @@ function CommitRow({
   // S03). `null` for a commit made outside Tug, or one predating the trailers
   // — the row then simply carries no chip, which is the honest rendering of a
   // commit that never said.
+  // Pure grammar over the trailer text, so the memo's inputs really are all of
+  // them — the chip itself asks the ledger who that id is.
   const cited = useMemo(
     () => resolveCitedSession(commit.tug_session, commit.tug_session_id),
     [commit.tug_session, commit.tug_session_id],
   );
-  const store = useDeckManager();
   const shortSha = commit.sha.slice(0, SHA_DISPLAY_LEN);
   const context = useMemo(
     () => matchedContext(commit, shortSha, filterQuery, filterScope),
@@ -450,10 +449,9 @@ function CommitRow({
                     than merely printing an id. */}
                 {cited !== null ? (
                   <TugSessionCitation
-                    sessionId={cited.sessionId}
-                    context={{ recordedTag: cited.tag }}
+                    citedId={cited.citedId}
+                    recordedTag={cited.tag}
                     className="tug-history-list-session-chip"
-                    onOpen={() => raiseSessionCard(cited.sessionId, store)}
                   />
                 ) : null}
               </>

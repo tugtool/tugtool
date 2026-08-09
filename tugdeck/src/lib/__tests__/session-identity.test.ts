@@ -182,58 +182,127 @@ describe("what the record deliberately does not carry", () => {
 
 describe("resolveCitedSession — what a commit's trailers name (Spec S03)", () => {
   const FULL = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
-  const known = () => [FULL, "aabbccdd-1111-2222-3333-444455556666"];
 
   test("the machine field wins: an exact uuid join, whatever the citation says", () => {
-    const cited = resolveCitedSession("stocky-pixie (f6e43925)", FULL, known);
-    expect(cited).toEqual({ sessionId: FULL, tag: "stocky-pixie" });
+    const cited = resolveCitedSession("stocky-pixie (f6e43925)", FULL);
+    expect(cited).toEqual({ citedId: FULL, tag: "stocky-pixie" });
   });
 
-  test("a short id expands against the ids this ledger knows", () => {
-    const cited = resolveCitedSession("stocky-pixie (f6e43925)", undefined, known);
-    expect(cited).toEqual({ sessionId: FULL, tag: "stocky-pixie" });
-  });
-
-  test("a short id this ledger never saw stays short, and so renders unresolvable", () => {
-    const cited = resolveCitedSession("alien-tag (deadbeef)", undefined, known);
-    // The id stays 8 chars: there is nothing to expand it to, and inventing a
-    // uuid would make a miss look like a hit.
-    expect(cited).toEqual({ sessionId: "deadbeef", tag: "alien-tag" });
+  test("a short id is reported as asked — the ledger expands it, not this", () => {
+    // A client-side prefix scan would answer differently depending on which
+    // listings had run, and could not see an ambiguous prefix at all.
+    const cited = resolveCitedSession("stocky-pixie (f6e43925)");
+    expect(cited).toEqual({ citedId: "f6e43925", tag: "stocky-pixie" });
   });
 
   test("a legacy one-line trailer resolves exactly — its token IS a uuid", () => {
     // The head is a display name rather than a callsign, which is why it is
     // only ever a fallback for a ledger that has no tag of its own.
-    const cited = resolveCitedSession(`list-filtering (${FULL})`, undefined, known);
-    expect(cited).toEqual({ sessionId: FULL, tag: "list-filtering" });
+    const cited = resolveCitedSession(`list-filtering (${FULL})`);
+    expect(cited).toEqual({ citedId: FULL, tag: "list-filtering" });
   });
 
   test("a tagless citation is the bare short id, with no callsign to report", () => {
-    expect(resolveCitedSession("f6e43925", undefined, known)).toEqual({
-      sessionId: FULL,
+    expect(resolveCitedSession("f6e43925")).toEqual({
+      citedId: "f6e43925",
       tag: null,
+    });
+  });
+
+  test("the token's case is normalized; the callsign's is the commit's own", () => {
+    expect(resolveCitedSession("Stocky-Pixie (F6E43925)")).toEqual({
+      citedId: "f6e43925",
+      tag: "Stocky-Pixie",
     });
   });
 
   test("a commit with no session trailers names nothing", () => {
-    expect(resolveCitedSession(undefined, undefined, known)).toBeNull();
-    expect(resolveCitedSession("", "", known)).toBeNull();
+    expect(resolveCitedSession(undefined, undefined)).toBeNull();
+    expect(resolveCitedSession("", "")).toBeNull();
     // Not a uuid, not 8 hex — nothing this grammar can honestly resolve.
-    expect(resolveCitedSession("some free prose", undefined, known)).toBeNull();
+    expect(resolveCitedSession("some free prose")).toBeNull();
+    // Nearly a short id, which is not a short id.
+    expect(resolveCitedSession("deadbee")).toBeNull();
+    expect(resolveCitedSession("deadbeefe")).toBeNull();
+  });
+});
+
+describe("resolvability is the ledger's word, never the citation's ([P13])", () => {
+  const FULL = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+
+  test("a recorded callsign fills the label WITHOUT making it resolvable", () => {
+    // The [D132] paragraph this pins: an unresolvable citation "still shows
+    // whatever callsign the commit recorded". Both halves have to hold at once,
+    // and folding `recordedTag` into `tag` was what made the second half
+    // silently cancel the first — every foreign commit rendered as findable.
+    const record = composeSessionIdentity({
+      sessionId: FULL,
+      name: null,
+      synopsis: null,
+      tag: null,
+      recordedTag: "alien-tag",
+    });
+    expect(record.tag).toBe("alien-tag");
+    expect(record.resolved).toBe(false);
   });
 
-  test("the recorded callsign fills a record this ledger cannot name", () => {
-    const cited = resolveCitedSession("alien-tag (deadbeef)", undefined, known);
+  test("the ledger's own callsign resolves it; so does a bound project", () => {
+    const byTag = composeSessionIdentity({
+      sessionId: FULL,
+      name: null,
+      synopsis: null,
+      tag: "stocky-pixie",
+    });
+    expect(byTag.resolved).toBe(true);
+    // A session whose card is open is findable even before any listing named
+    // its callsign — the binding is a ledger-fed fact too.
+    const byBinding = composeSessionIdentity({
+      sessionId: FULL,
+      name: null,
+      synopsis: null,
+      tag: null,
+      projectDir: "/Users/dev/src/tugtool",
+    });
+    expect(byBinding.resolved).toBe(true);
+  });
+
+  test("`ledgerKnown` resolves a session no local signal covers", () => {
+    // The `resolve_sessions` answer. A commit's session sits in no listing and
+    // has no card, so without this arm a locally-held session would render
+    // slashed purely because the picker had not been opened.
+    const answered = composeSessionIdentity({
+      sessionId: FULL,
+      name: null,
+      synopsis: null,
+      tag: null,
+      recordedTag: "alien-tag",
+      ledgerKnown: true,
+    });
+    expect(answered.resolved).toBe(true);
+  });
+
+  test("the ledger's callsign outranks the commit's copy of it", () => {
+    // A collided mint rerolls, so an old commit can carry a callsign this
+    // session no longer wears. The ledger is authoritative.
     const record = composeSessionIdentity({
-      sessionId: cited!.sessionId,
+      sessionId: FULL,
+      name: null,
+      synopsis: null,
+      tag: "rerolled-tag",
+      recordedTag: "optimistic-tag",
+    });
+    expect(record.tag).toBe("rerolled-tag");
+  });
+
+  test("nothing at all: no callsign, unresolved, and the short id to show", () => {
+    const record = composeSessionIdentity({
+      sessionId: "deadbeef",
       name: null,
       synopsis: null,
       tag: null,
     });
-    // Composed with no ledger tag, the record has none — the chip renders the
-    // short id. The `recordedTag` context arm is what puts the commit's own
-    // word back on it; that arm is exercised through the resolvers.
     expect(record.tag).toBeNull();
+    expect(record.resolved).toBe(false);
     expect(record.shortId).toBe("deadbeef");
   });
 });

@@ -42,7 +42,13 @@ import { MessageSquare, MessageSquareOff } from "lucide-react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useCopyableText } from "@/components/tugways/use-copyable-text";
-import { writeSessionAtomToClipboard } from "@/lib/session-atom";
+import { useDeckManager } from "@/deck-manager-context";
+import { useCardIdForSession } from "@/lib/card-session-binding-store";
+import { useCitedSession } from "@/lib/session-citation-store";
+import {
+  raiseSessionCard,
+  writeSessionAtomToClipboard,
+} from "@/lib/session-atom";
 import {
   sessionCitation,
   sessionIdentityLine,
@@ -151,6 +157,18 @@ export const TugSessionIdentity = React.forwardRef<
   const interactive = isChip && !isMissing && onOpen !== undefined;
   const run = sessionIdentityLine(identity);
 
+  // A chip's click is its own, not the row's. Every citation surface mounts
+  // this inside a click-hit region that expands a commit or a file, so the
+  // click has to stop there or raising a session would fold the row under it —
+  // the same guard the rows' trailing accessories already carry.
+  const handleClick = React.useCallback(
+    (event: React.MouseEvent<HTMLSpanElement>) => {
+      event.stopPropagation();
+      onOpen?.();
+    },
+    [onOpen],
+  );
+
   // Right-click → Copy. A resolving atom writes ALL its flavors: the citation
   // as plain text for anywhere outside Tug, and the atom sidecar beside it so
   // a paste back into a Tug surface returns the chip rather than the string.
@@ -177,7 +195,7 @@ export const TugSessionIdentity = React.forwardRef<
       data-size={isChip ? size : undefined}
       data-missing={isMissing ? "true" : undefined}
       data-interactive={interactive ? "true" : undefined}
-      onClick={interactive ? onOpen : undefined}
+      onClick={interactive ? handleClick : undefined}
       onContextMenu={isChip ? copy.handleContextMenu : undefined}
       {...rest}
     >
@@ -216,42 +234,87 @@ export const TugSessionIdentity = React.forwardRef<
  *
  * The Gazette's refs, the Changes card's orphan hint, and the History card's
  * commit line all hold an id and nothing else, and all three have to answer
- * the same question before they can render: does this ledger know that
- * session? Answering it three times would mean three answers, so it is
- * answered once, here.
+ * the same question before they can render: does the ledger hold that session?
+ * Answering it three times would mean three answers, so it is answered once,
+ * here — and it is answered by the **ledger**, over `resolve_sessions`, rather
+ * than by whatever this run's caches happened to accumulate. A commit's chip
+ * must not be resolvable or slashed depending on whether the picker was opened.
  *
- * **The rule:** a session is resolvable when something in this ledger names
- * it — a callsign in the tag store, or a live card binding that supplies its
- * project. Neither, and the reference is [P13]'s slashed inert atom. Note what
- * this does NOT test: liveness. A closed session resolves; a trashed one whose
- * tag is still in the store resolves; a citation written on another machine
- * does not. Sessions are never dead, only unfindable — which is exactly the
- * distinction the slashed atom draws.
+ * Three renderings, one per state of that answer:
+ *
+ * - **Resolved** — the atom in the session color, the ledger's own callsign,
+ *   and the caller's click intent live.
+ * - **Unresolvable** — [P13]'s slashed inert atom, still showing whatever
+ *   callsign the commit recorded (`recordedTag`), because a reference that
+ *   cannot be followed is more useful naming what it named than showing a bare
+ *   hash. Note what this does NOT test: liveness. A closed session resolves; a
+ *   commit from another machine does not. Sessions are never dead, only
+ *   unfindable.
+ * - **Pending** — the round trip is in flight. Inert, and *not* slashed:
+ *   claiming "not found" before asking would be the same lie in the other
+ *   direction, and the chip is unclickable until it knows where a click goes.
+ *
+ * **The click is this component's, not the caller's.** Every citation means the
+ * same thing by a click — raise the card showing that session — so the gesture
+ * lives here rather than being re-passed by each surface, and it is *offered*
+ * only when there is a card to raise. A resolved session with no card open is a
+ * real and ordinary state; a chip that looked clickable and did nothing in it
+ * would be the failure the Gazette's disabled refs were written to avoid.
  */
 export function TugSessionCitation({
-  sessionId,
+  citedId,
+  recordedTag,
   context,
   size = "2xs",
-  onOpen,
   className,
 }: {
-  /** The tug session id the citation names. */
-  sessionId: string;
-  /** Facts the caller already holds — a row's project dir, state, lineage. */
+  /**
+   * What the citation named: a full tug session id, or the 8-char short id a
+   * commit trailer records. The ledger expands the short form.
+   */
+  citedId: string;
+  /**
+   * The callsign the citation itself recorded, when the caller read one. Shown
+   * only if the ledger has no callsign of its own, and never taken as evidence
+   * that the session is findable.
+   */
+  recordedTag?: string | null;
+  /** Further facts the caller already holds — a row's state or lineage. */
   context?: SessionIdentityContext;
   size?: TugSessionIdentitySize;
-  onOpen?: () => void;
   className?: string;
 }): React.ReactElement {
-  const identity = useSessionIdentity(sessionId, context);
-  const missing = identity.tag === null && identity.project.length === 0;
+  const cited = useCitedSession(citedId);
+  const deck = useDeckManager();
+  // Once the ledger answers, its row is the identity's context — a citation has
+  // no card binding to borrow a project dir from, so without this a resolvable
+  // session would render its callsign with no project in front of it.
+  const sessionId = cited.status === "found" ? cited.sessionId : citedId;
+  const identity = useSessionIdentity(sessionId, {
+    ...context,
+    recordedTag: recordedTag ?? context?.recordedTag ?? null,
+    ...(cited.status === "found"
+      ? {
+          projectDir: context?.projectDir ?? cited.projectDir,
+          state: context?.state ?? cited.state,
+          tagLineage: context?.tagLineage ?? cited.tagLineage,
+          ledgerKnown: true,
+        }
+      : {}),
+  });
+  const pending = cited.status === "pending" && !identity.resolved;
+  const missing = !pending && !identity.resolved;
+  // Subscribed, so the click appears when the session's card opens and goes
+  // away when it closes, with no repaint of the surrounding surface needed.
+  const cardId = useCardIdForSession(sessionId);
+  const canRaise = !missing && !pending && cardId !== null && deck !== null;
   return (
     <TugSessionIdentity
       identity={identity}
       tier="chip"
       size={size}
       missing={missing}
-      onOpen={missing ? undefined : onOpen}
+      onOpen={canRaise ? () => raiseSessionCard(sessionId, deck) : undefined}
       className={className}
     />
   );

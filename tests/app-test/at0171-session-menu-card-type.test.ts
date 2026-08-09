@@ -101,10 +101,12 @@ describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => 
         // …but with no binding there is no dev block: the
         // session-state tier gates everything else off.
         await expectEnabled(app, "session.stop", false);
-        await expectEnabled(app, "session.model", false);
+        // One door for model / effort / permission mode, gated on
+        // `sessionSettingsChangeable` — an unbound card has nothing to set.
+        await expectEnabled(app, "session.ai", false);
         await expectEnabled(app, "session.new", false);
         await expectEnabled(app, "session.rewind", false);
-        await expectEnabled(app, "session.permissionMode.default", false);
+        await expectEnabled(app, "session.permissionMode.cycle", false);
         await expectEnabled(app, "edit.copyLastResponse", false);
       } catch (err) {
         const tail = app.tailLog(200);
@@ -140,9 +142,7 @@ describe.skipIf(!SHOULD_RUN)("AT0171: Session-menu card-type validation", () => 
         await expectEnabled(app, "session.new", true);
         await expectEnabled(app, "session.resume", true);
         await expectEnabled(app, "session.rename", true);
-        await expectEnabled(app, "session.model", true);
-        await expectEnabled(app, "session.effort", true);
-        await expectEnabled(app, "session.permissionMode.default", true);
+        await expectEnabled(app, "session.ai", true);
         await expectEnabled(app, "session.permissionMode.cycle", true);
         await expectEnabled(app, "session.permissionRules", true);
         await expectEnabled(app, "session.compact", true);

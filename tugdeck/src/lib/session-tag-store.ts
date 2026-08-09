@@ -68,18 +68,6 @@ class SessionTagStore {
   knownTags = (): ReadonlySet<string> => new Set(this.tags.values());
 
   /**
-   * Every session id this store has seen — what a commit trailer's 8-char short
-   * id is expanded against ([P10], Spec S03). A commit records the short id and
-   * the reader needs the whole one to resolve the reference, and this is the
-   * client's nearest thing to "the ids this ledger holds".
-   */
-  knownSessionIds = (): ReadonlySet<string> => new Set(this.tags.keys());
-
-  /**
-   * Set (trimmed) or clear (`null` / blank) the tag for `tugSessionId`. No-op
-   * + no notify when unchanged, so a redundant wire echo doesn't churn React.
-   */
-  /**
    * The session wearing `tag` right now, or `null` — the callsign resolved
    * back to an id ([P12]).
    *
@@ -97,6 +85,10 @@ class SessionTagStore {
   resolveTag = (tag: string): string | null =>
     this.byTag.get(tag.trim()) ?? null;
 
+  /**
+   * Set (trimmed) or clear (`null` / blank) the tag for `tugSessionId`. No-op
+   * + no notify when unchanged, so a redundant wire echo doesn't churn React.
+   */
   setTag(tugSessionId: string, tag: string | null): void {
     const trimmed = tag?.trim() ?? "";
     const current = this.tags.get(tugSessionId) ?? null;

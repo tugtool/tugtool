@@ -29,8 +29,22 @@
  *      assertion a re-introduction trips: an unstripped body or a chip that
  *      printed its id would both land here.
  *
+ *   C. **A commit whose session this ledger does not hold is SLASHED and
+ *      inert** ([P13], [D132]) — while still showing the callsign the commit
+ *      recorded. This test instance's `sessions.db` is fresh and per-instance,
+ *      so every real commit here cites a session it has no row for: exactly the
+ *      "written on another machine" case, arriving for free.
+ *
+ *      It is also the assertion that pins the two halves of [D132]'s
+ *      unresolvable-citation rule against each other. Folding the recorded
+ *      callsign into the identity's `tag` satisfies the "still shows what it
+ *      named" half and silently cancels the "slashed and inert" one — every
+ *      foreign commit then renders as a findable session, and a click on it
+ *      does nothing at all.
+ *
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  * @covers tugdeck/src/lib/session-identity.ts
+ * @covers tugdeck/src/lib/session-citation-store.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -122,6 +136,40 @@ describe.skipIf(!SHOULD_RUN)(
           // Every chip says something — an empty atom would be a chip that
           // resolved to nothing AND had nothing recorded to fall back on.
           for (const text of chips) expect(text.length).toBeGreaterThan(0);
+
+          // ---- C. A session this ledger never held reads unresolvable. -----
+          // Wait for the ledger's answer rather than the chip's mount: until
+          // `resolve_sessions` comes back a chip is honestly neither.
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(
+              ${JSON.stringify(CHIP)} + '[data-missing="true"]').length > 0`,
+            { timeoutMs: 10_000 },
+          );
+          const marks = await app.evalJS<
+            { text: string; missing: boolean; interactive: boolean }[]
+          >(
+            `Array.from(document.querySelectorAll(${JSON.stringify(CHIP)})).map(
+              function (el) {
+                return {
+                  text: (el.textContent || "").trim(),
+                  missing: el.getAttribute("data-missing") === "true",
+                  interactive: el.getAttribute("data-interactive") === "true",
+                };
+              })`,
+          );
+          const unresolved = marks.filter((m) => m.missing);
+          note(
+            `at0378 unresolvable chips: ${unresolved.length} of ${marks.length}`,
+          );
+          expect(unresolved.length).toBeGreaterThan(0);
+          // Inert: no click, on every one of them. A chip that offered a
+          // gesture into a session it cannot find is the failure this pins.
+          for (const mark of unresolved) {
+            expect(mark.interactive).toBe(false);
+            // And it still says what the commit named — a callsign or, for a
+            // legacy tagless trailer, the short id. Never nothing.
+            expect(mark.text.length).toBeGreaterThan(0);
+          }
 
           // ---- B. No raw id, and no trailer line in any body. ---------------
           const viewText = await app.evalJS<string>(

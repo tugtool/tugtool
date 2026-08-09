@@ -18,7 +18,7 @@
 
 import { dispatchCommand } from "@/command-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { cardIdForSession } from "@/lib/card-session-binding-store";
 import { transferFocusForActivation } from "@/focus-transfer";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import type { GazetteRef } from "@/protocol";
@@ -31,14 +31,6 @@ export type GazetteRefIntent =
   | { kind: "raise-card"; cardId: string }
   /** Nothing to do, and this is why — the chip renders disabled with it. */
   | { kind: "inert"; reason: string };
-
-/** The card currently bound to `sessionId`, or null if none is open. */
-export function cardIdForSession(sessionId: string): string | null {
-  for (const [cardId, binding] of cardSessionBindingStore.getSnapshot()) {
-    if (binding.tugSessionId === sessionId) return cardId;
-  }
-  return null;
-}
 
 /**
  * Resolve a ref to what clicking it should do.
