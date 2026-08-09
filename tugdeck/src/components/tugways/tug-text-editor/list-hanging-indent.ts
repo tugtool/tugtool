@@ -13,7 +13,12 @@
  * `Decoration.line` sets `padding-left: N ch` (indents the whole block,
  * so wrapped lines start at N) and `text-indent: -N ch` (pulls the FIRST
  * visual line back by N, cancelling the padding for it). N is measured in
- * `ch`. On a monospace surface (the Text card) the marker glyphs occupy
+ * `ch`. The padding is written as `calc(var(--tugx-cm-line-pad-x, 0px) +
+ * N ch)`: an inline `padding-left` longhand beats a surface theme's
+ * `padding` shorthand on `.cm-line`, so a surface that insets its lines
+ * must publish that inset as `--tugx-cm-line-pad-x` on `.cm-line` for the
+ * hanging indent to add to it rather than erase it. Surfaces with no
+ * inset need nothing — the `0px` fallback carries them. On a monospace surface (the Text card) the marker glyphs occupy
  * exactly those N cells, so the first line reads flush and only the wrap
  * hangs. On a proportional surface (e.g. the prompt entry under IBM Plex
  * Sans) `1ch` is the width of `0`, so the indent approximates rather than
@@ -51,7 +56,9 @@ function lineDecoForIndent(indent: number): Decoration {
   if (deco === undefined) {
     deco = Decoration.line({
       attributes: {
-        style: `text-indent:-${indent}ch;padding-left:${indent}ch`,
+        style:
+          `text-indent:-${indent}ch;` +
+          `padding-left:calc(var(--tugx-cm-line-pad-x, 0px) + ${indent}ch)`,
       },
     });
     decoCache.set(indent, deco);

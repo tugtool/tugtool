@@ -58,6 +58,10 @@ export const tugTextCardEditorTheme: Extension = EditorView.theme({
   },
   ".cm-line": {
     padding: "0 var(--tugx-textcard-line-padding-x)",
+    // Republish the left inset as the knob the markdown hanging-indent
+    // decoration adds to, so its inline `padding-left` extends this inset
+    // instead of replacing the shorthand that set it.
+    "--tugx-cm-line-pad-x": "var(--tugx-textcard-line-padding-x)",
   },
   "&.cm-focused": {
     outline: "none",

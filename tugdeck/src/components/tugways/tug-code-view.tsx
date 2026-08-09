@@ -208,6 +208,9 @@ const tugCodeViewTheme: Extension = EditorView.theme({
   },
   ".cm-line": {
     padding: "0 var(--tugx-codeview-line-padding-x)",
+    // See the Text card theme: the markdown hanging-indent decoration adds
+    // to this knob so its inline `padding-left` keeps the line inset.
+    "--tugx-cm-line-pad-x": "var(--tugx-codeview-line-padding-x)",
   },
   ".cm-gutters": {
     backgroundColor: "var(--tugx-codeview-gutter-bg)",

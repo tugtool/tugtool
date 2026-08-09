@@ -149,6 +149,7 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/state-preservation.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/theme.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/keymap.ts": 30,
+    "tugdeck/src/components/tugways/tug-text-editor/list-hanging-indent.ts": 30,
     // The editor substrate itself — every text surface in the app is this
     // component, so a test of any of them names it. Crossed the budget with
     // the arrow-exit prop (at0343).
