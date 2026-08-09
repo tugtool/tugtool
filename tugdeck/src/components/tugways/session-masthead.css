@@ -87,15 +87,11 @@
   --tugx-session-identity-row-pad: 0px;
   /* The two lines below the title start where the TITLE does, not where its dot
      does — three lines on two verticals read as a stack that was assembled
-     rather than set. The row's own indent is deliberately smaller than the dot's
-     whole advance, because a Lens RAIL cannot afford to indent its activity run
-     that far; a card-wide chrome tier can, so the masthead raises it to exactly
-     the dot's advance plus the gap after it. Both numbers are the row's, read
-     rather than retyped. */
-  --tugx-session-identity-row-indent: calc(
-    var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-slack, 0px) +
-      var(--tugx-session-row-name-gap)
-  );
+     rather than set. The row's own default indent is deliberately smaller,
+     because a Lens RAIL cannot afford to indent its activity run that far; a
+     card-wide chrome tier can, so the masthead takes the row's published title
+     inset whole rather than retyping its arithmetic. */
+  --tugx-session-identity-row-indent: var(--tugx-session-row-title-inset);
   min-width: 0;
   /* The masthead's column STRETCHES its children, and a list row is
      `align-items: center` — so a stretched row would center its three lines in

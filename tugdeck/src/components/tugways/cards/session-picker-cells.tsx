@@ -327,6 +327,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
       // Title, description, activity. The same component the Lens and the
       // masthead wear, at the same tier — three surfaces showing the same thing
       // had no business showing it three ways.
+      className="session-card-picker-session-row"
       name={
         // The row's own dot leads the line, so the identity renders its runs
         // only, with the filter mark painted inside EACH run.

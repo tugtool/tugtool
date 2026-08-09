@@ -200,6 +200,23 @@ body {
   gap: var(--tugx-session-identity-line-gap, 1px);
 }
 
+/* Where the TITLE's ink starts, as a distance from the row's leading edge —
+   the dot's advance, less the room its ink does not use, plus the air after
+   it. Published rather than left for each mount to re-derive: a stack whose
+   sub-lines hang off the title sets its indent to exactly this
+   (`--tugx-session-identity-row-indent: var(--tugx-session-row-title-inset)`),
+   and then the three lines share one vertical by construction instead of by
+   two files agreeing on the same arithmetic. A rail that wants its sub-lines
+   closer to its own edge than to the title — the Lens, whose large dot makes
+   the title inset a wide indent for a narrow column — sets its own number and
+   ignores this. */
+.tug-session-row {
+  --tugx-session-row-title-inset: calc(
+    var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-slack, 0px) +
+      var(--tugx-session-row-name-gap)
+  );
+}
+
 /* The sub-line takes a small indent off the title it belongs to, so the title
    reads as the heading of the pair beneath it. */
 .tug-session-row-description {
