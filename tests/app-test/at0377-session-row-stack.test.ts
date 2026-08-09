@@ -18,8 +18,8 @@
  *   B. **Tight leading, and a lead gap that separates identity from the
  *      pair.** Inherited body leading (~1.45) puts a 13px run in a 19px box,
  *      and three of those is a different row than the one the geometry was
- *      measured on. The two sub-lines also share one left vertical — the indent
- *      that makes the title read as their heading — which a zero-width strut
+ *      measured on. The two sub-lines also share one left vertical, and on this
+ *      small-dot surface it is the TITLE's own — which a zero-width strut
  *      collecting a container gap silently breaks.
  *
  *   C. **Every row is the same height, whatever its description says.** A row
@@ -287,14 +287,19 @@ describe.skipIf(!SHOULD_RUN)("at0377 — the three-level identity stack", () => 
         expect(geometry.nameLH).toBeLessThan(22);
         // The two sub-lines start on ONE vertical, indented off the row's own
         // leading edge — the indent is what makes the title read as their
-        // heading. It is deliberately SHORTER than the title's own advance: on a
-        // rail-width row, indenting the reading all the way to the title would
-        // cost the activity a fifth of its line, which is the one line here that
-        // cannot afford it. (The masthead, which has a card's width, raises the
-        // same knob to the title's advance — see at0375.)
+        // heading. On this surface that vertical is the TITLE's: the picker
+        // wears the small dot, and three lines on two verticals read as a stack
+        // that was assembled rather than set. The row publishes where its title
+        // starts and the picker takes that number whole, so the equality below
+        // is the whole point rather than a coincidence of two paddings.
+        //
+        // The Lens is the one mount that cannot follow — its 28px dot would make
+        // the title inset a wide indent for a narrow rail — so it keeps the
+        // row's own smaller default. Small dot, flush with the title; large dot,
+        // its own number.
         expect(geometry.pulseLeft).toBe(geometry.descLeft);
         expect(geometry.descLeft).toBeGreaterThan(geometry.rowLeft);
-        expect(geometry.descLeft).toBeLessThan(geometry.nameLeft);
+        expect(geometry.descLeft).toBe(geometry.nameLeft);
 
         // ---- C. Every row is one height, whatever it has to say. -----------
         //

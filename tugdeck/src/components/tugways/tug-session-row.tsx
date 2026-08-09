@@ -168,19 +168,30 @@ export const TUG_SESSION_SPARK_FULL_SCALE_CHARS = 1200;
 export const TUG_SESSION_SPARK_CURVE = sparklineCurves.gamma(0.6);
 
 /**
- * The tape's width, published to this component's own stylesheet.
+ * What every line ABOVE the tape must stop short of, published to this
+ * component's own stylesheet — the tape's own width plus the air it keeps.
  *
- * The tape rides the SECOND stacked line, so that line reserves its width by
- * flex layout and stops short of it on its own. The FIRST does not — the
- * headline runs the whole row and truncates at the row's edge, which puts a
- * long goal straight under a tape that is taller than its own line box and
- * lifted above it besides. So the first line has to be told what to stop
- * short of, and the number it must stop short of is the one right above:
- * declared in TS because the tape's size is, read from CSS because that is
- * where the stopping is done. One source, two readers.
+ * The tape rides the LAST line, so that line reserves its width by flex layout
+ * and stops short of it on its own. No line above it does: each runs the whole
+ * row and truncates at the row's edge, which puts them straight under a graph
+ * that is taller than its own line box and lifted above it besides. That is
+ * every line in the identity stack — the description as much as the activity's
+ * headline, and the description is the one the reader is most likely to have
+ * written something long into.
+ *
+ * A composition, not a raw width: the tape's size is declared in TS, the air
+ * beside it is a CSS token, and what the lines need is the sum. Publishing the
+ * sum is what lets one declaration serve both readers.
+ *
+ * `0px` when the mount passes no tape (the picker's rows) — a row reserving
+ * room for a graph it does not draw is width taken from the text for nothing.
  */
-const SPARK_ADVANCE_STYLE = {
-  "--tugx-session-row-spark-advance": `${TUG_SESSION_ROW_SPARK_WIDTH}px`,
+const SPARK_RESERVE_STYLE = {
+  "--tugx-session-row-spark-reserve": `calc(${TUG_SESSION_ROW_SPARK_WIDTH}px + var(--tugx-pulse-trailing-gap))`,
+} as React.CSSProperties;
+
+const NO_SPARK_RESERVE_STYLE = {
+  "--tugx-session-row-spark-reserve": "0px",
 } as React.CSSProperties;
 
 /**
@@ -349,7 +360,9 @@ export const TugSessionRow = React.forwardRef<
       ref={ref}
       className={cn("tug-session-row", className)}
       style={{
-        ...SPARK_ADVANCE_STYLE,
+        ...(sparkline !== undefined && sparkline !== null
+          ? SPARK_RESERVE_STYLE
+          : NO_SPARK_RESERVE_STYLE),
         ...(indicatorSize !== undefined
           ? {
               ["--tugx-session-row-dot-slack" as string]: `${dotInkSlack(

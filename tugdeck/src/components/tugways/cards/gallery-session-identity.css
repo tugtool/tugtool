@@ -252,7 +252,10 @@
 
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
 .gsi-masthead-description {
-  margin-top: 5px;
+  /* The step off the title. Deliberately small: the description belongs to the
+     name above it, and the pair beneath reads as one group only while this step
+     stays close to the one-pixel step inside the group. */
+  margin-top: 3px;
   margin-inline-start: var(--gsi-masthead-text-inset);
   /* The lifted tape overhangs this line's band, so the description stops
      short of it — the same reserve the activity run beneath already keeps. */
@@ -386,7 +389,7 @@
 
 /* @tug-renders-on var(--tugx-pane-bg) */
 .gsi-prow-description {
-  margin-top: 5px;
+  margin-top: 3px;
   margin-inline-start: var(--gsi-prow-text-inset);
   font-size: var(--tug-font-size-sm);
   color: var(--tug7-element-global-text-normal-default-rest);

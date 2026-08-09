@@ -1277,6 +1277,20 @@ fn strip_prefix_ci<'a>(text: &'a str, prefixes: &[&str]) -> Option<&'a str> {
 #[derive(Debug, Clone)]
 pub struct HeadlineReport {
     pub text: String,
+    /// The same line **before the character budget clipped it** — the model's
+    /// own words, in register, whole.
+    ///
+    /// This is what the grounding gate judges, and the distinction is not
+    /// cosmetic: [`clip`] marks a cut with `…`, and rule 3 refuses any token
+    /// carrying that marker because a model quoting a truncated path out of the
+    /// digest is the defect that rule exists to catch. Judging `text` therefore
+    /// made the gate refuse its OWN marker — every answer a few characters over
+    /// budget came back `path-bearing`, which on 2026-08-09 was 101 of the 112
+    /// descriptions refused in a day, and a session's description sat frozen for
+    /// as long as the model kept writing long. The clip is the strip's doing and
+    /// says nothing about whether the line is true; the gate must not read it as
+    /// evidence. What ships is still `text`.
+    pub unclipped: String,
     /// The normalizer changed the string at all.
     pub normalized: bool,
     /// An over-budget headline hung from a joiner, and the tail was cut there.
@@ -1358,6 +1372,7 @@ fn register_report(raw: &str, budget: usize, trim_joiner_tail: bool) -> Headline
         normalized: text != raw.trim(),
         trimmed: trimmed_text != collapsed,
         clipped: text != trimmed_text,
+        unclipped: trimmed_text,
         text,
     }
 }
@@ -1584,6 +1599,10 @@ fn digest_tool_names(digest: &str) -> HashSet<String> {
 /// 3. **path-bearing** — a token holding a `/` or `clip`'s `…` marker. A bare
 ///    filename is allowed: `score.py`'s rubric exempts identifiers and dotted
 ///    paths as proper names, and the gate must not contradict the rubric.
+///    The `…` half catches a model quoting a truncated path out of the digest,
+///    so what is judged must be the model's own words — callers pass
+///    [`HeadlineReport::unclipped`], never the clipped `text`, or the gate reads
+///    its own marker as the defect.
 /// 4. **activity restatement** — the subject is contained in one tool line. Only
 ///    tool lines, because restating a *synthesized ask* line is the correct
 ///    behavior — that line exists precisely so the headline follows the new
@@ -2410,7 +2429,8 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     // correction is appended for the model's benefit only.
     outcome.seen_digest = Some(digest.clone());
 
-    let refusal = match ground_headline(&report.text, &digest, mode) {
+    // Judged unclipped — see `HeadlineReport::unclipped`. What ships is `text`.
+    let refusal = match ground_headline(&report.unclipped, &digest, mode) {
         GroundingVerdict::Grounded => {
             outcome.headline = Some(report.text);
             return outcome;
@@ -2419,7 +2439,7 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
             info!(
                 session = %session_id,
                 rule = %rule,
-                headline = ?report.text,
+                headline = ?report.unclipped,
                 detail = ?detail,
                 "session overview: headline refused",
             );
@@ -2439,15 +2459,17 @@ async fn run_emit(job: EmitJob) -> EmitOutcome {
     // Grounded against the original digest, never against the corrected one —
     // the correction quotes the rejected headline, so grounding the second answer
     // against it would let the model pass by repeating itself.
+    // The rejected line as the gate SAW it, which is the unclipped one: quoting
+    // the clipped form would show the model a `…` nothing said about it.
     let corrected = format!(
         "{digest}{GROUNDING_CORRECTION} {}\nIt failed because: {} {}\n",
-        report.text, refusal.0, refusal.1,
+        report.unclipped, refusal.0, refusal.1,
     );
     let second = agent.run("summarize", corrected).await;
     let reask = match second {
         Ok(text) => {
             let report = headline_register_report(&text);
-            match ground_headline(&report.text, &digest, mode) {
+            match ground_headline(&report.unclipped, &digest, mode) {
                 GroundingVerdict::Grounded => {
                     outcome.headline = Some(report.text);
                     Reask::Rescued
@@ -2618,13 +2640,13 @@ async fn run_synopsis(job: SynopsisJob) {
     // does not support is the invention the gate exists to refuse, and that is
     // true whatever length the line is allowed to be.
     let report = synopsis_register_report(&answer);
-    match ground_headline(&report.text, &digest, GroundingMode::Intent) {
+    match ground_headline(&report.unclipped, &digest, GroundingMode::Intent) {
         GroundingVerdict::Grounded => {}
         GroundingVerdict::Ungrounded { rule, detail } => {
             info!(
                 session = %session_id,
                 rule = %rule,
-                synopsis = ?report.text,
+                synopsis = ?report.unclipped,
                 detail = ?detail,
                 "session synopsis: refused",
             );
@@ -3356,6 +3378,48 @@ mod tests {
             ground_headline("Fix composer typing lag", &digest, GroundingMode::Intent),
             GroundingVerdict::Grounded
         );
+    }
+
+    /// The gate must never read its OWN clip marker as the defect it is looking
+    /// for. `…` in a token means the model quoted a truncated path out of the
+    /// digest — but the register normalizer appends exactly that character when
+    /// an answer runs past the budget, so grounding the clipped text refused
+    /// every over-long description as `path-bearing`. On 2026-08-09 that was 101
+    /// of the day's 112 refusals, and the Lens showed a description frozen for as
+    /// long as the model kept writing long.
+    #[test]
+    fn an_over_budget_answer_is_not_refused_for_the_gate_s_own_clip_marker() {
+        let digest = compose_digest(
+            &[
+                "align the session description and pulse activity indent flush \
+                 with the title across the picker, the title bar, and the Lens"
+                    .to_string(),
+            ],
+            &["Edit(tugdeck/src/components/tugways/tug-session-row.css)".to_string()],
+            1,
+            false,
+        )
+        .expect("describes something");
+        let answer = "Align the session description and pulse activity indent \
+                      flush with the title across the picker, the title bar, and the Lens";
+        let report = synopsis_register_report(answer);
+        assert!(report.clipped, "the fixture must exercise the clip");
+        assert!(report.text.ends_with('…'));
+
+        assert_eq!(
+            ground_headline(&report.unclipped, &digest, GroundingMode::Intent),
+            GroundingVerdict::Grounded
+        );
+        // The same line judged clipped is what the defect looked like. Pinned so
+        // a caller that goes back to grounding `text` fails here rather than in
+        // a log nobody reads.
+        assert!(matches!(
+            ground_headline(&report.text, &digest, GroundingMode::Intent),
+            GroundingVerdict::Ungrounded {
+                rule: "path-bearing",
+                ..
+            }
+        ));
     }
 
     /// Restating one tool line is the intent/activity collapse the strip showed:

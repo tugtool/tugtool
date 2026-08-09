@@ -126,7 +126,7 @@
 .session-masthead-row .tug-session-row-description {
   padding-inline-end: max(
     calc(var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)),
-    calc(var(--tugx-session-row-spark-advance) + var(--tugx-pulse-trailing-gap))
+    var(--tugx-session-row-spark-reserve, 0px)
   );
 }
 
@@ -144,7 +144,8 @@
     var(--tugx-pane-title-fg-active) 85%,
     transparent
   );
-  font-size: var(--tug-font-size-sm);
+  /* Ink only. The SIZE of all three lines is the row's, stated once there —
+     a mount that restates it is how the three surfaces drifted apart. */
 }
 
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */

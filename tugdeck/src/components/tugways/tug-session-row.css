@@ -190,7 +190,7 @@ body {
    for a group it does not have. */
 .tug-session-row-lines:has(> .tug-session-row-description)
   .tug-session-row-name-line {
-  margin-block-end: var(--tugx-session-identity-lead-gap, 5px);
+  margin-block-end: var(--tugx-session-identity-lead-gap, 3px);
   line-height: var(--tug-line-height-tight);
 }
 
@@ -225,6 +225,15 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-inline-start: var(--tugx-session-identity-row-indent, 10px);
+  /* And it stops short of the tape, exactly as the activity line below it
+     does. The tape rides the LAST line but is taller than a line box and
+     lifted above its own besides, so it overhangs this band — a description
+     running the row's full width ends underneath the graph, which is the one
+     place on the row where two things are drawn on top of each other. The
+     reserve is the row's published one, so this line and the activity stop on
+     ONE vertical; it is `0px` on a mount with no tape, and this costs nothing
+     there. */
+  padding-inline-end: var(--tugx-session-row-spark-reserve, 0px);
   line-height: var(--tug-line-height-tight);
 }
 
@@ -278,16 +287,36 @@ body {
   padding-inline-start: var(--tugx-session-identity-row-indent, 10px);
 }
 
+/* The activity's TYPE on the three-level stack, stated once for every mount
+   that wears it — the masthead, the picker's rows, and the Lens rail.
+
+   `TugPulse`'s own presets set the run in the CONDENSED face, which is right
+   where the PULSE is a bar of its own: a tool call is a machine string in a
+   place where width is the scarce resource. It is wrong here. On this stack the
+   activity is the third line of a paragraph whose other two lines are ambient
+   sans — the same voice one size down is what makes them read as one entry, and
+   a condensed run under a sans description read as a caption pasted in from
+   somewhere else. So the stack sets the ambient face at the row size below the
+   description's, which is the gallery's rows section exactly.
+
+   Declared on the pulse's own element ([L20]'s documented mount-site override),
+   and after the preset rules in the cascade by specificity, not by order. */
+.tug-session-row:has(.tug-session-row-description) .tug-pulse {
+  --tugx-pulse-activity-font: var(--tug-font-family-sans);
+  --tugx-pulse-activity-size: var(--tug-font-size-xs);
+  --tugx-pulse-activity-weight: var(--tug-font-weight-regular);
+}
+
 /* Two numbers handed to `TugPulse` under the row's own names — the tape's
    lift and what the lines must stop short of. Declared on the pulse's own
    element, which is that component's documented mount-site override.
 
-   The reserve is the tape's own advance plus the gap it already keeps from
-   the run beside it, so the activity stops on a vertical a clear few pixels
-   off the tape rather than running under a graph it cannot be read through. */
+   The reserve is the tape's own advance plus the gap it keeps from the run
+   beside it, composed once by the component and published as
+   `--tugx-session-row-spark-reserve` (0 on a mount that draws no tape), so the
+   activity stops on a vertical a clear few pixels off the tape rather than
+   running under a graph it cannot be read through. */
 .tug-session-row .tug-pulse[data-layout="stacked"] {
   --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
-  --tugx-pulse-stacked-trailing-reserve: calc(
-    var(--tugx-session-row-spark-advance) + var(--tugx-pulse-trailing-gap)
-  );
+  --tugx-pulse-stacked-trailing-reserve: var(--tugx-session-row-spark-reserve);
 }
