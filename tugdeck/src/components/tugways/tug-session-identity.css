@@ -1,7 +1,4 @@
 /* @tug-pairings {
- * --tug7-element-atom-text-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | control
- * --tug7-element-atom-icon-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | control
- * --tug7-element-atom-border-normal-session-rest | --tug7-surface-atom-primary-normal-session-rest | decorative
  * --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-default-rest | content
  * --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | informational
  * } */
@@ -10,14 +7,15 @@
  * @tug-pairings
  * | Element                                        | Surface                                          | Role        | Context                                   |
  * |------------------------------------------------|--------------------------------------------------|-------------|-------------------------------------------|
- * | --tug7-element-atom-text-normal-session-rest    | --tug7-surface-atom-primary-normal-session-rest  | control     | [data-tier="chip"] (color)                |
- * | --tug7-element-atom-icon-normal-session-rest    | --tug7-surface-atom-primary-normal-session-rest  | control     | chip .tug-session-identity-icon (color)   |
- * | --tug7-element-atom-border-normal-session-rest  | --tug7-surface-atom-primary-normal-session-rest  | decorative  | [data-tier="chip"] (border-color)         |
- * | --tug7-element-global-text-normal-default-rest  | --tug7-surface-global-primary-normal-default-rest| content     | [data-tier="line"] (color)                |
- * | --tug7-element-global-text-normal-muted-rest    | --tug7-surface-global-primary-normal-default-rest| informational | line icon; the missing chip (color)     |
+ * | --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-default-rest| content     | both tiers (color)                        |
+ * | --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-default-rest| informational | the missing chip (color)                |
+ *
+ * The theme's session-color tokens are deliberately absent: the atom paints in
+ * text ink and the dot is its only color channel. The dot's own tones come from
+ * `TugProgressIndicator`'s phase mapping, which owns them.
  */
 
-/* The gap between the mark and the run is ONE number for both registers:
+/* The gap between the dot and the run is ONE number for both registers:
    presence and citation must read as the same mark at different weights, and
    a gap that varied by surface would break that. Knob defaults live as
    `var(--x, default)` fallbacks at point of use, never declared here. */
@@ -31,18 +29,50 @@
   white-space: nowrap;
 }
 
-.tug-session-identity-icon {
+/* The dot is a RING box: it paints at a fraction of its size and the ring
+   overhangs. Pulling the block edges in keeps it from setting the line's
+   height — the run's own text does that. */
+.tug-session-identity-dot {
+  display: inline-flex;
   flex: none;
+  margin-block: -4px;
 }
 
-/* `<project>/<callsign>` is ONE run: one span, one weight, one color. The
-   two-span form opened a flex gap after the slash and let each half truncate
-   independently — this can do neither. */
+/* The two title runs share a baseline, so the quieter callsign sits on the
+   name's line rather than beside it. */
 .tug-session-identity-run {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+}
+
+/* The user's name is the precious run: it never gives way beside a callsign.
+   Standing alone — an unnamed session, where the callsign fills this span — it
+   may elide, since it is then the only run there is. */
+.tug-session-identity-name {
+  flex: none;
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+.tug-session-identity-name:only-child {
+  flex: initial;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* The callsign after a custom name: quieter, and the run that gives way. Under
+   a narrow budget the user's own words survive and the minted handle elides;
+   the tooltip and every copy path still carry it whole. `white-space: pre`
+   keeps the ` : ` separator, which belongs to this run so it disappears with
+   it. */
+.tug-session-identity-callsign {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  font-weight: var(--tug-font-weight-regular, 400);
+  opacity: 0.78;
 }
 
 /* ── Presence: the session as itself. No enclosure. ───────────────────── */
@@ -52,36 +82,23 @@
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* The mark is quieter than the name it marks — it says what kind of thing
-   this is, and the name is the thing. A mount site that seats the line on
-   chrome of its own overrides the knob: the masthead points it at the pane's
-   title-bar icon color, because there the mark IS the card's title icon and
-   has to read like every other card's. */
-.tug-session-identity[data-tier="line"] .tug-session-identity-icon {
-  color: var(
-    --tugx-session-identity-icon-color,
-    var(--tug7-element-global-text-normal-muted-rest)
-  );
-}
-
 /* ── Citation: the session atom. A rounded pill, deliberately not the
-      squared house badge, in the theme's one session color. ───────────── */
+      squared house badge, painted in text ink — the dot is the pill's
+      only color. ───────────────────────────────────────────────────── */
 
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
 .tug-session-identity[data-tier="chip"] {
+  gap: 5px;
   padding: 2px 9px;
-  border: 1px solid var(--tug7-element-atom-border-normal-session-rest);
+  border: 1px solid color-mix(in oklab, currentcolor 30%, transparent);
   border-radius: 999px;
-  background-color: var(--tug7-surface-atom-primary-normal-session-rest);
-  color: var(--tug7-element-atom-text-normal-session-rest);
+  background-color: transparent;
+  color: var(--tug7-element-global-text-normal-default-rest);
   font-size: var(--tug-font-size-sm);
 }
 
-.tug-session-identity[data-tier="chip"] .tug-session-identity-icon {
-  color: var(--tug7-element-atom-icon-normal-session-rest);
-}
-
 .tug-session-identity[data-tier="chip"][data-size="2xs"] {
+  gap: 4px;
   padding: 1px 7px;
   font-size: var(--tug-font-size-xs);
 }
@@ -100,22 +117,16 @@
 
 /* ── The unresolvable citation ─────────────────────────────────────────
    The atom keeps its SHAPE — a reader still needs to know what kind of
-   thing is named — and drops the session color for muted ink, so it reads
-   as inert rather than as a link that happens to be broken. The slashed
-   icon carries the failure; the tooltip carries the sentence. */
+   thing is named — dashes its border and mutes its ink, so it reads as
+   inert rather than as a link that happens to be broken. With no icon
+   left to slash, shape alone states the failure; the tooltip carries the
+   sentence. */
 
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
 .tug-session-identity[data-tier="chip"][data-missing="true"] {
-  border-color: color-mix(in oklab, currentcolor 30%, transparent);
   border-style: dashed;
-  background-color: transparent;
   color: var(--tug7-element-global-text-normal-muted-rest);
   cursor: default;
-}
-
-.tug-session-identity[data-tier="chip"][data-missing="true"]
-  .tug-session-identity-icon {
-  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* ── Hover content ──────────────────────────────────────────────────────

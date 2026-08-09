@@ -10,10 +10,11 @@
  * is correct, the wiring is not — which is why the hook's contract can only be
  * pinned against the real app.
  *
- *   A. **The title bar reads `project/callsign`, with no `(branch)` suffix.**
- *      The branch left identity: it is telemetry now, and lives only in the
- *      placard. The card publishes its Line string to `cardTitleStore` and the
- *      pane wears it.
+ *   A. **A Session pane's title bar reads the session's own name, and nothing
+ *      else.** No `(branch)` suffix — the branch left identity and is telemetry
+ *      now — and no `project/` prefix, which belongs to `sessionIdentityLine`,
+ *      the pane-title CHANNEL the tab strip and the Window menu read. A Session
+ *      pane's bar wears the masthead, and the masthead's ink is the name.
  *
  *   B. **An identity change repaints a live surface with no reload.** The
  *      change arrives the way the wire delivers it — a real `session_updated`
@@ -25,19 +26,26 @@
  *      seconds after spawn. A bare-resolver implementation fails here and only
  *      here.
  *
- *   C. **A `/rename` does NOT change the Line string.** This is the
- *      consequence of the callsign leading: `<project>/<callsign>` carries no
- *      name arm, so the title bar, the tab strip, and the Window menu all read
- *      the same string before and after. Asserting a repaint there would be
- *      asserting a bug — this asserts the constancy instead, which is what
- *      makes `cardTitleStore`'s channel reader-compatibility rather than a
- *      notification path. The name's own landing surface is the masthead's
- *      description line, and it arrives with the masthead.
+ *   C. **A `/rename` LEADS the title, and the callsign follows it.** The user's
+ *      own name outranks a callsign Tug minted for itself, so it takes the front
+ *      of the title on every graphical surface — and the callsign stays beside
+ *      it, because that is the permanent citable handle a rename never changes.
+ *      Two runs, sized separately, on the same live mounted row. The Line
+ *      string's own constancy across a rename is a pure function and is pinned in
+ *      `lib/__tests__/session-identity.test.ts`.
+ *
+ * The per-run filter mark is deliberately NOT asserted here. It is enforced by
+ * construction — `TugSessionIdentity` highlights each run separately and never
+ * sees a joined string — and the Lens Cards filter cannot reach the case anyway:
+ * it matches a card row on `project/callsign`, not on the session's custom name,
+ * so a query for the name the user typed drops the row rather than marking it.
+ * That gap is recorded in the plan's follow-ons.
  *
  * @covers tugdeck/src/lib/session-identity.ts
  * @covers tugdeck/src/lib/session-synopsis-store.ts
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -52,6 +60,8 @@ const PROJECT_DIR = "/Users/tester/src/tugtool";
 const TAG = "stocky-pixie";
 /** What the ledger sends when it rerolls a collided mint ([P12]). */
 const REROLLED_TAG = "syrupy-beam";
+/** The user's own name for the session, from `/rename`. */
+const RENAME = "Refactor the Lens";
 const LENS_ROW = ".lens-cards-list .lens-cards-row[data-session-id]";
 // Scoped to the session pane by id: the Lens is a pane too, and once it is
 // open an unscoped query would read ITS title bar.
@@ -106,11 +116,11 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
           ),
         ).toBe(true);
 
-        // ---- A. The title bar is `project/callsign`, and nothing else. -----
+        // ---- A. The title bar is the session name, and nothing else. -------
         await app.waitForCondition<boolean>(
           `(function(){
             var bar = document.querySelector(${JSON.stringify(TITLE_BAR)});
-            return bar !== null && bar.innerText.indexOf("tugtool/${TAG}") !== -1;
+            return bar !== null && bar.innerText.indexOf("${TAG}") !== -1;
           })()`,
           { timeoutMs: 15_000 },
         );
@@ -123,8 +133,13 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
         // The `(branch)` suffix is retired outright — not merely dropped on
         // `main`, which is what the old rule did and what would still pass a
         // test that only checked for the word "main".
-        expect(barText).toContain(`tugtool/${TAG}`);
+        expect(barText).toContain(TAG);
         expect(barText).not.toContain("(");
+        // And no `project/` prefix: that belongs to `sessionIdentityLine`, the
+        // pane-title CHANNEL the tab strip and the Window menu read (asserted on
+        // a stacked tab in at0381). A Session pane's bar wears the masthead, and
+        // the masthead's title ink is the session's own name.
+        expect(barText).not.toContain("tugtool/");
         // The UUID never leads, and never appears at all in a name.
         expect(barText).not.toContain(SESSION_ID);
 
@@ -144,7 +159,7 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
             return t === null ? "" : t.innerText;
           })()`,
         );
-        expect(lineBefore).toContain(`tugtool/${TAG}`);
+        expect(lineBefore).toContain(TAG);
 
         // The ledger rerolls a collided mint rather than suffixing it, so a
         // callsign shown "from the drop" legitimately changes ONCE, seconds
@@ -168,7 +183,7 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
             var row = document.querySelector(${JSON.stringify(LENS_ROW)});
             if (row === null) return false;
             var t = row.querySelector(".tug-list-row-title");
-            return t !== null && t.innerText.indexOf("tugtool/${REROLLED_TAG}") !== -1;
+            return t !== null && t.innerText.indexOf("${REROLLED_TAG}") !== -1;
           })()`,
           { timeoutMs: 8_000 },
         );
@@ -176,48 +191,60 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
         await app.waitForCondition<boolean>(
           `(function(){
             var bar = document.querySelector(${JSON.stringify(TITLE_BAR)});
-            return bar !== null && bar.innerText.indexOf("tugtool/${REROLLED_TAG}") !== -1;
+            return bar !== null && bar.innerText.indexOf("${REROLLED_TAG}") !== -1;
           })()`,
           { timeoutMs: 8_000 },
         );
 
-        // ---- C. A `/rename` does NOT move the Line string. -----------------
+        // ---- C. A `/rename` LEADS the title, and the callsign follows. -----
         //
-        // The callsign leads and the Line carries no name arm, so every
-        // Line-tier surface — title bar, tab strip, Window menu — reads the
-        // same before and after. Asserting a repaint there would be asserting
-        // a bug; this asserts the constancy `cardTitleStore`'s `set` no-op
-        // rests on. The name's own landing surface is the masthead's
-        // description line, which arrives with the masthead.
-        const lineBeforeRename = await app.evalJS<string>(
-          `(function(){
-            var row = document.querySelector(${JSON.stringify(LENS_ROW)});
-            var t = row.querySelector(".tug-list-row-title");
-            return t === null ? "" : t.innerText;
-          })()`,
-        );
+        // The user's own name outranks a callsign Tug minted for itself, so it
+        // takes the front of the title on every graphical surface — and the
+        // callsign stays beside it, because that is the permanent citable handle
+        // a rename never changes. Both runs, on the same live mounted row, with
+        // no reload.
         expect(
           await app.evalJS<boolean>(
             `window.__tug.publishSessionUpdated(${JSON.stringify(
               sessionUpdated({
                 tag: REROLLED_TAG,
-                name: "Refactor the Lens",
+                name: RENAME,
                 name_user_set: true,
               }),
             )})`,
           ),
         ).toBe(true);
-        // Give a repaint every chance to land before claiming none happened.
-        await new Promise<void>((r) => setTimeout(r, 500));
-        const lineAfterRename = await app.evalJS<string>(
+        await app.waitForCondition<boolean>(
           `(function(){
             var row = document.querySelector(${JSON.stringify(LENS_ROW)});
-            var t = row.querySelector(".tug-list-row-title");
-            return t === null ? "" : t.innerText;
+            if (row === null) return false;
+            var name = row.querySelector(".tug-session-identity-name");
+            return name !== null && name.innerText.indexOf(${JSON.stringify(RENAME)}) !== -1;
+          })()`,
+          { timeoutMs: 8_000 },
+        );
+        const runs = await app.evalJS<{ name: string; callsign: string }>(
+          `(function(){
+            var row = document.querySelector(${JSON.stringify(LENS_ROW)});
+            var name = row.querySelector(".tug-session-identity-name");
+            var callsign = row.querySelector(".tug-session-identity-callsign");
+            return {
+              name: name === null ? "" : name.innerText,
+              callsign: callsign === null ? "" : callsign.innerText,
+            };
           })()`,
         );
-        expect(lineAfterRename).toBe(lineBeforeRename);
-        expect(lineAfterRename).not.toContain("Refactor the Lens");
+        // Two runs, sized separately — which is what lets the callsign be the
+        // one that elides under a squeeze (at0374 measures that).
+        expect(runs.name).toContain(RENAME);
+        expect(runs.callsign).toContain(REROLLED_TAG);
+        // The Line string the pane-title channel carries is a different, and
+        // deliberately CONSTANT, thing: `sessionIdentityLine` has no name arm, so
+        // the tab strip and the Window menu read the same string before and after
+        // a rename. That is a pure function and is pinned in
+        // `lib/__tests__/session-identity.test.ts`; asserting it here would need
+        // a surface that still shows it, and a masthead pane's bar does not.
+
       } finally {
         await app.close();
       }

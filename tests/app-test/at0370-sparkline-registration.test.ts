@@ -59,8 +59,15 @@ import { mkTempTugbank, rmTempTugbank, seedTugbankForLaunch } from "./_harness/t
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-/** Enough rows that the Lens Cards list genuinely overflows and can scroll. */
-const SESSION_COUNT = 12;
+/**
+ * Enough rows that the Lens Cards list genuinely overflows and can scroll.
+ *
+ * The count is asserted rather than trusted (`scrollable > 0` below): a session
+ * row is three lines tall now that the standing-goal level left it, so twelve of
+ * them fit the rail without overflowing and every scroll cycle here would have
+ * proved nothing.
+ */
+const SESSION_COUNT = 18;
 
 const sid = (n: number): string =>
   `a7c0d1ea-0000-4000-8000-${String(370_000 + n).padStart(12, "0")}`;

@@ -118,8 +118,8 @@
 /* The citation chip naming the session that made the commit ([P10]). Same
    left gap as the join badge, so the two marks after the subject read as one
    trailing run whether a commit carries one of them or both. The chip brings
-   its own color and shape from the `atom` slot; nothing here may restate them
-   ([L20]). */
+   its own shape and its own ink, and its live dot is its only color; nothing
+   here may restate any of them ([L20]). */
 .tug-history-list-session-chip {
   margin-left: 8px;
   vertical-align: baseline;

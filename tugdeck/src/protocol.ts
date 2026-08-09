@@ -150,9 +150,10 @@ export interface SessionRow {
   tag_lineage: string | null;
   /** The rolling generated description — a standing line saying what the
    *  session is about, composed on tugcast's Summarize lane. `null` until the
-   *  first one is written, and never written while `name_user_set` is true: a
-   *  `/rename` freezes the description line. Defaults to `null` for older
-   *  tugcast. Keep in lockstep with the Rust `SessionRow.synopsis`. */
+   *  first one is written. Independent of `name` — a renamed session keeps
+   *  being described, because the name is the title and this is the line
+   *  beneath it. Defaults to `null` for older tugcast. Keep in lockstep with
+   *  the Rust `SessionRow.synopsis`. */
   synopsis: string | null;
   /**
    * Provenance of the row: `"tug"` rows come from the sqlite ledger
@@ -171,10 +172,12 @@ export interface SessionRow {
    */
   terminal_live: TerminalLive | null;
   /**
-   * On-disk JSONL size in bytes — the picker's size readout (an orthogonal
-   * "how big" signal, deliberately *not* a message/turn proxy). Present only
-   * on `list_sessions` rows that have been scanned; `null`/absent for
-   * live-only ledger rows, `session_updated` pushes, and older tugcast.
+   * On-disk JSONL size in bytes — the picker's and the masthead's size readout
+   * (an orthogonal "how big" signal, deliberately *not* a message/turn proxy).
+   * Carried on `list_sessions` rows and on **every** `session_updated` push,
+   * both read from the same scan cache: a push that omitted it would blank the
+   * readout, because the client replaces its cached row wholesale. `null` for a
+   * session the scanner has never seen, and absent from an older tugcast.
    */
   file_size?: number | null;
 }

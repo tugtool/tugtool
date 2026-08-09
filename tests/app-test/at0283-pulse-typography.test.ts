@@ -141,6 +141,11 @@ async function stackedSteps(app: App): Promise<Array<number | null>> {
          var runs = pulses[i].querySelectorAll(
            '[data-slot="tug-pulse-headline"], [data-slot="tug-pulse-activity"]'
          );
+         /* A stacked PULSE with one run is the ordinary session shape — no
+            headline was supplied, so there is no second baseline to step to and
+            nothing here to measure. Skipped rather than recorded as a null,
+            which means "two runs that could not be measured". */
+         if (runs.length === 1) { continue; }
          if (runs.length !== 2) { out.push(null); continue; }
          var b = [];
          for (var j = 0; j < 2; j++) {
@@ -213,9 +218,9 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
         const steps = await stackedSteps(app);
         expect(steps.length).toBeGreaterThan(0);
         for (const s of steps) {
-          // A null is a stacked PULSE that rendered fewer than two runs —
-          // i.e. it dropped a level, and the Lens row carrying it just changed
-          // height. Neither level is ever absent; an empty one stands in.
+          // A null is a two-run stacked PULSE whose baselines could not be
+          // probed — the step is declared, so a run that cannot report one is a
+          // failure rather than a shape.
           expect(s).not.toBeNull();
           expect(Math.abs(s! - declaredStep)).toBeLessThan(0.51);
         }
@@ -360,59 +365,31 @@ describe.skipIf(!SHOULD_RUN)("AT0283: the PULSE's declared type metrics", () => 
         // loudly if the face is missing rather than marginally.
         expect(ligature.glyph).toBeLessThan(ligature.literal * 0.6);
 
-        // ── 7. Every session-row fit is a real reclamation ─────────────
-        // A fit exists to hand width back to the runs that can lose it. So
-        // each one is measured against the shipping `gutter` fit at the same
-        // rail width, on the same fixture: none may hand the activity LESS
-        // than gutter does, and the three that reclaim a column must hand it
-        // strictly more. This is the assertion that catches a fit whose CSS
-        // stopped reclaiming anything while still reading as a proposal.
-        const fits = await app.evalJS<
-          ReadonlyArray<{ fit: string; activity: number; height: number }>
+        // ── 7. The shipping row hands its activity a real measure ──────
+        // The `inset` fit exists to hand the leading column back to the lines
+        // under the title, and it is the only fit left — the four that were
+        // auditioned against it (`gutter`, `reveal`, `wash`, `duplex`) retired
+        // with the audition, and the comparison table with them. What survives
+        // is the claim that matters at a rail width: the activity run gets a
+        // measure worth reading, and rows do not differ in height.
+        const rows = await app.evalJS<
+          ReadonlyArray<{ activity: number; height: number }>
         >(
           `Array.from(document.querySelectorAll(
-             ${JSON.stringify(`${CARD} [data-gpd-fit-measure]`)}
+             ${JSON.stringify(`${CARD} .gpd-rail [data-slot="tug-session-row"]`)}
            )).map(function(row){
              var run = row.querySelector('[data-slot="tug-pulse-activity"]');
              return {
-               fit: row.getAttribute("data-gpd-fit-measure"),
                activity: run === null ? -1 : run.clientWidth,
                height: row.getBoundingClientRect().height,
              };
            })`,
         );
-        const byFit = new Map(fits.map((f) => [f.fit, f]));
-        const gutter = byFit.get("gutter");
-        expect(gutter).not.toBeUndefined();
-        expect(gutter!.activity).toBeGreaterThan(0);
-        // The three column-reclaiming fits each take a whole column out of the
-        // flow, so the gain is a column's width and not a rounding — and none
-        // of them may resize the row, since a Lens whose rows changed height
-        // with the fit would reflow its list on a design decision.
-        for (const fit of ["inset", "reveal", "wash"]) {
-          const f = byFit.get(fit);
-          expect(f).not.toBeUndefined();
-          expect(f!.activity).toBeGreaterThan(gutter!.activity + 8);
-          expect(Math.abs(f!.height - gutter!.height)).toBeLessThan(0.51);
+        expect(rows.length).toBeGreaterThan(1);
+        for (const row of rows) {
+          expect(row.activity).toBeGreaterThan(120);
+          expect(Math.abs(row.height - rows[0].height)).toBeLessThan(0.51);
         }
-        // `duplex` trades the other way — a shorter row for a shared line — so
-        // it is pinned on height instead. What it must NOT do is starve the
-        // activity: two runs on one bar with the goal pinned collapses the
-        // second to a few pixels, which is the defect `giveWay="both"` fixes,
-        // and a run that is present but unreadable is the one outcome no fit
-        // may ship.
-        const duplex = byFit.get("duplex");
-        expect(duplex).not.toBeUndefined();
-        expect(duplex!.height).toBeLessThan(gutter!.height);
-        expect(duplex!.activity).toBeGreaterThan(gutter!.activity * 0.3);
-        // And the meter reported what it measured, rather than sitting blank.
-        const readouts = await app.evalJS<readonly string[]>(
-          `Array.from(document.querySelectorAll(
-             ${JSON.stringify(`${CARD} .gpd-fit-readout`)}
-           )).map(function(el){ return el.textContent; })`,
-        );
-        expect(readouts.length).toBe(fits.length);
-        for (const line of readouts) expect(line).toMatch(/^activity \d+px/);
       } finally {
         await app.close();
       }

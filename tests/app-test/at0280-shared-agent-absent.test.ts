@@ -26,11 +26,13 @@
  * correlation in `shell-classify-store.test.ts`.
  *
  * Three claims:
- *   1. The PULSE line renders its activity run, and its headline run says the
- *      PLACEHOLDER and nothing else. With no agent no goal is ever composed,
- *      and the reading for that is the same word an idle session shows in the
- *      Lens — never an invented goal, and never a line that quietly fabricates
- *      one from the activity beside it.
+ *   1. The masthead renders its activity run, and there is no headline run at
+ *      all — nor any `PULSE` ink standing in for one. With no agent no goal is
+ *      ever composed, and the reading for that is now an absence rather than a
+ *      placeholder word: the standing-goal level left chrome, so a session with
+ *      nothing composed for it simply has two lines that say true things and no
+ *      third that says a word. Never an invented goal, and never a line that
+ *      quietly fabricates one from the activity beside it.
  *   2. Typing lines that open with a PATH executable — `make test`, `git
  *      status` — leaves the composer holding plain text: no routing chip, no
  *      atom of any kind. Routing is a submit-time decision over the whole
@@ -74,9 +76,10 @@ const SID = "a7c0d1ea-0000-4000-8000-000000000280";
 const CARD = '[data-card-id="A"]';
 const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const ATOM = `${CARD} [data-slot="tug-text-editor"] img[data-atom-type]`;
-// The card's PULSE lives in its pane chrome, on the masthead.
+// The card's activity line lives in its pane chrome, on the masthead.
 const PANE = '.tug-pane[data-pane-id="p1"]';
-const STRIP = `${PANE} .session-masthead-pulse`;
+const MASTHEAD = `${PANE} [data-slot="session-masthead"]`;
+const STRIP = `${MASTHEAD} .tug-pulse`;
 const HEADLINE = `${PANE} [data-slot="tug-pulse-headline"]`;
 
 // The Lens's own row for the same session. Addressed the way
@@ -123,17 +126,16 @@ async function count(app: App, selector: string): Promise<number> {
 }
 
 /**
- * What the masthead's headline run says, or `""` when there is no run at all.
+ * Everything the masthead has to say, as rendered text.
  *
- * Read as TEXT rather than counted: the run is always present — with no goal
- * composed it carries the word `PULSE` as a stand-in, which is exactly the
- * state this file is about. Counting it would pass whether the placeholder or
- * a fabricated goal were showing.
+ * The headline run's ABSENCE is what this file pins, and an absence is counted
+ * rather than read — but a count alone would pass while a placeholder word
+ * appeared on some other line, so the whole tier's ink is checked beside it.
  */
-async function headlineText(app: App): Promise<string> {
+async function mastheadText(app: App): Promise<string> {
   return app.evalJS<string>(
-    `(document.querySelector(${JSON.stringify(HEADLINE)})
-       || { textContent: "" }).textContent`,
+    `(document.querySelector(${JSON.stringify(MASTHEAD)})
+       || { innerText: "" }).innerText`,
   );
 }
 
@@ -190,15 +192,15 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 20_000 },
           );
 
-          // 1. The PULSE line is there, and its headline run says only the
-          //    placeholder — no agent means no goal was ever composed. The run
-          //    itself is always present (it is the word `PULSE` standing in),
-          //    so the claim is about what it SAYS, not whether it exists.
+          // 1. The activity line is there, and there is no headline run at all
+          //    — no agent means no goal was ever composed, and an absent level
+          //    is now an absence rather than a word standing in for one.
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(STRIP)}) !== null`,
             { timeoutMs: 20_000 },
           );
-          expect(await headlineText(app)).toBe("PULSE");
+          expect(await count(app, HEADLINE)).toBe(0);
+          expect(await mastheadText(app)).not.toContain("PULSE");
 
           // 2. Two lines that open with a real PATH executable — the exact
           //    shape that would be put to the agent when one is available.
@@ -209,7 +211,8 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await count(app, ATOM)).toBe(0);
 
           // Still no composed goal after all that activity.
-          expect(await headlineText(app)).toBe("PULSE");
+          expect(await count(app, HEADLINE)).toBe(0);
+          expect(await mastheadText(app)).not.toContain("PULSE");
 
           // 3. The Lens says the same thing. The strip and the Lens row are
           //    two separate readers of the same overview, so a regression can
@@ -220,15 +223,14 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(LENS_ROW)}) !== null`,
             { timeoutMs: 10_000 },
           );
-          // The intent LINE is always there — the PULSE holds both levels so
-          // Lens rows keep their height — so what "no overview" looks like is
-          // the stand-in, not a missing run.
-          expect(await count(app, LENS_INTENT)).toBe(1);
+          // No goal line in the rail either, and no word standing in for one.
+          expect(await count(app, LENS_INTENT)).toBe(0);
           expect(
             await app.evalJS<string>(
-              `document.querySelector(${JSON.stringify(LENS_INTENT)}).textContent`,
+              `(document.querySelector(${JSON.stringify(LENS_ROW)})
+                 || { innerText: "" }).innerText`,
             ),
-          ).toBe("PULSE");
+          ).not.toContain("PULSE");
         } finally {
           await app.close();
           rmTempTugbank(tugbankPath);

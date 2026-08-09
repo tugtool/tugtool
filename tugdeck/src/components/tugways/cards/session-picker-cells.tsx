@@ -82,9 +82,11 @@ import type {
 } from "@/lib/session-picker-data-source";
 import {
   formatFailedRowSubtitle,
-  formatSessionRowSubtitle,
   truncateForDisplay,
 } from "./session-picker-format";
+import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
+import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import { sessionActivityRestLine } from "@/lib/session-activity-line";
 import {
   sessionIdentityContextFrom,
   useSessionIdentity,
@@ -201,26 +203,32 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
     row.last_user_prompt !== null && row.last_user_prompt.length > 0
       ? row.last_user_prompt
       : null;
-  // The callsign leads: it is the session's identity, and it is the same
-  // callsign every other surface in the app shows for this session. A legacy
-  // tagless row degrades to its short id — never the raw UUID.
+  // The title leads with the user's own name when there is one, then the
+  // callsign — the same grammar every other surface in the app shows for this
+  // session. A legacy tagless row degrades to its short id, never the raw UUID.
+  // Rendered by the identity component itself, in two separately-sized runs.
   const identity = useSessionIdentity(
     row.session_id,
     sessionIdentityContextFrom(row),
   );
-  const titleText = identity.tag ?? identity.shortId;
-  const snippet = truncateForDisplay(titleText, 64);
 
-  // The description line — the `/rename` name, else the rolling synopsis, with
-  // the `last_user_prompt` snippet standing in until a session has either.
-  const description = truncateForDisplay(identity.title ?? fullPrompt ?? "", 96);
+  // The description line — the agent's rolling description, with the
+  // `last_user_prompt` snippet standing in until a session has one, and the
+  // creation stamp behind that. The user's own name is not a candidate here: it
+  // leads the title above. The prompt rung is load-bearing at THIS surface: for
+  // every external session the scanner has just found, the user's own first
+  // prompt is the only human-meaningful text the row has.
+  const standIn =
+    fullPrompt ?? (row.created_at > 0 ? `Created ${formatRestingStamp(row.created_at)}` : "");
+  const description = truncateForDisplay(identity.description ?? standIn, 96);
+  const descriptionStandIn = identity.description === null;
 
-  // The metadata line, composed by `formatSessionRowSubtitle`: the relative
-  // timestamp, the turn count, the on-disk JSONL size, and the short id, with
-  // whatever is unknown for this row dropping out. The state replaces the whole
-  // line when a row is not simply resumable — a row you cannot resume has one
-  // thing to say, and it is not how many turns it has.
-  const metadata = isLive
+  // The activity line: the session's rest facts — how many turns, how big, when
+  // it last moved. No `Ready.`: a closed session in this list is not ready for
+  // anything, it is a file on disk. The STATE replaces the whole line when a row
+  // is not simply resumable — a row you cannot resume has one thing to say, and
+  // it is not how many turns it has.
+  const activity = isLive
     ? "Live in another card"
     : isTerminalLive
       ? row.terminal_live?.status === "busy"
@@ -230,7 +238,12 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
           : "In use in a terminal"
       : isFailed
         ? formatFailedRowSubtitle(row)
-        : formatSessionRowSubtitle(row);
+        : sessionActivityRestLine({
+            turnCount: row.turn_count,
+            fileSize: row.file_size ?? null,
+            lastUsedAtMs: row.last_used_at,
+            hasCard: row.card_id !== null,
+          });
 
   const idShort = identity.shortId;
 
@@ -293,22 +306,31 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // long prompt tail) shows no mark, which is correct.
   return (
     <TugSessionRow
-      // The identity stack: callsign, description, PULSE, metadata. The same
-      // component the Lens wears, at the same tier — the picker and the Lens
-      // are showing the same thing and had no business showing it two ways.
-      name={renderFilterHighlight(snippet, filterQuery)}
+      // Title, description, activity. The same component the Lens and the
+      // masthead wear, at the same tier — three surfaces showing the same thing
+      // had no business showing it three ways.
+      name={
+        // The row's own dot leads the line, so the identity renders its runs
+        // only, with the filter mark painted inside EACH run.
+        <TugSessionIdentity
+          identity={identity}
+          tier="line"
+          dot={false}
+          highlight={filterQuery}
+        />
+      }
       description={renderFilterHighlight(description, filterQuery)}
-      metadata={renderFilterHighlight(metadata, filterQuery)}
-      // A session with a live card gets the phase dot; one without gets none,
-      // which is the honest rendering rather than an invented state. Most
-      // picker rows are closed sessions, so most show no dot.
+      descriptionStandIn={descriptionStandIn}
+      activity={renderFilterHighlight(activity, filterQuery)}
+      // Every row gets a dot, including the closed ones — which is most of
+      // them. A session whose live state cannot be reached reads idle, so the
+      // dot is quiet rather than absent or red, and the column of marks says
+      // which rows are working without saying anything false about the rest.
       indicator={
-        row.card_id !== null ? (
-          <SessionPhaseDot
-            cardId={row.card_id}
-            size={TUG_SESSION_ROW_STACK_DOT_SIZE}
-          />
-        ) : undefined
+        <SessionPhaseDot
+          sessionId={row.session_id}
+          size={TUG_SESSION_ROW_STACK_DOT_SIZE}
+        />
       }
       selected={isSelected}
       disabled={isLive || isTerminalLive}

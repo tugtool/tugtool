@@ -1,13 +1,22 @@
 /**
- * gallery-session-identity.tsx — the session-reference design spike.
+ * gallery-session-identity.tsx — the session-reference design surface.
  *
- * The brief is `roadmap/session-reference-brief.md`: one identity model, one
- * resolver, one component family. Earlier rounds settled the two registers
- * (presence vs citation), the session atom's shape and color, the flat-text
- * citation, and the fork-lineage grammar. This round — the seventh — is the
- * CONTENT round: what the surfaces actually say, and in what order.
+ * **SHIPPED.** The brief was `roadmap/session-reference-brief.md`: one identity
+ * model, one resolver, one component family. Earlier rounds settled the two
+ * registers (presence vs citation), the session atom's shape, the flat-text
+ * citation, and the fork-lineage grammar. The seventh round settled the
+ * CONTENT — what the surfaces actually say, and in what order — and
+ * `roadmap/session-identity.md` carried all of it into the app. Every decision
+ * below is now the shipped behavior, and `[D132]` is where it is durable; this
+ * card is the bench the identity app-tests drive and the place the vocabulary is
+ * discussed.
  *
- * Decided in the seventh review round:
+ * Two questions from that round were deferred rather than answered, and they are
+ * the surviving open items: whether the atom's sidecar segment should carry the
+ * short id, and whether the Changes card's server-side `session_row_title` should
+ * adopt the new grammar.
+ *
+ * What the seventh round decided, all of it shipped:
  *
  * - **The dot is the mark.** The chatbox icon retires from every surface that
  *   names a session; the pulsing phase dot replaces it — in the masthead, the
@@ -73,12 +82,23 @@
  * `<tag> (<shortid>)` as the only flat-text form; the fork-lineage grammar;
  * the three clipboard flavors (`text/html` stays struck).
  *
- * Everything that shipped as a Tug* component is mounted real where the
- * audition allows it (`TugProgressIndicator`, `TugSparkline`, and one
- * shipped-`TugSessionIdentity` contrast frame). The proposed forms — the
- * dot-led title, the new masthead, the dot-atom — are prototypes styled by
- * this card's own CSS, because they are exactly what has not shipped yet.
+ * **What is real here and what is a drawing.** The shipped-component frame mounts
+ * the real `TugSessionIdentity` at every state it renders — the line tier, both
+ * chip sizes, a named chip, a narrow named chip, and the missing chip — and it is
+ * load-bearing beyond illustration: `at0374` and `at0376` drive exactly those
+ * mounts, so a claim proved there is a claim about what ships. The dot and the
+ * tape are the real `TugProgressIndicator` and `TugSparkline` throughout. The
+ * masthead mock and the `.gsi-*` title/atom prototypes remain as DRAWINGS of the
+ * settled decisions, kept because a design surface that showed only the shipped
+ * component could no longer show why it looks the way it does — but they are
+ * drawings, and where one disagrees with the component the component is right.
  * Nothing in `gallery-session-identity.css` is a rule the app inherits.
+ *
+ * The masthead mock's title row draws dot + title + wave + close. That frame is
+ * INCOMPLETE about the pane, and it taught the rollout plan the wrong control
+ * inventory: the pane's own controls cluster sits beside the masthead and holds,
+ * in order, the slot-stack badge, the `…` section menu, and the close X. Only the
+ * width control left. See the caption on that section.
  *
  * @module components/tugways/cards/gallery-session-identity
  */
@@ -769,18 +789,27 @@ export function GallerySessionIdentity(): React.ReactElement {
         title="The masthead — three rows, two naming states"
         blurb={
           <>
-            Row one: the dot, the title, the telemetry wave, close — the
-            width control is gone. Row two: the description, or the creation
-            stamp while no description exists yet, so the line is never
-            blank. Row three: the activity line and the tape, lifted to sit
-            visually centered on rows two and three together. At rest the
-            activity reads{" "}
+            Row one: the dot, the title, the telemetry wave. Row two: the
+            description, or the session&apos;s own first prompt, or the creation
+            stamp — so the line is never blank. Row three: the activity line
+            and the tape, lifted to sit visually centered on rows two and three
+            together. At rest the activity reads{" "}
             <code>
               {"<turns> turns, <size>. Last updated: <stamp>. Ready."}
             </code>
             ; mid-turn it carries the live beat and the tape animates.
             Right-clicking the title copies the session <em>atom</em> — all
             flavors.
+            <br />
+            <br />
+            <strong>The frame below is incomplete about the pane, and it
+            misled the rollout plan.</strong> The <em>width control</em> is the
+            only thing that left the title row. The pane&apos;s own controls
+            cluster sits beside the masthead — outside it — and still holds the
+            slot-stack badge (whenever the pane stands in a stack of more than
+            one), the <code>…</code> section menu, and the close X. The badge in
+            particular describes the <em>slot</em> rather than the card, and it
+            is the only way into the panes behind this one.
           </>
         }
       >
@@ -886,11 +915,11 @@ export function GallerySessionIdentity(): React.ReactElement {
         </div>
         <div className="gsi-candidate-grid">
           {/* The shipped component at every state it renders. This frame is
-              load-bearing beyond the contrast: the gallery is the fixture
-              bench the identity app-tests (at0374, at0376) drive, so the
-              line tier, both chip sizes, and the missing chip must stay
-              mounted here until the proposed forms ship INTO the component. */}
-          <Frame label="shipped today, for contrast — the real TugSessionIdentity: line, chip, 2xs, missing">
+              load-bearing: the gallery is the fixture bench the identity
+              app-tests (at0374, at0376) drive, so the line tier, both chip
+              sizes, the named chip, the narrow named chip, and the missing
+              chip must all stay mounted here. */}
+          <Frame label="the shipped TugSessionIdentity — line, chip, 2xs, named, narrow, missing">
             <div className="gsi-chip-row">
               <TugSessionIdentity identity={fixtureIdentity(LIVE)} tier="line" />
               <TugSessionIdentity identity={fixtureIdentity(LIVE)} tier="chip" />
@@ -899,6 +928,19 @@ export function GallerySessionIdentity(): React.ReactElement {
                 tier="chip"
                 size="2xs"
               />
+              <TugSessionIdentity
+                identity={fixtureIdentity(NAMED_LIVE)}
+                tier="chip"
+                data-gsi-shipped="named"
+              />
+              {/* The truncation rule, on the real component: the name survives
+                  and the callsign gives way. Only a live browser can show it. */}
+              <span className="gsi-chip-narrow" data-gsi-shipped="narrow">
+                <TugSessionIdentity
+                  identity={fixtureIdentity(NAMED_LIVE)}
+                  tier="chip"
+                />
+              </span>
               <TugSessionIdentity
                 identity={fixtureIdentity(EXTERNAL)}
                 tier="chip"

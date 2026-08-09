@@ -52,13 +52,10 @@ import {
   type TugPulsePreset,
 } from "@/components/tugways/tug-pulse";
 import {
-  TUG_SESSION_ROW_FITS,
   TUG_SESSION_ROW_INDICATOR_SIZE,
   TUG_SESSION_ROW_SPARK_HEIGHT,
   TUG_SESSION_ROW_SPARK_WIDTH,
-  TUG_SESSION_ROW_DEFAULT_FIT,
   TugSessionRow,
-  type TugSessionRowFit,
 } from "@/components/tugways/tug-session-row";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugSlotLayout } from "@/components/tugways/tug-slot-layout";
@@ -188,22 +185,6 @@ const LIFECYCLE_ROWS: readonly SessionFixture[] = [
   },
   { name: "tugtool/bonsai-eval", phase: "idle" },
 ];
-
-/**
- * What each fit proposes, and what it hands back — stated as the line that
- * gains the width, because that is the whole argument.
- */
-const FIT_BLURB: Record<TugSessionRowFit, string> = {
-  gutter:
-    "The indicator holds a column of its own, so all three lines start past it; the slots ride the name and the tape rides the activity. The shape the others are measured against.",
-  inset:
-    "The indicator moves onto the name line. The two PULSE lines start at the row's own inset and gain the whole leading column — the widest single reclamation available, and it costs nothing but the dot's advance on one line.",
-  reveal:
-    "The slots carry no width until the row is engaged. At rest every line runs the full rail; on engage the slots claim their width back from the name, which is the one string the reader already knows.",
-  wash: "The tape leaves the flow and paints behind the PULSE at the trailing edge. The activity keeps the width the sparkline was spending — the line that needed it most, since a path identifies itself at the end.",
-  duplex:
-    "Both levels share one line, read as the session card's strip reads them. Three lines become two, and the activity gets a whole line minus the intent rather than a line minus the tape.",
-};
 
 /**
  * What each preset proposes, in one line, beside the thing it proposes.
@@ -389,8 +370,8 @@ function Band({
  * A Lens session row — the REAL {@link TugSessionRow}, with every part it
  * carries supplied by the real component the Lens supplies: the phase
  * indicator, the slot layout, and a sparkline. Only the strings and the series
- * are fixtures. So a fit judged here is a fit that ships; there is no gallery
- * drawing of a row.
+ * are fixtures. So a row judged here is the row that ships; there is no gallery
+ * drawing of one.
  *
  * The frame is the Lens rail at its usual width, and it declares the row knobs
  * `lens-cards-list` declares — the reading inset, the zeroed indicator
@@ -398,22 +379,15 @@ function Band({
  * Lens has.
  */
 function SessionFrame({
-  fit,
   fixture,
   phase,
-  measure,
 }: {
-  fit: TugSessionRowFit;
   fixture: SessionFixture;
   phase: number;
-  /** Marks this row as the one the fit meter reads. */
-  measure?: boolean;
 }): React.ReactElement {
   return (
     <div className="gpd-rail">
       <TugSessionRow
-        fit={fit}
-        data-gpd-fit-measure={measure === true ? fit : undefined}
         indicator={
           <TugProgressIndicator
             variant="pulsing-dot"
@@ -425,7 +399,6 @@ function SessionFrame({
         }
         name={fixture.name}
         slots={<TugSlotLayout count={3} states={SLOT_STATES} size="sm" />}
-        intent={fixture.intent}
         activity={fixture.activity}
         sparkline={
           <DemoSpark
@@ -435,93 +408,6 @@ function SessionFrame({
           />
         }
       />
-    </div>
-  );
-}
-
-/**
- * The fit meter — what each fit actually hands the two runs that have
- * something to lose.
- *
- * Packing is an argument about pixels, so it is measured rather than claimed:
- * the numbers come from the audition rows above, not from a second rendering,
- * so the table always describes exactly what is on screen. For each fit it
- * reports the width the ACTIVITY run was given and the width the NAME was
- * given, against the shipping `gutter` fit, plus whether the activity still
- * had to be cut at that width.
- *
- * Measurement writes straight to the DOM ([L06]): a readout derived from
- * layout, routed through React state, would re-render the rows being measured.
- */
-function FitMeter(): React.ReactElement {
-  const outRefs = useRef(new Map<TugSessionRowFit, HTMLSpanElement>());
-
-  useEffect(() => {
-    let live = true;
-    const read = (
-      fit: TugSessionRowFit,
-    ): { activity: number; name: number; cut: boolean } | null => {
-      const row = document.querySelector<HTMLElement>(
-        `[data-gpd-fit-measure="${fit}"]`,
-      );
-      if (row === null) return null;
-      const run = row.querySelector<HTMLElement>(
-        '[data-slot="tug-pulse-activity"]',
-      );
-      const name = row.querySelector<HTMLElement>(".tug-list-row-title");
-      if (run === null || name === null) return null;
-      return {
-        activity: run.clientWidth,
-        name: name.clientWidth,
-        cut: run.dataset.truncated === "true",
-      };
-    };
-    const measure = (): void => {
-      if (!live) return;
-      const base = read("gutter");
-      if (base === null || base.activity === 0) return;
-      for (const [fit, out] of outRefs.current) {
-        const now = read(fit);
-        if (now === null) continue;
-        const delta = Math.round(now.activity - base.activity);
-        out.textContent =
-          `activity ${Math.round(now.activity)}px` +
-          (fit === "gutter"
-            ? " — the baseline"
-            : ` — ${delta >= 0 ? "+" : ""}${delta}px`) +
-          ` · name ${Math.round(now.name)}px` +
-          (now.cut ? " · still cut" : " · fits");
-      }
-    };
-    // Nothing is measured until the rows' own faces have loaded — an unloaded
-    // face measures as its fallback — and not until the PULSE has had its own
-    // pass at the truncation it reports here, which is a frame behind the load.
-    const row = document.querySelector<HTMLElement>("[data-gpd-fit-measure]");
-    void whenFaceLoaded(row ?? document.body, row?.textContent ?? "").then(
-      () => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(measure);
-        });
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  return (
-    <div className="gpd-meter">
-      {TUG_SESSION_ROW_FITS.map((fit) => (
-        <div className="gpd-fit-row" key={fit}>
-          <span className="gpd-preset-name">{fit}</span>
-          <span
-            className="gpd-fit-readout"
-            ref={(el) => {
-              if (el !== null) outRefs.current.set(fit, el);
-            }}
-          />
-        </div>
-      ))}
     </div>
   );
 }
@@ -778,48 +664,74 @@ export function GalleryPulseDisplay(): React.ReactElement {
         title="Lens — how the session row packs"
         blurb={
           <>
-            A session row carries <strong>five</strong> things and has one
-            rail&apos;s width to spend on them: the phase indicator, the
-            session&apos;s name, the layout slots, and the PULSE&apos;s three
-            parts — intent, activity, and the tape. Three of those are text that
-            would rather not be cut; the rest is fixed-width furniture that
-            takes its width off the top before the text gets any. There is no
-            sixth: the reorder handle that used to hold a trailing column is
-            gone, because the row is carried by its own surface, and the content
-            runs out to the rail&apos;s edge in its place. Each fit below is one
-            proposal about where the remaining furniture goes, rendered by the
-            real <code>TugSessionRow</code> with the real indicator, slots, and
-            tape in it — so the fit approved here is the fit the Lens wears, by
-            construction. Every fit shows the same two sessions: an everyday
-            one, then the one that does not fit.
+            A session row carries four things and has one rail&apos;s width to
+            spend on them: the phase dot, the session&apos;s title, the layout
+            slots, and the activity with its tape. The two text parts would
+            rather not be cut; the rest is fixed-width furniture that takes its
+            width off the top before the text gets any. There is no reorder
+            handle among them — the row is carried by its own surface — so the
+            content runs out to the rail&apos;s edge.
+            <br />
+            <br />
+            The <code>inset</code> fit is what ships and the only one left: the
+            dot rides the title line, so the lines beneath it start at the
+            row&apos;s own inset and gain the whole leading column. Four other
+            fits were auditioned here — <code>gutter</code>, <code>reveal</code>,{" "}
+            <code>wash</code>, <code>duplex</code> — and retired with the
+            audition. Both rows below are the real <code>TugSessionRow</code>:
+            an everyday session, then the one that does not fit.
           </>
         }
       >
-        <div className="gpd-fit-audition">
-          {TUG_SESSION_ROW_FITS.map((fit, i) => (
-            <div className="gpd-fit" key={fit}>
-              <span className="gpd-preset-label">
-                <span className="gpd-preset-name">{fit}</span>
-                <span className="gpd-preset-blurb">{FIT_BLURB[fit]}</span>
-              </span>
-              <div className="gpd-lens-stack">
-                <SessionFrame fit={fit} fixture={FIT_CALM} phase={i + 10} />
-                <SessionFrame
-                  fit={fit}
-                  fixture={FIT_PRESSURE}
-                  phase={i + 70}
-                  measure
-                />
-              </div>
-            </div>
-          ))}
+        <div className="gpd-lens-stack">
+          <SessionFrame fixture={FIT_CALM} phase={10} />
+          <SessionFrame fixture={FIT_PRESSURE} phase={70} />
         </div>
+      </Section>
 
-        <p className="gpd-blurb">
-          What each fit actually handed the two runs that have something to
-          lose, measured off the pressure rows above rather than claimed:
-        </p>
-        <FitMeter />
+      <TugSeparator />
+
+      <Section
+        title="Stacked, two levels"
+        blurb={
+          <>
+            The <code>stacked</code> layout renders a headline line above the
+            activity when — and only when — its caller supplies one, and the two
+            baselines are exactly{" "}
+            <code>--tugx-pulse-stacked-baseline-step</code> apart. No session
+            surface passes a headline: the description above the activity already
+            says what a session is for, and a standing goal beside it read as an
+            echo. The shape stays because it is the component&apos;s, not the
+            row&apos;s — and this is where it is documented and measured.
+          </>
+        }
+      >
+        <div className="gpd-state">
+          <span className="gpd-state-label">
+            two levels, one declared step
+          </span>
+          <div className="gpd-rail">
+            <TugPulse
+              layout="stacked"
+              headline={PAIRS[0].intent}
+              activity={PAIRS[0].activity}
+              trailing={<DemoSpark phase={44} />}
+            />
+          </div>
+        </div>
+        <div className="gpd-state">
+          <span className="gpd-state-label">
+            one level — no headline supplied, so no headline line and no
+            reserved height (what every session surface wears)
+          </span>
+          <div className="gpd-rail">
+            <TugPulse
+              layout="stacked"
+              activity={PAIRS[0].activity}
+              trailing={<DemoSpark phase={45} />}
+            />
+          </div>
+        </div>
       </Section>
 
       <TugSeparator />
@@ -942,7 +854,6 @@ export function GalleryPulseDisplay(): React.ReactElement {
             {LIFECYCLE_ROWS.map((fixture, i) => (
               <SessionFrame
                 key={fixture.name}
-                fit={TUG_SESSION_ROW_DEFAULT_FIT}
                 fixture={fixture}
                 phase={i + 25}
               />

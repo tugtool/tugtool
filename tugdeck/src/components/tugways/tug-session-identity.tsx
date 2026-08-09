@@ -4,22 +4,30 @@
  * Takes a resolved identity record and a tier, never a format string. Two
  * registers fall out of the tier rather than being chosen: the `chip` tier is
  * a CITATION — a surface referring to a session from foreign context — and
- * wears the session atom, a rounded pill in the theme's session color. The
- * `line` tier is PRESENCE — a surface that IS the session — and wears the same
- * identity as bare typography, because on a surface that is the thing, an
- * enclosure reads as a link to it somewhere else.
+ * wears the session atom, a rounded pill. The `line` tier is PRESENCE — a
+ * surface that IS the session — and wears the same identity as bare
+ * typography, because on a surface that is the thing, an enclosure reads as a
+ * link to it somewhere else.
  *
- * Both registers print `<project>/<callsign>` as ONE bold run: one face, one
- * weight, one color, one text node. Two spans opened a flex gap after the
- * slash and let each half truncate on its own; one run can do neither. The
- * mark is the ruled chatbox — `MessageSquareText`, the bubble carrying lines
- * of talk, which is the app's session mark everywhere a session is named — and
- * the icon gap is one token across both registers and every tier.
+ * **The mark is a live pulsing dot, and it is the same mark on both registers.**
+ * It says what the session is *doing* rather than what kind of thing it is,
+ * which is the one thing a static glyph could never do — and it is why the
+ * chatbox icon is gone rather than sitting beside it. The dot reads
+ * {@link useSessionPhase}, so a session with no reachable live state shows a
+ * quiet idle dot rather than a red one.
  *
- * The mark's COLOR is the mount site's: the line tier publishes
- * `--tugx-session-identity-icon-color`, muted by default, and the masthead
- * points it at the pane's own title-bar icon color so a Session card's mark
- * reads in the theme tint every other card's title icon wears.
+ * **The title is two runs, not one.** The user's own name leads, then a quieter
+ * ` : <callsign>` ({@link sessionTitleParts}). Under a width squeeze the
+ * callsign is the run that elides and the name survives intact — a name the
+ * user typed outranks a callsign Tug minted for itself, and the callsign is the
+ * run that can be sacrificed because the tooltip and every copy path still
+ * carry it whole. A session with no name renders the bare callsign, which may
+ * then elide since it is the only run there is. No `project/` prefix: that is
+ * `sessionIdentityLine`'s channel and it survives in the tooltip and citation.
+ *
+ * **The atom paints in text ink.** The pill's run and border take the ordinary
+ * text color and a `currentcolor` mix; the dot is its only color channel,
+ * because a colored pill around a colored dot was two tints saying one thing.
  *
  * The chip's hover carries the full identity and the citation as a
  * `TugTooltip`, not a placard: `TugTooltip` is explicitly non-interactive and
@@ -31,30 +39,41 @@
  * placard carries the same citation on a `TugCopyBadge` for a click path.
  *
  * An unresolvable citation keeps its shape — the reader still needs to know
- * what kind of thing is named — slashes its icon, drops the session color for
- * muted ink, takes a dashed border, and is fully inert. Liveness is never a
- * property of a reference: sessions are never dead, only unfindable.
+ * what kind of thing is named — takes a dashed border and muted ink, forces its
+ * dot to idle, and is fully inert. With the icon gone there is nothing left to
+ * slash, so shape alone states the failure, which it already did alongside the
+ * slash. Liveness is never a property of a reference: sessions are never dead,
+ * only unfindable.
  *
- * Laws: [L06] appearance via CSS/DOM, never React state; [L16] every
- *       foreground rule declares its surface; [L19] component authoring guide;
- *       [L20] token sovereignty — composed children keep their own tokens.
+ * Laws: [L02] the dot's phase enters through `useSyncExternalStore`;
+ *       [L06] appearance via CSS/DOM, never React state; [L13] motion belongs
+ *       to the indicator; [L16] every foreground rule declares its surface;
+ *       [L19] component authoring guide; [L20] token sovereignty — composed
+ *       children keep their own tokens.
  * Decisions: [D123] one name, produced in one place.
  */
 
 import "./tug-session-identity.css";
 
 import React from "react";
-import { MessageSquareOff, MessageSquareText } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
+import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
+import {
+  TugProgressIndicator,
+  type TugProgressIndicatorPhaseVisual,
+} from "@/components/tugways/tug-progress-indicator";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useCopyableText } from "@/components/tugways/use-copyable-text";
 import { useCardIdForSession } from "@/lib/card-session-binding-store";
+import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 import { useCitedSession } from "@/lib/session-citation-store";
 import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import {
   sessionCitation,
   sessionIdentityLine,
+  sessionTitleParts,
   useSessionIdentity,
   type SessionIdentity,
   type SessionIdentityContext,
@@ -67,18 +86,24 @@ export type TugSessionIdentityTier = "chip" | "line";
 /** Chip sizes. `2xs` is for dense list ink; `sm` is the default. */
 export type TugSessionIdentitySize = "sm" | "2xs";
 
-/** Icon box per size, in px — the mark reads at the same weight as the run. */
-const ICON_SIZE: Record<TugSessionIdentitySize, number> = { sm: 12, "2xs": 11 };
+/** The atom's dot box per chip size, in px — a ring box, not a line height. */
+const CHIP_DOT_SIZE: Record<TugSessionIdentitySize, number> = {
+  sm: 12,
+  "2xs": 10,
+};
+
+const PHASE_VISUAL: (key: string) => TugProgressIndicatorPhaseVisual =
+  sessionSessionPhaseVisual;
 
 /**
- * The line tier's mark, which sits beside body-size text.
+ * The line tier's dot, which sits beside body-size text.
  *
  * Exported because a mount site stacking lines UNDER the identity has to know
- * what the mark advances by to start them at the callsign rather than at the
- * glyph — the masthead's description and PULSE lines do exactly that. One
- * source, two readers.
+ * what the mark advances by to start them at the title rather than at the dot —
+ * the masthead's description and activity lines do exactly that. One source,
+ * two readers.
  */
-export const TUG_SESSION_IDENTITY_LINE_ICON_SIZE = 14;
+export const TUG_SESSION_IDENTITY_LINE_DOT_SIZE = 16;
 
 export interface TugSessionIdentityProps
   extends Omit<React.ComponentPropsWithoutRef<"span">, "children" | "onClick"> {
@@ -99,17 +124,27 @@ export interface TugSessionIdentityProps
   size?: TugSessionIdentitySize;
   /**
    * The citation resolved to nothing — a post or a commit naming a session
-   * this ledger has no record of. Chip tier only; makes the atom inert.
+   * this ledger has no record of. Chip tier only; makes the atom inert and
+   * forces its dot to idle.
    * @selector [data-missing="true"]
    * @default false
    */
   missing?: boolean;
   /**
-   * Whether the line tier paints its mark. The masthead's lead line wants it;
-   * a row whose phase dot already leads the line does not.
+   * Whether the line tier paints its dot. A mount site whose own row already
+   * leads with the session's dot passes `false` rather than showing two.
    * @default true
    */
-  icon?: boolean;
+  dot?: boolean;
+  /**
+   * A list surface's filter query, painted over the title runs.
+   *
+   * Applied **per run** — never to a pre-joined string. Joining first would put
+   * the ` : ` separator inside a mark and defeat the truncation rule, since the
+   * two runs are separately sized. A row that matched on a field it does not
+   * display shows no mark, which is the shipped and correct behavior.
+   */
+  highlight?: string;
   /**
    * The caller's intent for a click on a chip — raise the session's card, or
    * open it. Omitted (or `missing`) leaves the atom inert.
@@ -128,8 +163,10 @@ function identityTooltip(identity: SessionIdentity): React.ReactNode {
       <span className="tug-session-identity-tip-line">
         {sessionIdentityLine(identity)}
       </span>
-      {identity.title !== null ? (
-        <span className="tug-session-identity-tip-desc">{identity.title}</span>
+      {identity.description !== null ? (
+        <span className="tug-session-identity-tip-desc">
+          {identity.description}
+        </span>
       ) : null}
       {identity.lineage.length > 0 ? (
         <span className="tug-session-identity-tip-desc">
@@ -152,7 +189,8 @@ export const TugSessionIdentity = React.forwardRef<
     tier = "line",
     size = "sm",
     missing = false,
-    icon = true,
+    dot = true,
+    highlight = "",
     onOpen,
     className,
     ...rest
@@ -161,11 +199,13 @@ export const TugSessionIdentity = React.forwardRef<
 ) {
   const isChip = tier === "chip";
   const isMissing = isChip && missing;
-  const Glyph = isMissing ? MessageSquareOff : MessageSquareText;
   // Inert when the citation resolves to nothing, and when the caller has no
   // intent to offer. Both are the same rendering: no cursor, no handler.
   const interactive = isChip && !isMissing && onOpen !== undefined;
-  const run = sessionIdentityLine(identity);
+  const title = sessionTitleParts(identity);
+  const dotSize = isChip
+    ? CHIP_DOT_SIZE[size]
+    : TUG_SESSION_IDENTITY_LINE_DOT_SIZE;
 
   // A chip's click is its own, not the row's. Every citation surface mounts
   // this inside a click-hit region that expands a commit or a file, so the
@@ -209,15 +249,36 @@ export const TugSessionIdentity = React.forwardRef<
       onContextMenu={isChip ? copy.handleContextMenu : undefined}
       {...rest}
     >
-      {isChip || icon ? (
-        <Glyph
-          size={isChip ? ICON_SIZE[size] : TUG_SESSION_IDENTITY_LINE_ICON_SIZE}
-          className="tug-session-identity-icon"
-          aria-hidden
-        />
+      {isChip || dot ? (
+        <span className="tug-session-identity-dot">
+          {isMissing ? (
+            // Forced idle: a reference the ledger cannot find has no liveness
+            // to report, and there is no binding to read one from either.
+            <TugProgressIndicator
+              variant="pulsing-dot"
+              size={dotSize}
+              phase="idle"
+              phaseVisual={PHASE_VISUAL}
+              aria-hidden
+            />
+          ) : (
+            <SessionPhaseDot sessionId={identity.id} size={dotSize} />
+          )}
+        </span>
       ) : null}
-      {/* ONE text node. Never a project span beside a tag span. */}
-      <span className="tug-session-identity-run">{run}</span>
+      {/* Two runs, sized separately, so the callsign is the one that elides.
+          The filter mark is painted inside each run, never across both. */}
+      <span className="tug-session-identity-run">
+        <span className="tug-session-identity-name">
+          {renderFilterHighlight(title.name, highlight)}
+        </span>
+        {title.callsign !== null ? (
+          <span className="tug-session-identity-callsign">
+            {" : "}
+            {renderFilterHighlight(title.callsign, highlight)}
+          </span>
+        ) : null}
+      </span>
     </span>
   );
 
@@ -252,15 +313,15 @@ export const TugSessionIdentity = React.forwardRef<
  *
  * Three renderings, one per state of that answer:
  *
- * - **Resolved** — the atom in the session color, the ledger's own callsign,
- *   and the caller's click intent live.
- * - **Unresolvable** — [P13]'s slashed inert atom, still showing whatever
- *   callsign the commit recorded (`recordedTag`), because a reference that
- *   cannot be followed is more useful naming what it named than showing a bare
- *   hash. Note what this does NOT test: liveness. A closed session resolves; a
- *   commit from another machine does not. Sessions are never dead, only
- *   unfindable.
- * - **Pending** — the round trip is in flight. Inert, and *not* slashed:
+ * - **Resolved** — the atom with its live dot, the ledger's own callsign, and
+ *   the caller's click intent live.
+ * - **Unresolvable** — the dashed inert atom with a forced idle dot, still
+ *   showing whatever callsign the commit recorded (`recordedTag`), because a
+ *   reference that cannot be followed is more useful naming what it named than
+ *   showing a bare hash. Note what this does NOT test: liveness. A closed
+ *   session resolves; a commit from another machine does not. Sessions are never
+ *   dead, only unfindable.
+ * - **Pending** — the round trip is in flight. Inert, and *not* dashed:
  *   claiming "not found" before asking would be the same lie in the other
  *   direction, and the chip is unclickable until it knows where a click goes.
  *

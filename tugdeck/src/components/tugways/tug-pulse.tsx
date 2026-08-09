@@ -13,9 +13,9 @@
  *  - `inline` — the Z2 strip: legend, headline, `›`, activity, accessory,
  *    on one fixed-height bar. The headline is pinned; the activity is the
  *    run that ellipsizes.
- *  - `stacked` — the Lens row: headline on its own line, activity on the
- *    next with the accessory past it. An absent level renders no line and
- *    reserves no height.
+ *  - `stacked` — the session row: the activity on its own line with the
+ *    accessory past it, and a headline line above it only when the caller
+ *    supplies one. The session surfaces supply none.
  *
  * Presets ({@link TugPulsePreset}) are complete typographic proposals for
  * the pair, differing only in the knobs `tug-pulse.css` declares. Adopting
@@ -87,25 +87,19 @@ export const TUG_PULSE_DEFAULT_PRESET: TugPulsePreset = "condensed";
 const SEPARATOR = "›";
 
 /**
- * What each level says when it has nothing to say. Both levels ALWAYS render,
- * so a PULSE occupies the same space whether or not the session it reports on
- * has an intent or an operation running yet.
+ * What the activity level says when it has nothing to say. The level ALWAYS
+ * renders, so the band occupies the same space whether or not the session it
+ * reports on has an operation running yet.
  *
- * The activity's stand-in is ordinary content, set exactly like the run it
- * stands in for: a lifecycle word wearing its own weight or tone would be the
- * reader's one inconsistent second run.
+ * Ordinary content, set exactly like the run it stands in for: a lifecycle word
+ * wearing its own weight or tone would be the reader's one inconsistent run.
  *
- * The headline's is the one exception, and it is the same word the legend
- * says. Where the legend exists it is already saying it, so the run stays
- * empty; where it does not — the stacked layout, which has no legend at all —
- * the stand-in speaks FOR the legend, and it is set as one: the small tracked
- * label, not a goal in headline register. A rail row before its session's
- * first overview then reads as the same band the Z2 strip opens with, rather
- * than as a session whose stated goal is the word PULSE.
+ * The HEADLINE level has no stand-in. It used to print the word `PULSE` where no
+ * goal had been composed — a placeholder holding a line's height, which is a job
+ * that no longer exists: the level renders only when a caller supplies one, and
+ * no session surface does. `PULSE` is an internal name now, never ink a reader
+ * sees ([D132]); `lib/__tests__/pulse-ink-gate.test.ts` is what keeps it out.
  */
-const HEADLINE_FALLBACK = (
-  <span className="tug-pulse-headline-stand-in">PULSE</span>
-);
 const ACTIVITY_FALLBACK = "None";
 
 /** What a middle truncation puts between the two surviving ends. */
@@ -173,16 +167,21 @@ export interface TugPulseProps
    */
   giveWay?: "activity" | "both";
   /**
-   * The label that names the band — the strip's `PULSE` pill. Rendered in
-   * the `inline` layout only; the Lens row is already named by its session.
+   * The label that names the band. Rendered in the `inline` layout only.
    * Supplied whole by the caller, which owns its behavior (popover trigger,
    * focus registration) and its own tokens.
+   *
+   * No production surface passes one: the Z2 strip it belonged to is retired, and
+   * a band that names itself is furniture where a sentence belongs ([D132]). The
+   * shape stays because it is the component's, and the gallery is where it is
+   * documented and where its cap-center alignment rule is measured.
    */
   legend?: React.ReactNode;
   /**
-   * The standing goal. Omitting it does NOT drop the level: the run stands in
-   * with `PULSE` and keeps its space, except inline where the legend beside it
-   * is already saying the word.
+   * The standing goal. In the `stacked` layout, omitting it drops the level
+   * entirely — a mount either has a goal to state or it does not, and no mount's
+   * height varies with whether one arrived. The `inline` bar is a fixed height
+   * either way and keeps the run's place.
    */
   headline?: React.ReactNode;
   /**
@@ -219,21 +218,17 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
     },
     ref,
   ) {
-    // NEITHER LEVEL IS EVER ABSENT. A level with nothing to say holds its
-    // space and says so, because a PULSE that drops a line is a PULSE that
-    // changes the height of the row carrying it — and Lens rows must not
-    // resize themselves midstream as sessions come and go quiet.
+    // The ACTIVITY level is never absent: a line with nothing to say holds its
+    // space and says so, because a PULSE that drops it changes the height of the
+    // row carrying it — and rows must not resize themselves midstream as
+    // sessions come and go quiet.
     //
-    // The headline's stand-in is the word the legend would have said. Inline,
-    // the legend is right there saying it, so the run stays empty rather than
-    // printing PULSE twice; the bar is a fixed height either way.
-    const hasLegend = legend !== undefined && legend !== null;
-    const headlineNode =
-      headline !== undefined && headline !== null
-        ? headline
-        : hasLegend
-          ? undefined
-          : HEADLINE_FALLBACK;
+    // The HEADLINE level is the caller's choice. A mount that passes one always
+    // passes one, and a mount that does not never does, so no mount's height
+    // varies with its content either way. The stacked mounts pass none: the
+    // description above the activity already says what a session is for, and a
+    // standing goal beside it read as an echo ([D132]).
+    const hasHeadline = headline !== undefined && headline !== null;
     const activityNode =
       activity !== undefined && activity !== null ? activity : ACTIVITY_FALLBACK;
     const root = (
@@ -254,17 +249,19 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
     );
 
     if (layout === "stacked") {
-      // Always two lines, so the block is always exactly two baseline steps
-      // tall. The accessory rides the second one.
+      // One baseline step per level the caller asked for. The accessory rides
+      // the activity line, which is always the last one.
       return root(
         <>
-          <span className="tug-pulse-line">
-            <Runs
-              headline={headlineNode}
-              activity={undefined}
-              truncate={truncate}
-            />
-          </span>
+          {hasHeadline ? (
+            <span className="tug-pulse-line">
+              <Runs
+                headline={headline}
+                activity={undefined}
+                truncate={truncate}
+              />
+            </span>
+          ) : null}
           <span className="tug-pulse-line">
             <Runs
               headline={undefined}
@@ -285,7 +282,7 @@ export const TugPulse = React.forwardRef<HTMLDivElement, TugPulseProps>(
             <span className="tug-pulse-legend">{legend}</span>
           ) : null}
           <Runs
-            headline={headlineNode}
+            headline={headline}
             activity={activityNode}
             truncate={truncate}
             stageProps={stageProps}

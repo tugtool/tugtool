@@ -25,6 +25,13 @@
  *      re-materialize as a session chip with no session-specific code on the
  *      paste side.
  *
+ *   C. **The masthead's TITLE offers the same copy.** A third way in, and it has
+ *      to be the same one: the atom should be reachable without opening
+ *      anything. Both paths run `writeSessionAtomToClipboard` through
+ *      `useCopyableText`, so what C pins is that the title CLAIMS the
+ *      right-click — a title that silently ignored it would leave the telemetry
+ *      popover as the only door.
+ *
  * `pbpaste` cannot see a private pasteboard type, which is why B goes through
  * the app rather than the shell. The keystroke half of a paste is deliberately
  * not driven here: ⌘V in this harness routes to the DOM paste event, whose
@@ -39,11 +46,12 @@
  * @covers tugdeck/src/lib/session-atom.ts
  * @covers tugdeck/src/lib/tug-atom-img.ts
  * @covers tugdeck/src/components/tugways/use-copyable-text.tsx
+ * @covers tugdeck/src/components/tugways/session-masthead.tsx
  */
 
 import { describe, expect, test } from "bun:test";
 
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -57,6 +65,9 @@ const GALLERY = '[data-card-id="G"]';
 const CHIP = `${GALLERY} [data-slot="tug-session-identity"][data-tier="chip"]`;
 const MENU = '[data-slot="tug-editor-context-menu"]';
 const COMPOSER = '[data-card-id="A"] [data-slot="tug-text-editor"] .cm-content';
+/** The bound Session card's masthead title — the third way into the atom copy. */
+const MASTHEAD_TITLE =
+  '.tug-pane[data-pane-id="p1"] [data-slot="session-masthead"] .session-masthead-title';
 
 function setPasteboard(text: string): void {
   Bun.spawnSync(["pbcopy"], { stdin: Buffer.from(text) });
@@ -227,6 +238,62 @@ describe.skipIf(!SHOULD_RUN)("at0376 — the session atom on the clipboard", () 
         // label is what the reader sees, and the citation is its flat form.
         expect(sidecar?.atoms[0].label).toBe(`tugtool/${TAG}`);
         expect(sidecar?.atoms[0].value).toBe(`tugtool/${TAG}`);
+
+        // ---- C. The masthead's TITLE offers the same copy. -----------------
+        //
+        // A third way in, and it has to be the same one: the atom should be
+        // reachable without opening anything, and right-click is the idiom every
+        // other Tug chip already uses ([D132]). Both paths run
+        // `writeSessionAtomToClipboard` through `useCopyableText`, so what this
+        // pins is that the masthead's title CLAIMS the gesture — a title that
+        // silently ignored a right-click would leave the popover as the only
+        // door, which is the thing this decision exists to fix.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD_TITLE)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+        await app.evalJS<null>(`(function(){
+          var title = document.querySelector(${JSON.stringify(MASTHEAD_TITLE)});
+          var r = title.getBoundingClientRect();
+          title.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            clientX: Math.round(r.left + r.width / 2),
+            clientY: Math.round(r.top + r.height / 2),
+          }));
+          return null;
+        })()`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MENU)}) !== null`,
+          { timeoutMs: 8_000 },
+        );
+        // Every open menu's rows, not just the first — and that is a finding, not
+        // a convenience. `useCopyableText`'s handler calls `preventDefault` but
+        // not `stopPropagation`, so a right-click on the masthead title raises the
+        // title's own single-Copy menu AND the surrounding surface's read-only
+        // one. The claim here is the one [D132] makes — the title offers a live
+        // Copy — and the diagnostic below records the overlap for the follow-on.
+        const titleMenus = await app.evalJS<
+          ReadonlyArray<ReadonlyArray<{ label: string; disabled: boolean }>>
+        >(
+          `Array.prototype.map.call(
+             document.querySelectorAll(${JSON.stringify(MENU)}),
+             function (menu) {
+               return Array.prototype.map.call(
+                 menu.querySelectorAll('[role="menuitem"]'),
+                 function (item) {
+                   return {
+                     label: item.textContent || "",
+                     disabled: item.getAttribute("aria-disabled") === "true",
+                   };
+                 });
+             })`,
+        );
+        note("at0376 title menus", JSON.stringify(titleMenus));
+        const liveCopy = titleMenus
+          .flat()
+          .some((item) => item.label.includes("Copy") && !item.disabled);
+        expect(liveCopy).toBe(true);
+        await app.nativeKey("Escape");
       } finally {
         await app.close();
       }

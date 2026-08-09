@@ -591,10 +591,26 @@ impl LedgerSessionsRecorder {
         };
         match self.ledger.get(session_id) {
             Ok(Some(row)) => {
-                let _ = tx.send(build_session_updated_frame(&row));
+                let _ = tx.send(build_session_updated_frame(
+                    &row,
+                    self.scan_metrics(session_id),
+                ));
             }
             Ok(None) => {}
             Err(err) => warn!(error = %err, session_id, "ledger get for broadcast failed"),
+        }
+    }
+
+    /// The scan-cache pair for a push, best-effort: a read failure degrades to
+    /// `None`, which the frame builder turns into "no size, the ledger's own
+    /// count" rather than into a failed broadcast.
+    fn scan_metrics(&self, session_id: &str) -> Option<crate::session_ledger::SessionScanMetrics> {
+        match self.ledger.scan_metrics_for(session_id) {
+            Ok(metrics) => metrics,
+            Err(err) => {
+                warn!(error = %err, session_id, "ledger scan_metrics_for for broadcast failed");
+                None
+            }
         }
     }
 
@@ -798,7 +814,22 @@ impl SessionsRecorder for LedgerSessionsRecorder {
 /// Build the `session_updated` push payload for a row's current state.
 /// Public so the `do_trash_session` / `do_trash_project_dir_sessions`
 /// handlers can emit the matching frame after their batch writes.
-pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> Frame {
+///
+/// `metrics` is the session's `external_scan_cache` pair, and **every** caller
+/// looks it up — not just the one pushing after a turn. The client replaces its
+/// cached row wholesale on a push, so a push that omits a fact downgrades it:
+/// without the lookup, an unrelated rename push would null a known `file_size`
+/// and knock a scan-derived `turn_count` to whatever sparse `0` the `sessions`
+/// row happens to hold. `None` (no scan-cache row — a session the scanner has
+/// never seen) emits a null size and the ledger row's own count, which is the
+/// right answer for that case.
+///
+/// Kept pure — it takes the pair, not a ledger handle — so each caller does its
+/// own lookup beside the `ledger.get` it already performs.
+pub fn build_session_updated_frame(
+    row: &crate::session_ledger::SessionRow,
+    metrics: Option<crate::session_ledger::SessionScanMetrics>,
+) -> Frame {
     let body = serde_json::json!({
         "action": "session_updated",
         "session_id": row.session_id,
@@ -808,7 +839,8 @@ pub fn build_session_updated_frame(row: &crate::session_ledger::SessionRow) -> F
             "project_dir": row.project_dir,
             "created_at": row.created_at,
             "last_used_at": row.last_used_at,
-            "turn_count": row.turn_count,
+            "turn_count": metrics.map_or(row.turn_count, |m| m.turn_count),
+            "file_size": metrics.map(|m| m.file_size),
             "last_user_prompt": row.last_user_prompt,
             "state": row.state,
             "card_id": row.card_id,
@@ -5615,7 +5647,13 @@ impl AgentSupervisor {
                 // without a re-fetch. A missing row here would be a TOCTOU race
                 // (renamed then trashed); the get is best-effort.
                 if let Ok(Some(row)) = ledger.get(session_id) {
-                    let _ = self.control_tx.send(build_session_updated_frame(&row));
+                    // The scan-cache lookup rides the rename push too — see
+                    // `build_session_updated_frame` for why omitting it would
+                    // blank a known size and zero a scan-derived turn count.
+                    let metrics = ledger.scan_metrics_for(session_id).unwrap_or(None);
+                    let _ = self
+                        .control_tx
+                        .send(build_session_updated_frame(&row, metrics));
                 }
                 let body = serde_json::json!({
                     "action": "rename_session_ok",
@@ -6319,10 +6357,58 @@ impl AgentSupervisor {
                     );
                 } else {
                     self.apply_outbound_turn_intercept(session_id, frame);
+                    let claude_id = {
+                        let entry = entry_arc.lock().await;
+                        entry.claude_session_id.clone()
+                    };
+                    if let Some(claude_id) = claude_id {
+                        self.spawn_session_metrics_refresh(claude_id);
+                    }
                 }
             }
             _ => unreachable!("filtered above"),
         }
+    }
+
+    /// Kick the turn-end scan-metrics refresh for a session, detached ([D132]).
+    ///
+    /// A turn ending is exactly when a masthead's activity line is read, and it
+    /// was exactly when the scan-derived turn count and size were most stale —
+    /// the picker scan was their only production writer. This re-derives both
+    /// for the one session and pushes them.
+    ///
+    /// Detached and on a blocking thread: the frame the user is waiting for has
+    /// already been forwarded by the time the merger reaches here, and the
+    /// refresh is file I/O plus a parse, which must not occupy the merger's
+    /// single loop. Every failure is silence — the numbers then stay exactly as
+    /// stale as they were before this path existed, which is not a regression.
+    ///
+    /// Keyed by the **claude** session id, because that is what both the ledger
+    /// row and the JSONL filename are keyed by.
+    fn spawn_session_metrics_refresh(&self, claude_session_id: String) {
+        let Some(ledger) = self.session_ledger.clone() else {
+            return;
+        };
+        let control_tx = self.control_tx.clone();
+        tokio::task::spawn_blocking(move || {
+            let Ok(Some(row)) = ledger.get(&claude_session_id) else {
+                return;
+            };
+            let Some(metrics) = crate::external_sessions::refresh_session_metrics(
+                &ledger,
+                &row.project_dir,
+                &claude_session_id,
+            ) else {
+                // Nothing changed on disk, or the file is unreadable. Either
+                // way there is no new number to announce.
+                return;
+            };
+            // Re-read: the refresh just moved `turn_count` on this row.
+            let Ok(Some(row)) = ledger.get(&claude_session_id) else {
+                return;
+            };
+            let _ = control_tx.send(build_session_updated_frame(&row, Some(metrics)));
+        });
     }
 
     /// Spawn the per-session agent bridge. Creates per-session stdin/stdout
@@ -6911,7 +6997,7 @@ mod tests {
             tag_lineage: None,
             synopsis: Some("Repair ligature fallback in monospace".to_owned()),
         };
-        let frame = build_session_updated_frame(&row);
+        let frame = build_session_updated_frame(&row, None);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
         assert_eq!(body["fields"]["tag"], "azure-heron");
         // The description rides the same push as the callsign, so a written
@@ -6920,6 +7006,47 @@ mod tests {
             body["fields"]["synopsis"],
             "Repair ligature fallback in monospace"
         );
+    }
+
+    #[test]
+    fn session_updated_frame_carries_the_scan_pair_when_it_has_one() {
+        let row = crate::session_ledger::SessionRow {
+            session_id: "s1".to_owned(),
+            workspace_key: "ws".to_owned(),
+            project_dir: "/p".to_owned(),
+            created_at: 0,
+            last_used_at: 0,
+            // The sparse `0` a session whose real count only ever came from a
+            // scan carries on its `sessions` row.
+            turn_count: 0,
+            last_user_prompt: None,
+            state: crate::session_ledger::SessionState::Live,
+            card_id: Some("c1".to_owned()),
+            name: None,
+            name_user_set: false,
+            tag: None,
+            root_tag: None,
+            tag_lineage: None,
+            synopsis: None,
+        };
+
+        // No scan-cache row: a null size, and the ledger's own count stands.
+        let body: serde_json::Value =
+            serde_json::from_slice(&build_session_updated_frame(&row, None).payload).expect("json");
+        assert!(body["fields"]["file_size"].is_null());
+        assert_eq!(body["fields"]["turn_count"], 0);
+
+        // With one, both facts come from the scan — which is what keeps an
+        // unrelated push from blanking the size or zeroing the count.
+        let metrics = crate::session_ledger::SessionScanMetrics {
+            file_size: 48_192,
+            turn_count: 7,
+        };
+        let body: serde_json::Value =
+            serde_json::from_slice(&build_session_updated_frame(&row, Some(metrics)).payload)
+                .expect("json");
+        assert_eq!(body["fields"]["file_size"], 48_192);
+        assert_eq!(body["fields"]["turn_count"], 7);
     }
 
     // ---- Test-only ChildSpawner fakes ----

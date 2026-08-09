@@ -242,17 +242,11 @@ body {
   color: var(--tugx-pulse-headline-color);
 }
 
-/* The headline's stand-in — the word the legend would have said, set as the
-   legend rather than as a goal. It inherits the headline's face and its line
-   box (so the line's height and baseline are exactly where they were, and the
-   run keeps its ellipsis) and overrides only the three things that make the
-   label a label: size, tracking, and tone. */
-/* @tug-renders-on var(--tugx-pane-bg) */
-.tug-pulse-headline-stand-in {
-  font-size: var(--tugx-pulse-legend-size);
-  letter-spacing: var(--tugx-pulse-legend-tracking);
-  color: var(--tugx-pulse-legend-color);
-}
+/* `.tug-pulse-headline-stand-in` styled the word `PULSE` where no goal had been
+   composed, set as the legend rather than as a goal. Both the run and the word
+   are gone: the headline level renders only when a caller supplies one, so there
+   is nothing to hold a line's height for, and `PULSE` is an internal name now
+   rather than ink a reader sees ([D132]). */
 
 /* ── Which run gives way on a short bar ──────────────────────────────────
    The pinned headline above is right for a bar the width of a card. It is

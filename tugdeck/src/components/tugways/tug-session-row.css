@@ -1,34 +1,25 @@
 /**
  * tug-session-row.css — the session row's packing.
  *
- * The row's TYPE is not here. The name is a `TugLabel` at the row title's
- * size, the two PULSE runs are `tug-pulse.css`'s, and the row's padding,
+ * The row's TYPE is mostly not here. The title is a `TugLabel` at the row
+ * title's size, the activity run is `tug-pulse.css`'s, and the row's padding,
  * hover, selection, and divider are `tug-list-row.css`'s. What is here is the
  * one thing this component owns: WHERE THE WIDTH GOES — which line each piece
- * of furniture rides, what it costs the text beside it, and what each fit
- * hands back.
- *
- * Every fit is a rearrangement, never a retypesetting: no rule below sets a
- * face, a size, or a weight, so the fits are comparable to each other and a
- * fit can be adopted without re-tuning the PULSE.
+ * of furniture rides and what it costs the text beside it — plus the
+ * description line, which is the row's own and has no component under it.
  *
  * Tuglaw cross-check:
- *  - [L06] the fit is a `data-fit` attribute and these rules; the reveal
- *    fit's engagement is CSS state, not React state.
+ *  - [L06] the fit is a `data-fit` attribute and these rules; the description's
+ *    stand-in treatment is a `data-stamp` attribute, never React state.
  *  - [L17] every `--tugx-session-row-*` alias resolves to a base token in one
  *    hop (the two that name colors do; the rest are geometry).
  *  - [L19] component authoring guide — file pair, docstring,
  *    `data-slot="tug-session-row"`.
  *  - [L20] token sovereignty — owns `--tugx-session-row-*`. It declares
- *    `TugPulse`'s geometry knobs on the pulse's OWN element — the `duplex`
- *    fit's bar height and baseline, and the stacked layout's tape lift and
- *    trailing reserve — which is that component's documented mount-site
- *    override, and reaches into no other component's internals.
- *
- * The row's `flush` variant is transparent and paints no foreground of its
- * own — the name and the PULSE runs carry their own colors from their own
- * components — so this file declares no new pairings beyond the wash, whose
- * ink is the sparkline's own.
+ *    `TugPulse`'s geometry knobs on the pulse's OWN element — the stacked
+ *    layout's tape lift and trailing reserve — which is that component's
+ *    documented mount-site override, and reaches into no other component's
+ *    internals.
  */
 
 body {
@@ -101,13 +92,6 @@ body {
      row's tuning numbers read together here, and so tuning the Lens rail
      cannot move a tape on some other stacked mount. */
   --tugx-session-row-spark-rise: 3px;
-  /* The `wash` fit's tape, painted behind the PULSE instead of beside it. It
-     must read as a texture under the type, not as a chart the eye tries to
-     follow, so it is held well back. */
-  --tugx-session-row-wash-opacity: 0.4;
-  /* How long the `reveal` fit's furniture takes to arrive. Fast: the
-     affordance has to be there by the time the pointer has stopped. */
-  --tugx-session-row-reveal-duration: var(--tug-motion-duration-fast);
 }
 
 /* ── The content column ───────────────────────────────────────────────────
@@ -179,17 +163,17 @@ body {
   display: none;
 }
 
-/* ── The four-line identity stack ────────────────────────────────────────
-   Identity on top, then a tight group of three lines that say what the
-   session is doing. The lead gap is what makes those two things read as two
-   things; the line gap inside the group is what makes the group one.
+/* ── The three-level identity stack ──────────────────────────────────────
+   Identity on top, then a tight pair of lines that say what the session is
+   for and what it is doing. The lead gap is what makes those two things read
+   as two things; the line gap inside the pair is what makes the pair one.
 
    Line-height is stated on every line and NEVER inherited: inherited body
-   leading (~1.45) puts a 13px run in a 19px box, and four of those is a
+   leading (~1.45) puts a 13px run in a 19px box, and three of those is a
    different row than the one the geometry was measured on. No margin can
    take that back. */
 
-/* The gap between identity and the group beneath it. Carried by the name
+/* The gap between identity and the pair beneath it. Carried by the name
    line rather than the container, so a row with no description pays nothing
    for a group it does not have. */
 .tug-session-row-lines:has(> .tug-session-row-description)
@@ -204,10 +188,9 @@ body {
   gap: var(--tugx-session-identity-line-gap, 1px);
 }
 
-/* The sub-lines take a small indent off the name they belong to, so the
-   callsign reads as the heading of the three beneath it. */
-.tug-session-row-description,
-.tug-session-row-metadata {
+/* The sub-line takes a small indent off the title it belongs to, so the title
+   reads as the heading of the pair beneath it. */
+.tug-session-row-description {
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -222,50 +205,46 @@ body {
   font-size: var(--tug-font-size-sm);
 }
 
+/* A description standing in for itself — the session's own first prompt, or its
+   creation stamp — is painted a step quieter, to say it is a fact standing in
+   for a line nobody has written yet. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-row-description[data-stamp="true"] {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
 /* An un-described session keeps the line's space rather than collapsing it:
-   the lines below must not move when a rename lands. */
+   the line below must not move when a description lands. */
 .tug-session-row-description[data-empty="true"]::after {
   content: "\00a0";
 }
 
-/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
-.tug-session-row-metadata {
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: var(--tug-font-size-xs);
-}
-
 /* Block padding and leading are opposite jobs: the tight leading above makes
-   four lines read as ONE entry, and this padding stands that block off the
+   three lines read as ONE entry, and this padding stands that block off the
    rules between rows. */
 .tug-session-row:has(.tug-session-row-description) {
   padding-block: var(--tugx-session-identity-row-pad, 12px);
 }
 
-/* ── `inset`, `wash`, `duplex`, `reveal` — no leading column ──────────────
-   With the indicator on the name line there is no leading accessory at all,
-   so the row primitive renders no leading column and every line — the name
-   and both PULSE runs — starts at the row's own inline padding. That reclaimed
-   gutter is the fit's whole proposal, and it is bought by the rules above
-   rather than by a rule here.
+/* ── The `inset` fit — no leading column ─────────────────────────────────
+   With the indicator on the title line there is no leading accessory at all,
+   so the row primitive renders no leading column and every line starts at the
+   row's own inline padding. That reclaimed gutter is the fit's whole proposal,
+   and it is bought by the rules above rather than by a rule here.
 
-   The PULSE then takes a small inset off that edge — see the knob. Not in the
-   `gutter` fit, where the leading column already indents every line past the
-   dot and a second inset would only push the reading further right. It is
+   The activity then takes a small inset off that edge — see the knob. It is
    padding rather than a margin so the trailing accessory keeps the row's own
    far edge: the tape is pinned to the end of the line, and only the start of
    the reading moves. */
-.tug-session-row[data-fit="inset"] .tug-pulse,
-.tug-session-row[data-fit="reveal"] .tug-pulse,
-.tug-session-row[data-fit="wash"] .tug-pulse,
-.tug-session-row[data-fit="duplex"] .tug-pulse {
+.tug-session-row[data-fit="inset"] .tug-pulse {
   padding-inline-start: var(--tugx-session-row-pulse-inset);
 }
 
-/* On the four-line stack the PULSE joins the indented group instead, so all
-   three sub-lines start on ONE vertical and the callsign reads as their
-   heading. After the fit rules deliberately — this and they carry the same
-   specificity, so source order is what decides, and the stack's indent is the
-   more specific intent. */
+/* On the three-level stack the activity joins the indented group instead, so
+   both sub-lines start on ONE vertical and the title reads as their heading.
+   After the fit rule deliberately — the two carry the same specificity, so
+   source order is what decides, and the stack's indent is the more specific
+   intent. */
 .tug-session-row:has(.tug-session-row-description) .tug-pulse {
   padding-inline-start: var(--tugx-session-identity-row-indent, 10px);
 }
@@ -275,85 +254,11 @@ body {
    element, which is that component's documented mount-site override.
 
    The reserve is the tape's own advance plus the gap it already keeps from
-   the run beside it, so BOTH lines stop on one vertical a clear few pixels
-   off the tape — the headline no longer runs under a graph it cannot be read
-   through, and the two lines end where each other ends.
-
-   Not in the `wash` fit: there the tape leaves the flow deliberately so the
-   lines can have its width, and reserving it back is the one thing that fit
-   exists to not do. */
-.tug-session-row:not([data-fit="wash"]) .tug-pulse[data-layout="stacked"] {
+   the run beside it, so the activity stops on a vertical a clear few pixels
+   off the tape rather than running under a graph it cannot be read through. */
+.tug-session-row .tug-pulse[data-layout="stacked"] {
   --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
   --tugx-pulse-stacked-trailing-reserve: calc(
     var(--tugx-session-row-spark-advance) + var(--tugx-pulse-trailing-gap)
   );
-}
-
-.tug-session-row[data-fit="wash"] .tug-pulse[data-layout="stacked"] {
-  --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
-}
-
-/* ── `wash` — the tape behind the type ───────────────────────────────────
-   The sparkline leaves the flow and paints at the trailing edge, under the
-   PULSE. The activity run then has the width the tape was spending, which on
-   a Lens-width row is the difference between reading a path and reading its
-   first half. Held back hard and inert to the pointer: it is a texture that
-   says "this session is busy", and the type in front of it is the reading. */
-.tug-session-row-wash {
-  position: absolute;
-  /* Stated rather than left at 0: an absolute box is placed against its
-     ancestor's PADDING box, so a flush tape here would ignore the trailing
-     inset every other piece of furniture on the row takes. */
-  inset-inline-end: var(--tugx-session-row-trailing-inset);
-  inset-block-end: 0;
-  z-index: -1;
-  display: flex;
-  align-items: flex-end;
-  opacity: var(--tugx-session-row-wash-opacity);
-  pointer-events: none;
-}
-
-/* ── `duplex` — both levels on one line ──────────────────────────────────
-   The PULSE in its inline form, as the session card's strip wears it: intent
-   pinned, activity giving way past the `›`, tape at the end. The row is two
-   lines instead of three, and the activity has a whole line's width rather
-   than a line minus the tape.
-
-   The bar's standing geometry is a strip's, not a row's: a 34px bar under a
-   name line is mostly air. Both numbers are declared HERE, on the pulse's own
-   element, which is that component's documented mount-site override — the
-   baseline moves with the height because a 21px baseline cannot exist inside a
-   22px bar. */
-.tug-session-row[data-fit="duplex"] .tug-pulse[data-layout="inline"] {
-  --tugx-pulse-bar-height: 22px;
-  --tugx-pulse-baseline: 15px;
-}
-
-/* ── `reveal` — furniture that costs nothing at rest ─────────────────────
-   The slots are BOTH hidden and zero-width until the row is engaged. At rest
-   the name gets the entire row; on engage the slots claim their width back
-   from the name, which is the only text on the row that can afford to give it
-   (it is short, and it is the one string the reader already knows).
-
-   Engagement is the same four states the row primitive's own trailing reveal
-   uses — hover, focus within, selected, and the list view's keyboard cursor —
-   so a row reveals identically to the pointer and to the keyboard. */
-.tug-session-row[data-fit="reveal"] .tug-session-row-slots {
-  inline-size: 0;
-  margin-inline-start: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition: opacity var(--tugx-session-row-reveal-duration) ease-out;
-}
-
-.tug-session-row[data-fit="reveal"]:hover .tug-session-row-slots,
-.tug-session-row[data-fit="reveal"]:focus-within .tug-session-row-slots,
-.tug-session-row[data-fit="reveal"][data-selected="true"] .tug-session-row-slots,
-.tug-list-view-cell[data-key-cursor]
-  .tug-session-row[data-fit="reveal"]
-  .tug-session-row-slots {
-  inline-size: auto;
-  margin-inline-start: var(--tugx-session-row-name-gap);
-  overflow: visible;
-  opacity: 1;
 }

@@ -34,7 +34,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::session_ledger::{
-    ScanCacheRow, SessionLedger, USER_PROMPT_MAX_CHARS, claude_project_dir,
+    ScanCacheRow, SessionLedger, SessionScanMetrics, USER_PROMPT_MAX_CHARS, claude_project_dir,
 };
 use crate::turn_engine::{Frontier, SigRecord, parse_significant, segment_turns, step_record};
 
@@ -1252,6 +1252,72 @@ fn cache_row_from_parsed(parsed: &ParsedSession, project_dir: &str) -> ScanCache
     }
 }
 
+/// Re-derive one session's scan metrics from its JSONL and write both back —
+/// the turn-end freshness path ([D132]).
+///
+/// The activity line on a Session card's masthead reads a turn count and an
+/// on-disk size the instant a turn ends, which is exactly when the scan-derived
+/// numbers were most stale: the only production writer of either was the picker
+/// scan. This is that same write for one session, composed from the same
+/// incremental entry points, so no second counting rule appears anywhere.
+///
+/// Returns the fresh `(file_size, turn_count)` when it wrote, and `None` when
+/// there was nothing to do: the file is missing or unreadable, the parse
+/// excluded it, or `(size, mtime)` already matches the cached pair. `None` is
+/// therefore "no push needed" as much as it is "no answer".
+///
+/// Never a naive full parse. A file that only grew past a recorded frontier
+/// resumes from it, which is the append-only steady state a turn ending leaves.
+/// A turn that lands a compaction or a rewind does force a re-stream, by the
+/// engine's own rules.
+pub fn refresh_session_metrics(
+    ledger: &SessionLedger,
+    project_dir: &str,
+    claude_session_id: &str,
+) -> Option<SessionScanMetrics> {
+    let (dir, canonical) = claude_project_dir(ledger.claude_projects_root(), project_dir);
+    let path = dir.join(format!("{claude_session_id}.jsonl"));
+    let (file_size, file_mtime) = stat_size_mtime(&path)?;
+    let cached = ledger
+        .get_scan_cache(claude_session_id)
+        .unwrap_or_else(|err| {
+            tracing::warn!(error = %err, "turn-end refresh: cache read failed");
+            None
+        });
+    let mut seed = None;
+    if let Some(row) = cached.as_ref() {
+        if row.file_size == file_size && row.file_mtime == file_mtime {
+            return None;
+        }
+        // Same rule the scan uses: seed only when the file GREW past the
+        // recorded frontier. A shrunk or rewritten file re-streams.
+        if file_size > row.file_size {
+            seed = resume_seed_from_cache(row);
+        }
+    }
+    let candidate = SessionFileCandidate {
+        session_id: claude_session_id.to_owned(),
+        path,
+        file_size,
+        file_mtime,
+    };
+    let parsed = parse_candidate(&candidate, &canonical, seed.as_ref())?;
+    let row = cache_row_from_parsed(&parsed, &canonical);
+    if let Err(err) = ledger.upsert_scan_cache(&row) {
+        tracing::warn!(error = %err, "turn-end refresh: cache write failed");
+        return None;
+    }
+    if let Err(err) =
+        ledger.reconcile_turn_count_from_engine(&parsed.meta.session_id, parsed.meta.turn_count)
+    {
+        tracing::warn!(error = %err, "turn-end refresh: ledger count reconcile failed");
+    }
+    Some(SessionScanMetrics {
+        file_size,
+        turn_count: parsed.meta.turn_count,
+    })
+}
+
 /// Drop superseded lineage ancestors from a listing. A resumed session's
 /// file embeds its pre-rotation history under the old session ids; the old
 /// files are then stale prefixes of the new one and listing them alongside
@@ -1797,6 +1863,74 @@ mod tests {
         let empty = scan_external_sessions_cached(&ledger, PROJECT);
         assert!(empty.metas.is_empty());
         assert!(ledger.get_scan_cache(SESSION_A).unwrap().is_none());
+    }
+
+    #[test]
+    fn turn_end_refresh_is_a_no_op_on_an_unchanged_file() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        seed(
+            &root.path().join("projects"),
+            PROJECT,
+            SESSION_A,
+            &tui_shaped_jsonl(SESSION_A, PROJECT),
+        );
+        scan_external_sessions_cached(&ledger, PROJECT);
+        // `(size, mtime)` still matches the cached pair, so there is nothing to
+        // re-derive and nothing to announce.
+        assert!(refresh_session_metrics(&ledger, PROJECT, SESSION_A).is_none());
+        // A session with no file at all is the same answer, not a panic.
+        assert!(
+            refresh_session_metrics(&ledger, PROJECT, "00000000-0000-0000-0000-000000000000")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn turn_end_refresh_writes_the_new_count_and_size() {
+        let root = tempfile::tempdir().unwrap();
+        let ledger = ledger_with_root(root.path());
+        let projects = root.path().join("projects");
+        seed(
+            &projects,
+            PROJECT,
+            SESSION_A,
+            &terminated_jsonl(SESSION_A, PROJECT, &["first prompt", "second prompt"]),
+        );
+        // A ledger row for the session, so the count reconcile has something to
+        // write. Its own `turn_count` starts sparse.
+        ledger
+            .record_spawn(SESSION_A, "ws", PROJECT, "card-1", 1, None)
+            .unwrap();
+        scan_external_sessions_cached(&ledger, PROJECT);
+        assert_eq!(ledger.get(SESSION_A).unwrap().unwrap().turn_count, 2);
+
+        // A turn lands: the file grows by one submission.
+        let path = projects
+            .join(encode_claude_project_name(PROJECT))
+            .join(format!("{SESSION_A}.jsonl"));
+        let mut content = fs::read_to_string(&path).unwrap();
+        content.push_str(&format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{SESSION_A}\",\"cwd\":\"{PROJECT}\",\"message\":{{\"role\":\"user\",\"content\":\"third prompt\"}}}}\n"
+        ));
+        fs::write(&path, &content).unwrap();
+
+        let metrics = refresh_session_metrics(&ledger, PROJECT, SESSION_A).expect("refreshed");
+        assert_eq!(metrics.turn_count, 3);
+        assert_eq!(metrics.file_size, content.len() as i64);
+        // Both writes landed: the ledger row's count and the scan cache the
+        // next push will read its pair from.
+        assert_eq!(ledger.get(SESSION_A).unwrap().unwrap().turn_count, 3);
+        assert_eq!(
+            ledger.scan_metrics_for(SESSION_A).unwrap(),
+            Some(SessionScanMetrics {
+                file_size: content.len() as i64,
+                turn_count: 3,
+            })
+        );
+        // And it is idempotent — a second refresh with no further append has
+        // nothing to say.
+        assert!(refresh_session_metrics(&ledger, PROJECT, SESSION_A).is_none());
     }
 
     /// Terminated-lines fixture (every record ends in `\n`) so the

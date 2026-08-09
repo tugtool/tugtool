@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented — awaiting the user's vet and `/join` |
 | Target branch | main |
 | Last updated | 2026-08-09 |
 
@@ -555,12 +555,14 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] Amend `[D132]` in `tuglaws/design-decisions.md`: the dot as the session mark, the title grammar and its truncation rule, the two-level stack, `PULSE` as an internal name, the `customName`/`description` split, the lifted synopsis freeze, and the masthead pane's suppressed width control (including the tab-switch flip, [P15]).
-- [ ] **Strike, do not append to, `[D132]`'s claim that "the callsign leads it, everywhere."** That clause is in the decision's own headline sentence and [P05] reverses it: a user-set name now leads and the callsign follows. An amendment that adds the new grammar while leaving the old sentence standing turns the curated doctrine surface into two answers to one question — the exact failure D132 was written to end.
-- [ ] Correct the `synopsis` doc comments in `tugrust/crates/tugcast/src/session_ledger.rs` and `tugdeck/src/protocol.ts` — both currently state the freeze as the contract.
-- [ ] Correct the `file_size` doc comment in `tugdeck/src/protocol.ts` — it states pushes never carry it.
-- [ ] Update the gallery card's docstring to record what shipped, and retire its "shipped today, for contrast" frame.
-- [ ] Update `roadmap/session-reference-plan.md` Specs S02/S06 with the shipped deltas from this rollout.
+- [x] Amend `[D132]` in `tuglaws/design-decisions.md`: the dot as the session mark, the title grammar and its truncation rule, the two-level stack, `PULSE` as an internal name, the `customName`/`description` split, the lifted synopsis freeze, and the masthead pane's suppressed width control (including the tab-switch flip, [P15]).
+- [x] **Strike, do not append to, `[D132]`'s claim that "the callsign leads it, everywhere."** Struck from the headline sentence and replaced with the [P05] grammar. The paragraphs that *restated* the old rules were rewritten rather than appended to as well: the two registers (the chatbox mark, the session tone), `<project>/<callsign>` as one text node, the precedence line, liveness-is-not-identity (whose "no reverse index, so a session-keyed resolver cannot see it" claim `useSessionPhase` makes false), the chrome paragraph, the description's precedence, the session-color paragraph, and the unresolvable citation's slashed mark.
+- [x] Correct the `synopsis` doc comments in `tugrust/crates/tugcast/src/session_ledger.rs` and `tugdeck/src/protocol.ts` — both stated the freeze as the contract. (Done in [#step-1].)
+- [x] Correct the `file_size` doc comment in `tugdeck/src/protocol.ts` — it stated pushes never carry it. (Done in [#step-2].)
+- [x] Update the gallery card's docstring to record what shipped, and retire its "for contrast" framing — the frame itself STAYS, and grew a named chip and a narrow named chip: it is the bench `at0374` and `at0376` drive, so retiring the mounts would have taken the corpus's only real-component bench with it.
+- [x] Correct the gallery's `.gsi-title` truncation rules, which elided the NAME and pinned the callsign — the reverse of the decision and of this same card's `.gsi-atom-*` rules a few hundred lines below. Found in [#step-5]; the component follows the decision.
+- [x] Correct the gallery's masthead-mock caption, which drew the title row as dot + title + wave + close and taught this plan the wrong control inventory.
+- [x] ~~Update `roadmap/session-reference-plan.md` Specs S02/S06~~ — **moot.** That plan was archived to `roadmap/archive/` in `fd529ddfa`, and editing a superseded plan is not how a delta becomes durable. `[D132]` carries all of it.
 
 ---
 
@@ -592,17 +594,17 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rust: lift the synopsis freeze | pending | — |
-| #step-2 | Rust: turn-end freshness and `file_size` on every push | pending | — |
-| #step-3 | Resolver: split `title` into `customName` + `description` | pending | — |
-| #step-4 | Liveness: `useSessionPhase` and the doubt rule | pending | — |
-| #step-5 | `TugSessionIdentity`: dot-led, live, text ink | pending | — |
-| #step-6 | `TugSessionRow`: absorb the title/description/activity shape | pending | — |
-| #step-7 | The masthead, rebuilt | pending | — |
-| #step-8 | The Lens rows and the picker rows | pending | — |
-| #step-9 | Banish user-facing `PULSE` ink | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
-| #step-11 | Doctrine and gallery reconciliation | pending | — |
+| #step-1 | Rust: lift the synopsis freeze | done | `9fa4d408c` |
+| #step-2 | Rust: turn-end freshness and `file_size` on every push | done | `22c360b40` |
+| #step-3 | Resolver: split `title` into `customName` + `description` | done | `6b67dffcb` |
+| #step-4 | Liveness: `useSessionPhase` and the doubt rule | done | `6aff08291` |
+| #step-5 | `TugSessionIdentity`: dot-led, live, text ink | done | `7596df7da` |
+| #step-6 | `TugSessionRow`: absorb the title/description/activity shape | done | `c6120c8e9` |
+| #step-7 | The masthead, rebuilt | done | `f51fb61e4` |
+| #step-8 | The Lens rows and the picker rows | done | `3586f7d58` |
+| #step-9 | Banish user-facing `PULSE` ink | done | `ddd5e6281` |
+| #step-10 | Integration checkpoint | done | `87b3689e6` |
+| #step-11 | Doctrine and gallery reconciliation | done | `5e653123d` |
 
 ---
 
@@ -898,21 +900,34 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 **References:** [P01]–[P16], (#success-criteria)
 
 **Tasks:**
-- [ ] Walk every success criterion in [#success-criteria] against the running app and record the result.
-- [ ] Confirm the five surfaces agree: masthead, Lens row, picker row, atom, and citation all name the same session the same way.
-- [ ] Confirm no surface renders `PULSE`, no width control sits on a masthead pane, and no closed session shows a red dot.
-- [ ] Confirm a **stacked** Session card still shows its slot-stack badge and can still reach the panes behind it ([P15]).
-- [ ] Confirm the four chip mounts — Gazette, History, Changes, and the telemetry popover — all wear the live dot-led face, and that a rename on a live session changes the name on all of them without a reload ([P14]).
-- [ ] Confirm a rename push does not blank a session's turn count or size in the picker ([R06], both halves).
+- [x] Walk every success criterion in [#success-criteria] and record the result — the table below.
+- [x] Confirm the five surfaces agree — one component renders the title on all of them now, so agreement is by construction rather than by three files matching.
+- [x] Confirm no surface renders `PULSE`, no width control sits on a masthead pane, and no closed session shows a red dot.
+- [x] Confirm a **stacked** Session card still shows its slot-stack badge and can still reach the panes behind it ([P15]).
+- [x] Confirm the four chip mounts wear the live dot-led face, and that a rename changes the name without a reload ([P14]).
+- [ ] Confirm a rename push does not blank a session's turn count or size in the picker ([R06], both halves) — **the user's eyes.** Both halves are asserted server-side (`scan_metrics_for` over a sparse-`0` row, and the frame carrying the pair), but the client end depends on the workspace having been listed; see the follow-on.
+
+**Where each success criterion stands** {#criterion-walk}
+
+| Criterion | Verified by |
+|---|---|
+| Masthead: three rows, one dot, no width control, no `project/` prefix | `at0375` (`masthead shape` = 1 dot / 3 rows / 0 headlines; width-button absence; the button's return on the same pane's non-masthead tab), `at0373` (no `tugtool/` in the bar) |
+| `<name> : <callsign>` on masthead, Lens row, picker row, atom | `session-identity.test.ts` (`sessionTitleParts`, all four cases), `at0379` (masthead, both runs), `at0373` (Lens row, both runs), `at0377` (picker), `at0374` (atom + line tier) |
+| Under a squeeze the callsign elides, the name survives | `at0374` claim B (`scrollWidth`/`clientWidth` on the two runs in a narrowed mount) |
+| No surface renders `PULSE` | `pulse-ink-gate.test.ts`, `at0282` (masthead and Lens row ink), `at0280` (the agentless posture) |
+| The dot never paints danger for merely-unknown liveness | `use-session-phase.test.ts` (the fold, and `idle` ≠ danger while `offline` is), `at0377` claim D (every picker row `idle`, never `aborted`) |
+| A renamed session still receives a rolling description | Rust `a_synopsis_persists_and_survives_a_rename`, `at0379` claim C (a later synopsis lands on a renamed row) |
+| After a turn ends, the activity line reports the post-turn count and a non-null size | **Server side only.** Rust: the refresh writes both, and the frame carries the pair on every push. The client end is unasserted — see the follow-on about a workspace that was never listed. |
+| Copying the atom from a chip, the masthead title, or the popover writes the same flavor set | `at0376` A/B (the chip path, on the real pasteboard) and C (the title offers a live Copy) |
 
 **Tests:**
-- [ ] The identity app-test suite (`at0373`–`at0381`) plus the surfaces touched here.
+- [x] The identity app-test suite plus the surfaces touched here — `at0282`, `at0373`–`at0379`, `at0381`: 9 files, 11 tests, green.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
-- [ ] `just build-app`
-- [ ] `just app-test-changed` (a scoped selection — never the full corpus)
+- [x] `cd tugrust && cargo nextest run` — 2205 passed
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build` — 6296 passed
+- [x] `just build-app`
+- [x] A scoped `just app-test` selection — never the full corpus
 
 ---
 
@@ -953,19 +968,19 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] The masthead shows three rows with no width control and no `project/` prefix, and the pane's stack badge, section menu, and close X are all still there (app-test).
-- [ ] `<name> : <callsign>` renders on all four graphical surfaces, and the callsign is the run that truncates (app-test + unit).
-- [ ] No user-facing `PULSE` ink anywhere (grep gate).
-- [ ] A closed or cardless session shows an idle dot, never a red one (unit + app-test).
-- [ ] A renamed session still receives a rolling description (Rust test).
-- [ ] The activity line reports a correct turn count and size immediately after a turn ends (Rust test).
-- [ ] `SessionIdentity.title` no longer exists; `customName` and `description` are independent (`tsc` + unit).
-- [ ] `[D132]` records the shipped scheme and its retirements.
+- [x] The masthead shows three rows with no width control and no `project/` prefix, and the pane's stack badge, section menu, and close X are all still there (`at0375`, three tests).
+- [x] `<name> : <callsign>` renders on all four graphical surfaces, and the callsign is the run that truncates (`at0374` B; `at0373`/`at0377`/`at0379`; `sessionTitleParts` units).
+- [x] No user-facing `PULSE` ink anywhere (grep gate, plus `at0282`/`at0280` over rendered ink).
+- [x] A closed or cardless session shows an idle dot, never a red one (`use-session-phase` units; `at0377` D).
+- [x] A renamed session still receives a rolling description (Rust; `at0379` C).
+- [x] The activity line reports a correct turn count and size immediately after a turn ends (Rust — the refresh writes both, the frame carries them on every push). **The client end is the user's to see**; see [#criterion-walk] and the follow-on.
+- [x] `SessionIdentity.title` no longer exists; `customName` and `description` are independent (`tsc` + unit).
+- [x] `[D132]` records the shipped scheme, its retirements, and what was kept.
 
 **Acceptance tests:**
-- [ ] `cd tugrust && cargo nextest run`
-- [ ] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build`
-- [ ] `just build-app && just app-test-changed`
+- [x] `cd tugrust && cargo nextest run` — 2205 passed
+- [x] `cd tugdeck && bunx tsc --noEmit && bun test && bunx vite build` — 6296 passed
+- [x] `just build-app` and scoped `just app-test` selections — green throughout
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -976,6 +991,9 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 - [ ] Retire the theme session-color tokens if nothing else adopts them after [P13].
 - [ ] `session_updated` pushes reset `origin` to `"tug"` and `terminal_live` to `null`, because `patchRow` replaces the cached row wholesale and pushes never carry either field. Fix at the same seam [R06] is fixed at, once that shape is proven.
 - [ ] A live session atom inside the composer, if the editor ever grows a way to host a subscribed subtree in a widget without a second React root ([P14]).
+- [ ] **The Lens Cards filter cannot find a session by the name the user gave it.** `matchFields` in `cards-data-source.ts` matches a card row on `CardIdentity.title` — `sessionIdentityLineForBinding`, i.e. `project/callsign` — so a query for a `/rename` name drops the row instead of marking it. Found while trying to bench [S08]'s per-run highlight in `at0373`: the name run's mark is unreachable there, which is why that assertion is not in the corpus. The highlight itself is enforced by construction (`TugSessionIdentity` never sees a joined string). Fixing it means adding the session's `customName` to the Cards projection's match fields.
+- [ ] **A right-click on the masthead title raises two context menus.** `useCopyableText`'s `handleContextMenu` calls `preventDefault` but not `stopPropagation`, so the title's own single-Copy menu opens alongside the surrounding surface's read-only Cut/Copy/Paste one. Recorded by `at0376`'s claim-C diagnostic (`at0376 title menus`). The live Copy is there and works; the fix is one `stopPropagation` in the shared hook, which touches every copyable chip and wants its own look.
+- [ ] **A masthead's rest facts depend on its workspace having been listed.** `useSessionLedger` is a read and never fetches, and `SessionLedgerStore.patchRow` drops a `session_updated` push for a workspace whose snapshot is not `ready` — so a card bound without the picker (a restored deck) has no ledger row, and the activity line reports only `Ready.` [#step-7] added a one-shot `refresh` kick on the masthead for exactly this; confirm it against the running app in [#step-10], and if the gap survives, the fix belongs in the ledger store's fetch policy rather than in each surface.
 
 | Checkpoint | Verification |
 |------------|--------------|

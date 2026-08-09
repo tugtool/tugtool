@@ -3,20 +3,21 @@
  * single-card session pane in the Lens's Cards section:
  *
  *   [dot] <session name>                         <slot layout>
- *   <standing goal>
+ *   <description>
  *   <latest pulse line>                        <activity sparkline>
  *
- * The middle line is the agent's standing session overview — the same string the
- * card's masthead wears as its headline. Both PULSE lines always render, so the
- * row is the same height whatever the session is doing and a deck with no
- * model sees a row that stands in rather than one that collapses.
+ * The middle line is the agent's rolling description of the session, with the
+ * session's creation date standing in until one is written — so the row is the
+ * same height whatever the session is doing, and a deck with no model sees a row
+ * that says something true rather than one that collapses. The standing-goal
+ * level that used to sit here is gone: the description already says what the
+ * session is for, and a goal beside it read as an echo.
  *
  * The name is the session identity's Line tier, resolved through
  * `useSessionIdentity` like every other identity surface. The row itself is
- * `TugSessionRow`, the shared
- * component the Pulse Display gallery card auditions its fits on: how the row
- * divides its one line's width between the indicator, the name, the slots, and
- * the PULSE's three parts is that component's decision, so what the gallery
+ * `TugSessionRow`, the shape the masthead and the new-session picker also wear:
+ * how it divides a rail's width between the dot, the title, the slots, and the
+ * activity with its tape is that component's decision, so what the gallery
  * approves is what the Lens wears, by construction rather than by two files
  * agreeing.
  *
@@ -41,6 +42,7 @@ import {
   TUG_SESSION_SPARK_CURVE,
   TUG_SESSION_SPARK_FULL_SCALE_CHARS,
 } from "@/components/tugways/tug-session-row";
+import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { TugSparkline } from "@/components/tugways/tug-sparkline";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import {
@@ -48,55 +50,17 @@ import {
   compactionProgressStore,
   isCompactingCard,
 } from "@/lib/compaction-progress-store";
-import { cardServicesStore } from "@/lib/card-services-store";
-import {
-  sessionIdentityLine,
-  useSessionIdentity,
-} from "@/lib/session-identity";
-import {
-  latestLineForScope,
-  usePulse,
-  usePulseOverview,
-} from "@/lib/pulse-store";
-import { restingActivityText } from "@/lib/pulse-line/resting-line";
+import { useSessionIdentity } from "@/lib/session-identity";
+import { latestLineForScope, usePulse } from "@/lib/pulse-store";
+import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import { useSessionCreatedAtMs } from "@/lib/session-created-at";
 import { useSessionLedger } from "@/lib/session-ledger-store";
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
   isRateChannel,
 } from "@/lib/session-activity-store";
-
-/** Stable no-op subscribe for a card whose services aren't constructed yet. */
-const NOOP_SUBSCRIBE = (): (() => void) => () => {};
-
-/**
- * When the session was made — the date half of the row's resting line.
- *
- * Same two sources, in the same order, as the Z2 control bar's "Session
- * created" metadata: the dev session ledger's `created_at` is the authority
- * (it is present at zero turns, which is exactly the state a resting row is
- * reporting on), with the replay-derived anchor covering the window before
- * the ledger answers. Null until one of them does.
- */
-function useSessionCreatedAtMs(
-  cardId: string,
-  tugSessionId: string,
-  projectDir: string,
-): number | null {
-  const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
-    cardServicesStore.getServices(cardId),
-  );
-  const store = services?.codeSessionStore ?? null;
-  const replayCreatedAtMs = useSyncExternalStore(
-    store?.subscribe ?? NOOP_SUBSCRIBE,
-    store !== null ? () => store.getSnapshot().sessionCreatedAtMs : () => null,
-    () => null,
-  );
-  const ledger = useSessionLedger(projectDir);
-  const ledgerCreatedAtMs =
-    ledger.rows.find((r) => r.session_id === tugSessionId)?.created_at ?? null;
-  return ledgerCreatedAtMs ?? replayCreatedAtMs;
-}
 
 /** The per-row activity sparkline over the session's composite series. */
 function RowSparkline({
@@ -163,17 +127,13 @@ export function CardsSessionRow({
   filterQuery,
   onRowPointerDown,
 }: CardsSessionRowProps): React.ReactElement {
-  // The row's name line is the identity's Line tier — `<project>/<callsign>`,
-  // the same string the tab strip and the Window menu wear, resolved through
-  // the one hook so a `/rename` or a reroll repaints here with no reload.
+  // The row's title is the identity's Line tier, rendered by the identity
+  // component itself — `<name> : <callsign>` in two separately-sized runs, with
+  // the filter mark painted inside each. Resolved through the one hook, so a
+  // `/rename` or a reroll repaints here with no reload.
   const identity = useSessionIdentity(tugSessionId, { projectDir });
-  const displayName = identity === null ? "" : sessionIdentityLine(identity);
   const pulse = usePulse();
   const latest = latestLineForScope(pulse.lines, tugSessionId);
-  // The session's standing goal — the same string the card's strip wears as
-  // its headline. Rendered on its own line here (L1) rather than inline, and
-  // only when it exists: an absent overview costs the row no height.
-  const overview = usePulseOverview(tugSessionId);
   // The compaction pin, exactly as the on-card strip wears it: a `/compact`
   // run streams nothing for minutes, so without it the row keeps showing the
   // last line from before the submit for the whole run.
@@ -184,16 +144,37 @@ export function CardsSessionRow({
   // The session's creation time — the date the resting line carries when the
   // session has never spoken.
   const createdAtMs = useSessionCreatedAtMs(cardId, tugSessionId, projectDir);
+  // The session's own ledger row — the turn count, the on-disk size, and when it
+  // last moved, which are the activity line's rest form.
+  const ledger = useSessionLedger(projectDir);
+  const row = ledger.rows.find((r) => r.session_id === tugSessionId) ?? null;
   // What the activity level says. A live beat is the beat; the two absences —
   // a finished turn's bare `Done` marker, and a session with no beats at all —
-  // become the resting reading, which dates itself and says what the state is
-  // (see `resting-line`). The row is a monitor, so those two are what it wears
-  // most of the time.
-  const pulseText = !pulse.enabled
-    ? null
-    : isCompactingCard(compaction, cardId)
-      ? COMPACTING_PULSE_TEXT
-      : restingActivityText(latest, createdAtMs);
+  // become the REST SENTENCE: how much conversation there has been, how big it
+  // has grown, when it last moved, and that it is open for another turn. The row
+  // is a monitor, so that is what it wears most of the time. Every row here is a
+  // bound live card, so `Ready.` always closes the line.
+  const restLine = sessionActivityRestLine({
+    turnCount: row?.turn_count ?? 0,
+    fileSize: row?.file_size ?? null,
+    lastUsedAtMs: row?.last_used_at ?? null,
+    hasCard: true,
+  });
+  const beat = pulse.enabled ? latest : null;
+  const pulseText = isCompactingCard(compaction, cardId)
+    ? COMPACTING_PULSE_TEXT
+    : beat !== null
+      ? beat.text
+      : restLine;
+  // The middle level: the agent's rolling description, with the session's
+  // creation date standing in until one is written. The prompt rung [S02] puts
+  // between them is the PICKER's — every row here is a bound live card, so there
+  // is no freshly-scanned session whose only human-meaningful text is its own
+  // first prompt.
+  const description =
+    identity?.description ??
+    (createdAtMs !== null ? `Created ${formatRestingStamp(createdAtMs)}` : "");
+  const descriptionStandIn = identity?.description == null;
   return (
     <TugSessionRow
       className="session-row-content lens-cards-row"
@@ -203,20 +184,38 @@ export function CardsSessionRow({
       data-lens-group-run="sessions"
       indicator={
         <SessionPhaseDot
-          cardId={cardId}
+          sessionId={tugSessionId}
           size={TUG_SESSION_ROW_INDICATOR_SIZE}
           // The ONLY place in the app that takes the dot's period jitter: a
           // list of separate sessions, each doing its own work.
           drift
         />
       }
-      name={renderFilterHighlight(displayName, filterQuery)}
+      name={
+        identity === null ? null : (
+          // The row's own dot leads the line, so the identity renders its runs
+          // only — one mark per row, never two.
+          <TugSessionIdentity
+            identity={identity}
+            tier="line"
+            dot={false}
+            highlight={filterQuery}
+          />
+        )
+      }
       slots={<SlotPicker cardId={cardId} />}
       // The row is its own reorder handle — a vertical drag from anywhere on
       // it that is not the slot picker carries it.
       onPointerDown={(e) => onRowPointerDown(orderKey, e)}
-      intent={pulse.enabled && overview !== null ? overview.text : undefined}
-      activity={pulseText ?? undefined}
+      description={renderFilterHighlight(description, filterQuery)}
+      descriptionStandIn={descriptionStandIn}
+      // Highlighted over what the line actually shows: the composed rest
+      // sentence takes the mark; a live beat is not a searchable fact.
+      activity={
+        pulseText === restLine
+          ? renderFilterHighlight(pulseText, filterQuery)
+          : pulseText
+      }
       sparkline={<RowSparkline tugSessionId={tugSessionId} />}
     />
   );

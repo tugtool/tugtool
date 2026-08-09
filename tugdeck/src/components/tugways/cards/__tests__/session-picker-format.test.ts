@@ -1,15 +1,16 @@
 /**
- * session-picker-format — pure-logic tests for the session-row subtitle
- * ([P07] no client recompute). The subtitle reads `turn_count` straight
- * from the row (the reconciled authority) and renders it beside the size.
+ * session-picker-format — pure-logic tests for the picker's row copy.
+ *
+ * The dot-joined subtitle (`<when> · <turns> · <size> · id <short>`) is gone with
+ * the metadata line it filled: those facts are the activity line's rest form now,
+ * and its grammar is tested in `lib/__tests__/session-activity-line.test.ts`.
+ * What survives here is the failed row's copy, whose whole point is that it does
+ * not fabricate a cause.
  */
 
 import { describe, expect, test } from "bun:test";
 
-import {
-  formatFailedRowSubtitle,
-  formatSessionRowSubtitle,
-} from "../session-picker-format";
+import { formatFailedRowSubtitle } from "../session-picker-format";
 import type { SessionRow } from "@/protocol";
 
 function row(over: Partial<SessionRow>): SessionRow {
@@ -34,33 +35,6 @@ function row(over: Partial<SessionRow>): SessionRow {
     ...over,
   };
 }
-
-describe("formatSessionRowSubtitle — turns beside size", () => {
-  test("renders [timestamp, N turns, size, id] in order", () => {
-    const s = formatSessionRowSubtitle(row({ turn_count: 42, file_size: 4096 }));
-    expect(s).toBe("just now · 42 turns · 4.0 KB · id abcdef12");
-  });
-
-  test("singular turn", () => {
-    const s = formatSessionRowSubtitle(row({ turn_count: 1, file_size: 100 }));
-    expect(s).toBe("just now · 1 turn · 100 B · id abcdef12");
-  });
-
-  test("drops the turns segment when turn_count is 0", () => {
-    const s = formatSessionRowSubtitle(row({ turn_count: 0, file_size: 2048 }));
-    expect(s).toBe("just now · 2.0 KB · id abcdef12");
-  });
-
-  test("drops the size segment when file_size is null (tug/live row)", () => {
-    const s = formatSessionRowSubtitle(row({ turn_count: 7, file_size: null }));
-    expect(s).toBe("just now · 7 turns · id abcdef12");
-  });
-
-  test("both turns and size absent → just timestamp + id", () => {
-    const s = formatSessionRowSubtitle(row({ turn_count: 0 }));
-    expect(s).toBe("just now · id abcdef12");
-  });
-});
 
 describe("formatFailedRowSubtitle — no fabricated cause", () => {
   test("an intact on-disk transcript invites a retry, never claims missing", () => {

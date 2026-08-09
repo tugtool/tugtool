@@ -21,8 +21,8 @@
  *      characters of an id nobody can read. It renders the session atom now.
  *
  *   C. **An unresolvable citation is inert, and looks it.** A ref naming a
- *      session this ledger has no record of keeps the atom's shape, slashes its
- *      icon, and takes no click ([P13]) — a reference that resolved to nothing
+ *      session this ledger has no record of keeps the atom's shape, dashes its
+ *      border, and takes no click — a reference that resolved to nothing
  *      must not look like one that resolves. That verdict comes from the
  *      ledger, over `resolve_sessions`, which is why the assertion waits for
  *      the answer rather than for the chip.
@@ -193,7 +193,11 @@ describe.skipIf(!SHOULD_RUN)("at0381 — every citation surface names the sessio
         expect(chips).toHaveLength(2);
         // B. The resolvable one is the callsign, and no part of the UUID.
         const resolved = chips.find((c) => !c.missing);
-        expect(resolved?.text).toContain(`tugtool/${TAG}`);
+        // The atom's title ink is the callsign with no `project/` in front of
+        // it — the prefix is `sessionIdentityLine`'s channel, which the tab
+        // strip above reads, and it survives in the tooltip and the citation.
+        expect(resolved?.text).toContain(TAG);
+        expect(resolved?.text).not.toContain("tugtool/");
         expect(resolved?.text).not.toContain(SESSION_ID);
         // The whole rail is free of raw ids, not merely this chip.
         const railText = await app.evalJS<string>(

@@ -219,38 +219,6 @@
   padding-inline-end: var(--tugx-lens-row-inset-end);
 }
 
-/* ── The fit audition ────────────────────────────────────────────────── */
-
-.gpd-fit-audition {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-lg);
-}
-
-.gpd-fit {
-  display: flex;
-  flex-direction: column;
-  gap: var(--tug-space-xs);
-}
-
-/* The fit meter's rows report two numbers and a verdict — no specimen column,
-   because the specimens are the audition rows above and the meter reads them
-   there. A row of its own class, not the density meter's: that meter's rows are
-   each expected to CARRY a measured PULSE. */
-.gpd-fit-row {
-  display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
-  align-items: baseline;
-  column-gap: var(--tug-space-sm);
-}
-
-/* @tug-renders-on var(--tugx-pane-bg) */
-.gpd-fit-readout {
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
 /* ── The measuring rig ───────────────────────────────────────────────── */
 
 .gpd-meter {

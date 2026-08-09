@@ -42,14 +42,22 @@
  *      "the pane portals its content" into a contract with a failing test
  *      behind it.
  *
- *   E. **The three lines are one block.** They share a left edge — the
- *      CALLSIGN's, not the mark's in front of it — the lead line seats where a
- *      one-line title bar seats its title, the telemetry widget stands on that
- *      same row as the pane's own controls, and the tape holds the trailing
- *      edge with the PULSE runs reaching it. Every one of these is a claim
- *      about pixels in a live pane against real content, so the test drives a
- *      real overview and a real beat through the production pulse parser
- *      rather than measuring an empty band.
+ *   E. **The three lines are one block, and there are exactly three.** They
+ *      share a left edge — the TITLE's, not the dot's in front of it — the
+ *      title line seats where a one-line title bar seats its title, the
+ *      telemetry widget stands on that same row as the pane's own controls, and
+ *      the tape holds the trailing edge with the activity run reaching it.
+ *      Every one of these is a claim about pixels in a live pane against real
+ *      content, so the test drives a real beat through the production pulse
+ *      parser rather than measuring an empty band.
+ *
+ *   F. **The width control is absent from a masthead pane, and nothing else in
+ *      the cluster is.** Written as an ABSENCE assertion on that one testid,
+ *      never as an equality check on the cluster's button list — which is
+ *      legitimately longer or shorter depending on whether the Session card
+ *      stands in a stack. The stack badge in particular is asserted PRESENT on
+ *      a stacked Session card: it describes the slot rather than the card, and
+ *      it is the only way into the panes behind it.
  *
  * Nothing here hangs off an animation: background app-test windows run no
  * rAF, so every assertion reads settled geometry.
@@ -62,6 +70,8 @@
  * @covers tugdeck/src/lib/card-title-store.ts
  * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
  * @covers tugdeck/src/components/tugways/tug-session-identity.css
+ * @covers tugdeck/src/components/tugways/tug-session-row.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/tugways/tug-pulse.css
  */
 
@@ -83,9 +93,13 @@ const CHROME_HEIGHT = 36;
 /** Long enough that every line has to give way somewhere. */
 const SYNOPSIS =
   "Rework how a session names itself across the masthead, the Lens, and every surface that cites one";
-const OVERVIEW = "Audit the masthead's three lines";
+/**
+ * Long enough that the activity run has to give way at ANY pane width this test
+ * uses — the tape-gap assertion can only be read off a run that was actually
+ * cut, so a beat that happened to fit would make it vacuous.
+ */
 const ACTIVITY =
-  "Running rg -n 'session-masthead' /Users/somebody/src/project/tugdeck/src/components/tugways | head -40";
+  "Running rg -n 'session-masthead' /Users/somebody/src/project/tugdeck/src/components/tugways /Users/somebody/src/project/tugdeck/src/components/chrome /Users/somebody/src/project/tests/app-test | head -40";
 
 /**
  * The most air permitted between a TRUNCATED activity run and the tape beside
@@ -124,6 +138,46 @@ function deckShape(cardIds: string[], activeCardId: string) {
       },
     ],
     activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+/**
+ * The Session pane and a second pane piled into ONE numbered slot — the shape
+ * that raises the stack badge. Mismatched widths deliberately: two panes of
+ * equal width leave the buried one fully occluded, and its badge then computes
+ * `visibility: hidden` (at0347's variant), which is not the state this asserts.
+ */
+function slotStackShape() {
+  return {
+    cards: [
+      { id: "S", componentId: "session", title: "Session", closable: true },
+      { id: "G", componentId: "gallery-input", title: "Input", closable: true },
+    ],
+    panes: [
+      {
+        id: "p0",
+        position: { x: 40, y: 40 },
+        size: { width: 520, height: 500 },
+        cardIds: ["G"],
+        activeCardId: "G",
+        title: "",
+        acceptsFamilies: ["maker"],
+        slot: 0,
+      },
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 420, height: 500 },
+        cardIds: ["S"],
+        activeCardId: "S",
+        title: "",
+        acceptsFamilies: ["maker"],
+        slot: 0,
+      },
+    ],
+    activePaneId: "p1",
+    imposition: { kind: "three-up", lens: "right" },
     hasFocus: true,
   };
 }
@@ -205,30 +259,73 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         expect(leadText).toContain(TAG);
 
         // The description line holds its place even with nothing to say, so
-        // the two lines below it do not move when a rename lands.
+        // the line below it does not move when a description lands.
         const descHeight = await app.evalJS<number>(
           `(function(){
             var el = document.querySelector(
-              ${JSON.stringify(MASTHEAD)} + ' .session-masthead-description');
+              ${JSON.stringify(MASTHEAD)} + ' .tug-session-row-description');
             return el === null ? -1 : Math.round(el.getBoundingClientRect().height);
           })()`,
         );
         expect(descHeight).toBeGreaterThan(0);
 
+        // ---- Exactly one dot and exactly three text rows. ------------------
+        // Three levels, not four: the standing-goal level left chrome, so a
+        // headline line reappearing here is the retired form coming back.
+        const shape = await app.evalJS<{
+          dots: number;
+          titles: number;
+          descriptions: number;
+          activities: number;
+          headlines: number;
+        }>(
+          `(function(){
+            var m = document.querySelector(${JSON.stringify(MASTHEAD)});
+            var n = function(sel){ return m.querySelectorAll(sel).length; };
+            return {
+              dots: n('[data-slot="tug-progress-indicator"]'),
+              titles: n('.tug-session-row-name-line'),
+              descriptions: n('.tug-session-row-description'),
+              activities: n('[data-slot="tug-pulse-activity"]'),
+              headlines: n('[data-slot="tug-pulse-headline"]'),
+            };
+          })()`,
+        );
+        note("masthead shape", JSON.stringify(shape));
+        expect(shape.dots).toBe(1);
+        expect(shape.titles).toBe(1);
+        expect(shape.descriptions).toBe(1);
+        expect(shape.activities).toBe(1);
+        expect(shape.headlines).toBe(0);
+
         // The Z2 PULSE strip is gone, and the voice speaks in exactly one
         // place. Asserted here rather than in a test of its own because "the
-        // strip is absent" and "the masthead has the PULSE" are one claim:
+        // strip is absent" and "the masthead has the voice" are one claim:
         // either alone would pass while the voice spoke twice or not at all.
-        const voices = await app.evalJS<{ strips: number; mastheadPulse: number }>(
-          `({
-            strips: document.querySelectorAll(
-              '[data-slot="session-pulse-strip"]').length,
-            mastheadPulse: document.querySelectorAll(
-              ${JSON.stringify(MASTHEAD)} + ' .session-masthead-pulse').length,
-          })`,
+        const strips = await app.evalJS<number>(
+          `document.querySelectorAll('[data-slot="session-pulse-strip"]').length`,
         );
-        expect(voices.strips).toBe(0);
-        expect(voices.mastheadPulse).toBe(1);
+        expect(strips).toBe(0);
+
+        // ---- F. No width control on a masthead pane. -----------------------
+        // An ABSENCE assertion on that one testid. Never an equality check on
+        // the cluster's button list: it is legitimately longer when the Session
+        // card stands in a stack, and shorter when the card contributes no
+        // section menu.
+        const widthButtons = await app.evalJS<number>(
+          `document.querySelectorAll(
+             ${JSON.stringify(PANE)} +
+             ' [data-testid="tug-pane-title-bar-width-button"]').length`,
+        );
+        expect(widthButtons).toBe(0);
+        // The close X is still there, so the absence above is the control
+        // leaving rather than the whole cluster failing to render.
+        const closeButtons = await app.evalJS<number>(
+          `document.querySelectorAll(
+             ${JSON.stringify(PANE)} +
+             ' [data-testid="tug-pane-title-bar-controls"] button').length`,
+        );
+        expect(closeButtons).toBeGreaterThan(0);
 
         // ---- B. The scrim seats below the masthead, not below 36. ----------
         const scrimTop = await app.evalJS<number>(topWithinPane(SCRIM));
@@ -321,6 +418,17 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         expect(onText.tabs).toBe(CHROME_HEIGHT);
         expect(onText.chromeVar).toBe(`${CHROME_HEIGHT}px`);
 
+        // And the width control is BACK on the non-masthead tab of the very same
+        // pane. This is the flip [D132] records as accepted rather than a bug —
+        // and it is what proves the suppression is a condition on the active
+        // card's masthead rather than the control having been deleted.
+        const widthOnText = await app.evalJS<number>(
+          `document.querySelectorAll(
+             ${JSON.stringify(PANE)} +
+             ' [data-testid="tug-pane-title-bar-width-button"]').length`,
+        );
+        expect(widthOnText).toBe(1);
+
         // ---- D. The swap keeps the content region's mount identity. --------
         const scroller = '[data-card-id="T"] .cm-scroller';
         await app.waitForCondition<boolean>(
@@ -396,20 +504,9 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
           { timeoutMs: 15_000 },
         );
 
-        // A real overview and a real beat, through the production parser and
-        // folds — the masthead cannot be measured with its runs empty.
-        await app.evalJS<boolean>(
-          `window.__tug.publishPulseFrame(${JSON.stringify(
-            JSON.stringify({
-              type: "pulse",
-              kind: "overview",
-              text: OVERVIEW,
-              scopes: [SESSION_ID],
-              beat: 1,
-              at: 1_700_000_000_000,
-            }),
-          )})`,
-        );
+        // A real beat, through the production parser and folds — the masthead
+        // cannot be measured with its runs empty. No overview: the standing-goal
+        // level left chrome, so publishing one would exercise nothing here.
         await app.evalJS<boolean>(
           `window.__tug.publishPulseFrame(${JSON.stringify(
             JSON.stringify({
@@ -423,13 +520,13 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         );
         await app.waitForCondition<boolean>(
           `(document.querySelector(
-             ${JSON.stringify(MASTHEAD)} + ' [data-slot="tug-pulse-headline"]')
+             ${JSON.stringify(MASTHEAD)} + ' [data-slot="tug-pulse-activity"]')
              || { textContent: "" }).textContent.length > 0`,
           { timeoutMs: 8_000 },
         );
 
         // ---- One left edge for all three lines. ---------------------------
-        // The description and the PULSE start at the CALLSIGN, not at the mark
+        // The description and the activity start at the TITLE, not at the dot
         // in front of it — three lines on two verticals read as a stack that
         // was assembled rather than set.
         const edges = await app.evalJS<{
@@ -440,16 +537,22 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         }>(
           `(function(){
             var m = document.querySelector(${JSON.stringify(MASTHEAD)});
+            /* The INK's left edge, not the box's: the row indents its sub-lines
+               with padding, so a box read would report the row's own edge and
+               pass no matter where the text landed. */
             var left = function(sel){
               var el = m.querySelector(sel);
-              return el === null ? -1
-                : Math.round(el.getBoundingClientRect().left);
+              if (el === null) return -1;
+              var pad = parseFloat(
+                getComputedStyle(el).paddingInlineStart,
+              ) || 0;
+              return Math.round(el.getBoundingClientRect().left + pad);
             };
             return {
               run: left('.tug-session-identity-run'),
-              desc: left('.session-masthead-description'),
+              desc: left('.tug-session-row-description'),
               pulse: left('.tug-pulse-stage'),
-              mark: left('.tug-session-identity-icon'),
+              mark: left('.tug-session-row-dot'),
             };
           })()`,
         );
@@ -460,13 +563,13 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         // could agree by the inset having quietly become zero.
         expect(edges.mark).toBeLessThan(edges.run);
 
-        // ---- The lead line seats on the pane's own title row. -------------
+        // ---- The title line seats on the pane's own title row. ------------
         // Its box centers in the FIRST chrome band, exactly where a one-line
         // title bar seats its title and where the pane's controls already sit.
         const seat = await app.evalJS<{ lead: number; height: number }>(
           `(function(){
             var bar = document.querySelector(${JSON.stringify(TITLE_BAR)});
-            var lead = bar.querySelector('.session-masthead-lead');
+            var lead = bar.querySelector('.tug-session-row-name-line');
             var r = lead.getBoundingClientRect();
             return {
               lead: Math.round(r.top - bar.getBoundingClientRect().top),
@@ -497,8 +600,8 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         note("widget vs controls center", JSON.stringify(widget));
         expect(Math.abs(widget.widget - widget.controls)).toBeLessThanOrEqual(1);
 
-        // ---- The tape is flush right, and the runs reach it. --------------
-        // The sparkline holds the trailing edge and the PULSE gets everything
+        // ---- The tape is flush right, and the run reaches it. -------------
+        // The sparkline holds the trailing edge and the activity gets everything
         // else: a truncated activity that stops well short of the tape has
         // thrown away width nothing else is using.
         const band = await app.evalJS<{
@@ -508,7 +611,7 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         }>(
           `(function(){
             var m = document.querySelector(${JSON.stringify(MASTHEAD)});
-            var pulse = m.querySelector('.session-masthead-pulse');
+            var pulse = m.querySelector('.tug-pulse');
             var tape = pulse.querySelector('.tug-pulse-trailing');
             var run = pulse.querySelector('[data-slot="tug-pulse-activity"]');
             var pr = pulse.getBoundingClientRect();
@@ -528,6 +631,66 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         // that fits leaves whatever slack it likes.
         expect(band.truncated).toBe(true);
         expect(band.tapeGap).toBeLessThanOrEqual(TAPE_GAP_MAX);
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a stacked Session card keeps its slot badge and still has no width control",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375c-"));
+      const app = await launchTugApp({
+        testName: "at0375-session-masthead-stack",
+      });
+      try {
+        await app.seedDeckState({
+          state: slotStackShape(),
+          focusCardId: "S",
+        });
+        await app.bindSession("S", {
+          tugSessionId: SESSION_ID,
+          projectDir: dir,
+        });
+        await app.evalJS<boolean>(
+          `window.__tug.publishSessionUpdated(${JSON.stringify(
+            sessionUpdated({ tag: TAG, name: null, name_user_set: false }),
+          )})`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        // The badge describes the SLOT, not the card, and it is the only way
+        // into the panes behind this one — so suppressing the width control must
+        // not have taken it along. Written as two counts on two testids, never
+        // as an equality check on the cluster's button list.
+        const controls = await app.evalJS<{ badge: number; width: number }>(
+          `({
+            badge: document.querySelectorAll(
+              ${JSON.stringify(PANE)} +
+              ' [data-testid="tug-pane-title-bar-stack-badge"]').length,
+            width: document.querySelectorAll(
+              ${JSON.stringify(PANE)} +
+              ' [data-testid="tug-pane-title-bar-width-button"]').length,
+          })`,
+        );
+        note("stacked masthead controls", JSON.stringify(controls));
+        expect(controls.badge).toBe(1);
+        expect(controls.width).toBe(0);
+
+        // And the badge is actually visible rather than merely mounted: the
+        // Session pane is the narrower of the pair, so it is not occluded.
+        const visible = await app.evalJS<string>(
+          `getComputedStyle(document.querySelector(
+             ${JSON.stringify(PANE)} +
+             ' [data-testid="tug-pane-title-bar-stack-badge"]')).visibility`,
+        );
+        expect(visible).toBe("visible");
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

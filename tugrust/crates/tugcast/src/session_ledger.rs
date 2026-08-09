@@ -334,10 +334,10 @@ pub struct SessionRow {
     pub tag_lineage: Option<String>,
     /// The rolling generated description ([P07]) — a standing line saying what
     /// this session is about, composed on the SharedAgent's Summarize lane and
-    /// re-composed as the work moves. `None` until the first one is written,
-    /// and never written at all while `name_user_set` is true: a `/rename` is
-    /// the user's word and it freezes the description line. Keep in lockstep
-    /// with the TS `SessionRow.synopsis`.
+    /// re-composed as the work moves. `None` until the first one is written.
+    /// Independent of `name` — a renamed session keeps being described, because
+    /// the name is the title and this is the line beneath it ([D132]). Keep in
+    /// lockstep with the TS `SessionRow.synopsis`.
     #[serde(default)]
     pub synopsis: Option<String>,
 }
@@ -650,6 +650,15 @@ pub struct ScanCacheRow {
     /// the parse — `upsert_scan_cache` never writes it, so a re-parse of a
     /// grown file cannot erase a minted callsign.
     pub tag: Option<String>,
+}
+
+/// The scan-derived pair a `session_updated` push carries — the on-disk size
+/// and the segmentation engine's turn count for one session. Read by
+/// [`SessionLedger::scan_metrics_for`]; see its doc for why a push needs both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionScanMetrics {
+    pub file_size: i64,
+    pub turn_count: i64,
 }
 
 /// One row of the `file_events` table — an authoritative record that a
@@ -2958,14 +2967,18 @@ impl SessionLedger {
 
     /// Record the rolling generated description ([P07]).
     ///
-    /// Writes `synopsis` **only** when `name_user_set = 0`. That is the freeze
-    /// rule, and it lives here rather than only at the caller because this is
-    /// the one statement every writer goes through: a `/rename` is the user's
-    /// word about what the session is, and a generated line must never speak
-    /// over it. Returns whether a row actually changed, so the caller can skip
-    /// a pointless broadcast. An unknown session id or a frozen row is a no-op
-    /// rather than an error — the description arrives on a best-effort lane and
-    /// must never fail anything upstream of it.
+    /// Writes `synopsis` regardless of `name_user_set`. A rename used to freeze
+    /// the description because the two competed for one line of chrome, so a
+    /// generated line could speak over the user's word. They no longer compete:
+    /// the user's name is the title and the description is the line beneath it
+    /// ([D132]), so a renamed session that stopped being described would simply
+    /// show a dead line on its most-visible surface. Do not restore the freeze.
+    ///
+    /// The `COALESCE(synopsis, '') != ?2` guard stays — it is what suppresses a
+    /// broadcast for a write that changes nothing. Returns whether a row
+    /// actually changed. An unknown session id is a no-op rather than an error:
+    /// the description arrives on a best-effort lane and must never fail
+    /// anything upstream of it.
     pub fn record_synopsis(&self, session_id: &str, synopsis: &str) -> Result<bool, LedgerError> {
         let trimmed = synopsis.trim();
         if trimmed.is_empty() {
@@ -2976,7 +2989,6 @@ impl SessionLedger {
             "UPDATE sessions
              SET synopsis = ?2
              WHERE session_id = ?1
-               AND name_user_set = 0
                AND COALESCE(synopsis, '') != ?2",
             params![session_id, trimmed],
         )?;
@@ -3365,6 +3377,41 @@ impl SessionLedger {
     }
 
     // ── external scan cache ──────────────────────────────────────────────────
+
+    /// The two scan-derived facts a `session_updated` push has to carry, read
+    /// in one statement ([D132]).
+    ///
+    /// Both live in `external_scan_cache` rather than on the `sessions` row:
+    /// `file_size` is not a `sessions` column at all, and `turn_count` on the
+    /// `sessions` row can be a sparse `0` for a session whose real count only
+    /// ever came from a scan. A push built without these downgrades whatever it
+    /// omits, because the client replaces its cached row wholesale.
+    ///
+    /// Epoch-gated like [`get_scan_cache`] — a row written under a prior turn
+    /// rule reads as absent, and the caller then falls back to the `sessions`
+    /// row's own count.
+    pub fn scan_metrics_for(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<SessionScanMetrics>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let metrics = conn
+            .query_row(
+                "SELECT file_size, turn_count
+                 FROM external_scan_cache
+                 WHERE session_id = ?1 AND rule_epoch = ?2 AND excluded = 0
+                 LIMIT 1",
+                params![session_id, CURRENT_RULE_EPOCH],
+                |r| {
+                    Ok(SessionScanMetrics {
+                        file_size: r.get(0)?,
+                        turn_count: r.get(1)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(metrics)
+    }
 
     /// Look up the cached scan result for `session_id`. Validity
     /// against the current `(file_size, file_mtime)` is the caller's
@@ -6600,7 +6647,7 @@ mod tests {
     // ── sessions.synopsis: the rolling description ───────────────────────────
 
     #[test]
-    fn a_synopsis_persists_and_a_rename_freezes_it() {
+    fn a_synopsis_persists_and_survives_a_rename() {
         let l = fresh();
         l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
             .unwrap();
@@ -6617,16 +6664,18 @@ mod tests {
         // A newer description supersedes the older one.
         assert!(l.record_synopsis("s1", "Trace mint collisions").unwrap());
 
-        // Once the user has named the session, the line is theirs: the
-        // description freezes at whatever it last said and no generated line
-        // speaks over it again.
+        // Naming the session does not stop it being described: the name is the
+        // title and the description is the line beneath it, so both are wanted.
         l.rename("s1", Some("the mint work")).unwrap();
-        assert!(!l.record_synopsis("s1", "Something else entirely").unwrap());
+        assert!(l.record_synopsis("s1", "Something else entirely").unwrap());
         let row = l.get("s1").unwrap().unwrap();
-        assert_eq!(row.synopsis.as_deref(), Some("Trace mint collisions"));
+        assert_eq!(row.synopsis.as_deref(), Some("Something else entirely"));
+        // And the two fields are independent — a description write leaves the
+        // user's name and its provenance flag exactly as they were.
+        assert_eq!(row.name.as_deref(), Some("the mint work"));
         assert!(row.name_user_set);
 
-        // Clearing the name thaws it again — the user withdrew their word.
+        // Clearing the name leaves the description standing.
         l.rename("s1", None).unwrap();
         assert!(l.record_synopsis("s1", "Audit the reroll loop").unwrap());
         assert_eq!(
@@ -6644,6 +6693,85 @@ mod tests {
         assert!(!l.record_synopsis("no-such-session", "A line").unwrap());
         assert!(!l.record_synopsis("s1", "   ").unwrap());
         assert_eq!(l.get("s1").unwrap().unwrap().synopsis, None);
+    }
+
+    // ── scan_metrics_for: the pair every push carries ────────────────────────
+
+    #[test]
+    fn scan_metrics_answer_for_a_session_whose_ledger_count_is_sparse() {
+        let l = fresh();
+        // The shape the regression lives in: a `sessions` row whose own
+        // `turn_count` is a sparse 0 because the session's real count only ever
+        // came from a scan. A push built from the row alone would report both a
+        // null size and 0 turns; the client replaces its cached row wholesale,
+        // so that push is a downgrade rather than a partial update.
+        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), None)
+            .unwrap();
+        assert_eq!(l.get("s1").unwrap().unwrap().turn_count, 0);
+        assert!(l.scan_metrics_for("s1").unwrap().is_none());
+
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "s1".into(),
+            project_dir: "/proj".into(),
+            file_size: 48_192,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 7,
+            last_user_prompt: None,
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
+            tag: None,
+        })
+        .unwrap();
+        let metrics = l.scan_metrics_for("s1").unwrap().expect("scan row");
+        assert_eq!(metrics.file_size, 48_192);
+        assert_eq!(metrics.turn_count, 7);
+
+        // A rename does not disturb the pair — which is the whole point: the
+        // rename push carries the same two facts any other push does.
+        l.rename("s1", Some("the mint work")).unwrap();
+        assert_eq!(l.scan_metrics_for("s1").unwrap(), Some(metrics));
+
+        // An unknown session has no pair, and neither does an excluded file:
+        // a cwd/sessionId mismatch is not this session's transcript, so its
+        // size and count are not this session's facts.
+        assert!(l.scan_metrics_for("no-such-session").unwrap().is_none());
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: "s2".into(),
+            project_dir: "/proj".into(),
+            file_size: 900,
+            file_mtime: millis(5),
+            excluded: true,
+            turn_count: 3,
+            last_user_prompt: None,
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
+            tag: None,
+        })
+        .unwrap();
+        assert!(l.scan_metrics_for("s2").unwrap().is_none());
     }
 
     // ── resolve_session_ids: what a commit's citation names ──────────────────

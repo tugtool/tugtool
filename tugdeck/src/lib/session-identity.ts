@@ -28,11 +28,12 @@
  * than a convention.
  *
  * **Liveness is not identity.** The record carries no phase field. Phase lives
- * on a per-*card* `codeSessionStore` — there is no session-keyed phase store to
- * read, and folding one in would wake every identity surface on every
- * transcript event. The phase dot stays a `cardId`-keyed leaf subscription
- * composed *into* the row and masthead tiers as a child; identity and liveness
- * are two subscriptions with two keys that meet in the component.
+ * on a per-*card* `codeSessionStore`, and folding it in would wake every
+ * identity surface on every transcript event. `useSessionPhase` is the
+ * session-keyed door onto it, returning a short key rather than the snapshot,
+ * and the phase dot stays a leaf subscription composed *into* the chip, row, and
+ * masthead tiers as a child; identity and liveness are two subscriptions with
+ * two keys that meet in the component.
  *
  * **The branch is not identity either.** It is telemetry — it rides the record
  * for the masthead's placard and never appears in a rendered name. The old
@@ -79,8 +80,17 @@ export interface SessionIdentity {
   tag: string | null;
   /** Parsed lineage segments, e.g. `["A1","B2"]`; empty for a root session. */
   lineage: readonly string[];
-  /** The description: the `/rename` name when set, else the synopsis, else null. */
-  title: string | null;
+  /**
+   * The user's own name for this session — `/rename`, never an auto title.
+   *
+   * Independent of {@link description}, and never merged with it: the name is
+   * the title a surface leads with ({@link sessionTitleParts}) and the
+   * description is the line beneath it. A single merged field could serve
+   * neither.
+   */
+  customName: string | null;
+  /** The agent's rolling description. Independent of {@link customName}. */
+  description: string | null;
   /** Ledger state, when the caller knows it. */
   state: SessionRow["state"] | null;
   /** Full tug session id (plumbing: tooltips, copy affordance). */
@@ -248,10 +258,11 @@ export function composeSessionIdentity(input: {
     resolved:
       input.ledgerKnown === true || ledgerTag !== null || projectDir.length > 0,
     lineage: parseTagLineage(tag, input.tagLineage),
-    // The `/rename` name wins and freezes the line; the rolling synopsis fills
-    // it otherwise; an honest empty line when neither exists. The store holds
-    // only user-set names — an auto title never fronts a description.
-    title: name ?? synopsis,
+    // Two fields, never a fallback between them: they occupy different lines on
+    // every surface. The name store holds only user-set names, so an auto title
+    // can never arrive here as a `customName`.
+    customName: name,
+    description: synopsis,
     state: input.state ?? null,
     id: input.sessionId,
     shortId: shortSessionId(input.sessionId),
@@ -378,6 +389,33 @@ export function useSessionIdentity(
     tagLineage: context?.tagLineage ?? null,
     ledgerKnown: context?.ledgerKnown ?? false,
   });
+}
+
+/**
+ * The two runs a surface renders as a session's title: the user's name first,
+ * then the callsign that follows it.
+ *
+ * A user-supplied name is the user saying what the session is called, so it
+ * cannot rank below a callsign Tug minted for itself — but the callsign stays
+ * visible, because it is the permanent citable handle a rename never changes.
+ * With no name, the callsign IS the title and there is no second run.
+ *
+ * Two runs rather than one joined string, because they are sized separately:
+ * under a width squeeze the callsign run is the one that ellipsizes and the name
+ * survives intact. The `" : "` separator belongs to the callsign run so it
+ * disappears with it. A lone name run may ellipsize — it is then the only run
+ * there is.
+ *
+ * No `project/` prefix. {@link sessionIdentityLine} keeps that and is a
+ * different channel; see its own note for why it must not change.
+ */
+export function sessionTitleParts(identity: SessionIdentity): {
+  name: string;
+  callsign: string | null;
+} {
+  const label = identity.tag ?? identity.shortId;
+  if (identity.customName === null) return { name: label, callsign: null };
+  return { name: identity.customName, callsign: label };
 }
 
 /**

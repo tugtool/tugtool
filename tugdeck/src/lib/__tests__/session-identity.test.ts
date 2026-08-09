@@ -16,6 +16,7 @@ import {
   resolveCitedSession,
   sessionCitation,
   sessionIdentityLine,
+  sessionTitleParts,
   shortSessionId,
   SESSION_SHORT_ID_LENGTH,
 } from "@/lib/session-identity";
@@ -52,25 +53,78 @@ describe("projectLeafName", () => {
   });
 });
 
-describe("title precedence", () => {
-  test("a user-set name wins and is the description", () => {
-    expect(identity({ name: "Refactor the Lens", synopsis: "s" }).title).toBe(
-      "Refactor the Lens",
-    );
+describe("customName and description", () => {
+  test("both stand independently, with no fallback between them", () => {
+    const both = identity({
+      name: "Refactor the Lens",
+      synopsis: "Reworking the pane chrome",
+    });
+    expect(both.customName).toBe("Refactor the Lens");
+    expect(both.description).toBe("Reworking the pane chrome");
   });
 
-  test("the synopsis fills the line when there is no name", () => {
-    expect(identity({ synopsis: "Reworking the pane chrome" }).title).toBe(
-      "Reworking the pane chrome",
-    );
+  test("a name without a description leaves the description empty", () => {
+    const named = identity({ name: "Refactor the Lens" });
+    expect(named.customName).toBe("Refactor the Lens");
+    expect(named.description).toBeNull();
   });
 
-  test("a session with neither has an honestly empty description", () => {
-    expect(identity().title).toBeNull();
+  test("a description without a name leaves the name empty", () => {
+    const described = identity({ synopsis: "Reworking the pane chrome" });
+    expect(described.customName).toBeNull();
+    expect(described.description).toBe("Reworking the pane chrome");
+  });
+
+  test("a session with neither has both honestly empty", () => {
+    expect(identity().customName).toBeNull();
+    expect(identity().description).toBeNull();
   });
 
   test("blank strings are unset, not values", () => {
-    expect(identity({ name: "   ", synopsis: "  " }).title).toBeNull();
+    const blank = identity({ name: "   ", synopsis: "  " });
+    expect(blank.customName).toBeNull();
+    expect(blank.description).toBeNull();
+  });
+});
+
+describe("sessionTitleParts", () => {
+  test("a named session leads with the name and the callsign follows", () => {
+    const parts = sessionTitleParts(
+      identity({ name: "Refactor the Lens", tag: "stocky-pixie" }),
+    );
+    expect(parts).toEqual({
+      name: "Refactor the Lens",
+      callsign: "stocky-pixie",
+    });
+  });
+
+  test("an unnamed session's title IS its callsign, with no second run", () => {
+    expect(sessionTitleParts(identity({ tag: "stocky-pixie" }))).toEqual({
+      name: "stocky-pixie",
+      callsign: null,
+    });
+  });
+
+  test("a legacy tagless session degrades to its short id, never the UUID", () => {
+    expect(sessionTitleParts(identity({ tag: null }))).toEqual({
+      name: SHORT,
+      callsign: null,
+    });
+    expect(
+      sessionTitleParts(identity({ name: "The mint work", tag: null })),
+    ).toEqual({ name: "The mint work", callsign: SHORT });
+  });
+
+  test("the description is not a title candidate — it is the line beneath", () => {
+    expect(
+      sessionTitleParts(identity({ synopsis: "Reworking the pane chrome" })),
+    ).toEqual({ name: "stocky-pixie", callsign: null });
+  });
+
+  test("a name never carries a project prefix — that is the Line channel", () => {
+    const named = identity({ name: "Refactor the Lens" });
+    expect(sessionTitleParts(named).name).not.toContain("/");
+    expect(sessionIdentityLine(named)).toBe("tugtool/stocky-pixie");
   });
 });
 

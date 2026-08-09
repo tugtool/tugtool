@@ -1,14 +1,21 @@
 /**
  * SessionMasthead — the three lines a Session card wears in pane chrome.
  *
- *   <project>/<callsign>          ← identity, the Line tier
- *   <description>                 ← the /rename name, else the synopsis
- *   goal › activity          ~~~  ← the voice, with its activity sparkline
+ *   [dot] <name> : <callsign>     ← identity, and whether it is working
+ *   <description>                 ← the agent's synopsis, or a stand-in
+ *   <activity>               ~~~  ← the voice, with its activity sparkline
  *
  * Three levels of the same session, widening as they go down: what it IS, what
- * it is FOR, and what it is doing this second. The word `PULSE` appears on the
- * third line only as a stand-in, while there is no goal to state — it is a
- * placeholder, not a label.
+ * it is FOR, and what it is doing this second.
+ *
+ * **The shape is `TugSessionRow`'s, not this component's.** The masthead, the
+ * Lens rows, and the new-session picker rows show the same thing, so they wear
+ * one authoring of it and the component library is the consistency mechanism
+ * ([D132]). What stays local is what is genuinely the masthead's: the dwell
+ * queue that paces the beat, the two popovers, the telemetry widget, and the
+ * chrome geometry — the row is mounted with its list-row padding zeroed and
+ * each of its three lines told what to stop short of, because the pane's
+ * control cluster occupies only the FIRST of the tier's three bands.
  *
  * The pane owns the chrome SLOT and its geometry; this component owns what is
  * inside it and every store behind those lines. That split is what keeps
@@ -17,6 +24,12 @@
  * code while chrome stays the pane's ([L09]). The precedent is the Session
  * card mounting `TugPaneBanner`: pane-class furniture, session-class content
  * inside it.
+ *
+ * The width control does not render on a masthead-bearing pane ([D132]): the
+ * title row is identity plus its own telemetry wave, and width is reachable by
+ * its command and by the Lens's width presets. Everything else in the pane's
+ * controls cluster stays — the slot-stack badge, the `…` section menu, and the
+ * close X.
  *
  * Keyed by `sessionId`, which is all the pane knows and all it should: the
  * chrome names a session and this component resolves what to say about it.
@@ -68,20 +81,23 @@ import {
   TugPopupListScroller,
   TugPopupListToneDot,
 } from "@/components/tugways/tug-popup-list";
-import { TugPulse } from "@/components/tugways/tug-pulse";
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
+import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
-import {
-  TUG_SESSION_IDENTITY_LINE_ICON_SIZE,
-  TugSessionIdentity,
-} from "@/components/tugways/tug-session-identity";
+import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import { useSessionCreatedAtMs } from "@/lib/session-created-at";
+import { writeSessionAtomToClipboard } from "@/lib/session-atom";
+import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import {
   TugSparkline,
 } from "@/components/tugways/tug-sparkline";
 import {
+  TUG_SESSION_ROW_STACK_DOT_SIZE,
   TUG_SESSION_SPARK_CURVE,
   TUG_SESSION_SPARK_FULL_SCALE_CHARS,
+  TugSessionRow,
 } from "@/components/tugways/tug-session-row";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
@@ -96,7 +112,6 @@ import {
   latestLineForScope,
   linesForScope,
   usePulse,
-  usePulseOverview,
   type PulseLineEntry,
 } from "@/lib/pulse-store";
 import {
@@ -105,7 +120,10 @@ import {
   isRateChannel,
 } from "@/lib/session-activity-store";
 import { sessionCitation, useSessionIdentity } from "@/lib/session-identity";
-import { useSessionLedger } from "@/lib/session-ledger-store";
+import {
+  getSessionLedgerStore,
+  useSessionLedger,
+} from "@/lib/session-ledger-store";
 
 /**
  * Sparkline box in the masthead's PULSE line. The line runs the full card
@@ -117,6 +135,12 @@ const SPARKLINE_WIDTH = 128;
 const SPARKLINE_HEIGHT = 18;
 
 /**
+ * The masthead's dot box. The row's denser cut, not the Lens's 28: the masthead
+ * is a 72px chrome tier and a dot that size would out-shout the name it marks.
+ */
+const MASTHEAD_DOT_SIZE = TUG_SESSION_ROW_STACK_DOT_SIZE;
+
+/**
  * Every line holds the masthead at least this long before the next replaces
  * it. This pacing is what makes the voice readable rather than a strobe: the
  * machine's commentary arrives in bursts, and a line that flickered past in
@@ -124,22 +148,37 @@ const SPARKLINE_HEIGHT = 18;
  */
 export const MIN_DWELL_MS = 1_800;
 
-/** What the PULSE line is showing: a pulse line or the placeholder. */
+/** What the activity line is showing: a live beat, or the rest sentence. */
 interface DisplayEntry {
   key: string;
   text: string;
+  /**
+   * Not a beat. The rest sentence and the compaction pin are both facts the
+   * masthead composed rather than news the session sent, so neither goes
+   * through the markdown pipeline and neither is what a line copy carries.
+   */
   placeholder: boolean;
   /** Swap this entry in the moment it arrives, skipping the dwell — the
    *  user's own clear and the compaction pin both answer a gesture. */
   immediate?: boolean;
 }
 
-const NONE_ENTRY: DisplayEntry = Object.freeze({
-  key: "__pulse_none__",
-  text: "None",
-  placeholder: true,
-  immediate: true,
-});
+/**
+ * The rest-line entry: the activity grammar's sentence, shown whenever there is
+ * no live beat.
+ *
+ * Keyed BY ITS TEXT, and `immediate`, so the numbers land the moment they move —
+ * a constant key would hold the previous sentence on screen after a turn end
+ * refreshed the very facts it reports.
+ */
+function restEntry(text: string): DisplayEntry {
+  return {
+    key: `__activity_rest__:${text}`,
+    text,
+    placeholder: true,
+    immediate: true,
+  };
+}
 
 /**
  * The compaction pin. A `/compact` turn streams nothing for minutes, and the
@@ -279,32 +318,21 @@ function MastheadSparkline({
   );
 }
 
-/** How many recent pulses the PULSE-line popover lists. */
+/** How many recent pulses the activity line's popover lists. */
 const PULSE_HISTORY_COUNT = 8;
 
 /**
- * What the description and the PULSE line hang off, so both start at the
- * CALLSIGN rather than at the mark in front of it. The mark's own advance:
- * its box plus the one icon gap the identity component publishes — read from
- * that component rather than typed here, because it is that component's
- * number.
- */
-const TEXT_INSET_STYLE = {
-  "--tugx-session-masthead-text-inset": `calc(${TUG_SESSION_IDENTITY_LINE_ICON_SIZE}px + var(--tugx-session-identity-icon-gap, 6px))`,
-} as React.CSSProperties;
-
-/**
- * Raw-text form of a line for the clipboard: "intent › text". Two callers with
- * two different intents — the masthead passes the session overview, so a copy
- * carries the same two-level reading the eye gets; the history popover passes
- * its group's line intent, which is the level that survives there.
+ * Raw-text form of a beat for the clipboard: `intent › text`. The history
+ * popover's rows carry their group's intent, which is the level that survives
+ * there; the masthead's own line copies the beat alone, since the standing goal
+ * no longer rides the line beside it.
  */
 function composeLineCopy(intent: string | undefined, text: string): string {
   return intent !== undefined ? `${intent} › ${text}` : text;
 }
 
 /**
- * The PULSE-label popover body: the recent pulses for this session, newest
+ * The activity line's popover body: the recent pulses for this session, newest
  * first, GROUPED by intent so a retained goal heads its run of beats instead
  * of repeating on each row. An empty history reads as a quiet placeholder.
  */
@@ -535,11 +563,24 @@ export function SessionMasthead({
     branch,
   });
   const ledger = useSessionLedger(projectDir);
+  // Ask for this workspace's rows once. `useSessionLedger` is a read: it never
+  // fetches, and the ledger store DROPS a `session_updated` push for a workspace
+  // it has not listed — so a bound card in a project nothing opened the picker
+  // for would never see its own turn count, size, or last-used stamp, which is
+  // exactly what the activity line reports at rest. An event kick, not a state
+  // mirror ([L02]), and the same one the picker already performs on open.
+  // Latched only on a kick that actually landed: the store singleton does not
+  // exist until the connection is up, and the masthead mounts before that — a
+  // ref set on the way past would swallow the one request this ever makes.
+  const refreshedDirRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (refreshedDirRef.current === projectDir || projectDir.length === 0) return;
+    const store = getSessionLedgerStore();
+    if (store === null) return;
+    refreshedDirRef.current = projectDir;
+    store.refresh(projectDir);
+  }, [projectDir, ledger.status]);
   const pulse = usePulse();
-  // The session's standing overview — the headline run. Separate from the beat
-  // entirely: it never enters the dwell queue (it is not news, so it has
-  // nothing to pace against) and the emitter's own floor already makes it slow.
-  const overview = usePulseOverview(sessionId);
   // A manual `/compact` run started from THIS card. The wire is silent for its
   // whole duration, so the pin is the only thing the line can say about it;
   // the daemon's own `Compacted context` beat closes it out.
@@ -565,19 +606,40 @@ export function SessionMasthead({
     sessionId,
     pulse.cleared.get(sessionId),
   );
+  const row = ledger.rows.find((r) => r.session_id === sessionId) ?? null;
+  // Not `row.created_at`: the shared resolver also reads the card's own
+  // replay anchor, which is the only source for a freshly-bound card in a
+  // project nothing has listed yet — exactly the state the stamp rung is for.
+  const createdAtMs = useSessionCreatedAtMs(cardId, sessionId, projectDir);
+  // At rest the activity line reports the session's own facts — the turn count,
+  // the on-disk size, when it last moved, and whether it is open for another
+  // turn. `Ready.` needs a bound card, and a masthead always has one.
+  const restLine = sessionActivityRestLine({
+    turnCount: row?.turn_count ?? 0,
+    fileSize: row?.file_size ?? null,
+    lastUsedAtMs: row?.last_used_at ?? null,
+    hasCard: cardId !== undefined,
+  });
   const target: DisplayEntry = isCompactingCard(compaction, cardId)
     ? COMPACTING_ENTRY
     : latest !== null
       ? { key: latest.key, text: latest.text, placeholder: false }
-      : NONE_ENTRY;
+      : restEntry(restLine);
   const { current } = useDwellDisplay(target);
-  const row = ledger.rows.find((r) => r.session_id === sessionId) ?? null;
-  // The last few pulses for this session — shown in the PULSE line's popover.
+  // The last few pulses for this session — shown in the activity line's popover.
   const history = linesForScope(pulse.lines, sessionId, PULSE_HISTORY_COUNT);
-  // Right-click → Copy the current line's raw text (not the placeholder),
-  // headline included so the copy carries the whole two-level reading.
+  // Right-click → Copy the current beat's raw text. A composed rest sentence is
+  // not a beat and copies nothing; the atom copy on the title is what that row
+  // offers instead.
   const copyLine = useCopyableButton(
-    current.placeholder ? "" : composeLineCopy(overview?.text, current.text),
+    current.placeholder ? "" : current.text,
+  );
+  // Right-click the TITLE → Copy the session atom's full flavor set: the
+  // citation as plain text with the atom sidecar beside it, so a paste back
+  // into a Tug surface returns the chip rather than the string ([D132]).
+  const copyAtom = useCopyableButton(
+    sessionCitation(identity, { project: true }),
+    () => writeSessionAtomToClipboard(identity),
   );
   // One node, two readers: the copy hook's own callback ref and the popover's
   // anchor ref.
@@ -590,58 +652,61 @@ export function SessionMasthead({
     [copyRef],
   );
 
-  // No null branch: `sessionId` is a string here, and `useSessionIdentity`'s
-  // non-null overload answers with a record. A fallback would be dead code
-  // claiming to handle a state the prop type forbids.
-  const description = identity.title;
+  // The description line's three rungs ([D132]): the agent's synopsis, else the
+  // session's own first prompt, else the date it was created. The lower two are
+  // facts STANDING IN for a line nobody has written yet, so they are marked as
+  // such and painted a step quieter. A never-summarized session — every external
+  // one the scanner has just found — has the user's own prompt as the only
+  // human-meaningful text the row holds, which is why that rung is here at all.
+  //
+  // No null branch on the identity: `sessionId` is a string and
+  // `useSessionIdentity`'s non-null overload answers with a record.
+  const prompt = row?.last_user_prompt?.trim() ?? "";
+  const description =
+    identity.description ??
+    (prompt.length > 0
+      ? prompt
+      : createdAtMs !== null
+        ? `Created ${formatRestingStamp(createdAtMs)}`
+        : null);
+  const descriptionStandIn = identity.description === null;
 
   return (
-    <div
-      className="session-masthead"
-      data-slot="session-masthead"
-      style={TEXT_INSET_STYLE}
-    >
-      <div className="session-masthead-lead">
-        <TugSessionIdentity identity={identity} tier="line" />
-      </div>
-
-      {/* Always present, even when empty: a description line that appeared
-          and vanished would move the two lines below it on every rename. */}
-      <div
-        className="session-masthead-description"
-        data-empty={description === null ? "true" : undefined}
-        title={description ?? undefined}
-      >
-        {description ?? ""}
-      </div>
-
-      {/* The PULSE line. Absent entirely when the `pulse/enabled` default is
-          off — and the masthead keeps its height, because chrome that got
-          shorter when a preference changed would move every card in the pane. */}
-      {pulse.enabled ? (
-        <TugPulse
-          className="session-masthead-pulse"
-          layout="inline"
-          // NO LEGEND. The word PULSE is a PLACEHOLDER, not a label: a session
-          // that has said what it is doing does not also need the band it said
-          // it in named, and printing the word beside every headline made two
-          // of the masthead's three lines open with furniture. Omitting the
-          // legend hands the job to `TugPulse`'s own headline stand-in, which
-          // prints PULSE in the label's voice exactly while there is no
-          // headline — the same reading the Lens row has always had for a
-          // session with nothing to say yet. One rule, both surfaces.
-          headline={overview !== null ? overview.text : undefined}
-          activity={
-            <PulseLineText
-              entry={current}
-              className="session-masthead-pulse-text"
-            />
-          }
-          trailing={
+    <div className="session-masthead" data-slot="session-masthead">
+      <TugSessionRow
+        className="session-masthead-row"
+        indicator={
+          <SessionPhaseDot sessionId={sessionId} size={MASTHEAD_DOT_SIZE} />
+        }
+        name={
+          // The row's dot leads the line, so the identity renders its runs
+          // only. Right-click on the title copies the atom.
+          <span
+            ref={copyAtom.ref as React.Ref<HTMLSpanElement>}
+            onContextMenu={copyAtom.onContextMenu}
+            className="session-masthead-title"
+          >
+            <TugSessionIdentity identity={identity} tier="line" dot={false} />
+          </span>
+        }
+        description={description ?? ""}
+        descriptionStandIn={descriptionStandIn}
+        // The activity line. When the `pulse/enabled` default is off the line
+        // still exists and still reports the session's own facts — chrome that
+        // got shorter when a preference changed would move every card in the
+        // pane, and the rest sentence is true either way.
+        activity={
+          <PulseLineText
+            entry={pulse.enabled ? current : restEntry(restLine)}
+            className="session-masthead-pulse-text"
+          />
+        }
+        sparkline={
+          pulse.enabled ? (
             /*
               The compact sparkline is the entry point to the expanded Activity
               card: clicking it opens a popover of per-channel small-multiples
-              for this session. Mirrors the legend's focus discipline.
+              for this session.
             */
             <TugPopover>
               <TugPopoverTrigger>
@@ -660,15 +725,16 @@ export function SessionMasthead({
                 <SessionPulseCard session={sessionId} />
               </TugPopoverContent>
             </TugPopover>
-          }
-          stageProps={{
-            ref: stageRef as React.Ref<HTMLSpanElement>,
-            onContextMenu: copyLine.onContextMenu,
-            onClick: () => setHistoryOpen((open) => !open),
-            className: "session-masthead-stage",
-          }}
-        />
-      ) : null}
+          ) : undefined
+        }
+        stageProps={{
+          ref: stageRef as React.Ref<HTMLSpanElement>,
+          onContextMenu: copyLine.onContextMenu,
+          onClick: () => setHistoryOpen((open) => !open),
+          className: "session-masthead-stage",
+        }}
+      />
+      {copyAtom.contextMenu}
       {copyLine.contextMenu}
 
       {/*
@@ -730,6 +796,17 @@ export function SessionMasthead({
             data-slot="session-masthead-telemetry"
           >
             <div className="session-masthead-telemetry-body">
+              {/* The two copyable forms side by side, each labeled by what a
+                  paste of it yields: the atom returns the chip, the citation is
+                  flat text for anywhere outside Tug. */}
+              <TelemetryRow label="Atom">
+                <TugSessionIdentity
+                  identity={identity}
+                  tier="chip"
+                  size="2xs"
+                  className="session-masthead-telemetry-atom"
+                />
+              </TelemetryRow>
               <TelemetryRow label="Branch">{identity.branch ?? "—"}</TelemetryRow>
               <TelemetryRow label="State">
                 {row?.state ?? identity.state ?? "—"}
@@ -738,7 +815,7 @@ export function SessionMasthead({
               {/* The card's Z0 load-control bar used to carry this same line;
                   the telemetry panel is where session telemetry lives now, so
                   it says it once. */}
-              <TelemetryBirthRow cardId={cardId} createdAtMs={row?.created_at} />
+              <TelemetryBirthRow cardId={cardId} createdAtMs={createdAtMs} />
               <TelemetryRow label="Last used">{stamp(row?.last_used_at)}</TelemetryRow>
               <TelemetryRow label="Citation">
                 {/* The citation is the sanctioned flat-text form, and the only

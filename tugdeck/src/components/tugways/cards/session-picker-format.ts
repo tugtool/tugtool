@@ -24,30 +24,14 @@ export function truncateForDisplay(s: string, max: number): string {
   return chars.slice(0, max).join("") + "…";
 }
 
-/**
- * Format `then` (unix millis) relative to `now`. Returns short forms:
- * "just now", "Nm ago", "Nh ago", "yesterday", "Nd ago", or a
- * locale-formatted date for anything older than a week.
+/*
+ * `formatRelativeTimestamp` lived here too — "just now", "3h ago", "yesterday" —
+ * as the subtitle's leading segment. It went with the subtitle: the activity
+ * line dates itself with an absolute `Last updated: <stamp>` instead, because a
+ * relative age beside a turn count and a size left the reader working out which
+ * of the three it was measuring. `formatRestingStamp` in
+ * `lib/pulse-line/resting-line.ts` is what composes that stamp now.
  */
-export function formatRelativeTimestamp(then: number, now: number): string {
-  const deltaMs = Math.max(0, now - then);
-  const deltaSec = Math.floor(deltaMs / 1_000);
-  if (deltaSec < 30) return "just now";
-  const deltaMin = Math.floor(deltaSec / 60);
-  if (deltaMin < 60) return `${deltaMin}m ago`;
-  const deltaHr = Math.floor(deltaMin / 60);
-  if (deltaHr < 24) return `${deltaHr}h ago`;
-  const deltaDay = Math.floor(deltaHr / 24);
-  if (deltaDay === 1) return "yesterday";
-  if (deltaDay < 7) return `${deltaDay}d ago`;
-  // Older than a week: locale-formatted short date. Stable across
-  // locales for tests via toLocaleDateString without an explicit
-  // locale arg.
-  return new Date(then).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 /**
  * Format a byte count as a compact human-readable size: "B", "KB", "MB".
@@ -61,28 +45,14 @@ export function formatByteSize(bytes: number): string {
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB`;
 }
 
-/**
- * Build the subtitle line for a session row: relative timestamp, turn count,
- * on-disk JSONL size, and short identifier. The turn count is the canonical
- * session metric (`tuglaws/turn-metric.md`) — read straight from
- * `row.turn_count` (the authority the scanner/ledger already reconciled), not
- * recomputed client-side ([P07]). Size remains an orthogonal "how big"
- * signal alongside it. Segments with no value (a session with zero turns, or
- * a tug/live row whose `file_size` is null) drop out so the line stays clean.
+/*
+ * `formatSessionRowSubtitle` lived here, composing the picker's fourth line as
+ * `<when> · <turns> · <size> · id <short>`. That line is gone: those facts are
+ * the activity line's rest form now (`lib/session-activity-line.ts`), stated as
+ * a sentence on the surface every session shares rather than as a dot-joined run
+ * the picker alone wore. `formatByteSize` above is what survived, and the new
+ * formatter borrows it rather than re-deriving a second spelling of a size.
  */
-export function formatSessionRowSubtitle(row: SessionRow): string {
-  const turns =
-    row.turn_count > 0
-      ? `${row.turn_count} ${row.turn_count === 1 ? "turn" : "turns"}`
-      : null;
-  const size =
-    row.file_size != null && row.file_size > 0
-      ? formatByteSize(row.file_size)
-      : null;
-  const ts = formatRelativeTimestamp(row.last_used_at, Date.now());
-  const id = `id ${row.session_id.slice(0, 8)}`;
-  return [ts, turns, size, id].filter((p) => p !== null).join(" · ");
-}
 
 /**
  * Subtitle for a `state: "failed"` row. The old copy hard-coded

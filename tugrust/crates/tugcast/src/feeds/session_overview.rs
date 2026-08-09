@@ -2478,8 +2478,7 @@ struct SynopsisJob {
     session_id: String,
     /// The session-lifetime evidence, everything except the description this
     /// ask is revising — that one is read from the ledger row inside the job,
-    /// in the same read that enforces the freeze rule, so the two facts come
-    /// from one look at the row rather than two.
+    /// so the revision target comes from the row as it stands when the ask runs.
     digest: String,
     shared_agent: crate::shared_agent::SharedAgentHandle,
     ledger: Arc<crate::session_ledger::SessionLedger>,
@@ -2573,19 +2572,13 @@ async fn run_synopsis(job: SynopsisJob) {
         cancel,
         row_id,
     } = job;
-    // The freeze rule, read before the model call rather than after it: a
-    // renamed session must cost nothing at all, not an inference whose answer
-    // is then discarded. `record_synopsis` enforces the same rule in SQL, which
-    // is what closes the window between this read and that write.
+    // The read yields the description this ask is revising, which is the last
+    // section of the digest: a re-run should revise a standing line, not compose
+    // a fresh one every minute against slightly different evidence.
     //
-    // The same read also yields the description this ask is revising, which is
-    // the last section of the digest: a re-run should revise a standing line,
-    // not compose a fresh one every minute against slightly different evidence.
+    // A rename does not stop the ask. The name is the session's title and this
+    // is the line beneath it ([D132]), so both are wanted on a renamed session.
     let previous = match ledger.get(&row_id) {
-        Ok(Some(row)) if row.name_user_set => {
-            debug!(session = %session_id, "session synopsis: frozen by rename");
-            return;
-        }
         Ok(Some(row)) => row.synopsis,
         Ok(None) => {
             debug!(session = %session_id, row = %row_id, "session synopsis: no ledger row");
@@ -2651,12 +2644,15 @@ async fn run_synopsis(job: SynopsisJob) {
                 "session synopsis: written",
             );
             if let (Some(tx), Ok(Some(row))) = (control_tx, ledger.get(&row_id)) {
+                // Every push carries the scan pair, this one included — see
+                // `build_session_updated_frame`.
+                let metrics = ledger.scan_metrics_for(&row_id).unwrap_or(None);
                 let _ = tx.send(crate::feeds::agent_supervisor::build_session_updated_frame(
-                    &row,
+                    &row, metrics,
                 ));
             }
         }
-        // Unchanged, or frozen between the read above and the write.
+        // The description already said exactly this.
         Ok(false) => {}
         Err(error) => {
             warn!(%error, session = %session_id, "session synopsis: ledger write failed");

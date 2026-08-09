@@ -1,5 +1,5 @@
 /**
- * at0377-session-row-stack.test.ts — the four-line identity stack, in the
+ * at0377-session-row-stack.test.ts — the three-level identity stack, in the
  * picker.
  *
  * ## What this gates
@@ -7,23 +7,38 @@
  * The row tier's whole content is geometry, and geometry is only true in a
  * browser at a real width.
  *
- *   A. **Four lines, in identity order.** Callsign first, then description,
- *      then the PULSE, then the metadata. The callsign leading is the change:
- *      the picker used to lead with a `last_user_prompt` snippet and bury the
+ *   A. **Three lines, in identity order.** Title first, then description, then
+ *      the activity. Two things are pinned by the count: the title leads (the
+ *      picker used to open with a `last_user_prompt` snippet and bury the
  *      callsign in a metadata run, so a session was called one thing here and
- *      another everywhere else.
+ *      another everywhere else), and there are neither four levels nor five —
+ *      the standing-goal level and the metadata line are retired, and their
+ *      facts are the activity line's rest form now.
  *
  *   B. **Tight leading, and a lead gap that separates identity from the
- *      group.** Inherited body leading (~1.45) puts a 13px run in a 19px box,
- *      and four of those is a different row than the one the geometry was
- *      measured on. The three sub-lines also share one left vertical — the
- *      indent that makes the callsign read as their heading — which a
- *      zero-width strut collecting a container gap silently breaks.
+ *      pair.** Inherited body leading (~1.45) puts a 13px run in a 19px box,
+ *      and three of those is a different row than the one the geometry was
+ *      measured on. The two sub-lines also share one left vertical — the indent
+ *      that makes the title read as their heading — which a zero-width strut
+ *      collecting a container gap silently breaks.
  *
- *   C. **An un-described session keeps its description line.** The row must
- *      not change height when a rename lands, so the line holds its space
- *      empty. Two rows in the same list at the same moment, one described and
- *      one not, measure the same.
+ *   C. **Every row is the same height, whatever its description says.** A row
+ *      that resized as a description arrived would move every row beneath it,
+ *      so the line holds its space in every state it has. Measured across the
+ *      whole list at one moment, so it cannot pass by the feature being broken
+ *      outright in one row.
+ *
+ *   D. **Every row leads with a quiet dot, closed sessions included.** These are
+ *      all closed on-disk sessions with no card bound, which used to mean no dot
+ *      at all. A session whose live state cannot be reached reads `idle` now — and
+ *      emphatically not the danger reading, which would make every ordinary
+ *      closed session look broken.
+ *
+ *   E. **The description's rungs, over real scan rows.** The `last_user_prompt`
+ *      rung is load-bearing at THIS surface and nowhere else: a freshly-scanned
+ *      external session has never been summarized, and its own first prompt is
+ *      the only human-meaningful text the row holds. A creation date in its place
+ *      is strictly less. The fixture with neither falls to the stamp.
  *
  * The rows are seeded as real transcript files in the encoded claude project
  * dir for a fresh temp path and picked up by the real scan — no mocks, and no
@@ -40,7 +55,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
@@ -161,9 +176,9 @@ function deckShape() {
   };
 }
 
-describe.skipIf(!SHOULD_RUN)("at0377 — the four-line identity stack", () => {
+describe.skipIf(!SHOULD_RUN)("at0377 — the three-level identity stack", () => {
   test(
-    "callsign leads, the group is tight and indented, and an empty description holds its line",
+    "the title leads, the pair is tight and indented, and every row is one height",
     async () => {
       const app = await launchTugApp({ testName: "at0377-session-row-stack" });
       try {
@@ -189,14 +204,13 @@ describe.skipIf(!SHOULD_RUN)("at0377 — the four-line identity stack", () => {
           { timeoutMs: 30_000 },
         );
 
-        // ---- A. Four lines, callsign first. --------------------------------
+        // ---- A. Three lines, the title first. ------------------------------
         const shape = await app.evalJS<{
           lines: number;
+          order: string;
           title: string;
-          hasDescription: boolean;
-          hasPulse: boolean;
-          hasMetadata: boolean;
-          orderOk: boolean;
+          dots: number;
+          headlines: number;
         }>(`(function(){
           var row = document.querySelector(${JSON.stringify(ROW)});
           if (row === null) throw new Error("no picker row");
@@ -204,39 +218,40 @@ describe.skipIf(!SHOULD_RUN)("at0377 — the four-line identity stack", () => {
           var kids = Array.prototype.map.call(lines.children, function (n) {
             if (n.classList.contains("tug-session-row-name-line")) return "name";
             if (n.classList.contains("tug-session-row-description")) return "desc";
-            if (n.classList.contains("tug-session-row-metadata")) return "meta";
-            if (n.matches('[data-slot="tug-pulse"]')) return "pulse";
+            if (n.matches('[data-slot="tug-pulse"]')) return "activity";
             return "other";
           });
           var title = row.querySelector(".tug-list-row-title");
           return {
             lines: kids.length,
+            order: kids.join(","),
             title: title === null ? "" : (title.textContent || ""),
-            hasDescription: kids.indexOf("desc") !== -1,
-            hasPulse: kids.indexOf("pulse") !== -1,
-            hasMetadata: kids.indexOf("meta") !== -1,
-            orderOk: kids.join(",") === "name,desc,pulse,meta",
+            dots: row.querySelectorAll('[data-slot="tug-progress-indicator"]').length,
+            headlines: row.querySelectorAll('[data-slot="tug-pulse-headline"]').length,
           };
         })()`);
-        expect(shape.lines).toBe(4);
-        expect(shape.hasDescription).toBe(true);
-        expect(shape.hasPulse).toBe(true);
-        expect(shape.hasMetadata).toBe(true);
-        expect(shape.orderOk).toBe(true);
+        expect(shape.lines).toBe(3);
+        expect(shape.order).toBe("name,desc,activity");
+        // The retired levels, asserted as absences: a standing-goal run
+        // reappearing here is the four-level form coming back.
+        expect(shape.headlines).toBe(0);
+        // Every row leads with the session's dot, closed sessions included —
+        // a cardless session reads idle rather than getting no mark at all.
+        expect(shape.dots).toBe(1);
         // The callsign leads — an `adjective-noun` from the lexicon, minted at
         // scan time. Not the prompt snippet the row used to open with, and
-        // never the raw UUID.
-        expect(shape.title).toMatch(/^[a-z]+-[a-z]+(-[A-Z]\d+)*$/);
+        // never the raw UUID. These fixtures carry no user-set name, so the
+        // callsign IS the whole title.
+        expect(shape.title.trim()).toMatch(/^[a-z]+-[a-z]+(-[A-Z]\d+)*$/);
 
-        // ---- B. Tight leading, one vertical for the group. -----------------
+        // ---- B. Tight leading, one vertical for the pair. ------------------
         const geometry = await app.evalJS<{
           nameLH: number;
           descLH: number;
-          metaLH: number;
           descLeft: number;
-          metaLeft: number;
           pulseLeft: number;
           nameLeft: number;
+          rowLeft: number;
         }>(`(function(){
           var row = document.querySelector(${JSON.stringify(ROW)});
           var q = function (sel) { return row.querySelector(sel); };
@@ -252,60 +267,106 @@ describe.skipIf(!SHOULD_RUN)("at0377 — the four-line identity stack", () => {
           };
           var name = q(".tug-session-row-name-line");
           var desc = q(".tug-session-row-description");
-          var meta = q(".tug-session-row-metadata");
           var pulse = q('[data-slot="tug-pulse"]');
           var title = q(".tug-list-row-title");
           return {
             nameLH: parseFloat(getComputedStyle(name).lineHeight),
             descLH: parseFloat(getComputedStyle(desc).lineHeight),
-            metaLH: parseFloat(getComputedStyle(meta).lineHeight),
             descLeft: left(desc),
-            metaLeft: left(meta),
             pulseLeft: left(pulse),
             nameLeft: left(title),
+            // The lines column's own content edge — what the indent is measured
+            // from, so "indented" is a real fact rather than a comparison
+            // between two numbers that could both be zero.
+            rowLeft: left(q(".tug-session-row-lines")),
           };
         })()`);
         // Tight, not inherited body leading. A 13px run under ~1.45 would be
         // 19px; tight is well under that.
         expect(geometry.descLH).toBeLessThan(19);
-        expect(geometry.metaLH).toBeLessThan(19);
         expect(geometry.nameLH).toBeLessThan(22);
-        // The three sub-lines start on ONE vertical, and it is indented past
-        // the callsign — the indent is what makes the callsign their heading.
-        expect(geometry.metaLeft).toBe(geometry.descLeft);
+        // The two sub-lines start on ONE vertical, indented off the row's own
+        // leading edge — the indent is what makes the title read as their
+        // heading. It is deliberately SHORTER than the title's own advance: on a
+        // rail-width row, indenting the reading all the way to the title would
+        // cost the activity a fifth of its line, which is the one line here that
+        // cannot afford it. (The masthead, which has a card's width, raises the
+        // same knob to the title's advance — see at0375.)
         expect(geometry.pulseLeft).toBe(geometry.descLeft);
-        expect(geometry.descLeft).toBeGreaterThan(geometry.nameLeft);
+        expect(geometry.descLeft).toBeGreaterThan(geometry.rowLeft);
+        expect(geometry.descLeft).toBeLessThan(geometry.nameLeft);
 
-        // ---- C. An empty description still holds its line. -----------------
+        // ---- C. Every row is one height, whatever it has to say. -----------
         //
-        // Both rows are in the same list at the same moment, so this cannot
-        // pass by the feature being broken outright in one of them.
+        // Across the whole list at one moment, so this cannot pass by the
+        // feature being broken outright in one row. The fixtures deliberately
+        // differ in what they have to show — one carries an agent title, one
+        // only a prompt, one neither — and a row that resized as a description
+        // arrived would move every row beneath it.
         const heights = await app.evalJS<{
-          described: number;
-          bare: number;
-          emptyLines: number;
+          heights: number[];
+          descriptions: number;
         }>(`(function(){
           var rows = Array.prototype.slice.call(
             document.querySelectorAll(${JSON.stringify(ROW)}));
-          var described = null, bare = null;
-          for (var i = 0; i < rows.length; i++) {
-            var d = rows[i].querySelector(".tug-session-row-description");
-            if (d === null) continue;
-            if (d.getAttribute("data-empty") === "true") bare = rows[i];
-            else described = rows[i];
-          }
-          if (described === null || bare === null) {
-            throw new Error("need one described row and one without");
-          }
+          if (rows.length < 2) throw new Error("need at least two rows");
           return {
-            described: Math.round(described.getBoundingClientRect().height),
-            bare: Math.round(bare.getBoundingClientRect().height),
-            emptyLines: document.querySelectorAll(
-              ${JSON.stringify(ROW)} + ' .tug-session-row-description[data-empty="true"]').length,
+            heights: rows.map(function (r) {
+              return Math.round(r.getBoundingClientRect().height);
+            }),
+            descriptions: document.querySelectorAll(
+              ${JSON.stringify(ROW)} + ' .tug-session-row-description').length,
           };
         })()`);
-        expect(heights.emptyLines).toBeGreaterThan(0);
-        expect(heights.bare).toBe(heights.described);
+        // Every row renders the description line, present or standing in.
+        expect(heights.descriptions).toBe(heights.heights.length);
+        for (const h of heights.heights) expect(h).toBe(heights.heights[0]);
+
+        // ---- D. Every row leads with a quiet dot, closed sessions included. -
+        //
+        // These are all closed on-disk sessions with no card bound, which used to
+        // mean NO dot at all. A session whose live state cannot be reached reads
+        // idle now, so the column of marks says which rows are working without
+        // saying anything false about the rest — and `idle` is emphatically not
+        // the danger reading, which is what would make every ordinary closed
+        // session look broken.
+        const dots = await app.evalJS<
+          ReadonlyArray<{ phase: string; state: string }>
+        >(`Array.prototype.map.call(
+             document.querySelectorAll(
+               ${JSON.stringify(ROW)} + ' [data-slot="tug-progress-indicator"]'),
+             function (el) {
+               return {
+                 phase: el.getAttribute("data-phase") || "",
+                 state: el.getAttribute("data-state") || "",
+               };
+             })`);
+        expect(dots.length).toBe(heights.heights.length);
+        for (const dot of dots) {
+          expect(dot.phase).toBe("idle");
+          expect(dot.state).not.toBe("aborted");
+        }
+
+        // ---- E. The description's rungs, over real scan rows. --------------
+        //
+        // Rung 2 is load-bearing HERE and nowhere else: a freshly-scanned
+        // external session has never been summarized, and its own first prompt is
+        // the only human-meaningful text the row holds. A creation date in its
+        // place is strictly less. The third fixture has neither, and falls to the
+        // stamp.
+        const rungs = await app.evalJS<ReadonlyArray<string>>(
+          `Array.prototype.map.call(
+             document.querySelectorAll(
+               ${JSON.stringify(ROW)} + ' .tug-session-row-description'),
+             function (el) { return (el.textContent || "").trim(); })`,
+        );
+        note("at0377 description rungs", JSON.stringify(rungs));
+        // The two prompt-bearing fixtures show their prompts, not a date.
+        for (const prompt of ["kestrel telemetry sweep", "narwhal ledger reconciliation"]) {
+          expect(rungs.some((r) => r.includes(prompt))).toBe(true);
+        }
+        // And the one with neither a summary nor a prompt dates itself.
+        expect(rungs.some((r) => r.startsWith("Created "))).toBe(true);
       } finally {
         await app.close();
       }
