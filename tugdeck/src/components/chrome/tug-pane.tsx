@@ -280,6 +280,30 @@ function CardTitleBar({
     [onDragStart],
   );
 
+  // The controls cluster's measured width, published on the bar as
+  // `--tugx-pane-controls-width`. The cluster only occupies the first chrome
+  // band, and the masthead runs its lower lines under the dead space beneath
+  // it to the card's edge — how far is a sibling's width, which CSS cannot
+  // read, and which changes as the stack badge comes and goes. A DOM write on
+  // resize, never React state ([L06]).
+  const barElRef = useRef<HTMLDivElement | null>(null);
+  const controlsElRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const bar = barElRef.current;
+    const controls = controlsElRef.current;
+    if (bar === null || controls === null) return;
+    const observer = new ResizeObserver(() => {
+      bar.style.setProperty(
+        "--tugx-pane-controls-width",
+        `${controls.offsetWidth}px`,
+      );
+    });
+    observer.observe(controls);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   // Controlled-mode open state for the close-confirm popover (the shared
   // `TugConfirmPopover` component). The X button and the imperative
   // `requestClose*` handles drive it open; the component's onConfirm /
@@ -493,6 +517,7 @@ function CardTitleBar({
 
   return (
     <div
+      ref={barElRef}
       className="tug-pane-title-bar"
       data-slot="tug-pane-title-bar"
       data-masthead={masthead !== null ? "true" : undefined}
@@ -540,7 +565,7 @@ function CardTitleBar({
         </>
       )}
 
-      <div className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
+      <div ref={controlsElRef} className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
         {/* The slot's depth at rest, and the way into the panes behind this
             one. The condition is `slotStack.length > 1` and nothing else — no
             "am I on top?" test, which would need a second cross-pane fact the

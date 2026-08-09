@@ -141,14 +141,10 @@ export const TUG_SESSION_ROW_STACK_DOT_SIZE = 16;
  * whose width comes straight off the activity run's, so the number belongs to
  * the row's packing rather than to whichever surface mounts it.
  *
- * The width is `SPARKLINE_WIDTH` in `session-masthead.tsx`, which is where the
- * Session card's own tape lives now. The pair has to match, not just the scale
- * constants: width sets the scroll speed and height sets the amplitude, so a
- * tape one pixel shorter draws the same series at a different vertical
- * proportion under a stroke that stays 1px. Same session, two surfaces, one
- * reading. (The masthead's tape is shorter — 18 against this 22 — because it
- * rides a `--tugx-pulse-bar-height: 18px` bar; the width, which is the scroll
- * clock, is the number that must not drift.)
+ * The masthead's own tape (`SPARKLINE_WIDTH` in `session-masthead.tsx`) is a
+ * deliberately larger cut of the same instrument — wider, on a shorter bar.
+ * Both draw the same `VISIBLE_SECONDS` span, so the two tapes always show the
+ * same window of work, each at its own resolution.
  */
 const SPARK_BASE_WIDTH = 64;
 const SPARK_BASE_HEIGHT = 22;

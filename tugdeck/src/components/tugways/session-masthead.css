@@ -45,6 +45,17 @@
       ) / 2
   );
   overflow: hidden;
+  /* The pane's control cluster is a flex sibling, but it only occupies the
+     first chrome band — the two bands beneath it are dead space. The negative
+     margin takes the masthead's box under that dead space to the card's
+     padding edge, so the PULSE line runs the full card width and its tape
+     lands flush at the right edge, under the close box. The width is the
+     pane's measurement, published as `--tugx-pane-controls-width`; the
+     space-xs term is the cluster's own start margin. Each line above the
+     PULSE keeps its own right edge below. */
+  margin-inline-end: calc(
+    -1 * (var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs))
+  );
 }
 
 /* The identity line stands apart from the group beneath it — a slightly wider
@@ -56,6 +67,13 @@
   min-width: 0;
   margin-block-end: var(--tugx-session-identity-lead-gap, 5px);
   line-height: var(--tug-line-height-tight);
+  /* The lead line shares its band with the pane's controls and the telemetry
+     widget, so it alone stops short of both: the cluster, its start margin,
+     the widget's 28px box, and one gap of air. */
+  padding-inline-end: calc(
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) + 28px +
+      var(--tug-space-xs)
+  );
 }
 
 /* The mark is the card's title icon, so it wears the pane's title-icon color
@@ -92,6 +110,13 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: var(--tug-font-size-xs);
   line-height: var(--tug-line-height-tight);
+  /* The description's band starts a hair under the controls' bottom edge, so
+     a long title running the extended box would end pressed against the close
+     box. It stops where the cluster starts; only the PULSE line beneath runs
+     the full width. */
+  padding-inline-end: calc(
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)
+  );
 }
 
 /* An un-described session keeps the line's space rather than collapsing it:
@@ -279,7 +304,11 @@
      At 22px in a box pinned to the tier's top it read 7px high of the chevron
      and the close box — one row of controls that did not line up. */
   inset-block-start: calc((var(--tug-chrome-height) - 28px) / 2);
-  inset-inline-end: 0;
+  /* The masthead's box now ends at the card's padding edge; the widget's
+     place is unchanged — immediately left of the pane's control cluster. */
+  inset-inline-end: calc(
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)
+  );
   display: inline-flex;
   align-items: center;
   justify-content: center;

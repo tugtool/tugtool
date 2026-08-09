@@ -111,8 +111,13 @@ import { useSessionLedger } from "@/lib/session-ledger-store";
 const SPARKLINE_FULL_SCALE_CHARS = 1200;
 const SPARKLINE_CURVE = sparklineCurves.gamma(0.6);
 
-/** Sparkline box in the masthead's PULSE line — shorter than the Z2 bar's. */
-const SPARKLINE_WIDTH = 64;
+/**
+ * Sparkline box in the masthead's PULSE line. The line runs the full card
+ * width, and the tape is its only graphic, so it takes twice the Lens row's
+ * 64 — the span shown is the same (`VISIBLE_SECONDS`); width buys resolution.
+ * The height rides the line's `--tugx-pulse-bar-height: 18px` bar.
+ */
+const SPARKLINE_WIDTH = 128;
 const SPARKLINE_HEIGHT = 18;
 
 /**
