@@ -30,7 +30,7 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const CHIP = `${CARD} [data-slot="ai-chip"]`;
-const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"]`;
 const SHEET = '[data-slot="tug-sheet"]';
 const SHEET_PRESENT = `document.querySelector(${JSON.stringify(SHEET)}) !== null`;
 

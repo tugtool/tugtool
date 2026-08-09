@@ -49,8 +49,8 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const CHIP = `${CARD} [data-slot="ai-chip"]`;
-/** The shown face only — the width-stabilizer's sizers are hidden siblings. */
-const CHIP_VALUE = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+/** The chip's composite face. */
+const CHIP_VALUE = `${CHIP} [data-slot="ai-chip-value"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 const SHEET = '[data-slot="ai-config-sheet"]';

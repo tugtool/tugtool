@@ -17,11 +17,18 @@
  * supports none. Right-click keeps the value chips' copy affordance
  * (`useCopyableButton`), now covering the whole composition in one string.
  *
+ * **It sizes to what it says.** The chip is deliberately NOT width-stabilized:
+ * stabilization exists to stop a row of chips from shuffling sideways when one
+ * of them changes, and the collapse left Z4B with two. With nothing downstream
+ * to push around, a fixed width bought only a permanent margin of empty chip,
+ * so the face is a plain span and the button is as wide as the settings it is
+ * reporting.
+ *
  * Laws: [L02] every value enters through `useSyncExternalStore` on the
  *       metadata store; [L06] no React state for appearance — the copy menu's
  *       disclosure belongs to `useCopyableButton`'s popover; [L19]/[L20]
- *       composes `TugPushButton`, `TugActionTooltip`, and `TugStableOverlay`,
- *       each keeping its own tokens.
+ *       composes `TugPushButton` and `TugActionTooltip`, each keeping its own
+ *       tokens.
  *
  * @module components/tugways/cards/ai-chip
  */
@@ -34,23 +41,13 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
-import { TugStableOverlay } from "@/components/tugways/internal/tug-stable-overlay";
 import type { ReadableMetadataStore } from "@/lib/session-metadata-store";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { readModelCatalog } from "@/lib/model-catalog";
-import {
-  knownModelRows,
-  modelRowTitle,
-  resolveModelLabel,
-} from "@/lib/model-label";
-import {
-  EFFORT_LEVELS,
-  formatEffortLabel,
-  resolveEffortDisplay,
-} from "@/lib/effort";
+import { knownModelRows, resolveModelLabel } from "@/lib/model-label";
+import { formatEffortLabel, resolveEffortDisplay } from "@/lib/effort";
 import {
   PERMISSION_MODE_DOMAIN,
-  PERMISSION_MODE_MENU,
   formatPermissionMode,
   parsePersistedPermissionMode,
   resolvePermissionMode,
@@ -76,27 +73,6 @@ export interface AiChipProps {
   focusGroup?: string;
   /** Order within {@link focusGroup}. */
   focusOrder?: number;
-}
-
-/** The widest composition the chip can ever show, for width stabilization. */
-function widestSummary(modelTitles: string[]): string {
-  const widestModel = modelTitles.reduce(
-    (widest, title) => (title.length > widest.length ? title : widest),
-    "",
-  );
-  const widestEffort = EFFORT_LEVELS.map((l) => formatEffortLabel(l)).reduce(
-    (widest, label) => (label.length > widest.length ? label : widest),
-    "",
-  );
-  const widestMode = PERMISSION_MODE_MENU.map((m) => formatPermissionMode(m)).reduce(
-    (widest, label) => (label.length > widest.length ? label : widest),
-    "",
-  );
-  return formatAiConfigSummary({
-    modelLabel: widestModel.length > 0 ? widestModel : null,
-    effortLabel: widestEffort,
-    modeLabel: widestMode,
-  });
 }
 
 /**
@@ -184,15 +160,7 @@ export function AiChip({
           // the handler, and the opener's first parameter is a row name.
           onClick={() => onOpenSheet()}
         >
-          {/* Width-stabilized against the widest composition the catalog can
-              produce, so changing any of the three values never reflows the
-              chip. A live value wider than the sizer still fits — the active
-              face is a real layout item. */}
-          <TugStableOverlay
-            data-slot="ai-chip-value"
-            active={value}
-            alternates={[widestSummary(rows.map((r) => modelRowTitle(r)))]}
-          />
+          <span data-slot="ai-chip-value">{value}</span>
         </TugPushButton>
       </TugActionTooltip>
       {copy.contextMenu}

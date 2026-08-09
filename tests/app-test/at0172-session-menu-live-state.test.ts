@@ -68,13 +68,13 @@ function deckShape() {
 }
 
 /**
- * The mode the chip is SHOWING — the last token of its width-stabilized active
- * face, which is what the user reads. The chip used to carry a native `title`
+ * The mode the chip is SHOWING — the last token of its face, which is what
+ * the user reads. The chip used to carry a native `title`
  * and this expression read that; the face is the more direct statement of the
  * same fact, and it does not move when the hover copy is reworded.
  */
 function chipModeExpr(): string {
-  const value = `${MODE_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+  const value = `${MODE_CHIP} [data-slot="ai-chip-value"]`;
   return `(function(){
     var e = document.querySelector(${JSON.stringify(value)});
     if (e === null) return null;

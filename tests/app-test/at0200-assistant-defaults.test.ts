@@ -58,9 +58,8 @@ const SETTINGS = '[data-testid="settings-session-card"]';
 // The Assistant box's one control — model, effort, and mode in a single chip
 // over a single mixer sheet, the same pair the Z4B row uses.
 const SETTINGS_AI_CHIP = `${SETTINGS} [data-slot="ai-chip"]`;
-// The overlay's ACTIVE face only — the width stabilizer also renders hidden
-// sizer alternates whose text would pollute a plain textContent read.
-const SETTINGS_AI_VALUE = `${SETTINGS_AI_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+// The chip's composite face.
+const SETTINGS_AI_VALUE = `${SETTINGS_AI_CHIP} [data-slot="ai-chip-value"]`;
 // Sheets portal into their host PANE's frame and linger through the exit
 // animation — scope every sheet read/click to the pane that owns it so a
 // closing sheet in another pane can never swallow a click.
@@ -75,7 +74,7 @@ const MODEL_SEGMENT = (value: string): string =>
   `${MODEL_LIST} [data-model="${value}"]`;
 
 const cardAiValue = (cardId: string): string =>
-  `[data-card-id="${cardId}"] [data-slot="ai-chip"] [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+  `[data-card-id="${cardId}"] [data-slot="ai-chip"] [data-slot="ai-chip-value"]`;
 
 /**
  * The MODEL the composite names — asserted as a prefix rather than a token
@@ -303,12 +302,6 @@ describe.skipIf(!SHOULD_RUN)(
           await app.ingestSessionMetadata("A", capabilities());
           await waitForModel(app, cardAiValue("A"), "Opus 4.8 · 1M");
           await waitForModel(app, SETTINGS_AI_VALUE, "Opus 4.8 · 1M");
-          const settingsChipWidthBefore = await app.evalJS<number | null>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)});
-              return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
-            })()`,
-          );
 
           // ---- The AI chip opens the mixer, which now offers the live
           //      catalog's models (Sonnet among them).
@@ -324,18 +317,6 @@ describe.skipIf(!SHOULD_RUN)(
           await app.click(`${SETTINGS_SHEET} ${MODEL_SEGMENT("sonnet")}`);
           await app.click(`${SETTINGS_SHEET} [data-slot="ai-config-ok"]`);
           await waitForModel(app, SETTINGS_AI_VALUE, "Sonnet 4.6");
-
-          // Width stability: the chip reserves every known row's title, so
-          // changing the default never reflows it.
-          expect(
-            await app.evalJS<number | null>(
-              `(function(){
-                var el = document.querySelector(${JSON.stringify(SETTINGS_AI_CHIP)});
-                return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
-              })()`,
-            ),
-            "the Settings AI chip must not reflow across default values",
-          ).toBe(settingsChipWidthBefore);
 
           // ---- Card A's session is knowable (capabilities landed above), so
           //      the seed aligns it to the new deck default, and the Z4B label

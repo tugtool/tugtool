@@ -237,7 +237,7 @@ describe.skipIf(!SHOULD_RUN)(
         // tokens. Effort is OMITTED rather than dashed when unsupported, so the
         // token COUNT is what says whether a level is known.
         const AI_TOKENS_JS = `(() => {
-          const el = document.querySelector('[data-card-id="A"] [data-slot="ai-chip"] [data-tug-stable="active"]');
+          const el = document.querySelector('[data-card-id="A"] [data-slot="ai-chip"] [data-slot="ai-chip-value"]');
           return el ? (el.textContent || '').trim().split(" \\u00b7 ") : [];
         })()`;
 

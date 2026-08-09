@@ -116,7 +116,9 @@
    describes the whole sheet rather than one control. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .ai-config-scope {
-  font-size: var(--tug-font-size-xs);
+  /* The same size as a channel's description: both are the sheet's explanatory
+     voice, one about the whole sheet and one about a single control. */
+  font-size: var(--tug-font-size-sm);
   line-height: var(--tug-line-height-normal);
   text-align: center;
   color: var(--tug7-element-global-text-normal-muted-rest);

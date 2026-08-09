@@ -40,7 +40,7 @@ const CHIP = `${CARD} [data-slot="ai-chip"]`;
 // (the widest composition) share the `ai-chip-value` wrapper to reserve the
 // widest label. Read the active variant so `textContent` is the shown label
 // alone, not the wrapper's value+sizers concatenation.
-const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"]`;
 // The mixer sheet + its MODE row (rendered into the pane frame portal).
 const SHEET = '[data-slot="tug-sheet"]';
 const MODE_ROW = `${SHEET} [data-testid="ai-config-mode"]`;
@@ -95,16 +95,6 @@ const CHIP_MODE_EXPR = `(function(){
 })()`;
 
 const KNOWN_MODE_LABELS = ["Default", "Accept Edits", "Plan", "Auto", "Bypass"];
-
-/** Outer width of the chip, rounded to 1/100 px. */
-async function chipWidth(app: App): Promise<number | null> {
-  return await app.evalJS<number | null>(
-    `(function(){
-      var el = document.querySelector(${JSON.stringify(CHIP)});
-      return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
-    })()`,
-  );
-}
 
 describe.skipIf(!SHOULD_RUN)(
   "AT0088: the permission mode cycles via ⌃⌥⌘P and is set from the AI mixer",
@@ -164,7 +154,6 @@ describe.skipIf(!SHOULD_RUN)(
           const afterCycle = await chipMode(app);
           expect(afterCycle, "Shift+Tab must change the mode").not.toBe(initialMode);
           expect(KNOWN_MODE_LABELS).toContain(afterCycle!);
-          const widthAtCycle = await chipWidth(app);
 
           // 2. The mixer's MODE row sets the mode explicitly. Click the chip to
           //    open the sheet, choose the Auto segment (which moves the pending
@@ -214,15 +203,6 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 4000 },
           );
           expect(await chipMode(app), "OK must set the chip mode").toBe("Auto");
-
-          // 3. Width stabilization: the chip reserves its widest label, so the
-          //    mode change above (a different-length value) does not reflow it.
-          const widthAtAuto = await chipWidth(app);
-          expect(widthAtCycle, "chip width must be measurable").not.toBeNull();
-          expect(
-            widthAtAuto,
-            "the AI chip must not reflow across mode values ([R01], this chip)",
-          ).toBe(widthAtCycle);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {

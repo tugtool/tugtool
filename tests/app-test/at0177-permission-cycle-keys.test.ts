@@ -61,8 +61,7 @@ function deckShape() {
 }
 
 /**
- * The mode the chip is SHOWING — the last token of its width-stabilized active
- * face. The AI chip's value is the composite `model · effort · mode`, and mode
+ * The mode the chip is SHOWING — the last token of its face. The AI chip's value is the composite `model · effort · mode`, and mode
  * is always its final token (an unsupported effort is omitted, never dashed,
  * so the mode never shifts position).
  *
@@ -72,7 +71,7 @@ function deckShape() {
  * user sees, and it is what the cycle is supposed to move.
  */
 function chipModeExpr(): string {
-  const value = `${MODE_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+  const value = `${MODE_CHIP} [data-slot="ai-chip-value"]`;
   return `(function(){
     var e = document.querySelector(${JSON.stringify(value)});
     if (e === null) return null;

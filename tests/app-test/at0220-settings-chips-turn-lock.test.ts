@@ -44,9 +44,9 @@ const SID = "test-session-A"; // bindSession's synthetic tug_session_id
 const CARD = '[data-card-id="A"]';
 // One chip now carries all three settings, so one gate locks all three.
 const AI_CHIP = `${CARD} [data-slot="ai-chip"]`;
-// The shown value line (the `active` variant of the width-stabilizing
-// overlay), so `textContent` is the composite alone. Mode is its last token.
-const AI_VALUE = `${AI_CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+// The chip's value line, so `textContent` is the composite alone. Mode is
+// its last token.
+const AI_VALUE = `${AI_CHIP} [data-slot="ai-chip-value"]`;
 const PROMPT_INPUT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 
 // A completed assistant turn: one non-partial assistant message + the

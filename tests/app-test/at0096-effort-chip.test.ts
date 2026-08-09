@@ -43,9 +43,8 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const CHIP = `${CARD} [data-slot="ai-chip"]`;
-// The shown value only — the width-stabilizer sizers also live under the
-// button content, so read the active variant.
-const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"] [data-tug-stable="active"]`;
+// The chip's composite face.
+const CHIP_CONTENT = `${CHIP} [data-slot="ai-chip-value"]`;
 const SHEET = '[data-slot="tug-sheet"]';
 /** The sheet's readout — its own statement of what OK would commit. */
 const READOUT = `${SHEET} [data-slot="ai-config-summary"]`;
@@ -132,16 +131,6 @@ function hasAnyEffortTokenExpr(): string {
   })()`;
 }
 
-/** Outer width of the chip, rounded to 1/100 px. `null` if absent. */
-async function chipWidth(app: App): Promise<number | null> {
-  return await app.evalJS<number | null>(
-    `(function(){
-      var el = document.querySelector(${JSON.stringify(CHIP)});
-      return el ? Math.round(el.getBoundingClientRect().width * 100) / 100 : null;
-    })()`,
-  );
-}
-
 describe.skipIf(!SHOULD_RUN)(
   "AT0096: the AI chip carries the effort level, and the mixer's EFFORT row sets it",
   () => {
@@ -180,7 +169,6 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(hasEffortTokenExpr("High"), {
             timeoutMs: 6000,
           });
-          const widthAtHigh = await chipWidth(app);
 
           // Open the mixer (synthetic click — the chip sits at the card's
           // bottom-right edge, below the window's clickable region for a
@@ -224,25 +212,9 @@ describe.skipIf(!SHOULD_RUN)(
             timeoutMs: 4000,
           });
 
-          // Width stabilization: the chip reserves its widest label, so the
-          // level change (a different-length value) does not reflow it.
-          const widthAtMax = await chipWidth(app);
-          expect(widthAtHigh, "chip width must be measurable").not.toBeNull();
-          expect(
-            widthAtMax,
-            "the AI chip must not reflow across level values ([R01], this chip)",
-          ).toBe(widthAtHigh);
-
           // Model gate: an active model that does NOT support effort drops the
-          // effort token entirely — the chip stays present (a stable row), it
-          // just has no level to name.
-          //
-          // Driven by moving the ACTIVE model within the same capability list,
-          // not by replacing the list: the composite's width is dominated by its
-          // model token, which is reserved against the known catalog, so
-          // swapping the catalog itself legitimately resizes the chip. What
-          // must not resize it is a value change under a fixed catalog — which
-          // is what a user picking haiku actually does.
+          // effort token entirely — the chip stays present, it just has no
+          // level to name.
           await app.ingestSessionMetadata("A", {
             type: "system_metadata",
             model: "haiku",
@@ -258,13 +230,6 @@ describe.skipIf(!SHOULD_RUN)(
             ),
             "chip stays present (never hides)",
           ).toBe(true);
-          // Width stability across the unsupported transition: the chip
-          // reserves the widest composition, so losing the effort token must
-          // not collapse its width.
-          expect(
-            await chipWidth(app),
-            "chip must not reflow when the effort token goes",
-          ).toBe(widthAtHigh);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
