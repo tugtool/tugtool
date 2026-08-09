@@ -35,11 +35,11 @@
  *   anywhere a user reads. The activity line always has something true to
  *   say instead (see the grammar below), so nothing needs a placeholder.
  * - **The activity line has a grammar.** At rest:
- *   `<turns> turns, <size>. <last-updated>. Ready.` — with the stamp omitted
- *   at zero turns. During a turn it carries the live beat, and the sparkline
- *   beside it animates. A fresh or resumed session with no description yet
- *   shows its creation stamp on the description line, so the line is never
- *   blank and never a placeholder word.
+ *   `<turns> turns, <size>. Last updated: <last-updated>. Ready.` — with the
+ *   stamp omitted at zero turns. During a turn it carries the live beat, and
+ *   the sparkline beside it animates. A fresh or resumed session with no
+ *   description yet shows its creation stamp on the description line, so the
+ *   line is never blank and never a placeholder word.
  * - **The masthead slims its controls.** The width-control icon leaves the
  *   title row; the wave (telemetry) widget and close remain. Right-clicking
  *   the title copies the session ATOM — all flavors — and the telemetry
@@ -52,6 +52,11 @@
  *   prose: identity through `useSessionIdentity`, phase through a new
  *   session-keyed `useSessionPhase` that resolves card-bound sessions to
  *   their card's `codeSessionStore` and everything else to the idle dot.
+ * - **The atom's ink is text color.** The theme's session color leaves the
+ *   atom face: the run and the border paint from the ordinary text ink, and
+ *   the DOT is the pill's only color channel — a colored pill around a
+ *   colored dot was two tints saying one thing. Right-click on any atom
+ *   offers Copy, exactly as the shipped chip already does.
  * - **The missing atom loses its slash.** With the icon gone, the
  *   unresolvable citation states its failure by shape alone: dashed border,
  *   muted ink, the still idle dot, inert. Same tooltip sentence as before.
@@ -61,10 +66,12 @@
  * description + intent + activity stack; the `PULSE` legend/stand-in as
  * user-facing ink; the four-line row (its metadata line folds into the
  * activity grammar); the masthead width control; red for anything but
- * errors. Still standing from earlier rounds: one theme-authored session
- * color; no per-session hashed tint; no monospace in session chrome; the
- * citation `<tag> (<shortid>)` as the only flat-text form; the fork-lineage
- * grammar; the three clipboard flavors (`text/html` stays struck).
+ * errors; the session-colored pill paint (the dot is the atom's only color
+ * now); the tape on picker rows (the picker reads at rest — the masthead
+ * and the Lens keep theirs). Still standing from earlier rounds: no
+ * per-session hashed tint; no monospace in session chrome; the citation
+ * `<tag> (<shortid>)` as the only flat-text form; the fork-lineage grammar;
+ * the three clipboard flavors (`text/html` stays struck).
  *
  * Everything that shipped as a Tug* component is mounted real where the
  * audition allows it (`TugProgressIndicator`, `TugSparkline`, and one
@@ -82,6 +89,7 @@ import React from "react";
 import { Waves, X } from "lucide-react";
 
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
+import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import {
@@ -262,13 +270,14 @@ function isRunning(f: IdentityFixture): boolean {
 
 /**
  * The activity line at rest — the grammar, in one place:
- * `<turns> turns, <size>. <last-updated>. Ready.` The stamp appears only for
- * a session with turns to have been updated by; a fresh session's line is
- * `0 turns, 8 KB. Ready.` and nothing more.
+ * `<turns> turns, <size>. Last updated: <last-updated>. Ready.` The labeled
+ * stamp appears only for a session with turns to have been updated by; a
+ * fresh session's line is `0 turns, 8 KB. Ready.` and nothing more.
  */
 function restLine(f: IdentityFixture): string {
   const turns = `${f.turns} ${f.turns === 1 ? "turn" : "turns"}, ${f.size}.`;
-  const stamp = f.turns > 0 && f.lastUsed !== null ? ` ${f.lastUsed}.` : "";
+  const stamp =
+    f.turns > 0 && f.lastUsed !== null ? ` Last updated: ${f.lastUsed}.` : "";
   return `${turns}${stamp} Ready.`;
 }
 
@@ -444,12 +453,16 @@ function ProtoMasthead({
       </div>
       <div className="gsi-masthead-activity">
         <span className="gsi-activity-run">{activityLine(f)}</span>
-        <FixtureTape
-          seed={seed}
-          active={isRunning(f)}
-          width={MASTHEAD_TAPE_WIDTH}
-          height={MASTHEAD_TAPE_HEIGHT}
-        />
+        {/* Lifted so the tape reads visually centered on rows two and three
+            together, not seated on row three alone. */}
+        <span className="gsi-masthead-tape">
+          <FixtureTape
+            seed={seed}
+            active={isRunning(f)}
+            width={MASTHEAD_TAPE_WIDTH}
+            height={MASTHEAD_TAPE_HEIGHT}
+          />
+        </span>
       </div>
     </div>
   );
@@ -464,7 +477,9 @@ function ProtoMasthead({
  * dot size exchanged — the Lens keeps its across-the-room
  * {@link TUG_SESSION_ROW_INDICATOR_SIZE}; the picker reads up close and
  * takes the masthead's {@link SMALL_DOT_SIZE}. The old fourth line is gone:
- * its facts (time, turns, size) live in the activity grammar now.
+ * its facts (time, turns, size) live in the activity grammar now. The
+ * picker's rows carry no tape — a picker is read at rest, choosing, and the
+ * dot already says which rows are working.
  */
 function ProtoRow({
   f,
@@ -488,12 +503,14 @@ function ProtoRow({
       <div className="gsi-prow-description">{descriptionLine(f)}</div>
       <div className="gsi-prow-activity">
         <span className="gsi-activity-run">{activityLine(f)}</span>
-        <FixtureTape
-          seed={seed}
-          active={isRunning(f)}
-          width={64}
-          height={16}
-        />
+        {dot === "lens" ? (
+          <FixtureTape
+            seed={seed}
+            active={isRunning(f)}
+            width={64}
+            height={16}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -506,11 +523,14 @@ function ProtoRow({
 /**
  * The proposed atom face: `[dot] <callsign>`, or
  * `[dot] <custom-name> : <callsign>` once the user names the session. The
- * pill keeps the session color and the rounded shape from the shipped chip;
- * the chatbox icon gives way to the dot, and the dot is LIVE. A missing
- * (unresolvable) atom forces the idle dot, drops the session color, and
- * dashes its border — shape states the failure now that there is no icon to
- * slash.
+ * rounded pill shape survives from the shipped chip; the session color does
+ * not — the run and the border paint in ordinary text ink, and the LIVE dot
+ * is the pill's only color channel. A missing (unresolvable) atom forces
+ * the idle dot, mutes the ink, and dashes its border — shape states the
+ * failure now that there is no icon to slash.
+ *
+ * Right-click offers Copy — here the flat citation; the rollout writes the
+ * atom's full flavor set exactly as the shipped chip already does.
  */
 function ProtoAtom({
   f,
@@ -521,8 +541,11 @@ function ProtoAtom({
   size?: "sm" | "2xs";
   missing?: boolean;
 }): React.ReactElement {
+  const copy = useCopyableButton(`${f.project}/${citation(f)}`);
   return (
     <span
+      ref={copy.ref as React.Ref<HTMLSpanElement>}
+      onContextMenu={copy.onContextMenu}
       className="gsi-atom"
       data-size={size}
       data-missing={missing ? "true" : undefined}
@@ -541,6 +564,7 @@ function ProtoAtom({
           </>
         )}
       </span>
+      {copy.contextMenu}
     </span>
   );
 }
@@ -748,10 +772,13 @@ export function GallerySessionIdentity(): React.ReactElement {
             Row one: the dot, the title, the telemetry wave, close — the
             width control is gone. Row two: the description, or the creation
             stamp while no description exists yet, so the line is never
-            blank. Row three: the activity line and the tape. At rest the
+            blank. Row three: the activity line and the tape, lifted to sit
+            visually centered on rows two and three together. At rest the
             activity reads{" "}
-            <code>{"<turns> turns, <size>. <last-updated>. Ready."}</code>;
-            mid-turn it carries the live beat and the tape animates.
+            <code>
+              {"<turns> turns, <size>. Last updated: <stamp>. Ready."}
+            </code>
+            ; mid-turn it carries the live beat and the tape animates.
             Right-clicking the title copies the session <em>atom</em> — all
             flavors.
           </>
@@ -806,7 +833,9 @@ export function GallerySessionIdentity(): React.ReactElement {
           <>
             One stack, three mounts. The Lens exchanges the small dot for
             its across-the-room 28px indicator; the picker keeps the
-            masthead&apos;s 16. The old fourth line is gone — its facts
+            masthead&apos;s 16 and carries <strong>no tape</strong> — a
+            picker is read at rest, choosing, and the dot already says
+            which rows are working. The old fourth line is gone — its facts
             (time, turns, size) are the activity grammar&apos;s rest form
             now, so a row at rest carries them and a row mid-turn shows the
             beat instead, exactly like the masthead.
@@ -843,7 +872,9 @@ export function GallerySessionIdentity(): React.ReactElement {
             repaints every mounted atom. So the atom is a component with
             subscriptions, never a static string or a baked image — pasted
             atoms, Gazette refs, and History chips all stay current for as
-            long as they are on screen.
+            long as they are on screen. The ink is <strong>text color</strong>:
+            the theme&apos;s session tint leaves the pill, and the dot is
+            its only color channel. Right-click any atom for Copy.
           </>
         }
       >
@@ -887,7 +918,7 @@ export function GallerySessionIdentity(): React.ReactElement {
               <ProtoAtom f={NAMED_REST} size="2xs" />
             </div>
           </Frame>
-          <Frame label="a named atom under a narrow budget — the name gives way, the callsign survives">
+          <Frame label="a named atom under a narrow budget — the user's name survives, the callsign gives way">
             <span className="gsi-chip-narrow">
               <ProtoAtom f={NAMED_LIVE} />
             </span>

@@ -280,6 +280,27 @@
   opacity: 0.65;
 }
 
+/* The tape rides row three's flex box but paints lifted, so its 18px reads
+   visually centered on rows two and three together rather than seated on
+   the last line. Relative offset, not margin: the flow box stays put and
+   nothing beneath it moves.
+
+   The tape draws in its container's computed color, and the masthead's
+   ground is the tinted chrome band, not the pane bg — so the color is
+   pinned to the chrome foreground and the line/area alphas are raised
+   above the instrument's pane-ground defaults, which wash out against a
+   saturated light-theme band. */
+.gsi-masthead-tape {
+  --tugx-sparkline-line-alpha: 1;
+  --tugx-sparkline-area-alpha: 0.3;
+
+  display: inline-flex;
+  flex: none;
+  position: relative;
+  top: -9px;
+  color: var(--tugx-pane-title-fg-active);
+}
+
 .gsi-masthead-widget {
   flex: none;
   display: inline-flex;
@@ -379,10 +400,11 @@
 }
 
 /* ── PROTOTYPE: the atom — a live, dot-led pill ───────────────────────
-   The shipped session-color tokens, so the proposal is judged in the real
-   paint. The dot replaces the chatbox icon; a missing atom forces the
-   idle dot, drops the session color, and dashes its border — shape states
-   the failure now that there is no icon to slash. */
+   Text ink, not the session tint: the run and the border paint from the
+   ordinary text color, and the LIVE dot is the pill's only color channel.
+   The dot replaces the chatbox icon; a missing atom forces the idle dot,
+   mutes the ink, and dashes its border — shape states the failure now
+   that there is no icon to slash. */
 
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
 .gsi-atom {
@@ -392,10 +414,10 @@
   min-width: 0;
   white-space: nowrap;
   padding: 2px 9px;
-  border: 1px solid var(--tug7-element-atom-border-normal-session-rest);
+  border: 1px solid color-mix(in oklab, currentcolor 30%, transparent);
   border-radius: 999px;
-  background-color: var(--tug7-surface-atom-primary-normal-session-rest);
-  color: var(--tug7-element-atom-text-normal-session-rest);
+  background-color: transparent;
+  color: var(--tug7-element-global-text-normal-default-rest);
   font-size: var(--tug-font-size-sm);
 }
 
@@ -418,17 +440,28 @@
   min-width: 0;
 }
 
+/* The user's name is the precious run: it never truncates beside a
+   callsign. Standing alone — an un-named atom, where the callsign fills
+   this span — it may elide, since it is then the only run there is. */
 .gsi-atom-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex: none;
   font-weight: var(--tug-font-weight-semibold);
 }
 
-/* The callsign after a custom name: quieter, and it never truncates —
-   under a narrow budget the name gives way and the handle survives. */
+.gsi-atom-name:only-child {
+  flex: initial;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The callsign after a custom name: quieter, and the run that gives way —
+   under a narrow budget the user's own words survive and the minted
+   handle elides; the tooltip and Copy still carry it whole. */
 .gsi-atom-callsign {
-  flex: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: pre;
   font-weight: var(--tug-font-weight-regular, 400);
   opacity: 0.78;
@@ -484,6 +517,13 @@
 /* The citation is flat text — the one place monospace appears. */
 .gsi-placard-citation {
   font-family: var(--tug-font-family-mono);
+}
+
+/* The pill's inline padding reads as indent against the bare values in the
+   rows above it; pulling the atom back by that padding puts its RUN on the
+   column the other values start at, with the border overhanging left. */
+.gsi-placard-row .gsi-atom {
+  margin-inline-start: -7px;
 }
 
 /* ── The clipboard flavors ───────────────────────────────────────────── */
