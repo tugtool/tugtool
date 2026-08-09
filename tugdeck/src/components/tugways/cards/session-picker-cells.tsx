@@ -87,7 +87,10 @@ import {
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 import { latestLineForScope, usePulse } from "@/lib/pulse-store";
-import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import {
+  sessionActivityBeat,
+  sessionActivityRestLine,
+} from "@/lib/session-activity-line";
 import {
   sessionIdentityContextFrom,
   useSessionIdentity,
@@ -232,12 +235,16 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // terminal holds no pulse feed — and for failed rows, whose one fact is the
   // failure. A pure subscription read, so the pure-renderer rule holds.
   const pulse = usePulse();
+  // The bare `Done` marker is filtered out on the way in: it is the absence of
+  // a beat, and the rest sentence says the same thing with the facts in it.
   const beat =
     isLive && pulse.enabled
-      ? latestLineForScope(
-          pulse.lines,
-          row.session_id,
-          pulse.cleared.get(row.session_id),
+      ? sessionActivityBeat(
+          latestLineForScope(
+            pulse.lines,
+            row.session_id,
+            pulse.cleared.get(row.session_id),
+          ),
         )
       : null;
   const activity = isTerminalLive

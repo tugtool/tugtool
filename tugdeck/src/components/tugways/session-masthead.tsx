@@ -87,7 +87,10 @@ import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
-import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import {
+  sessionActivityBeat,
+  sessionActivityRestLine,
+} from "@/lib/session-activity-line";
 import { useSessionCreatedAtMs } from "@/lib/session-created-at";
 import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
@@ -126,6 +129,7 @@ import { sessionCitation, useSessionIdentity } from "@/lib/session-identity";
 import {
   getSessionLedgerStore,
   useSessionLedger,
+  useSessionLedgerRow,
 } from "@/lib/session-ledger-store";
 
 /**
@@ -605,12 +609,14 @@ export function SessionMasthead({
 
   // Lines cleared by this card's last submit stay hidden; the next turn's
   // voice repopulates the line.
-  const latest = latestLineForScope(
-    pulse.lines,
-    sessionId,
-    pulse.cleared.get(sessionId),
+  // The bare `Done` marker is filtered on the way in: it is the ABSENCE of a
+  // beat, and the rest sentence beneath says the same thing with facts in it.
+  const latest = sessionActivityBeat(
+    latestLineForScope(pulse.lines, sessionId, pulse.cleared.get(sessionId)),
   );
-  const row = ledger.rows.find((r) => r.session_id === sessionId) ?? null;
+  // By id, not out of the workspace listing: a just-spawned session is
+  // content-empty and the listing deliberately omits it.
+  const row = useSessionLedgerRow(sessionId, projectDir);
   // Not `row.created_at`: the shared resolver also reads the card's own
   // replay anchor, which is the only source for a freshly-bound card in a
   // project nothing has listed yet — exactly the state the stamp rung is for.

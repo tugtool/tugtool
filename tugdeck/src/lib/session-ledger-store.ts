@@ -122,6 +122,21 @@ export class SessionLedgerStore {
   private readonly snapshots = new Map<string, WorkspaceSnapshot>();
   /** Reverse index from session_id → workspace, kept in lockstep with snapshots. */
   private readonly rowLocations = new Map<string, RowLocation>();
+  /**
+   * Rows the LIST deliberately does not carry — a just-spawned session's
+   * ({@link isEmptySessionRow}).
+   *
+   * Dropping them from the list is the picker's rule and it stays: nobody
+   * should be offered an abandoned empty session to resume into. But the
+   * drop threw away the only record the deck ever gets of WHEN a fresh
+   * session was made — the spawn-time `session_updated` push carries the
+   * full row, `created_at` and all, and the card's other source (the
+   * replay anchor) reads the first turn's timestamp out of a JSONL that a
+   * zero-turn session has not written. So the row is kept here instead of
+   * discarded, and a surface that holds a session id and asks about THAT
+   * session ({@link findRow}) is answered. A browse still sees nothing.
+   */
+  private readonly detachedRows = new Map<string, SessionRow>();
   private readonly listeners = new Set<() => void>();
 
   /** Resolves attached to in-flight `trash_session` calls, keyed by id. */
@@ -214,11 +229,33 @@ export class SessionLedgerStore {
    * leave the store advertising a stale view.
    */
   invalidateAll(): void {
-    if (this.snapshots.size === 0) return;
+    if (this.snapshots.size === 0 && this.detachedRows.size === 0) return;
     this.snapshots.clear();
     this.rowLocations.clear();
+    this.detachedRows.clear();
     this.tick();
   }
+
+  /**
+   * The ledger's row for ONE session, wherever it is held: the workspace
+   * listing if it is in one, else the detached spawn-time row the listing
+   * deliberately omits ({@link detachedRows}).
+   *
+   * The question a card asks about its own session, which is not the
+   * question the picker asks. Referentially stable while the row is
+   * unchanged, so a `useSyncExternalStore` selector may return it directly.
+   */
+  findRow = (sessionId: string): SessionRow | null => {
+    if (sessionId.length === 0) return null;
+    const located = this.rowLocations.get(sessionId);
+    if (located !== undefined) {
+      const cached = this.snapshots.get(located.projectDir);
+      const listed =
+        cached?.rows.find((r) => r.session_id === sessionId) ?? null;
+      if (listed !== null) return listed;
+    }
+    return this.detachedRows.get(sessionId) ?? null;
+  };
 
   // ── internals ───────────────────────────────────────────────────────────
 
@@ -379,8 +416,20 @@ export class SessionLedgerStore {
   private patchRow(sessionId: string, row: SessionRow): void {
     // A content-empty row never enters the list — see `isEmptySessionRow`.
     // Spawn-time pushes carry exactly this shape, and the host already
-    // filters them out of `list_sessions`.
-    if (isEmptySessionRow(row)) return;
+    // filters them out of `list_sessions`. It is KEPT rather than dropped
+    // (see `detachedRows`): the list must not carry it, and the card whose
+    // session it is still has to be able to ask when it was made.
+    if (isEmptySessionRow(row)) {
+      this.detachedRows.set(sessionId, row);
+      this.rowLocations.set(sessionId, {
+        projectDir: this.rowLocations.get(sessionId)?.projectDir ?? row.project_dir,
+      });
+      this.tick();
+      return;
+    }
+    // It has content now, so the list is its home and the detached copy
+    // would only be a second, staler answer to the same question.
+    this.detachedRows.delete(sessionId);
     // Locate the cache slot via the reverse index, falling back to the
     // payload's `project_dir` if the index doesn't yet know about this
     // session (the row was created on the server before the picker ever
@@ -416,6 +465,7 @@ export class SessionLedgerStore {
   }
 
   private removeRow(sessionId: string): void {
+    this.detachedRows.delete(sessionId);
     const located = this.rowLocations.get(sessionId);
     if (located === undefined) return;
     this.rowLocations.delete(sessionId);
@@ -471,6 +521,31 @@ export function _resetSessionLedgerStoreForTest(): void {
  * renderer). Empty string short-circuits to the idle snapshot — the
  * picker doesn't issue a request until the user has typed something.
  */
+/**
+ * React hook: the ledger's row for ONE session — the question every session
+ * surface asks (its turn count, its size, when it was made, when it last
+ * moved), as against the picker's browse of a whole workspace.
+ *
+ * It reads through {@link useSessionLedger} rather than beside it, so the
+ * workspace listing is still kicked and subscribed exactly as before; what it
+ * adds is the fallback to {@link SessionLedgerStore.findRow}, which also sees
+ * the spawn-time row a fresh session's listing deliberately leaves out.
+ */
+export function useSessionLedgerRow(
+  sessionId: string,
+  projectDir: string,
+): SessionRow | null {
+  const snapshot = useSessionLedger(projectDir);
+  const listed =
+    sessionId.length === 0
+      ? null
+      : (snapshot.rows.find((r) => r.session_id === sessionId) ?? null);
+  if (listed !== null) return listed;
+  // Same store, already subscribed above — a detached row's arrival ticks
+  // those listeners, so this re-reads on the same wake.
+  return _activeStore?.findRow(sessionId) ?? null;
+}
+
 export function useSessionLedger(projectDir: string): WorkspaceSnapshot {
   return useSyncExternalStore(
     (listener) => {

@@ -6,12 +6,16 @@
  * reports. Two sources, in this order:
  *
  *  1. **The session ledger's `created_at`** — the authority. It is present at
- *     zero turns, which is exactly the state a fallback is reporting on.
+ *     zero turns, which is exactly the state a fallback is reporting on. Read
+ *     through `useSessionLedgerRow` rather than off the workspace listing: a
+ *     just-spawned session is content-empty, the listing deliberately omits it
+ *     so nobody is offered an abandoned session to resume into, and the by-id
+ *     lookup is what still answers for the card that holds it.
  *  2. **The card's replay-derived anchor** — `sessionCreatedAtMs` on the card's
- *     own session store, which covers the window before the ledger answers. That
- *     window is not a formality: the ledger store drops a `session_updated` push
- *     for a workspace it has not listed yet, so a freshly-bound card in an
- *     unlisted project has no row at all until something opens the picker.
+ *     own session store, which covers the window before the ledger answers. It
+ *     is derived from the first turn entry in the JSONL, so it says nothing
+ *     about a session that has not taken a turn — which is exactly why rung 1
+ *     has to see the detached row.
  *
  * Null until one of them answers. Shared rather than re-derived per surface,
  * because a masthead and a Lens row dating the same session differently is the
@@ -25,7 +29,7 @@
 import { useSyncExternalStore } from "react";
 
 import { cardServicesStore } from "@/lib/card-services-store";
-import { useSessionLedger } from "@/lib/session-ledger-store";
+import { useSessionLedgerRow } from "@/lib/session-ledger-store";
 
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
@@ -45,8 +49,6 @@ export function useSessionCreatedAtMs(
     store !== null ? () => store.getSnapshot().sessionCreatedAtMs : () => null,
     () => null,
   );
-  const ledger = useSessionLedger(projectDir);
-  const ledgerCreatedAtMs =
-    ledger.rows.find((r) => r.session_id === tugSessionId)?.created_at ?? null;
-  return ledgerCreatedAtMs ?? replayCreatedAtMs;
+  const row = useSessionLedgerRow(tugSessionId, projectDir);
+  return row?.created_at ?? replayCreatedAtMs;
 }

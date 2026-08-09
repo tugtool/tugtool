@@ -209,6 +209,75 @@ describe("SessionLedgerStore", () => {
     store.dispose();
   });
 
+  it("findRow answers for the spawn-time row the list leaves out", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      sessions: [makeRow({ session_id: "s1", last_user_prompt: "hello" })],
+    });
+    // A just-spawned session. It stays out of the LIST — nobody is offered an
+    // abandoned empty session to resume into — but the card that holds it has
+    // to be able to ask when it was made, and this push is the only record of
+    // that the deck ever gets: a zero-turn session has written no JSONL, so
+    // the card's replay anchor is blind to it.
+    publishSessionUpdated({
+      session_id: "fresh",
+      fields: makeRow({
+        session_id: "fresh",
+        project_dir: "ws-1",
+        state: "live",
+        card_id: "c1",
+        created_at: 1_700_000_000_000,
+      }),
+    });
+    expect(
+      store.getSnapshot("ws-1").rows.map((r) => r.session_id),
+    ).toEqual(["s1"]);
+    expect(store.findRow("fresh")?.created_at).toBe(1_700_000_000_000);
+    // And a listed row still answers through the same door.
+    expect(store.findRow("s1")?.session_id).toBe("s1");
+    expect(store.findRow("nobody")).toBeNull();
+    store.dispose();
+  });
+
+  it("findRow drops the detached copy once the session has content", () => {
+    const { store } = newStore();
+    store.getSnapshot("ws-1");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "ws-1",
+      sessions: [],
+    });
+    publishSessionUpdated({
+      session_id: "fresh",
+      fields: makeRow({
+        session_id: "fresh",
+        project_dir: "ws-1",
+        created_at: 1_700_000_000_000,
+      }),
+    });
+    expect(store.getSnapshot("ws-1").rows).toHaveLength(0);
+    // First prompt lands: the row has content, so the LIST is its home and a
+    // detached copy would only be a second, staler answer.
+    publishSessionUpdated({
+      session_id: "fresh",
+      fields: makeRow({
+        session_id: "fresh",
+        project_dir: "ws-1",
+        created_at: 1_700_000_000_000,
+        turn_count: 1,
+        last_user_prompt: "hello",
+        last_used_at: 1_700_000_009_000,
+      }),
+    });
+    const listed = store.getSnapshot("ws-1").rows;
+    expect(listed.map((r) => r.session_id)).toEqual(["fresh"]);
+    expect(store.findRow("fresh")).toBe(listed[0]);
+    store.dispose();
+  });
+
   it("session_updated { removed: true } drops the row", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");

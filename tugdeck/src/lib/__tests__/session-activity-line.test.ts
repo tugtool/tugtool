@@ -9,7 +9,10 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import {
+  sessionActivityBeat,
+  sessionActivityRestLine,
+} from "@/lib/session-activity-line";
 
 /** Aug 9 2026, 9:41 AM local — the stamp the assertions read back. */
 const AT_MS = new Date(2026, 7, 9, 9, 41, 0).getTime();
@@ -60,5 +63,25 @@ describe("sessionActivityRestLine", () => {
     expect(line({ turnCount: 0, fileSize: null, lastUsedAtMs: null })).toBe(
       "0 turns. Ready.",
     );
+  });
+});
+
+describe("sessionActivityBeat", () => {
+  test("the bare turn-end marker is not a beat", () => {
+    expect(sessionActivityBeat({ text: "Done" })).toBeNull();
+    // Whitespace around it is still the marker and nothing else.
+    expect(sessionActivityBeat({ text: "  Done \n" })).toBeNull();
+  });
+
+  test("anything the voice actually said passes through, identity and all", () => {
+    const beat = { text: "Reading the masthead's CSS" };
+    expect(sessionActivityBeat(beat)).toBe(beat);
+    // Only the bare marker: a sentence that merely contains the word is news.
+    const sentence = { text: "Done with the first pass; starting the second" };
+    expect(sessionActivityBeat(sentence)).toBe(sentence);
+  });
+
+  test("no beat is no beat", () => {
+    expect(sessionActivityBeat(null)).toBeNull();
   });
 });

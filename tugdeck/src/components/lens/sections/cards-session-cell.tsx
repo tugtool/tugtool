@@ -53,9 +53,12 @@ import {
 import { useSessionIdentity } from "@/lib/session-identity";
 import { latestLineForScope, usePulse } from "@/lib/pulse-store";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
-import { sessionActivityRestLine } from "@/lib/session-activity-line";
+import {
+  sessionActivityBeat,
+  sessionActivityRestLine,
+} from "@/lib/session-activity-line";
 import { useSessionCreatedAtMs } from "@/lib/session-created-at";
-import { useSessionLedger } from "@/lib/session-ledger-store";
+import { useSessionLedgerRow } from "@/lib/session-ledger-store";
 import {
   ACTIVITY_BIN_MS,
   getSessionActivityStore,
@@ -133,7 +136,11 @@ export function CardsSessionRow({
   // `/rename` or a reroll repaints here with no reload.
   const identity = useSessionIdentity(tugSessionId, { projectDir });
   const pulse = usePulse();
-  const latest = latestLineForScope(pulse.lines, tugSessionId);
+  // The bare `Done` marker is not a beat — it is the absence of one, and the
+  // rest sentence below says the same thing with the session's facts in it.
+  const latest = sessionActivityBeat(
+    latestLineForScope(pulse.lines, tugSessionId),
+  );
   // The compaction pin, exactly as the on-card strip wears it: a `/compact`
   // run streams nothing for minutes, so without it the row keeps showing the
   // last line from before the submit for the whole run.
@@ -146,8 +153,7 @@ export function CardsSessionRow({
   const createdAtMs = useSessionCreatedAtMs(cardId, tugSessionId, projectDir);
   // The session's own ledger row — the turn count, the on-disk size, and when it
   // last moved, which are the activity line's rest form.
-  const ledger = useSessionLedger(projectDir);
-  const row = ledger.rows.find((r) => r.session_id === tugSessionId) ?? null;
+  const row = useSessionLedgerRow(tugSessionId, projectDir);
   // What the activity level says. A live beat is the beat; the two absences —
   // a finished turn's bare `Done` marker, and a session with no beats at all —
   // become the REST SENTENCE: how much conversation there has been, how big it

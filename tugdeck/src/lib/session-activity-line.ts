@@ -30,7 +30,10 @@
  */
 
 import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
-import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import {
+  formatRestingStamp,
+  TURN_DONE_MARKER,
+} from "@/lib/pulse-line/resting-line";
 
 /** The facts the rest line is made of — a `SessionRow`'s, or a fixture's. */
 export interface SessionActivityFacts {
@@ -66,4 +69,27 @@ export function sessionActivityRestLine(facts: SessionActivityFacts): string {
   segments.push("Ready.");
 
   return segments.join(" ");
+}
+
+/**
+ * A beat worth putting on the activity line, or `null`.
+ *
+ * There is exactly one line the voice emits that is not news: the bare
+ * turn-end marker `Done` ({@link TURN_DONE_MARKER}, written by the voice's
+ * `onTurnEnd`). It is a fine wire marker and a poor thing to read off a row —
+ * it says a run ended and nothing about when, and it sits there unchanged for
+ * however long the session then stays quiet. It is also, precisely, the state
+ * the REST SENTENCE describes, which says the same thing with the facts in it
+ * and appears nowhere in the gallery as the word `Done`.
+ *
+ * So the marker is not shown, and the surfaces that show a beat call this on
+ * the way in. Recognized here rather than suppressed upstream: the marker is
+ * what the ledger, the recent-pulses popover, and a copied line carry, and
+ * only this reading changes.
+ */
+export function sessionActivityBeat<T extends { text: string }>(
+  beat: T | null,
+): T | null {
+  if (beat === null) return null;
+  return beat.text.trim() === TURN_DONE_MARKER ? null : beat;
 }
