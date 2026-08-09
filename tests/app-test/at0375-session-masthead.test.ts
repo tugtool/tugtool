@@ -47,6 +47,9 @@
  *      title line seats where a one-line title bar seats its title, the
  *      telemetry widget stands on that same row as the pane's own controls, and
  *      the tape holds the trailing edge with the activity run reaching it.
+ *      The dot in front of them emits its ring past its own box, so nothing
+ *      between it and the title bar may clip, and the bar's leading padding
+ *      has to be deep enough to hold the ring's full reach.
  *      Every one of these is a claim about pixels in a live pane against real
  *      content, so the test drives a real beat through the production pulse
  *      parser rather than measuring an empty band.
@@ -562,6 +565,47 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         // And the mark really is out to the left of them — otherwise the three
         // could agree by the inset having quietly become zero.
         expect(edges.mark).toBeLessThan(edges.run);
+
+        // ---- Nothing clips the dot's ring. --------------------------------
+        // The glyph EMITS its ring past its own box — at the masthead's 16px
+        // it travels to 1.75x — so any clip between the dot and the title bar
+        // takes a bite out of the ring on every breath. Asserted as the two
+        // things that make the overhang safe: no clipping ancestor, and the
+        // ring's full reach landing inside the bar's leading padding. The
+        // reach is read off the glyph's own published variable rather than
+        // retyped, so a geometry change moves the assertion with it.
+        const ring = await app.evalJS<{
+          clip: string[];
+          ringLeft: number;
+          barLeft: number;
+        }>(
+          `(function(){
+            var m = document.querySelector(${JSON.stringify(MASTHEAD)});
+            var bar = document.querySelector(${JSON.stringify(TITLE_BAR)});
+            var dot = m.querySelector(
+              '[data-slot="tug-progress-pulsing-dot"]');
+            var cs = getComputedStyle(dot);
+            var size = parseFloat(cs.getPropertyValue(
+              '--tugx-progress-pulsing-dot-size')) || 0;
+            var reach = parseFloat(cs.getPropertyValue(
+              '--tugx-progress-pulsing-dot-emit-reach-auto')) || 1;
+            var clip = [];
+            for (var el = dot; el !== null && el !== bar.parentNode;
+                 el = el.parentElement) {
+              var o = getComputedStyle(el).overflowX;
+              if (o !== 'visible') clip.push(el.className + ' -> ' + o);
+            }
+            var r = dot.getBoundingClientRect();
+            return {
+              clip: clip,
+              ringLeft: Math.round(r.left + r.width / 2 - (size * reach) / 2),
+              barLeft: Math.round(bar.getBoundingClientRect().left),
+            };
+          })()`,
+        );
+        note("dot ring vs clips", JSON.stringify(ring));
+        expect(ring.clip).toEqual([]);
+        expect(ring.ringLeft).toBeGreaterThanOrEqual(ring.barLeft);
 
         // ---- The title line seats on the pane's own title row. ------------
         // Its box centers in the FIRST chrome band, exactly where a one-line

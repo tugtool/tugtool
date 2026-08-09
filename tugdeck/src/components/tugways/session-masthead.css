@@ -42,7 +42,14 @@
           var(--tug-line-height-tight)
       ) / 2
   );
-  overflow: hidden;
+  /* NOT a clip. The phase dot's ring is emitted past its own box — at the
+     masthead's 16px glyph it travels to 1.75× and reaches ~4px left of the
+     row's leading edge, which is the masthead's own edge — so a clip here
+     takes a bite out of the ring on every breath. The gallery's mock does not
+     clip its masthead either; the pane frame does, and the title bar's
+     `--tug-space-md` of leading padding is the room the ring paints into.
+     Nothing else can spill: every line inside sets its own nowrap ellipsis,
+     and the block box is three fixed-height lines inside a fixed tier. */
   /* The pane's control cluster is a flex sibling, but it only occupies the
      first chrome band — the two bands beneath it are dead space. The negative
      margin takes the masthead's box under that dead space to the card's
