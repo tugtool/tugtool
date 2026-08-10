@@ -1,104 +1,40 @@
 /**
- * card-masthead.css — the document card's masthead tier.
+ * card-masthead.css — what a DOCUMENT masthead adds to the shared frame.
+ *
+ * The tier's geometry, the row's seating in it, and the ink ladder on the
+ * tinted band are `masthead-frame.css`, shared with the Session card's
+ * masthead. The three lines' type is `tug-session-row.css`, because both
+ * mastheads mount the same row. Neither is restated here — this file was once
+ * a second authoring of both, which is exactly why the two tiers did not match.
+ *
+ * What is left is the two things that genuinely belong to a document: the
+ * glyph that leads its name, and a path line that clips its head and can be
+ * acted on.
  *
  * @tug-pairings
- * | Element                                      | Surface                          | Role          | Context                     |
- * |----------------------------------------------|----------------------------------|---------------|-----------------------------|
- * | --tugx-pane-title-fg-active                  | --tugx-pane-title-bar-bg-active  | content       | .card-masthead-title        |
- * | --tugx-pane-title-bar-icon-active            | --tugx-pane-title-bar-bg-active  | control       | .card-masthead-icon         |
- * | --tugx-pane-title-fg-active                  | --tugx-pane-title-bar-bg-active  | informational | .card-masthead-description  |
+ * | Element                           | Surface                          | Role    | Context             |
+ * |-----------------------------------|----------------------------------|---------|---------------------|
+ * | --tugx-pane-title-bar-icon-active | --tugx-pane-title-bar-bg-active  | control | .card-masthead-icon |
  */
 
-/**
- * The tier. Top-aligned rather than centered, for the reason the session
- * masthead is: three lines centered in 72px put the lead line a few pixels
- * from the pane's top edge, where every other card's title sits ten down. So
- * the lead line seats exactly where a ONE-LINE title bar seats its title —
- * centered in the first `--tug-chrome-height` band — and the lines below hang
- * into the tier's remaining room. The pane's controls center in that same
- * band, so the name and the close box sit on one row.
- */
-.card-masthead {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1 1 auto;
-  /* `border-box` so the tier's own height is what `100%` means. Under
-     content-box the block's top padding is added on top of the full tier and
-     the box reports ~9px taller than the chrome it sits in. */
-  box-sizing: border-box;
-  block-size: 100%;
-  justify-content: flex-start;
-  /* Where the sub-lines start, so they hang off the TITLE rather than off the
-     masthead's edge — the icon sits in a leading gutter the way the session
-     row's phase dot does, and the three lines share one vertical. Derived from
-     the glyph's advance rather than tuned, so a retuned icon size cannot leave
-     the ladder behind. Zero when there is no glyph: nothing to hang off.
-     (The session row states the same idea as `--tugx-session-row-title-inset`
-     with `sub-align="title"`; this is that arithmetic for a plain icon.) */
-  --tugx-card-masthead-gutter: 0px;
-  /* The TYPE in this tier is the session masthead's, value for value — the
-     approved ladder, not a second one invented beside it. Its line boxes are
-     size × `--tug-line-height-tight`, its steps are the session stack's lead
-     gap (3px) and line gap (1px), and its seat is the same arithmetic the
-     session masthead states: the lead line centered in the first
-     `--tug-chrome-height` band. One tier, one recipe, whoever wears it. */
-  padding-block-start: calc(
-    (
-        var(--tug-chrome-height) - var(--tug-font-size-sm) *
-          var(--tug-line-height-tight)
-      ) / 2
-  );
-  /* The control cluster is a flex sibling that occupies only the FIRST band;
-     the two beneath it are dead space. The negative margin takes this block
-     under that dead space to the card's padding edge, so the description and
-     detail run the full card width. The lead line reserves the cluster back
-     below. Width is the pane's own measurement; the space-xs term is the
-     cluster's start margin. */
-  margin-inline-end: calc(
-    -1 * (var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs))
-  );
-}
-
-/* ── Lead line ─────────────────────────────────────────────────────────── */
-
-/* Alone among the three, this line shares its band with the pane's controls,
-   so it alone stops short of them: the measured cluster, its start margin,
-   and one gap of air. */
-.card-masthead[data-icon="true"] {
-  --tugx-card-masthead-gutter: calc(
-    var(--tug-icon-size-md) + var(--tug-space-sm)
-  );
-}
-
-.card-masthead-lead {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  block-size: calc(var(--tug-font-size-sm) * var(--tug-line-height-tight));
-  /* The session stack's lead gap — what makes the name read as the heading of
-     the pair beneath it, and the sub-lines read as one group. */
-  margin-block-end: 3px;
-  padding-inline-end: calc(
-    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) +
-      var(--tug-space-xs)
-  );
-}
-
+/* ── The glyph ─────────────────────────────────────────────────────────────
+   The row centers whatever mark it is handed in its own advance; this is only
+   the glyph's box and its ink. Sized at the chrome icon token rather than at
+   the advance, so the mark keeps the size every other title bar's glyph wears
+   and the row's packing stays the row's. */
 .card-masthead-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--tug-icon-size-md);
-  height: var(--tug-icon-size-md);
+  inline-size: var(--tug-icon-size-md);
+  block-size: var(--tug-icon-size-md);
   flex-shrink: 0;
-  margin-right: var(--tug-space-sm);
   color: var(--tugx-pane-title-bar-icon-inactive);
 }
 
 .card-masthead-icon svg {
-  width: 100%;
-  height: 100%;
+  inline-size: 100%;
+  block-size: 100%;
 }
 
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
@@ -106,70 +42,8 @@
   color: var(--tugx-pane-title-bar-icon-active);
 }
 
-/* The name is the pane's title, and paints from the pane's title token — a
-   masthead does not get a second answer to what a card title looks like. */
-.card-masthead-title {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--tug-font-size-sm);
-  line-height: var(--tug-line-height-tight);
-  font-weight: var(--tug-font-weight-medium);
-  color: var(--tugx-pane-title-fg-inactive);
-}
-
-/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
-.tug-pane[data-focused="true"] .card-masthead-title {
-  color: var(--tugx-pane-title-fg-active);
-}
-
-/* ── Description and detail ────────────────────────────────────────────── */
-
-/* The lower lines, as one block hung off the title. The indent lives here
-   rather than on each line: this element is LTR whatever a path line inside it
-   says about its own direction, so `padding-inline-start` lands where it
-   reads. `min-width: 0` so the lines inside can ellipsize. */
-.card-masthead-sub {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  /* The session stack's inner step — the pair is tighter than the lead gap
-     above it, which is what makes it read as one group. */
-  gap: 1px;
-  padding-inline-start: var(--tugx-card-masthead-gutter);
-}
-
-/* The two sub-lines are the session masthead's two, exactly: the description
-   at the row size on 85% of the chrome foreground, the third line one size
-   down at 65% — the same faces, sizes, leadings, and ink strengths that tier
-   already ships under a session's name. Mixed rather than made translucent so
-   a highlight inside a run keeps its own paint. */
-
-/* @tug-renders-on: --tugx-pane-title-bar-bg-active */
-.card-masthead-description {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--tug-font-size-sm);
-  line-height: calc(var(--tug-font-size-sm) * var(--tug-line-height-tight));
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 85%, transparent);
-}
-
-/* @tug-renders-on: --tugx-pane-title-bar-bg-active */
-.card-masthead-detail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--tug-font-size-xs);
-  font-weight: var(--tug-font-weight-regular);
-  line-height: calc(var(--tug-font-size-xs) * var(--tug-line-height-tight));
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 65%, transparent);
-}
-
-/* A path clips its HEAD, so the filename it ends in survives the truncation
+/* ── The path line ─────────────────────────────────────────────────────────
+   A path clips its HEAD, so the filename it ends in survives the truncation
    that a long directory chain guarantees. `unicode-bidi: plaintext` keeps the
    run's own direction under the `dir="rtl"` that does the clipping. */
 .card-masthead-description[data-kind="path"] {
@@ -177,16 +51,11 @@
 }
 
 /* An actionable description says so on hover and not before — a permanent
-   underline on a path would read as a link the whole strip long. The title
-   bar is a drag surface, so the line takes pointer events back for itself. */
-/* Content-width rather than stretched, so the hover rule underlines the path
-   and not the empty run to the card's edge. `align-self` is how a column flex
-   item asks for that; the cap has to net out the gutter the margin spends. */
+   underline on a path would read as a link the whole strip long. The title bar
+   is a drag surface, so the line takes pointer events back for itself. */
 .card-masthead-description[data-actionable="true"] {
   cursor: pointer;
   pointer-events: auto;
-  align-self: flex-start;
-  max-width: 100%;
 }
 
 .card-masthead-description[data-actionable="true"]:hover {

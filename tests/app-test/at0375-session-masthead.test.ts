@@ -69,6 +69,7 @@
  *
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/components/tugways/session-masthead.css
+ * @covers tugdeck/src/components/tugways/masthead-frame.css
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/components/tugways/tug-sheet.css

@@ -1,0 +1,157 @@
+/**
+ * masthead-frame.css — the 72px masthead tier, and how a `TugSessionRow` is
+ * seated in it.
+ *
+ * Every masthead in the deck wears the SAME three lines, because every one of
+ * them mounts the same component: `TugSessionRow`. What this file adds is the
+ * part that is not the row's — the chrome tier's geometry, the row's list-row
+ * furniture zeroed out, and the ink ladder the tinted band calls for — stated
+ * ONCE so a second masthead cannot arrive with its own answer.
+ *
+ * It arrived with one anyway. The document masthead was authored beside this
+ * geometry rather than on it: its own paired size/line-height ladder, its own
+ * gaps, its own indent derived from an icon's advance instead of from the row's
+ * published title inset. Every number was defensible and none of them matched,
+ * which is the whole failure mode a component library exists to prevent — the
+ * type of a masthead is not a thing a mount site gets to decide.
+ *
+ * So: the frame is a class, the row's mount is a class, and a card wearing a
+ * masthead composes both and contributes content. What a mount site still owns
+ * is what is genuinely its own — the session's telemetry widget and its tape,
+ * the document's path affordance — and those live in the two files beside this.
+ *
+ * @tug-pairings
+ * | Element                     | Surface                          | Role          | Context                          |
+ * |-----------------------------|----------------------------------|---------------|----------------------------------|
+ * | --tugx-pane-title-fg-active | --tugx-pane-title-bar-bg-active  | informational | the description and third lines  |
+ */
+
+/**
+ * The tier. TOP-ALIGNED, not centered: three lines centered in 72px put the
+ * title a few pixels from the pane's top edge, where every other card's title
+ * sits ten down. So the title line seats exactly where a ONE-LINE title bar
+ * seats its title — centered in the first `--tug-chrome-height` band — and the
+ * two lines below hang into the tier's remaining room. The pane's controls
+ * center in that same band, so the name and the close box sit on one row.
+ *
+ * NOT clipped. A phase dot's ring is emitted past its own box and reaches a few
+ * pixels left of the row's leading edge, so a clip here would take a bite out of
+ * the ring on every breath. The pane frame clips; the title bar's leading
+ * padding is the room the ring paints into. Nothing else can spill — every line
+ * inside sets its own nowrap ellipsis inside a fixed tier.
+ */
+.tug-masthead-frame {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  /* The slot is a fixed height; this fills it and never asks for more.
+     `border-box` so the tier's own height is what `100%` means — under
+     content-box the top padding is added on top of the full tier and the box
+     reports ~9px taller than the chrome it sits in. */
+  box-sizing: border-box;
+  block-size: 100%;
+  justify-content: flex-start;
+  padding-block-start: calc(
+    (
+        var(--tug-chrome-height) - var(--tug-font-size-sm) *
+          var(--tug-line-height-tight)
+      ) / 2
+  );
+  /* The pane's control cluster is a flex sibling, but it occupies only the
+     FIRST chrome band — the two beneath it are dead space. The negative margin
+     takes this box under that dead space to the card's padding edge, so the
+     last line runs the full card width. The width is the pane's own
+     measurement, published as `--tugx-pane-controls-width`; the space-xs term
+     is the cluster's own start margin. Each line above reserves the cluster
+     back for itself. */
+  margin-inline-end: calc(
+    -1 * (var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs))
+  );
+}
+
+/**
+ * The composed row, seated in chrome.
+ *
+ * `TugSessionRow` is a LIST ROW, and a masthead is not a list: the row's own
+ * block and inline padding, its hover wash, its press pose, and its leading
+ * accessory gutter all belong to a rail. They are zeroed HERE — on the row's own
+ * element, through the knobs its primitive publishes ([L20]) — rather than by
+ * reaching into its rules. Everything the row decides about the three lines
+ * (which one truncates, the type, the leading between them) it keeps deciding.
+ */
+.tug-masthead-frame-row {
+  --tugx-list-row-padding-block: 0px;
+  --tugx-list-row-padding-inline: 0px;
+  /* The gutter holds a rail row's leading focus accessory; chrome has none, and
+     3px of it would push the mark off the vertical the pane's own title sits
+     on. */
+  --tugx-list-row-indicator-gutter: 0px;
+  --tugx-list-row-flush-hover-bg: transparent;
+  /* And the PRESS pose goes with the hover wash, for the same reason and one
+     more. A list row paints an accent press layer on pointer-down because a row
+     whose click acts without leaving a selection behind would answer the press
+     with nothing. This row's click does not act: the title bar is the pane's
+     ACTIVATION/DRAG surface, so the press belongs to the card being picked up.
+     Left on, the layer is the width of the chrome tier — every click anywhere
+     in the title bar, including the one that starts a drag, filled the whole
+     bar accent-blue and let it fade. */
+  --tugx-list-row-pressed-bg: transparent;
+  --tugx-list-row-selected-pressed-bg: transparent;
+  /* Chrome, not a rail: there is no movement caret on this edge and no column
+     of other rows to line up with, so the tier seats the mark's ink a few
+     pixels inside its own content edge and the three lines hang off that. */
+  --tugx-session-row-leading-inset: 6px;
+  /* The three-level stack's block padding stands its block off the RULES
+     between rail rows. Chrome has no rules, and the tier's own top padding is
+     what seats the block — 12px on top of it drops the title line clear of the
+     band the pane's controls sit in. */
+  --tugx-session-identity-row-pad: 0px;
+  min-width: 0;
+  /* The frame's column STRETCHES its children, and a list row is
+     `align-items: center` — so a stretched row would center its three lines in
+     the tier's remaining height and drop the title clear of the band the pane's
+     own controls sit in. The row takes its content height instead, and the
+     tier's own top padding seats it. */
+  flex: 0 0 auto;
+}
+
+/* ── The ink ladder on the tinted band ──────────────────────────────────
+   A masthead's ground is the tinted chrome band, so its text paints from the
+   chrome foreground at stepped strengths rather than the gray muted token the
+   rail rows use — title full, description 85%, third line 65%. Mixed rather
+   than made translucent so a filter highlight inside a run keeps its own paint.
+
+   Ink only. The SIZE of all three lines is the row's, stated once there — a
+   mount that restates it is how the three surfaces drifted apart in the first
+   place. */
+
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.tug-masthead-frame-row .tug-session-row-description {
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 85%, transparent);
+}
+
+/* A fact STANDING IN for a line nobody has written yet drops one more step. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.tug-masthead-frame-row .tug-session-row-description[data-stamp="true"] {
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 60%, transparent);
+}
+
+/* The title run inherits the pane's title color, exactly as every other card's
+   title does — the row's own list-row ink is a rail's. */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.tug-masthead-frame-row .tug-list-row-title {
+  color: var(--tugx-pane-title-fg-active);
+}
+
+/* The third line rides the chrome band too: chrome foreground at 65%, the last
+   step of the ladder. `TugPulse` is composed through its published knob. [L20] */
+/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
+.tug-masthead-frame-row .tug-pulse {
+  --tugx-pulse-activity-color: color-mix(
+    in oklab,
+    var(--tugx-pane-title-fg-active) 65%,
+    transparent
+  );
+}

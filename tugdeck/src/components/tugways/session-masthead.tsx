@@ -62,6 +62,7 @@
  *       [L20] `TugPulse` is composed through its published knobs only.
  */
 
+import "./masthead-frame.css";
 import "./session-masthead.css";
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
@@ -486,9 +487,12 @@ export function SessionMasthead({
   );
 
   return (
-    <div className="session-masthead" data-slot="session-masthead">
+    <div
+      className="session-masthead tug-masthead-frame"
+      data-slot="session-masthead"
+    >
       <SessionIdentityRow
-        className="session-masthead-row"
+        className="session-masthead-row tug-masthead-frame-row"
         sessionId={sessionId}
         cardId={cardId}
         projectDir={projectDir}
