@@ -76,6 +76,8 @@ import {
 import type { BlockInfo } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
+import { gutterLineSelectionHandlers } from "../gutter-line-selection";
+
 /**
  * Per-line gutter marker rendering the line number inside a
  * `<span>` so the theme can apply a smaller `font-size` to just
@@ -150,5 +152,8 @@ export const tugLineNumbersGutter: Extension = [
       return new TugLineNumberMarker(view.state.doc.lineAt(line.from).number);
     },
     initialSpacer: () => new TugLineNumberSpacer(),
+    // Press a number to select its line, drag to extend by lines —
+    // `gutter-line-selection.ts`, shared with the viewer's stock gutter.
+    domEventHandlers: gutterLineSelectionHandlers,
   }),
 ];

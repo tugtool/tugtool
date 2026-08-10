@@ -119,6 +119,7 @@ import {
 import { cn } from "@/lib/utils";
 import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
 import { loadMarkdownTextStyling } from "@/components/tugways/tug-text-editor/markdown-text-styling";
+import { gutterLineSelectionHandlers } from "@/components/tugways/gutter-line-selection";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler } from "./responder-chain";
@@ -166,10 +167,16 @@ const languageCompartment = new Compartment();
  */
 function buildLineNumbers(enabled: boolean, startLine: number): Extension {
   if (!enabled) return [];
-  if (startLine <= 1) return cmLineNumbers();
+  // Press a number to select its line, drag to extend by lines — the same
+  // handlers the Text card editor's custom gutter carries, so the gesture is
+  // one gesture wherever a gutter appears.
+  if (startLine <= 1) {
+    return cmLineNumbers({ domEventHandlers: gutterLineSelectionHandlers });
+  }
   const offset = startLine - 1;
   return cmLineNumbers({
     formatNumber: (lineNo) => String(lineNo + offset),
+    domEventHandlers: gutterLineSelectionHandlers,
   });
 }
 

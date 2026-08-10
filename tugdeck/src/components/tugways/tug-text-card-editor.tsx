@@ -139,6 +139,7 @@ import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
+import { gutterLineSelectionHandlers } from "./gutter-line-selection";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
 import { tugTextCardEditorTheme } from "./tug-text-card-editor/theme";
@@ -152,6 +153,15 @@ const lineWrapCompartment = new Compartment();
 
 /** Reconfigurable line-number gutter. */
 const lineNumbersCompartment = new Compartment();
+
+/**
+ * The gutter, when it is shown: the stock line numbers wearing the substrate's
+ * press-and-drag line selection, so a number selects the line it names here as
+ * it does in every other gutter-bearing surface.
+ */
+const lineNumbersGutter = cmLineNumbers({
+  domEventHandlers: gutterLineSelectionHandlers,
+});
 
 /** Reconfigurable read-only state (permission-refused files). */
 const readOnlyCompartment = new Compartment();
@@ -666,7 +676,7 @@ export const TugTextCardEditor = React.forwardRef<
         history(),
         readOnlyCompartment.of(EditorState.readOnly.of(readOnlyRef.current)),
         lineWrapCompartment.of(lineWrapFor(s)),
-        lineNumbersCompartment.of(s.lineNumbers ? cmLineNumbers() : []),
+        lineNumbersCompartment.of(s.lineNumbers ? lineNumbersGutter : []),
         foldGutterCompartment.of(s.foldGutter ? cmFoldGutter() : []),
         tabConfigCompartment.of(tabConfigFor(s)),
         whitespaceCompartment.of(whitespaceFor(s)),
@@ -760,7 +770,7 @@ export const TugTextCardEditor = React.forwardRef<
   useLayoutEffect(() => {
     viewRef.current?.dispatch({
       effects: lineNumbersCompartment.reconfigure(
-        settings.lineNumbers ? cmLineNumbers() : [],
+        settings.lineNumbers ? lineNumbersGutter : [],
       ),
     });
   }, [settings.lineNumbers]);
