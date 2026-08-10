@@ -13,6 +13,14 @@
  * multi-line output, and ask whether follow-bottom survived. The dev
  * log's follow-bottom transitions name the culprit if it did not.
  *
+ * The third test pins the instrumentation the field diagnosis needed
+ * and did not have. A flip tagged `unattributed-scroll-up` says only
+ * that SmartScroll could not attribute the move — without the scroller's
+ * identity, the page's focus / visibility state, and the `scroll` events
+ * that led there, a field report reduces to "something did this,
+ * somewhere," which is exactly where the first two live captures left
+ * off.
+ *
  * @covers tugdeck/src/lib/smart-scroll.ts
  * @covers tugdeck/src/components/tugways/cards/blocks/bash-tool-block.tsx
  */
@@ -336,6 +344,89 @@ describe.skipIf(!SHOULD_RUN)("AT0387: error block vs follow-bottom", () => {
         expect(after.displacements).toBe("0");
         expect(after.buttonVisible).toBe("false");
         expect(after.distance).toBeLessThanOrEqual(60);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a flip record names the scroller and carries the scroll events behind it",
+    async () => {
+      const app = await standUp("at0387-record");
+      try {
+        // A wheel-up is the one disengage whose cause is never in doubt,
+        // which makes it the honest fixture for the record's shape: if
+        // the fields are wrong here they are wrong for the flip whose
+        // cause IS in doubt.
+        await app.evalJS<boolean>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  for (var i = 0; i < 6; i += 1) {
+    el.dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true, cancelable: true }));
+    el.scrollTop = Math.max(0, el.scrollTop - 400);
+  }
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 600));
+
+        const flip = await app.evalJS<{
+          source: string;
+          following: boolean;
+          scrollKey: string;
+          cardId: string;
+          visibility: string;
+          windowFocused: boolean;
+          top: number;
+          dist: number;
+          sinceInputMs: number | null;
+          ring: string;
+        } | null>(`(function () {
+  var rows = window.__deckTrace.dump().filter(function (e) {
+    return e.kind === "follow-bottom" && e.following === false;
+  });
+  if (rows.length === 0) return null;
+  var e = rows[rows.length - 1];
+  return {
+    source: e.source, following: e.following,
+    scrollKey: e.scrollKey, cardId: e.cardId,
+    visibility: e.visibility, windowFocused: e.windowFocused,
+    top: e.top, dist: e.dist, sinceInputMs: e.sinceInputMs, ring: e.ring,
+  };
+})()`);
+        note("at0387-record", flip);
+
+        expect(flip).not.toBeNull();
+        expect(flip!.source).toBe("wheel-up");
+        // Which scroller, in a deck that can hold several transcripts.
+        expect(flip!.scrollKey).toBe("session-card-transcript");
+        expect(flip!.cardId.length).toBeGreaterThan(0);
+        // What the page was doing. The value is whatever the harness's
+        // window state is — the contract is that it is RECORDED, since a
+        // scroller the user cannot see is one they cannot have scrubbed.
+        expect(typeof flip!.visibility).toBe("string");
+        expect(typeof flip!.windowFocused).toBe("boolean");
+        // The gesture is fresh, and the geometry is real. `dist` is read
+        // at the flip, which for `wheel-up` is the wheel event itself —
+        // before the movement it stands for — so it carries no lower
+        // bound here; what matters is that the position is recorded.
+        expect(flip!.sinceInputMs).not.toBeNull();
+        expect(flip!.sinceInputMs!).toBeLessThan(5_000);
+        expect(flip!.top).toBeGreaterThan(0);
+        expect(Number.isFinite(flip!.dist)).toBe(true);
+        // The ring: `Δms,top,scrollHeight,clientHeight` tuples, oldest
+        // first, every Δ negative (they precede the flip). A stream of
+        // samples like this is what a hand looks like; the clamp this
+        // instrument exists to catch arrives as exactly one.
+        const samples = flip!.ring.split("|").filter((s) => s.length > 0);
+        expect(samples.length).toBeGreaterThan(1);
+        for (const sample of samples) {
+          const parts = sample.split(",").map(Number);
+          expect(parts).toHaveLength(4);
+          expect(parts[0]!).toBeLessThanOrEqual(0);
+          expect(parts[2]!).toBeGreaterThan(0);
+          expect(parts[3]!).toBeGreaterThan(0);
+        }
       } finally {
         await app.close();
       }

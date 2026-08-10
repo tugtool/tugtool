@@ -65,7 +65,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 300_000;
@@ -279,11 +279,24 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         // is recorded.
         await expectZeroDisplacements(app);
 
-        // The transcript stood up at the live edge, which is a
-        // follow-bottom engagement — and the dev log carries it with
-        // no opt-in of any kind.
+        // The dev log carries follow-bottom flips with no opt-in of any
+        // kind. Driven with a wheel-up rather than read off the
+        // stand-up: a transcript that mounts at the live edge mounts
+        // ALREADY engaged, and `_setFollowingBottom` early-returns on a
+        // no-op, so a clean stand-up has no transition to log. Reading
+        // the stand-up made this assertion pass only while something
+        // was spuriously flipping the flag — it failed the moment the
+        // machinery got that right, which is the opposite of what it
+        // exists to check.
+        await app.evalJS<boolean>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  el.dispatchEvent(new WheelEvent('wheel', { deltaY: -400, bubbles: true, cancelable: true }));
+  el.scrollTop = Math.max(0, el.scrollTop - 400);
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 400));
         const sources = await readFollowBottomSources(app);
-        expect(sources.length).toBeGreaterThan(0);
+        expect(sources).toContain("wheel-up");
 
         // Now the no-opt-in property itself, asserted rather than
         // assumed: switch deck-trace recording OFF, clear the ring,
@@ -295,11 +308,24 @@ describe.skipIf(!SHOULD_RUN)("AT0335: scroll displacement", () => {
         await app.evalJS<boolean>(
           `(function () { window.__tug.clearDeckTrace(); return true; })()`,
         );
+        const parkedSnap = await readSnap(app);
         await parkMidHistory(app);
+        const beforeClamp = await readSnap(app);
         await app.evalJS<boolean>(
           `(function () { window.__tug.forceCommitClamp('${SCROLLER}'); return true; })()`,
         );
         await new Promise((r) => setTimeout(r, 600));
+        const afterClamp = await readSnap(app);
+        // The simulation only clamps when the shrink lowers the maximum
+        // BELOW the live position, so the arithmetic it depends on is
+        // worth printing: a run that records nothing should say whether
+        // the clamp had room to happen at all.
+        note("at0335-gated-clamp", {
+          shrinkPx: 2_000,
+          settled: `top=${parkedSnap.top} max=${parkedSnap.maxScroll} spacer=${parkedSnap.topSpacer}`,
+          parked: `top=${beforeClamp.top} max=${beforeClamp.maxScroll} spacer=${beforeClamp.topSpacer}`,
+          after: `top=${afterClamp.top} max=${afterClamp.maxScroll} disp=${afterClamp.displacements}`,
+        });
 
         const gated = await app.evalJS<{ displacement: number; other: number }>(
           `(function () {

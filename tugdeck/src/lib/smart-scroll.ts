@@ -181,6 +181,29 @@ const SCROLLEND_FALLBACK_MS = 150;
  */
 const RESTORE_SUPERSEDE_DRIFT_PX = 8;
 
+/**
+ * One delivered `scroll` event, kept for the follow-bottom flip
+ * record's ring. See {@link SmartScroll._scrollRing}.
+ */
+interface ScrollSample {
+  t: number;
+  top: number;
+  sh: number;
+  ch: number;
+}
+
+/**
+ * How many recent `scroll` events a flip record carries.
+ *
+ * Sixteen spans a wheel burst's opening ticks at 60Hz — enough to see
+ * whether a move arrived as a stream (a hand) or alone (a clamp) — and
+ * costs one small object per scroll event, allocated whether or not
+ * anyone is watching. That is the point: the sessions holding the
+ * evidence for a follow-bottom defect are the ones nobody instrumented,
+ * so the ring cannot be opt-in.
+ */
+const SCROLL_RING_CAPACITY = 16;
+
 // ---------------------------------------------------------------------------
 // Scroller registry
 // ---------------------------------------------------------------------------
@@ -310,6 +333,25 @@ export class SmartScroll {
   // which flushes layout, so the height comes from the same
   // computation.
   private _lastScrollEventHeight = 0;
+
+  // The last `SCROLL_RING_CAPACITY` delivered `scroll` events, oldest
+  // first. Filled from `_handleScroll`, which has already flushed
+  // layout for its own rules, so the samples cost no extra reads.
+  //
+  // Read only when a follow-bottom flip is recorded. A flip's `source`
+  // names the rule that fired; the ring is the evidence the rule acted
+  // on, and for `unattributed-scroll-up` it is the whole diagnosis: one
+  // isolated upward sample with `sh` unchanged on both sides is a
+  // browser clamp, a stream of them is a hand on the scrollbar. Nothing
+  // else in the system can tell those apart after the fact.
+  private readonly _scrollRing: ScrollSample[] = [];
+
+  // `performance.now()` of the last user input carrying scroll intent,
+  // or `null` before the first. Recorded alongside `_userActivitySeq`
+  // — the counter answers "did the user touch this?", this answers
+  // "how long ago?", and a disengage attributed to the user minutes
+  // after their last input is a contradiction the record should show.
+  private _lastUserInputAt: number | null = null;
 
   // Timer handles
   private _decelerationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -998,6 +1040,18 @@ export class SmartScroll {
     this._writesSinceScrollEvent = 0;
     this._lastScrollEventHeight = this._container.scrollHeight;
 
+    // Sample into the flip ring. `clientHeight` rides on the layout the
+    // reads above already flushed.
+    this._scrollRing.push({
+      t: performance.now(),
+      top: scrollTop,
+      sh: this._lastScrollEventHeight,
+      ch: this._container.clientHeight,
+    });
+    if (this._scrollRing.length > SCROLL_RING_CAPACITY) {
+      this._scrollRing.splice(0, this._scrollRing.length - SCROLL_RING_CAPACITY);
+    }
+
     // Fire onScroll for every scroll event regardless of phase.
     this._callbacks.onScroll?.(this);
 
@@ -1159,6 +1213,7 @@ export class SmartScroll {
   private _handlePointerDown(_e: PointerEvent): void {
     if (this._disposed) return;
     this._userActivitySeq += 1;
+    this._lastUserInputAt = performance.now();
     if (this._phase === 'idle') {
       this._gestureStartScrollTop = this._container.scrollTop;
       this._phase = 'tracking';
@@ -1217,6 +1272,7 @@ export class SmartScroll {
     if (this._disposed) return;
 
     this._userActivitySeq += 1;
+    this._lastUserInputAt = performance.now();
 
     // wheel always enters DRAGGING directly (no pointer down involved).
     // `_enterDragging` resets the accumulator when a NEW gesture
@@ -1260,6 +1316,7 @@ export class SmartScroll {
     if (_isEditableEventTarget(e.target)) return;
 
     this._userActivitySeq += 1;
+    this._lastUserInputAt = performance.now();
 
     // All scroll keys enter DRAGGING directly (keyboard has no pointer).
     if (this._phase !== 'dragging') {
@@ -1387,6 +1444,56 @@ export class SmartScroll {
     this._container.style.overflowAnchor = this._isFollowingBottom ? 'none' : '';
   }
 
+  /**
+   * The circumstances of a follow-bottom flip: which scroller, what the
+   * page was doing, where the position sat, and the `scroll` events that
+   * led there.
+   *
+   * Assembled once per real transition (the no-op early-return in
+   * `_setFollowingBottom` guards the call), so the geometry reads here
+   * cost no more than the dev-log payload already did.
+   *
+   * The ring is stringified rather than passed as an array so
+   * `deckTrace.dumpTable()` keeps one row per event — the table is the
+   * surface a person reads first, and a nested array in a cell makes it
+   * unreadable.
+   */
+  private _flipContext(): {
+    scrollKey: string;
+    cardId: string;
+    visibility: string;
+    windowFocused: boolean;
+    top: number;
+    dist: number;
+    sinceInputMs: number | null;
+    ring: string;
+  } {
+    const el = this._container;
+    const now = performance.now();
+    const top = el.scrollTop;
+    const scrollHeight = el.scrollHeight;
+    const clientHeight = el.clientHeight;
+    const card = el.closest('[data-card-id]');
+    return {
+      scrollKey: el.getAttribute('data-tug-scroll-key') ?? '',
+      cardId: card === null ? '' : (card.getAttribute('data-card-id') ?? ''),
+      visibility: document.visibilityState,
+      windowFocused: document.hasFocus(),
+      top: Math.round(top),
+      dist: Math.round(scrollHeight - clientHeight - top),
+      sinceInputMs:
+        this._lastUserInputAt === null
+          ? null
+          : Math.round(now - this._lastUserInputAt),
+      ring: this._scrollRing
+        .map(
+          (s) =>
+            `${Math.round(s.t - now)},${Math.round(s.top)},${s.sh},${s.ch}`,
+        )
+        .join('|'),
+    };
+  }
+
   private _setFollowingBottom(following: boolean, source: string): void {
     // A scroller constructed with `followBottom: false` has no live edge to
     // follow. Every engage route — the idle re-engage, the gesture-end
@@ -1406,7 +1513,8 @@ export class SmartScroll {
     // a follow-bottom regression most often hides in. `source` names
     // the trigger; the early-return above means only real transitions
     // are logged, never no-op calls.
-    deckTrace.record({ kind: 'follow-bottom', following, source });
+    const context = this._flipContext();
+    deckTrace.record({ kind: 'follow-bottom', following, source, ...context });
     // Also to the dev log, which is visible in a release build through
     // the dev panel and readable from app-tests via
     // `window.tugDevLog.getSnapshot()`. The deck-trace ring is a
@@ -1422,6 +1530,7 @@ export class SmartScroll {
       scrollHeight: this._container.scrollHeight,
       clientHeight: this._container.clientHeight,
       phase: this._phase,
+      ...context,
     });
     // Engaging the live edge supersedes any pending cold-boot
     // restore: the user (or an explicit jump-to-latest) has declared

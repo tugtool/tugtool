@@ -433,6 +433,44 @@ export type DeckTraceEvent = {
       kind: "follow-bottom";
       following: boolean;
       source: string;
+      // The flip's circumstances. All optional so a hand-built record
+      // (a unit test, a hand-authored replay) stays valid; SmartScroll
+      // fills every one.
+      //
+      // `source` alone is enough when the trigger is a gesture — the
+      // user's hand explains itself. It is NOT enough for
+      // `unattributed-scroll-up`, whose whole premise is that
+      // SmartScroll could not attribute the move: the record names the
+      // rule that fired but says nothing about what moved the
+      // scroller, so a field report reduces to "something did this,
+      // somewhere." These fields carry what the rule had in hand at
+      // the moment it decided.
+      /** Which scroller flipped: its `data-tug-scroll-key` and the
+       *  enclosing card. Without these a multi-card deck's trace can't
+       *  say WHICH transcript stopped following. */
+      scrollKey?: string;
+      cardId?: string;
+      /** Page state at the flip. A scroller in a hidden or unfocused
+       *  window is one the user cannot have been scrubbing — which is
+       *  exactly the claim `unattributed-scroll-up` makes about them. */
+      visibility?: string;
+      windowFocused?: boolean;
+      /** Position and distance from the live edge at the flip. */
+      top?: number;
+      dist?: number;
+      /** Milliseconds since the last user input carrying scroll intent
+       *  (wheel / pointerdown / scroll key), or `null` when none has
+       *  ever arrived. A large number under an intent-derived source is
+       *  a contradiction worth seeing. */
+      sinceInputMs?: number | null;
+      /** The delivered `scroll` events leading up to the flip, oldest
+       *  first, as `Δms,top,scrollHeight,clientHeight` tuples joined by
+       *  `|`. Δms is relative to the flip, so every value is negative.
+       *  This is what separates a gesture (a stream of samples) from a
+       *  browser clamp (one isolated jump), and a height-driven move (a
+       *  `scrollHeight` that changed with it) from a position-only one
+       *  (a height identical on both sides). */
+      ring?: string;
     }
   | {
       // Fired by `TugListView`'s commit bracket when it finds the
