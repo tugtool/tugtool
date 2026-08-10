@@ -43,8 +43,11 @@
  *   native-input hook wrap the returned menu inside the responder's
  *   scope themselves.
  *
- * - Mouse dismissal: window-level capture-phase mousedown outside the
- *   menu closes it. Mousedowns inside the menu element are ignored.
+ * - Press dismissal: window-level capture-phase `pointerdown` AND `mousedown`
+ *   outside the menu close it; presses inside the menu element are ignored.
+ *   Both, because `mousedown` is a compatibility event a surface can suppress
+ *   by calling `preventDefault` on its `pointerdown` — which is what left a
+ *   menu over a Lens row undismissable.
  *
  * - Dispatch-observer dismissal: the menu subscribes to the responder
  *   chain's observeDispatch while open. Any action flowing through the
@@ -460,7 +463,7 @@ export function TugEditorContextMenu({
   useLayoutEffect(() => {
     if (!open) return;
 
-    const onWindowMouseDown = (e: MouseEvent) => {
+    const onWindowPress = (e: Event) => {
       if (menuRef.current?.contains(e.target as Node)) return;
       // Imperatively hide immediately, then schedule React unmount.
       // Direct DOM mutation guarantees the menu is visually gone
@@ -597,10 +600,24 @@ export function TugEditorContextMenu({
       // menu and let the event pass through.
       dismiss();
     };
-    window.addEventListener("mousedown", onWindowMouseDown, true);
+    // BOTH presses, and the pair is not belt-and-braces. `mousedown` alone was
+    // the dismissal for a long time, and it is a COMPATIBILITY event: a
+    // surface whose `pointerdown` handler calls `preventDefault` suppresses it
+    // outright, and the menu then had nothing left to hear. The Lens's rows do
+    // exactly that — a press there is a reorder that has not decided it is a
+    // drag yet, and claiming the press is how the list knows to hold its
+    // selection — so a menu opened over a session row stayed up while the user
+    // clicked around underneath it. `pointerdown` always fires and fires
+    // first; `mousedown` stays for anything that synthesizes only mouse
+    // events. Both are guarded by the same containment check, so a press
+    // inside the menu is still the menu's own, and dismissing twice is
+    // idempotent.
+    window.addEventListener("pointerdown", onWindowPress, true);
+    window.addEventListener("mousedown", onWindowPress, true);
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("mousedown", onWindowMouseDown, true);
+      window.removeEventListener("pointerdown", onWindowPress, true);
+      window.removeEventListener("mousedown", onWindowPress, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [open, activateItem, applyTypeahead, setHighlightedItem]);

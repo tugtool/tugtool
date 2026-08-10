@@ -83,18 +83,24 @@ function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose:
     menu.style.top = `${top}px`;
     menu.style.visibility = "visible";
 
-    // Dismiss on click-away or keypress.
+    // Dismiss on click-away or keypress. Both press events, for the reason
+    // TugEditorContextMenu listens for both: `mousedown` is a compatibility
+    // event, and a surface that calls `preventDefault` on its `pointerdown`
+    // (the Lens's reorder-armed rows do) suppresses it — leaving a menu with
+    // nothing to hear and no way to close.
     const dismiss = () => onClose();
-    const onMouseDown = (e: MouseEvent) => {
+    const onPress = (e: Event) => {
       if (menu.contains(e.target as Node)) return;
       dismiss();
     };
     const onKeyDown = () => dismiss();
 
-    window.addEventListener("mousedown", onMouseDown, true);
+    window.addEventListener("pointerdown", onPress, true);
+    window.addEventListener("mousedown", onPress, true);
     window.addEventListener("keydown", onKeyDown, true);
     return () => {
-      window.removeEventListener("mousedown", onMouseDown, true);
+      window.removeEventListener("pointerdown", onPress, true);
+      window.removeEventListener("mousedown", onPress, true);
       window.removeEventListener("keydown", onKeyDown, true);
     };
   }, [x, y, onClose]);
