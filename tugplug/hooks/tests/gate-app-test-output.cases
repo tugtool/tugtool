@@ -39,6 +39,12 @@ allow	TUG_APPTEST_JSON=/tmp/r.json just AT x.test.ts | tail -5	TUG_APPTEST_JSON=
 allow	cd tugdeck && bunx vite build | tail -3 && cd .. && just AT x.test.ts | tail -20	cd tugdeck && bunx vite build | tail -3 && cd .. && just AT x.test.ts
 allow	just AT x.test.ts | tail -20 && echo done	just AT x.test.ts && echo done
 allow	just AT a.test.ts | tail -5 ; just AT b.test.ts | tail -5	just AT a.test.ts ; just AT b.test.ts
+# A filter's own arguments are its business: a `$` or a `|` inside quotes is not
+# a command substitution and not the cut point.
+allow	just AT x.test.ts 2>&1 | sed -n '/Diagnostics/,$p'	just AT x.test.ts 2>&1
+allow	just AT x.test.ts | grep -E 'VERDICT|Failures'	just AT x.test.ts
+allow	just AT x.test.ts | awk '/Failures:/{f=1} f'	just AT x.test.ts
+allow	tugutil file edit --path a.ts --replace 'x' --with 'y' && just AT x.test.ts 2>&1 | sed -n '/Diagnostics/,$p'	tugutil file edit --path a.ts --replace 'x' --with 'y' && just AT x.test.ts 2>&1
 
 # --- denied ----------------------------------------------------------------
 deny	just AT x.test.ts | grep VERDICT > /tmp/out.txt

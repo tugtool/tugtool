@@ -121,10 +121,13 @@ SEGS+=("$cur")
 NAKED+=("$nak")
 SEPS+=("")
 
-# Everything a filtered app-test segment is allowed to contain. `2>&1` is the
-# one shell metacharacter allowed through; it is removed before the shape is
-# matched, and kept by the rewrite, since it only redirects a stream the summary
-# already merges.
+# Everything a filtered app-test segment is allowed to contain, outside quotes.
+# The shape is matched against the quote-blanked twin, so a filter's own
+# arguments can hold anything — `sed -n '/Diagnostics/,$p'` is a filter with a
+# `$` in it, not a command substitution — while an unquoted `$(` still isn't
+# rewritable. `2>&1` is the one shell metacharacter allowed through; it is
+# removed before the shape is matched, and kept by the rewrite, since it only
+# redirects a stream the summary already merges.
 ARG='[^|;&`$()<>]*'
 STRIPPABLE="${SEGMENT_OPENS_APPTEST%%\$}${ARG}(\\|[[:space:]]*${FILTER}${ARG})+[[:space:]]*\$"
 
@@ -135,9 +138,13 @@ for idx in "${!SEGS[@]}"; do
     printf '%s' "$bare_probe" | grep -Eq "$SEGMENT_HAS_APPTEST" || continue
     printf '%s' "$bare_probe" | grep -Eq "\\|[[:space:]]*${FILTER}([[:space:]]|\$)" || continue
 
-    if printf '%s' "${seg//2>&1/}" | grep -Eq "$STRIPPABLE"; then
-        # Everything from the first pipe on is the filter chain; drop it.
-        bare=${seg%%|*}
+    if printf '%s' "${bare_probe//2>&1/}" | grep -Eq "$STRIPPABLE"; then
+        # Everything from the first pipe on is the filter chain; drop it. The
+        # cut is located in the twin — which is blanked in place, so offsets
+        # still line up — and applied to the real bytes, so a `|` inside a
+        # filter's quoted argument cannot be mistaken for the cut point.
+        head=${bare_probe%%|*}
+        bare=${seg:0:${#head}}
         bare=${bare%"${bare##*[![:space:]]}"}
         SEGS[$idx]=$bare
         CHANGED=1
