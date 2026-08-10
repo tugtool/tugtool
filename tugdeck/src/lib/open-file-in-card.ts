@@ -39,31 +39,7 @@ import { findTextCardByPath } from "./text-card-open-registry";
 import { findFileViewCardByPath } from "./file-view-open-registry";
 import { isViewableFile } from "./file-kinds";
 import { noteRecentDocument } from "./recent-documents";
-import { slotCount } from "./layout-imposer";
-
-/**
- * The slot a file opened from `originCardId` lands in: the slot immediately to
- * its left, or — when the origin is already leftmost — the one immediately to
- * its right. A file opened from a link belongs beside the card that named it;
- * landing at the first slot can put it a whole deck away from the passage being
- * read.
- *
- * `undefined` is "no opinion, take the default slot": no arrangement is up, the
- * arrangement has one slot, or the originating card holds no slot of its own (a
- * sidebar card such as the Lens, or a free-floating pane).
- */
-function neighborSlot(
-  store: IDeckManagerStore,
-  originCardId: string | null,
-): number | undefined {
-  if (originCardId === null) return undefined;
-  const deck = store.getSnapshot();
-  const kind = deck.imposition.kind;
-  if (kind === undefined || slotCount(kind) < 2) return undefined;
-  const host = deck.panes.find((p) => p.cardIds.includes(originCardId));
-  if (!host || host.slot === undefined) return undefined;
-  return host.slot > 0 ? host.slot - 1 : 1;
-}
+import { neighborSlot } from "./neighbor-slot";
 
 /**
  * Read the deck-wide save-mode default straight from the tugbank cache

@@ -193,8 +193,17 @@ export function useSessionIdentityMenu({
     // row for a command id to name ([ACTIONS_OUTSIDE_THE_TABLE]). The deck
     // work lives in `action-dispatch.ts`, which is the only place that holds
     // the DeckManager and the connection.
-    getRegistryHandler(TUG_ACTIONS.RESUME_SESSION)?.({ sessionId, projectDir });
-  }, [cited, identity.id, projectDir, heldElsewhere]);
+    //
+    // The host card goes along as the origin the resumed card is placed
+    // beside — the same "left if it can, right if it must" rule a file link
+    // opens under. It is the card being pointed at, which a right-click need
+    // not have made first responder.
+    getRegistryHandler(TUG_ACTIONS.RESUME_SESSION)?.({
+      sessionId,
+      projectDir,
+      originCardId: hostCard ?? undefined,
+    });
+  }, [cited, identity.id, projectDir, heldElsewhere, hostCard]);
 
   // The atom, with the flat citation as its fallback. `writeSessionAtomToClipboard`
   // answers false in a browser-mode run, where the native pasteboard bridge that

@@ -31,6 +31,7 @@ import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-regist
 import { advanceKeyViewFocus, getFocusManager } from "@/components/tugways/focus-manager";
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
+import { neighborSlot } from "@/lib/neighbor-slot";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
@@ -673,6 +674,13 @@ export function initActionDispatch(
   // needs a card id to key its expectation on, and the card mounts on the
   // restoring placeholder because the registry entry is what that placeholder
   // reads.
+  //
+  // Placement follows the file-link rule ({@link neighborSlot}): the resumed
+  // session lands in the slot beside the card whose menu named it — left when
+  // there is a left, right when there is not. `originCardId` is the menu's
+  // host card, which is the card the reader is pointing at even when the
+  // right-click has not moved first responder; the first responder is the
+  // fallback for a dispatch that names no origin.
   registerAction(TUG_ACTIONS.RESUME_SESSION, (payload) => {
     const sessionId = payload.sessionId;
     const projectDir = payload.projectDir;
@@ -680,7 +688,20 @@ export function initActionDispatch(
       console.warn("resume-session: missing sessionId or projectDir", payload);
       return;
     }
-    const cardId = deckManager.addCard("session");
+    const outgoing = deckManager.getFirstResponderCardId();
+    const origin =
+      typeof payload.originCardId === "string" ? payload.originCardId : null;
+    // The named host first, the first responder second: a menu mounted in a
+    // rail — the Gazette, the Lens — names a card that holds no slot of its
+    // own and so has no neighbour to offer, and the reader's focused card is
+    // the better answer than the head of the arrangement.
+    const slot =
+      neighborSlot(deckManager, origin) ?? neighborSlot(deckManager, outgoing);
+    // Save-before-activation ([L23]): `addCard` activates the fresh card
+    // directly, so the surface that dispatched this — the identity row's
+    // menu, mounted in some other card — must bank its focus bag first.
+    if (outgoing !== null) deckManager.invokeSaveCallback(outgoing);
+    const cardId = deckManager.addCard("session", undefined, { slot });
     if (cardId === null) {
       console.warn("resume-session: no session card registration");
       return;
