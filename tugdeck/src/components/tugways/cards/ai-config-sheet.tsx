@@ -24,6 +24,13 @@
  * turn-idle guard and refuse (leaving the sheet open with its pending values
  * rather than closing on a commit that did nothing).
  *
+ * **⌃⌘I is a toggle.** The chord that opens the sheet closes it again while it
+ * is up, dismissing rather than committing — the same two-halved arrangement
+ * the usage panel carries for ⌃⌘U: the opener answers the press when it
+ * reaches the card, the mounted body answers it off the chain when it does
+ * not. Re-presenting instead would swap the sheet for a fresh instance and
+ * replay its entrance, which reads as a judder rather than as a command.
+ *
  * **Choosing is free; committing is not.** Every control selects *live* into
  * the sheet's pending state — arrows audition a value and the readout and the
  * channel's own description follow at once — because inside a transaction a
@@ -46,8 +53,10 @@
 
 import "./ai-config-sheet.css";
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
@@ -159,7 +168,10 @@ export interface UseAiConfigSheetArgs {
 /** Imperative handle to the card-hosted AI configuration sheet. */
 export interface AiConfigSheetController {
   /**
-   * Present the sheet, reading the baseline fresh from the store ([L07]).
+   * Present the sheet, reading the baseline fresh from the store ([L07]) — or,
+   * when this sheet is the one already showing, dismiss it. `/ai` and ⌃⌘I are
+   * the same door in both directions, as `/usage` and ⌃⌘U are.
+   *
    * `focusRow` deep-links the keyboard ring to a named row (`/model`,
    * `/effort`, `/mode`); omitted, the ring lands on the sticky row.
    */
@@ -195,8 +207,27 @@ export function useAiConfigSheet({
     null,
   );
 
+  // Is *this* sheet the one currently mounted, and how do we close it? The
+  // shared sheet host is single-slot, so `showSheet`'s promise resolving is the
+  // authoritative "no longer showing" signal — it fires on OK, on Cancel, on
+  // Escape, and on another sheet superseding this one. `closeRef` is the body's
+  // own `close` callback, registered while it is mounted. This is the half of
+  // the ⌃⌘I toggle that runs when the command DOES reach the card; the body
+  // carries the other half for when it does not.
+  const shownRef = useRef(false);
+  const closeRef = useRef<(() => void) | null>(null);
+
   const openAiConfigSheet = useCallback(
     (focusRow?: AiConfigRow) => {
+      // Already up: this door closes it. Without this a second ⌃⌘I called
+      // `showSheet` again, and the single-slot host answers that by swapping
+      // the mounted sheet for a fresh instance — the same panel, re-entering,
+      // which reads as a judder rather than as a command.
+      if (shownRef.current) {
+        closeRef.current?.();
+        return;
+      }
+
       // One reading of the session, shared with the Settings card's AI Model
       // box — the sheet freezes it as its baseline, that panel re-reads it
       // every render.
@@ -206,6 +237,7 @@ export function useAiConfigSheet({
         cardId === undefined ? null : persistedMode,
       );
 
+      shownRef.current = true;
       void showSheet({
         title: "AI Model Settings",
         icon: "Sparkles",
@@ -220,9 +252,13 @@ export function useAiConfigSheet({
             onCommit={onCommit}
             scopeNote={scopeNote}
             renderFooter={renderFooter}
+            registerClose={closeRef}
             close={() => close()}
           />
         ),
+      }).then(() => {
+        shownRef.current = false;
+        closeRef.current = null;
       });
     },
     [
@@ -258,6 +294,8 @@ interface AiConfigSheetBodyProps {
   /** Whose settings these are — see {@link UseAiConfigSheetArgs.scopeNote}. */
   scopeNote: string;
   renderFooter?: (close: () => void) => React.ReactNode;
+  /** The opener's handle on this body's dismissal — see {@link useAiConfigSheet}. */
+  registerClose: React.MutableRefObject<(() => void) | null>;
   close: () => void;
 }
 
@@ -267,6 +305,7 @@ function AiConfigSheetBody({
   onCommit,
   scopeNote,
   renderFooter,
+  registerClose,
   close,
 }: AiConfigSheetBodyProps): React.ReactElement {
   const baseline = sources.value;
@@ -287,6 +326,33 @@ function AiConfigSheetBody({
 
   const focusGroup = React.useId();
   useSeedKeyView(`${focusGroup}:${AI_CONFIG_ROW_OFFSET[openRow]}`);
+
+  useEffect(() => {
+    registerClose.current = () => close();
+    return () => {
+      registerClose.current = null;
+    };
+  }, [registerClose, close]);
+
+  // The other half of the ⌃⌘I toggle, the same shape the usage panel uses for
+  // ⌃⌘U. `ai` is a key-card-routed command, and a sheet can be up with no key
+  // card — this body is portalled out of the card's subtree, so the walk finds
+  // no `card` ancestor and the dispatch reaches the opener's toggle above not
+  // at all. It is still *announced*: observers hear it whether or not a
+  // responder handled it. So the open sheet watches the chain for its own
+  // command and takes that press as "put me away" too. Either half alone
+  // leaves a door that only opens. It closes the way Cancel and Escape do: a
+  // toggle-off is a dismissal, and nothing reaches the wire.
+  const manager = useResponderChain();
+  useEffect(() => {
+    if (manager === null) return;
+    return manager.observeDispatch((event) => {
+      if (event.action !== TUG_ACTIONS.RUN_SLASH_COMMAND) return;
+      const value = event.value as { name?: string } | undefined;
+      if (value?.name !== "ai") return;
+      close();
+    });
+  }, [manager, close]);
 
   const confirm = (): void => {
     const actions = computeAiConfigCommit(baseline, pending);

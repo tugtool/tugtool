@@ -26,7 +26,9 @@
  *
  * Also pinned: the three deep-link slash commands (`/model`, `/effort`,
  * `/mode`) open the ONE sheet, and `/ai` opens it too — the muscle memory
- * survives the collapse.
+ * survives the collapse. And ⌃⌘I is a toggle, not a re-open: pressed again
+ * while the sheet is up it puts the sheet away rather than swapping it for a
+ * fresh instance that replays the enter animation.
  *
  * Capabilities are injected through the `ingestSessionMetadata` surface seam
  * (the chip reads its own `SESSION_METADATA` FeedStore, unreachable by the
@@ -321,6 +323,64 @@ describe.skipIf(!SHOULD_RUN)("AT0372: the AI mixer's transaction and row couplin
         const tail = app.tailLog(200);
         if (tail !== "") {
           process.stderr.write(`\n[at0372-ai-config-deep-links] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "⌃⌘I toggles the mixer — a second press puts it away, and it re-opens fresh",
+    async () => {
+      const app = await launchTugApp({ testName: "at0372-ai-config-toggle" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A");
+        await app.awaitEngineReady("A");
+        await app.ingestSessionMetadata("A", capabilities());
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(CHIP_VALUE)});
+            return el !== null && el.textContent.trim() === "Opus 5 · High · Default";
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        const before = await chipValue(app);
+
+        await app.nativeKey("i", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 6000 });
+
+        // Move a channel first: the toggle-off is a DISMISSAL, so the pending
+        // change must die with the sheet exactly as Cancel would kill it.
+        await app.click(SEGMENT(MODE_ROW, "plan"));
+
+        // Same chord again — the door closes the way it opened.
+        await app.nativeKey("i", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(SHEET_CLOSED, { timeoutMs: 6000 });
+        expect(
+          await chipValue(app),
+          "a toggle-off commits nothing, the same as Cancel",
+        ).toBe(before);
+
+        // And it re-opens, so a full cycle leaves nothing latched — and opens
+        // on the session's own values, not the abandoned pending ones.
+        await app.nativeKey("i", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(SHEET_OPEN, { timeoutMs: 6000 });
+        expect(
+          await readout(app),
+          "the re-opened sheet reads the session, not the dismissed transaction",
+        ).toBe("Opus 5 · High · Default");
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0372-ai-config-toggle] log tail:\n${tail}\n`);
         }
         throw err;
       } finally {
