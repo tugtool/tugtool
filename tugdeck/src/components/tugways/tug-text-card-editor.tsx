@@ -140,6 +140,7 @@ import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
 import { useTextSurfaceContextMenu } from "./use-text-surface-context-menu";
 import { createCMSelectionAdapter } from "./tug-text-editor/selection-adapter";
 import { gutterLineSelectionHandlers } from "./gutter-line-selection";
+import { pressCollapsesSelection } from "./press-collapses-selection";
 import type { TextSelectionAdapter } from "./text-selection-adapter";
 import { undoMenuStatePlugin } from "./tug-text-editor/undo-menu-state-plugin";
 import { tugTextCardEditorTheme } from "./tug-text-card-editor/theme";
@@ -682,6 +683,10 @@ export const TugTextCardEditor = React.forwardRef<
         whitespaceCompartment.of(whitespaceFor(s)),
         activeLineCompartment.of(activeLineFor(s)),
         languageCompartment.of([]),
+        // A primary press inside a ranged selection collapses it now rather
+        // than on release — otherwise the whole range stays painted for as
+        // long as the button is held. See `press-collapses-selection.ts`.
+        pressCollapsesSelection,
         revealFlashField,
         // ⌘-click intra-document link/anchor navigation (plain click still
         // edits). Jumps via the live `revealLine` through a ref so the

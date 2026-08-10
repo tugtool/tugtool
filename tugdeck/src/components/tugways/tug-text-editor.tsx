@@ -170,6 +170,7 @@ import {
   tugCaretLayer,
 } from "./tug-text-editor/caret-layer";
 import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
+import { pressCollapsesSelection } from "./press-collapses-selection";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
 import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
 import type {
@@ -1061,16 +1062,6 @@ function buildExtensions(
     // selection must NOT move the caret — it opens the context menu, which acts on
     // the existing selection. CodeMirror's built-in pointer selection otherwise
     // dispatches a `select.pointer` transaction on mouseup that collapses the
-    // selection to the click point (even after the shared hook's capture/restore
-    // runs, so restoring-after is the wrong shape here). This handler runs before
-    // CM6's built-in mouse handling; returning `true` suppresses CM6's pointer
-    // selection for this click. The OS-level `contextmenu` still fires, so the
-    // menu opens. Only guards when a range exists — a plain-caret secondary-click
-    // still positions the caret (Paste-at-click). Confirmed working by hand.
-    // [P02] A secondary-click (right-click or macOS Control-click) over a ranged
-    // selection must NOT move the caret — it opens the context menu, which acts on
-    // the existing selection. CodeMirror's built-in pointer selection otherwise
-    // dispatches a `select.pointer` transaction on mouseup that collapses the
     // selection to the click point. This handler runs before CM6's built-in mouse
     // handling; returning `true` suppresses CM6's pointer selection for this
     // click. The OS-level `contextmenu` still fires, so the menu opens. Only
@@ -1085,6 +1076,10 @@ function buildExtensions(
         return hasRange && isSecondaryClick;
       },
     }),
+    // A primary press inside a ranged selection collapses it now rather
+    // than on release — otherwise the whole range stays painted for as
+    // long as the button is held. See `press-collapses-selection.ts`.
+    pressCollapsesSelection,
     // Host-supplied extensions are layered first so they sit BELOW the
     // substrate's keymap / theme precedence. A compound component that
     // wants its own keymap or `Prec.highest` rules can wrap them in

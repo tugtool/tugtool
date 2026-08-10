@@ -125,19 +125,26 @@ function onGutterMouseDown(
     apply();
   };
 
+  // The release ends the drag. `blur` ends it too: a drag released over
+  // another application delivers no `mouseup` here, and this timer plus
+  // these listeners must not outlive the gesture that made them — a
+  // surviving pair would go on rewriting this editor's selection from
+  // every later pointer move in the window.
   const win = view.dom.ownerDocument.defaultView ?? window;
+  const onUp = (): void => {
+    win.clearInterval(ticker);
+    win.removeEventListener("mousemove", onMove);
+    win.removeEventListener("mouseup", onUp);
+    win.removeEventListener("blur", onUp);
+  };
   const onMove = (moved: MouseEvent): void => {
     pointerY = moved.clientY;
     track();
   };
   const ticker = win.setInterval(track, AUTOSCROLL_TICK_MS);
-  const onUp = (): void => {
-    win.clearInterval(ticker);
-    win.removeEventListener("mousemove", onMove);
-    win.removeEventListener("mouseup", onUp);
-  };
   win.addEventListener("mousemove", onMove);
   win.addEventListener("mouseup", onUp);
+  win.addEventListener("blur", onUp);
 
   return true;
 }

@@ -120,6 +120,7 @@ import { cn } from "@/lib/utils";
 import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
 import { loadMarkdownTextStyling } from "@/components/tugways/tug-text-editor/markdown-text-styling";
 import { gutterLineSelectionHandlers } from "@/components/tugways/gutter-line-selection";
+import { pressCollapsesSelection } from "@/components/tugways/press-collapses-selection";
 import { useOptionalResponder } from "./use-responder";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
 import type { ActionHandler } from "./responder-chain";
@@ -684,6 +685,10 @@ export const TugCodeView = React.forwardRef<
         ),
         // Empty until the language effect resolves the grammar chunk.
         languageCompartment.of([]),
+        // A primary press inside a ranged selection collapses it now rather
+        // than on release — otherwise the whole range stays painted for as
+        // long as the button is held. See `press-collapses-selection.ts`.
+        pressCollapsesSelection,
         // The search extension is always present so `setSearchQuery`
         // effects work; the bundled panel is NOT used (we don't bind
         // its keymap). The composing component owns the Find UI via

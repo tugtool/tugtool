@@ -627,6 +627,14 @@ final class NativeEventHandlers {
     /// (hover-while-modifier-held, modal-dismiss patterns) where
     /// `holdModifier` + click is not enough. Tests should prefer
     /// `nativeClick` / `nativeDrag`.
+    ///
+    /// The click state is set explicitly to 1. A CGEvent left alone
+    /// carries click state 0, which WebKit reports as `detail: 0` —
+    /// a press that is not the first click of anything. No press a
+    /// person can make looks like that, and code that keys off
+    /// `detail` (CM6's own pointer selection does) takes a different
+    /// branch for it, so a test driving this primitive would exercise
+    /// a path the app never sees in the field.
     func nativeMouseDown(
         viewportPoint: CGPoint,
         button: MouseButton = .left,
@@ -641,6 +649,7 @@ final class NativeEventHandlers {
         ) else {
             throw NativeEventError.eventCreationFailed("mouseDown")
         }
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
         post(event)
     }
 
@@ -659,6 +668,7 @@ final class NativeEventHandlers {
         ) else {
             throw NativeEventError.eventCreationFailed("mouseUp")
         }
+        event.setIntegerValueField(.mouseEventClickState, value: 1)
         post(event)
     }
 
