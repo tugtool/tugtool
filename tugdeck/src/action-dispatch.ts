@@ -32,6 +32,7 @@ import { advanceKeyViewFocus, getFocusManager } from "@/components/tugways/focus
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { neighborSlot } from "@/lib/neighbor-slot";
+import { flashCardPane, flashPaneBorder } from "@/lib/flash-pane-border";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
@@ -98,55 +99,6 @@ export const SHIPPED_THEME_NAMES: readonly string[] = [
   "aria", // light
   "vivace", // light
 ];
-
-/**
- * One-shot flash of a pane's BORDER ([P04]). Toggles a CSS class on the pane
- * root, which pulses an accent ring (box-shadow) and removes it on
- * `animationend` — pure appearance, never React state ([L06]). A mid-flash
- * re-request restarts the animation (remove → reflow → add).
- *
- * A pane the DOM does not hold yet gets one deferred retry: `assign-slot` can
- * pull a card out of a tab group into a pane that exists in the store but not
- * on screen until React commits, and the flash belongs on the pane the card
- * ends up in. The retry does not retry again — a second miss is a pane that
- * never rendered, not one still on its way.
- */
-const FLASH_CLASS = "tug-pane-flash";
-const FLASH_ANIMATION_NAME = "tug-pane-border-flash";
-/** `tug-pane-border-flash`'s duration in `tug-pane.css`, plus slack. */
-const FLASH_BACKSTOP_MS = 1600;
-
-function flashPaneBorder(paneId: string, allowRetry = true): void {
-  if (typeof document === "undefined") return;
-  const paneEl = document.querySelector(
-    `.tug-pane[data-pane-id="${CSS.escape(paneId)}"]`,
-  );
-  if (!(paneEl instanceof HTMLElement)) {
-    if (allowRetry) window.setTimeout(() => flashPaneBorder(paneId, false), 0);
-    return;
-  }
-  paneEl.classList.remove(FLASH_CLASS);
-  // Force a reflow so re-adding the class restarts the keyframes.
-  void paneEl.offsetWidth;
-  paneEl.classList.add(FLASH_CLASS);
-  const clear = (): void => {
-    paneEl.classList.remove(FLASH_CLASS);
-    paneEl.removeEventListener("animationend", onEnd);
-    window.clearTimeout(backstop);
-  };
-  // `animationend` bubbles, so the listener must name the flash's own
-  // keyframes: any animation finishing anywhere inside the card — a streaming
-  // transcript, a spinner — would otherwise cut the flash short.
-  const onEnd = (event: AnimationEvent): void => {
-    if (event.animationName !== FLASH_ANIMATION_NAME) return;
-    clear();
-  };
-  paneEl.addEventListener("animationend", onEnd);
-  // A window whose rendering is suspended never ticks the keyframes, so
-  // `animationend` never arrives and the ring would rest on the pane forever.
-  // The timer is the only thing that guarantees the flash is one-shot.
-  const backstop = window.setTimeout(clear, FLASH_BACKSTOP_MS);
-}
 
 /** Handler function for an action */
 export type ActionHandler = (payload: Record<string, unknown>) => void;
@@ -706,6 +658,10 @@ export function initActionDispatch(
       console.warn("resume-session: no session card registration");
       return;
     }
+    // The same ring a raise draws, for the same reason: the answer to the
+    // gesture is a card somewhere else on the deck, and the eye has to be
+    // told where ([P04]).
+    flashCardPane(deckManager, cardId);
     fireRestore(cardId, sessionId, projectDir, connection);
   });
 

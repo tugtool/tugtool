@@ -27,7 +27,14 @@
  * succeeds is another test's subject: an app-test ledger row has no JSONL
  * behind it, so the fresh card is rightly on its way to the picker.
  *
+ * Every landing is also checked for its FLASH — the border ring a raise draws,
+ * now drawn by a card that arrives. Placement and the flash are one gesture: a
+ * card put down two slots away announces itself or it may as well have opened
+ * at the head of the deck. The check is on the class, not on the ring's paint,
+ * because a background app-test window ticks no keyframes ([P04]).
+ *
  * @covers tugdeck/src/lib/neighbor-slot.ts
+ * @covers tugdeck/src/lib/flash-pane-border.ts
  * @covers tugdeck/src/action-dispatch.ts
  * @covers tugdeck/src/components/tugways/session-identity-menu.tsx
  */
@@ -122,6 +129,23 @@ async function resumeAndCatchCard(
   const after = await sessionCardIds(app);
   const fresh = after.filter((id) => !before.includes(id));
   expect(fresh).toHaveLength(1);
+
+  // …and it announces itself. The flash is a one-shot class the pane wears
+  // for the length of the keyframes, so the read is a poll rather than a
+  // sample: the card is added before React has committed its pane, and the
+  // flash lands on the deferred retry that follows the commit.
+  await app.waitForCondition<boolean>(
+    `(function () {
+      var pane = window.tugdeck.diag.getDeckState().panes.find(function (p) {
+        return p.cardIds.indexOf(${JSON.stringify(fresh[0])}) !== -1;
+      });
+      if (pane === undefined) return false;
+      var el = document.querySelector(
+        '.tug-pane[data-pane-id="' + pane.id + '"]');
+      return el !== null && el.classList.contains("tug-pane-flash");
+    })()`,
+    { timeoutMs: 1_200 },
+  );
   return fresh[0];
 }
 

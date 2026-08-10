@@ -19,6 +19,11 @@
  * takes. Under a multi-slot arrangement that fresh card opens at the slot
  * beside the card the open came from ({@link neighborSlot}).
  *
+ * Either way the card that answers the open flashes its border
+ * ({@link flashCardPane}): a card arriving beside the passage being read is a
+ * change the eye has to find, and a reused card that was already on screen
+ * gives no sign at all that the click did anything.
+ *
  * Callers: the `open-file` registry handler (Control frames +
  * `dispatchCommand` from transcript links) and DeckCanvas's
  * `TUG_ACTIONS.OPEN_FILE` chain handler (context-menu items).
@@ -40,6 +45,7 @@ import { findFileViewCardByPath } from "./file-view-open-registry";
 import { isViewableFile } from "./file-kinds";
 import { noteRecentDocument } from "./recent-documents";
 import { neighborSlot } from "./neighbor-slot";
+import { flashCardPane } from "./flash-pane-border";
 
 /**
  * Read the deck-wide save-mode default straight from the tugbank cache
@@ -67,6 +73,7 @@ function openFileInViewerCard(store: IDeckManagerStore, path: string): void {
       store,
       commitMutation: () => store.activateCard(existing.cardId),
     });
+    flashCardPane(store, existing.cardId);
     return;
   }
 
@@ -76,7 +83,8 @@ function openFileInViewerCard(store: IDeckManagerStore, path: string): void {
   const outgoing = store.getFirstResponderCardId();
   const slot = neighborSlot(store, outgoing);
   if (outgoing !== null) store.invokeSaveCallback(outgoing);
-  store.addCard("file-view", { path }, { slot });
+  const cardId = store.addCard("file-view", { path }, { slot });
+  if (cardId !== null) flashCardPane(store, cardId);
 }
 
 export function openFileInCard(
@@ -107,6 +115,7 @@ export function openFileInCard(
     if (line !== undefined) {
       existing.entry.revealLine(line, endLine);
     }
+    flashCardPane(store, existing.cardId);
     return;
   }
 
@@ -129,5 +138,6 @@ export function openFileInCard(
   const outgoing = store.getFirstResponderCardId();
   const slot = neighborSlot(store, outgoing);
   if (outgoing !== null) store.invokeSaveCallback(outgoing);
-  store.addCard("text", seed, { slot });
+  const cardId = store.addCard("text", seed, { slot });
+  if (cardId !== null) flashCardPane(store, cardId);
 }
