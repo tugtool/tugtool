@@ -8,14 +8,19 @@
  * Three levels of the same session, widening as they go down: what it IS, what
  * it is FOR, and what it is doing this second.
  *
- * **The shape is `TugSessionRow`'s, not this component's.** The masthead, the
- * Lens rows, and the new-session picker rows show the same thing, so they wear
- * one authoring of it and the component library is the consistency mechanism
- * ([D132]). What stays local is what is genuinely the masthead's: the dwell
- * queue that paces the beat, the two popovers, the telemetry widget, and the
- * chrome geometry — the row is mounted with its list-row padding zeroed and
- * each of its three lines told what to stop short of, because the pane's
- * control cluster occupies only the FIRST of the tier's three bands.
+ * **The three lines are `SessionIdentityRow`'s, not this component's.** The
+ * masthead, the Lens rows, and the new-session picker rows show the same thing,
+ * so they wear one authoring of it — not only of the shape but of what goes in
+ * it: the identity, the description ladder, the activity ladder, the phase dot,
+ * and the tape are all that component's, and this one asks for them at the
+ * masthead's settings (the dense dot, sub-lines flush with the title, the tape
+ * on, the beat paced and set through the markdown pipeline) ([D132]).
+ *
+ * What stays local is what is genuinely the masthead's: the two popovers, the
+ * telemetry widget, the copy gestures, and the chrome geometry — the row is
+ * mounted with its list-row padding zeroed and each of its three lines told
+ * what to stop short of, because the pane's control cluster occupies only the
+ * FIRST of the tier's three bands.
  *
  * The pane owns the chrome SLOT and its geometry; this component owns what is
  * inside it and every store behind those lines. That split is what keeps
@@ -57,13 +62,7 @@
 
 import "./session-masthead.css";
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { Waves } from "lucide-react";
 
 import {
@@ -81,7 +80,6 @@ import {
   TugPopupListToneDot,
 } from "@/components/tugways/tug-popup-list";
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
-import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
@@ -91,32 +89,15 @@ import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 import { useSessionPhase } from "@/lib/code-session-store/use-session-phase";
 import { SESSION_PHASE_LABELS } from "@/lib/code-session-store/session-phase-visual";
-import {
-  sessionActivityBeat,
-  sessionActivityRestLine,
-} from "@/lib/session-activity-line";
+import { sessionActivityBeat } from "@/lib/session-activity-line";
 import { useSessionCreatedAtMs } from "@/lib/session-created-at";
 import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
-import {
-  TugSparkline,
-} from "@/components/tugways/tug-sparkline";
-import {
-  TUG_SESSION_ROW_SPARK_HEIGHT,
-  TUG_SESSION_ROW_SPARK_WIDTH,
-  TUG_SESSION_ROW_STACK_DOT_SIZE,
-  TUG_SESSION_SPARK_CURVE,
-  TUG_SESSION_SPARK_FULL_SCALE_CHARS,
-  TugSessionRow,
-} from "@/components/tugways/tug-session-row";
+import { SessionIdentityRow } from "@/components/tugways/session-identity-row";
+import { TUG_SESSION_ROW_STACK_DOT_SIZE } from "@/components/tugways/tug-session-row";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionBranch } from "@/lib/changeset-all-store";
-import {
-  COMPACTING_PULSE_TEXT,
-  compactionProgressStore,
-  isCompactingCard,
-} from "@/lib/compaction-progress-store";
 import {
   groupPulseHistory,
   latestLineForScope,
@@ -124,11 +105,6 @@ import {
   usePulse,
   type PulseLineEntry,
 } from "@/lib/pulse-store";
-import {
-  ACTIVITY_BIN_MS,
-  getSessionActivityStore,
-  isRateChannel,
-} from "@/lib/session-activity-store";
 import {
   sessionCitation,
   useSessionIdentity,
@@ -141,144 +117,10 @@ import {
 } from "@/lib/session-ledger-store";
 
 /**
- * Sparkline box in the masthead's PULSE line — the SAME cut the Lens's session
- * rows wear, read off their constants rather than retyped, so the two tapes
- * cannot drift into two instruments. An earlier double-width cut bought
- * resolution the line never needed and took the width out of the description
- * beside it; a tape is a glance, and the glance is the same on both surfaces.
- */
-const SPARKLINE_WIDTH = TUG_SESSION_ROW_SPARK_WIDTH;
-const SPARKLINE_HEIGHT = TUG_SESSION_ROW_SPARK_HEIGHT;
-
-/**
  * The masthead's dot box. The row's denser cut, not the Lens's 28: the masthead
  * is a 72px chrome tier and a dot that size would out-shout the name it marks.
  */
 const MASTHEAD_DOT_SIZE = TUG_SESSION_ROW_STACK_DOT_SIZE;
-
-/**
- * Every line holds the masthead at least this long before the next replaces
- * it. This pacing is what makes the voice readable rather than a strobe: the
- * machine's commentary arrives in bursts, and a line that flickered past in
- * 200ms would be a texture rather than a sentence.
- */
-export const MIN_DWELL_MS = 1_800;
-
-/** What the activity line is showing: a live beat, or the rest sentence. */
-interface DisplayEntry {
-  key: string;
-  text: string;
-  /**
-   * Not a beat. The rest sentence and the compaction pin are both facts the
-   * masthead composed rather than news the session sent, so neither goes
-   * through the markdown pipeline and neither is what a line copy carries.
-   */
-  placeholder: boolean;
-  /** Swap this entry in the moment it arrives, skipping the dwell — the
-   *  user's own clear and the compaction pin both answer a gesture. */
-  immediate?: boolean;
-}
-
-/**
- * The rest-line entry: the activity grammar's sentence, shown whenever there is
- * no live beat.
- *
- * Keyed BY ITS TEXT, and `immediate`, so the numbers land the moment they move —
- * a constant key would hold the previous sentence on screen after a turn end
- * refreshed the very facts it reports.
- */
-function restEntry(text: string): DisplayEntry {
-  return {
-    key: `__activity_rest__:${text}`,
-    text,
-    placeholder: true,
-    immediate: true,
-  };
-}
-
-/**
- * The compaction pin. A `/compact` turn streams nothing for minutes, and the
- * submit that opened it cleared the line — so without this the whole run reads
- * as an idle `None`, which is exactly when the user has pulled the progress
- * sheet down and has only this line to go on. Held for the run's lifetime, not
- * the sheet's.
- */
-const COMPACTING_ENTRY: DisplayEntry = Object.freeze({
-  key: "__pulse_compacting__",
-  text: COMPACTING_PULSE_TEXT,
-  placeholder: false,
-  immediate: true,
-});
-
-/**
- * The dwell queue: `target` is what the store wants shown; `current` is what
- * the masthead shows. A swap happens immediately when the current line has
- * dwelt long enough (or the target is marked `immediate`); otherwise the
- * newest target waits out the remainder. A swap replaces the text INSTANTLY —
- * one node, no animation, because two different strings cross-fading in one
- * box interleave their glyphs into a smash.
- *
- * Local presentation data: refs and timers, changing WHAT text exists rather
- * than how it looks, so no appearance passes through React state ([L06]/[L22]).
- */
-function useDwellDisplay(target: DisplayEntry): { current: DisplayEntry } {
-  const [current, setCurrent] = useState<DisplayEntry>(target);
-  const currentKeyRef = useRef(target.key);
-  const lastSwapAtRef = useRef(0);
-  const pendingRef = useRef<DisplayEntry | null>(null);
-  const timerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    currentKeyRef.current = current.key;
-  }, [current.key]);
-
-  const swap = useCallback((next: DisplayEntry): void => {
-    setCurrent((prev) => (prev.key === next.key ? prev : next));
-    lastSwapAtRef.current = Date.now();
-  }, []);
-
-  useEffect(() => {
-    if (target.key === currentKeyRef.current) {
-      pendingRef.current = null;
-      return;
-    }
-    // The user's own clear (submit → placeholder) and the compaction pin feel
-    // immediate; dwell only paces the machine's stream.
-    if (target.immediate === true) {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-        timerRef.current = null;
-      }
-      pendingRef.current = null;
-      swap(target);
-      return;
-    }
-    const remaining = lastSwapAtRef.current + MIN_DWELL_MS - Date.now();
-    if (remaining <= 0 && timerRef.current === null) {
-      swap(target);
-      return;
-    }
-    // Within the dwell: the newest target wins when the window opens.
-    pendingRef.current = target;
-    if (timerRef.current === null) {
-      timerRef.current = window.setTimeout(() => {
-        timerRef.current = null;
-        const pending = pendingRef.current;
-        pendingRef.current = null;
-        if (pending !== null) swap(pending);
-      }, Math.max(remaining, 0));
-    }
-  }, [target, swap]);
-
-  useEffect(
-    () => () => {
-      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
-    },
-    [],
-  );
-
-  return { current };
-}
 
 export interface SessionMastheadProps {
   /** Which session the chrome is about. The only key the pane supplies. */
@@ -288,50 +130,6 @@ export interface SessionMastheadProps {
    * workspace facts — a pane fact the pane already holds, not session state.
    */
   cardId?: string;
-}
-
-/**
- * The activity sparkline, reading this session's composite series straight off
- * the app-scoped store. The tape samples imperatively off React's render path
- * and scrolls under WAAPI ([L06]/[L13]).
- */
-function MastheadSparkline({
-  sessionId,
-}: {
-  sessionId: string;
-}): React.ReactElement {
-  const activityStore = getSessionActivityStore();
-  const getSeries = useCallback(
-    (nowMs: number): number[] =>
-      activityStore !== null && sessionId.length > 0
-        ? activityStore.compositeSeries(sessionId, nowMs)
-        : [],
-    [activityStore, sessionId],
-  );
-  // Filtered to rate channels: this tape draws the composite of rate work, so
-  // gauge levels — which move whether or not the session works — must not
-  // wake it.
-  const subscribeActivity = useCallback(
-    (wake: () => void): (() => void) =>
-      activityStore !== null && sessionId.length > 0
-        ? activityStore.subscribeActivity(sessionId, (channel) => {
-            if (isRateChannel(channel)) wake();
-          })
-        : () => {},
-    [activityStore, sessionId],
-  );
-  return (
-    <TugSparkline
-      getSeries={getSeries}
-      subscribeActivity={subscribeActivity}
-      binMs={ACTIVITY_BIN_MS}
-      fullScale={TUG_SESSION_SPARK_FULL_SCALE_CHARS}
-      curve={TUG_SESSION_SPARK_CURVE}
-      width={SPARKLINE_WIDTH}
-      height={SPARKLINE_HEIGHT}
-      title="Session activity — text, tokens, tools, and subagents"
-    />
-  );
 }
 
 /** How many recent pulses the activity line's popover lists. */
@@ -443,70 +241,6 @@ function SessionPulseHistoryBeat({
       <TugPopupListItemText primary={primary} />
       {copy.contextMenu}
     </TugPopupListItem>
-  );
-}
-
-/**
- * The activity run. The pulse-line library owns fidelity and safety
- * (math-first split, sanitized markdown, KaTeX, total-function fallback); this
- * only re-renders once a lazy KaTeX load resolves, then every render is
- * synchronous. `html: ""` is the library's render-as-plain-text signal.
- *
- * The activity is a tool call, so backticked paths and commands are exactly
- * what the markdown pipeline is for. The headline beside it is one
- * model-written sentence with no markup in it, so that one renders as plain
- * text rather than paying for a second pipeline.
- */
-function PulseLineText({
-  entry,
-  className,
-}: {
-  entry: DisplayEntry;
-  className: string;
-}): React.ReactElement {
-  const [engineEpoch, bumpEngineReady] = React.useReducer(
-    (n: number) => n + 1,
-    0,
-  );
-  // A file-tool beat wears its target as a file reference, not a spelled-out
-  // path — the beat grammar is tried first, and only a miss pays for the
-  // markdown pipeline below.
-  const fileBeat = React.useMemo(
-    () => (entry.placeholder ? null : parseBeatFileTarget(entry.text)),
-    [entry],
-  );
-  // engineEpoch keys the memo so the resolved KaTeX engine re-renders the SAME
-  // entry with real typesetting (the first pass showed the escaped source
-  // while the engine loaded).
-  const render = React.useMemo(
-    () =>
-      entry.placeholder || fileBeat !== null
-        ? null
-        : renderPulseLine(entry.text),
-    [entry, fileBeat, engineEpoch],
-  );
-  React.useEffect(() => {
-    const pending = render?.pending;
-    if (pending == null) return;
-    let live = true;
-    void pending.then(() => {
-      if (live) bumpEngineReady();
-    });
-    return () => {
-      live = false;
-    };
-  }, [render]);
-  if (fileBeat !== null) {
-    return <PulseBeatText text={entry.text} className={className} />;
-  }
-  if (render === null || render.html.length === 0) {
-    return <span className={className}>{entry.text}</span>;
-  }
-  return (
-    <span
-      className={className}
-      dangerouslySetInnerHTML={{ __html: render.html }}
-    />
   );
 }
 
@@ -721,13 +455,6 @@ export function SessionMasthead({
     store.refresh(projectDir);
   }, [projectDir, ledger.status]);
   const pulse = usePulse();
-  // A manual `/compact` run started from THIS card. The wire is silent for its
-  // whole duration, so the pin is the only thing the line can say about it;
-  // the daemon's own `Compacted context` beat closes it out.
-  const compaction = useSyncExternalStore(
-    compactionProgressStore.subscribe,
-    compactionProgressStore.getSnapshot,
-  );
   const [historyOpen, setHistoryOpen] = React.useState(false);
   /*
     The PULSE line's own DOM node, so the recent-pulses popover can anchor to
@@ -739,40 +466,28 @@ export function SessionMasthead({
   */
   const stageElRef = useRef<HTMLElement | null>(null);
 
-  // Lines cleared by this card's last submit stay hidden; the next turn's
-  // voice repopulates the line.
-  // The bare `Done` marker is filtered on the way in: it is the ABSENCE of a
-  // beat, and the rest sentence beneath says the same thing with facts in it.
-  const latest = sessionActivityBeat(
-    latestLineForScope(pulse.lines, sessionId, pulse.cleared.get(sessionId)),
-  );
-  // By id, not out of the workspace listing: a just-spawned session is
-  // content-empty and the listing deliberately omits it.
+  // The ledger's row for this session, for the telemetry panel: by id, not out
+  // of the workspace listing, because a just-spawned session is content-empty
+  // and the listing deliberately omits it. The row's own three lines read the
+  // same facts through the same hook inside `SessionIdentityRow`.
   const row = useSessionLedgerRow(sessionId, projectDir);
   // Not `row.created_at`: the shared resolver also reads the card's own
   // replay anchor, which is the only source for a freshly-bound card in a
-  // project nothing has listed yet — exactly the state the stamp rung is for.
+  // project nothing has listed yet.
   const createdAtMs = useSessionCreatedAtMs(cardId, sessionId, projectDir);
-  // At rest the activity line reports the session's own facts — the turn count,
-  // the on-disk size, when it last moved — and closes `Ready.`
-  const restLine = sessionActivityRestLine({
-    turnCount: row?.turn_count ?? 0,
-    fileSize: row?.file_size ?? null,
-    lastUsedAtMs: row?.last_used_at ?? null,
-  });
-  const target: DisplayEntry = isCompactingCard(compaction, cardId)
-    ? COMPACTING_ENTRY
-    : latest !== null
-      ? { key: latest.key, text: latest.text, placeholder: false }
-      : restEntry(restLine);
-  const { current } = useDwellDisplay(target);
   // The last few pulses for this session — shown in the activity line's popover.
   const history = linesForScope(pulse.lines, sessionId, PULSE_HISTORY_COUNT);
-  // Right-click → Copy the current beat's raw text. A composed rest sentence is
-  // not a beat and copies nothing; the atom copy on the title is what that row
-  // offers instead.
+  // Right-click → Copy the beat's raw text. A read for the CLIPBOARD, not for
+  // the line: what the line shows is the row's ladder, paced by its dwell, and
+  // this is the newest beat the feed holds. Within a dwell window the two can
+  // differ by one line, and the newest is the honest thing to hand a paste.
+  // A composed rest sentence is not a beat and copies nothing; the atom copy on
+  // the title is what that row offers instead.
+  const newestBeat = sessionActivityBeat(
+    latestLineForScope(pulse.lines, sessionId, pulse.cleared.get(sessionId)),
+  );
   const copyLine = useCopyableButton(
-    current.placeholder ? "" : current.text,
+    pulse.enabled && newestBeat !== null ? newestBeat.text : "",
   );
   // Right-click the TITLE → Copy the session atom's full flavor set: the
   // citation as plain text with the atom sidecar beside it, so a paste back
@@ -798,82 +513,64 @@ export function SessionMasthead({
     [copyRef],
   );
 
-  // The description line's three rungs ([D132]): the agent's synopsis, else the
-  // session's own first prompt, else the date it was created. The lower two are
-  // facts STANDING IN for a line nobody has written yet, so they are marked as
-  // such and painted a step quieter. A never-summarized session — every external
-  // one the scanner has just found — has the user's own prompt as the only
-  // human-meaningful text the row holds, which is why that rung is here at all.
-  //
-  // No null branch on the identity: `sessionId` is a string and
-  // `useSessionIdentity`'s non-null overload answers with a record.
-  const prompt = row?.last_user_prompt?.trim() ?? "";
-  const description =
-    identity.description ??
-    (prompt.length > 0
-      ? prompt
-      : createdAtMs !== null
-        ? `Created ${formatRestingStamp(createdAtMs)}`
-        : null);
-  const descriptionStandIn = identity.description === null;
-
   return (
     <div className="session-masthead" data-slot="session-masthead">
-      <TugSessionRow
+      <SessionIdentityRow
         className="session-masthead-row"
-        indicator={
-          <SessionPhaseDot sessionId={sessionId} size={MASTHEAD_DOT_SIZE} />
-        }
-        indicatorSize={MASTHEAD_DOT_SIZE}
-        name={
-          // The row's dot leads the line, so the identity renders its runs
-          // only. Right-click on the title copies the atom.
-          <span
-            ref={copyAtom.ref as React.Ref<HTMLSpanElement>}
-            onContextMenu={copyAtom.onContextMenu}
-            className="session-masthead-title"
-          >
-            <TugSessionIdentity identity={identity} tier="line" dot={false} />
-          </span>
-        }
-        description={description ?? ""}
-        descriptionStandIn={descriptionStandIn}
-        // The activity line. When the `pulse/enabled` default is off the line
-        // still exists and still reports the session's own facts — chrome that
-        // got shorter when a preference changed would move every card in the
-        // pane, and the rest sentence is true either way.
-        activity={
-          <PulseLineText
-            entry={pulse.enabled ? current : restEntry(restLine)}
-            className="session-masthead-pulse-text"
-          />
-        }
-        sparkline={
-          pulse.enabled ? (
-            /*
-              The compact sparkline is the entry point to the expanded Activity
-              card: clicking it opens a popover of per-channel small-multiples
-              for this session.
-            */
-            <TugPopover>
-              <TugPopoverTrigger>
-                <button
-                  type="button"
-                  className="session-masthead-spark-trigger"
-                  tabIndex={-1}
-                  data-tug-focus="refuse"
-                  data-no-activate=""
-                  aria-label="Session pulse detail"
-                >
-                  <MastheadSparkline sessionId={sessionId} />
-                </button>
-              </TugPopoverTrigger>
-              <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>
-                <SessionPulseCard session={sessionId} />
-              </TugPopoverContent>
-            </TugPopover>
-          ) : undefined
-        }
+        sessionId={sessionId}
+        cardId={cardId}
+        projectDir={projectDir}
+        // The branch rides the identity for the telemetry panel and never
+        // reaches a rendered name; passing the masthead's own context is what
+        // keeps the row's record and this component's the same record.
+        identityContext={{
+          projectDir: projectDir.length > 0 ? projectDir : undefined,
+          branch,
+        }}
+        // The dense cut. A 72px chrome tier with a 28px dot in it would have
+        // the mark out-shouting the name it marks.
+        dotSize={MASTHEAD_DOT_SIZE}
+        // The two lines below the title start where the TITLE does — three
+        // lines on two verticals read as a stack that was assembled rather than
+        // set. A card-wide chrome tier can afford the indent a rail cannot.
+        subAlign="title"
+        tape
+        // The line is being READ here, not scanned, so the beat is paced and
+        // set through the markdown pipeline: a tool call's backticked paths and
+        // commands are exactly what that pipeline is for.
+        pace
+        markdown
+        activityClassName="session-masthead-pulse-text"
+        // Right-click on the title copies the atom.
+        nameProps={{
+          ref: copyAtom.ref as React.Ref<HTMLSpanElement>,
+          onContextMenu: copyAtom.onContextMenu,
+          className: "session-masthead-title",
+        }}
+        /*
+          The tape is the entry point to the expanded Activity card: clicking it
+          opens a popover of per-channel small-multiples for this session. The
+          instrument is the row's; only this wrapper is the masthead's.
+        */
+        renderTape={(tape) => (
+          <TugPopover>
+            <TugPopoverTrigger>
+              <button
+                type="button"
+                className="session-masthead-spark-trigger"
+                tabIndex={-1}
+                data-tug-focus="refuse"
+                data-no-activate=""
+                aria-label="Session pulse detail"
+              >
+                {tape}
+              </button>
+            </TugPopoverTrigger>
+            <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>
+              <SessionPulseCard session={sessionId} />
+            </TugPopoverContent>
+          </TugPopover>
+        )}
         stageProps={{
           ref: stageRef as React.Ref<HTMLSpanElement>,
           onContextMenu: copyLine.onContextMenu,

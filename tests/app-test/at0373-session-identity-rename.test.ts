@@ -47,6 +47,7 @@
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
  * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
+ * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  */
 
 import { describe, expect, test } from "bun:test";

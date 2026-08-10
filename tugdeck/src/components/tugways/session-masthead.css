@@ -95,13 +95,9 @@
      what seats the block — 12px on top of it drops the title line clear of the
      band the pane's controls sit in. */
   --tugx-session-identity-row-pad: 0px;
-  /* The two lines below the title start where the TITLE does, not where its dot
-     does — three lines on two verticals read as a stack that was assembled
-     rather than set. The row's own default indent is deliberately smaller,
-     because a Lens RAIL cannot afford to indent its activity run that far; a
-     card-wide chrome tier can, so the masthead takes the row's published title
-     inset whole rather than retyping its arithmetic. */
-  --tugx-session-identity-row-indent: var(--tugx-session-row-title-inset);
+  /* Where the two lines below the title start is `subAlign` on the row's own
+     props — `title` here — and not a custom property this file re-declares.
+     See `TugSessionRowSubAlign`. */
   min-width: 0;
   /* The masthead's column STRETCHES its children, and a list row is
      `align-items: center` — so a stretched row would center its three lines in

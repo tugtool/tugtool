@@ -74,6 +74,28 @@ export type TugSessionRowFit = "inset";
 export const TUG_SESSION_ROW_DEFAULT_FIT: TugSessionRowFit = "inset";
 
 /**
+ * Where the two sub-lines start — the row's second published knob, and one of
+ * the three things that genuinely differ between the surfaces showing a session.
+ *
+ * `title` hangs the description and the activity off the TITLE's own ink, so
+ * the three lines share one vertical and the title reads as the heading of the
+ * pair beneath it. `edge` starts them nearer the row's own leading edge
+ * instead — outdented from the title — which is what a narrow rail wearing the
+ * large indicator needs: a title inset measured off a 28px glyph is a wide
+ * indent to spend on a column that has no width to spare.
+ *
+ * It is an ATTRIBUTE on the row, not a custom property a mount site declares.
+ * It was the latter, and the cost was exactly what a knob nobody published
+ * costs: the same seven-word declaration appeared in `session-masthead.css` and
+ * in `session-card.css`, each with its own paragraph explaining it, and the
+ * third surface got the other value by *omitting* a line — so the one real
+ * choice among the three was invisible at all three mount sites.
+ *
+ * @selector [data-sub-align="title"] | [data-sub-align="edge"]
+ */
+export type TugSessionRowSubAlign = "title" | "edge";
+
+/**
  * Glyph box for the row's phase indicator — the knob for its SIZE, declared
  * here rather than at a mount site so every surface showing a session shows
  * the same dot at the same size.
@@ -246,6 +268,13 @@ export interface TugSessionRowProps
    */
   fit?: TugSessionRowFit;
 
+  /**
+   * Where the description and the activity start.
+   * @selector [data-sub-align="<align>"]
+   * @default "title"
+   */
+  subAlign?: TugSessionRowSubAlign;
+
   /** The PULSE's typographic preset, forwarded whole to {@link TugPulse}. */
   preset?: TugPulsePreset;
 
@@ -335,6 +364,7 @@ export const TugSessionRow = React.forwardRef<
 >(function TugSessionRow(
   {
     fit = TUG_SESSION_ROW_DEFAULT_FIT,
+    subAlign = "title",
     preset,
     indicator,
     indicatorSize,
@@ -375,6 +405,7 @@ export const TugSessionRow = React.forwardRef<
       }}
       data-slot="tug-session-row"
       data-fit={fit}
+      data-sub-align={subAlign}
       selected={selected}
       trailing={trailing}
       trailingReveal={trailingReveal}

@@ -38,6 +38,7 @@
  * @covers tugdeck/src/lib/session-synopsis-store.ts
  * @covers tugdeck/src/lib/session-identity.ts
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
+ * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/protocol.ts
  * @covers tugdeck/src/action-dispatch.ts
  */

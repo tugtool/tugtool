@@ -300,19 +300,36 @@ body {
 
 /* Where the TITLE's ink starts, as a distance from the row's leading edge —
    the dot's advance, less the room its ink does not use, plus the air after
-   it. Published rather than left for each mount to re-derive: a stack whose
-   sub-lines hang off the title sets its indent to exactly this
-   (`--tugx-session-identity-row-indent: var(--tugx-session-row-title-inset)`),
-   and then the three lines share one vertical by construction instead of by
-   two files agreeing on the same arithmetic. A rail that wants its sub-lines
-   closer to its own edge than to the title — the Lens, whose large dot makes
-   the title inset a wide indent for a narrow column — sets its own number and
-   ignores this. */
+   it. Derived rather than tuned, so a stack whose sub-lines hang off the title
+   shares one vertical with it by construction rather than by two files
+   agreeing on the same arithmetic. */
 .tug-session-row {
   --tugx-session-row-title-inset: calc(
     var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-slack, 0px) +
       var(--tugx-session-row-name-gap)
   );
+  /* And the other end of the `sub-align` knob: how far the sub-lines start
+     inside the row's own leading edge when they are NOT hung off the title.
+     Deliberately smaller than the title inset — it is the value a narrow rail
+     wearing the large indicator can afford, which is the whole reason there
+     are two. TUNE HERE for the `edge` alignment. */
+  --tugx-session-row-edge-indent: 10px;
+}
+
+/* The `sub-align` knob, resolved. Both alignments are stated HERE, on the row's
+   own element, keyed off the attribute the component sets from its prop — so
+   the choice is visible in the mount site's JSX and the arithmetic behind each
+   answer is written once.
+
+   It used to be neither: `title` was a custom property re-declared in
+   `session-masthead.css` and again in `session-card.css`, and `edge` was what a
+   mount got by declaring nothing at all. */
+.tug-session-row[data-sub-align="title"] {
+  --tugx-session-identity-row-indent: var(--tugx-session-row-title-inset);
+}
+
+.tug-session-row[data-sub-align="edge"] {
+  --tugx-session-identity-row-indent: var(--tugx-session-row-edge-indent);
 }
 
 /* The sub-line takes a small indent off the title it belongs to, so the title
@@ -417,4 +434,16 @@ body {
 .tug-session-row .tug-pulse[data-layout="stacked"] {
   --tugx-pulse-stacked-trailing-rise: var(--tugx-session-row-spark-rise);
   --tugx-pulse-stacked-trailing-reserve: var(--tugx-session-row-spark-reserve);
+}
+
+/* The tape keeps its declared width whatever the run beside it wants.
+   `.tug-pulse-trailing` is already `flex: 0 0 auto`, but the tape INSIDE it is
+   a flex item of its own and would take the shrink instead — a graph drawn at
+   one width and laid out at another is a graph that lies about its scale.
+
+   Here rather than at a mount site: it was a Lens-only class on a Lens-only
+   copy of the tape, and the masthead's copy was left to be correct by accident
+   of sitting inside a button. */
+.tug-session-row .tug-pulse-trailing .tug-sparkline {
+  flex-shrink: 0;
 }

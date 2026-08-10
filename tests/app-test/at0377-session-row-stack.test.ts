@@ -44,6 +44,7 @@
  * dir for a fresh temp path and picked up by the real scan — no mocks, and no
  * dependence on whatever sessions the host happens to have.
  *
+ * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/tugways/session-phase-dot.tsx

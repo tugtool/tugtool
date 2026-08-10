@@ -1102,20 +1102,6 @@
   color: var(--tug7-element-control-icon-ghost-danger-active);
 }
 
-/* The picker's rows hang their description and activity off the TITLE, not off
-   the row's own leading edge — the masthead's rule, and for the masthead's
-   reason: three lines on two verticals read as a stack that was assembled
-   rather than set. The row publishes where its title starts, so this takes
-   that number whole rather than retyping its arithmetic.
-
-   The row's smaller default indent stays the LENS's, which is the one mount
-   that cannot follow: the Lens wears the large 28px dot, and a title inset
-   measured off that glyph is a wide indent for a narrow rail. Small dot, flush
-   with the title; large dot, its own number. */
-.session-card-picker-session-row {
-  --tugx-session-identity-row-indent: var(--tugx-session-row-title-inset);
-}
-
 /* Give the trailing accessories more breathing room: the `terminal`
    provenance badge sat too close to the trash button at the default xs gap. */
 .session-card-picker-sessions-list .tug-list-row-trailing {

@@ -301,8 +301,6 @@ body {
 /* How the session monitor row divides its width — which line the dot, the
    slots, and the sparkline ride, and what each costs the text beside it — is
    `tug-session-row.css`'s, not this file's. Nothing about that row's packing is
-   authored here, so the Lens cannot drift from the fit the gallery approved. */
-
-.sessions-monitor-spark {
-  flex-shrink: 0;
-}
+   authored here, so the Lens cannot drift from the fit the gallery approved.
+   That now includes the tape, whose `flex-shrink: 0` was a Lens-only class on
+   a Lens-only copy of the instrument and is the row's rule. */

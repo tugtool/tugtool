@@ -57,6 +57,7 @@
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
  * @covers tugdeck/src/components/tugways/tug-pulse.tsx
  * @covers tugdeck/src/components/tugways/tug-pulse.css
+ * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/lib/pulse-store.ts

@@ -43,6 +43,7 @@
  * reported as a diagnostic rather than asserted.
  *
  * @covers tugdeck/src/components/tugways/tug-sparkline.tsx
+ * @covers tugdeck/src/components/tugways/session-activity-sparkline.tsx
  * @covers tugdeck/src/lib/sparkline-tape.ts
  * @covers tugdeck/src/lib/workers/sparkline-render-worker.ts
  * @covers tugdeck/src/lib/sparkline-geometry.ts
@@ -75,7 +76,7 @@ const sid = (n: number): string =>
 const lensRow = (session: string): string =>
   `.lens-cards-list .session-row-content[data-session-id="${session}"]`;
 const lensSpark = (session: string): string =>
-  `${lensRow(session)} .sessions-monitor-spark`;
+  `${lensRow(session)} .tug-pulse-trailing .tug-sparkline`;
 
 /**
  * The tape's own scroll container, found the way the component finds it —
@@ -242,7 +243,7 @@ describe.skipIf(!SHOULD_RUN)("AT0370: the sparkline stays registered", () => {
           "monitor rows / tapes mounted",
           await app.evalJS<string>(
             `document.querySelectorAll(".lens-cards-list .session-row-content").length
-               + " / " + document.querySelectorAll(".sessions-monitor-spark").length`,
+               + " / " + document.querySelectorAll(".lens-cards-list .tug-pulse-trailing .tug-sparkline").length`,
           ),
         );
 

@@ -61,7 +61,6 @@
 import React, { createContext, useContext } from "react";
 import { Trash2 } from "lucide-react";
 
-import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type {
@@ -69,29 +68,15 @@ import type {
   TugListViewCellRenderer,
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
-import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
-import { PulseBeatText } from "@/components/tugways/pulse-beat-text";
-import {
-  TugSessionRow,
-  TUG_SESSION_ROW_STACK_DOT_SIZE,
-} from "@/components/tugways/tug-session-row";
+import { SessionIdentityRow } from "@/components/tugways/session-identity-row";
+import { TUG_SESSION_ROW_STACK_DOT_SIZE } from "@/components/tugways/tug-session-row";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 
 import type {
   SessionsRow,
   SessionsDataSource,
 } from "@/lib/session-picker-data-source";
-import {
-  formatFailedRowSubtitle,
-  truncateForDisplay,
-} from "./session-picker-format";
-import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
-import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
-import { latestLineForScope, usePulse } from "@/lib/pulse-store";
-import {
-  sessionActivityBeat,
-  sessionActivityRestLine,
-} from "@/lib/session-activity-line";
+import { formatFailedRowSubtitle } from "./session-picker-format";
 import {
   sessionIdentityContextFrom,
   useSessionIdentity,
@@ -204,51 +189,22 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // the context value — no per-cell state.
   const isPendingTrash = pendingTrashSessionId === row.session_id;
 
-  const fullPrompt =
-    row.last_user_prompt !== null && row.last_user_prompt.length > 0
-      ? row.last_user_prompt
-      : null;
   // The title leads with the user's own name when there is one, then the
   // callsign — the same grammar every other surface in the app shows for this
   // session. A legacy tagless row degrades to its short id, never the raw UUID.
-  // Rendered by the identity component itself, in two separately-sized runs.
+  // Resolved here as well as inside the row because the trash control's labels
+  // name the session by its short id; the row resolves its own from the same
+  // hook and the same context, so the two cannot be two records.
   const identity = useSessionIdentity(
     row.session_id,
     sessionIdentityContextFrom(row),
   );
 
-  // The description line — the agent's rolling description, with the
-  // `last_user_prompt` snippet standing in until a session has one, and the
-  // creation stamp behind that. The user's own name is not a candidate here: it
-  // leads the title above. The prompt rung is load-bearing at THIS surface: for
-  // every external session the scanner has just found, the user's own first
-  // prompt is the only human-meaningful text the row has.
-  const standIn =
-    fullPrompt ?? (row.created_at > 0 ? `Created ${formatRestingStamp(row.created_at)}` : "");
-  const description = truncateForDisplay(identity.description ?? standIn, 96);
-  const descriptionStandIn = identity.description === null;
-
-  // The activity line: the session's rest facts — how many turns, how big, when
-  // it last moved — closing `Ready.` like every other mount of this row. A row
-  // live in a card and mid-turn wears the live beat instead, exactly like the
-  // masthead (the `live` badge and the disabled state already say where it is).
-  // The STATE still replaces the line for rows this app cannot see into — a
-  // terminal holds no pulse feed — and for failed rows, whose one fact is the
-  // failure. A pure subscription read, so the pure-renderer rule holds.
-  const pulse = usePulse();
-  // The bare `Done` marker is filtered out on the way in: it is the absence of
-  // a beat, and the rest sentence says the same thing with the facts in it.
-  const beat =
-    isLive && pulse.enabled
-      ? sessionActivityBeat(
-          latestLineForScope(
-            pulse.lines,
-            row.session_id,
-            pulse.cleared.get(row.session_id),
-          ),
-        )
-      : null;
-  const activity = isTerminalLive
+  // What the activity line says INSTEAD of anything the pulse feed could
+  // report. Both cases are rows this app cannot see into: a terminal holds no
+  // feed, and a failed row's one fact is the failure. Everything else — the
+  // live beat, the rest sentence — is the shared row's ladder.
+  const activityOverride = isTerminalLive
     ? row.terminal_live?.status === "busy"
       ? "In use in a terminal — busy"
       : row.terminal_live?.status === "idle"
@@ -256,13 +212,7 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
         : "In use in a terminal"
     : isFailed
       ? formatFailedRowSubtitle(row)
-      : beat !== null
-        ? beat.text
-        : sessionActivityRestLine({
-            turnCount: row.turn_count,
-            fileSize: row.file_size ?? null,
-            lastUsedAtMs: row.last_used_at,
-          });
+      : null;
 
   const idShort = identity.shortId;
 
@@ -324,45 +274,44 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
   // characters. A row that matched on a field it does not display (its id, a
   // long prompt tail) shows no mark, which is correct.
   return (
-    <TugSessionRow
+    <SessionIdentityRow
       // Title, description, activity. The same component the Lens and the
-      // masthead wear, at the same tier — three surfaces showing the same thing
-      // had no business showing it three ways.
-      className="session-card-picker-session-row"
-      name={
-        // The row's own dot leads the line, so the identity renders its runs
-        // only, with the filter mark painted inside EACH run.
-        <TugSessionIdentity
-          identity={identity}
-          tier="line"
-          dot={false}
-          highlight={filterQuery}
-        />
-      }
-      description={renderFilterHighlight(description, filterQuery)}
-      descriptionStandIn={descriptionStandIn}
-      // The live beat takes no highlight — it is not a searchable fact; the
-      // composed rest sentence and the state lines do. A file-tool beat wears
-      // its target as a file reference — glyph + basename, full path on hover
-      // — never a spelled-out path.
-      activity={
-        beat !== null ? (
-          <PulseBeatText text={activity} />
-        ) : (
-          renderFilterHighlight(activity, filterQuery)
-        )
-      }
+      // masthead wear — three surfaces showing the same thing had no business
+      // showing it three ways.
+      //
       // Every row gets a dot, including the closed ones — which is most of
       // them. A session whose live state cannot be reached reads idle, so the
       // dot is quiet rather than absent or red, and the column of marks says
       // which rows are working without saying anything false about the rest.
-      indicator={
-        <SessionPhaseDot
-          sessionId={row.session_id}
-          size={TUG_SESSION_ROW_STACK_DOT_SIZE}
-        />
-      }
-      indicatorSize={TUG_SESSION_ROW_STACK_DOT_SIZE}
+      className="session-card-picker-session-row"
+      sessionId={row.session_id}
+      identityContext={sessionIdentityContextFrom(row)}
+      // The picker browses a whole workspace and already holds every row, so
+      // the description's prompt rung and the activity's rest facts come off
+      // the payload in hand rather than out of a second read by id.
+      row={row}
+      // The dense cut — this is a list to pick FROM, not a monitor, so it takes
+      // the small dot, no tape, and its sub-lines flush with the title. A row
+      // reserving width for a graph it does not draw is width taken from the
+      // text for nothing. No `drift`: a picker's dots are read as a column, not
+      // watched.
+      dotSize={TUG_SESSION_ROW_STACK_DOT_SIZE}
+      subAlign="title"
+      tape={false}
+      // A dense list's line is scanned, not read, so it takes the newest fact
+      // rather than a paced one — and a `TugListView` cell may hold no state
+      // anyway ([D17]).
+      pace={false}
+      // Only a row live in THIS app has a feed to read. `latestLineForScope`
+      // answers with app-wide ambience for any scope, so a closed session's row
+      // would otherwise narrate whatever the app happened to be saying.
+      beats={isLive}
+      activityOverride={activityOverride}
+      // A browse list of external sessions is where a runaway first prompt
+      // actually lands, so the description is bounded in text as well as by the
+      // line's own ellipsis.
+      descriptionMaxChars={96}
+      highlight={filterQuery}
       selected={isSelected}
       disabled={isLive || isTerminalLive}
       trailing={trailing}

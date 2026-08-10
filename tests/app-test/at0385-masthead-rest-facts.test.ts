@@ -25,6 +25,7 @@
  *
  * @covers tugdeck/src/lib/session-ledger-store.ts
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
+ * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/lib/session-activity-line.ts
  */
 
