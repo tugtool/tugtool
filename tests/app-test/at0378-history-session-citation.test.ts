@@ -53,7 +53,14 @@
  *      all still there in the DOM and every content assertion above passes with
  *      the mark unreadable on screen.
  *
+ *   E. **Copying from the chip's menu is not a click on the row.** The menu
+ *      portals to the canvas overlay, but React events bubble along the REACT
+ *      tree, not the DOM one — so taking `Copy` reached the surface that
+ *      rendered the menu as an ordinary primary click, and the commit folded
+ *      open under the gesture.
+ *
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-editor-context-menu.tsx
  * @covers tugdeck/src/components/tugways/tug-session-identity.css
  * @covers tugdeck/src/lib/session-identity.ts
  * @covers tugdeck/src/lib/session-citation-store.ts
@@ -78,6 +85,7 @@ const REPO = resolve(import.meta.dir, "..", "..");
 const VIEW = `[data-slot="session-history-view"]`;
 const ROW = `${VIEW} [data-testid="session-history-commit"]`;
 const CHIP = `${ROW} [data-slot="tug-session-identity"]`;
+const MENU = '[data-slot="tug-editor-context-menu"]';
 
 /** A full session UUID anywhere in a string — what must never reach the eye. */
 const UUID_ANYWHERE =
@@ -215,6 +223,62 @@ describe.skipIf(!SHOULD_RUN)(
             expect(chip.elided).toBe(false);
             expect(chip.slack).toBeGreaterThanOrEqual(-1);
           }
+
+          // ---- E. The chip's copy menu is not a click on the row. ----------
+          //
+          // The menu PORTALS to the canvas overlay, but React events bubble
+          // along the REACT tree, not the DOM one — so taking `Copy` was
+          // delivered to the surface that rendered the menu as an ordinary
+          // primary click, and the commit folded open under the gesture. The
+          // row's own `button !== 0` guard cannot see it: by then the event is
+          // a real left-click on a menu item several layers away in the DOM.
+          const foldedBefore = await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(ROW)})
+              .getAttribute("data-expanded") === "true"`,
+          );
+          expect(foldedBefore).toBe(false);
+          await app.evalJS<null>(`(function(){
+            var chip = document.querySelector(${JSON.stringify(CHIP)});
+            var r = chip.getBoundingClientRect();
+            chip.dispatchEvent(new MouseEvent("contextmenu", {
+              bubbles: true,
+              clientX: Math.round(r.left + r.width / 2),
+              clientY: Math.round(r.top + r.height / 2),
+            }));
+            return null;
+          })()`);
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(MENU)}) !== null`,
+            { timeoutMs: 8_000 },
+          );
+          // Opening it is not a click on the row either.
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(ROW)})
+                .getAttribute("data-expanded") === "true"`,
+            ),
+          ).toBe(false);
+          // Take the item, the way the gesture finishes: the menu acts on
+          // mousedown and the browser's click follows it.
+          await app.evalJS<null>(`(function(){
+            var item = document.querySelector(
+              ${JSON.stringify(MENU)} + ' [role="menuitem"]');
+            var r = item.getBoundingClientRect();
+            var at = {
+              bubbles: true, button: 0, clientX: Math.round(r.left + 4),
+              clientY: Math.round(r.top + 4),
+            };
+            item.dispatchEvent(new MouseEvent("mousedown", at));
+            item.dispatchEvent(new MouseEvent("mouseup", at));
+            item.dispatchEvent(new MouseEvent("click", at));
+            return null;
+          })()`);
+          const foldedAfter = await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(ROW)})
+              .getAttribute("data-expanded") === "true"`,
+          );
+          note(`at0378 row folded after copy: ${foldedAfter}`);
+          expect(foldedAfter).toBe(false);
 
           // ---- B. No raw id, and no trailer line in any body. ---------------
           const viewText = await app.evalJS<string>(

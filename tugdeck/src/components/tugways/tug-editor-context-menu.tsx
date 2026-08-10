@@ -195,6 +195,17 @@ const VIEWPORT_MARGIN = 8;
 /** How long the typeahead buffer persists between keystrokes. */
 const TYPEAHEAD_BUFFER_TIMEOUT_MS = 500;
 
+/**
+ * Keep a gesture inside the menu. Only React's own propagation is stopped —
+ * the menu portals out of its host's DOM subtree but not out of its REACT
+ * subtree, so without this the host's handlers run on the menu's clicks. Native
+ * listeners on `window`/`document` (dismissal, the responder chain) travel the
+ * DOM and are untouched.
+ */
+function stopReactPropagation(e: React.SyntheticEvent): void {
+  e.stopPropagation();
+}
+
 /** True if the entry is a selectable, non-disabled action item. */
 function isActionable(entry: TugEditorContextMenuEntry): entry is TugEditorContextMenuItem {
   if (entry.type === "separator" || entry.type === "label") return false;
@@ -625,6 +636,23 @@ export function TugEditorContextMenu({
       // within our own menu — otherwise right-clicking an item would
       // stack the system menu on top.
       onContextMenu={(e) => e.preventDefault()}
+      // The menu's own gestures stop at the menu. It PORTALS to the canvas
+      // overlay, but React events bubble along the REACT tree, not the DOM one
+      // — so a click on `Copy` was still delivered to whatever surface rendered
+      // the menu, as an ordinary primary click on that surface. Right-clicking
+      // a session chip in a History row and taking Copy folded the commit open
+      // under it, and the row's own `button !== 0` guard could not see it: by
+      // then the event was a real left-click on a menu item several layers away
+      // in the DOM. Native listeners (the dismissal watcher on `window`, the
+      // responder chain's own `pointerdown`) are unaffected — React's
+      // propagation is not the DOM's.
+      onPointerDown={stopReactPropagation}
+      onPointerUp={stopReactPropagation}
+      onMouseDown={stopReactPropagation}
+      onMouseUp={stopReactPropagation}
+      onClick={stopReactPropagation}
+      onDoubleClick={stopReactPropagation}
+      onAuxClick={stopReactPropagation}
       // Initial style: off-screen and hidden. A useLayoutEffect
       // measures the menu size and writes left/top/visibility directly
       // to the DOM (L06) — no React state, no extra render cycle.
