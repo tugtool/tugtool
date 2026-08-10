@@ -13,7 +13,7 @@
   padding: 6px 8px 8px;
 }
 
-/* The plan: the one drawing of the deck, with its caption under it. Exactly
+/* The plan: the one drawing of the deck, under the heading naming it. Exactly
    one layer shows at a time — the committed layer at rest, or the layer whose
    `data-plan-preview-id` the hover/cursor handlers marked `data-plan-active`.
    Every layer has the same structure, so swapping layers never moves the
@@ -28,7 +28,7 @@
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .layouts-plan-layer[data-plan-layer="committed"] {
@@ -53,12 +53,15 @@
 }
 
 /* The plan's caption is the section's one statement of what the deck is doing,
-   so it reads as text rather than as a footnote: the arrangement's name at the
-   body size, in the normal text colour. */
+   so it leads the plan the way the AI mixer's readout leads its channels: the
+   answers stated first, the drawing under them showing what they come to. A
+   step under that readout's size — the Lens is a narrower surface than the
+   settings page — but above the body size, so it reads as the plan's heading
+   rather than as a line of text next to it. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-plan-caption {
-  font-size: var(--tug-font-size-sm);
-  font-weight: var(--tug-font-weight-semibold);
+  font-size: var(--tug-font-size-md);
+  font-weight: var(--tug-font-weight-bold);
   line-height: var(--tug-line-height-tight);
   color: var(--tug7-element-global-text-normal-default-rest);
   white-space: nowrap;

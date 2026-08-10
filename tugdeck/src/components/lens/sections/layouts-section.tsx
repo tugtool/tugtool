@@ -17,9 +17,9 @@
  * there — so the deck always stands under an imposition and every row's slot
  * picker is live from the first frame.
  *
- * The section draws the deck **once**: the plan at the top is a scale picture
- * of the deck as it stands ({@link LayoutMiniature}), captioned with the
- * current answers. Every control under it is a compact segmented group
+ * The section draws the deck **once**: the plan at the top states the current
+ * answers as a heading, and under that heading stands a scale picture of the
+ * deck ({@link LayoutMiniature}). Every control below is a compact segmented group
  * (`TugChoiceGroup`) that writes the plan. The picture-per-option idiom this
  * replaced spent a full deck drawing on every option and asked the eye to
  * diff them; here the options are words and numerals, and the *plan* is where
@@ -394,13 +394,13 @@ function LayoutsSectionBody({
           aria-hidden="true"
         >
           <div className="layouts-plan-layer" data-plan-layer="committed">
+            <span className="layouts-plan-caption">{committedCaption}</span>
             <LayoutMiniature
               kind={kind}
               rails={rails}
               width={contentWidth}
               selected
             />
-            <span className="layouts-plan-caption">{committedCaption}</span>
           </div>
           {layers.map((layer) => (
             <div
@@ -408,12 +408,12 @@ function LayoutsSectionBody({
               data-plan-preview-id={layer.previewId}
               key={layer.previewId}
             >
+              <span className="layouts-plan-caption">{layer.caption}</span>
               <LayoutMiniature
                 kind={layer.kind}
                 rails={layer.rails}
                 width={layer.width}
               />
-              <span className="layouts-plan-caption">{layer.caption}</span>
             </div>
           ))}
         </div>
