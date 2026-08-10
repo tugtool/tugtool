@@ -26,8 +26,20 @@
 
 /** Width of one bin, in ms (4 Hz) — matches tugcode's `activity_delta` flush. */
 export const ACTIVITY_BIN_MS = 250;
-/** Bins retained — enough for a rolling ~1s rate with headroom. */
-export const ACTIVITY_WINDOW_BINS = 40;
+/**
+ * Bins retained. The window serves two consumers, and the LARGER one sets it:
+ * the rolling ~1s rate needs only a handful of trailing bins, but the
+ * sparkline reconstructs its whole picture from these bins on every rebuild —
+ * a wake from a hidden pause, a masthead remount when a stacked pane's
+ * frontmost tab flips, a resolution change. `SparklineTape.rebuildTape`
+ * reaches back `DORMANT_AFTER_MS` (the visible span plus the prune margin,
+ * 19 s) and zero-seeds anything the bins do not cover, so a window shorter
+ * than that FABRICATES emptiness over a span the screen was just showing:
+ * the tape visibly clears and refills from the right. 80 bins is 20 s —
+ * the reconstruction span with one second of slack. The invariant is pinned
+ * by `sparkline-tape.test.ts`.
+ */
+export const ACTIVITY_WINDOW_BINS = 80;
 
 /** Shared surface both meter kinds expose to the store. */
 export interface ActivityMeterLike {

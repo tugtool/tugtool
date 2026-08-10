@@ -12,7 +12,11 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { RateMeter } from "@/lib/activity-meter";
+import {
+  ACTIVITY_BIN_MS,
+  ACTIVITY_WINDOW_BINS,
+  RateMeter,
+} from "@/lib/activity-meter";
 import { drawSparkline, type SparklinePoint } from "@/lib/sparkline-geometry";
 import {
   DORMANT_AFTER_MS,
@@ -452,6 +456,78 @@ describe("SparklineTape — the rate decay the wall-clock seam protects", () => 
     // bin the burst touched has aged out and the pen must be back at baseline.
     h.clock.advance(RATE_WINDOW_MS + BIN_MS + SAMPLE_MS * 2);
     expect(plotted()).toBe(0);
+  });
+});
+
+describe("SparklineTape — a rebuild reads back everything the screen showed", () => {
+  test("the meters' window covers the tape's reconstruction span", () => {
+    // `rebuildTape` reaches back DORMANT_AFTER_MS and zero-seeds whatever the
+    // bins do not cover. A meter window shorter than that span fabricates
+    // emptiness over seconds the screen was just showing: every rebuild path —
+    // a hidden-pause wake, a masthead remount, a resolution change — visibly
+    // clears the tape's left and refills it from the right. The two constants
+    // live in modules that deliberately do not import each other, so this is
+    // where they are held together.
+    expect(ACTIVITY_WINDOW_BINS * ACTIVITY_BIN_MS).toBeGreaterThanOrEqual(
+      DORMANT_AFTER_MS,
+    );
+  });
+
+  test("a hidden→visible rebuild fabricates no zeros over a span the meter recorded", () => {
+    // The REAL meter at its production window, fed continuously for longer
+    // than the tape's whole reconstruction span, exactly as the store feeds
+    // it. After a hidden pause the wake rebuilds the tape from these bins —
+    // and every point inside the visible-plus-margin window must carry the
+    // recorded work, edge to edge, with no zero-seeded seam at the left.
+    const meter = new RateMeter(ACTIVITY_BIN_MS);
+    const painted: SparklinePoint[][] = [];
+    const h = makeHarness(
+      { getSeries: (nowMs) => meter.series(nowMs), binMs: ACTIVITY_BIN_MS },
+      {
+        paint(points) {
+          painted.push([...points]);
+        },
+      },
+    );
+    const wallBase = Date.now();
+    const wallAt = (t: number): number => wallBase + (t - CLOCK_BASE);
+
+    h.tape.start(h.clock.now());
+
+    // Continuous work: one sample per bin for 22 s — enough to fill every bin
+    // the meter retains, so nothing the rebuild reads back is empty by right.
+    // The level alternates so the plot keeps clearing the deadband: a steady
+    // level is as dormant as silence, and this tape must still be LIVE.
+    const fedBins = Math.ceil(22_000 / ACTIVITY_BIN_MS);
+    for (let i = 0; i < fedBins; i++) {
+      const units = i % 4 < 2 ? FULL_SCALE / 4 : FULL_SCALE / 8;
+      meter.record(units, wallAt(h.clock.now()));
+      h.tape.onActivity();
+      h.clock.advance(ACTIVITY_BIN_MS);
+    }
+    expect(h.tape.debugState().state).toBe("live");
+
+    // Off screen long enough for the hysteresis to believe it, with the work
+    // continuing meanwhile — remembered, not appended.
+    hide(h);
+    expect(h.tape.debugState().state).toBe("hidden-paused");
+    for (let i = 0; i < 4; i++) {
+      meter.record(FULL_SCALE / 4, wallAt(h.clock.now()));
+      h.tape.onActivity();
+      h.clock.advance(ACTIVITY_BIN_MS);
+    }
+
+    // Re-entry rebuilds from the bins. The picture must reach the window's
+    // left edge, and no point on it may be a fabricated zero.
+    h.tape.setVisible(true);
+    expect(h.tape.debugState().state).toBe("live");
+    const tape = painted[painted.length - 1];
+    const now = h.clock.now();
+    expect(tape.length).toBeGreaterThan(0);
+    expect(tape[0].t).toBeLessThanOrEqual(
+      now - DORMANT_AFTER_MS + 2 * ACTIVITY_BIN_MS,
+    );
+    for (const point of tape) expect(point.v).toBeGreaterThan(0);
   });
 });
 
