@@ -38,19 +38,23 @@ body {
   --tugx-session-row-name-gap: 8px;
   /* How far the row's whole leading reading — the indicator, the name, and
      both PULSE runs under them — stands off the row's own leading edge. TUNE
-     HERE.
+     HERE, per mount.
 
-     It is clearance for the movement caret, which is drawn ON that edge and is
-     the loudest mark on the surface: a 4px bar with a 3px nose, at full accent.
-     The indicator is the piece it crowds, because the dot's ring of breath
-     overhangs its own advance and reaches back toward the edge the caret is
-     using. Everything on the line moves together rather than the dot alone —
-     the name is measured from the dot and the PULSE takes its inset from the
-     same edge, so nudging one piece would only re-open the gap between them.
+     AIR, and only air. It used to be air plus whatever part of the dot's
+     advance the glyph did not fill, which is why the same 4px bought a
+     different margin on every mount: the reading began where the indicator's
+     BOX began, and the ink several pixels further in. `--tugx-session-row-dot-lead`
+     now takes that second term back (see the negative margin on the dot below),
+     so the number here is the whole answer and a mount can align its rows
+     against its own furniture by setting it.
+
+     Zero is a real setting and the common one — it puts the dot's ink on the
+     row's content edge, which is the vertical a rail's section headers and a
+     picker's plain rows already use.
 
      Leading only: the trailing furniture keeps the row's own far edge, so the
      slots and the tape stay on the vertical they already share. */
-  --tugx-session-row-leading-inset: 4px;
+  --tugx-session-row-leading-inset: 0px;
   /* What the indicator COSTS on the name line in the inline-indicator fits.
      Deliberately less than the indicator's own box: the phase dot is a small
      disc inside a much larger ring of breath, and the ring is free to overhang
@@ -209,16 +213,23 @@ body {
   inline-size: var(--tugx-session-row-dot-advance);
   block-size: 1em;
   overflow: visible;
-  /* The air after the mark, less the room inside the advance the mark's INK
-     does not use (`--tugx-session-row-dot-slack`, published by the component
-     from the glyph size the mount site declares; 0 when it declares none).
+  /* The room inside the advance the mark's INK does not use, taken back on
+     both sides — published by the component from the glyph size the mount site
+     declares, and 0 when it declares none, so a mount that names no size packs
+     exactly as it always did.
 
-     A negative TRAILING margin, deliberately: the box, the dot centered in it,
-     and the row's leading edge all stay exactly where they are, and only what
-     follows closes up. The gap the reader sees is then measured from the ink
-     rather than from a column sized for the largest dot any mount uses — which
-     is what left the title 14px off its mark on the two mounts that pass a
-     smaller glyph than the advance was measured against. */
+     LEADING: all of it, so the box slides back until the ink rests on the lines
+     column's content edge. What the row calls its leading edge is then the
+     first thing the reader can see, and the mount's own inset is air rather
+     than air plus an accident of the glyph's proportions.
+
+     TRAILING: half, so the gap the title keeps is measured from the ink rather
+     than from a column sized for the largest dot any mount uses — which is what
+     left the title 14px off its mark on the two mounts that pass a smaller
+     glyph than the advance was measured against. Half rather than all because
+     this side IS a gap: the ring reaches past the ink, and a title closed all
+     the way up is pressed by the ring rather than led by it. */
+  margin-inline-start: calc(-1 * var(--tugx-session-row-dot-lead, 0px));
   margin-inline-end: calc(
     var(--tugx-session-row-name-gap) - var(--tugx-session-row-dot-slack, 0px)
   );
@@ -298,15 +309,17 @@ body {
   );
 }
 
-/* Where the TITLE's ink starts, as a distance from the row's leading edge —
-   the dot's advance, less the room its ink does not use, plus the air after
-   it. Derived rather than tuned, so a stack whose sub-lines hang off the title
-   shares one vertical with it by construction rather than by two files
-   agreeing on the same arithmetic. */
+/* Where the TITLE's ink starts, as a distance from the lines column's content
+   edge — the dot's advance, less the room its ink does not use on either side,
+   plus the air after it. The leading term is what the dot's own negative margin
+   took back, so this reads as the distance from the DOT'S INK to the title's,
+   which is the distance the eye is measuring. Derived rather than tuned, so a
+   stack whose sub-lines hang off the title shares one vertical with it by
+   construction rather than by two files agreeing on the same arithmetic. */
 .tug-session-row {
   --tugx-session-row-title-inset: calc(
-    var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-slack, 0px) +
-      var(--tugx-session-row-name-gap)
+    var(--tugx-session-row-dot-advance) - var(--tugx-session-row-dot-lead, 0px) -
+      var(--tugx-session-row-dot-slack, 0px) + var(--tugx-session-row-name-gap)
   );
   /* And the other end of the `sub-align` knob: how far the sub-lines start
      inside the row's own leading edge when they are NOT hung off the title.

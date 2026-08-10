@@ -88,7 +88,14 @@
      a drag, filled the whole bar accent-blue and let it fade. */
   --tugx-list-row-pressed-bg: transparent;
   --tugx-list-row-selected-pressed-bg: transparent;
-  --tugx-session-row-leading-inset: 0px;
+  /* Chrome, not a rail: there is no movement caret on this edge and no column
+     of other rows to line up with, so the tier seats the dot's ink a few pixels
+     inside its own content edge and the three lines hang off that. The number
+     is what the row used to hand this mount for nothing — the unfilled leading
+     half of a 16px glyph's 20px advance — now that the row's leading edge means
+     the ink; the masthead was the one surface where the accident read right, so
+     it keeps it deliberately. */
+  --tugx-session-row-leading-inset: 6px;
   /* The tape stands off the masthead's trailing edge by exactly enough to sit
      CENTERED under the pane's three always-present controls, rather than flush
      with the cluster's outer box edge. Flush read as hanging right: each

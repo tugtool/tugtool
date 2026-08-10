@@ -235,16 +235,49 @@ const NO_SPARK_RESERVE_STYLE = {
  * then stood 14px off a mark that is meant to be leading it, and it did so on
  * two of the three mounts.
  *
- * The DOT does not move: its box, its center, and its ring are all where they
- * were, and the row's leading edge is unchanged. Only what follows it closes
- * up, by the trailing half of that slack ({@link TugSessionRowProps.indicatorSize}).
- * The ratio is read from {@link sizeGeometry} — the glyph's own function, not
- * a second copy of its numbers — so a change to the dot's proportions moves
- * this with it.
+ * Only what FOLLOWS the dot closes up, and only by the trailing half of that
+ * slack ({@link TugSessionRowProps.indicatorSize}) — the ring reaches well past
+ * the ink it is measured from, so a title pulled all the way to the ink's edge
+ * is periodically pressed by the ring rather than led by it. The leading side is
+ * {@link dotInkLead}, and it is a different question with a different answer.
+ *
+ * The ratio is read from {@link sizeGeometry} — the glyph's own function, not a
+ * second copy of its numbers — so a change to the dot's proportions moves this
+ * with it.
  */
 function dotInkSlack(size: number, advance: number): number {
-  const trailing = Math.max(0, (advance - size * sizeGeometry(size).ratio) / 2);
-  return trailing * DOT_SLACK_RECLAIMED;
+  return dotInkRoom(size, advance) * DOT_SLACK_RECLAIMED;
+}
+
+/**
+ * The same empty room on the LEADING side — between the start of the advance
+ * and the start of the dot's ink — taken back in full.
+ *
+ * Its trailing twin above is a gap between two marks, and closing all of one is
+ * too tight. This one is not a gap: it is the difference between where the row
+ * says its reading begins and where the reader sees the first ink. Nothing sits
+ * in it, and every line of the row is pushed right by it — so the whole entry
+ * hangs inside the margin its own surface set, while the mark that leads it
+ * lands somewhere no other element in the rail agrees with.
+ *
+ * Taken back as a NEGATIVE leading margin on the dot's box, so the ink comes to
+ * rest on the lines column's content edge and the title, the description and
+ * the activity all come with it. The glyph is free to overhang that edge; it is
+ * mostly the ring's breath out there, which is transparent and has always
+ * overhung something.
+ *
+ * A mount that wants air before its dot now states it as air —
+ * `--tugx-session-row-leading-inset` — which is a number that means what it
+ * says. Before, that inset was air PLUS however much of the advance the glyph
+ * happened not to fill, and the second term changed with the dot's size.
+ */
+function dotInkLead(size: number, advance: number): number {
+  return dotInkRoom(size, advance);
+}
+
+/** The unused room on ONE side of the ink, inside the advance. */
+function dotInkRoom(size: number, advance: number): number {
+  return Math.max(0, (advance - size * sizeGeometry(size).ratio) / 2);
 }
 
 /**
@@ -465,6 +498,10 @@ export const TugSessionRow = React.forwardRef<
         ...(indicatorSize !== undefined
           ? {
               ["--tugx-session-row-dot-slack" as string]: `${dotInkSlack(
+                indicatorSize,
+                DOT_ADVANCE,
+              ).toFixed(2)}px`,
+              ["--tugx-session-row-dot-lead" as string]: `${dotInkLead(
                 indicatorSize,
                 DOT_ADVANCE,
               ).toFixed(2)}px`,

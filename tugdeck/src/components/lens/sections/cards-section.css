@@ -77,6 +77,29 @@
   justify-content: center;
 }
 
+/* The session rows wear the rail's LARGE indicator, and the air after it is
+   the row default's less two pixels.
+
+   The gap has to be wider here than it is under the 16px dot the masthead and
+   the picker carry — that dot's ring reaches barely past its ink, and this
+   one's reaches the full width of a 28px glyph, so a title set at the smaller
+   mount's distance is inside the breath. But the shared 8px, measured against
+   the small dot, over-answers it: the ring's own overhang is already doing
+   most of the work of holding the title off, and the two pixels it was being
+   charged on top read as the name drifting away from the mark leading it. */
+.lens-cards-list .tug-session-row {
+  --tugx-session-row-name-gap: 6px;
+  /* And a little air before the mark, which the rail is the one mount that
+     needs. The row's leading edge is the dot's INK, and the ring of breath
+     reaches most of a 28px glyph past it in both directions — so an ink flush
+     with the section's own leading edge puts the ring on the rail's border and
+     over the movement caret drawn there. Less than the ring's full overhang,
+     deliberately: giving all of it back would seat the reading where it was,
+     hanging a visible indent inside the margin the section header sets. TUNE
+     HERE — the whole entry, dot and three lines, moves with it. */
+  --tugx-session-row-leading-inset: 2px;
+}
+
 /* ── The one-line row ─────────────────────────────────────────────────────── */
 
 /* THE DENSE ROW METRIC. A one-line row bottoms out on its 24px close box, so
