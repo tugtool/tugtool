@@ -68,30 +68,6 @@ const STACK: readonly SlotStackEntry[] = [
   },
 ];
 
-/** The four candidate rail treatments, in the order they read best compared. */
-const RAIL_VARIANTS = [
-  {
-    key: "icon" as const,
-    label: "Icon",
-    note: "an accent glyph and a sentence-case name",
-  },
-  {
-    key: "underline" as const,
-    label: "Underline",
-    note: "the name over a short accent rule, like a selected tab",
-  },
-  {
-    key: "chip" as const,
-    label: "Chip",
-    note: "the name inside a raised pill — a tool's tag",
-  },
-  {
-    key: "label" as const,
-    label: "Label",
-    note: "the first pass: uppercase, tracked, no glyph",
-  },
-];
-
 function textMasthead(dirty: boolean, detail: boolean): CardMastheadPayload {
   return {
     kind: "card-masthead",
@@ -137,18 +113,10 @@ function diffMasthead(detail: boolean): CardMastheadPayload {
 function SpikePane({
   focused,
   masthead = false,
-  railVariant,
   children,
   body,
 }: {
   focused: boolean;
-  /**
-   * Which candidate rail treatment this frame wears. Set on the PANE, not the
-   * bar, so the variant selectors compose with `[data-focused]` without asking
-   * `:has()` about a descendant. Exactly one candidate survives adoption and
-   * the attribute goes away with the losers.
-   */
-  railVariant?: "label" | "icon" | "underline" | "chip";
   /**
    * Mirrors what `TugPane` stamps on the pane element when its active card
    * publishes a masthead. It has to live HERE and not on the bar: the tier is
@@ -164,10 +132,16 @@ function SpikePane({
       className="tug-pane cg-spike-pane"
       data-focused={focused ? "true" : undefined}
       data-masthead={masthead ? "true" : undefined}
-      data-rail-variant={railVariant}
     >
-      {children}
-      <div className="cg-spike-pane-body">{body}</div>
+      {/* The REAL chrome wrapper, not a stand-in. The deck's inactive recede is
+          two blend layers on `.tug-pane-chrome::before/::after`, and it
+          establishes the stacking context that confines them — so a fixture
+          that skipped it showed every unfocused frame at full strength and
+          could not answer what a rail looks like on a card you are not using. */}
+      <div className="tug-pane-chrome">
+        {children}
+        <div className="cg-spike-pane-body">{body}</div>
+      </div>
     </div>
   );
 }
@@ -368,28 +342,37 @@ export function GalleryCardChrome(): React.ReactElement {
           <TugLabel className="cg-section-title">Tier 3 — rail (32px, flush)</TugLabel>
           <TugLabel size="2xs" emphasis="calm">
             A rail pins to a deck edge, takes its width from the allocator rather than a
-            preset, and insets the band the content cards live in. Every candidate below
-            shares a flush ground and a hairline divider — a rail reads as a panel, not a
-            card with a lid, and its ground does not light up with focus. What differs is
-            what the name wears. Pick one.
+            preset, and insets the band the content cards live in. So it says so: a flush
+            ground instead of the tinted title band, and racing stripes flanking a centered
+            glyph and tracked label. The ground never lights up with focus — that is what
+            flush means — and the stripes carry the state instead.
           </TugLabel>
 
-          {/* Lens, Jots and Gazette register no icon today — adopting the
-              `icon` variant means adding one to those three registrations. */}
-          {RAIL_VARIANTS.map((variant) => (
-            <SpikeRow key={variant.key} caption={`${variant.label} — ${variant.note}`}>
-              <SpikePane
-                focused={focused}
-                railVariant={variant.key}
-                body="Cards · Layouts · Sessions"
-              >
-                <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
-              </SpikePane>
-              <SpikePane focused={focused} railVariant={variant.key} body="Filter · New jot">
-                <CardTitleBar title="Jots" icon="NotebookPen" sidebar onClose={noop} />
-              </SpikePane>
-            </SpikeRow>
-          ))}
+          {/* Lens, Jots and Gazette register no icon today — adopting this
+              means adding one to those three registrations. */}
+          <SpikeRow caption="Focused and unfocused, together — the pair is the point, not either alone">
+            <SpikePane focused body="Cards · Layouts · Sessions">
+              <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
+            </SpikePane>
+            <SpikePane focused={false} body="Filter · New jot">
+              <CardTitleBar title="Jots" icon="NotebookPen" sidebar onClose={noop} />
+            </SpikePane>
+          </SpikeRow>
+
+          <TugLabel size="2xs" emphasis="calm">
+            The rail&apos;s own focus step is one notch of the global ladder per element —
+            hairline ink to strong for the stripes, muted to default for the label and
+            glyph. It is deliberately small: an unfocused pane is already dimmed deck-wide
+            by the two blend layers on <code>.tug-pane-chrome</code>, and a rail that also
+            dimmed itself hard would compound with that wash and vanish. A 1px stripe has
+            no contrast to give away twice.
+          </TugLabel>
+
+          <SpikeRow caption="Follows the checkbox, for stepping between the two">
+            <SpikePane focused={focused} body="Cards · Layouts · Sessions">
+              <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
+            </SpikePane>
+          </SpikeRow>
 
           <SpikeRow caption="As shipped, for comparison — a content card's bar on a rail">
             <SpikePane focused={focused} body="Cards · Layouts · Sessions">

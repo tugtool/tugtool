@@ -37,14 +37,17 @@
      (The session row states the same idea as `--tugx-session-row-title-inset`
      with `sub-align="title"`; this is that arithmetic for a plain icon.) */
   --tugx-card-masthead-gutter: 0px;
-  /* NO row gap. The leading between the lines is the LINE BOXES' — each line
-     pairs its size token with that size's line-height token (13/19, 12/17,
-     11/15), which is where the deck's vertical rhythm is stated. A gap here
-     would be a second, unrelated answer to the same question, and it is how
-     the first pass ended up with three lines mashed against the tier's top
-     edge and 15px of dead air under them. */
+  /* The TYPE in this tier is the session masthead's, value for value — the
+     approved ladder, not a second one invented beside it. Its line boxes are
+     size × `--tug-line-height-tight`, its steps are the session stack's lead
+     gap (3px) and line gap (1px), and its seat is the same arithmetic the
+     session masthead states: the lead line centered in the first
+     `--tug-chrome-height` band. One tier, one recipe, whoever wears it. */
   padding-block-start: calc(
-    (var(--tug-chrome-height) - var(--tug-line-height-sm)) / 2
+    (
+        var(--tug-chrome-height) - var(--tug-font-size-sm) *
+          var(--tug-line-height-tight)
+      ) / 2
   );
   /* The control cluster is a flex sibling that occupies only the FIRST band;
      the two beneath it are dead space. The negative margin takes this block
@@ -72,7 +75,10 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  block-size: var(--tug-line-height-sm);
+  block-size: calc(var(--tug-font-size-sm) * var(--tug-line-height-tight));
+  /* The session stack's lead gap — what makes the name read as the heading of
+     the pair beneath it, and the sub-lines read as one group. */
+  margin-block-end: 3px;
   padding-inline-end: calc(
     var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) +
       var(--tug-space-xs)
@@ -108,7 +114,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--tug-font-size-sm);
-  line-height: var(--tug-line-height-sm);
+  line-height: var(--tug-line-height-tight);
   font-weight: var(--tug-font-weight-medium);
   color: var(--tugx-pane-title-fg-inactive);
 }
@@ -128,17 +134,17 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* The session stack's inner step — the pair is tighter than the lead gap
+     above it, which is what makes it read as one group. */
+  gap: 1px;
   padding-inline-start: var(--tugx-card-masthead-gutter);
 }
 
-/* Three lines, three steps, on every axis at once — indent off the title, size
-   down the scale, and ink down the ladder. The first pass stepped only the ink
-   and set both sub-lines at `xs`, which made the path and the summary read as
-   the same thing said twice.
-
-   The ink ladder is the session masthead's (title full, 85%, 60%), mixed
-   rather than made translucent so a highlight inside a run keeps its own
-   paint. */
+/* The two sub-lines are the session masthead's two, exactly: the description
+   at the row size on 85% of the chrome foreground, the third line one size
+   down at 65% — the same faces, sizes, leadings, and ink strengths that tier
+   already ships under a session's name. Mixed rather than made translucent so
+   a highlight inside a run keeps its own paint. */
 
 /* @tug-renders-on: --tugx-pane-title-bar-bg-active */
 .card-masthead-description {
@@ -146,8 +152,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-font-size-xs);
-  line-height: var(--tug-line-height-xs);
+  font-size: var(--tug-font-size-sm);
+  line-height: calc(var(--tug-font-size-sm) * var(--tug-line-height-tight));
   color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 85%, transparent);
 }
 
@@ -157,9 +163,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-font-size-2xs);
-  line-height: var(--tug-line-height-2xs);
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 60%, transparent);
+  font-size: var(--tug-font-size-xs);
+  font-weight: var(--tug-font-weight-regular);
+  line-height: calc(var(--tug-font-size-xs) * var(--tug-line-height-tight));
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 65%, transparent);
 }
 
 /* A path clips its HEAD, so the filename it ends in survives the truncation

@@ -34,6 +34,16 @@
   box-shadow: var(--tugx-pane-shadow-active);
 }
 
+/* A deck absolutely positions every pane, and `chrome.css` repeats that for
+   UNFOCUSED panes so their dim overlay stacks correctly. The gallery has no
+   deck — these frames sit in normal flow — so an unfocused one dropped out of
+   flow and landed on top of the frame beside it. Taken back here, at a weight
+   that beats `.tug-pane:not([data-focused="true"])`, because the fixture owns
+   its own layout and nothing else about the pane's chrome depends on this. */
+.tug-pane.cg-spike-pane:not([data-focused="true"]) {
+  position: relative;
+}
+
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .cg-spike-pane-body {
   padding: var(--tug-space-md);

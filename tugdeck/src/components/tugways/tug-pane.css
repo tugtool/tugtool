@@ -328,19 +328,36 @@ body {
  * focus — that is the whole of what flush means, and a rail that lit up would
  * be a card with a lid again; the label carries focus instead.
  *
- * What a rail wears ON that ground is `data-rail-variant`, and it is an open
- * question with four candidate answers rendered side by side in the
- * `gallery-card-chrome` fixture. A tracked label alone on an empty bar was the
- * first pass and was not enough: at 11px with a lone close box at the far end,
- * the bar read as unfinished rather than as quiet.
+ * What a rail wears, settled by review: RACING STRIPES — three hairlines
+ * flanking a centered glyph and an uppercase tracked label. A bare label on an
+ * empty bar read as unfinished rather than as quiet; a sentence-case name read
+ * as a card title; a single rule filling the run read as a divider that lost
+ * its way. Three thin stripes read as livery, which is what a tool's bar
+ * should say next to a document's.
  *
- *   label     — the first pass. Uppercase, tracked, no glyph.
- *   icon      — an accent-tinted glyph and a sentence-case name.
- *   underline — the name over a short accent rule, like a selected tab.
- *   chip      — the name inside a raised pill, a tool's tag.
+ * ── Ink: the GLOBAL family, never the card-titlebar family ──
+ * Everything in this bar paints from `--tug7-element-global-*`, because a rail
+ * has given up the tinted title band and its ground is the pane's own content
+ * surface. The card-titlebar tokens (`--tugx-pane-title-fg-*`,
+ * `--tugx-pane-title-bar-icon-*`) are authored against that TINT, which is a
+ * saturated near-dark in the light themes — so in `harmony` the title ink is
+ * `blue l:980`, near-white, and the first pass painted a near-white label,
+ * glyph, and stripes onto a near-white rail. The bar was legible in the dark
+ * themes and all but invisible in the light ones. A surface change is a token
+ * FAMILY change; carrying the old family across is the whole of that bug.
  *
- * Exactly one survives adoption, and `data-rail-variant` goes away with the
- * losers: `TugPane` will pass only the role.
+ * ── The recede: one mechanism, not two ──
+ * An unfocused pane is already dimmed deck-wide by the two blend layers on
+ * `.tug-pane-chrome` (saturation kill + lightness wash), and those cover the
+ * title bar along with everything else. So the rail's own focus step is
+ * deliberately SMALL — one notch of the global ladder per element — and the
+ * deck's existing recede does the rest. A rail that also dimmed itself hard
+ * would compound with that wash and disappear on an inactive card, which is
+ * the failure the stripes are least able to survive: they are 1px, and 1px has
+ * no contrast left to give away twice.
+ *
+ * The three inks are published as knobs so the two states are stated once, as
+ * a pair, rather than restated at each of the four places they are drawn.
  *
  * The height is a knob with its default at the point of use — a theme retuning
  * the tier declares `--tug-rail-chrome-height`. The tier is redeclared on the
@@ -354,15 +371,42 @@ body {
 .tug-pane-title-bar[data-role="sidebar"] {
   --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 32px);
   padding-inline: var(--tug-space-sm);
-  /* The bar's own `space-between` distributes THREE children, so a variant
-     that shows a glyph got its name pushed to the bar's center, halfway to the
-     close box and nowhere near the icon it belongs to. A rail packs its name
-     against the leading edge and lets the controls claim the trailing one. */
+  /* The bar's own `space-between` distributes its children, which pushed the
+     name to the bar's center — halfway to the close box and nowhere near the
+     glyph it belongs to. The stripe bands do the centering here instead. */
   justify-content: flex-start;
+
+  /* The FOCUSED pair is the base, and the recede is the override — the
+     opposite polarity to the rest of this file, on purpose.
+     `.tug-pane[data-focused="true"] …` is a DESCENDANT selector, so it matches
+     a rail nested anywhere under any focused pane, not just one whose own pane
+     is focused. That is not hypothetical: the gallery mounts pane frames inside
+     a pane, and every rail in the fixture took the focused ink no matter what
+     its own frame said. Keying the recede off the pane's own
+     `:not([data-focused="true"])` cannot make that mistake — the nearest
+     unfocused ancestor is the one that wins, which is the answer we want.
+
+     `strong` reads as more contrast in BOTH directions (lighter than `default`
+     on a dark ground, darker on a light one), which is the property that lets
+     one rule serve all six themes. */
+  --tugx-rail-stripe-ink: var(--tug7-element-global-border-normal-strong-rest);
+  --tugx-rail-label-ink: var(--tug7-element-global-text-normal-default-rest);
+  --tugx-rail-icon-ink: var(--tug7-element-global-icon-normal-active-rest);
 }
 
+/* The recede: one notch down the same ladder, each. */
+.tug-pane:not([data-focused="true"]) .tug-pane-title-bar[data-role="sidebar"] {
+  --tugx-rail-stripe-ink: var(--tug7-element-global-border-normal-default-rest);
+  --tugx-rail-label-ink: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-rail-icon-ink: var(--tug7-element-global-icon-normal-muted-rest);
+}
+
+/* `order` so the bar's `::after` stripe band — a pseudo-element, and therefore
+   the LAST flex item in document order — lays out between the label and the
+   controls rather than past them. */
 .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title-bar-controls {
   margin-inline-start: auto;
+  order: 1;
 }
 
 /* Both states are stated because the focused title-bar rule below outranks a
@@ -373,122 +417,76 @@ body {
   background-color: var(--tugx-pane-bg);
 }
 
-/* The name, in every variant: content-width rather than stretched, so a
-   variant that draws a rule or a pill around it draws around the WORD and not
-   across the bar. The close box still sits at the far end — it is a sibling in
-   the controls cluster, which owns the trailing edge. */
+/* The name: content-width rather than stretched, so the stripe bands are
+   measured from the WORD's end and the reading centers on the word rather than
+   on a box that swallowed the bar. Uppercase and tracked — the voice Lens
+   already speaks in its own section bands, brought up into the chrome so the
+   bar and the bands below it read as one column. */
+/* @tug-renders-on: --tugx-pane-bg */
 .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
   flex: 0 1 auto;
-}
-
-/* A glyph belongs to the variants that asked for one. */
-.tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
-  display: none;
-}
-
-/* ---- variant: label — uppercase, tracked, no glyph ---------------------- */
-
-/* The voice Lens already speaks in its own section bands, brought up into the
-   chrome so the bar and the bands below it read as one column. */
-/* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="label"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
   font-size: var(--tug-font-size-2xs);
   font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 80%, transparent);
+  color: var(--tugx-rail-label-ink);
 }
 
+/* Stated at the focused rule's own weight, not left to inherit: the deck's
+   `.tug-pane[data-focused="true"] .tug-pane-title` and `… .tug-pane-icon` rules
+   carry (0,3,0) and sit LATER in this file, so a plainer selector here loses
+   the tie on source order and the bar takes the card-titlebar ink back — which
+   is exactly the near-white-on-near-white failure in the light themes. */
 /* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="label"][data-focused="true"]
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 80%, transparent);
+.tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  color: var(--tugx-rail-label-ink);
 }
 
-/* ---- variant: icon — an accent glyph and a sentence-case name ----------- */
-
-.tug-pane[data-rail-variant="icon"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
+/* The glyph — a tool wears its mark. */
+.tug-pane .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon,
+.tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
   display: inline-flex;
-  color: var(--tug7-element-global-icon-normal-active-rest);
+  color: var(--tugx-rail-icon-ink);
 }
 
-/* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="icon"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
-  font-size: var(--tug-font-size-sm);
-  font-weight: var(--tug-font-weight-medium);
-  color: var(--tugx-pane-title-fg-inactive);
-}
+/* ── The racing stripes ───────────────────────────────────────────────────
+   A band before the glyph and a band after the label, both flex-growing at
+   `flex-basis: 0` so the two resolve to the SAME width whatever the label's
+   length — the reading lands optically centered rather than wherever the
+   leftover happened to fall.
 
+   Three hairlines on a 3px pitch, drawn as one gradient so the set is one
+   shape with one height and one center. Thin deliberately: at 2px they read as
+   rules with a slot between them, which is furniture; at 1px on an even pitch
+   they read as livery. The band's 7px is its own arithmetic — three 1px lines
+   and two 2px gaps — so the middle stripe lands on the band's exact center. */
 /* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="icon"][data-focused="true"]
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  color: var(--tugx-pane-title-fg-active);
-}
-
-/* ---- variant: underline — the name over a short accent rule ------------- */
-
-/* The rule is the width of the WORD, which is what makes it read as a tab
-   indicator rather than as a second divider. It sits inside the bar's own
-   height, so this variant costs no extra tier. */
-/* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="underline"]
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  font-size: var(--tug-font-size-xs);
-  font-weight: var(--tug-font-weight-semibold);
-  letter-spacing: 0.03em;
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 85%, transparent);
-  padding-block-end: 3px;
-  border-block-end: 2px solid var(--tug7-element-global-fill-normal-accent-rest);
-  /* The rule is drawn on the text's own box, so the box has to sit where the
-     text does — the bar centers it, and the border adds to the bottom. */
+.tug-pane-title-bar[data-role="sidebar"]::before,
+.tug-pane-title-bar[data-role="sidebar"]::after {
+  content: "";
+  flex: 1 1 0;
   align-self: center;
-  margin-block-start: 5px;
-}
-
-/* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-rail-variant="underline"][data-focused="true"]
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  color: var(--tugx-pane-title-fg-active);
-}
-
-/* An unfocused rail's rule steps back rather than vanishing — the indicator is
-   telling you WHICH rail this is, which stays true when the focus leaves. */
-.tug-pane[data-rail-variant="underline"]:not([data-focused="true"])
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  border-block-end-color: color-mix(
-    in oklab,
-    var(--tug7-element-global-fill-normal-accent-rest) 45%,
-    transparent
+  min-inline-size: var(--tug-space-md);
+  block-size: 7px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--tugx-rail-stripe-ink) 0 1px,
+    transparent 1px 3px
   );
 }
 
-/* ---- variant: chip — the name inside a raised pill ---------------------- */
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-raised-rest */
-.tug-pane[data-rail-variant="chip"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
-  font-size: var(--tug-font-size-2xs);
-  font-weight: var(--tug-font-weight-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 85%, transparent);
-  background-color: var(--tug7-surface-global-primary-normal-raised-rest);
-  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
-  border-radius: var(--tug-radius-sm);
-  padding: 1px var(--tug-space-sm);
-  align-self: center;
+.tug-pane-title-bar[data-role="sidebar"]::before {
+  margin-inline-end: var(--tug-space-sm);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-raised-rest */
-.tug-pane[data-rail-variant="chip"][data-focused="true"]
-  .tug-pane-title-bar[data-role="sidebar"]
-  .tug-pane-title {
-  color: var(--tugx-pane-title-fg-active);
-  border-color: var(--tug7-element-global-fill-normal-accent-rest);
+/* The trailing band stops short of the CONTROLS as well as starting clear of
+   the label — the close box is a pressable object with its own hover fill, and
+   a texture running into its edge reads as the button's own furniture. More
+   air on that side than on the label's, because the button's box is bigger
+   than its glyph and the gap the eye measures is to the glyph. */
+.tug-pane-title-bar[data-role="sidebar"]::after {
+  margin-inline-start: var(--tug-space-sm);
+  margin-inline-end: var(--tug-space-md);
 }
 
 /* When a tab bar sits directly below, drop the title-bar divider so the title
