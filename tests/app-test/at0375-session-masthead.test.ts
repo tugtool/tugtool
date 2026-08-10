@@ -744,6 +744,249 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
   );
 
   test(
+    "the Session Summary panel keys its rows and clips neither chip",
+    async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375e-"));
+      const app = await launchTugApp({
+        testName: "at0375-session-summary",
+      });
+      try {
+        await app.seedDeckState({ state: deckShape(["S"], "S"), focusCardId: "S" });
+        await app.bindSession("S", {
+          tugSessionId: SESSION_ID,
+          projectDir: dir,
+        });
+        // A name long enough that the atom cannot fit the panel's value column.
+        // The whole claim here is about what happens THEN: a chip that runs out
+        // of room elides its own run inside its own border, and a panel that
+        // clips it instead is the regression.
+        await app.evalJS<boolean>(
+          `window.__tug.publishSessionUpdated(${JSON.stringify(
+            sessionUpdated({
+              tag: TAG,
+              name: "rework how a session names itself across every surface",
+              name_user_set: true,
+            }),
+          )})`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        await app.click(`${PANE} [data-slot="session-masthead-widget"]`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="session-masthead-telemetry"]') !== null`,
+          { timeoutMs: 5000 },
+        );
+
+        // The panel says what it is.
+        const title = await app.getElementText(
+          '[data-slot="session-masthead-telemetry"] .tug-popup-list-title-text',
+        );
+        expect(title).toBe("Session Summary");
+
+        // The gallery's row set, in the gallery's order, keyed rather than
+        // sentence-cased. CREATED reads COMPACTED for a `/compact`-born
+        // session, which is the same rung wearing the other verb.
+        const labels = await app.evalJS<string[]>(
+          `Array.from(document.querySelectorAll(
+             '[data-slot="session-masthead-telemetry"] .session-masthead-telemetry-label'),
+           ).map(function(el){ return el.textContent || ""; })`,
+        );
+        note("summary labels", labels.join(" / "));
+        expect(labels).toEqual([
+          "STATE",
+          "TURNS",
+          "CREATED",
+          "BRANCH",
+          "ATOM",
+          "CITATION",
+        ]);
+
+        // Nothing sticks out of the panel. Measured against the panel's own
+        // padding box, which is what the reader sees as its edge.
+        const fit = await app.evalJS<{
+          panel: number;
+          atomRight: number;
+          citationRight: number;
+          atomLeft: number;
+          panelLeft: number;
+          elided: boolean;
+          badges: number;
+          citationMono: boolean;
+          citationCut: boolean;
+          citationSize: string;
+        }>(
+          `(function(){
+            var panel = document.querySelector('[data-slot="session-masthead-telemetry"]');
+            var pr = panel.getBoundingClientRect();
+            var atom = panel.querySelector('.session-masthead-telemetry-atom');
+            var cite = panel.querySelector('.session-masthead-telemetry-citation');
+            var run = atom.querySelector('.tug-session-identity-callsign')
+              || atom.querySelector('.tug-session-identity-name');
+            return {
+              panel: Math.round(pr.right),
+              panelLeft: Math.round(pr.left),
+              atomRight: Math.round(atom.getBoundingClientRect().right),
+              atomLeft: Math.round(atom.getBoundingClientRect().left),
+              citationRight: Math.round(cite.getBoundingClientRect().right),
+              // Flat text, not a chip: exactly ONE enclosure in the pair, and
+              // it belongs to the atom. A badge here put a bordered, tinted,
+              // icon-bearing box on the quieter of the two rows.
+              badges: panel.querySelectorAll('.tug-copy-badge, .tug-badge').length,
+              citationMono: getComputedStyle(cite).fontFamily.indexOf('Mono') >= 0,
+              // The citation is the panel's longest line and the one fact a
+              // reader is here to take away — the panel is sized so it fits
+              // whole rather than ending in an ellipsis mid-id.
+              citationCut: cite.scrollWidth > cite.clientWidth,
+              citationSize: getComputedStyle(cite).fontSize,
+              // The chip gave way inside its own border rather than being cut.
+              elided: run.scrollWidth > run.clientWidth,
+            };
+          })()`,
+        );
+        note("summary fit", JSON.stringify(fit));
+        expect(fit.atomRight).toBeLessThanOrEqual(fit.panel);
+        expect(fit.citationRight).toBeLessThanOrEqual(fit.panel);
+        expect(fit.atomLeft).toBeGreaterThanOrEqual(fit.panelLeft);
+        expect(fit.elided).toBe(true);
+        expect(fit.badges).toBe(0);
+        expect(fit.citationMono).toBe(true);
+        expect(fit.citationCut).toBe(false);
+
+        // ---- The two copyable rows each carry a COPY, and only those two. ---
+        const copies = await app.evalJS<string[]>(
+          `Array.from(document.querySelectorAll(
+             '[data-slot="session-masthead-telemetry"] .session-masthead-telemetry-row'),
+           ).map(function(row){
+             var key = (row.querySelector('.session-masthead-telemetry-label').textContent || "");
+             var btn = row.querySelector('[data-slot="session-masthead-telemetry-copy"]');
+             return key + "=" + (btn === null ? "-" : (btn.getAttribute('aria-label') || "?"));
+           })`,
+        );
+        note("summary copies", copies.join(" | "));
+        // And each one sits BESIDE its value, not out at the panel's edge.
+        // The gap is measured against the row's own column gap; a button
+        // parked on the right edge leaves a run of empty panel between the
+        // fact and the control that copies it.
+        const gaps = await app.evalJS<number[]>(
+          `Array.from(document.querySelectorAll(
+             '[data-slot="session-masthead-telemetry"] ' +
+             '.session-masthead-telemetry-row:has([data-slot="session-masthead-telemetry-copy"])'),
+           ).map(function(row){
+             var v = row.querySelector('.session-masthead-telemetry-value').getBoundingClientRect();
+             var b = row.querySelector('[data-slot="session-masthead-telemetry-copy"]')
+               .getBoundingClientRect();
+             return Math.round(b.left - v.right);
+           })`,
+        );
+        note("copy gaps", JSON.stringify(gaps));
+        expect(gaps).toHaveLength(2);
+        for (const gap of gaps) {
+          expect(gap).toBeGreaterThanOrEqual(0);
+          expect(gap).toBeLessThanOrEqual(16);
+        }
+        expect(copies).toEqual([
+          "STATE=-",
+          "TURNS=-",
+          "CREATED=-",
+          "BRANCH=-",
+          "ATOM=Copy session atom",
+          "CITATION=Copy session citation",
+        ]);
+
+        // And the atom answers RIGHT-CLICK with a Copy of its own — the
+        // gesture every Tug chip carries, which here writes the atom's whole
+        // flavor set (citation on `text/plain`, the sidecar beside it) rather
+        // than the visible string. The harness cannot read a custom clipboard
+        // flavor (see at0376), so what is pinned here is that the chip inside
+        // this popover CLAIMS the gesture: a menu with an enabled Copy. The
+        // popover is opened with `dismissOnChainActivity={false}` precisely so
+        // this copy does not dismiss the panel out from under itself.
+        // Dispatched rather than driven from the mouse, exactly as at0376 does
+        // it: what is under test is the chip's own `onContextMenu`, and a
+        // trusted right-click inside a portaled popover in a background window
+        // is a second subsystem this assertion has no business depending on.
+        await app.evalJS<null>(`(function(){
+          var chip = document.querySelector(
+            '[data-slot="session-masthead-telemetry"] .session-masthead-telemetry-atom');
+          var r = chip.getBoundingClientRect();
+          chip.dispatchEvent(new MouseEvent("contextmenu", {
+            bubbles: true,
+            clientX: Math.round(r.left + r.width / 2),
+            clientY: Math.round(r.top + r.height / 2),
+          }));
+          return null;
+        })()`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="tug-editor-context-menu"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+        const menu = await app.evalJS<{ items: string[]; panel: number }>(
+          `(function(){
+            var menu = document.querySelector('[data-slot="tug-editor-context-menu"]');
+            return {
+              items: Array.from(menu.querySelectorAll('[role="menuitem"]'))
+                .filter(function(el){ return el.getAttribute('aria-disabled') !== 'true'; })
+                .map(function(el){ return (el.textContent || "").trim(); }),
+              // The panel is still up: the copy must not dismiss what it was
+              // launched from.
+              panel: document.querySelectorAll(
+                '[data-slot="session-masthead-telemetry"]').length,
+            };
+          })()`,
+        );
+        note("atom context menu", JSON.stringify(menu));
+        expect(menu.items.some((item) => item.includes("Copy"))).toBe(true);
+        expect(menu.panel).toBe(1);
+        await app.nativeKey("Escape");
+
+        // ---- The ATOM button writes the ATOM, not the citation. ------------
+        //
+        // Clicked for real, then read back off the REAL pasteboard through the
+        // production parser — the two functions the editor's own paste handler
+        // calls. A `text/plain`-only write would still look right in every
+        // assertion above and in any paste outside Tug; the sidecar is the
+        // whole difference between pasting a chip and pasting a string, and it
+        // is invisible unless something reads the private flavor.
+        await app.click(
+          `[data-slot="session-masthead-telemetry"] ` +
+            `.session-masthead-telemetry-row[data-enclosed="true"] ` +
+            `[data-slot="session-masthead-telemetry-copy"]`,
+        );
+        await app.evalJS<null>(
+          `(window.__at0375sidecar = undefined,
+            window.__tug.readClipboardAtoms().then(function (r) {
+              window.__at0375sidecar = JSON.stringify(r);
+            }),
+            null)`,
+        );
+        await app.waitForCondition<boolean>(
+          `window.__at0375sidecar !== undefined`,
+          { timeoutMs: 8000 },
+        );
+        const sidecar = JSON.parse(
+          await app.evalJS<string>(`window.__at0375sidecar`),
+        ) as {
+          text: string;
+          atoms: Array<{ type: string; label: string; value: string }>;
+        } | null;
+        note("atom button sidecar", JSON.stringify(sidecar));
+        expect(sidecar).not.toBeNull();
+        expect(sidecar?.atoms).toHaveLength(1);
+        expect(sidecar?.atoms[0]?.type).toBe("session");
+        expect(sidecar?.atoms[0]?.label).toContain(TAG);
+        expect(sidecar?.atoms[0]?.value).toBe(sidecar?.atoms[0]?.label);
+      } finally {
+        await app.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "clicking the pulse line opens its history without flashing the title bar",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375d-"));

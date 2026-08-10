@@ -32,12 +32,18 @@
  *      right-click — a title that silently ignored it would leave the telemetry
  *      popover as the only door.
  *
+ *   D. **A DOM paste re-materializes the chip.** The copy is written natively,
+ *      to the private pasteboard type, exactly because WebKit swallows custom
+ *      MIME types — so a DOM `paste` event's `clipboardData` cannot see it, and
+ *      the paste fell through to plain text: the atom landing in the composer
+ *      as its citation string. The event here is dispatched with an EMPTY
+ *      `clipboardData`, which is the shape of the real hazard — everything the
+ *      paste needs is on the pasteboard and none of it is in the event.
+ *
  * `pbpaste` cannot see a private pasteboard type, which is why B goes through
- * the app rather than the shell. The keystroke half of a paste is deliberately
- * not driven here: ⌘V in this harness routes to the DOM paste event, whose
- * `clipboardData` never carries a custom type — a harness limitation, not a
- * product one, and one that would make the assertion test the harness rather than
- * the atom.
+ * the app rather than the shell. The KEYSTROKE half is still not driven here:
+ * ⌘V does not reach the web layer in this harness at all. D covers the branch
+ * that keystroke lands in, which is the part that was broken.
  *
  * Foreground: the copy and the pasteboard reads want a key window.
  *
@@ -47,6 +53,7 @@
  * @covers tugdeck/src/lib/tug-atom-img.ts
  * @covers tugdeck/src/components/tugways/use-copyable-text.tsx
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/clipboard-filters.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -294,6 +301,51 @@ describe.skipIf(!SHOULD_RUN)("at0376 — the session atom on the clipboard", () 
           .some((item) => item.label.includes("Copy") && !item.disabled);
         expect(liveCopy).toBe(true);
         await app.nativeKey("Escape");
+
+        // ---- D. And a DOM paste re-materializes the chip. ------------------
+        //
+        // The copy is written NATIVELY, to the Tug-private
+        // `dev.tug.prompt-atoms` pasteboard type, precisely because WebKit's
+        // pasteboard normalization swallows custom MIME types. The consequence
+        // is that a DOM `paste` event's `clipboardData` cannot see it: the
+        // handler's `getData(TUG_ATOMS_MIME)` branch comes back empty for a
+        // clipboard that demonstrably carries an atom (A and B above just put
+        // one there), and the paste used to fall through to plain text — the
+        // atom arriving in the composer as its citation string.
+        //
+        // The event is dispatched with an EMPTY clipboardData, which is exactly
+        // the shape of the real hazard: everything the paste needs is on the
+        // pasteboard and none of it is in the event.
+        await app.focusElement(COMPOSER);
+        const before = await app.evalJS<number>(
+          `document.querySelectorAll(${JSON.stringify(COMPOSER)} + ' img:not(.cm-widgetBuffer)').length`,
+        );
+        await app.evalJS<null>(`(function(){
+          var cm = document.querySelector(${JSON.stringify(COMPOSER)});
+          cm.dispatchEvent(new ClipboardEvent("paste", {
+            bubbles: true, cancelable: true, clipboardData: new DataTransfer(),
+          }));
+          return null;
+        })()`);
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(COMPOSER)} + ' img:not(.cm-widgetBuffer)').length > ${before}`,
+          { timeoutMs: 8_000 },
+        );
+        const pasted = await app.evalJS<{ atoms: number; text: string }>(
+          `(function(){
+            var cm = document.querySelector(${JSON.stringify(COMPOSER)});
+            return {
+              atoms: cm.querySelectorAll('img:not(.cm-widgetBuffer)').length,
+              text: Array.from(cm.querySelectorAll('.cm-line'))
+                .map(function(l){ return l.textContent || ""; }).join("").slice(0, 60),
+            };
+          })()`,
+        );
+        note("at0376 pasted composer", `${before} → ${JSON.stringify(pasted)}`);
+        // Exactly one MORE chip than the composer already held.
+        expect(pasted.atoms).toBe(before + 1);
+        // The chip is the whole paste — not the citation typed out beside it.
+        expect(pasted.text).not.toContain(TAG);
       } finally {
         await app.close();
       }

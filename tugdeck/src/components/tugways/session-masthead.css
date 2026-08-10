@@ -408,8 +408,15 @@
    the masthead's two popovers read as one family. The frame owns the titlebar
    and the padding; this sets the width and the rows inside it. */
 
+/* Wide enough for the CITATION whole. The panel's longest line is
+   `<project>/<callsign> (<short-id>)` — a fixed grammar, not open-ended prose —
+   and 320px (the gallery's mock width, which draws no project prefix and no
+   trailing copy) cut it mid-id on a real project. A panel of six facts that
+   truncates the one fact you would copy is showing you the least useful part of
+   it. The rows still elide if a long branch or a long project pushes past this;
+   what the width buys is that the ordinary case never does. */
 .session-masthead-telemetry {
-  inline-size: 320px;
+  inline-size: 400px;
 }
 
 .session-masthead-telemetry-body {
@@ -419,32 +426,100 @@
   padding: var(--tug-space-sm) var(--tug-space-md);
 }
 
+/* A GRID, not a flex pair, and the gallery's own track sizes: a fixed label
+   column and `minmax(0, 1fr)` for the value, so a value that cannot fit shrinks
+   instead of pushing the panel's right edge out from under it. Centered rather
+   than baseline-aligned, because two of the six values are bordered chips whose
+   baseline sits below their border. */
+/* Three tracks: the key, the value SIZED TO ITS CONTENT, and the slack. The
+   copy sits in the middle track's shadow rather than out at the panel's right
+   edge — an affordance belongs beside the thing it acts on, and a button flush
+   right leaves a run of empty panel between the citation and the control that
+   copies it, which reads as two unrelated things on one row. `minmax(0, …)`
+   keeps the value shrinkable, so a value too long for the panel still elides
+   instead of pushing its own button off the edge. */
 .session-masthead-telemetry-row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tug-space-sm);
-  min-width: 0;
+  display: grid;
+  grid-template-columns: 5rem minmax(0, max-content) 1fr;
+  align-items: center;
+  column-gap: var(--tug-space-sm);
+  /* The action track's own height, reserved on EVERY row. A copy button is
+     taller than a line of 12px text, so rows that carry one would otherwise
+     stand taller than the four that do not, and the panel's leading would go
+     uneven halfway down. */
+  min-block-size: var(--tug-control-size-2xs, 20px);
+}
+
+/* The label is a KEY — small, letter-spaced, and set in the ambient sans. The
+   frame paints everything that is not its titlebar in mono (it hosts tabular
+   logs), which turned this panel into a wall of monospace no other identity
+   surface wears; the two rules below take the panel's own type back, and the
+   citation opts into mono deliberately further down. */
+/* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
+.session-masthead-telemetry-label {
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-2xs, 10px);
+  letter-spacing: 0.14em;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 /* @tug-renders-on var(--tug7-surface-popover-primary-normal-default-rest) */
-.session-masthead-telemetry-label {
-  flex: none;
-  inline-size: 84px;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  font-size: var(--tug-font-size-xs);
-}
-
 .session-masthead-telemetry-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tug-space-xs);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-font-size-sm);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-default-rest);
 }
 
-/* The citation is flat text, and flat text is where monospace belongs. */
+/* The COPY, immediately after its value. Declared on every row (empty on four
+   of them) so the track exists uniformly and the rows keep one leading. */
+.session-masthead-telemetry-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* An ENCLOSED value — the atom's pill, the citation's badge — is a bordered
+   thing, and `overflow: hidden` on the cell around it cuts the border off
+   mid-curve rather than eliding the text. So the cell stops clipping and the
+   chip is made shrinkable instead: it already elides its own run inside its own
+   border ([D132]'s two-register rule — on the atom the minted callsign is what
+   gives way), which is what the gallery draws. */
+.session-masthead-telemetry-row[data-enclosed="true"]
+  .session-masthead-telemetry-value {
+  overflow: visible;
+}
+
+.session-masthead-telemetry-row[data-enclosed="true"]
+  .session-masthead-telemetry-value
+  > * {
+  min-width: 0;
+  max-inline-size: 100%;
+}
+
+/* The citation is flat text, and flat text is where monospace belongs — and it
+   is flat text HERE too, not a badge. Its cell is an ordinary one, so the run
+   elides with an ellipsis like every other string in the panel; the atom above
+   it is the enclosed form of the same session, and one enclosure per pair is
+   the whole distinction between the two rows. */
 .session-masthead-telemetry-citation {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--tug-font-family-mono);
+  /* A step down from the sans values above it. Monospace at a shared nominal
+     size reads LARGER than the sans beside it — wider glyphs, no fitting — so
+     the citation was the loudest run in a panel where it is the quietest fact,
+     and it was also the run most likely to reach the edge. One step down puts
+     it back in the ladder and buys the longest line in the panel its width. */
+  font-size: var(--tug-font-size-2xs, 10px);
 }
 
 /* The rendered atom, pulled left by the pill's own inline padding so its RUN

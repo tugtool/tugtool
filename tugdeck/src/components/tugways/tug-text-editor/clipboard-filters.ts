@@ -53,6 +53,10 @@ import {
 } from "./atom-decoration";
 import { processAttachmentFiles } from "./drop-extension";
 import type { AtomBytesEntry, AtomBytesStore } from "@/lib/atom-bytes-store";
+import {
+  hasNativeClipboardBridge,
+  readClipboardViaNative,
+} from "@/lib/tug-native-clipboard";
 
 // ---------------------------------------------------------------------------
 // Wire format
@@ -367,6 +371,40 @@ function extractImageFiles(
  * since clipboards with image items don't usually carry the
  * substrate's atom sidecar.
  */
+/**
+ * Insert a parsed sidecar at the selection: its text, its atoms placed at their
+ * carried offsets, and any image bytes rehydrated into this card's store first
+ * so the reconstituted chips resolve non-pending immediately.
+ *
+ * One implementation for both routes into an atom paste — the DOM event's own
+ * `application/x-tug-atoms`, and the native pasteboard read below it. They
+ * inserted the same thing two ways before, which is one edit away from two
+ * behaviors for one gesture.
+ */
+export function insertSidecar(
+  view: EditorView,
+  sidecar: TugAtomsClipboardPayload,
+  bytesStore: AtomBytesStore | null,
+): void {
+  rehydrateSidecarBytes(sidecar, bytesStore);
+  const { from, to } = view.state.selection.main;
+  const placedAtoms: PositionedAtom[] = sidecar.atoms.map((a) => ({
+    position: from + a.position,
+    segment: a.segment,
+  }));
+  view.dispatch({
+    changes: { from, to, insert: sidecar.text },
+    effects: placedAtoms.length > 0 ? addAtomsEffect.of(placedAtoms) : [],
+    selection: { anchor: from + sidecar.text.length },
+    userEvent: "input.paste",
+    // Reveal the caret after the paste — without this the sidecar-paste path
+    // leaves the caret below the fold on a paste that overflows the visible
+    // rows. (The `keepCaretVisible` listener also re-checks post-layout, but
+    // flag the transaction too for the immediate case.)
+    scrollIntoView: true,
+  });
+}
+
 function handlePaste(
   view: EditorView,
   event: ClipboardEvent,
@@ -402,30 +440,54 @@ function handlePaste(
   if (sidecarRaw !== "") {
     const sidecar = parseClipboardSidecar(sidecarRaw);
     if (sidecar !== null) {
-      // Rehydrate any carried image bytes into this card's store first,
-      // so the reconstituted chips resolve non-pending immediately.
-      rehydrateSidecarBytes(sidecar, bytesStore);
-      const { from, to } = view.state.selection.main;
-      const placedAtoms: PositionedAtom[] = sidecar.atoms.map((a) => ({
-        position: from + a.position,
-        segment: a.segment,
-      }));
-
-      view.dispatch({
-        changes: { from, to, insert: sidecar.text },
-        effects: placedAtoms.length > 0 ? addAtomsEffect.of(placedAtoms) : [],
-        selection: { anchor: from + sidecar.text.length },
-        userEvent: "input.paste",
-        // Reveal the caret after the paste — without this the sidecar-paste
-        // path leaves the caret below the fold on a paste that overflows the
-        // visible rows. (The `keepCaretVisible` listener also re-checks
-        // post-layout, but flag the transaction too for the immediate case.)
-        scrollIntoView: true,
-      });
-
+      insertSidecar(view, sidecar, bytesStore);
       event.preventDefault();
       return true;
     }
+  }
+
+  // Branch 2b: the sidecar is on the PASTEBOARD but not in this event.
+  //
+  // Inside Tug.app an atom copy is written natively, to the Tug-private
+  // `dev.tug.prompt-atoms` pasteboard type — the whole reason that path exists
+  // is that WebKit's pasteboard normalization swallows custom MIME types. The
+  // consequence is that a DOM `paste` event's `clipboardData` cannot see it:
+  // `getData(TUG_ATOMS_MIME)` above comes back empty for a clipboard that
+  // demonstrably carries an atom, and the paste falls through to plain text.
+  // That is a session atom copied from the Session Summary panel, a Gazette
+  // ref, or a History line landing in the composer as its citation string.
+  //
+  // The editor's own ⌘V responder action reads the native bridge and does the
+  // right thing; this branch is for every paste that reaches the DOM event
+  // instead — a menu Paste, a middle-click, a keystroke WebKit handled before
+  // the chain saw it. Claim the event and ask the bridge.
+  //
+  // Deliberately narrow: only when the bridge exists (inside Tug.app), only
+  // after the DOM has been given every chance above, and the read's own plain
+  // text is the fallback — so a clipboard with no sidecar still pastes exactly
+  // what it would have pasted, just via one async hop.
+  if (hasNativeClipboardBridge()) {
+    event.preventDefault();
+    const domText = dt.getData("text/plain");
+    void readClipboardViaNative().then(({ text, atoms }) => {
+      const sidecar = atoms !== "" ? parseClipboardSidecar(atoms) : null;
+      if (sidecar !== null) {
+        insertSidecar(view, sidecar, getBytesStore());
+        return;
+      }
+      const plain = text !== "" ? text : domText;
+      if (plain === "") return;
+      const late = getPastedCommandResolver();
+      if (late !== null && tryInsertLeadingCommandPaste(view, plain, late)) return;
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: plain },
+        selection: { anchor: from + plain.length },
+        userEvent: "input.paste",
+        scrollIntoView: true,
+      });
+    });
+    return true;
   }
 
   // Branch 3: external plain text whose first position is an exact slash

@@ -66,7 +66,6 @@ import React, {
 } from "react";
 import { Waves } from "lucide-react";
 
-import { TugCopyBadge } from "@/components/tugways/tug-copy-badge";
 import {
   TugPopover,
   TugPopoverAnchor,
@@ -84,9 +83,12 @@ import {
 import { SessionPulseCard } from "@/components/tugways/cards/pulse-card";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
+import { useSessionPhase } from "@/lib/code-session-store/use-session-phase";
+import { SESSION_PHASE_LABELS } from "@/lib/code-session-store/session-phase-visual";
 import {
   sessionActivityBeat,
   sessionActivityRestLine,
@@ -125,7 +127,11 @@ import {
   getSessionActivityStore,
   isRateChannel,
 } from "@/lib/session-activity-store";
-import { sessionCitation, useSessionIdentity } from "@/lib/session-identity";
+import {
+  sessionCitation,
+  useSessionIdentity,
+  type SessionIdentity,
+} from "@/lib/session-identity";
 import {
   getSessionLedgerStore,
   useSessionLedger,
@@ -481,26 +487,128 @@ function PulseLineText({
   );
 }
 
-/** One telemetry row: a quiet label and its value. */
+/**
+ * One telemetry row: a quiet label and its value.
+ *
+ * `enclosed` names a value that is a bordered thing of its own — the atom's
+ * pill, the citation's badge — rather than a run of text. The distinction is
+ * about CLIPPING: a text value is cut with an ellipsis by the cell around it,
+ * and doing that to a pill cuts the pill's border off mid-curve. An enclosed
+ * value is handed a cell that does not clip and shrinks it instead, and the
+ * chip elides its own run inside its own border, which is what the gallery
+ * draws.
+ */
 function TelemetryRow({
   label,
+  enclosed = false,
+  action,
   children,
 }: {
   label: string;
+  enclosed?: boolean;
+  /** A trailing affordance for this row — the two copyable rows carry one. */
+  action?: React.ReactNode;
   children: React.ReactNode;
 }): React.ReactElement {
   return (
-    <div className="session-masthead-telemetry-row">
+    <div
+      className="session-masthead-telemetry-row"
+      data-enclosed={enclosed ? "true" : undefined}
+    >
       <span className="session-masthead-telemetry-label">{label}</span>
       <span className="session-masthead-telemetry-value">{children}</span>
+      {/* The cell is declared on EVERY row, empty or not, so the value column
+          is one width down the whole panel — a track that appeared on two rows
+          would step those two values in from the four above them. */}
+      <span className="session-masthead-telemetry-action">{action}</span>
     </div>
   );
 }
 
-/** A stamp as a local date-time, or an em dash when the ledger has none. */
+/**
+ * The trailing COPY on a row whose value is copyable.
+ *
+ * `BlockCopyButton` is the suite's copy affordance and this is the shape a
+ * popup already uses for it (see `PopupCopyButton`) — icon-only here, because
+ * the row's key already says what is being copied and a `COPY` word beside a
+ * one-line value would out-weigh it.
+ *
+ * `copyAction` rather than `getText` for both, because the atom's write is not
+ * a text write: it puts the citation on `text/plain` AND the atom sidecar on
+ * `dev.tug.prompt-atoms`, which is what makes a paste back into a Tug surface
+ * re-materialize the live chip rather than a string ([D132]). It returns
+ * `false` when the native bridge is absent (a browser-mode run), and the
+ * plain-text write is the fallback — the same two-step `useCopyableText`
+ * performs for the right-click path, so the button and the menu cannot copy
+ * two different things.
+ */
+function TelemetryCopy({
+  label,
+  text,
+  atom,
+}: {
+  label: string;
+  text: string;
+  atom?: SessionIdentity;
+}): React.ReactElement {
+  const copy = useCallback(async (): Promise<boolean> => {
+    if (atom !== undefined && writeSessionAtomToClipboard(atom)) return true;
+    if (text.length === 0) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  }, [atom, text]);
+  return (
+    <BlockCopyButton
+      subtype="icon"
+      emphasis="ghost"
+      size="2xs"
+      aria-label={label}
+      data-slot="session-masthead-telemetry-copy"
+      copyAction={copy}
+    />
+  );
+}
+
+/**
+ * A stamp in the resting line's own format — `Aug 8, 7:02 AM` — or an em dash
+ * when the ledger has none.
+ *
+ * Deliberately not `toLocaleString()`, which spelled a date the panel already
+ * says elsewhere as `8/9/2026, 1:17:45 PM`: seconds nobody reads, a numeric
+ * date beside a row of prose, and a width that pushed the value column past
+ * the panel's own edge. One session, one way of saying when.
+ */
 function stamp(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "—";
-  return new Date(ms).toLocaleString();
+  return formatRestingStamp(ms);
+}
+
+/**
+ * The STATE row: the ledger's own word for the session, and what it is doing
+ * right now beside it.
+ *
+ * A LEAF for the same reason `TelemetryBirthRow` is one — `useSessionPhase`
+ * reads the per-card `codeSessionStore`, whose snapshot changes on every
+ * transcript event, and subscribing to it up in `SessionMasthead` would wake
+ * the whole identity tier on each one ([P15]). A closed popover mounts no
+ * content, so this subscription exists only while the panel is open.
+ */
+function TelemetryStateRow({
+  sessionId,
+  state,
+}: {
+  sessionId: string;
+  state: string | null | undefined;
+}): React.ReactElement {
+  const phase = useSessionPhase(sessionId);
+  // Lower-cased to sit beside the ledger's own lower-case state word: the pair
+  // is one reading of one session, not a sentence and a label.
+  const doing = SESSION_PHASE_LABELS[phase].toLowerCase();
+  return (
+    <TelemetryRow label="STATE">
+      {state != null && state.length > 0 ? `${state} · ${doing}` : doing}
+    </TelemetryRow>
+  );
 }
 
 /**
@@ -537,7 +645,7 @@ function TelemetryBirthRow({
     () => false,
   );
   return (
-    <TelemetryRow label={compacted ? "Compacted" : "Created"}>
+    <TelemetryRow label={compacted ? "COMPACTED" : "CREATED"}>
       {stamp(createdAtMs)}
     </TelemetryRow>
   );
@@ -649,6 +757,12 @@ export function SessionMasthead({
     sessionCitation(identity, { project: true }),
     () => writeSessionAtomToClipboard(identity),
   );
+  // Right-click the SUMMARY panel's citation → Copy that flat string alone. The
+  // title's gesture above writes the atom's whole flavor set; this one writes
+  // exactly the text the row is showing, which is the point of the row.
+  const copyCitation = useCopyableButton(
+    sessionCitation(identity, { project: true }),
+  );
   // One node, two readers: the copy hook's own callback ref and the popover's
   // anchor ref.
   const copyRef = copyLine.ref;
@@ -745,6 +859,7 @@ export function SessionMasthead({
       />
       {copyAtom.contextMenu}
       {copyLine.contextMenu}
+      {copyCitation.contextMenu}
 
       {/*
         The recent-pulses history, anchored on the line it is the history OF.
@@ -799,16 +914,17 @@ export function SessionMasthead({
         </TugPopoverTrigger>
         <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>
           <TugPopupListFrame
-            title="Session"
+            title="Session Summary"
             kind="item"
             className="session-masthead-telemetry"
             data-slot="session-masthead-telemetry"
           >
             <div className="session-masthead-telemetry-body">
-              <TelemetryRow label="State">
-                {row?.state ?? identity.state ?? "—"}
-              </TelemetryRow>
-              <TelemetryRow label="Turns">
+              <TelemetryStateRow
+                sessionId={sessionId}
+                state={row?.state ?? identity.state}
+              />
+              <TelemetryRow label="TURNS">
                 {row === null
                   ? "—"
                   : row.file_size != null && row.file_size > 0
@@ -817,15 +933,31 @@ export function SessionMasthead({
               </TelemetryRow>
               {/* The card's Z0 load-control bar used to carry this same line;
                   the telemetry panel is where session telemetry lives now, so
-                  it says it once. */}
+                  it says it once.
+
+                  There is no LAST USED row beside it, and that is the gallery's
+                  row set rather than an omission: the activity line under the
+                  title says `Last updated: …` at rest, on this very card, a few
+                  pixels above this panel. */}
               <TelemetryBirthRow cardId={cardId} createdAtMs={createdAtMs} />
-              <TelemetryRow label="Last used">{stamp(row?.last_used_at)}</TelemetryRow>
-              <TelemetryRow label="Branch">{identity.branch ?? "—"}</TelemetryRow>
+              <TelemetryRow label="BRANCH">{identity.branch ?? "—"}</TelemetryRow>
               {/* The two copyable forms sit TOGETHER, the atom directly above
                   the flat citation, each labeled by what a paste of it yields:
                   the atom returns the chip, the citation is flat text for
-                  anywhere outside Tug. */}
-              <TelemetryRow label="Atom">
+                  anywhere outside Tug. Both are enclosed values — bordered
+                  things that elide inside their own border rather than being
+                  cut off by the cell. */}
+              <TelemetryRow
+                label="ATOM"
+                enclosed
+                action={
+                  <TelemetryCopy
+                    label="Copy session atom"
+                    text={sessionCitation(identity, { project: true })}
+                    atom={identity}
+                  />
+                }
+              >
                 <TugSessionIdentity
                   identity={identity}
                   tier="chip"
@@ -833,13 +965,31 @@ export function SessionMasthead({
                   className="session-masthead-telemetry-atom"
                 />
               </TelemetryRow>
-              <TelemetryRow label="Citation">
+              <TelemetryRow
+                label="CITATION"
+                action={
+                  <TelemetryCopy
+                    label="Copy session citation"
+                    text={sessionCitation(identity, { project: true })}
+                  />
+                }
+              >
                 {/* The citation is the sanctioned flat-text form, and the only
-                    place monospace appears in session identity. */}
-                <TugCopyBadge
-                  value={sessionCitation(identity, { project: true })}
+                    place monospace appears in session identity. FLAT text, and
+                    nothing else: it wore a `TugCopyBadge` here, which put a
+                    bordered, tinted, icon-bearing chip on the row directly under
+                    the atom — two enclosures in a row, the quieter fact wearing
+                    the louder box. The row above is the chip; this row is the
+                    string you would paste. Copy stays on right-click, the same
+                    gesture the title and the pulse line already answer, which
+                    costs the row no ink at all. */}
+                <span
+                  ref={copyCitation.ref as React.Ref<HTMLSpanElement>}
+                  onContextMenu={copyCitation.onContextMenu}
                   className="session-masthead-telemetry-citation"
-                />
+                >
+                  {sessionCitation(identity, { project: true })}
+                </span>
               </TelemetryRow>
             </div>
           </TugPopupListFrame>
