@@ -671,6 +671,15 @@ export interface TugTextEditorProps
    */
   inlineCommandMatcher?: InlineCommandMatcher;
   /**
+   * Resolver turning a `file` atom's stored value into the absolute path
+   * "Open in Editor" should open. An `@` mention carries the path the file
+   * index handed it — relative to the project root, not to `/` — and the
+   * open handler takes absolute paths only, so a host that knows the root
+   * supplies the join here. Omitted (gallery / standalone) ⇒ the atom's
+   * value is dispatched as written.
+   */
+  resolveAtomPath?: (value: string) => string;
+  /**
    * Preferred direction for the completion popup relative to the
    * trigger character. `"down"` (default) places the popup below the
    * trigger when there's room; `"up"` places it above. The substrate
@@ -1280,6 +1289,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       argumentHintRefresh,
       pastedCommandResolver,
       inlineCommandMatcher,
+      resolveAtomPath,
       completionDirection = "down",
       onTypeaheadChange,
       dropHandler,
@@ -2031,13 +2041,20 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         const type = img.getAttribute("data-atom-type");
         const value = img.getAttribute("data-atom-value");
         if (type !== "file" || value === null || value === "") return [];
+        // An `@` mention's value is whatever the file index handed it —
+        // `roadmap/kbf-mode.md`, relative to the project root — and the
+        // open handler resolves nothing: a relative path reaches the file
+        // service as written and comes back `bad_path`. The host's
+        // resolver knows the root the mention was written against, so the
+        // join happens here and an absolute path is what rides the item.
+        const path = resolveAtomPath?.(value) ?? value;
         // The path rides on the item, so the dispatch walks past this
         // editor to the deck's open-file handler.
         return [
           {
             action: TUG_ACTIONS.OPEN_FILE,
             label: "Open in Editor",
-            value: { path: value },
+            value: { path },
           },
         ];
       },

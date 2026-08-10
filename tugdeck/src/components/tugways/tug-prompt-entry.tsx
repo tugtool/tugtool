@@ -160,6 +160,8 @@ import type { ShellClassifyStore } from "@/lib/shell-classify-store";
 import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
 import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
+import { resolveAtomFilePath } from "@/lib/atom-file-path";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
 // ---------------------------------------------------------------------------
 // Module constants
@@ -1380,6 +1382,27 @@ export const TugPromptEntry = React.forwardRef<
     });
     editor?.focus();
   }, []);
+
+  // The absolute path behind a file chip, for the substrate's "Open in
+  // Editor" item. An `@` mention's value is project-root-relative (that is
+  // what the file index reports) while the open handler speaks absolute
+  // only, so the roots the mention could have been written against are
+  // read live at right-click time [L07] — the binding and the cwd both
+  // arrive after mount, and a resolver frozen at mount would open nothing
+  // on the first turn.
+  const atomPathCardId = useCardId();
+  const resolveAtomPath = useCallback(
+    (value: string): string =>
+      resolveAtomFilePath(value, {
+        projectDir:
+          atomPathCardId === null
+            ? null
+            : cardSessionBindingStore.getBinding(atomPathCardId)?.projectDir ??
+              null,
+        cwd: sessionMetadataStore.getSnapshot().cwd,
+      }),
+    [atomPathCardId, sessionMetadataStore],
+  );
 
   // Z5 submit-button state machine. The button's whole view — label,
   // icon, `disabled`, `data-mode` — is a pure function of the
@@ -3674,6 +3697,7 @@ export const TugPromptEntry = React.forwardRef<
               argumentHintRefresh={argumentHintRefresh}
               pastedCommandResolver={commitActive ? undefined : pastedCommandResolver}
               inlineCommandMatcher={commitActive ? undefined : inlineCommandMatcher}
+              resolveAtomPath={resolveAtomPath}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
               onAttachmentError={publishAttachmentError}
