@@ -2619,7 +2619,10 @@ async fn run_synopsis(job: SynopsisJob) {
     };
     let digest = match previous.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
         Some(previous) => {
-            format!("{digest}\n{SESSION_PREVIOUS_HEADING}\n- {}\n", clip(previous, 240))
+            format!(
+                "{digest}\n{SESSION_PREVIOUS_HEADING}\n- {}\n",
+                clip(previous, 240)
+            )
         }
         None => digest,
     };
@@ -4546,8 +4549,11 @@ mod tests {
         );
         assert_eq!(
             cache.arc.iter().cloned().collect::<Vec<_>>(),
-            ["audit the ledger's migrations", "now repair the wedge it found"]
-                .map(String::from),
+            [
+                "audit the ledger's migrations",
+                "now repair the wedge it found"
+            ]
+            .map(String::from),
             "each answered stretch's opener is an entry in the arc"
         );
 
@@ -4563,7 +4569,10 @@ mod tests {
     fn the_description_digest_is_about_the_session_not_the_stretch() {
         let digest = compose_synopsis_digest(
             Some("audit the ledger's migrations"),
-            &["audit the ledger's migrations".to_string(), "now repair the wedge".to_string()],
+            &[
+                "audit the ledger's migrations".to_string(),
+                "now repair the wedge".to_string(),
+            ],
             Some("write the doctrine entry"),
             Some("Draft doctrine entry for ledger wedge"),
             Some("Audit and repair the ledger's migrations"),
@@ -4614,10 +4623,7 @@ mod tests {
         // Everything mechanical is still imposed: quotes, filler openers, the
         // leading article, the terminal period.
         let messy = "\"The user is working on the wedge recovery path.\"";
-        assert_eq!(
-            synopsis_register_report(messy).text,
-            "wedge recovery path",
-        );
+        assert_eq!(synopsis_register_report(messy).text, "wedge recovery path",);
 
         // And the budget really does clip — the line is chrome, not prose.
         let overlong = "x".repeat(MAX_SYNOPSIS_CHARS + 40);
@@ -5245,11 +5251,8 @@ mod tests {
         assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_none());
         // And the debounce was not spent on a question that was never put — the
         // moment the session says something, the very next emit asks.
-        sessions
-            .get_mut("s1")
-            .expect("seeded")
-            .prompts
-            .opening = Some("audit the ledger's migrations".to_string());
+        sessions.get_mut("s1").expect("seeded").prompts.opening =
+            Some("audit the ledger's migrations".to_string());
         assert!(take_synopsis_job("s1", &mut sessions, &config, &cancel, now).is_some());
     }
 
@@ -5262,7 +5265,10 @@ mod tests {
         let cancel = CancellationToken::new();
         let now = Instant::now();
         let mut sessions = HashMap::new();
-        sessions.insert("s1".to_string(), described_session(now, "port the shell router"));
+        sessions.insert(
+            "s1".to_string(),
+            described_session(now, "port the shell router"),
+        );
         // The resolver answers `None` both for "no such entry" and for a
         // contended lock, so there is no row this description is known to
         // belong to. Guessing the tug id would name a fork's PARENT row.

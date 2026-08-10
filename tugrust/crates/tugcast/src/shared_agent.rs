@@ -1373,8 +1373,7 @@ DIGEST:"
 /// the same reason it is there: `ground_headline` refuses a description whose
 /// words are not in the digest, so telling the model to reuse the digest's own
 /// words is what keeps the refusal rate down.
-const SYNOPSIS_INSTRUCTIONS: &str = concat!(
-    "\
+const SYNOPSIS_INSTRUCTIONS: &str = "\
 You write the standing description of a coding session — ONE sentence saying what the whole session is about. It sits under the session's name, on the line under it a headline says what the session is doing this minute, and it is read days later, so it must still be true then.
 
 The digest comes in labeled sections, and they are not equal.
@@ -1398,8 +1397,7 @@ USE THE DIGEST'S OWN WORDS. Build the line out of words that appear in the diges
 
 Answer only from the digest below. Output only the line.
 
-DIGEST:"
-);
+DIGEST:";
 
 /// Scripted workers, for this module's pool-policy tests and for any other
 /// module that needs a pool answering a known thing.

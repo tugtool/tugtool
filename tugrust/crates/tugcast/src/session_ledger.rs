@@ -2562,8 +2562,9 @@ impl SessionLedger {
             })
         }
         let conn = self.db.lock().expect("ledger mutex");
-        let mut exact =
-            conn.prepare(&format!("SELECT {COLUMNS} FROM sessions WHERE session_id = ?1 LIMIT 1"))?;
+        let mut exact = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM sessions WHERE session_id = ?1 LIMIT 1"
+        ))?;
         // `LIMIT 2` is the ambiguity probe: one row is an answer, two are a
         // refusal. The pattern is safe to interpolate into LIKE because the
         // short-id shape is validated first — eight hex chars carry no `%`/`_`.
@@ -2582,8 +2583,9 @@ impl SessionLedger {
         // arm uses: a tag two rows wear answers nothing. `sessions.tag` is
         // UNIQUE, so it is the scan cache — where uniqueness lives in
         // `minted_tags` rather than in an index — that the probe answers for.
-        let mut tagged =
-            conn.prepare(&format!("SELECT {COLUMNS} FROM sessions WHERE tag = ?1 LIMIT 2"))?;
+        let mut tagged = conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM sessions WHERE tag = ?1 LIMIT 2"
+        ))?;
         let mut scan_tagged = conn.prepare(&format!(
             "SELECT {SCAN_COLUMNS} FROM external_scan_cache
              WHERE tag = ?1 AND excluded = 0 LIMIT 2"
@@ -2736,8 +2738,9 @@ impl SessionLedger {
         // optimistic tag, and adopts the ledger's on the `session_updated` /
         // spawn-ack path. A callsign may therefore change once, seconds after
         // spawn, and is immutable forever after ([P12]).
-        let mut candidate: Option<String> =
-            existing_tag.or(scanned_tag).or_else(|| tag.map(str::to_owned));
+        let mut candidate: Option<String> = existing_tag
+            .or(scanned_tag)
+            .or_else(|| tag.map(str::to_owned));
         let mut attempt: u32 = 0;
         loop {
             // Claim before the write so a tag spent by a dead session rerolls
@@ -5661,8 +5664,7 @@ fn is_full_session_uuid(s: &str) -> bool {
 /// records. The length comes from the trailer writer's own constant rather than
 /// a second copy of the number.
 fn is_short_session_id(s: &str) -> bool {
-    s.len() == tugchanges_core::SHORT_SESSION_ID_LEN
-        && s.bytes().all(|b| b.is_ascii_hexdigit())
+    s.len() == tugchanges_core::SHORT_SESSION_ID_LEN && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// Whether `s` is a callsign — `adjective-noun`, extended by `-<Letter><digits>`
@@ -5681,8 +5683,7 @@ fn is_session_callsign(s: &str) -> bool {
     let head = [segments.next(), segments.next()];
     for word in head {
         match word {
-            Some(w)
-                if !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase()) => {}
+            Some(w) if !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase()) => {}
             _ => return false,
         }
     }
@@ -6506,10 +6507,24 @@ mod tests {
         // candidate — claiming that candidate would spend a `minted_tags` row
         // on a tag no session will ever display.
         let l = fresh();
-        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(0), Some("azure-heron"))
-            .unwrap();
-        l.record_spawn("s1", WS_A, "/proj", "card-1", millis(1), Some("coral-otter"))
-            .unwrap();
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("azure-heron"),
+        )
+        .unwrap();
+        l.record_spawn(
+            "s1",
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(1),
+            Some("coral-otter"),
+        )
+        .unwrap();
         assert_eq!(
             l.get("s1").unwrap().unwrap().tag.as_deref(),
             Some("azure-heron")
@@ -6843,8 +6858,15 @@ mod tests {
     fn a_citation_resolves_by_full_uuid_and_by_short_id() {
         let l = fresh();
         let full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
-        l.record_spawn(full, WS_A, "/proj", "card-1", millis(0), Some("stocky-pixie"))
-            .unwrap();
+        l.record_spawn(
+            full,
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("stocky-pixie"),
+        )
+        .unwrap();
 
         // The machine field's exact join.
         let by_uuid = l.resolve_session_ids(&[full.to_owned()]).unwrap();
@@ -6855,9 +6877,7 @@ mod tests {
         // The citation's 8-char token, expanded here rather than against
         // whatever the client happened to have cached. Case is the trailer's,
         // not the ledger's.
-        let by_short = l
-            .resolve_session_ids(&["F6E43925".to_owned()])
-            .unwrap();
+        let by_short = l.resolve_session_ids(&["F6E43925".to_owned()]).unwrap();
         assert_eq!(by_short.len(), 1);
         // The answer is keyed by what was ASKED, so a caller can match it back
         // to the citation it read.
@@ -6873,8 +6893,15 @@ mod tests {
     fn a_citation_resolves_by_callsign() {
         let l = fresh();
         let full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
-        l.record_spawn(full, WS_A, "/proj", "card-1", millis(0), Some("stocky-pixie"))
-            .unwrap();
+        l.record_spawn(
+            full,
+            WS_A,
+            "/proj",
+            "card-1",
+            millis(0),
+            Some("stocky-pixie"),
+        )
+        .unwrap();
         let forked = "aabbccdd-1111-2222-3333-444455556666";
         l.record_spawn(
             forked,
@@ -6902,8 +6929,16 @@ mod tests {
         assert_eq!(by_fork[0].1.session_id, forked);
 
         // Exact, deliberately: a callsign is a name, not a prefix query.
-        assert!(l.resolve_session_ids(&["stocky-pix".to_owned()]).unwrap().is_empty());
-        assert!(l.resolve_session_ids(&["stocky-pixie-a1".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["stocky-pix".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            l.resolve_session_ids(&["stocky-pixie-a1".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -6937,13 +6972,22 @@ mod tests {
             tag: None,
         })
         .unwrap();
-        l.record_spawn(evicted, WS_A, "/proj/alpha", "card-9", millis(2), Some("stocky-pixie"))
-            .unwrap();
+        l.record_spawn(
+            evicted,
+            WS_A,
+            "/proj/alpha",
+            "card-9",
+            millis(2),
+            Some("stocky-pixie"),
+        )
+        .unwrap();
         l.backfill_external_tag(evicted, millis(3)).unwrap();
-        l.db
-            .lock()
+        l.db.lock()
             .expect("ledger mutex")
-            .execute("DELETE FROM sessions WHERE session_id = ?1", params![evicted])
+            .execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![evicted],
+            )
             .unwrap();
 
         let resolved = l.resolve_session_ids(&["stocky-pixie".to_owned()]).unwrap();
@@ -6985,8 +7029,7 @@ mod tests {
         };
         for id in [a, b] {
             l.upsert_scan_cache(&scan_row(id)).unwrap();
-            l.db
-                .lock()
+            l.db.lock()
                 .expect("ledger mutex")
                 .execute(
                     "UPDATE external_scan_cache SET tag = 'stocky-pixie' WHERE session_id = ?1",
@@ -6994,7 +7037,11 @@ mod tests {
                 )
                 .unwrap();
         }
-        assert!(l.resolve_session_ids(&["stocky-pixie".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["stocky-pixie".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -7016,14 +7063,26 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
-        assert!(l.resolve_session_ids(&["0badf00d".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["0badf00d".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
         // Neither shape: the grammar refused it upstream and nothing here
         // invents a spelling for it.
-        assert!(l.resolve_session_ids(&["some free prose".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["some free prose".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
         assert!(l.resolve_session_ids(&["".to_owned()]).unwrap().is_empty());
         // A `%` cannot become a wildcard: the short-id shape is validated
         // before the LIKE pattern is built.
-        assert!(l.resolve_session_ids(&["f6e439%%".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["f6e439%%".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -7039,7 +7098,11 @@ mod tests {
             .unwrap();
         // A wrong-but-resolvable citation is strictly worse than an
         // unresolvable one ([D132]), so an ambiguous prefix answers nothing.
-        assert!(l.resolve_session_ids(&["f6e43925".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["f6e43925".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
         // Each full uuid still resolves exactly — ambiguity is the prefix's
         // problem alone.
         assert_eq!(l.resolve_session_ids(&[a.to_owned()]).unwrap().len(), 1);
@@ -7106,16 +7169,27 @@ mod tests {
         // then the `sessions` row hard-deleted by eviction. `upsert_scan_cache`
         // never writes `tag` itself, so the backfill step is load-bearing.
         l.upsert_scan_cache(&scan_row(evicted, None)).unwrap();
-        l.record_spawn(evicted, WS_A, "/proj/alpha", "card-9", millis(2), Some("stocky-pixie"))
-            .unwrap();
+        l.record_spawn(
+            evicted,
+            WS_A,
+            "/proj/alpha",
+            "card-9",
+            millis(2),
+            Some("stocky-pixie"),
+        )
+        .unwrap();
         assert_eq!(
-            l.backfill_external_tag(evicted, millis(3)).unwrap().as_deref(),
+            l.backfill_external_tag(evicted, millis(3))
+                .unwrap()
+                .as_deref(),
             Some("stocky-pixie")
         );
-        l.db
-            .lock()
+        l.db.lock()
             .expect("ledger mutex")
-            .execute("DELETE FROM sessions WHERE session_id = ?1", params![evicted])
+            .execute(
+                "DELETE FROM sessions WHERE session_id = ?1",
+                params![evicted],
+            )
             .unwrap();
 
         // No `sessions` row — the eviction took it. Both spellings still
@@ -7146,10 +7220,18 @@ mod tests {
         let mut row = scan_row(excluded, None);
         row.excluded = true;
         l.upsert_scan_cache(&row).unwrap();
-        assert!(l.resolve_session_ids(&["0badf00d".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["0badf00d".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
         let twin = "f6e43925-9999-4c3d-8e9f-0a1b2c3d4e5f";
         l.upsert_scan_cache(&scan_row(twin, None)).unwrap();
-        assert!(l.resolve_session_ids(&["f6e43925".to_owned()]).unwrap().is_empty());
+        assert!(
+            l.resolve_session_ids(&["f6e43925".to_owned()])
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

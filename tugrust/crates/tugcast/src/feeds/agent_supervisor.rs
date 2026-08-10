@@ -659,7 +659,6 @@ impl LedgerSessionsRecorder {
             Err(err) => warn!(error = %err, "ledger sweep_expired failed"),
         }
     }
-
 }
 
 impl SessionsRecorder for LedgerSessionsRecorder {
@@ -1006,7 +1005,6 @@ impl ControlOutcome {
     pub(crate) fn is_handled(&self) -> bool {
         matches!(self, ControlOutcome::Handled)
     }
-
 }
 
 /// Errors returned from [`AgentSupervisor::handle_control`]. Consumed by

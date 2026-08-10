@@ -806,9 +806,8 @@ mod tests {
         let envelope = "<command-name>/compact</command-name> \
                         <command-message>compact</command-message> \
                         <command-args></command-args>";
-        let line = format!(
-            r#"{{"type":"user","message":{{"role":"user","content":"{envelope}"}}}}"#
-        );
+        let line =
+            format!(r#"{{"type":"user","message":{{"role":"user","content":"{envelope}"}}}}"#);
         assert_eq!(prompt_from_jsonl_line(&line, 0, 500), None);
 
         let prose = r#"{"type":"user","message":{"role":"user","content":"fix the flaky test"}}"#;
