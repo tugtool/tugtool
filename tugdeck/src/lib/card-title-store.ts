@@ -84,6 +84,18 @@ export interface DocumentMastheadPayload {
    * tail (the filename) and sheds its head, anything else clips normally.
    */
   readonly descriptionKind?: "path" | "text";
+  /**
+   * Whether {@link description} is a fact STANDING IN for the place this card
+   * would name if it had one — a draft that is not a file yet, a diff with no
+   * repository behind it. Painted a step quieter by the tier, exactly as the
+   * session masthead's own last rung is ([D132]).
+   *
+   * A card with nothing to name publishes a stand-in rather than `null`: the
+   * tier is a fixed three lines, so a null description is not a shorter
+   * masthead, it is a hole between two filled ones. Only the card knows which
+   * rung it landed on, so only the card can say.
+   */
+  readonly descriptionStandIn?: boolean;
   /** Third line — quieter still, and optional; most cards stop at two. */
   readonly detail?: string | null;
   /** Lead-line glyph, resolved against the lucide `icons` map by the chrome. */
@@ -111,6 +123,7 @@ function sameMasthead(
     a.title === other.title &&
     a.description === other.description &&
     (a.descriptionKind ?? "text") === (other.descriptionKind ?? "text") &&
+    (a.descriptionStandIn ?? false) === (other.descriptionStandIn ?? false) &&
     (a.detail ?? null) === (other.detail ?? null) &&
     a.icon === other.icon
   );

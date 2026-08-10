@@ -98,13 +98,18 @@ export function CardMasthead({
         name={
           <span data-testid="card-masthead-title">{payload.title}</span>
         }
-        /* ALWAYS rendered, even when the card names no place. The description
-           is what tells the row it is wearing the three-level stack — the lead
-           gap, the tight inner step, the sub-line indent, and the tape's
-           centering all key off `:has(> .tug-session-row-description)` — so
-           omitting it would not merely drop a line, it would hand the masthead
-           a two-line row's whole geometry. `dir="rtl"` is what clips a path at
-           its head; the row's own line does the eliding. */
+        /* ALWAYS rendered. The description is what tells the row it is wearing
+           the three-level stack — the lead gap, the tight inner step, the
+           sub-line indent, and the tape's centering all key off
+           `:has(> .tug-session-row-description)` — so omitting it would not
+           merely drop a line, it would hand the masthead a two-line row's
+           whole geometry. `dir="rtl"` is what clips a path at its head; the
+           row's own line does the eliding.
+           A card that names no place publishes a STAND-IN, not `null`: the
+           tier is a fixed three lines, so an empty run here is a hole between
+           two filled ones rather than a shorter masthead. The empty branch
+           survives for the moment before a card's first publish. */
+        descriptionStandIn={payload.descriptionStandIn === true}
         description={
           payload.description === null ? (
             ""

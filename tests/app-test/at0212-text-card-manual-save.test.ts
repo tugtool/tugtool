@@ -22,7 +22,10 @@
  *    Information without touching the real file.
  * 4. **Automatic mode retained.** A seeded automatic text card keeps Save
  *    enabled even when clean (the [P07] no-beep guard).
- * 5. **New Text Card.** `new-text-card` opens a second Untitled editor.
+ * 5. **New Text Card.** `new-text-card` opens a second Untitled editor, and
+ *    that buffer's masthead is checked for the two things a not-yet-a-file
+ *    document must not do: leave the second line empty (a hole in a fixed
+ *    three-line tier) or claim on the third that it was saved.
  *
  * ## Coverage note — the explicit-save write, external-change conflict,
  * and the [P12] "Save Anyway writes the REAL file not the aside" guard are
@@ -43,6 +46,8 @@
  * @covers tugdeck/src/components/tugways/cards/text-card.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-save-sheets.tsx
  * @covers tugdeck/src/lib/text-card-store.ts
+ * @covers tugdeck/src/lib/text-card-save-text.ts
+ * @covers tugdeck/src/components/tugways/card-masthead.tsx
  * @covers tugdeck/src/lib/file-io.ts
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-status-bar.tsx
@@ -54,7 +59,7 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -632,6 +637,43 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
           `document.querySelectorAll('[data-slot="tug-text-card-editor"]').length >= 2`,
           { timeoutMs: 15000 },
         );
+
+        // The masthead of a buffer that is NOT A FILE YET. Both lines were
+        // wrong when the tier shipped: the second was empty, which on a fixed
+        // three-line tier is a hole between two filled lines rather than a
+        // shorter masthead, and the third said "Saved" about a buffer nothing
+        // had ever written. A stand-in fills the second ([D132]) and the third
+        // names what the buffer IS.
+        const untitled = await app.evalJS<{
+          description: string;
+          stamp: string | null;
+          detail: string;
+        } | null>(`(function () {
+          var heads = document.querySelectorAll('[data-slot="card-masthead"]');
+          for (var i = 0; i < heads.length; i++) {
+            var head = heads[i];
+            var title = head.querySelector('[data-testid="card-masthead-title"]');
+            if (title === null || title.innerText.indexOf("Untitled") !== 0) continue;
+            var desc = head.querySelector('[data-testid="card-masthead-description"]');
+            var detail = head.querySelector('[data-testid="card-masthead-detail"]');
+            return {
+              description: desc === null ? "" : desc.innerText,
+              // The quieter ink lands on the ROW's description element, which
+              // is this span's parent — that is where the row stamps it.
+              stamp:
+                desc === null || desc.parentElement === null
+                  ? null
+                  : desc.parentElement.getAttribute("data-stamp"),
+              detail: detail === null ? "" : detail.innerText,
+            };
+          }
+          return null;
+        })()`);
+        note("at0212 untitled masthead", JSON.stringify(untitled));
+        expect(untitled).not.toBeNull();
+        expect(untitled!.description.length).toBeGreaterThan(0);
+        expect(untitled!.stamp, "a stand-in reads a step quieter").toBe("true");
+        expect(untitled!.detail).toBe("Draft");
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

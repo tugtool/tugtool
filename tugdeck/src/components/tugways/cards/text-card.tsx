@@ -185,6 +185,14 @@ function coerceRevealOnOpen(
   };
 }
 
+/**
+ * The masthead's second line for a buffer that is not a file yet — the
+ * stand-in rung of the document description ladder ([D132]). A draft does sit
+ * on disk, under the Tug drafts directory, but not anywhere the reader put it,
+ * and the line's question is where the document LIVES.
+ */
+const UNNAMED_PLACE = "Not saved to a file";
+
 // ---------------------------------------------------------------------------
 // Human-readable error copy
 // ---------------------------------------------------------------------------
@@ -720,18 +728,20 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // unconditionally, which is exactly the traffic the guard exists to
   // suppress. What the card owes the store is one clear when it goes away.
   useLayoutEffect(() => {
-    const detail = saveText(
-      snapshot.saveMode,
-      snapshot.saveState,
-      snapshot.conflict,
-      snapshot.lastSavedAt,
-    );
+    const detail = saveText({
+      saveMode: snapshot.saveMode,
+      saveState: snapshot.saveState,
+      conflict: snapshot.conflict,
+      lastSavedAt: snapshot.lastSavedAt,
+      bound: isBoundFile,
+    });
     if (snapshot.fileName === null) {
       cardTitleStore.set(cardId, "Untitled", {
         kind: "card-masthead",
         icon: "FileText",
         title: "Untitled",
-        description: null,
+        description: UNNAMED_PLACE,
+        descriptionStandIn: true,
         detail,
       });
     } else {
@@ -745,10 +755,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         kind: "card-masthead",
         icon: "FileText",
         title,
-        // An untitled buffer names no place: its path is a drafts-directory
-        // file the user never chose.
-        description: isBoundFile ? snapshot.path : null,
-        descriptionKind: "path",
+        // A draft names no place the user chose — its path is a
+        // drafts-directory file it was handed — so it stands in for one, a
+        // step quieter, rather than leaving the line empty.
+        description: isBoundFile ? snapshot.path : UNNAMED_PLACE,
+        descriptionKind: isBoundFile ? "path" : "text",
+        descriptionStandIn: !isBoundFile,
         detail,
       });
     }

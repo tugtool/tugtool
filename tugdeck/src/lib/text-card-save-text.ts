@@ -12,6 +12,22 @@
 
 import type { FileConflict, FileSaveState, SaveMode } from "./text-card-store";
 
+/** The buffer facts the wording is a function of. */
+export interface SaveTextFacts {
+  readonly saveMode: SaveMode;
+  readonly saveState: FileSaveState;
+  readonly conflict: FileConflict | null;
+  /** When this buffer was last written, or `null` if it has not been. */
+  readonly lastSavedAt: number | null;
+  /**
+   * Whether the buffer is bound to a file the USER named — false for a draft,
+   * which lives under the Tug drafts directory until Move To… gives it a home.
+   * It is what separates a clean buffer that has a file from one that is not
+   * a file yet; see the "Draft" rung below.
+   */
+  readonly bound: boolean;
+}
+
 /**
  * Save-state copy. Automatic mode is the saveless live-autosave wording
  * ("Saving…" / "Unsaved" / "Saved"); manual mode is the classic document
@@ -19,17 +35,18 @@ import type { FileConflict, FileSaveState, SaveMode } from "./text-card-store";
  * change displaces both — a buffer whose file changed under it has nothing
  * useful to say about when it was last written.
  */
-export function saveText(
-  saveMode: SaveMode,
-  saveState: FileSaveState,
-  conflict: FileConflict | null,
-  lastSavedAt: number | null,
-): string {
+export function saveText(facts: SaveTextFacts): string {
+  const { saveMode, saveState, conflict, lastSavedAt, bound } = facts;
   if (saveMode === "manual" && conflict !== null) {
     return conflict.reason === "missing" ? "File deleted" : "File changed";
   }
   if (saveState === "writing") return "Saving…";
   if (saveState === "editing") return saveMode === "manual" ? "Edited" : "Unsaved";
-  if (lastSavedAt === null) return "Saved";
+  // Clean, and nothing has been written yet. For a file on disk that is the
+  // truth — it is saved, there is simply no event to time. For an unnamed
+  // draft it would be a claim about an act that never happened: the buffer
+  // has never been a file. It says what it IS instead, and starts saying
+  // "Saved: <time>" the moment autosave gives it something to time.
+  if (lastSavedAt === null) return bound ? "Saved" : "Draft";
   return `Saved: ${new Date(lastSavedAt).toLocaleTimeString()}`;
 }

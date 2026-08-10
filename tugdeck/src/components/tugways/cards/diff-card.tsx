@@ -197,15 +197,28 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
     const stats = (added: number, removed: number): string =>
       `+${added} −${removed}`;
 
+    // What a whole-diff masthead says on its second line. The counted summary
+    // when there is one; otherwise a STAND-IN, never `null` — the tier is a
+    // fixed three lines, so an absent description is a hole between two filled
+    // ones rather than a shorter masthead, and a fact standing in for a line
+    // nobody has written yet paints a step quieter ([D132]).
+    const summary: { text: string; standIn: boolean } =
+      payload === null
+        ? { text: "Reading the diff…", standIn: true }
+        : payload.no_repo
+          ? { text: "No repository here", standIn: true }
+          : {
+              text: `${payload.file_count} ${payload.file_count === 1 ? "file" : "files"} · ${stats(payload.total_added, payload.total_removed)}`,
+              standIn: false,
+            };
+
     if (project) {
       cardTitleStore.set(cardId, "Project Diff", {
         kind: "card-masthead",
         icon: "GitCompareArrows",
         title: "Project Diff",
-        description:
-          payload === null || payload.no_repo
-            ? null
-            : `${payload.file_count} ${payload.file_count === 1 ? "file" : "files"} · ${stats(payload.total_added, payload.total_removed)}`,
+        description: summary.text,
+        descriptionStandIn: summary.standIn,
         detail: payload === null ? null : `vs ${payload.base}`,
       });
       return;
@@ -228,7 +241,8 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
             kind: "card-masthead" as const,
             icon: "GitCompareArrows",
             title: descriptorLabel(descriptor),
-            description: null,
+            description: summary.text,
+            descriptionStandIn: summary.standIn,
             detail: payload === null ? null : `vs ${payload.base}`,
           };
     cardTitleStore.setMasthead(cardId, masthead);
