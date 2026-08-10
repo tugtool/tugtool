@@ -81,7 +81,7 @@ function deckShape() {
       {
         id: "p1",
         position: { x: 40, y: 40 },
-        size: { width: 900, height: 680 },
+        size: { width: 675, height: 680 },
         cardIds: ["A"],
         activeCardId: "A",
         title: "",
@@ -176,9 +176,63 @@ describe.skipIf(!SHOULD_RUN)("AT0226: /usage sheet", () => {
         expect(statValues).toContain("$0.00");
         expect(statValues.length).toBe(8);
 
+        // The panel is a sheet, not a wall: it keeps a real gutter on both
+        // sides of the card rather than running out to the pane's edges.
+        const gutters = await app.evalJS<{ left: number; right: number }>(
+          `(function(){
+            var c = document.querySelector(${JSON.stringify(SHEET)}).getBoundingClientRect();
+            var k = document.querySelector(${JSON.stringify(SHEET)}).closest(".tug-sheet-clip").getBoundingClientRect();
+            return { left: c.left - k.left, right: k.right - c.right };
+          })()`,
+        );
+        expect(gutters.left).toBeGreaterThan(40);
+        expect(gutters.right).toBeGreaterThan(40);
+
         await app.nativeClickAtElement(DONE_BTN);
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SHEET)}) === null`,
+          { timeoutMs: 6000 },
+        );
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "⌃⌘U toggles the panel — a second press puts it away",
+    async () => {
+      const app = await launchTugApp({ testName: "at0226-usage-toggle" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", { tugSessionId: SID });
+        await app.awaitEngineReady("A");
+        await app.evalJS<null>(
+          `(window.__tug.ingestUsage(${JSON.stringify({ request_id: "usage-seed", ok: true, text: USAGE_TEXT })}), null)`,
+        );
+
+        await app.nativeKey("u", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(
+          `(function(){ var e = document.querySelector(${JSON.stringify(SHEET_TITLE)}); return e !== null && e.textContent === "Usage"; })()`,
+          { timeoutMs: 6000 },
+        );
+
+        // Same chord again — the door closes the way it opened.
+        await app.nativeKey("u", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET)}) === null`,
+          { timeoutMs: 6000 },
+        );
+
+        // And it re-opens, so a full cycle leaves nothing latched.
+        await app.nativeKey("u", ["ctrl", "cmd"]);
+        await app.waitForCondition<boolean>(
+          `(function(){ var e = document.querySelector(${JSON.stringify(SHEET_TITLE)}); return e !== null && e.textContent === "Usage"; })()`,
           { timeoutMs: 6000 },
         );
       } finally {

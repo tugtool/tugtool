@@ -120,7 +120,7 @@
    side, each row carrying a dotted leader. */
 .usage-sheet-grid {
   display: flex;
-  gap: var(--tug-space-2xl);
+  gap: var(--tug-space-xl);
   align-items: flex-start;
   flex-wrap: wrap;
 }
@@ -132,7 +132,7 @@
   row-gap: 3px;
   align-items: baseline;
   flex: 0 1 auto;
-  min-width: 190px;
+  min-width: 170px;
 }
 
 /* @tug-renders-on var(--tug7-surface-sheet-primary-normal-default-rest) */
@@ -172,7 +172,7 @@
 
 .usage-sheet-periods {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: var(--tug-space-xl);
 }
 

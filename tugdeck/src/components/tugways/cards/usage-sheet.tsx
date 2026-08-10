@@ -31,7 +31,7 @@
 
 import "./usage-sheet.css";
 
-import React, { useCallback, useMemo, useSyncExternalStore } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugArcGauge } from "@/components/tugways/tug-arc-gauge";
@@ -39,6 +39,8 @@ import { TugLinearGauge } from "@/components/tugways/tug-linear-gauge";
 import type { GaugeThresholds } from "@/components/tugways/gauge-math";
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { TugSheetScaffold } from "@/components/tugways/tug-sheet-scaffold";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useSeedKeyView } from "@/components/tugways/use-focusable";
 import {
   formatDurationMs,
@@ -71,7 +73,11 @@ export interface UseUsageSheetArgs {
 }
 
 export interface UsageSheetController {
-  /** Present the `/usage` sheet, firing a fresh (or cached) panel request. */
+  /**
+   * Present the `/usage` sheet, firing a fresh (or cached) panel request — or,
+   * when this sheet is the one already showing, dismiss it. `/usage` and ⌃⌘U
+   * are the same door in both directions.
+   */
   openUsageSheet: () => void;
 }
 
@@ -80,19 +86,41 @@ export function useUsageSheet({
   codeSessionStore,
   showSheet,
 }: UseUsageSheetArgs): UsageSheetController {
+  // Is *this* sheet the one currently mounted, and how do we close it? The
+  // shared sheet host is single-slot, so `showSheet`'s promise resolving is the
+  // authoritative "no longer showing" signal — it fires on Done, on Escape, and
+  // on another sheet superseding this one. `closeRef` is the body's own `close`
+  // callback, registered while it is mounted.
+  const shownRef = useRef(false);
+  const closeRef = useRef<(() => void) | null>(null);
+
   const openUsageSheet = useCallback(() => {
+    if (shownRef.current) {
+      closeRef.current?.();
+      return;
+    }
     usageStore?.requestUsage();
+    shownRef.current = true;
     void showSheet({
       title: "Usage",
       icon: "Gauge",
-      displayWidth: "lg",
+      displayWidth: "md",
+      // A slim card (675px) is narrower than the `md` panel, so the width alone
+      // would leave the sheet flush against both edges. The fractional cap is
+      // what actually keeps it nested: at every preset the panel is a panel,
+      // with card showing on both sides of it.
+      maxHostFraction: 0.82,
       content: (close) => (
         <UsageSheetBody
           usageStore={usageStore}
           codeSessionStore={codeSessionStore}
           onClose={close}
+          registerClose={closeRef}
         />
       ),
+    }).then(() => {
+      shownRef.current = false;
+      closeRef.current = null;
     });
   }, [usageStore, codeSessionStore, showSheet]);
 
@@ -145,12 +173,15 @@ interface UsageSheetBodyProps {
   usageStore: UsageStore | null;
   codeSessionStore: CodeSessionStore;
   onClose: (value?: string) => void;
+  /** Hands this sheet's `close` back to the controller, for the ⌃⌘U re-press. */
+  registerClose: React.MutableRefObject<(() => void) | null>;
 }
 
 function UsageSheetBody({
   usageStore,
   codeSessionStore,
   onClose,
+  registerClose,
 }: UsageSheetBodyProps): React.ReactElement {
   const usage = useSyncExternalStore(
     useCallback(
@@ -170,6 +201,31 @@ function UsageSheetBody({
     useCallback(() => codeSessionStore.getSnapshot().transcript, [codeSessionStore]),
   );
   const totals = useMemo(() => deriveSessionTotals(transcript), [transcript]);
+
+  useEffect(() => {
+    registerClose.current = () => onClose();
+    return () => {
+      registerClose.current = null;
+    };
+  }, [registerClose, onClose]);
+
+  // The ⌃⌘U half of the toggle that the card cannot answer. `usage` is a
+  // key-card-routed command, and while a sheet is up there is no key card —
+  // the sheet's responder is portalled out of the card's subtree, so the walk
+  // finds no `card` ancestor and the dispatch lands nowhere. It is still
+  // *announced*: `notifyDispatchObservers` runs whether or not a responder
+  // handled it. So the open panel watches the chain for its own command and
+  // takes the second press as "put me away".
+  const manager = useResponderChain();
+  useEffect(() => {
+    if (manager === null) return;
+    return manager.observeDispatch((event) => {
+      if (event.action !== TUG_ACTIONS.RUN_SLASH_COMMAND) return;
+      const value = event.value as { name?: string } | undefined;
+      if (value?.name !== "usage") return;
+      onClose();
+    });
+  }, [manager, onClose]);
 
   const doneFocusGroup = React.useId();
   useSeedKeyView(`${doneFocusGroup}:0`);
