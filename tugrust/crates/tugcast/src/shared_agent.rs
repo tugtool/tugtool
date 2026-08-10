@@ -1354,11 +1354,12 @@ DIGEST:"
 /// without the other:
 ///
 ///  - **The evidence.** The digest is now `compose_synopsis_digest`'s —
-///    session-lifetime, with the opening ask and the arc of finished stretches
-///    as the subject and the live headline explicitly labelled background. The
-///    old digest's "standing goal" was the current *stretch's* opening ask,
-///    wiped at every idle barrier, which is the same thing the headline is
-///    written about.
+///    session-lifetime and NEWEST FIRST: the most recent ask is the subject,
+///    prior asks are earlier work, the session's opening is context, and the
+///    live headline is explicitly labelled background. The boundaries between
+///    work items are the user's own messages, not idle-barrier stretches — a
+///    stretch swallowed every ask after its first, which is how a description
+///    kept leading with the morning's job after the session had moved on.
 ///  - **The register.** `headline_rules!` is dropped for a summary's rules:
 ///    articles and conjunctions are allowed, the budget is
 ///    `MAX_SYNOPSIS_CHARS` rather than 56, and the line is asked to name the
@@ -1374,21 +1375,25 @@ DIGEST:"
 /// words are not in the digest, so telling the model to reuse the digest's own
 /// words is what keeps the refusal rate down.
 const SYNOPSIS_INSTRUCTIONS: &str = "\
-You write the standing description of a coding session — ONE sentence saying what the whole session is about. It sits under the session's name, on the line under it a headline says what the session is doing this minute, and it is read days later, so it must still be true then.
+You write the standing description of a coding session — ONE sentence saying what the session is about, weighted toward what it is about NOW. It sits under the session's name; on the line under it a headline says what the session is doing this minute. A session moves through work items over time, each new ask closing the one before it, and the reader scanning a list of sessions wants the newest work named first.
 
 The digest comes in labeled sections, and they are not equal.
 
-\"What the session set out to do\" and \"What it turned to after that\" are THE SUBJECT. Together they are the session: where it started and how far it has moved. Describe the undertaking those add up to — if the session began in one place and turned, say the thing that covers both, not the newest half.
+\"What the session was most recently asked to do\" is THE SUBJECT. The newest ask is the work item the session is on, and the line leads with it.
+
+\"What it worked on before that\" is EARLIER WORK, listed newest first. Mention it only if the line has room after the subject, and at most one item of it; when the line names two undertakings, the more recent one comes first.
+
+\"What the session set out to do at the start\" is CONTEXT. It says where the session began. It earns a place in the line only when the newest ask is still that same undertaking.
 
 \"Where it stands right now\" is BACKGROUND. It is there so you know the work is live and what it currently touches. It is never the subject. The line above yours already says it, and a description that repeats it says nothing.
 
-\"The description you are revising\" is your own last answer. If it is still true, stay close to it — change it only as much as the newer evidence requires. This line is supposed to stand.
+\"The description you are revising\" is your own last answer. Keep its voice and wording where they still fit — but the subject moves with the work. When the newest ask is a new undertaking, the line changes with it; a description still leading with finished work is stale, not stable.
 
 Write it as a sentence, not as a headline:
 
 START WITH A VERB, in the plain command form: Rework, Repair, Trace, Port, Audit, Bundle, Investigate, Extend. Not \"Fixing\", not \"Working on\" — Rework, Repair.
 ARTICLES AND CONJUNCTIONS ARE ALLOWED. \"the\", \"a\", \"and\" — use them where the sentence wants them. This is the one line that gets to read as English.
-NAME THE WORK AND ITS OBJECT: what is being done, and to what. One subject and one object — never a list of surfaces, parts, or steps.
+NAME THE WORK AND ITS OBJECT: what is being done, and to what. One subject and one object for the newest work, with at most one earlier item riding after it — never a list of surfaces, parts, or steps.
 BE BRIEF. ROOM FOR ABOUT 65 CHARACTERS, and shorter is better — a line that runs long is cut off mid-word on every surface that shows it.
 SENTENCE CASE. Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
 No period at the end. No quotes.

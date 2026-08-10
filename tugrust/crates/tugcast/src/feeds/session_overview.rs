@@ -370,17 +370,27 @@ struct PromptCache {
     /// not standing at all. Reading the headline's own notion of a goal was
     /// what made the description and the headline print the same sentence.
     opening: Option<String>,
-    /// The opening ask of each FINISHED stretch, oldest evicted — the shape of
-    /// the session so far. Pushed by [`Self::barrier`] as each stretch closes,
-    /// so the description can say what the whole session has been about rather
-    /// than what its newest few minutes are about.
+    /// The newest ask in the transcript — the work item the session is ON.
+    /// Session-level, like `opening`: an idle barrier does not clear it,
+    /// because the user pausing for coffee does not change what they last
+    /// asked for. Only a rewritten transcript resets it.
+    current_ask: Option<String>,
+    /// Every ask BEFORE the current one, in order, oldest evicted — the
+    /// session's work items. An ask is pushed here the moment the next one
+    /// arrives: the user's messages are the boundaries between work items, so
+    /// a session whose user typed three jobs into one warm stretch has three
+    /// entries, not one. The stretch used to be the unit here, and a stretch
+    /// swallowed every ask after its first — which is how a description came
+    /// to lead with the morning's cleanup while the afternoon's work went
+    /// unmentioned.
     arc: VecDeque<String>,
 }
 
-/// Finished stretches carried in the arc. Enough to show a session that has
-/// turned — an audit that became a repair that became a doc pass — bounded so
-/// a day-long session's opening asks cannot outvote its present.
-const MAX_ARC_STRETCHES: usize = 6;
+/// Asks carried in the arc. Enough to show a session that has moved through
+/// several work items, bounded so a day-long session's history cannot crowd
+/// the digest — the oldest go first, which is the right end to lose under a
+/// description that leads with the newest.
+const MAX_ARC_ASKS: usize = 8;
 
 impl PromptCache {
     /// Fold any newly appended complete lines into the cache. Runs blocking
@@ -404,6 +414,7 @@ impl PromptCache {
             // session-lifetime memory goes with it rather than describing a
             // file that no longer exists.
             self.opening = None;
+            self.current_ask = None;
             self.arc.clear();
         }
         if len == self.offset {
@@ -439,11 +450,11 @@ impl PromptCache {
             else {
                 if priming {
                     // A response, so every ask above it was answered: a
-                    // barrier this cache did not watch being crossed. Taking
-                    // it through `barrier` rather than clearing the two fields
-                    // by hand is what reconstructs the ARC across a restart —
-                    // the session's finished stretches are all sitting in the
-                    // file, and reading them is free.
+                    // barrier this cache did not watch being crossed. Only the
+                    // stretch-scoped fields go with it — the session-level
+                    // memory (`opening`, `current_ask`, the arc) is built ask
+                    // by ask below, so a restart reconstructs it from exactly
+                    // the file it is already reading.
                     self.barrier();
                 }
                 continue;
@@ -460,6 +471,20 @@ impl PromptCache {
             if self.opening.is_none() {
                 self.opening = Some(prompt.clone());
             }
+            // The ask that was current until this line is a finished work item
+            // now: the user's next message is the boundary that closes it.
+            // This is where the arc is built — at ask granularity, live and
+            // during priming alike — never at the idle barrier, whose stretch
+            // unit swallowed every ask after the stretch's first.
+            if let Some(prev) = self.current_ask.take() {
+                if prev != prompt && self.arc.back() != Some(&prev) {
+                    if self.arc.len() == MAX_ARC_ASKS {
+                        self.arc.pop_front();
+                    }
+                    self.arc.push_back(prev);
+                }
+            }
+            self.current_ask = Some(prompt.clone());
             if self.recent.len() == MAX_RECENT_PROMPTS {
                 self.recent.pop_front();
             }
@@ -473,19 +498,12 @@ impl PromptCache {
     /// behind an idle barrier belong to a finished request; the preserved
     /// offset means they are gone for good rather than re-read on the next
     /// refresh.
-    /// The stretch that just ended keeps its opening ask in the arc on the way
-    /// out — the barrier is what ends a stretch, so it is the only place that
-    /// knows one has ended. `opening` is untouched: it belongs to the session,
-    /// not to any stretch of it.
+    /// Only the STRETCH's fields fall here. `opening`, `current_ask`, and the
+    /// arc belong to the session, not to any stretch of it — the barrier is
+    /// the headline's boundary, and the description's boundaries are the
+    /// user's own messages, recorded as each ask arrives.
     fn barrier(&mut self) {
-        if let Some(goal) = self.first.take() {
-            if self.arc.back() != Some(&goal) {
-                if self.arc.len() == MAX_ARC_STRETCHES {
-                    self.arc.pop_front();
-                }
-                self.arc.push_back(goal);
-            }
-        }
+        self.first = None;
         self.recent.clear();
     }
 
@@ -1103,86 +1121,89 @@ fn push_prompt_sections(out: &mut String, prompts: &[String]) {
 /// different questions; they were asked the same question about the same
 /// paragraph, and the model answered honestly twice.
 ///
-/// So the description gets evidence the headline cannot see:
+/// So the description gets evidence the headline cannot see, ordered newest
+/// first — the user's messages are the boundaries between work items, and the
+/// newest item is the subject:
 ///
+///  - **The most recent ask** — `PromptCache::current_ask`, the work item the
+///    session is on. This LEADS the digest, because a description that led
+///    with the session's opening kept naming the morning's cleanup after the
+///    session had moved on to the afternoon's work.
+///  - **The arc** — every prior ask, presented newest first. Earlier work is
+///    evidence the line may mention, never the half it leads with.
 ///  - **The session's opening ask** — `PromptCache::opening`, which survives
-///    every idle barrier. This is what the session set out to do.
-///  - **The arc** — the opening ask of each finished stretch, in order. A
-///    session that began as an audit, became a repair, and ended in a doc pass
-///    is *about* that movement, and no single stretch contains it.
-///  - **Where it stands now** — the current stretch's goal and the live
-///    headline, LABELLED AS THE PRESENT and explicitly not the subject. They
-///    are here so the description is current, not so it is about them.
+///    every idle barrier. Labelled as context: where the session began, which
+///    matters exactly when the session is still doing it.
+///  - **The live headline** — LABELLED AS THE PRESENT and explicitly not the
+///    subject. It is here so the description is current, not so it is about
+///    it.
 ///  - **The description it is replacing**, when there is one, so a re-run
 ///    revises a standing line rather than composing a new one from scratch
-///    every minute. It is also what keeps the line still: a model handed its
-///    own last answer mostly agrees with it, which is the correct behavior for
-///    a line that is supposed to stand.
+///    every minute — stability of voice, while the subject moves with the
+///    work.
 ///
-/// Returns `None` when the session has said nothing yet — with no opening ask,
-/// no arc, and no goal there is no undertaking to describe, and an honestly
-/// empty description line is the right answer.
+/// Returns `None` when the session has said nothing yet — with no ask there
+/// is no undertaking to describe, and an honestly empty description line is
+/// the right answer.
 pub fn compose_synopsis_digest(
     opening: Option<&str>,
     arc: &[String],
-    current_goal: Option<&str>,
+    recent_ask: Option<&str>,
     headline: Option<&str>,
     previous: Option<&str>,
 ) -> Option<String> {
-    if opening.is_none() && arc.is_empty() && current_goal.is_none() {
+    if opening.is_none() && arc.is_empty() && recent_ask.is_none() {
         return None;
     }
     let mut out = String::new();
-    if let Some(opening) = opening {
-        out.push_str(SESSION_OPENING_HEADING);
+    if let Some(recent) = recent_ask.map(str::trim).filter(|r| !r.is_empty()) {
+        out.push_str(SESSION_RECENT_HEADING);
         out.push_str("\n- ");
-        out.push_str(&clip(opening.trim(), 240));
+        out.push_str(&clip(recent, 240));
         out.push('\n');
     }
-    // The arc omits a stretch that merely restates the opener, and the opener
-    // itself: a session with one stretch has no arc to show, and printing its
-    // one ask twice would weight it as though it did.
-    let turns: Vec<&String> = arc
+    // Prior work items, NEWEST FIRST — the order the description weighs them
+    // in. The opener is omitted here because it gets its own labelled section,
+    // and an entry that merely restates the current ask says nothing new.
+    let prior: Vec<&String> = arc
         .iter()
-        .filter(|goal| Some(goal.as_str()) != opening)
+        .rev()
+        .filter(|ask| Some(ask.as_str()) != opening && Some(ask.as_str()) != recent_ask)
         .collect();
-    if !turns.is_empty() {
+    if !prior.is_empty() {
         if !out.is_empty() {
             out.push('\n');
         }
         out.push_str(SESSION_ARC_HEADING);
         out.push('\n');
-        for goal in turns {
+        for ask in prior {
             out.push_str("- ");
-            out.push_str(&clip(goal.trim(), 160));
+            out.push_str(&clip(ask.trim(), 160));
             out.push('\n');
         }
     }
-    // The present, under a heading that says so. Both lines are background:
-    // the wording tells the model in as many words that this section is
-    // evidence the work is live, never the subject.
-    let now: Vec<&str> = [current_goal, headline]
-        .into_iter()
-        .flatten()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    if !now.is_empty() {
+    // Where the session began — context, and skipped entirely when the newest
+    // ask IS the opener: a one-ask session would otherwise weight its one ask
+    // twice.
+    if let Some(opening) = opening.filter(|o| Some(*o) != recent_ask) {
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(SESSION_OPENING_HEADING);
+        out.push_str("\n- ");
+        out.push_str(&clip(opening.trim(), 240));
+        out.push('\n');
+    }
+    // The present, under a heading that says so: evidence the work is live,
+    // never the subject.
+    if let Some(headline) = headline.map(str::trim).filter(|h| !h.is_empty()) {
         if !out.is_empty() {
             out.push('\n');
         }
         out.push_str(SESSION_PRESENT_HEADING);
+        out.push_str("\n- ");
+        out.push_str(&clip(headline, 160));
         out.push('\n');
-        let mut seen: Vec<&str> = Vec::new();
-        for line in now {
-            let line = line.trim();
-            if seen.contains(&line) {
-                continue;
-            }
-            seen.push(line);
-            out.push_str("- ");
-            out.push_str(&clip(line, 160));
-            out.push('\n');
-        }
     }
     if let Some(previous) = previous.map(str::trim).filter(|p| !p.is_empty()) {
         out.push('\n');
@@ -1197,8 +1218,10 @@ pub fn compose_synopsis_digest(
 /// Headings the synopsis digest states its evidence under. Separate constants
 /// because the prompt names each one verbatim, and a heading the wording does
 /// not name is a section the model has no instruction about.
-const SESSION_OPENING_HEADING: &str = "What the session set out to do:";
-const SESSION_ARC_HEADING: &str = "What it turned to after that, in order:";
+const SESSION_RECENT_HEADING: &str = "What the session was most recently asked to do:";
+const SESSION_ARC_HEADING: &str = "What it worked on before that, newest first:";
+const SESSION_OPENING_HEADING: &str =
+    "What the session set out to do at the start (context, not the subject):";
 const SESSION_PRESENT_HEADING: &str = "Where it stands right now (background, not the subject):";
 const SESSION_PREVIOUS_HEADING: &str = "The description you are revising:";
 
@@ -2560,7 +2583,7 @@ fn take_synopsis_job(
     let digest = compose_synopsis_digest(
         state.prompts.opening.as_deref(),
         &arc,
-        state.prompts.first.as_deref(),
+        state.prompts.current_ask.as_deref(),
         state.last_headline.as_deref(),
         None,
     )?;
@@ -4494,19 +4517,24 @@ mod tests {
             "the new stretch's opening ask takes the pinned slot"
         );
         // The barrier is the STRETCH's boundary, not the session's. What the
-        // session set out to do outlives it, and the stretch that just ended
-        // goes into the arc on its way out — this pair is what the standing
-        // description is written from, and what the headline's digest has no
-        // way to see.
+        // session set out to do outlives it, and the ask it answered became an
+        // arc entry the moment the next ask arrived — the user's messages are
+        // the boundaries the description reads, and the headline's digest has
+        // no way to see them.
         assert_eq!(
             cache.opening.as_deref(),
             Some("the finished request"),
             "the session's opening ask survives every barrier"
         );
         assert_eq!(
+            cache.current_ask.as_deref(),
+            Some("the new request"),
+            "the newest ask is the session's current work item"
+        );
+        assert_eq!(
             cache.arc.iter().cloned().collect::<Vec<_>>(),
             ["the finished request"].map(String::from),
-            "the closed stretch's goal is kept as the session's arc"
+            "the answered ask is kept as the session's arc"
         );
 
         let _ = std::fs::remove_file(&path);
@@ -4548,25 +4576,71 @@ mod tests {
             "the file's first ask is the session's opening ask"
         );
         assert_eq!(
+            cache.current_ask.as_deref(),
+            Some("write the doctrine entry"),
+            "the newest ask in the file is the current work item"
+        );
+        assert_eq!(
             cache.arc.iter().cloned().collect::<Vec<_>>(),
             [
                 "audit the ledger's migrations",
                 "now repair the wedge it found"
             ]
             .map(String::from),
-            "each answered stretch's opener is an entry in the arc"
+            "every prior ask is an entry in the arc"
         );
 
         let _ = std::fs::remove_file(&path);
     }
 
-    /// The bug this whole rework exists for: the description and the headline
-    /// used to be one question asked twice. The two digests must now differ in
-    /// their SUBJECT — the description's leads with the session, the
-    /// headline's leads with the stretch — and the description's must file the
-    /// live headline under a heading that says it is background.
+    /// The tiny-movie case, and the reason the arc is built at ask granularity:
+    /// a user who types the next job into a WARM session never crosses an idle
+    /// barrier, and under stretch granularity the whole afternoon collapsed
+    /// into the first job's ask. The user's messages are the boundaries
+    /// between work items — three jobs typed back-to-back are three items,
+    /// with the newest as the current one.
     #[test]
-    fn the_description_digest_is_about_the_session_not_the_stretch() {
+    fn asks_in_a_warm_session_are_work_item_boundaries() {
+        let path = cache_tmp("warm-asks");
+        std::fs::write(&path, "").unwrap();
+        let mut cache = PromptCache::default();
+        cache.refresh(&path);
+        for ask in [
+            "clean up the usage sheet",
+            "clean up the gutter selection",
+            "fix the focus caret in Lens",
+        ] {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(format!("{}\n{}\n", user_line(ask), assistant_line("done")).as_bytes())
+                .unwrap();
+            cache.refresh(&path);
+        }
+
+        assert_eq!(
+            cache.current_ask.as_deref(),
+            Some("fix the focus caret in Lens"),
+            "the newest ask is the current work item, no barrier required"
+        );
+        assert_eq!(
+            cache.arc.iter().cloned().collect::<Vec<_>>(),
+            ["clean up the usage sheet", "clean up the gutter selection"].map(String::from),
+            "each earlier ask closed into the arc when the next one arrived"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The description's digest leads with the NEWEST work item and files
+    /// everything older behind it. It shipped the other way — opener first,
+    /// arc in chronological order — and the line it produced named a session's
+    /// first job ahead of the work actually under way. The headline digest is
+    /// still the stretch's; this one is the session's, newest first, with the
+    /// live headline filed under a heading that says it is background.
+    #[test]
+    fn the_description_digest_leads_with_the_newest_work_item() {
         let digest = compose_synopsis_digest(
             Some("audit the ledger's migrations"),
             &[
@@ -4577,22 +4651,29 @@ mod tests {
             Some("Draft doctrine entry for ledger wedge"),
             Some("Audit and repair the ledger's migrations"),
         )
-        .expect("a session with an opening ask has something to describe");
+        .expect("a session with an ask has something to describe");
 
-        assert!(digest.starts_with(SESSION_OPENING_HEADING));
-        assert!(digest.contains("audit the ledger's migrations"));
-        // The arc carries the turn, and does NOT repeat the opener it already
-        // stated — a one-stretch session would otherwise be weighted twice.
-        assert!(digest.contains(SESSION_ARC_HEADING));
-        assert_eq!(digest.matches("audit the ledger's migrations").count(), 1);
+        // The newest ask opens the digest as the subject.
+        assert!(digest.starts_with(SESSION_RECENT_HEADING));
+        let recent = digest.split_once(SESSION_ARC_HEADING).expect("the arc").0;
+        assert!(recent.contains("write the doctrine entry"));
+        // Prior work follows; the opener is not repeated there, because it has
+        // its own labelled section below — every ask appears exactly once.
         assert!(digest.contains("now repair the wedge"));
+        assert_eq!(digest.matches("audit the ledger's migrations").count(), 1);
+        // The opening comes AFTER the work items, labelled as context.
+        assert!(digest.contains(SESSION_OPENING_HEADING));
+        assert!(
+            digest.find(SESSION_ARC_HEADING).unwrap()
+                < digest.find(SESSION_OPENING_HEADING).unwrap(),
+            "earlier work outranks the opening"
+        );
         // The present is present, and labelled as background.
         let present = digest
             .split_once(SESSION_PRESENT_HEADING)
             .expect("the present section")
             .1;
         assert!(present.contains("Draft doctrine entry for ledger wedge"));
-        assert!(present.contains("write the doctrine entry"));
         // The standing line the model is revising closes it out.
         assert!(digest.contains(SESSION_PREVIOUS_HEADING));
         assert!(digest.contains("Audit and repair the ledger's migrations"));
@@ -4600,6 +4681,36 @@ mod tests {
         // Nothing said yet is nothing to describe: an honestly empty
         // description line beats a composed one about no evidence.
         assert!(compose_synopsis_digest(None, &[], None, Some("Fix things"), None).is_none());
+    }
+
+    /// Prior asks print newest first — the order the description weighs them
+    /// in — and a one-ask session prints its one ask once, under the subject
+    /// heading, with no context section restating it.
+    #[test]
+    fn the_description_digest_orders_prior_asks_newest_first() {
+        let digest = compose_synopsis_digest(
+            Some("first job"),
+            &["first job".to_string(), "second job".to_string()],
+            Some("third job"),
+            None,
+            None,
+        )
+        .expect("three asks are something to describe");
+        let arc = digest
+            .split_once(SESSION_ARC_HEADING)
+            .expect("the arc section")
+            .1
+            .split_once(SESSION_OPENING_HEADING)
+            .expect("the opening section")
+            .0;
+        assert_eq!(arc.trim(), "- second job", "newest prior ask leads the arc");
+
+        let young =
+            compose_synopsis_digest(Some("the only ask"), &[], Some("the only ask"), None, None)
+                .expect("one ask is something to describe");
+        assert!(young.starts_with(SESSION_RECENT_HEADING));
+        assert_eq!(young.matches("the only ask").count(), 1);
+        assert!(!young.contains(SESSION_OPENING_HEADING));
     }
 
     /// The description's register is a SUMMARY's, and the difference from the
@@ -4813,6 +4924,7 @@ mod tests {
             first: Some("pinned".to_string()),
             recent: VecDeque::from(["recent".to_string()]),
             opening: Some("pinned".to_string()),
+            current_ask: Some("pinned".to_string()),
             arc: VecDeque::new(),
         };
         cache.refresh(std::path::Path::new("/nonexistent/tugcast/prompts.jsonl"));
@@ -4831,6 +4943,7 @@ mod tests {
             first: Some("the goal".to_string()),
             recent: VecDeque::from(["the goal".to_string()]),
             opening: Some("the goal".to_string()),
+            current_ask: Some("the goal".to_string()),
             arc: VecDeque::new(),
         };
         assert_eq!(cache.digest_prompts(), ["the goal"].map(String::from));
@@ -4845,6 +4958,7 @@ mod tests {
                 "and a refinement".to_string(),
             ]),
             opening: Some("the goal".to_string()),
+            current_ask: Some("the goal".to_string()),
             arc: VecDeque::new(),
         };
         assert_eq!(
