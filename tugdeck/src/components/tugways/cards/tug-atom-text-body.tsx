@@ -43,6 +43,8 @@ import {
   type AtomSegment,
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
+import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
+import { isSessionAtomType, sessionAtomCallsign } from "@/lib/session-atom";
 import {
   annotationOpensSurface,
   dataAttributesForPayload,
@@ -204,6 +206,21 @@ export const TugAtomTextBody = React.forwardRef<
         if (seg.kind === "stray-ffc") {
           return (
             <React.Fragment key={`s-${i}`}>{TUG_ATOM_CHAR}</React.Fragment>
+          );
+        }
+        // A session atom is not a look-alike of the identity chip — it IS one.
+        // The transcript is a React surface, so the atom mounts the live
+        // component rather than a bake of it: its dot reads the session's phase
+        // this second and its title tracks a rename ([P14]). The chip resolves
+        // through the callsign, which is all the wire marker records.
+        if (isSessionAtomType(seg.atom.type)) {
+          const callsign = sessionAtomCallsign(seg.atom.value);
+          return (
+            <TugSessionCitation
+              key={`a-${i}`}
+              citedId={callsign}
+              recordedTag={callsign}
+            />
           );
         }
         const displayLabel = decorateChipLabel(seg.atom, address);

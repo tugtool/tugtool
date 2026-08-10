@@ -2495,14 +2495,26 @@ impl SessionLedger {
     /// Resolve citation ids to the rows they name ([D132]) — the server-side
     /// answer to "does this ledger hold the session that commit cited?".
     ///
-    /// Each requested id is either a full session uuid (an exact lookup) or the
-    /// 8-char short id a `Tug-Session:` citation records (a prefix lookup). The
-    /// prefix arm demands a **unique** match: two rows sharing eight hex chars
-    /// resolve to nothing rather than to the first one found, because a
-    /// citation that resolves to the wrong session is the confidently-wrong
-    /// answer [D132] calls strictly worse than an unresolvable one. Anything
-    /// that is neither shape is skipped — the caller's grammar already refused
-    /// it, and this is not the place to invent a spelling.
+    /// Each requested spelling is a full session uuid (an exact lookup), the
+    /// 8-char short id a `Tug-Session:` citation records (a prefix lookup), or a
+    /// **callsign** (an exact match on `tag`). The prefix arm demands a
+    /// **unique** match: two rows sharing eight hex chars resolve to nothing
+    /// rather than to the first one found, because a citation that resolves to
+    /// the wrong session is the confidently-wrong answer [D132] calls strictly
+    /// worse than an unresolvable one; the callsign arm demands the same, though
+    /// the mint arbiter makes a duplicate tag a repair case rather than a race.
+    /// Anything that is none of the three shapes is skipped — the caller's
+    /// grammar already refused it, and this is not the place to invent a
+    /// spelling.
+    ///
+    /// The callsign arm is what a **session atom** resolves through. An atom
+    /// carries `<project>/<callsign>` and no id — the wire marker a submitted
+    /// prompt records carries the same, so a replayed transcript has only the
+    /// callsign to go on — and a chip that cannot reach an id cannot show a live
+    /// dot or track a rename. Answering the callsign here rather than from the
+    /// client's tag cache is the same decision [D132] already made for ids: the
+    /// ledger can see every session, and a cache can only see what this run
+    /// happened to mention.
     ///
     /// Answers from `sessions` first, then from `external_scan_cache`. A
     /// citation is written by a commit made from a Tug session, which is a
@@ -2566,6 +2578,16 @@ impl SessionLedger {
             "SELECT {SCAN_COLUMNS} FROM external_scan_cache
              WHERE session_id LIKE ?1 || '%' AND excluded = 0 LIMIT 2"
         ))?;
+        // The callsign arms. `LIMIT 2` is the same ambiguity probe the prefix
+        // arm uses: a tag two rows wear answers nothing. `sessions.tag` is
+        // UNIQUE, so it is the scan cache — where uniqueness lives in
+        // `minted_tags` rather than in an index — that the probe answers for.
+        let mut tagged =
+            conn.prepare(&format!("SELECT {COLUMNS} FROM sessions WHERE tag = ?1 LIMIT 2"))?;
+        let mut scan_tagged = conn.prepare(&format!(
+            "SELECT {SCAN_COLUMNS} FROM external_scan_cache
+             WHERE tag = ?1 AND excluded = 0 LIMIT 2"
+        ))?;
         let mut seen = HashSet::new();
         let mut resolved = Vec::new();
         for id in ids {
@@ -2575,13 +2597,21 @@ impl SessionLedger {
             }
             let needle = queried.to_ascii_lowercase();
             let full = is_full_session_uuid(&needle);
+            let short = !full && is_short_session_id(&needle);
+            // The callsign matches on the spelling as asked: an id is hex and
+            // case-free, a callsign carries a capital in every fork segment.
+            let callsign = !full && !short && is_session_callsign(queried);
             let rows = if full {
                 exact
                     .query_map(params![needle], row_from_query)?
                     .collect::<Result<Vec<_>, _>>()?
-            } else if is_short_session_id(&needle) {
+            } else if short {
                 prefixed
                     .query_map(params![needle], row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            } else if callsign {
+                tagged
+                    .query_map(params![queried], row_from_query)?
                     .collect::<Result<Vec<_>, _>>()?
             } else {
                 continue;
@@ -2601,9 +2631,13 @@ impl SessionLedger {
                 scan_exact
                     .query_map(params![needle], scan_row_from_query)?
                     .collect::<Result<Vec<_>, _>>()?
-            } else {
+            } else if short {
                 scan_prefixed
                     .query_map(params![needle], scan_row_from_query)?
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                scan_tagged
+                    .query_map(params![queried], scan_row_from_query)?
                     .collect::<Result<Vec<_>, _>>()?
             };
             if scan_rows.len() != 1 {
@@ -5631,6 +5665,35 @@ fn is_short_session_id(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Whether `s` is a callsign — `adjective-noun`, extended by `-<Letter><digits>`
+/// fork segments (`stocky-pixie`, `stocky-pixie-A1-B2`).
+///
+/// The shape is checked before the value reaches a query so a spelling that is
+/// neither an id nor a callsign is refused here rather than scanning the table
+/// for free prose. The match itself is exact and case-sensitive: the fork
+/// segments carry a capital, and a callsign is a name rather than a query.
+fn is_session_callsign(s: &str) -> bool {
+    const MAX_LEN: usize = 64;
+    if s.is_empty() || s.len() > MAX_LEN {
+        return false;
+    }
+    let mut segments = s.split('-');
+    let head = [segments.next(), segments.next()];
+    for word in head {
+        match word {
+            Some(w)
+                if !w.is_empty() && w.bytes().all(|b| b.is_ascii_lowercase()) => {}
+            _ => return false,
+        }
+    }
+    segments.all(|seg| {
+        let mut bytes = seg.bytes();
+        matches!(bytes.next(), Some(b) if b.is_ascii_uppercase())
+            && bytes.len() > 0
+            && bytes.all(|b| b.is_ascii_digit())
+    })
+}
+
 /// A fork's allocated identity ([P11]) — the composed callsign plus the
 /// structured record behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6804,6 +6867,134 @@ mod tests {
         // The row travels whole — the callsign is what the chip renders, and
         // resolving is what puts the ledger's own word on it.
         assert_eq!(by_uuid[0].1.tag.as_deref(), Some("stocky-pixie"));
+    }
+
+    #[test]
+    fn a_citation_resolves_by_callsign() {
+        let l = fresh();
+        let full = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        l.record_spawn(full, WS_A, "/proj", "card-1", millis(0), Some("stocky-pixie"))
+            .unwrap();
+        let forked = "aabbccdd-1111-2222-3333-444455556666";
+        l.record_spawn(
+            forked,
+            WS_A,
+            "/proj",
+            "card-2",
+            millis(1),
+            Some("stocky-pixie-A1"),
+        )
+        .unwrap();
+
+        // A session atom carries a callsign and no id — this arm is what lets
+        // its chip reach one, and so show a live dot.
+        let by_tag = l.resolve_session_ids(&["stocky-pixie".to_owned()]).unwrap();
+        assert_eq!(by_tag.len(), 1);
+        assert_eq!(by_tag[0].0, "stocky-pixie");
+        assert_eq!(by_tag[0].1.session_id, full);
+
+        // A fork's callsign is a tag like any other and matches as itself, never
+        // as its root.
+        let by_fork = l
+            .resolve_session_ids(&["stocky-pixie-A1".to_owned()])
+            .unwrap();
+        assert_eq!(by_fork.len(), 1);
+        assert_eq!(by_fork[0].1.session_id, forked);
+
+        // Exact, deliberately: a callsign is a name, not a prefix query.
+        assert!(l.resolve_session_ids(&["stocky-pix".to_owned()]).unwrap().is_empty());
+        assert!(l.resolve_session_ids(&["stocky-pixie-a1".to_owned()]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_evicted_session_resolves_by_callsign_from_the_scan_cache() {
+        // Same eviction path the id arms fall back through: the transcript is
+        // still on disk and the picker still lists it, so an atom naming it must
+        // not go dark either.
+        let l = fresh();
+        let evicted = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        l.upsert_scan_cache(&ScanCacheRow {
+            session_id: evicted.into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 42,
+            last_user_prompt: None,
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
+            tag: None,
+        })
+        .unwrap();
+        l.record_spawn(evicted, WS_A, "/proj/alpha", "card-9", millis(2), Some("stocky-pixie"))
+            .unwrap();
+        l.backfill_external_tag(evicted, millis(3)).unwrap();
+        l.db
+            .lock()
+            .expect("ledger mutex")
+            .execute("DELETE FROM sessions WHERE session_id = ?1", params![evicted])
+            .unwrap();
+
+        let resolved = l.resolve_session_ids(&["stocky-pixie".to_owned()]).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].1.session_id, evicted);
+        assert_eq!(resolved[0].1.state, SessionState::Closed);
+    }
+
+    #[test]
+    fn an_ambiguous_callsign_in_the_scan_cache_resolves_to_nothing() {
+        // `sessions.tag` is UNIQUE, so the first arm cannot be ambiguous. The
+        // scan cache carries no such index — uniqueness lives in `minted_tags` —
+        // so the ambiguity probe is load-bearing on the fallback.
+        let l = fresh();
+        let a = "f6e43925-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+        let b = "aabbccdd-1111-2222-3333-444455556666";
+        let scan_row = |id: &str| ScanCacheRow {
+            session_id: id.into(),
+            project_dir: "/proj/alpha".into(),
+            file_size: 1_000,
+            file_mtime: millis(5),
+            excluded: false,
+            turn_count: 42,
+            last_user_prompt: None,
+            name: None,
+            created_at: millis(1),
+            last_used_at: millis(5),
+            parse_offset: 0,
+            tail_hash: 0,
+            cwd_checked: false,
+            created_at_found: false,
+            frontier_open: false,
+            frontier_pending_close: false,
+            frontier_pending_close_msg_id: None,
+            frontier_leaf_uuid: None,
+            effective_uuids: None,
+            lineage_ancestors: None,
+            tag: None,
+        };
+        for id in [a, b] {
+            l.upsert_scan_cache(&scan_row(id)).unwrap();
+            l.db
+                .lock()
+                .expect("ledger mutex")
+                .execute(
+                    "UPDATE external_scan_cache SET tag = 'stocky-pixie' WHERE session_id = ?1",
+                    params![id],
+                )
+                .unwrap();
+        }
+        assert!(l.resolve_session_ids(&["stocky-pixie".to_owned()]).unwrap().is_empty());
     }
 
     #[test]

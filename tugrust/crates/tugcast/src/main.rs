@@ -2010,6 +2010,11 @@ struct SeedSession {
     /// Display name for the entry's title, applied via `rename`.
     #[serde(default)]
     name: Option<String>,
+    /// The session's callsign. Written by `record_spawn` exactly as the real
+    /// spawn path writes it, so a seeded session is addressable by the name a
+    /// citation or a session atom carries.
+    #[serde(default)]
+    tag: Option<String>,
 }
 
 /// One file event to seed, with the sub-file evidence that decides whether
@@ -2114,7 +2119,7 @@ fn seed_ledger(spec_path: &std::path::Path) -> ! {
             &session.project_dir,
             &session.card_id,
             now,
-            None,
+            session.tag.as_deref(),
         ) {
             eprintln!("tugcast: error: record_spawn failed: {e}");
             std::process::exit(1);

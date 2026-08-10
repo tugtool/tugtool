@@ -31,9 +31,13 @@ import {
 } from "@/lib/session-identity";
 import { writeClipboardViaNative } from "@/lib/tug-native-clipboard";
 import { TUG_ATOM_CHAR, type AtomSegment } from "@/lib/tug-atom-img";
+import { SESSION_ATOM_TYPE } from "@/lib/session-atom-shape";
 
-/** The atom `type` a session reference wears. */
-export const SESSION_ATOM_TYPE = "session";
+export {
+  SESSION_ATOM_TYPE,
+  isSessionAtomType,
+  sessionAtomCallsign,
+} from "@/lib/session-atom-shape";
 
 /**
  * The atom segment for a session — `<project>/<callsign>` as both label and

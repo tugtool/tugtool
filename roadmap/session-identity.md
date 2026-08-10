@@ -116,6 +116,8 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 **Resolution:** DEFERRED — out of scope here; the atom's payloads are explicitly unchanged by this plan (see [#non-goals]).
 
+**Answered by the ledger instead.** The consumer this question anticipated arrived — a live transcript chip needs an id to subscribe with — and the payload still did not have to widen: `resolve_sessions` resolves a callsign ([P14]'s amendment). The callsign was already "a unique permanent key"; what was missing was somewhere to redeem it. An atom pasted into a document that outlives this ledger is unchanged by that, and the flat-text citation beside it remains the durable form.
+
 #### [Q02] Should the Changes card's session title adopt the new grammar? (DEFERRED) {#q02-changeset-title-grammar}
 
 **Question:** `session_row_title` in `tugrust/crates/tugcast/src/feeds/changeset.rs` composes a session's display title server-side with the old precedence — user name, else callsign, else prompt snippet, else short id. The new grammar is `<name> : <callsign>`, with both present.
@@ -349,6 +351,13 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 - The four live mount sites are `gazette-card.tsx`, `tug-history-list.tsx`, `tug-changes-list.tsx`, and the masthead's telemetry popover ([P16]). All four go live for free once [#step-5] lands, because all four compose `TugSessionCitation`.
 - `tug-changes-list.tsx` mounts one chip **per row**, so the Changes card acquires one `useSessionPhase` subscription per visible citation. [P03]'s key-return is what makes that affordable; see the watch-item in [#step-5].
 - Nothing here reaches the editor's atom pipeline, so no step touches `atom-decoration.ts` and the `at0205` SVG-in-img constraint is untouched.
+
+**Amendment — the two transcript surfaces, and the face the bake wears.** This decision's list of live mount sites was the set of surfaces that already composed `TugSessionCitation`; it was not a claim that the others were settled. Two were not, and both are fixed here rather than left as a look-alike:
+
+- **The transcript is a React surface, so its session atoms are live too.** `TugAtomTextBody` and `TugAtomMarkdownBody` rendered every atom through the generic `TugAtomChip` — which meant a submitted or replayed session reference wore the atom family's key-washed pill with the `MessageSquareText` glyph: a file atom with a different icon. Both walkers now mount `TugSessionCitation` for `type === "session"`, so the chip in the user's own row is subscribed on exactly the terms this decision states.
+- **The composer's atom stays a bake, and the bake now wears Spec S05's face.** [P14]'s exclusion was about *liveness*, not about appearance, but the face never followed. `bakeAtomChipDataUri` paints the session type on its own terms: a transparent pill in text ink, hairline-bounded, led by a filled phase dot resolved through `sessionPhaseNow` at bake time. The medium constraint is unchanged and `atom-decoration.ts` is still untouched.
+
+**The chip reaches an id through its callsign.** A `TugSessionCitation` needs a session id and the atom carries none — the wire marker records `` `@<project>/<callsign>` `` and nothing else, so a replayed transcript has only the name. `SessionLedger::resolve_session_ids` gains a callsign arm (exact match on `tag`, `sessions` first then the scan cache, ambiguity refused on the same terms as a short id), so the answer comes from the ledger rather than from whatever this run's tag cache happened to accumulate — the decision [D132] already made for ids. The atom's payloads are still unchanged; see [Q01].
 
 #### [P15] The width control leaves masthead-bearing panes (DECIDED) {#p15-no-width-control}
 

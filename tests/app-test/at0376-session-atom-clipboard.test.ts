@@ -40,6 +40,11 @@
  *      `clipboardData`, which is the shape of the real hazard — everything the
  *      paste needs is on the pasteboard and none of it is in the event.
  *
+ *   E. **And what lands wears the session face.** The pasted chip is a Canvas
+ *      bake inside an `<img>` and stays one ([P14]), so its face is pinned in
+ *      pixels: no ground where the shared atom family paints an opaque surface,
+ *      and a filled dot where the family strokes a glyph (Spec S05).
+ *
  * `pbpaste` cannot see a private pasteboard type, which is why B goes through
  * the app rather than the shell. The KEYSTROKE half is still not driven here:
  * ⌘V does not reach the web layer in this harness at all. D covers the branch
@@ -50,6 +55,8 @@
  * @foreground
  *
  * @covers tugdeck/src/lib/session-atom.ts
+ * @covers tugdeck/src/lib/session-atom-shape.ts
+ * @covers tugdeck/src/lib/command-atom.ts
  * @covers tugdeck/src/lib/tug-atom-img.ts
  * @covers tugdeck/src/components/tugways/use-copyable-text.tsx
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
@@ -346,6 +353,56 @@ describe.skipIf(!SHOULD_RUN)("at0376 — the session atom on the clipboard", () 
         expect(pasted.atoms).toBe(before + 1);
         // The chip is the whole paste — not the citation typed out beside it.
         expect(pasted.text).not.toContain(TAG);
+
+        // ---- E. And what landed wears the SESSION face. -------------------
+        //
+        // The composer's atom is a Canvas bake inside an `<img>` and stays one
+        // ([P14]), so the only witness to its face is its pixels. Two samples
+        // separate the session pill from the shared atom family:
+        //
+        //   - the right padding column, inside the chip and clear of the label:
+        //     the family fills its box with an opaque surface + Key wash, the
+        //     session atom paints no ground at all (Spec S05).
+        //   - the leading mark's center: the family strokes a glyph there, the
+        //     session atom fills a dot.
+        //
+        // Sampled in the bitmap's own device pixels; the bake is at 2× the
+        // screen's density, so CSS coordinates are scaled by the ratio.
+        const face = await app.evalJS<{
+          type: string;
+          groundAlpha: number;
+          markAlpha: number;
+        }>(
+          `(function(){
+            var img = document.querySelector(
+              ${JSON.stringify(COMPOSER)} + ' img[data-atom-type="session"]');
+            if (img === null) throw new Error("no session atom in the composer");
+            var c = document.createElement("canvas");
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            var g = c.getContext("2d");
+            g.drawImage(img, 0, 0);
+            var device = img.naturalWidth / img.width;
+            function alphaAt(cssX, cssY) {
+              return g.getImageData(
+                Math.round(cssX * device), Math.round(cssY * device), 1, 1).data[3];
+            }
+            // The chip fills the editor's line box minus a 1px inset per edge,
+            // so its font size falls out of its height; the dot sits half a
+            // mark-box in from the pill's 9px padding.
+            var fontSize = (img.height + 2) / 1.5;
+            return {
+              type: img.dataset.atomType || "",
+              groundAlpha: alphaAt(img.width - 4, img.height / 2),
+              markAlpha: alphaAt(9 + fontSize / 2, img.height / 2),
+            };
+          })()`,
+        );
+        note("at0376 pasted face", JSON.stringify(face));
+        expect(face.type).toBe("session");
+        // No ground: the pill is transparent and the dot is its only color.
+        expect(face.groundAlpha).toBeLessThan(16);
+        // The dot is painted, and it is solid.
+        expect(face.markAlpha).toBeGreaterThan(200);
       } finally {
         await app.close();
       }

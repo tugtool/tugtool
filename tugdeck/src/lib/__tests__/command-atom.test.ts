@@ -10,8 +10,11 @@ import {
   chipStyle,
   chipDisplayLabel,
   chipHasIcon,
+  chipMark,
   detectCommandEcho,
   hasLeadingCommandAtom,
+  SESSION_CHIP_GEOMETRY,
+  SESSION_CHIP_INK_TOKEN,
 } from "../command-atom";
 import type { ContentBlock } from "@/protocol";
 
@@ -80,6 +83,42 @@ describe("chipHasIcon", () => {
     expect(chipHasIcon("command")).toBe(false);
     expect(chipHasIcon("file")).toBe(true);
     expect(chipHasIcon("link")).toBe(true);
+  });
+
+  test("a session reserves the same leading span — for its dot", () => {
+    expect(chipHasIcon("session")).toBe(true);
+  });
+});
+
+describe("chipMark", () => {
+  test("the session's mark is the dot, never a glyph", () => {
+    expect(chipMark("session")).toBe("dot");
+    expect(chipMark("file")).toBe("icon");
+    expect(chipMark("command")).toBe("none");
+  });
+});
+
+describe("the session chip face", () => {
+  test("a session shows its callsign, not the project run it is cited by", () => {
+    expect(
+      chipDisplayLabel("session", "tugtool/quirky-hull", "tugtool/quirky-hull"),
+    ).toBe("quirky-hull");
+    // A fork's callsign is a callsign; the segments are not a path.
+    expect(
+      chipDisplayLabel("session", "tugtool/quirky-hull-A1", "tugtool/quirky-hull-A1"),
+    ).toBe("quirky-hull-A1");
+  });
+
+  test("is a pill in text ink — outside the shared atom family", () => {
+    expect(SESSION_CHIP_GEOMETRY.radius).toBeGreaterThan(
+      chipStyle().geometry.radius,
+    );
+    expect(SESSION_CHIP_INK_TOKEN).toBe(
+      "--tug7-element-global-text-normal-default-rest",
+    );
+    // The theme's atom tokens are the family's; the session paints in ordinary
+    // text ink, and the dot is its only color.
+    expect(SESSION_CHIP_INK_TOKEN).not.toBe(chipStyle().tokens.text);
   });
 });
 

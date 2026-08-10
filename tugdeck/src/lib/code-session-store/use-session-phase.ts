@@ -31,7 +31,10 @@
 
 import { useSyncExternalStore } from "react";
 
-import { useCardIdForSession } from "@/lib/card-session-binding-store";
+import {
+  cardIdForSession,
+  useCardIdForSession,
+} from "@/lib/card-session-binding-store";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { countRunningJobs } from "@/lib/code-session-store/select-jobs";
 import {
@@ -74,6 +77,20 @@ export function sessionPhaseFromSnapshot(
     // is how a card the user isn't looking at says it needs them.
     pendingAsk: snap.pendingAsk !== null,
   });
+}
+
+/**
+ * The phase key for a session **as a snapshot, with no subscription** — the
+ * same walk the hook makes, read once.
+ *
+ * Non-React callers only, and there is one: the editor's atom chip is a Canvas
+ * bake, so a pasted session atom's dot is the phase at paste time and cannot be
+ * anything else ([P14]). Every component uses {@link useSessionPhase}.
+ */
+export function sessionPhaseNow(sessionId: string): SessionPhaseKey {
+  const cardId = cardIdForSession(sessionId);
+  const services = cardId === null ? null : cardServicesStore.getServices(cardId);
+  return sessionPhaseFromSnapshot(services?.codeSessionStore?.getSnapshot() ?? null);
 }
 
 /**

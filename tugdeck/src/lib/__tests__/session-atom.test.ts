@@ -15,6 +15,7 @@ import { composeSessionIdentity } from "@/lib/session-identity";
 import {
   SESSION_ATOM_TYPE,
   sessionAtomClipboardPayload,
+  sessionAtomCallsign,
   sessionAtomSegment,
 } from "@/lib/session-atom";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
@@ -68,6 +69,23 @@ describe("sessionAtomClipboardPayload", () => {
     const payload = sessionAtomClipboardPayload(identity());
     expect(payload.text).toBe(TUG_ATOM_CHAR);
     expect(payload.text.length).toBe(1);
+  });
+});
+
+describe("sessionAtomCallsign", () => {
+  test("is what the chip displays and resolves through", () => {
+    // The atom carries no id: the callsign is the whole of what a chip — in the
+    // composer, or replayed from a wire marker — has to reach the ledger with.
+    expect(sessionAtomCallsign(sessionAtomSegment(identity()).value)).toBe(
+      "syrupy-beam",
+    );
+    expect(sessionAtomCallsign("tugtool/syrupy-beam-A1-B2")).toBe(
+      "syrupy-beam-A1-B2",
+    );
+  });
+
+  test("a value that is already a callsign passes through", () => {
+    expect(sessionAtomCallsign("syrupy-beam")).toBe("syrupy-beam");
   });
 });
 

@@ -414,6 +414,14 @@ export interface LedgerSeedSession {
   card_id?: string;
   /** The entry's display title; falls back to the id prefix without one. */
   name?: string;
+  /**
+   * The session's callsign, written the way the real spawn path writes it.
+   *
+   * Seed it whenever the test asks the ledger to answer for the session by
+   * NAME rather than by id — a session atom carries `project/callsign` and no
+   * id, so its chip resolves through `resolve_sessions`' callsign arm.
+   */
+  tag?: string;
 }
 
 /**

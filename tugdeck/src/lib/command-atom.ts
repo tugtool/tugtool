@@ -29,6 +29,10 @@
  */
 
 import type { ContentBlock } from "@/protocol";
+import {
+  isSessionAtomType,
+  sessionAtomCallsign,
+} from "@/lib/session-atom-shape";
 
 /** Strip a single leading slash so the helpers are idempotent on a
  *  value that already carries one (defensive — `value` is canonically
@@ -59,18 +63,32 @@ export function chipDisplayLabel(
   label: string,
   value: string,
 ): string {
+  if (isSessionAtomType(type)) return sessionAtomCallsign(value);
   if (type !== "command") return label;
   return "/" + bareName(value);
 }
 
 /**
- * Whether a chip of this type draws a leading icon glyph. A slash command
- * does not — its leading `/` (see {@link chipDisplayLabel}) is the marker, so
- * an icon would be redundant. Every other type draws its
- * {@link ATOM_ICON_PATHS} glyph.
+ * What a chip draws in front of its label.
+ *
+ * - `"icon"` — the type's {@link ATOM_ICON_PATHS} glyph, the family default.
+ * - `"dot"` — the session atom's phase dot. The session's mark says what it is
+ *   *doing*, which is the one thing a static glyph could never do ([P01]), so
+ *   the chip leads with the dot and carries no glyph beside it.
+ * - `"none"` — a slash command, whose leading `/` (see
+ *   {@link chipDisplayLabel}) is its marker.
+ *
+ * Both marks occupy the same leading span, so geometry is one rule.
  */
+export function chipMark(type: string): "icon" | "dot" | "none" {
+  if (type === "command") return "none";
+  if (isSessionAtomType(type)) return "dot";
+  return "icon";
+}
+
+/** Whether a chip of this type reserves a leading mark span. */
 export function chipHasIcon(type: string): boolean {
-  return type !== "command";
+  return chipMark(type) !== "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -189,6 +207,38 @@ const CHIP_STYLE_SELECTED: ChipStyle = {
 export function chipStyle(variant: ChipVariant = "default"): ChipStyle {
   return variant === "selected" ? CHIP_STYLE_SELECTED : CHIP_STYLE;
 }
+
+/**
+ * The session atom's face ([P13], Spec S05) — the one atom type outside the
+ * shared family above.
+ *
+ * A rounded pill in **text ink**: no ground, no Key wash, and a plain hairline
+ * at {@link SESSION_CHIP_BORDER_ALPHA} of the text color in place of the
+ * family's recess. The dot is the chip's only color channel, because a colored
+ * pill around a colored dot was two tints saying one thing.
+ *
+ * The numbers are the ones `tug-session-identity.css` authors for the `sm`
+ * chip, so the composer's bake and the mounted component read as the same
+ * object at the same size.
+ */
+export const SESSION_CHIP_GEOMETRY: ChipGeometryStyle = {
+  // A pill: both renderers clamp a corner radius to half the box.
+  radius: 999,
+  paddingX: 9,
+  gap: 5,
+};
+
+/** Alpha of the session chip's hairline, over the chip's own text ink —
+ *  the bake's equivalent of the component's `currentcolor 30%` mix. */
+export const SESSION_CHIP_BORDER_ALPHA = 0.3;
+
+/** The text/border ink the session chip paints in — ordinary text color, not
+ *  the atom family's own tokens. */
+export const SESSION_CHIP_INK_TOKEN =
+  "--tug7-element-global-text-normal-default-rest";
+
+/** The painted dot's share of its mark box — the pulsing dot's own ratio. */
+export const SESSION_CHIP_DOT_RATIO = 0.6;
 
 // ---------------------------------------------------------------------------
 // Expansion-echo detection

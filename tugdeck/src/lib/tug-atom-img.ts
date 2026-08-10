@@ -23,8 +23,22 @@
  */
 
 import { getTokenValue } from "@/theme-tokens";
-import { chipStyle, chipDisplayLabel, chipHasIcon, ATOM_KEY_WASH } from "./command-atom";
+import {
+  chipStyle,
+  chipDisplayLabel,
+  chipHasIcon,
+  ATOM_KEY_WASH,
+  SESSION_CHIP_BORDER_ALPHA,
+  SESSION_CHIP_DOT_RATIO,
+  SESSION_CHIP_GEOMETRY,
+  SESSION_CHIP_INK_TOKEN,
+} from "./command-atom";
 import type { ChipVariant } from "./command-atom";
+import { progressRoleFillToken } from "@/components/tugways/tug-progress-indicator";
+import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
+import { sessionPhaseNow } from "@/lib/code-session-store/use-session-phase";
+import { isSessionAtomType, sessionAtomCallsign } from "@/lib/session-atom-shape";
+import { sessionTagStore } from "@/lib/session-tag-store";
 
 /**
  * Recess-edge geometry shared by both renderers so the inline-`<svg>` chip
@@ -360,7 +374,9 @@ export function computeAtomChipGeometry(
   // (not duplicated in the two renderers). Every atom type shares this layout;
   // a slash command differs only in that it has no icon (its `/` is the
   // marker), so it reserves no icon span.
-  const { paddingX, gap, radius } = chipStyle().geometry;
+  const { paddingX, gap, radius } = isSessionAtomType(type)
+    ? SESSION_CHIP_GEOMETRY
+    : chipStyle().geometry;
   const hasIcon = chipHasIcon(type);
   const iconSpan = hasIcon ? icon_px + gap : 0;
   const width = paddingX + iconSpan + Math.ceil(textWidth) + paddingX;
@@ -503,6 +519,80 @@ function paintRecessShade(
   ctx.drawImage(off, 0, 0, width, height);
 }
 
+/**
+ * The color a session atom's dot paints, for the session its value names.
+ *
+ * A **snapshot**, and the only honest one available here: the chip is a Canvas
+ * bake inside an `<img>`, which can neither subscribe nor cascade ([P14]). The
+ * callsign is resolved through the tag index this run has built — a session
+ * nothing has mentioned yet is unknown, which reads `idle` exactly as an
+ * unreachable one does ([P02]: doubt is quiet, never red).
+ *
+ * `null` means the phase paints in the chip's own ink (the `inherit` role) —
+ * the quiet mark for a session with no turn in flight.
+ */
+function sessionDotToken(value: string): string | null {
+  const sessionId = sessionTagStore.resolveTag(sessionAtomCallsign(value));
+  if (sessionId === null) return null;
+  const { role } = sessionSessionPhaseVisual(sessionPhaseNow(sessionId));
+  return progressRoleFillToken(role ?? "inherit");
+}
+
+/**
+ * Paint the session atom: a transparent pill in text ink, hairline-bounded,
+ * led by the phase dot. No ground, no Key wash, no recess — the family's
+ * treatment says "inline reference", and this chip's shape says it instead
+ * (Spec S05).
+ */
+function paintSessionChip(
+  ctx: CanvasRenderingContext2D,
+  g: AtomChipGeometry,
+  value: string,
+  variant: ChipVariant,
+): void {
+  // Under the editor's selection the chip takes the family's selected text
+  // token — the one the theme authors to stay legible over the blue wash. A
+  // transparent pill has no ground to swap, so the ink is the whole swap.
+  const ink = getTokenValue(
+    variant === "selected"
+      ? chipStyle("selected").tokens.text
+      : SESSION_CHIP_INK_TOKEN,
+  );
+  const dotToken = sessionDotToken(value);
+
+  ctx.globalAlpha = SESSION_CHIP_BORDER_ALPHA;
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 1;
+  traceRoundedRect(
+    ctx,
+    0.5,
+    0.5,
+    g.width - 1,
+    g.height - 1,
+    Math.max(0, g.radius - 0.5),
+  );
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  if (g.hasIcon) {
+    const box = g.fontSize;
+    ctx.beginPath();
+    ctx.arc(
+      g.iconX + box / 2,
+      g.height / 2,
+      (box * SESSION_CHIP_DOT_RATIO) / 2,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fillStyle = dotToken === null ? ink : getTokenValue(dotToken);
+    ctx.fill();
+  }
+
+  ctx.font = `${g.fontSize}px ${g.fontFamily}`;
+  ctx.fillStyle = ink;
+  ctx.fillText(g.displayLabel, g.textX, g.textY);
+}
+
 // ---- Public API ----
 
 /**
@@ -592,15 +682,6 @@ export function bakeAtomChipDataUri(
     ...options,
     lineHeight: options?.lineHeight ?? EDITOR_LINE_HEIGHT,
   });
-  // Colors come from the shared chip style, resolved to concrete values
-  // at bake time.
-  const tokens = chipStyle(options?.variant).tokens;
-  const surfaceColor = getTokenValue(tokens.surface);
-  const keyColor = getTokenValue(tokens.key);
-  const borderColor = getTokenValue(tokens.border);
-  const iconColor = getTokenValue(tokens.icon);
-  const textColor = getTokenValue(tokens.text);
-
   const scale = bakeScale();
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(g.width * scale));
@@ -617,6 +698,27 @@ export function bakeAtomChipDataUri(
     };
   }
   ctx.scale(canvas.width / g.width, canvas.height / g.height);
+
+  // The session atom is the one type outside the shared family: its own paint,
+  // its own tokens, and a dot where the others carry a glyph.
+  if (isSessionAtomType(type)) {
+    paintSessionChip(ctx, g, value, options?.variant ?? "default");
+    return {
+      dataUri: canvas.toDataURL("image/png"),
+      width: g.width,
+      height: g.height,
+      baselineOffset: g.baselineOffset,
+    };
+  }
+
+  // Colors come from the shared chip style, resolved to concrete values
+  // at bake time.
+  const tokens = chipStyle(options?.variant).tokens;
+  const surfaceColor = getTokenValue(tokens.surface);
+  const keyColor = getTokenValue(tokens.key);
+  const borderColor = getTokenValue(tokens.border);
+  const iconColor = getTokenValue(tokens.icon);
+  const textColor = getTokenValue(tokens.text);
 
   // Base surface (opaque), then the Key wash overlay — together a 9%
   // wash, no hard stroke.

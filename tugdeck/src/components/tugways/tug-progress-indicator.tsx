@@ -184,13 +184,25 @@ function buildFillStyle(
   _variant: TugProgressIndicatorVariant,
   role: TugProgressIndicatorRole,
 ): React.CSSProperties {
-  if (role === "inherit") {
-    return { "--tugx-progress-indicator-fill": "currentColor" } as React.CSSProperties;
-  }
-  const suffix = ROLE_TO_TOKEN_SUFFIX[role];
+  const token = progressRoleFillToken(role);
   return {
-    "--tugx-progress-indicator-fill": `var(--tug7-surface-toggle-primary-normal-${suffix}-rest)`,
+    "--tugx-progress-indicator-fill": token === null ? "currentColor" : `var(${token})`,
   } as React.CSSProperties;
+}
+
+/**
+ * The token name a role's fill resolves from, or `null` for `inherit` — which
+ * paints in `currentColor` and so has no token to name.
+ *
+ * Exported for the one renderer that cannot cascade: the editor's atom chip is
+ * a Canvas bake inside an `<img>`, so a session atom's dot has to resolve this
+ * tone to pixels rather than inherit it.
+ */
+export function progressRoleFillToken(
+  role: TugProgressIndicatorRole,
+): string | null {
+  if (role === "inherit") return null;
+  return `--tug7-surface-toggle-primary-normal-${ROLE_TO_TOKEN_SUFFIX[role]}-rest`;
 }
 
 /**
