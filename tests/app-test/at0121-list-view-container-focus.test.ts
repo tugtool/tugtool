@@ -87,7 +87,12 @@ const CURSOR_BAR = `(function(){
   var el = document.querySelector(${JSON.stringify(DEMO)} + " [data-tug-list-cell-index=\\"0\\"]");
   if (!el) return null;
   var cs = getComputedStyle(el, "::before");
-  return { content: cs.content, width: cs.width, background: cs.backgroundColor };
+  return {
+    content: cs.content,
+    width: cs.width,
+    background: cs.backgroundColor,
+    clipPath: cs.clipPath,
+  };
 })()`;
 
 // Whether EVERY rendered cell wrapper in the demo is tabIndex=-1.
@@ -118,6 +123,7 @@ interface CursorBar {
   content: string;
   width: string;
   background: string;
+  clipPath: string;
 }
 
 describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop", () => {
@@ -195,6 +201,21 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(bar?.content).not.toBe("none");
         expect(parseFloat(bar?.width ?? "0")).toBeGreaterThan(0);
         expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
+
+        // The caret is a triangle standing on a STEM: a stripe of constant
+        // width at the leading edge running the row's full height, with the
+        // taper starting where it ends. A pure triangle comes to nothing at
+        // the row's own top and bottom edges and reads lighter than it
+        // measures. The clip's second point is the stem's top corner — it
+        // must sit in from the leading edge, which is what a bare
+        // `polygon(0 0, 100% 50%, 0 100%)` would not do.
+        const points = (bar?.clipPath ?? "")
+          .replace(/^polygon\(/, "")
+          .replace(/\)$/, "")
+          .split(",")
+          .map((point) => point.trim());
+        expect(points.length).toBe(5);
+        expect(parseFloat(points[1] ?? "")).toBeGreaterThan(0);
       } finally {
         await app.close();
       }

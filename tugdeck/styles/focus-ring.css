@@ -203,10 +203,19 @@ body {
      comes to a point at both ends rather than ending square. It reads as an
      indicator aimed at the row rather than as a rule beside it.
 
-     `-width` and `-point` together are that widest extent at mid-height. Keep
-     the sum SMALL — over a tall row the taper is nearly vertical and reads as
-     a subtle bevel, which is the intent; a large value turns the caret into a
-     dart that competes with the content. */
+     `-stem` is the one part of the caret that is NOT the triangle: a stripe of
+     constant width at the leading edge, running the row's full height, with the
+     taper starting where it ends. A pure triangle comes to nothing at the top
+     and bottom edges, so on a tall row the mark thins away exactly where the
+     row's own edges are and the caret reads lighter than it measures. The stem
+     gives it a continuous edge to stand on. Keep it to a pixel or so: more and
+     the shape stops reading as a pointer and becomes a rule with a bulge.
+
+     `-width` and `-point` together are the widest extent at mid-height, on top
+     of the stem. Keep the sum SMALL — over a tall row the taper is nearly
+     vertical and reads as a subtle bevel, which is the intent; a large value
+     turns the caret into a dart that competes with the content. */
+  --tugx-focus-cursor-bar-stem: 1px;
   --tugx-focus-cursor-bar-width: 3px;
   --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);

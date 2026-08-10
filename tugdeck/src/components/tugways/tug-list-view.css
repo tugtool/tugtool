@@ -105,6 +105,7 @@ body {
      token would be a straight [L20] violation ("A never overrides, aliases, or
      references B's tokens"). The old names survive as fallbacks so existing
      consumers that set them keep working. */
+  --tugx-list-view-cursor-bar-stem:    var(--tugx-focus-cursor-bar-stem);
   --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
   --tugx-list-view-cursor-bar-point:   var(--tugx-focus-cursor-bar-point);
   --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
@@ -394,13 +395,24 @@ body {
      pseudo-element and generated ahead of the row, so at the default `auto` it
      would paint UNDER the row and vanish on any filled row. */
   z-index: 1;
-  /* The box is the caret's widest extent — bar plus nose — and the clip cuts
-     the shape out of it. Clipping one box rather than adding a second element
-     keeps the caret one paint: an `::after` triangle would have to track the
-     bar's colour, its inset, and the row's height independently. */
-  width: calc(var(--tugx-list-view-cursor-bar-width) + var(--tugx-list-view-cursor-bar-point));
+  /* The box is the caret's widest extent — stem plus bar plus nose — and the
+     clip cuts the shape out of it: a full-height stripe `-stem` wide at the
+     leading edge, then the taper to the nose. Clipping one box rather than
+     adding a second element keeps the caret one paint: an `::after` triangle
+     would have to track the bar's colour, its inset, and the row's height
+     independently. */
+  width: calc(
+    var(--tugx-list-view-cursor-bar-stem) + var(--tugx-list-view-cursor-bar-width) +
+      var(--tugx-list-view-cursor-bar-point)
+  );
   background: var(--tugx-list-view-cursor-bar-color);
-  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  clip-path: polygon(
+    0 0,
+    var(--tugx-list-view-cursor-bar-stem) 0,
+    100% 50%,
+    var(--tugx-list-view-cursor-bar-stem) 100%,
+    0 100%
+  );
 }
 /* The caret sits flush against the row's leading edge unless a consumer insets
    it. It used to be pushed in by the container ring's inner overlap so it
