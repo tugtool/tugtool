@@ -716,7 +716,7 @@ function CardTitleBar({
                 role="action"
                 size="sm"
                 icon={<MoreHorizontal />}
-                aria-label="Section menu"
+                aria-label="Card menu"
                 data-testid="tug-pane-title-bar-menu-button"
               />
             }

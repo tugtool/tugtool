@@ -220,9 +220,12 @@ describe("the vocabulary is fully accounted for", () => {
     expect(modes.map((e) => e.payload)).toEqual(["continuous", "single", "two"]);
   });
 
-  test("every doorless entry says so rather than failing the door lint", () => {
-    // The lint is only honest if `internal` is a declaration, not a
-    // catch-all: each one has to be a deliberate row.
+  test("every entry with no host door declares which case it is", () => {
+    // The lint is only honest if the declaration is a deliberate row rather
+    // than a catch-all. Two cases, and they are opposites: `internal` says
+    // nothing opens this yet, `paneMenu` says a card's `…` menu does and the
+    // lint simply cannot see that door. An entry that said neither would be
+    // invocable by nobody with no one having noticed.
     const doorless = COMMANDS.filter(
       (e) =>
         e.menuItemId === undefined &&
@@ -230,7 +233,14 @@ describe("the vocabulary is fully accounted for", () => {
         !e.parameterized,
     );
     for (const entry of doorless) {
-      expect(entry.internal).toBe(true);
+      expect(
+        entry.internal === true || entry.paneMenu === true,
+        `${entry.id} declares internal or paneMenu`,
+      ).toBe(true);
+      expect(
+        entry.internal === true && entry.paneMenu === true,
+        `${entry.id} is not both at once`,
+      ).toBe(false);
     }
   });
 });

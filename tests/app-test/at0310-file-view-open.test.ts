@@ -19,6 +19,10 @@
  *   4. The Lens **Files** section lists the viewer beside text cards, without
  *      the unsaved dot (a viewer is read-only and can never be dirty), and its
  *      close box closes the card.
+ *   5. The pane wears the **document masthead** the card publishes: name,
+ *      path, and a kind label composed from the classifier plus the extension
+ *      — and, for a PDF, the page count that only the surface knows. The tier
+ *      is 72px before that count arrives, which is the whole of [P11].
  *
  * Both the PNG and the two-page PDF are encoded by this test rather than
  * checked in, so the bytes the route serves are produced here and the repo
@@ -29,6 +33,7 @@
  * @covers tugdeck/src/lib/file-view-open-registry.ts
  * @covers tugdeck/src/components/tugways/cards/file-view-card.tsx
  * @covers tugdeck/src/components/tugways/cards/pdf-view.tsx
+ * @covers tugdeck/src/lib/card-title-store.ts
  * @covers tugdeck/src/lib/pdf-runtime.ts
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
@@ -39,7 +44,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { deflateSync } from "node:zlib";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -57,6 +62,39 @@ const UNSAVED_DOT = '[data-testid="lens-card-unsaved"]';
 
 const IMAGE_WIDTH = 48;
 const IMAGE_HEIGHT = 32;
+
+/**
+ * A masthead line on the pane hosting the viewer card.
+ *
+ * Pane-scoped by construction rather than by id: the card is opened by
+ * `open-file`, so its pane is whichever one the deck minted. The masthead
+ * lives in the PANE's title bar, which is not a descendant of the card
+ * element — a selector prefixed with the card would match nothing.
+ */
+async function mastheadLine(app: App, testid: string): Promise<string | null> {
+  return app.evalJS<string | null>(
+    `(() => {
+       const card = document.querySelector('[data-slot="file-view-card"]');
+       const pane = card === null ? null : card.closest(".tug-pane");
+       const el = pane === null
+         ? null
+         : pane.querySelector('[data-testid=${JSON.stringify(testid)}]');
+       return el === null ? null : el.innerText;
+     })()`,
+  );
+}
+
+/** The title bar's tier, less the 1px divider that sits below it. */
+async function paneTier(app: App): Promise<number> {
+  return app.evalJS<number>(
+    `(() => {
+       const card = document.querySelector('[data-slot="file-view-card"]');
+       const bar = card.closest(".tug-pane").querySelector(".tug-pane-title-bar");
+       const border = parseFloat(getComputedStyle(bar).borderBottomWidth) || 0;
+       return bar.getBoundingClientRect().height - border;
+     })()`,
+  );
+}
 
 /** Expression: count of deck cards with the given componentId. */
 function countByComponent(componentId: string): string {
@@ -210,6 +248,30 @@ describe.skipIf(!SHOULD_RUN)("at0310 — image opens in a viewer card", () => {
           ),
         ).toBe(IMAGE_HEIGHT);
 
+        // ---- A viewer is a DOCUMENT card, so its pane wears the masthead.
+        //
+        // Three lines from three different sources: the basename the card
+        // already displayed, the full path it is bound to (start-truncated,
+        // so what survives is the tail), and a kind label composed from the
+        // classifier's coarse answer plus the extension — "image" is not what
+        // a reader calls a PNG.
+        expect(await paneTier(app)).toBeCloseTo(72, 0);
+        expect(await mastheadLine(app, "card-masthead-title")).toBe("gradient.png");
+        expect(await mastheadLine(app, "card-masthead-description")).toContain(
+          "gradient.png",
+        );
+        expect(await mastheadLine(app, "card-masthead-detail")).toBe("PNG image");
+
+        // The card's one verb reaches its pane's `…` menu. Membership is the
+        // card's to publish; the row's label and enablement are the command
+        // table's, which at0392 asserts on the Text card's richer menu.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(
+               '[data-testid="tug-pane-title-bar-menu-button"]').length`,
+          ),
+        ).toBe(1);
+
         const viewerCardId = await app.evalJS<string>(
           `window.tugdeck.diag.getDeckState().cards.find(
             (c) => c.componentId === "file-view",
@@ -332,6 +394,24 @@ describe.skipIf(!SHOULD_RUN)("at0310 — image opens in a viewer card", () => {
            })()`,
         );
         expect(distinctPixels).toBeGreaterThan(1);
+
+        // The masthead's third line counts the pages, which only the surface
+        // knows: `PdfView` reports `doc.numPages` up to the card once the
+        // document resolves, and the card republishes through the same
+        // equality-guarded `set`. Waited for rather than read, because the
+        // count arrives after the tier does — which is the point of [P11]:
+        // the height was already 72 before this line had anything to say.
+        expect(await paneTier(app)).toBeCloseTo(72, 0);
+        await app.waitForCondition<boolean>(
+          `(() => {
+             const card = document.querySelector('[data-slot="file-view-card"]');
+             const el = card.closest(".tug-pane")
+               .querySelector('[data-testid="card-masthead-detail"]');
+             return el !== null && el.innerText === "PDF · 2 pages";
+           })()`,
+          { timeoutMs: 15_000 },
+        );
+        expect(await mastheadLine(app, "card-masthead-title")).toBe("two-pages.pdf");
 
         // pdf.js's text layer is what makes the rendering selectable rather
         // than a picture of a document. Selecting across its spans and

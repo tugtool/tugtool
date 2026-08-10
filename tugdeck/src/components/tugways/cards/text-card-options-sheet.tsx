@@ -39,7 +39,11 @@ type ShowSheet = (options: ShowSheetOptions) => Promise<string | undefined>;
 function TextCardOptionsSheetBody({ cardId }: { cardId: string }): React.ReactElement {
   const { settings, setSetting } = useTextCardSettings(cardId);
   return (
-    <div className="text-card-options" data-testid="text-card-options">
+    <div
+      className="text-card-options"
+      data-slot="text-card-options"
+      data-testid="text-card-options"
+    >
       <TextCardControls settings={settings} onChange={setSetting} />
     </div>
   );

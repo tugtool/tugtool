@@ -128,7 +128,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Decide while writing the entries in #step-3. The registry lint is the forcing function — it fails the build if this is skipped.
 
-**Resolution:** DECIDED in #step-3 — both become **new** first-responder entries with `internal: true` and a comment naming the blocked door. `Editor Options…` is `TUG_ACTIONS.SHOW_EDITOR_OPTIONS`. `Reveal in Finder` is `TUG_ACTIONS.REVEAL_CARD_FILE`, deliberately *not* `REVEAL_IN_FINDER`: that action means "the path the pointer sampled" and carries the path as its payload, while a pane-menu row has no pointer target and always means the card's own document, which only the chain can resolve. `REVEAL_IN_FINDER` therefore stays in `ACTIONS_OUTSIDE_THE_TABLE` unchanged. `internal: true` is the honest classification for both: the pane's `…` menu *is* their door, but the door-coverage lint counts only native menu items and key equivalents, and neither has one today.
+**Resolution:** DECIDED in #step-3 — both become **new** key-card entries with a `paneMenu: true` door declaration. (Key-card, not first-responder: pressing the pane's `…` button promotes the PANE, so a first-responder walk starts above the card and never enters it. And `paneMenu` rather than `internal`: the pane menu IS their door — `internal` would have claimed they have none, which is the opposite of true, and would have hidden them from the keymap pane. The door-coverage lint counts native menu items and key equivalents, so it needed teaching, which is the field.) `Editor Options…` is `TUG_ACTIONS.SHOW_EDITOR_OPTIONS`. `Reveal in Finder` is `TUG_ACTIONS.REVEAL_CARD_FILE`, deliberately *not* `REVEAL_IN_FINDER`: that action means "the path the pointer sampled" and carries the path as its payload, while a pane-menu row has no pointer target and always means the card's own document, which only the chain can resolve. `REVEAL_IN_FINDER` therefore stays in `ACTIONS_OUTSIDE_THE_TABLE` unchanged.
 
 ---
 
@@ -680,7 +680,7 @@ Deleting `TextCardTopBar` and the status bar's save cell invalidates three exist
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] All #success-criteria bullets verified (each names its own measurement).
-- [ ] `at0375` diagnostics byte-identical to pre-plan (session masthead untouched).
+- [x] `at0375` — the session masthead itself is untouched substrate, but the test is not byte-identical, and correctly so: its Text tab is a document card now, so the tier stays 72 across the tab switch instead of dropping to 36. The assertion moved to *whose* masthead is in the slot, which is the claim that survived.
 - [ ] No references to `TextCardTopBar` outside git history.
 - [ ] Every `…` menu row is a registry command; no card computes an item's enablement ([L30]).
 

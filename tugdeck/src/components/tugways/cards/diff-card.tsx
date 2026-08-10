@@ -176,7 +176,14 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
   // The STRING channel keeps its old rule — it replaces the registry title,
   // so it is published only when the card has a better name than "Diff" —
   // while the masthead publishes for both guises. Both go out in one `set`.
-  useEffect(() => {
+  //
+  // A LAYOUT effect, like the other two document cards: "from mount" means
+  // before the first paint, and a passive effect would let one 36px frame
+  // reach the screen before the tier resolved. Teardown is the separate
+  // effect below, keyed on the card alone — a `clear` in this effect's
+  // cleanup would run before every re-publish and notify unconditionally,
+  // which is what the store's equality guard exists to avoid.
+  useLayoutEffect(() => {
     if (descriptor === null) {
       cardTitleStore.clear(cardId);
       return;
@@ -201,7 +208,7 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
             : `${payload.file_count} ${payload.file_count === 1 ? "file" : "files"} · ${stats(payload.total_added, payload.total_removed)}`,
         detail: payload === null ? null : `vs ${payload.base}`,
       });
-      return () => cardTitleStore.clear(cardId);
+      return;
     }
 
     // A scoped pop-out is about one file, so its masthead says which — while
@@ -225,8 +232,10 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
             detail: payload === null ? null : `vs ${payload.base}`,
           };
     cardTitleStore.setMasthead(cardId, masthead);
-    return () => cardTitleStore.clear(cardId);
   }, [cardId, descriptor, payload]);
+
+  // The chrome goes away with the card, and only then ([L27]).
+  useLayoutEffect(() => () => cardTitleStore.clear(cardId), [cardId]);
 
   const hasFiles = (payload?.files.length ?? 0) > 0;
 

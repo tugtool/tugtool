@@ -449,7 +449,10 @@ body {
   color: var(--tugx-rail-label-ink);
 }
 
-/* The glyph — a tool wears its mark. */
+/* The glyph — a tool wears its mark. Both selectors for the same reason the
+   label states its focused weight twice: the deck's `.tug-pane-icon` rule sits
+   later in this file and would otherwise win the tie. */
+/* @tug-renders-on: --tugx-pane-bg */
 .tug-pane .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon,
 .tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
   display: inline-flex;

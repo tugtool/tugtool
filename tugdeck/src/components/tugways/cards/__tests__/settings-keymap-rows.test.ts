@@ -237,6 +237,20 @@ describe("the shipped table", () => {
     }
   });
 
+  test("a pane-menu command IS listed — it has a door, just not one the host opens", () => {
+    // The opposite case to `internal` below, and the reason the two are
+    // separate fields. A card's `…` menu already invokes these, so a reader
+    // can meet one and come here asking what it is bound to; the honest
+    // answer is "nothing yet", which is a row with no chord — not silence.
+    const rows = buildKeymapRows(NONE);
+    for (const entry of COMMANDS.filter((e) => e.paneMenu === true)) {
+      const row = rows.find((r) => r.commandId === entry.id);
+      expect(row, `${entry.id} is listed`).toBeDefined();
+      expect(row?.group, `${entry.id} groups under Other Commands`).toBe(UNGROUPED);
+      expect(row?.bindings.length, `${entry.id} shows no chord yet`).toBe(0);
+    }
+  });
+
   test("internal commands get no row — a chord for a command nothing performs", () => {
     // `internal` means "no door by design": the entry's own comment names
     // what blocks it. A pane row is a door offer, so offering one would be

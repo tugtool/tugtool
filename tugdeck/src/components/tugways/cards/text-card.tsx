@@ -714,7 +714,11 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   //
   // `set` compares every payload field before notifying, so the save-state
   // line costs a notify only when its wording actually changes — the same
-  // cost the dirty dot in the title already had.
+  // cost the dirty dot in the title already had. That guard is why the
+  // teardown below is a SEPARATE effect keyed on the card alone: a `clear`
+  // in this effect's cleanup would run before every re-publish and notify
+  // unconditionally, which is exactly the traffic the guard exists to
+  // suppress. What the card owes the store is one clear when it goes away.
   useLayoutEffect(() => {
     const detail = saveText(
       snapshot.saveMode,
@@ -748,9 +752,6 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         detail,
       });
     }
-    return () => {
-      cardTitleStore.clear(cardId);
-    };
   }, [
     cardId,
     snapshot.fileName,
@@ -764,6 +765,11 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     isManual,
     isDirty,
   ]);
+
+  // The chrome this card published goes away with the card, and only then
+  // ([L27]). Keyed on `cardId` alone so a save-state transition re-publishes
+  // through the equality guard instead of clearing and re-setting.
+  useLayoutEffect(() => () => cardTitleStore.clear(cardId), [cardId]);
 
   // ---- Menu-state file block (drives the native File menu) ----
   //
@@ -815,7 +821,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   useLayoutEffect(() => {
     if (snapshot.phase !== "ready") {
       paneTitleBarMenuStore.set(cardId, null);
-      return () => paneTitleBarMenuStore.set(cardId, null);
+      return;
     }
     const items: PaneTitleBarMenuItem[] = [];
     if (isManual) items.push({ commandId: TUG_ACTIONS.SAVE });
@@ -823,8 +829,11 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     if (isBoundFile) items.push({ commandId: TUG_ACTIONS.REVEAL_CARD_FILE });
     items.push({ commandId: TUG_ACTIONS.SHOW_EDITOR_OPTIONS });
     paneTitleBarMenuStore.set(cardId, items);
-    return () => paneTitleBarMenuStore.set(cardId, null);
   }, [cardId, snapshot.phase, isManual, canMoveTo, isBoundFile]);
+
+  // Same shape as the masthead's teardown, and for the same reason: the rows
+  // belong to the card's lifetime, not to any one membership fact ([L27]).
+  useLayoutEffect(() => () => paneTitleBarMenuStore.set(cardId, null), [cardId]);
 
   // The two `…` rows the chain has to deliver. They are KEY-CARD routed and
   // land here, on the card's own content responder, rather than on the
@@ -997,100 +1006,100 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   const conflict = snapshot.conflict;
   return (
     <CardContentResponderScope>
-    <div
-      ref={cardRootComposedRef}
-      className="text-card text-card--editor"
-      data-slot="text-card"
-    >
-      <TugTextCardEditor
-        ref={editorRef}
-        store={store}
-        readOnly={snapshot.readOnly}
-        settings={editorSettings}
-        languageExt={effectiveLanguageExt}
-        className="text-card-editor"
-        onFindRequested={openFindBar}
-        onFindNavigated={() => findBarRef.current?.refreshCount()}
-        onSaveCommand={onSaveCommand}
-        onStats={statsStore.set}
-      />
-      {findOpen ? (
-        <TextCardFindBar
-          ref={findBarRef}
-          getDelegate={() => editorRef.current}
-          onClose={closeFindBar}
-          cardRootRef={cardRootRef}
+      <div
+        ref={cardRootComposedRef}
+        className="text-card text-card--editor"
+        data-slot="text-card"
+      >
+        <TugTextCardEditor
+          ref={editorRef}
+          store={store}
+          readOnly={snapshot.readOnly}
+          settings={editorSettings}
+          languageExt={effectiveLanguageExt}
+          className="text-card-editor"
+          onFindRequested={openFindBar}
+          onFindNavigated={() => findBarRef.current?.refreshCount()}
+          onSaveCommand={onSaveCommand}
+          onStats={statsStore.set}
         />
-      ) : null}
-      <TextCardStatusBar
-        statsStore={statsStore}
-        lineEnding={snapshot.lineEnding}
-        onSetLineEnding={setLineEnding}
-        languageId={effectiveLanguageId}
-        onSetLanguage={setLanguageOverrideId}
-      />
-      {renderSheet()}
-      <TugPaneBanner
-        visible={conflict !== null && snapshot.saveMode === "automatic"}
-        variant="error"
-        tone="caution"
-        label={conflict?.reason === "missing" ? "File deleted" : "File changed"}
-        message={
-          conflict?.reason === "missing"
-            ? "This file was deleted on disk. Your buffer is preserved until you close the card."
-            : "This file changed on disk while you were editing."
-        }
-        footer={
-          conflict?.reason === "missing" ? (
-            <>
-              {isPathPickerAvailable() ? (
+        {findOpen ? (
+          <TextCardFindBar
+            ref={findBarRef}
+            getDelegate={() => editorRef.current}
+            onClose={closeFindBar}
+            cardRootRef={cardRootRef}
+          />
+        ) : null}
+        <TextCardStatusBar
+          statsStore={statsStore}
+          lineEnding={snapshot.lineEnding}
+          onSetLineEnding={setLineEnding}
+          languageId={effectiveLanguageId}
+          onSetLanguage={setLanguageOverrideId}
+        />
+        {renderSheet()}
+        <TugPaneBanner
+          visible={conflict !== null && snapshot.saveMode === "automatic"}
+          variant="error"
+          tone="caution"
+          label={conflict?.reason === "missing" ? "File deleted" : "File changed"}
+          message={
+            conflict?.reason === "missing"
+              ? "This file was deleted on disk. Your buffer is preserved until you close the card."
+              : "This file changed on disk while you were editing."
+          }
+          footer={
+            conflict?.reason === "missing" ? (
+              <>
+                {isPathPickerAvailable() ? (
+                  <TugPushButton
+                    data-testid="text-card-missing-save-as"
+                    onClick={saveAs}
+                  >
+                    Save As…
+                  </TugPushButton>
+                ) : null}
                 <TugPushButton
-                  data-testid="text-card-missing-save-as"
-                  onClick={saveAs}
+                  data-testid="text-card-missing-close"
+                  onClick={() => {
+                    // Close the card via the chain: the walk from the card
+                    // reaches the host pane's CLOSE handler ([L11] — the
+                    // pane owns the card list this action mutates).
+                    manager?.sendToTarget(cardId, {
+                      action: TUG_ACTIONS.CLOSE,
+                      sender: senderId,
+                      phase: "discrete",
+                    });
+                  }}
                 >
-                  Save As…
+                  Close
                 </TugPushButton>
-              ) : null}
-              <TugPushButton
-                data-testid="text-card-missing-close"
-                onClick={() => {
-                  // Close the card via the chain: the walk from the card
-                  // reaches the host pane's CLOSE handler ([L11] — the
-                  // pane owns the card list this action mutates).
-                  manager?.sendToTarget(cardId, {
-                    action: TUG_ACTIONS.CLOSE,
-                    sender: senderId,
-                    phase: "discrete",
-                  });
-                }}
-              >
-                Close
-              </TugPushButton>
-            </>
-          ) : (
-            <>
-              <TugPushButton
-                data-testid="text-card-conflict-reload"
-                onClick={() => {
-                  void store.resolveConflict("reload");
-                }}
-              >
-                Reload from Disk
-              </TugPushButton>
-              <TugPushButton
-                data-testid="text-card-conflict-overwrite"
-                role="danger"
-                onClick={() => {
-                  void store.resolveConflict("overwrite");
-                }}
-              >
-                Keep Mine
-              </TugPushButton>
-            </>
-          )
-        }
-      />
-    </div>
+              </>
+            ) : (
+              <>
+                <TugPushButton
+                  data-testid="text-card-conflict-reload"
+                  onClick={() => {
+                    void store.resolveConflict("reload");
+                  }}
+                >
+                  Reload from Disk
+                </TugPushButton>
+                <TugPushButton
+                  data-testid="text-card-conflict-overwrite"
+                  role="danger"
+                  onClick={() => {
+                    void store.resolveConflict("overwrite");
+                  }}
+                >
+                  Keep Mine
+                </TugPushButton>
+              </>
+            )
+          }
+        />
+      </div>
     </CardContentResponderScope>
   );
 }

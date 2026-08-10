@@ -25,7 +25,10 @@
  *   4. **One height for a card's whole life.** A Diff pane is 72px before its
  *      diff resolves and after. Chrome that grew on data arrival would jump
  *      the body while the user was reading it.
- *   5. **The rail tier.** A pinned Lens is 32px, flush on the pane's own
+ *   5. **Two channels, one card.** A scoped Diff pop-out names its file on
+ *      the masthead while its tab still says "Diff" — the reason the store
+ *      has a masthead-only setter beside the one that renames the card.
+ *   6. **The rail tier.** A pinned Lens is 32px, flush on the pane's own
  *      ground, uppercase and tracked, with both stripe bands drawn — and the
  *      height is published on the PANE, so the scrim and the banner seat
  *      below the bar rather than 4px into it.
@@ -42,8 +45,12 @@
  * @covers tugdeck/src/lib/pane-title-bar-menu-store.ts
  * @covers tugdeck/src/lib/card-title-store.ts
  * @covers tugdeck/src/components/tugways/cards/text-card.tsx
- * @covers tugdeck/src/components/tugways/cards/file-view-card.tsx
  * @covers tugdeck/src/components/tugways/cards/diff-card.tsx
+ *
+ * The File viewer's masthead is asserted in `at0310-file-view-open`, where the
+ * real PNG and PDF fixtures already are — the page count needs a real
+ * document, and a `@covers` line here would claim a coverage this file does
+ * not provide.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -80,6 +87,14 @@ const UTILITY_HEIGHT = 36;
  */
 const LONG_NAME =
   "a-deliberately-long-document-name-that-fills-the-masthead-tier.md";
+
+/**
+ * A repo path for the scoped-pop-out case. The masthead's name and path lines
+ * are read straight off the descriptor, so they are right whether or not git
+ * has anything to say about the file — only the `+added −removed` detail waits
+ * on the payload.
+ */
+const SCOPED_FILE = "tugdeck/src/lib/git-diff-store.ts";
 
 function textDeck() {
   return {
@@ -364,6 +379,74 @@ describe.skipIf(!SHOULD_RUN)("at0392 — the three chrome tiers", () => {
         const after = await tierOf(app, TITLE_BAR);
         note("at0392 diff tier", `${Math.round(before)} → ${Math.round(after)}`);
         expect(after).toBeCloseTo(MASTHEAD_HEIGHT, 0);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a scoped Diff pop-out names its file on the masthead and keeps 'Diff' on its tab",
+    async () => {
+      const app = await launchTugApp({ testName: "at0392-scoped-diff" });
+      try {
+        // Two cards so the pane has a tab bar to read: the masthead and the
+        // tab are the two channels this case is about, and only a stacked
+        // pane shows both at once.
+        await app.seedDeckState({
+          state: {
+            cards: [
+              { id: "A", componentId: "diff", title: "Diff", closable: true },
+              {
+                id: "B",
+                componentId: "gallery-accordion",
+                title: "Accordion",
+                closable: true,
+              },
+            ],
+            panes: [
+              {
+                id: "p1",
+                position: { x: 40, y: 40 },
+                size: { width: 760, height: 520 },
+                cardIds: ["A", "B"],
+                activeCardId: "A",
+                title: "",
+                acceptsFamilies: ["standard", "maker"],
+              },
+            ],
+            activePaneId: "p1",
+            hasFocus: true,
+          },
+          cardStates: {
+            A: {
+              content: {
+                descriptor: { kind: "head", paths: [SCOPED_FILE] },
+              },
+            },
+          },
+          focusCardId: "A",
+        });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(MASTHEAD_TITLE)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        // The masthead says which file — `setMasthead`, the sidecar-only
+        // publish that exists for exactly this case.
+        expect(await textOf(app, MASTHEAD_TITLE)).toBe("git-diff-store.ts");
+        expect(await textOf(app, MASTHEAD_DESCRIPTION)).toContain(
+          "git-diff-store.ts",
+        );
+
+        // And the TAB still says "Diff". The title override REPLACES the
+        // registry string, so publishing one here would rename the tab after
+        // the file — which is the reason the masthead has a setter of its own
+        // rather than riding the string channel.
+        expect(
+          await textOf(app, `${PANE} [data-testid="tug-tab-A"]`),
+        ).toContain("Diff");
       } finally {
         await app.close();
       }

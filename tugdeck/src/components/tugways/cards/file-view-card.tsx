@@ -182,7 +182,10 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
   //
   // The string and the payload go out in one `set` — the tab bar and the
   // Window menu read the string, the pane renders the payload, and two calls
-  // would race the store's equality guard into notifying twice.
+  // would race the store's equality guard into notifying twice. Teardown is a
+  // separate effect below, keyed on the card alone: a `clear` in this
+  // effect's cleanup would run before every re-publish (a PDF reporting its
+  // page count, a rebind) and notify unconditionally, defeating that guard.
   useLayoutEffect(() => {
     if (path === null) {
       cardTitleStore.clear(cardId);
@@ -197,9 +200,6 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
       descriptionKind: "path",
       detail: fileKindLabel(path, pdfPages),
     });
-    return () => {
-      cardTitleStore.clear(cardId);
-    };
   }, [cardId, path, pdfPages]);
 
   // Reveal in Finder — the one verb this card has, and a bound viewer card
@@ -213,10 +213,17 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
     paneTitleBarMenuStore.set(cardId, [
       { commandId: TUG_ACTIONS.REVEAL_CARD_FILE },
     ]);
-    return () => {
-      paneTitleBarMenuStore.set(cardId, null);
-    };
   }, [cardId, path]);
+
+  // What this card published to the pane goes away with the card, and only
+  // then ([L27]) — one teardown for both channels.
+  useLayoutEffect(
+    () => () => {
+      cardTitleStore.clear(cardId);
+      paneTitleBarMenuStore.set(cardId, null);
+    },
+    [cardId],
+  );
 
   // The `…` row's landing point. Key-card routed, so it arrives here however
   // focus happens to sit when the menu row is chosen.
@@ -247,33 +254,33 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
 
   return (
     <CardContentResponderScope>
-    <div
-      ref={cardContentResponderRef as (el: HTMLDivElement | null) => void}
-      className="file-view-card"
-      data-slot="file-view-card"
-      data-file-view-kind={kind}
-    >
-      {kind === "image" ? (
-        <ImageBlock
-          className="file-view-card-image"
-          src={blobUrl(path)}
-          alt={name}
-        />
-      ) : kind === "pdf" ? (
-        <PdfView
-          key={path}
-          path={path}
-          cardId={cardId}
-          initialState={restoredViewRef.current}
-          onStateChange={setView}
-          onDocumentInfo={(info) => setPdfPages(info.pages)}
-        />
-      ) : (
-        <TugLabel className="file-view-card-notice">
-          Tug can&rsquo;t display this file yet.
-        </TugLabel>
-      )}
-    </div>
+      <div
+        ref={cardContentResponderRef as (el: HTMLDivElement | null) => void}
+        className="file-view-card"
+        data-slot="file-view-card"
+        data-file-view-kind={kind}
+      >
+        {kind === "image" ? (
+          <ImageBlock
+            className="file-view-card-image"
+            src={blobUrl(path)}
+            alt={name}
+          />
+        ) : kind === "pdf" ? (
+          <PdfView
+            key={path}
+            path={path}
+            cardId={cardId}
+            initialState={restoredViewRef.current}
+            onStateChange={setView}
+            onDocumentInfo={(info) => setPdfPages(info.pages)}
+          />
+        ) : (
+          <TugLabel className="file-view-card-notice">
+            Tug can&rsquo;t display this file yet.
+          </TugLabel>
+        )}
+      </div>
     </CardContentResponderScope>
   );
 }

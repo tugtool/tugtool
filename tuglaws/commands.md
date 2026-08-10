@@ -54,7 +54,7 @@ One `CommandEntry` per user-invocable command, in `COMMANDS`. The fields that de
 | `bindings` | Default chords. A list from day one, each with a `scope` and optional `menuEligible` / `preventDefault` |
 | `validate` / `state` / `dynamicTitle` | Applicability, check mark, and dynamic title. Chain-routed entries default to the chain walk; `registry`-routed entries supply their own |
 | `disabledChord` / `chordActive` | What becomes of the key equivalent when the command is not applicable |
-| `parameterized` / `internal` | The two sanctioned escapes from the door-coverage lint |
+| `parameterized` / `internal` / `paneMenu` | The three sanctioned answers to the door-coverage lint: a runtime-discovered family, no door at all, or a door the lint cannot see |
 
 **Routing and scope are orthogonal.** `routing` says *how a command dispatches* and lives on the entry. `scope` says *where a binding is live* — `global`, `{ responder: id }`, or `{ mode: id }` — and lives on the binding. Conflating them is what made "innermost scope wins" meaningless in the old keybinding map.
 
@@ -66,7 +66,7 @@ One `CommandEntry` per user-invocable command, in `COMMANDS`. The fields that de
 
 1. **Name it and pick its tier.** The name follows [action-naming.md](action-naming.md) — `<verb>-<object>[-<modifier>]`, kebab-case, a `TUG_ACTIONS` constant if it is a chain action. No synonyms, no raw string literals at call sites. If it is getting a chord, derive the chord from [chord-tiers.md](chord-tiers.md) in the same breath: universal verb or Tug machinery, and which operator (if any) it composes with — a chord picked before its tier is a chord picked by availability.
 2. **Add the row to `COMMANDS`** with `id`, `title`, and `routing`. The classification a name used to carry by hand is now a consequence of this field.
-3. **Give it a door.** A `menuItemId`, or `bindings`, or both. A command with neither is invocable by nobody; the lint fails unless the entry says `internal: true` with a comment naming what blocks the door.
+3. **Give it a door.** A `menuItemId`, or `bindings`, or both. A command with neither is invocable by nobody; the lint fails unless the entry declares which case it is. `internal: true` means *nothing opens this yet*, and carries a comment naming what blocks the door. `paneMenu: true` means *a card's pane `…` menu opens it* — a real door, dispatched through funnel #1 like any other, that the lint cannot count because the lint counts native menu items and key equivalents. The two are opposites and never appear together: an `internal` command is hidden from the keymap pane because a chord for it would record dead keystrokes, while a `paneMenu` command is listed there unbound, because a reader who just used it may fairly ask what it is bound to.
 4. **Register the implementation.** A responder's `useResponder` actions map for chain routing; a `registerAction` handler for `registry` routing.
 5. **Answer applicability.** Chain-routed commands answer through the responder's `validateAction`; add that branch on the responder rather than a predicate on the entry. `registry`-routed commands that are gateable carry a `validate` predicate. A check mark or a dynamic title rides `state` / `dynamicTitle`.
 6. **Mirror it** (`mirrored: true`) in the same change that deletes any host-side tier gating the item, so exactly one definition of its enablement is ever live.
@@ -114,7 +114,7 @@ Chain-routed commands validate through `manager.validateAction` walked from the 
 
 ## Enforcement
 
-The table lints itself. `lintCommandTable` reports duplicate ids, two commands claiming one menu item, chain routing with no resolvable action, and the load-bearing one — **door coverage**: a command with neither a menu item nor a binding, and no `parameterized` / `internal` declaration. `lintActionCoverage` requires every action name to be a command wire or explicitly excluded. `lintNativeLocked` requires every locked id to name a live command. All three run at import time in DEV and throw, and again in `command-registry.test.ts`.
+The table lints itself. `lintCommandTable` reports duplicate ids, two commands claiming one menu item, chain routing with no resolvable action, and the load-bearing one — **door coverage**: a command with neither a menu item nor a binding, and no `parameterized` / `internal` / `paneMenu` declaration. `lintActionCoverage` requires every action name to be a command wire or explicitly excluded. `lintNativeLocked` requires every locked id to name a live command. All three run at import time in DEV and throw, and again in `command-registry.test.ts`.
 
 Beyond the lints it is review: a raw `sendToFirstResponder` at a call site whose action names a registry command, an authored chord string, a component matching a chord itself, or a hand-rolled shadowing comment are all the same defect wearing different clothes. `at0180-command-registry-gates`, `at0181-keymap-chord-sweep`, and `at0182-keymap-override` pin the menu gate, the chord sweep, and the override round-trip end to end.
 
