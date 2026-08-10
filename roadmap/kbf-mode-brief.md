@@ -1,6 +1,6 @@
 # Keyboard Focus Mode (KBF) — design brief
 
-*Status: brief for discussion, not yet a plan. Grounds in [tuglaws/focus-language.md](../tuglaws/focus-language.md), and revisits the decisions landed by `53233fdc6` (universal arrow traversal) and archived at [roadmap/archive/arrow-traversal.md](archive/arrow-traversal.md). Four questions in this brief are already DECIDED by the owner and are marked as such; the rest are open.*
+*Status: brief for discussion, not yet a plan. Grounds in [tuglaws/focus-language.md](../tuglaws/focus-language.md), and revisits the decisions landed by `53233fdc6` (universal arrow traversal) and archived at [roadmap/archive/arrow-traversal.md](archive/arrow-traversal.md). Four questions in this brief were DECIDED by the owner at authoring; the seven at the end were resolved 2026-08-10 and are recorded with their groundings. Every question in this brief is now decided.*
 
 ---
 
@@ -28,12 +28,12 @@ Each is defensible on its own. Together they mean the app has a navigation mode 
 
 This is the sharpest instance and it is not a matter of taste — the mechanism is exact.
 
-`TugCompletionPopup` handles ↑/↓ in a React `onKeyDown` on its `TugInput` (`tug-completion-popup.tsx:270`), moving the highlighted row. But `arrowNavListener` is a **capture-phase document listener** and runs first. On open the query is `""`, the field is the seeded key view (`useSeedKeyView`, `tug-completion-popup.tsx:249`), and its type is `text` — so `resolveArrowRelease` returns `"released"`, `moveKeyViewSpatial` moves the ring, and `stopImmediatePropagation()` fires. The popup's own handler never runs.
+`TugCompletionPopup` handles ↑/↓ in a React `onKeyDown` on its `TugInput` (`tug-completion-popup.tsx:270`), moving the highlighted row. But the document-capture pipeline runs first. On open the query is `""`, the field is the seeded key view (`useSeedKeyView`, `tug-completion-popup.tsx:249`), and its type is `text` — so `resolveArrowRelease` returns `"released"`. The popup declares no spatial order and the field carries no cursor handle, so `moveKeyViewSpatial` declines in *every* case (`focus-manager.ts:1766`) and the press falls to the net, `arrowFallbackListener`, which walks the trapped mode's linear order, consumes the key, and fires `stopImmediatePropagation()`. The popup's own handler never runs.
 
 Two outcomes, both wrong:
 
-- With a directory switcher present (≥2 root candidates, `open-quickly-overlay.tsx:416`), **↓ moves the ring onto the switcher button** instead of selecting the first file.
-- With one candidate there is a single stop in the popup's trapped mode, so `moveKeyViewSpatial` declines, the net's `moveKeyViewLinear` wraps the mode onto itself, the key is consumed, and **↓ does nothing at all**.
+- With a directory switcher present (≥2 root candidates, `open-quickly-overlay.tsx:417`), the mode holds two stops, so **↓ moves the ring onto the switcher button** instead of selecting the first file.
+- With one candidate there is a single stop, the net's `moveKeyViewLinear` wraps the mode onto itself, the key is consumed, and **↓ does nothing at all**.
 
 Type one character and it starts working. Delete back to empty and it breaks again. The state where the machinery steals the arrows — freshly opened, empty query, full result list — is the *only* state a fast open-quickly gesture ever passes through.
 
@@ -125,7 +125,7 @@ This single rule:
 
 - fixes Open Quickly (↓ selects the next result, always, from the first keystroke to the last);
 - covers every `TugFilterField` in the Lens and the session picker (↓ from the filter reaches the rows, which is what the empty-release was buying);
-- retires `filterFieldDidRequestAdvance`, the question dialog's bespoke `arrowRelease={empty ? "up down" : undefined}`, and the automatic empty-input release in `arrow-release.ts`.
+- retires `filterFieldDidRequestAdvance` and the automatic empty-input release in `arrow-release.ts`. (The question dialog's bespoke `arrowRelease` prop is already gone — `session-question-dialog.tsx:1048` records its removal — so there is nothing left to delete there.)
 
 It is also the reason Open Quickly needs no special-casing beyond *not* being an auto-engaging surface: it opens in mode OFF with the caret in the field, and its arrows work because the field is list-attached. `⌥⇥` still reaches its directory switcher for the rare case that wants it.
 
@@ -137,7 +137,7 @@ Verified by sweep of `tugdeck/src` on 2026-08-10. Every surface below is a place
 
 ### Class A — surfaces that push a focus trap (engaged while up)
 
-Auto-engagement here is *derived from the trap*, not a per-surface list to maintain: `useFocusTrap` with `trapped: true` is the auto-engager. The enumeration below is what that resolves to today.
+Auto-engagement here is *derived from the trap*, not a per-surface list to maintain: any `useFocusTrap` push is the auto-engager (`trapped` defaults to `true` in the hook — no call site passes it explicitly). The enumeration below is what that resolves to today.
 
 | Surface | Site |
 |---|---|
@@ -242,12 +242,12 @@ A sweep of the other laws for statements this invalidates is part of the phase �
 
 ---
 
-## Open questions
+## Open questions — all resolved 2026-08-10
 
-1. **`Tab` in mode OFF.** Three candidates: (a) `Tab` engages KBF and takes one step — makes `⇥` and `⌥⇥` coherent, and means a user who reaches for Tab gets what they expect; (b) `Tab` does nothing outside a text surface; (c) `Tab` keeps a DOM-ish walk with no ring, which contradicts D2. Recommendation: **(a)**, with `Tab` inside a focused text surface still meaning indent/completion.
-2. **Does `manuallyEngaged` persist across card activation?** If you `⌥⇥` on the Lens and click into a session card, is KBF still on? Recommendation: **yes** — it is a deck-global bit and a pointerdown clears it anyway (D5), so the question only bites for keyboard-driven card switches (⌘L and friends), where persisting is the friendlier answer.
-3. **`persistentDefaultRing` in mode OFF** — does the recommended-default ring paint when no other ring does? Recommendation: **yes**, because it is a promise about `Return` rather than a focus position. Needs a visual check; it may read as a stray mark on an otherwise ring-free surface.
-4. **Auto-engaged surfaces and `⌥⇥`.** Inside a sheet, does `⌥⇥` do anything? It cannot disengage (the surface forces the mode). Recommendation: it **returns the keyboard from a typing descend to the ring** — a useful, non-contradictory meaning.
-5. **Does the Jots card auto-engage at the list level** while an open jot's editor is a typing descend, or does opening a jot flip the card to OFF like a document card? The two differ in what Escape does after you finish typing.
-6. **The diff card** — reading surface with selectable content. Auto-engage or not?
-7. **Is `⌥⇥` discoverable enough?** It appears in no menu today (`CYCLE_FOCUS_MODE`, `command-registry.ts:1786`). If KBF is a first-class app mode, it probably wants a menu item with the chord shown beside it.
+1. **`Tab` in mode OFF.** DECIDED — **(a)**: with a live caret, `Tab` belongs to the text surface unconditionally (indent/completion — the empty-`Tab` handoff is deleted); in the *nowhere* state (an active card with no caret — a diff card, transcript prose after a stray click, a disabled entry), `Tab` engages KBF and takes one step. Symmetric with `⌥⇥`, and the most-tried key always produces a visible landing. Note the never-fall-through corollary: today's `focusWalkListener` yields to the native DOM tab walk when the engine walk is empty (`responder-chain-provider.tsx:424`); under D2 that fallback goes — a `Tab` the engine cannot spend is consumed, never handed to WebKit.
+2. **Does `manuallyEngaged` persist across card activation?** DECIDED — **yes**. It is a deck-global bit and a pointerdown clears it anyway (D5), so the question only bites for keyboard-driven card switches (⌘L and friends), where persisting is the friendlier answer. (`CYCLE_FOCUS_MODE`'s `routing: "key-card"` survives — the toggle still needs the key card to seed the ring — but the bit it flips is the engine's, not the card's.)
+3. **`persistentDefaultRing` in mode OFF** — DECIDED — **yes, it paints**: it is a promise about `Return`, not a focus position. The exposure is smaller than the brief feared: every current `persistentDefaultRing` site but two is a Class-A auto-engaging surface (sheets, alerts, dialogs), where rings paint anyway. The residual mode-OFF surfaces are the session card's entry (which already uses the shell's own hand-painted `data-tug-entry-default` promotion, not the engine ring) and the session-history view — a visual check on those two, not a design fork.
+4. **Auto-engaged surfaces and `⌥⇥`.** DECIDED — inside a forced mode it **returns the keyboard from a typing descend to the ring** (the D6 re-engage gesture, made uniform). It never disengages a forced mode.
+5. **The Jots card.** DECIDED — **auto-engage at the list level; an open jot is a typing descend.** Escape after typing ascends back to the ring on the jot's row — exactly today's behavior (the jot editor already lives in a non-trapped descend scope with blur-commit, `jots-card.tsx:457`).
+6. **The diff card.** DECIDED — **OFF at rest.** The card registers no focus stops at all today (its one control is the header Refresh button) and has no keyboard handling of its own — there is no furniture to navigate, and auto-engaging a surface with nothing to ring violates the empty-group rule in `focus-language.md`. Revisit only if it grows hunk navigation.
+7. **`⌥⇥` discoverability.** DECIDED — **menu item with a decorative chord.** A "Keyboard Focus" menu item fires the toggle, with ⌥⇥ shown as display-only text — *not* registered as an AppKit key equivalent, preserving the reason it was kept out of the menus (`command-registry.ts:1775`: a real key equivalent is scanned above every surface that wants a modified Tab, the Settings chord capture among them). Mechanically: `menuItemId` on the registry entry without `menuEligible` on the chord, plus Swift-side rendering of the shortcut glyph as title text.
