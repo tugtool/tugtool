@@ -55,7 +55,12 @@ import React, {
 } from "react";
 
 import { TextCardStore, type FilePositions } from "@/lib/text-card-store";
+import { saveText } from "@/lib/text-card-save-text";
 import { cardTitleStore } from "@/lib/card-title-store";
+import {
+  paneTitleBarMenuStore,
+  type PaneTitleBarMenuItem,
+} from "@/lib/pane-title-bar-menu-store";
 import {
   notifyOpenTextCardsChanged,
   registerOpenTextCard,
@@ -82,7 +87,7 @@ import {
   type TextCardFindBarHandle,
 } from "./text-card-find-bar";
 import { TugLabel } from "../tug-label";
-import { TextCardTopBar } from "./text-card-top-bar";
+import { presentTextCardOptionsSheet } from "./text-card-options-sheet";
 import { TextCardStatusBar } from "./text-card-status-bar";
 import { useTextCardSettings } from "@/lib/use-text-card-settings";
 import { EditorStatsStore } from "@/lib/editor-stats-store";
@@ -97,6 +102,7 @@ import {
   useCardStatePreservation,
 } from "../use-card-state-preservation";
 import { useResponderChain } from "../responder-chain-provider";
+import { useResponder } from "../use-responder";
 import { useFocusManager } from "../use-focusable";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
@@ -216,6 +222,10 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const isManual = snapshot.saveMode === "manual";
   const isDirty = snapshot.saveState !== "clean";
+  // Bound to a file the USER chose. An untitled buffer has a path too, but
+  // it is a drafts-directory name nobody typed and nothing outside this card
+  // should be shown it.
+  const isBoundFile = snapshot.path !== null && snapshot.draftId === null;
   const editorRef = useRef<TugTextCardEditorDelegate | null>(null);
   const manager = useResponderChain();
   const cardLifecycle = useCardLifecycle();
@@ -690,23 +700,70 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     };
   }, [store]);
 
-  // ---- Title sync (basename → pane chrome via cardTitleStore) ----
-
+  // ---- Title + masthead sync (pane chrome via cardTitleStore) ----
+  //
+  // ONE `set` call carries both channels. The string is what the tab bar,
+  // the deck canvas, and the Window menu read; the payload is what the pane
+  // renders as its document masthead. Publishing them separately would race
+  // the store's equality guard and notify twice for one change.
+  //
+  // An untitled buffer publishes "Untitled" rather than clearing: the tier's
+  // height is fixed precisely so chrome does not grow and shrink under a
+  // reader, and a card that dropped to 36px while unnamed would reflow its
+  // editor the moment it was first saved.
+  //
+  // `set` compares every payload field before notifying, so the save-state
+  // line costs a notify only when its wording actually changes — the same
+  // cost the dirty dot in the title already had.
   useLayoutEffect(() => {
-    if (snapshot.fileName !== null) {
+    const detail = saveText(
+      snapshot.saveMode,
+      snapshot.saveState,
+      snapshot.conflict,
+      snapshot.lastSavedAt,
+    );
+    if (snapshot.fileName === null) {
+      cardTitleStore.set(cardId, "Untitled", {
+        kind: "card-masthead",
+        icon: "FileText",
+        title: "Untitled",
+        description: null,
+        detail,
+      });
+    } else {
       const base = snapshot.readOnly
         ? `${snapshot.fileName} (read-only)`
         : snapshot.fileName;
       // Manual mode marks unsaved changes with a small dot AFTER the name,
       // so the filename doesn't hop as the dirty bit sets and clears.
-      cardTitleStore.set(cardId, isManual && isDirty ? `${base} •` : base);
-    } else {
-      cardTitleStore.clear(cardId);
+      const title = isManual && isDirty ? `${base} •` : base;
+      cardTitleStore.set(cardId, title, {
+        kind: "card-masthead",
+        icon: "FileText",
+        title,
+        // An untitled buffer names no place: its path is a drafts-directory
+        // file the user never chose.
+        description: isBoundFile ? snapshot.path : null,
+        descriptionKind: "path",
+        detail,
+      });
     }
     return () => {
       cardTitleStore.clear(cardId);
     };
-  }, [cardId, snapshot.fileName, snapshot.readOnly, isManual, isDirty]);
+  }, [
+    cardId,
+    snapshot.fileName,
+    snapshot.path,
+    isBoundFile,
+    snapshot.readOnly,
+    snapshot.saveMode,
+    snapshot.saveState,
+    snapshot.conflict,
+    snapshot.lastSavedAt,
+    isManual,
+    isDirty,
+  ]);
 
   // ---- Menu-state file block (drives the native File menu) ----
   //
@@ -739,6 +796,75 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     snapshot.path,
     snapshot.conflict,
   ]);
+
+  // ---- The pane's `…` menu ----
+  //
+  // What the card publishes is MEMBERSHIP: which commands belong on this
+  // pane's menu, and in what order. It never publishes a label, a shortcut,
+  // or an enabled bit — `CardTitleBar` resolves all three from the command
+  // table, which is the same answer ⌘S and File ▸ Save get, so a row here
+  // can never disagree with them ([L30]).
+  //
+  // Membership is genuinely the card's, and it is a different question from
+  // enablement. Save is on a manual-mode card's menu even when there is
+  // nothing to save (it dims); it is not on an automatic-mode card's menu at
+  // all, because that card has no manual save contract. Move To… appears
+  // only for a draft the native picker can relocate, and Reveal in Finder
+  // only once the buffer is bound to a file the user chose.
+  const canMoveTo = snapshot.draftId !== null && isPathPickerAvailable();
+  useLayoutEffect(() => {
+    if (snapshot.phase !== "ready") {
+      paneTitleBarMenuStore.set(cardId, null);
+      return () => paneTitleBarMenuStore.set(cardId, null);
+    }
+    const items: PaneTitleBarMenuItem[] = [];
+    if (isManual) items.push({ commandId: TUG_ACTIONS.SAVE });
+    if (canMoveTo) items.push({ commandId: TUG_ACTIONS.SAVE_AS });
+    if (isBoundFile) items.push({ commandId: TUG_ACTIONS.REVEAL_CARD_FILE });
+    items.push({ commandId: TUG_ACTIONS.SHOW_EDITOR_OPTIONS });
+    paneTitleBarMenuStore.set(cardId, items);
+    return () => paneTitleBarMenuStore.set(cardId, null);
+  }, [cardId, snapshot.phase, isManual, canMoveTo, isBoundFile]);
+
+  // The two `…` rows the chain has to deliver. They are KEY-CARD routed and
+  // land here, on the card's own content responder, rather than on the
+  // editor's: both mean "this card", and pressing the pane's `…` button
+  // promotes the PANE as first responder, so a first-responder walk would
+  // start above the editor and never reach it. Key-card dispatch starts at
+  // this node regardless of where focus sits, which is the same reason the
+  // Session card registers its ⌘K and ⌘F here.
+  const {
+    ResponderScope: CardContentResponderScope,
+    responderRef: cardContentResponderRef,
+  } = useResponder({
+    id: `${cardId}-card-content`,
+    kind: "card-content",
+    actions: {
+      [TUG_ACTIONS.REVEAL_CARD_FILE]: () => {
+        revealInFinder();
+      },
+      [TUG_ACTIONS.SHOW_EDITOR_OPTIONS]: () => {
+        void presentTextCardOptionsSheet(showSheet, cardId);
+      },
+    },
+    validateAction: (action) =>
+      // Nothing for the Finder to select until the buffer is bound to a real
+      // file — an untitled draft lives in the drafts directory under a name
+      // the user never chose.
+      action === TUG_ACTIONS.REVEAL_CARD_FILE ? isBoundFile : true,
+  });
+
+  // Compose the responder registration onto the card's root node, which the
+  // editor branch also captures for the find bar's anchor. A `useCallback` so
+  // the ref identity is stable — an inline lambda makes React detach and
+  // reattach on every commit.
+  const cardRootComposedRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      cardRootRef.current = el;
+      (cardContentResponderRef as (node: Element | null) => void)(el);
+    },
+    [cardContentResponderRef],
+  );
 
   // ---- Focus the editor when a fresh untitled buffer opens ----
   //
@@ -870,26 +996,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // autosave sub-state [L26].
   const conflict = snapshot.conflict;
   return (
+    <CardContentResponderScope>
     <div
-      ref={cardRootRef}
+      ref={cardRootComposedRef}
       className="text-card text-card--editor"
       data-slot="text-card"
     >
-      <TextCardTopBar
-        path={snapshot.path}
-        isDraft={snapshot.draftId !== null}
-        saveMode={snapshot.saveMode}
-        canMoveTo={snapshot.draftId !== null && isPathPickerAvailable()}
-        onMoveTo={saveAs}
-        onSave={() => void doSave()}
-        canSave={
-          !snapshot.readOnly &&
-          (isDirty || snapshot.untitled || snapshot.conflict !== null)
-        }
-        onRevealInFinder={revealInFinder}
-        settings={editorSettings}
-        onChangeSetting={setSetting}
-      />
       <TugTextCardEditor
         ref={editorRef}
         store={store}
@@ -912,10 +1024,6 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       ) : null}
       <TextCardStatusBar
         statsStore={statsStore}
-        saveMode={snapshot.saveMode}
-        saveState={snapshot.saveState}
-        conflict={snapshot.conflict}
-        lastSavedAt={snapshot.lastSavedAt}
         lineEnding={snapshot.lineEnding}
         onSetLineEnding={setLineEnding}
         languageId={effectiveLanguageId}
@@ -983,6 +1091,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         }
       />
     </div>
+    </CardContentResponderScope>
   );
 }
 

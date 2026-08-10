@@ -40,79 +40,17 @@
   min-height: 0;
 }
 
-/* ---- Top bar ---- */
-
-/* A thin chrome strip above the editor: the full file path (left,
- * BBEdit-style) and the action icons (right — Move To…, gear). Composes
- * TugIconButton, which keeps its own tokens [L20]. */
-/* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.text-card-top-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-sm);
-  /* Vertical size comes from `min-height` (shared with the bottom bar
-   * so the two match); the icon buttons (28px) set the natural height. */
-  min-height: 2rem;
-  box-sizing: border-box;
-  /* Match the pane title bar's horizontal padding so the action icons
-   * (Save, gear) line up directly under the title bar's collapse/close
-   * buttons. */
-  padding: 0 var(--tug-space-md);
-  flex: 0 0 auto;
-  /* A contrasting rule separating the chrome strip from the content —
-   * the same divider the pane title bar uses. */
-  border-bottom: 1px solid var(--tug7-element-global-divider-normal-default-rest);
-  min-width: 0;
-}
-
-/* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
-.text-card-top-bar-path {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  /* `dir="rtl"` on the element keeps the filename end visible when the
-   * strip is narrow; `text-align: left` restores normal reading order
-   * for the (LTR) path text itself. */
-  text-align: left;
-  font-size: var(--tug-font-size-xs);
-  color: var(--tug7-element-global-text-normal-default-rest);
-}
-
-/* A bound file's path is clickable — hover underlines it; a click reveals
- * the file in the Finder. */
-.text-card-top-bar-path[data-revealable] {
-  cursor: pointer;
-}
-
-.text-card-top-bar-path[data-revealable]:hover {
-  text-decoration: underline;
-}
-
-.text-card-top-bar-actions {
-  display: flex;
-  align-items: center;
-  /* No gap — the title bar's collapse/close controls sit adjacent (gap 0),
-   * so matching that (plus the shared --tug-space-md edge padding) lines
-   * the Save/gear icons up directly beneath them. */
-  gap: 0;
-  flex: 0 0 auto;
-}
-
 /* ---- Bottom status bar ---- */
 
-/* A thin strip below the editor: save state, line ending, file type,
- * caret L/C, and the doc counts (right-aligned). */
+/* A thin strip below the editor: line ending, file type, caret L/C, and the
+ * doc counts (right-aligned). */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-plain-rest */
 .text-card-status-bar {
   display: flex;
   align-items: center;
   gap: var(--tug-space-lg);
-  /* Same height as the top bar (favor the taller of the two). */
   min-height: 2rem;
   box-sizing: border-box;
-  /* A tad more left/right margin than the top bar. */
   padding: 0 var(--tug-space-lg);
   flex: 0 0 auto;
   /* Contrasting rule vs. the editor content (pane-title-bar divider). */
@@ -144,8 +82,9 @@
 }
 
 /* The settable pair (line ending + file type) claims the flexible gap,
- * pulling both right-hand clusters to the trailing edge; the save state
- * stays alone on the left. */
+ * pulling both clusters to the trailing edge. Nothing sits on the left of
+ * the strip any more — the save state it used to hold now rides the card's
+ * masthead, beside the name and the path it is about. */
 .text-card-status-group--settable {
   margin-left: auto;
   /* Breathing room between the popups and the divider, so the gap on the
@@ -167,36 +106,22 @@
   min-width: 6rem;
 }
 
-/* ---- Options popover (the gear) ---- */
+/* ---- Editor options sheet ---- */
 
-/* A sized wrapper so the shared TextCardControls read like a mini
- * Text Card settings panel — wide enough for its 3-column switch grid
- * to spread the way the app-card panel does. */
+/* The body inside the sheet. No width of its own — the sheet's
+ * `displayWidth` sizes the panel, and a second width here would fight it.
+ * No title either: the sheet's header names the surface, which is a job the
+ * old anchored popover had to do for itself. */
 .text-card-options {
-  width: 460px;
-  max-width: 90vw;
   padding: var(--tug-space-lg);
 }
 
-/* Panel title (the popover has no tab to name it, unlike the settings
- * card). Uppercase + letterspaced + muted, matching the popup-list
- * title vocabulary. No rule beneath — just generous space to the first
- * group. */
-/* @tug-renders-on: --tugx-popover-bg */
-.text-card-options-title {
-  font-size: var(--tug-font-size-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  margin-bottom: var(--tug-space-2xl);
-}
-
-/* The shared controls' legends mask the group border with a swatch of
- * their backdrop. In the popover that backdrop is the popover surface,
- * not the pane background — override so the swatch matches. */
+/* The shared controls' legends mask the group border with a swatch of their
+ * backdrop, so the swatch has to name the surface the controls actually sit
+ * on — here, the sheet's. */
+/* @tug-renders-on: --tugx-sheet-bg */
 .text-card-options .text-card-controls-group > .tug-box-legend {
-  background: var(--tugx-popover-bg);
+  background: var(--tugx-sheet-bg);
 }
 
 /* ---- Open (empty) surface ---- */

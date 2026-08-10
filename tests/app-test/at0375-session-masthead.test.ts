@@ -417,18 +417,33 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
           `document.querySelector(${JSON.stringify(MASTHEAD)}) === null`,
           { timeoutMs: 8_000 },
         );
-        const onText = await app.evalJS<{ bar: number; tabs: number; chromeVar: string }>(
+        // The Text tab is a DOCUMENT card, so the tier stays 72 — what
+        // changed is whose masthead is in it. The session masthead is gone
+        // and a card masthead has taken the slot, which is the claim: chrome
+        // follows the frontmost tab. (The tier drops to 36 on a tab that
+        // publishes no masthead at all — a utility card; at0392 measures
+        // that one.) The tab row is 36 either way: the masthead and the tab
+        // bar stack rather than merge.
+        const onText = await app.evalJS<{
+          bar: number;
+          tabs: number;
+          chromeVar: string;
+          cardMastheads: number;
+        }>(
           `({
             bar: ${tierHeight(TITLE_BAR)},
             tabs: ${tierHeight(TAB_ROW)},
             chromeVar: getComputedStyle(
               document.querySelector(${JSON.stringify(PANE)}),
             ).getPropertyValue('--tugx-pane-chrome-height').trim(),
+            cardMastheads: document.querySelectorAll(
+              ${JSON.stringify(PANE)} + ' [data-slot="card-masthead"]').length,
           })`,
         );
-        expect(onText.bar).toBe(CHROME_HEIGHT);
+        expect(onText.bar).toBe(MASTHEAD_HEIGHT);
         expect(onText.tabs).toBe(CHROME_HEIGHT);
-        expect(onText.chromeVar).toBe(`${CHROME_HEIGHT}px`);
+        expect(onText.chromeVar).toBe(`${MASTHEAD_HEIGHT}px`);
+        expect(onText.cardMastheads).toBe(1);
 
         // And the width control is on the non-masthead tab of the very same
         // pane. Paired with F above, this is the claim that the cluster does not
@@ -459,7 +474,7 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         );
         expect(before).toBeGreaterThan(0);
 
-        // Away to the 72px tier and back to the 36px one.
+        // Away to the session's masthead and back to the Text card's.
         await app.evalJS<null>('(window.__tug.activateCard("S"), null)');
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(MASTHEAD)}) !== null`,

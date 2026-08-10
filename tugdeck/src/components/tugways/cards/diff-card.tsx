@@ -88,6 +88,23 @@ function isProjectDiffDescriptor(descriptor: DiffDescriptor): boolean {
   );
 }
 
+/**
+ * The single file a scoped pop-out is about, or null when the descriptor
+ * scopes to something other than one file — a range, or several paths. Only a
+ * one-file scope has a filename to put on a masthead.
+ */
+function scopedFilePath(descriptor: DiffDescriptor): string | null {
+  if (descriptor.kind === "range") return null;
+  const paths = descriptor.paths ?? [];
+  return paths.length === 1 ? paths[0]! : null;
+}
+
+/** The final path segment — what a document masthead calls the file. */
+function basename(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? path : path.slice(slash + 1);
+}
+
 /** The header label for a descriptor's document. */
 function descriptorLabel(descriptor: DiffDescriptor): string {
   if (descriptor.kind === "range") {
@@ -110,19 +127,6 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
   useEffect(() => {
     if (descriptor !== null && store !== null) store.requestDiff(descriptor);
   }, [descriptor, store]);
-
-  // The repo-wide guise names itself: an unscoped head descriptor is the
-  // Project Diff card, and the title bar should say so. Scoped pop-outs keep
-  // the registry's "Diff" (the override REPLACES the registry title, so it is
-  // published only when there is a better name).
-  useEffect(() => {
-    if (descriptor !== null && isProjectDiffDescriptor(descriptor)) {
-      cardTitleStore.set(cardId, "Project Diff");
-    } else {
-      cardTitleStore.clear(cardId);
-    }
-    return () => cardTitleStore.clear(cardId);
-  }, [cardId, descriptor]);
 
   // Seed the descriptor from the card's initial content; persist it so a
   // Maker ▸ Reload restores the same diff.
@@ -156,6 +160,74 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
   const refresh = (): void => store?.requestDiff();
 
   const payload = snapshot.payload;
+
+  // ---- Title + masthead sync (pane chrome) ----
+  //
+  // Declared below the subscription, because it reads the snapshot: the
+  // effect used to sit above it and had only the descriptor to go on.
+  //
+  // Published FROM MOUNT, with the description filled in when the diff
+  // resolves. Gating the payload's existence on `ready` would swap the pane
+  // between 36px and 72px while the user is looking at the card and jump the
+  // body 36px with it — a tab switch may change the tier, data arriving may
+  // not. `no_repo` keeps a null description for the same reason: there is
+  // nothing to say, which is not the same as having no masthead.
+  //
+  // The STRING channel keeps its old rule — it replaces the registry title,
+  // so it is published only when the card has a better name than "Diff" —
+  // while the masthead publishes for both guises. Both go out in one `set`.
+  useEffect(() => {
+    if (descriptor === null) {
+      cardTitleStore.clear(cardId);
+      return;
+    }
+    const project = isProjectDiffDescriptor(descriptor);
+    const scopedPath = scopedFilePath(descriptor);
+    const file =
+      scopedPath === null
+        ? undefined
+        : payload?.files.find((f) => f.path === scopedPath);
+    const stats = (added: number, removed: number): string =>
+      `+${added} −${removed}`;
+
+    if (project) {
+      cardTitleStore.set(cardId, "Project Diff", {
+        kind: "card-masthead",
+        icon: "GitCompareArrows",
+        title: "Project Diff",
+        description:
+          payload === null || payload.no_repo
+            ? null
+            : `${payload.file_count} ${payload.file_count === 1 ? "file" : "files"} · ${stats(payload.total_added, payload.total_removed)}`,
+        detail: payload === null ? null : `vs ${payload.base}`,
+      });
+      return () => cardTitleStore.clear(cardId);
+    }
+
+    // A scoped pop-out is about one file, so its masthead says which — while
+    // the string channel stays the registry's "Diff", the name a tab wants.
+    const masthead =
+      scopedPath !== null
+        ? {
+            kind: "card-masthead" as const,
+            icon: "GitCompareArrows",
+            title: basename(scopedPath),
+            description: scopedPath,
+            descriptionKind: "path" as const,
+            detail:
+              file === undefined ? null : stats(file.added, file.removed),
+          }
+        : {
+            kind: "card-masthead" as const,
+            icon: "GitCompareArrows",
+            title: descriptorLabel(descriptor),
+            description: null,
+            detail: payload === null ? null : `vs ${payload.base}`,
+          };
+    cardTitleStore.setMasthead(cardId, masthead);
+    return () => cardTitleStore.clear(cardId);
+  }, [cardId, descriptor, payload]);
+
   const hasFiles = (payload?.files.length ?? 0) > 0;
 
   let body: React.ReactElement;

@@ -211,7 +211,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // event of that pointer to the capture element — so which button may
     // start a drag decides whether a right-click in the bar reaches anything
     // at all. That coupling lives in this file and nowhere smaller.
-    "tugdeck/src/components/chrome/tug-pane.tsx": 28,
+    // 28 → 29 with the chrome tiers (at0392): which tier a pane wears is
+    // decided here — the masthead sidecar it subscribes to, and the rail role
+    // it derives from the active card's `layoutRole` and stamps on the pane —
+    // so a test of the tiers has nothing smaller to name.
+    "tugdeck/src/components/chrome/tug-pane.tsx": 29,
     // The list primitive: the transcript, the Lens sections, the gallery, and
     // every picker are all TugListView, so a test that drives any list of rows
     // names it. Crossed the budget when transcript DOM eviction landed inside

@@ -43,7 +43,7 @@ export function registerLensCard(): void {
     family: "lens",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
-    defaultMeta: { title: "Lens", closable: true },
+    defaultMeta: { title: "Lens", icon: "Telescope", closable: true },
     hidden: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it — the machinery the anchored rail has always used, now

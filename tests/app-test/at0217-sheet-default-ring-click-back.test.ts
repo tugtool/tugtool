@@ -43,8 +43,15 @@ const EDITOR_A = `${CARD_A} [data-slot="tug-text-card-editor"] .cm-content`;
 const SAVE_BUTTON = '[data-testid="file-save-sheet-save"]';
 const SHEET_PANEL = '[data-pane-id="p1"] [data-slot="tug-sheet"]';
 
+/**
+ * The pane's title BAR, which is what this test clicks — it wants the chrome
+ * as an activation surface, not the name written on it. Naming the title
+ * element instead used to be the same thing and no longer is: a document card
+ * wears a masthead, and the masthead replaces the bar's icon-and-title pair,
+ * so `tug-pane-title` does not render on a Text card's pane at all.
+ */
 function paneTitleSelectorFor(paneId: string): string {
-  return `[data-pane-id="${paneId}"] [data-testid="tug-pane-title"]`;
+  return `[data-pane-id="${paneId}"] .tug-pane-title-bar`;
 }
 
 const ORIGINAL = "alpha\nbeta\ngamma\n";

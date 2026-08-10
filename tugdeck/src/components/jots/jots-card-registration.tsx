@@ -40,7 +40,7 @@ export function registerJotsCard(): void {
     family: "jots",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <JotsContent cardId={cardId} />,
-    defaultMeta: { title: "Jots", closable: true },
+    defaultMeta: { title: "Jots", icon: "NotebookPen", closable: true },
     hidden: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it.

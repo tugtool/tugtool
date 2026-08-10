@@ -37,6 +37,7 @@ body {
   /* Chrome */
   --tug-chrome-height: 36px;
   --tug-masthead-height: 72px;
+  --tug-rail-chrome-height: 32px;
 
   /* Icon Size */
   --tug-icon-size-2xs: 10px;

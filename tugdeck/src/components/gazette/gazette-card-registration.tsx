@@ -40,7 +40,7 @@ export function registerGazetteCard(): void {
     family: "gazette",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <GazetteContent cardId={cardId} />,
-    defaultMeta: { title: "Gazette", closable: true },
+    defaultMeta: { title: "Gazette", icon: "Newspaper", closable: true },
     hidden: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it.

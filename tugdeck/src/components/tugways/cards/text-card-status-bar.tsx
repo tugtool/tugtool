@@ -2,16 +2,18 @@
  * text-card-status-bar.tsx — the thin status strip at the bottom of a
  * Text card's editor, in the spirit of BBEdit's document status bar.
  *
- * Left to right: save state (alone on the left), then two clusters on
- * the right — the **settable** pair (line-ending and syntax/file type,
- * each a popup menu) and the **number** pair (caret line/column and the
- * line / word / character counts), separated by a divider.
+ * Two clusters on the right: the **settable** pair (line-ending and
+ * syntax/file type, each a popup menu) and the **number** pair (caret
+ * line/column and the line / word / character counts), separated by a
+ * divider. The save state used to sit alone on the left; it says the same
+ * thing on the card's document masthead now, where the name and the path
+ * it belongs to already are.
  *
  * Live counts + caret ride the per-card `EditorStatsStore`
  * (`useSyncExternalStore`), so keystroke-rate updates repaint only this
- * strip; save state / line-ending come from the `TextCardStore`
- * snapshot the card already subscribes to. The two popups dispatch
- * through this panel's `useResponderForm` responder.
+ * strip; the line-ending comes from the `TextCardStore` snapshot the card
+ * already subscribes to. The two popups dispatch through this panel's
+ * `useResponderForm` responder.
  *
  * Laws: layout-only CSS in text-card.css [L06]; stats enter through
  * `useSyncExternalStore` [L02]; the popups emit actions to this panel's
@@ -26,12 +28,7 @@ import { TugPopupButton, type TugPopupButtonItem } from "../tug-popup-button";
 import { useResponderForm } from "../use-responder-form";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import type { EditorStatsStore } from "@/lib/editor-stats-store";
-import type {
-  FileConflict,
-  FileSaveState,
-  LineEnding,
-  SaveMode,
-} from "@/lib/text-card-store";
+import type { LineEnding } from "@/lib/text-card-store";
 import { SELECTABLE_LANGUAGES } from "@/lib/language-registry";
 
 const LINE_ENDING_LABEL: Record<LineEnding, string> = {
@@ -54,11 +51,6 @@ const LANGUAGE_ITEMS: TugPopupButtonItem<string>[] = SELECTABLE_LANGUAGES.map(
 
 export interface TextCardStatusBarProps {
   statsStore: EditorStatsStore;
-  saveMode: SaveMode;
-  saveState: FileSaveState;
-  /** Unresolved divergence — shows a conflict badge (manual mode). */
-  conflict: FileConflict | null;
-  lastSavedAt: number | null;
   lineEnding: LineEnding;
   /** Change the buffer's line-ending style. */
   onSetLineEnding: (ending: LineEnding) => void;
@@ -68,33 +60,8 @@ export interface TextCardStatusBarProps {
   onSetLanguage: (id: string) => void;
 }
 
-/**
- * Save-state cell copy. Automatic mode is the saveless live-autosave
- * wording ("Saving…" / "Unsaved" / "Saved"); manual mode is the classic
- * document wording ("Saving…" / "Edited" / "Saved"), plus a conflict
- * badge when an external change is unresolved.
- */
-function saveText(
-  saveMode: SaveMode,
-  saveState: FileSaveState,
-  conflict: FileConflict | null,
-  lastSavedAt: number | null,
-): string {
-  if (saveMode === "manual" && conflict !== null) {
-    return conflict.reason === "missing" ? "File deleted" : "File changed";
-  }
-  if (saveState === "writing") return "Saving…";
-  if (saveState === "editing") return saveMode === "manual" ? "Edited" : "Unsaved";
-  if (lastSavedAt === null) return "Saved";
-  return `Saved: ${new Date(lastSavedAt).toLocaleTimeString()}`;
-}
-
 export function TextCardStatusBar({
   statsStore,
-  saveMode,
-  saveState,
-  conflict,
-  lastSavedAt,
   lineEnding,
   onSetLineEnding,
   languageId,
@@ -121,16 +88,6 @@ export function TextCardStatusBar({
         data-slot="text-card-status-bar"
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
-        <span
-          className="text-card-status-cell text-card-status-save"
-          data-testid="text-card-status-save"
-          data-conflict={
-            saveMode === "manual" && conflict !== null ? "true" : undefined
-          }
-        >
-          {saveText(saveMode, saveState, conflict, lastSavedAt)}
-        </span>
-
         {/* Settable pair, pushed to the right edge. */}
         <div className="text-card-status-group text-card-status-group--settable">
           <TugPopupButton

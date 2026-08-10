@@ -61,7 +61,11 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
-const SAVE_CELL = `${CARD} [data-testid="text-card-status-save"]`;
+// The save state rides the PANE's document masthead, not a cell inside the
+// card — the title bar is not a descendant of the card element, so this is
+// pane-scoped on purpose. Chrome follows the frontmost tab, so in the
+// two-card cases below this selector reads whichever card is active.
+const SAVE_LINE = `[data-pane-id="p1"] [data-testid="card-masthead-detail"]`;
 const CLOSE_BUTTON = `[data-testid="tug-pane-close-button"]`;
 
 const ORIGINAL = "alpha\nbeta\ngamma\n";
@@ -136,7 +140,7 @@ async function typeIntoEditor(app: App, text: string): Promise<void> {
 async function waitForSaveCell(app: App, want: string, timeoutMs = 15000): Promise<void> {
   await app.waitForCondition<boolean>(
     `(function(){
-      var el = document.querySelector('${SAVE_CELL}');
+      var el = document.querySelector('${SAVE_LINE}');
       return el !== null && el.innerText.indexOf(${JSON.stringify(want)}) === 0;
     })()`,
     { timeoutMs },
@@ -144,7 +148,7 @@ async function waitForSaveCell(app: App, want: string, timeoutMs = 15000): Promi
 }
 
 async function saveCell(app: App): Promise<string> {
-  return app.evalJS<string>(`document.querySelector('${SAVE_CELL}').innerText`);
+  return app.evalJS<string>(`document.querySelector('${SAVE_LINE}').innerText`);
 }
 
 /**
@@ -506,7 +510,8 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
       fs.writeFileSync(fileB, "other\n", "utf8");
       const app = await launchTugApp({ testName: "at0212-visit-dirty" });
       const B_EDITOR = `[data-card-id="B"] [data-slot="tug-text-card-editor"] .cm-content`;
-      const B_SAVE_CELL = `[data-card-id="B"] [data-testid="text-card-status-save"]`;
+      // Same pane, so the same masthead — it reads B while B is the frontmost tab.
+      const B_SAVE_LINE = SAVE_LINE;
       try {
         await app.seedDeckState({
           state: {
@@ -558,7 +563,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         expect(typed).toBe(true);
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector('${B_SAVE_CELL}');
+            var el = document.querySelector('${B_SAVE_LINE}');
             return el !== null && el.innerText.indexOf("Edited") === 0;
           })()`,
           { timeoutMs: 15000 },
@@ -587,7 +592,7 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         await app.click(`[data-testid="file-save-sheet-cancel"]`);
         await settle();
         expect(
-          await app.evalJS<string>(`document.querySelector('${B_SAVE_CELL}').innerText`),
+          await app.evalJS<string>(`document.querySelector('${B_SAVE_LINE}').innerText`),
         ).toStartWith("Edited");
 
         // X again: Don't Save finishes the close directly — the visit

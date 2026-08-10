@@ -33,6 +33,10 @@ import { useLayoutEffect, useRef, useState } from "react";
 
 import { classifyFileKind, blobUrl } from "@/lib/file-kinds";
 import { cardTitleStore } from "@/lib/card-title-store";
+import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
+import { openPathInOS } from "@/lib/os-open";
+import { useResponder } from "@/components/tugways/use-responder";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import {
   notifyOpenFileViewCardsChanged,
   registerOpenFileViewCard,
@@ -83,9 +87,37 @@ function basename(path: string): string {
   return slash === -1 ? path : path.slice(slash + 1);
 }
 
+/**
+ * The masthead's third line: what kind of document this is, in the words a
+ * reader would use.
+ *
+ * `classifyFileKind` answers with a coarse `FileKind` — the three branches
+ * the card body switches on — and "image" is not what a reader calls a PNG.
+ * So the extension supplies the name and the classification supplies the
+ * category, which is why this is composed here rather than asked of the
+ * classifier. A PDF also says how long it is, once the surface has told the
+ * card ([Q03] leaves image dimensions and byte size to a follow-on; the line
+ * takes them without changing shape when they arrive).
+ */
+function fileKindLabel(path: string, pdfPages: number | null): string {
+  const kind = classifyFileKind(path);
+  if (kind === "pdf") {
+    return pdfPages === null
+      ? "PDF"
+      : `PDF · ${pdfPages} ${pdfPages === 1 ? "page" : "pages"}`;
+  }
+  const dot = basename(path).lastIndexOf(".");
+  const ext = dot <= 0 ? null : basename(path).slice(dot + 1).toUpperCase();
+  if (kind === "image") return ext === null ? "Image" : `${ext} image`;
+  return ext ?? "File";
+}
+
 export function FileViewCardContent({ cardId }: { cardId: string }) {
   const [path, setPath] = useState<string | null>(null);
   const [view, setView] = useState<PdfViewState | undefined>(undefined);
+  // How many pages the bound PDF turned out to have; null until the surface
+  // reports, and for every non-PDF kind.
+  const [pdfPages, setPdfPages] = useState<number | null>(null);
   // The surface mounts fresh per document, so its opening state is read once
   // per binding; a live prop would fight the reader's own zoom.
   const restoredViewRef = useRef<PdfViewState | undefined>(undefined);
@@ -121,6 +153,9 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
         // one's zoom.
         restoredViewRef.current = undefined;
         setView(undefined);
+        // A different document has a different length; the old count would be
+        // a resting lie on the masthead until the new one loaded.
+        setPdfPages(null);
         setPath(next);
       },
     });
@@ -137,18 +172,67 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
     notifyOpenFileViewCardsChanged();
   }, [path]);
 
-  // ---- Title sync (basename → pane chrome) ----
-
+  // ---- Title + masthead sync (pane chrome) ----
+  //
+  // Published from the moment the card HAS a path, not when the bytes land: a
+  // tier that appeared once the image decoded would grow the chrome under a
+  // reader who is already looking at the card. Until then the card holds no
+  // document at all and is not a document card, so the pre-bind state still
+  // clears.
+  //
+  // The string and the payload go out in one `set` — the tab bar and the
+  // Window menu read the string, the pane renders the payload, and two calls
+  // would race the store's equality guard into notifying twice.
   useLayoutEffect(() => {
     if (path === null) {
       cardTitleStore.clear(cardId);
       return;
     }
-    cardTitleStore.set(cardId, basename(path));
+    const name = basename(path);
+    cardTitleStore.set(cardId, name, {
+      kind: "card-masthead",
+      icon: classifyFileKind(path) === "image" ? "Image" : "FileText",
+      title: name,
+      description: path,
+      descriptionKind: "path",
+      detail: fileKindLabel(path, pdfPages),
+    });
     return () => {
       cardTitleStore.clear(cardId);
     };
+  }, [cardId, path, pdfPages]);
+
+  // Reveal in Finder — the one verb this card has, and a bound viewer card
+  // always has a real file to reveal. Membership is the card's; the row's
+  // label, its enablement, and any chord are the command table's ([L30]).
+  useLayoutEffect(() => {
+    if (path === null) {
+      paneTitleBarMenuStore.set(cardId, null);
+      return;
+    }
+    paneTitleBarMenuStore.set(cardId, [
+      { commandId: TUG_ACTIONS.REVEAL_CARD_FILE },
+    ]);
+    return () => {
+      paneTitleBarMenuStore.set(cardId, null);
+    };
   }, [cardId, path]);
+
+  // The `…` row's landing point. Key-card routed, so it arrives here however
+  // focus happens to sit when the menu row is chosen.
+  const {
+    ResponderScope: CardContentResponderScope,
+    responderRef: cardContentResponderRef,
+  } = useResponder({
+    id: `${cardId}-card-content`,
+    kind: "card-content",
+    actions: {
+      [TUG_ACTIONS.REVEAL_CARD_FILE]: () => {
+        const live = pathRef.current;
+        if (live !== null) openPathInOS(live, "reveal");
+      },
+    },
+  });
 
   if (path === null) {
     return (
@@ -162,7 +246,9 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
   const name = basename(path);
 
   return (
+    <CardContentResponderScope>
     <div
+      ref={cardContentResponderRef as (el: HTMLDivElement | null) => void}
       className="file-view-card"
       data-slot="file-view-card"
       data-file-view-kind={kind}
@@ -180,6 +266,7 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
           cardId={cardId}
           initialState={restoredViewRef.current}
           onStateChange={setView}
+          onDocumentInfo={(info) => setPdfPages(info.pages)}
         />
       ) : (
         <TugLabel className="file-view-card-notice">
@@ -187,5 +274,6 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
         </TugLabel>
       )}
     </div>
+    </CardContentResponderScope>
   );
 }

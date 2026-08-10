@@ -276,6 +276,16 @@ body {
   --tugx-pane-chrome-height: var(--tug-masthead-height);
 }
 
+/* The rail tier's height, published at the same scope and for the same reason:
+   the scrim, the sheet clip, and the pane banner all seat below the bar, and a
+   rail's bar is shorter than a card's. `TugPane` stamps the role from the
+   active card's `layoutRole`, so this is a pane fact the way the masthead's is.
+   The rail's ink, stripes, and label stay keyed on the BAR's own attribute —
+   they style the bar, not the pane. */
+.tug-pane[data-role="sidebar"] {
+  --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 32px);
+}
+
 .tug-pane-title-bar {
   display: flex;
   align-items: center;
@@ -320,7 +330,7 @@ body {
  *
  *   72px masthead, tinted band  → a document card saying its own name
  *   36px title bar, tinted band → a utility card wearing its type's name
- *   30px label, flush ground    → a rail, which is a tool and not a document
+ *   32px label, flush ground    → a rail, which is a tool and not a document
  *
  * What every rail shares: a FLUSH ground instead of the tinted title band, so
  * the rail reads as one panel rather than a card with a lid, with the hairline
@@ -360,16 +370,13 @@ body {
  * a pair, rather than restated at each of the four places they are drawn.
  *
  * The height is a knob with its default at the point of use — a theme retuning
- * the tier declares `--tug-rail-chrome-height`. The tier is redeclared on the
- * BAR rather than on the pane. It would properly be published pane-wide, the
- * way the masthead's is, so the scrim and the banner seat below it — but the
- * pane learns it from a descendant's attribute, and `:has()` does not
- * invalidate on a descendant attribute change in WebKit. When this lands,
- * `TugPane` stamps the role on the pane element from the `sidebarSide` it
- * already has, and this rule moves up there beside the masthead's.
+ * the tier declares `--tug-rail-chrome-height` — and it is declared on the PANE,
+ * beside the masthead's, so the scrim, the sheet clip, and the banner seat below
+ * a 32px bar. The pane cannot learn the role from the bar (`:has()` does not
+ * invalidate on a descendant attribute change in WebKit), so `TugPane` stamps
+ * `data-role` on both from the active card's `layoutRole`.
  */
 .tug-pane-title-bar[data-role="sidebar"] {
-  --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 32px);
   padding-inline: var(--tug-space-sm);
   /* The bar's own `space-between` distributes its children, which pushed the
      name to the bar's center — halfway to the close box and nowhere near the

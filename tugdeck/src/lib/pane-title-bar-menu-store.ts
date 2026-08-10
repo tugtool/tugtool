@@ -20,16 +20,28 @@
  * @module lib/pane-title-bar-menu-store
  */
 
-/** A single title-bar menu item a card contributes. */
+/**
+ * A single title-bar menu item a card contributes — a COMMAND REFERENCE, not
+ * a label and a callback.
+ *
+ * A menu item is a command ([L30] names one first in its list), so a card
+ * says only *which* commands belong on its pane's menu and in what order.
+ * `CardTitleBar` resolves the row's title, its enablement, and its shortcut
+ * glyph from `command-registry.ts` and invokes it with `dispatchCommand`, so
+ * a row can never disagree with the same command's chord or its item in the
+ * native menu bar.
+ *
+ * There is deliberately no `disabled` field. Enablement is the registry's
+ * answer via `validate(chain)`; a card-supplied one would be the second
+ * opinion the law forbids, and it would drift from ⌘S the first time a gate
+ * changed. What the card decides is MEMBERSHIP — whether the row is on the
+ * menu at all — which is a different question and genuinely the card's.
+ */
 export interface PaneTitleBarMenuItem {
-  /** Stable id within the menu. */
-  id: string;
-  /** Display label. */
-  label: string;
-  /** Optional checkmark state (a checkable/visibility toggle). */
+  /** The command this row names — a `TUG_ACTIONS` value / command id. */
+  commandId: string;
+  /** Checkmark state for a toggle row; omit for a plain verb. */
   checked?: boolean;
-  /** Invoked when the item is chosen. */
-  onSelect: () => void;
 }
 
 class PaneTitleBarMenuStore {

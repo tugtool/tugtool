@@ -1,24 +1,29 @@
 /**
- * at0210-text-card-options.test.ts — Text card top bar + gear options
- * ([AT0210]): open a real file, then drive the top-bar gear popover and
- * assert each toggle reconfigures the live CodeMirror 6 editor.
+ * at0210-text-card-options.test.ts — Text card masthead + editor options
+ * ([AT0210]): open a real file, then drive the pane `…` menu's Editor
+ * Options sheet and assert each toggle reconfigures the live CodeMirror 6
+ * editor.
  *
- * Scenario: seed a Text card bound to a real temp fixture, assert the
- * top bar shows the file path and the editor mounts with the default
- * line-number gutter. Open the gear, toggle Line numbers off (the CM6
- * `lineNumbers` compartment drops the gutter), then toggle Soft wrap on
- * (the `lineWrapping` compartment adds `.cm-lineWrapping`). Every step
- * drives the real settings → CM6 reconfigure path on a real file — no
- * mocks.
+ * Scenario: seed a Text card bound to a real temp fixture, assert the pane's
+ * document masthead names the file and its path and that the editor mounts
+ * with the default line-number gutter. Open the `…` menu, choose Editor
+ * Options…, toggle Line numbers off (the CM6 `lineNumbers` compartment drops
+ * the gutter), then toggle Soft wrap on (the `lineWrapping` compartment adds
+ * `.cm-lineWrapping`). Every step drives the real settings → CM6 reconfigure
+ * path on a real file — no mocks.
+ *
+ * The masthead lives in the PANE's title bar, which is not a descendant of
+ * the card element, so its selectors are pane-scoped rather than card-scoped.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * @covers tugdeck/src/components/tugways/cards/text-card-top-bar.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card-options-sheet.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-controls.tsx
  * @covers tugdeck/src/lib/text-card-settings.ts
  * @covers tugdeck/src/lib/use-text-card-settings.ts
  * @covers tugdeck/src/components/tugways/tug-text-card-editor/
  * @covers tugdeck/src/components/tugways/cards/text-card-status-bar.tsx
+ * @covers tugdeck/src/components/tugways/cards/text-card.tsx
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
  */
@@ -35,10 +40,16 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 const LINE_NUMBERS = `${CARD} [data-slot="tug-text-card-editor"] .cm-lineNumbers`;
-const TOP_BAR = `${CARD} [data-slot="text-card-top-bar"]`;
-const GEAR = `${CARD} [aria-label="Editor options"]`;
+// The masthead and the `…` button are the PANE's, not the card's — the title
+// bar is a sibling of the card element, so a card-scoped prefix matches
+// nothing here.
+const PANE = '[data-pane-id="p1"]';
+const MASTHEAD_TITLE = `${PANE} [data-testid="card-masthead-title"]`;
+const MASTHEAD_DESCRIPTION = `${PANE} [data-testid="card-masthead-description"]`;
+const MASTHEAD_DETAIL = `${PANE} [data-testid="card-masthead-detail"]`;
+const MENU_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-menu-button"]`;
 const OPTIONS_PANEL = '[data-testid="text-card-options"]';
-// Scoped to the popover: the same option testids also appear in the
+// Scoped to the sheet: the same option testids also appear in the
 // Settings card's Text Card tab (shared TextCardControls).
 const LINE_NUMBERS_SWITCH = `${OPTIONS_PANEL} [data-testid="text-card-option-line-numbers"]`;
 const LINE_WRAP_SWITCH = `${OPTIONS_PANEL} [data-testid="text-card-option-line-wrap"]`;
@@ -128,9 +139,47 @@ const WRAP_STATE = `(() => {
   return el !== null && el.classList.contains("cm-lineWrapping");
 })()`;
 
-describe.skipIf(!SHOULD_RUN)("at0210: Text card top bar + gear options", () => {
+/**
+ * Open the pane's `…` menu and choose a row by its label. The menu portals to
+ * the document root, so the rows are found globally once it is open.
+ */
+async function chooseMenuRow(app: App, label: string): Promise<void> {
+  await app.nativeClickAtElement(MENU_BUTTON);
+  const found = JSON.stringify(label);
+  await app.waitForCondition<boolean>(
+    `!!Array.from(document.querySelectorAll('.tug-menu-item')).find(n => n.textContent && n.textContent.includes(${found}))`,
+    { timeoutMs: 8000 },
+  );
+  const pt = await app.evalJS<{ x: number; y: number; disabled: boolean } | null>(
+    `(() => {
+      const item = Array.from(document.querySelectorAll('.tug-menu-item'))
+        .find(n => n.textContent && n.textContent.includes(${found}));
+      if (!item) return null;
+      const r = item.getBoundingClientRect();
+      return {
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2),
+        disabled: item.hasAttribute('data-disabled'),
+      };
+    })()`,
+  );
+  if (pt === null) throw new Error(`[at0210] menu row ${label} not found`);
+  // A disabled row swallows the click, so a wrongly-gated row would read as a
+  // sheet that never opened. The registry answers this — the card does not —
+  // so a disabled Editor Options row means the key-card walk missed.
+  expect(pt.disabled, `the ${label} row must be enabled`).toBe(false);
+  await app.nativeClick(pt);
+  // The menu closes in the same step that invokes the command, so a menu
+  // still standing here means the selection never fired.
+  await app.waitForCondition<boolean>(
+    `document.querySelectorAll('.tug-menu-item').length === 0`,
+    { timeoutMs: 5000 },
+  );
+}
+
+describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () => {
   test(
-    "top bar shows the path; gear toggles reconfigure the live editor",
+    "the masthead names the file; the … menu's options reconfigure the live editor",
     async () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0210-text-card-options" });
@@ -146,19 +195,31 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card top bar + gear options", () => {
           { timeoutMs: 15000 },
         );
 
-        // Top bar shows the full path.
-        const barText = await app.evalJS<string>(
-          `document.querySelector(${JSON.stringify(TOP_BAR)}).innerText`,
+        // The pane's masthead names the file, says where it lives, and — on
+        // its third line — how it stands with the disk. A freshly loaded file
+        // is clean, so the save state reads "Saved".
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(MASTHEAD_TITLE)}).innerText`,
+          ),
+        ).toBe("sample.txt");
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(MASTHEAD_DESCRIPTION)}).innerText`,
+          ),
+        ).toContain("sample.txt");
+        const saveLine = await app.evalJS<string>(
+          `document.querySelector(${JSON.stringify(MASTHEAD_DETAIL)}).innerText`,
         );
-        expect(barText).toContain("sample.txt");
+        expect(saveLine.startsWith("Saved")).toBe(true);
 
-        // Bottom status bar reflects the file + caret. A freshly loaded
-        // file is clean (save cell "Saved"); .txt is Plain Text; the
-        // caret starts at L: 1.
-        const saveCell = await app.evalJS<string>(
-          `document.querySelector('${CARD} [data-testid="text-card-status-save"]').innerText`,
-        );
-        expect(saveCell.startsWith("Saved")).toBe(true);
+        // The bottom status bar keeps the settable pair and the caret; the
+        // save state is no longer one of its cells.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll('${CARD} [data-testid="text-card-status-save"]').length`,
+          ),
+        ).toBe(0);
         const statusText = await app.evalJS<string>(
           `document.querySelector('${CARD} [data-slot="text-card-status-bar"]').innerText`,
         );
@@ -179,8 +240,8 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card top bar + gear options", () => {
         ).toBe(true);
         expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(false);
 
-        // Open the gear options popover.
-        await app.nativeClickAtElement(GEAR);
+        // Open the options through the pane's `…` menu.
+        await chooseMenuRow(app, "Editor Options");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(OPTIONS_PANEL)}) !== null`,
           { timeoutMs: 15000 },

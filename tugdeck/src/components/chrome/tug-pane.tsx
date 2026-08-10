@@ -26,6 +26,7 @@ import React, {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -34,7 +35,7 @@ import React, {
 import { Layers, MoreHorizontal, MoveHorizontal, X, icons } from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
 import type { SlotStackEntry } from "@/deck-store-selectors";
-import type { CardMeta, CardSizePolicy } from "@/card-registry";
+import type { CardMeta, CardSizePolicy, LayoutRole } from "@/card-registry";
 import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
@@ -71,7 +72,16 @@ import { SessionMasthead } from "@/components/tugways/session-masthead";
 import { CardMasthead } from "@/components/tugways/card-masthead";
 import { composePaneTitleBarText } from "@/lib/pane-title";
 import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
-import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
+import {
+  TugPopupMenu,
+  type TugPopupMenuEntry,
+} from "@/components/tugways/internal/tug-popup-menu";
+import {
+  commandEntry,
+  validateCommand,
+} from "@/components/tugways/command-registry";
+import { commandShortcut } from "@/components/tugways/keymap-registry";
+import { commandValidationSource } from "@/lib/host-menu-state";
 import {
   getCardCloseGuard,
   type CardCloseDecision,
@@ -251,8 +261,9 @@ export interface CardTitleBarProps {
    * place of an icon-and-title — because the layout imposer already treats it
    * as a different thing and the chrome should say so.
    *
-   * Passed by `TugPane` from the same `sidebarSide` that already decides
-   * whether this bar gets a width control.
+   * Passed by `TugPane` from the active card's registered `layoutRole` — what
+   * the card IS, not where it currently stands. A released rail keeps this
+   * chrome and gains a width control, which `sidebarSide` still governs.
    * @selector [data-role="sidebar"]
    */
   sidebar?: boolean;
@@ -285,6 +296,52 @@ function CardTitleBar({
     paneTitleBarMenuStore.subscribe,
     () => paneTitleBarMenuStore.get(activeCardId ?? null),
   );
+
+  // Every row is a command reference, so a row's title, its enablement, and
+  // its shortcut glyph are all the TABLE's answers — the same ones the chord
+  // and the native menu item get ([L30]). A card chooses which commands are
+  // on its menu and in what order; it never says whether one is enabled,
+  // because a second opinion beside the entry that already answers is exactly
+  // what drifts from ⌘S the first time a gate changes.
+  //
+  // Sampled at OPEN, keyed on the open flag: `commandValidationSource()` is a
+  // snapshot of the last menu-state flush, and open time is the moment an
+  // in-page menu wants it — the same rule `buildTextEditingMenuItems` follows.
+  // Closed, the rows are not rendered and not worth computing.
+  //
+  // A row whose command is invalid renders DISABLED rather than vanishing: a
+  // menu whose rows come and go is one the hand cannot learn.
+  const [titleBarMenuOpen, setTitleBarMenuOpen] = useState(false);
+
+  // A chosen row's command runs once the menu is GONE, not while it stands.
+  // An open menu owns focus — its content is portalled outside the card — so a
+  // command dispatched from inside the selection handler is asked to find a
+  // key card and a first responder that the menu is currently holding, and it
+  // finds neither. Parking the id and dispatching from a layout effect that
+  // runs after the close commits is what makes the row mean the same thing
+  // its chord does.
+  const [pendingCommandId, setPendingCommandId] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (pendingCommandId === null || titleBarMenuOpen) return;
+    setPendingCommandId(null);
+    dispatchCommand(pendingCommandId);
+  }, [pendingCommandId, titleBarMenuOpen]);
+  const titleBarMenuRows = useMemo<TugPopupMenuEntry[]>(() => {
+    if (!titleBarMenuOpen || titleBarMenuItems === null) return [];
+    const source = commandValidationSource();
+    return titleBarMenuItems.map((item) => {
+      const entry = commandEntry(item.commandId);
+      const shortcut = commandShortcut(item.commandId);
+      return {
+        id: item.commandId,
+        label:
+          entry?.dynamicTitle?.(source) ?? entry?.title ?? item.commandId,
+        disabled: entry === undefined || !validateCommand(entry, source),
+        ...(item.checked !== undefined ? { selected: item.checked } : {}),
+        ...(shortcut !== undefined ? { shortcut } : {}),
+      };
+    });
+  }, [titleBarMenuOpen, titleBarMenuItems]);
   const handleTitleBarPointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
@@ -664,15 +721,10 @@ function CardTitleBar({
               />
             }
             align="end"
-            items={titleBarMenuItems.map((item) => ({
-              id: item.id,
-              label: item.label,
-              ...(item.checked !== undefined ? { selected: item.checked } : {}),
-            }))}
-            onSelect={(id) => {
-              const item = titleBarMenuItems.find((i) => i.id === id);
-              item?.onSelect();
-            }}
+            open={titleBarMenuOpen}
+            onOpenChange={setTitleBarMenuOpen}
+            items={titleBarMenuRows}
+            onSelect={setPendingCommandId}
           />
         )}
         {/* Card width. A dedicated, persistent trigger rather than a row in
@@ -1018,6 +1070,14 @@ export interface TugPaneProps {
   /** Default metadata for the window (from card registration). */
   meta: CardMeta;
   /**
+   * The active card's registered layout role. Companion to {@link meta}: a
+   * single-card pane has no `cards` array to resolve a registration from, so
+   * the caller — which already holds that registration — hands the role down.
+   * A stacked pane resolves it from its own active card instead. `"sidebar"`
+   * is what puts the pane in the rail chrome tier.
+   */
+  layoutRole?: LayoutRole;
+  /**
    * Minimum content area size (below title bar + accessory).
    * Total min-size = header + accessory + this region.
    */
@@ -1198,6 +1258,7 @@ const LENS_MIN_GUTTER_PX = 80;
 export function TugPane({
   stackState,
   meta,
+  layoutRole,
   minContentSize: minContentSizeProp,
   accessory = null,
   cards,
@@ -1543,6 +1604,18 @@ export function TugPane({
   const effectiveMeta: CardMeta = activeCardRegistration
     ? activeCardRegistration.defaultMeta
     : meta;
+
+  // Rail-ness follows the ACTIVE card's registration, the same way the
+  // masthead and the title do. It reads `layoutRole` — what the card IS — and
+  // not `sidebarSide`, which says only where a rail currently stands: a
+  // released Lens is still a tool, and its livery should not blink when it
+  // leaves its pin. `activeCardRegistration` resolves only for a stacked pane,
+  // so a single-card pane falls back to the role its caller resolved from the
+  // same registration, exactly as `effectiveMeta` falls back to `meta`.
+  const effectiveLayoutRole: LayoutRole | undefined = activeCardRegistration
+    ? activeCardRegistration.layoutRole
+    : layoutRole;
+  const isRail = effectiveLayoutRole === "sidebar";
 
   // Per-card title override (cardTitleStore) — the name a card takes once its
   // identity resolves: a Text card's filename, the Session card's bound
@@ -2708,7 +2781,14 @@ export function TugPane({
       // banner. A custom property rather than a measured number, so the 72↔36
       // swap is one cascade and not four subscriptions ([L06]).
       {...(activeCardMasthead !== null ? { "data-masthead": "true" } : {})}
+      // The rail tier, stamped here as well as on the bar so the height is a
+      // pane fact: the scrim, the sheet clip, and the banner all seat below a
+      // 32px bar. CSS cannot read the bar's own attribute from up here —
+      // `:has()` does not invalidate on a descendant attribute change.
+      {...(isRail ? { "data-role": "sidebar" } : {})}
       {...(isLensPane ? { "data-lens-pane": "" } : {})}
+      // `data-lens` is NOT the same bit: it carries which edge a rail is
+      // pinned to, and a released rail has rail chrome with no side.
       {...(sidebarSide !== undefined ? { "data-lens": sidebarSide } : {})}
       {...(imposed && placement !== undefined && !bullseye
         ? { "data-imposed": String(placement.slot) }
@@ -2777,6 +2857,7 @@ export function TugPane({
             slotStack={slotStack}
             onRevealPane={onRevealPane}
             masthead={activeCardMasthead}
+            sidebar={isRail}
             onClose={handleTitleBarClose}
             onDragStart={handleDragStart}
           />

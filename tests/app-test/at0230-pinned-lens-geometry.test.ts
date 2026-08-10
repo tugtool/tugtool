@@ -178,6 +178,19 @@ describe.skipIf(!SHOULD_RUN)(
                   )}) !== null`,
                 ),
               ).toBe(true);
+              // And it keeps its RAIL CHROME. The tier is read from the card's
+              // registered `layoutRole` — what the card is — not from the side
+              // it happens to be standing on, so a tool that leaves its pin is
+              // still a tool and its livery does not blink. This is also why
+              // `data-role` and `data-lens` are two bits and not one: here the
+              // pane has the first without the second.
+              expect(
+                await app.evalJS<boolean>(
+                  `document.querySelector(${JSON.stringify(
+                    `${LENS_SELECTOR}[data-role="sidebar"]`,
+                  )}) !== null`,
+                ),
+              ).toBe(true);
               // Width is the user's either way — the release never touches it.
               expect(Math.abs(after.width - before.width)).toBeLessThanOrEqual(2);
             }

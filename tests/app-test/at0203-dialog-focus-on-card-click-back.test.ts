@@ -52,8 +52,14 @@ const Q_OPTIONS = `${Q_DIALOG} .session-question-dialog-options-list`;
 const P_DIALOG = `${CARD_A} [data-slot="session-permission-dialog"]`;
 const P_ALLOW = `${P_DIALOG} .tug-inline-dialog-actions .tug-button-primary-action`;
 
+/**
+ * The pane's title BAR, which is what this test clicks — it wants the chrome
+ * as an activation surface, not the name written on it. A masthead-bearing
+ * pane renders no `tug-pane-title` at all: the masthead replaces the bar's
+ * icon-and-title pair.
+ */
 function paneTitleSelectorFor(paneId: string): string {
-  return `[data-pane-id="${paneId}"] [data-testid="tug-pane-title"]`;
+  return `[data-pane-id="${paneId}"] .tug-pane-title-bar`;
 }
 
 const twoSessionPanes = {

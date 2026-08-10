@@ -34,6 +34,10 @@ function makeStore() {
   const calls: { addCard: unknown[][]; activated: string[] } = { addCard: [], activated: [] };
   const store = {
     getFirstResponderCardId: () => null,
+    // `openDiffInCard` flashes the arriving card's pane. No pane holds these
+    // ids, which is silence rather than a warning — the reuse behavior under
+    // test is unaffected either way.
+    getSnapshot: () => ({ panes: [] }),
     activateCard: (id: string) => calls.activated.push(id),
     addCard: (...args: unknown[]) => {
       calls.addCard.push(args);
@@ -49,7 +53,14 @@ describe("open-diff-in-card ([P20])", () => {
     const { store, calls } = makeStore();
     openDiffInCard(store as never, DESCRIPTOR);
     expect(calls.addCard).toHaveLength(1);
-    expect(calls.addCard[0]).toEqual(["diff", { descriptor: DESCRIPTOR }]);
+    // The third argument is the pop-out's seating request. With no outgoing
+    // card there is no neighbour to sit beside, so the slot is undefined and
+    // the deck places the card itself.
+    expect(calls.addCard[0]).toEqual([
+      "diff",
+      { descriptor: DESCRIPTOR },
+      { slot: undefined },
+    ]);
   });
 
   test("an already-open descriptor activates and re-points the existing card", () => {

@@ -133,6 +133,12 @@ export interface PdfViewProps {
   initialState?: PdfViewState;
   /** Mirrors mode and zoom back to the card so the bag can persist them. */
   onStateChange?: (state: PdfViewState) => void;
+  /**
+   * What the loaded document turned out to be. Reported once per binding,
+   * after the document resolves — the card's masthead says how many pages it
+   * is holding, and this surface is the only thing that knows.
+   */
+  onDocumentInfo?: (info: { pages: number }) => void;
 }
 
 /** Pages kept mounted beyond the viewport, so a scroll lands on drawn ink. */
@@ -279,7 +285,12 @@ export function PdfView({
   cardId,
   initialState,
   onStateChange,
+  onDocumentInfo,
 }: PdfViewProps) {
+  // Read through a ref at report time [L07]: the load effect is keyed on the
+  // path, and a fresh callback identity must not re-fetch the document.
+  const onDocumentInfoRef = useRef(onDocumentInfo);
+  onDocumentInfoRef.current = onDocumentInfo;
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [runtime, setRuntime] = useState<PdfRuntime | null>(null);
   const [document, setDocument] = useState<PdfDocument | null>(null);
@@ -336,6 +347,7 @@ export function PdfView({
         setDocument(doc);
         setPageSizes(sizes);
         setStatus("ready");
+        onDocumentInfoRef.current?.({ pages: doc.numPages });
       } catch (error) {
         tugDevLogStore.error("pdf-view", `load failed: ${String(error)}`, {
           path,

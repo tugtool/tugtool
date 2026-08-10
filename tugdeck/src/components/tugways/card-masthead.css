@@ -42,6 +42,30 @@
   color: var(--tugx-pane-title-bar-icon-active);
 }
 
+/* ── Reserving the control cluster ─────────────────────────────────────────
+   `masthead-frame.css` pulls the whole frame out from under the pane's controls
+   with a negative trailing margin, because the cluster occupies only the FIRST
+   chrome band and the lines below it should have the full run. Its comment ends
+   "each line above reserves the cluster back for itself" — these are that
+   reserve for the document tier, the counterpart of the two rules
+   `session-masthead.css` writes for the session tier.
+
+   Two lines share the cluster's band, so two lines stop short of it: the name
+   and the description. The third runs the full width, which is the whole point
+   of the frame's pull.
+
+   The session's terms do not carry over. There is no trailing-inset
+   compensation — a document masthead sets no trailing inset, having no tape to
+   seat under the controls' ink — and no 28px widget term, having no telemetry
+   widget beside the name. What is left is the cluster the pane measures, plus
+   one gap of air. */
+.card-masthead-row .tug-session-row-name-line,
+.card-masthead-row .tug-session-row-description {
+  padding-inline-end: calc(
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)
+  );
+}
+
 /* ── The path line ─────────────────────────────────────────────────────────
    A path clips its HEAD, so the filename it ends in survives the truncation
    that a long directory chain guarantees. `unicode-bidi: plaintext` keeps the

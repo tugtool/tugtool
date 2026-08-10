@@ -140,6 +140,21 @@ class CardTitleStore {
     this._notify();
   }
 
+  /**
+   * Set the masthead sidecar alone, leaving the title string as it is.
+   *
+   * For a card that wants the taller tier without renaming itself. A scoped
+   * Diff pop-out is the case: its masthead says which file it is showing,
+   * while its tab keeps the registry's "Diff" — the override REPLACES the
+   * registry title, so publishing one would rename the tab too. Same
+   * equality guard, so an unchanged payload notifies nobody.
+   */
+  setMasthead(cardId: string, masthead: CardMastheadPayload): void {
+    if (sameMasthead(this._mastheads.get(cardId), masthead)) return;
+    this._mastheads.set(cardId, masthead);
+    this._notify();
+  }
+
   /** Remove the title override (and any masthead) for `cardId`. */
   clear(cardId: string): void {
     if (!this._overrides.has(cardId) && !this._mastheads.has(cardId)) return;

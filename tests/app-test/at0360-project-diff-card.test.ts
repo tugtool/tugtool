@@ -127,14 +127,18 @@ describe.skipIf(!SHOULD_RUN)("AT0360: /diff opens the Project Diff card", () => 
           { timeoutMs: 10000 },
         );
 
-        // Its pane's title bar reads the published override, not "Diff".
+        // Its pane's chrome reads the published name, not the registry's
+        // "Diff". A document card wears a masthead, and the masthead REPLACES
+        // the bar's icon-and-title pair — so the name is on the masthead's
+        // lead line rather than in `tug-pane-title`, which no longer renders
+        // on this pane at all.
         const paneTitle = await app.evalJS<string | null>(
           `(() => {
              const card = document.querySelector(${JSON.stringify(DIFF_CARD)});
              const pane = card === null ? null : card.closest(".tug-pane");
              const title = pane === null
                ? null
-               : pane.querySelector('[data-testid="tug-pane-title"]');
+               : pane.querySelector('[data-testid="card-masthead-title"]');
              return title === null ? null : title.textContent;
            })()`,
         );

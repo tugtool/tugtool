@@ -1,11 +1,8 @@
 /**
- * gallery-card-chrome.tsx — design spike for the deck's chrome tiers.
+ * gallery-card-chrome.tsx — the deck's three chrome tiers, side by side.
  *
- * The Session card wears a 72px masthead; every other card wears the 36px
- * title bar, and a rail (Lens, Jots, Gazette) wears that same bar despite the
- * layout imposer treating it as a different kind of thing entirely. This
- * fixture proposes three tiers instead of two, and shows them side by side
- * against what ships today:
+ * This began as a proposal and is now the reference: all three tiers ship.
+ * The tiers are
  *
  *   72px masthead, tinted band  → a DOCUMENT card saying its own name
  *   36px title bar, tinted band → a UTILITY card wearing its type's name
@@ -14,12 +11,20 @@
  * Everything here is the real chrome: a real `CardTitleBar` inside a real
  * `.tug-pane` wrapper, driven by real `CardMastheadPayload`s, so the reserve
  * arithmetic under the control cluster and the focused/unfocused token pairs
- * are the shipping ones and not a mock's approximation. The "today" rows
- * mount the real `TextCardTopBar` for the same reason.
+ * are the shipping ones and not a mock's approximation.
  *
- * Nothing in this file is wired into a shipping card. The Text, File, and
- * Diff cards still publish no masthead and `TugPane` still passes no sidebar
- * role — adopting the tiers is the decision this fixture exists to inform.
+ * What this fixture is FOR, now that the tiers are adopted: seeing all three
+ * next to each other, and seeing each one's states — focused and receded,
+ * dirty and clean, two lines and three, stacked and alone — without having to
+ * arrange a deck that produces them. A real Text card shows you one tier in
+ * one state; this shows the vocabulary.
+ *
+ * The Text, File viewer, and Diff cards publish document mastheads of their
+ * own, and `TugPane` derives the rail role from the active card's
+ * `layoutRole`, so a row here that named a shipping card's chrome would be a
+ * second authoring of it. Do not add one — and in particular, do not
+ * resurrect `TextCardTopBar`, whose row lived here and which no longer
+ * exists: the Text card's actions are rows in its pane's `…` menu now.
  *
  * @module components/tugways/cards/gallery-card-chrome
  */
@@ -29,13 +34,11 @@ import React, { useId, useState } from "react";
 import { CardTitleBar } from "@/components/chrome/tug-pane";
 import type { CardMastheadPayload } from "@/lib/card-title-store";
 import type { SlotStackEntry } from "@/deck-store-selectors";
-import { DEFAULT_TEXT_CARD_SETTINGS } from "@/lib/text-card-settings";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugSeparator } from "@/components/tugways/tug-separator";
 import { TugBox } from "@/components/tugways/tug-box";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
-import { TextCardTopBar } from "./text-card-top-bar";
 
 import "./gallery-card-chrome.css";
 
@@ -196,9 +199,9 @@ export function GalleryCardChrome(): React.ReactElement {
         <div className="cg-section">
           <TugLabel className="cg-section-title">Card Chrome — three tiers</TugLabel>
           <TugLabel size="2xs" emphasis="calm">
-            A proposal: the masthead generalizes from the Session card to every document
-            card, and a rail stops borrowing a content card's title bar. Real CardTitleBar
-            throughout — nothing here is drawn by hand.
+            All three ship: the masthead generalizes from the Session card to every
+            document card, and a rail no longer borrows a content card's title bar. Real
+            CardTitleBar throughout — nothing here is drawn by hand.
           </TugLabel>
         </div>
 
@@ -275,43 +278,6 @@ export function GalleryCardChrome(): React.ReactElement {
 
         <TugSeparator />
 
-        {/* ---- What ships today ---- */}
-        <div className="cg-section">
-          <TugLabel className="cg-section-title">Today, for comparison</TugLabel>
-          <TugLabel size="2xs" emphasis="calm">
-            The real Text card chrome: a 36px bar naming the file, then a separate strip
-            repeating it as a path. Two tiers, one identity, and the actions are the only
-            thing the second tier holds that the first could not.
-          </TugLabel>
-
-          <SpikeRow caption="Text card as shipped — title bar + TextCardTopBar">
-            <SpikePane focused={focused} body="1  Notes:">
-              <CardTitleBar
-                title={dirty ? "session-naming-notes.md •" : "session-naming-notes.md"}
-                icon="FileText"
-                widthPreset="comfy"
-                onSetWidth={noop}
-                slotStack={slotStack}
-                onClose={noop}
-              />
-              <TextCardTopBar
-                path={NOTES_PATH}
-                isDraft={false}
-                saveMode="manual"
-                canMoveTo={false}
-                onMoveTo={noop}
-                onSave={noop}
-                canSave={dirty}
-                onRevealInFinder={noop}
-                settings={DEFAULT_TEXT_CARD_SETTINGS}
-                onChangeSetting={noop}
-              />
-            </SpikePane>
-          </SpikeRow>
-        </div>
-
-        <TugSeparator />
-
         {/* ---- Tier 2: the utility card ---- */}
         <div className="cg-section">
           <TugLabel className="cg-section-title">Tier 2 — utility card (36px, unchanged)</TugLabel>
@@ -374,7 +340,7 @@ export function GalleryCardChrome(): React.ReactElement {
             </SpikePane>
           </SpikeRow>
 
-          <SpikeRow caption="As shipped, for comparison — a content card's bar on a rail">
+          <SpikeRow caption="Before — the content card's bar a rail used to wear">
             <SpikePane focused={focused} body="Cards · Layouts · Sessions">
               <CardTitleBar title="Lens" onClose={noop} />
             </SpikePane>

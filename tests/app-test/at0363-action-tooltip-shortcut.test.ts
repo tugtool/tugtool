@@ -3,20 +3,17 @@
  * keyboard shortcut says so in its tooltip, and the chord it shows is the
  * one the keymap registry holds rather than a string somebody typed.
  *
- * The Text card's Save button is the specimen: it dispatches
- * `TUG_ACTIONS.SAVE`, which carries a default binding and a mirrored menu
- * item (`file.save`). So the chip can be checked against a source the
- * tooltip does not read — the macOS menu bar's own key equivalent for
- * File ▸ Save, captured through the Swift menu snapshot. If the tooltip
- * ever drifts from the registry, the two disagree.
+ * The Text card find bar's **Find next** button is the specimen: it
+ * dispatches `TUG_ACTIONS.FIND_NEXT`, which carries a default binding (⌘G)
+ * and a mirrored menu item (`edit.findNext`). So the chip can be checked
+ * against a source the tooltip does not read — the macOS menu bar's own key
+ * equivalent for Edit ▸ Find Next, captured through the Swift menu snapshot.
+ * If the tooltip ever drifts from the registry, the two disagree.
  *
- * The button is disabled while the buffer is clean, and a disabled button
- * swallows the pointer, so the test dirties a real file first — which is
- * also the state a reader is actually in when they reach for Save.
- *
- * Drives the real path: a real file in a real manual-mode Text card, a real
- * `pointerenter` at the real button, and Radix's real open machinery
- * portalling a real bubble into the canvas overlay. Nothing is stubbed.
+ * Drives the real path: a real file in a real Text card, ⌘F opening the real
+ * find bar, a real `pointerenter` at the real button, and Radix's real open
+ * machinery portalling a real bubble into the canvas overlay. Nothing is
+ * stubbed.
  *
  * A second test runs the same check on the Z4B **AI Model** chip, whose chord
  * reaches the command through a different door: `run-slash-command:model` is a
@@ -26,7 +23,7 @@
  *
  * @covers tugdeck/src/components/tugways/tug-action-tooltip.tsx
  * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
- * @covers tugdeck/src/components/tugways/cards/text-card-top-bar.tsx
+ * @covers tugdeck/src/components/tugways/tug-find-bar.tsx
  * @covers tugdeck/src/components/tugways/cards/ai-chip.tsx
  */
 
@@ -41,9 +38,10 @@ const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
-// `TugIconButton` names a fixed prop list and drops anything else, so the
-// button carries no test id of its own; its aria-label is the stable handle.
-const SAVE_BUTTON = `${CARD} [data-slot="text-card-top-bar"] button[aria-label="Save"]`;
+const FIND_BAR = `${CARD} [data-slot="text-card-find-bar"]`;
+// The button carries no test id of its own; its aria-label is the stable
+// handle.
+const FIND_NEXT_BUTTON = `${FIND_BAR} button[aria-label="Find next"]`;
 const MODEL_CHIP = `${CARD} [data-slot="ai-chip"]`;
 const BUBBLE = ".tug-tooltip-content";
 const CHIP = ".tug-tooltip-content .tug-tooltip-shortcut";
@@ -106,21 +104,27 @@ function sessionDeckShape() {
   };
 }
 
-async function typeIntoEditor(app: App, text: string): Promise<void> {
-  const ok = await app.evalJS<boolean>(
+/** ⌘F from the editor raises the card's find bar. */
+async function openFindBar(app: App): Promise<void> {
+  await app.nativeClickAtElement(EDITOR_CONTENT);
+  await app.evalJS<boolean>(
     `(function(){
-      var el = document.querySelector('${EDITOR_CONTENT}');
-      if (!el) return false;
-      el.focus();
-      return document.execCommand("insertText", false, ${JSON.stringify(text)});
+      var target = document.activeElement || document;
+      return target.dispatchEvent(new KeyboardEvent("keydown", {
+        code: "KeyF", key: "f", metaKey: true,
+        bubbles: true, cancelable: true, composed: true,
+      }));
     })()`,
   );
-  if (!ok) throw new Error("[at0363] typeIntoEditor: insertText not handled");
+  await app.waitForCondition<boolean>(
+    `document.querySelector('${FIND_NEXT_BUTTON}') !== null`,
+    { timeoutMs: 8000 },
+  );
 }
 
 describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => {
   test(
-    "hovering Save shows the phrase and the registry's chord",
+    "hovering Find next shows the phrase and the registry's chord",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0363-"));
       const file = path.join(dir, "manual.txt");
@@ -149,21 +153,13 @@ describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => 
           await app.evalJS<number>(`document.querySelectorAll('${BUBBLE}').length`),
         ).toBe(0);
 
-        // Save only takes the pointer once there is something to save.
-        await typeIntoEditor(app, "delta\n");
-        await app.waitForCondition<boolean>(
-          `(function(){
-            var el = document.querySelector('${SAVE_BUTTON}');
-            return el !== null && el.disabled !== true;
-          })()`,
-          { timeoutMs: 8000 },
-        );
+        await openFindBar(app);
 
         // A real pointerenter at the real trigger. Radix opens on its own
         // delay, so the bubble is waited for rather than assumed.
         await app.evalJS<null>(
           `(function(){
-            var el = document.querySelector('${SAVE_BUTTON}');
+            var el = document.querySelector('${FIND_NEXT_BUTTON}');
             el.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
             el.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
             return null;
@@ -175,14 +171,14 @@ describe.skipIf(!SHOULD_RUN)("at0363 — action tooltip names the chord", () => 
         );
 
         const phrase = await app.getElementText(BUBBLE);
-        expect(phrase).toContain("Write this buffer to its file");
+        expect(phrase).toContain("Go to the next match");
 
         // The chip against a source the tooltip never reads: the menu bar's
         // own key equivalent for the same command.
         const chip = await app.getElementText(CHIP);
-        const item = await app.menuItemState("file.save");
+        const item = await app.menuItemState("edit.findNext");
         expect(item.found).toBe(true);
-        if (!item.found) throw new Error("[at0363] file.save not in the menu");
+        if (!item.found) throw new Error("[at0363] edit.findNext not in the menu");
         expect(chip).toBe(menuChord(item.keyEquivalent, item.modifierMask));
       } finally {
         await app.close();

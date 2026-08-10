@@ -128,7 +128,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Plan to resolve:** Decide while writing the entries in #step-3. The registry lint is the forcing function — it fails the build if this is skipped.
 
-**Resolution:** OPEN — must close inside #step-3.
+**Resolution:** DECIDED in #step-3 — both become **new** first-responder entries with `internal: true` and a comment naming the blocked door. `Editor Options…` is `TUG_ACTIONS.SHOW_EDITOR_OPTIONS`. `Reveal in Finder` is `TUG_ACTIONS.REVEAL_CARD_FILE`, deliberately *not* `REVEAL_IN_FINDER`: that action means "the path the pointer sampled" and carries the path as its payload, while a pane-menu row has no pointer target and always means the card's own document, which only the chain can resolve. `REVEAL_IN_FINDER` therefore stays in `ACTIONS_OUTSIDE_THE_TABLE` unchanged. `internal: true` is the honest classification for both: the pane's `…` menu *is* their door, but the door-coverage lint counts only native menu items and key equivalents, and neither has one today.
 
 ---
 
@@ -439,15 +439,15 @@ Deleting `TextCardTopBar` and the status bar's save cell invalidates three exist
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Rail role plumbing + tokens + icons | pending | — |
-| #step-2 | Document masthead control-cluster reserve | pending | — |
-| #step-3 | `…` menu items become commands; Text card publishes them | pending | — |
-| #step-4 | Text card masthead; delete `TextCardTopBar`; relocate save state; repair three tests | pending | — |
-| #step-5 | File viewer masthead | pending | — |
-| #step-6 | Diff card masthead | pending | — |
-| #step-7 | Doctrine + gallery fixture updates | pending | — |
-| #step-8 | New app-test coverage | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Rail role plumbing + tokens + icons | done | `c03b7d1a4` |
+| #step-2 | Document masthead control-cluster reserve | done | `103119661` |
+| #step-3 | `…` menu items become commands; Text card publishes them | done | `71a987806` |
+| #step-4 | Text card masthead; delete `TextCardTopBar`; relocate save state; repair three tests | done | `b2d8bade4` |
+| #step-5 | File viewer masthead | done | `871f6ba43` |
+| #step-6 | Diff card masthead | done | `853df018c` |
+| #step-7 | Doctrine + gallery fixture updates | done | `154fe94de` |
+| #step-8 | New app-test coverage | done | `517db39b4` |
+| #step-9 | Integration checkpoint | done | `4ecbd5e42` |
 
 #### Step 1: Rail role plumbing + tokens + icons {#step-1}
 

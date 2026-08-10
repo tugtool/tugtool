@@ -1643,6 +1643,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             key={stackState.id}
             stackState={stackState}
             meta={registration.defaultMeta}
+            layoutRole={registration.layoutRole}
             // A pane is one box shared by every tab in the stack, so
             // its resize floor must clear the widest card kind it
             // hosts — not just the active tab. `getStackSizePolicy`

@@ -756,6 +756,35 @@ export const COMMANDS: readonly CommandEntry[] = [
     mirrored: true,
     validate: (chain) => chain.menu.fileGates?.reload ?? false,
   },
+  // The two rows a document card contributes to its PANE's `…` menu. That
+  // menu is a real door — every row in it is dispatched through this table,
+  // and the registry answers for its title, its enablement, and its chord —
+  // but it is a door the door-coverage lint cannot see, because it counts
+  // only native menu items and key equivalents. So both are `internal`, and
+  // what blocks a door of the kind the lint counts is written down: neither
+  // has a native File-menu item today, and neither is worth a chord until it
+  // is asked for often enough to earn one.
+  //
+  // Enablement is the chain's, not the card's: a Text card that computed its
+  // own `disabled` for these rows would be the second opinion [L30] forbids.
+  //
+  // KEY-CARD routed, not first-responder. Both mean "the card this menu
+  // belongs to", and pressing the pane's `…` button promotes the PANE as
+  // first responder — so a first-responder walk starts ABOVE the card and
+  // never enters it. Key-card dispatch starts at the active card's
+  // card-content responder, which is where a card's own verbs belong.
+  {
+    id: TUG_ACTIONS.REVEAL_CARD_FILE,
+    title: "Reveal in Finder",
+    routing: "key-card",
+    internal: true,
+  },
+  {
+    id: TUG_ACTIONS.SHOW_EDITOR_OPTIONS,
+    title: "Editor Options…",
+    routing: "key-card",
+    internal: true,
+  },
 
   // ---- Edit ----
   //
