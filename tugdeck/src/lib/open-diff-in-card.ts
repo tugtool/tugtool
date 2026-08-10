@@ -10,6 +10,12 @@
  * initial-content channel. Two cards showing the same diff would be pure
  * duplication.
  *
+ * Placement and the flash are the file opener's, for the same reason: a diff
+ * popped out of a changeset row belongs beside the card the row is in
+ * ({@link neighborSlot}), and the card that answers announces itself
+ * ({@link flashCardPane}) — including when it is a card that already existed
+ * and merely raised, which otherwise gives no sign the pop-out did anything.
+ *
  * Callers: the `open-diff` registry handler (`dispatchCommand` from the
  * changeset card's pop-out affordances).
  *
@@ -20,6 +26,8 @@ import { transferFocusForActivation } from "@/focus-transfer";
 import type { IDeckManagerStore } from "@/deck-manager-store";
 import { diffDescriptorKey, type DiffDescriptor } from "./git-diff-store";
 import { findDiffCardByKey } from "./diff-card-open-registry";
+import { neighborSlot } from "./neighbor-slot";
+import { flashCardPane } from "./flash-pane-border";
 
 /** The Diff card's initial-content seed (its restore bag content). */
 export interface DiffCardSeed {
@@ -42,8 +50,16 @@ export function openDiffInCard(
     // Re-point defensively (a same-key open is a no-op re-request, which is
     // harmless and refreshes the diff).
     existing.entry.setDescriptor(descriptor);
+    flashCardPane(store, existing.cardId);
     return;
   }
   const seed: DiffCardSeed = { descriptor };
-  store.addCard("diff", seed);
+  // Save-before-activation ([L23]): `addCard` activates the fresh card
+  // directly, so the card the pop-out was pressed in banks its focus bag
+  // first.
+  const outgoing = store.getFirstResponderCardId();
+  const slot = neighborSlot(store, outgoing);
+  if (outgoing !== null) store.invokeSaveCallback(outgoing);
+  const cardId = store.addCard("diff", seed, { slot });
+  if (cardId !== null) flashCardPane(store, cardId);
 }
