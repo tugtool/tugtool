@@ -9,7 +9,7 @@
  *
  *   72px masthead, tinted band  → a DOCUMENT card saying its own name
  *   36px title bar, tinted band → a UTILITY card wearing its type's name
- *   30px label, flush ground    → a RAIL, which is a tool and not a document
+ *   32px flush ground           → a RAIL, which is a tool and not a document
  *
  * Everything here is the real chrome: a real `CardTitleBar` inside a real
  * `.tug-pane` wrapper, driven by real `CardMastheadPayload`s, so the reserve
@@ -68,6 +68,30 @@ const STACK: readonly SlotStackEntry[] = [
   },
 ];
 
+/** The four candidate rail treatments, in the order they read best compared. */
+const RAIL_VARIANTS = [
+  {
+    key: "icon" as const,
+    label: "Icon",
+    note: "an accent glyph and a sentence-case name",
+  },
+  {
+    key: "underline" as const,
+    label: "Underline",
+    note: "the name over a short accent rule, like a selected tab",
+  },
+  {
+    key: "chip" as const,
+    label: "Chip",
+    note: "the name inside a raised pill — a tool's tag",
+  },
+  {
+    key: "label" as const,
+    label: "Label",
+    note: "the first pass: uppercase, tracked, no glyph",
+  },
+];
+
 function textMasthead(dirty: boolean, detail: boolean): CardMastheadPayload {
   return {
     kind: "card-masthead",
@@ -113,10 +137,18 @@ function diffMasthead(detail: boolean): CardMastheadPayload {
 function SpikePane({
   focused,
   masthead = false,
+  railVariant,
   children,
   body,
 }: {
   focused: boolean;
+  /**
+   * Which candidate rail treatment this frame wears. Set on the PANE, not the
+   * bar, so the variant selectors compose with `[data-focused]` without asking
+   * `:has()` about a descendant. Exactly one candidate survives adoption and
+   * the attribute goes away with the losers.
+   */
+  railVariant?: "label" | "icon" | "underline" | "chip";
   /**
    * Mirrors what `TugPane` stamps on the pane element when its active card
    * publishes a masthead. It has to live HERE and not on the bar: the tier is
@@ -132,6 +164,7 @@ function SpikePane({
       className="tug-pane cg-spike-pane"
       data-focused={focused ? "true" : undefined}
       data-masthead={masthead ? "true" : undefined}
+      data-rail-variant={railVariant}
     >
       {children}
       <div className="cg-spike-pane-body">{body}</div>
@@ -332,29 +365,33 @@ export function GalleryCardChrome(): React.ReactElement {
 
         {/* ---- Tier 3: the rail ---- */}
         <div className="cg-section">
-          <TugLabel className="cg-section-title">Tier 3 — rail (30px, flush)</TugLabel>
+          <TugLabel className="cg-section-title">Tier 3 — rail (32px, flush)</TugLabel>
           <TugLabel size="2xs" emphasis="calm">
             A rail pins to a deck edge, takes its width from the allocator rather than a
-            preset, and insets the band the content cards live in. The chrome should say
-            so: flush ground instead of the tinted band, a tracked label instead of an
-            icon and a title, and no width control (already true today).
+            preset, and insets the band the content cards live in. Every candidate below
+            shares a flush ground and a hairline divider — a rail reads as a panel, not a
+            card with a lid, and its ground does not light up with focus. What differs is
+            what the name wears. Pick one.
           </TugLabel>
 
-          {/* No `icon` on any of these: Lens, Jots and Gazette register none
-              today, so the tracked label is what changes and not the glyph. */}
-          <SpikeRow caption="Lens — proposed rail chrome">
-            <SpikePane focused={focused} body="Cards · Layouts · Sessions">
-              <CardTitleBar title="Lens" sidebar onClose={noop} />
-            </SpikePane>
-          </SpikeRow>
+          {/* Lens, Jots and Gazette register no icon today — adopting the
+              `icon` variant means adding one to those three registrations. */}
+          {RAIL_VARIANTS.map((variant) => (
+            <SpikeRow key={variant.key} caption={`${variant.label} — ${variant.note}`}>
+              <SpikePane
+                focused={focused}
+                railVariant={variant.key}
+                body="Cards · Layouts · Sessions"
+              >
+                <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
+              </SpikePane>
+              <SpikePane focused={focused} railVariant={variant.key} body="Filter · New jot">
+                <CardTitleBar title="Jots" icon="NotebookPen" sidebar onClose={noop} />
+              </SpikePane>
+            </SpikeRow>
+          ))}
 
-          <SpikeRow caption="Jots — proposed rail chrome">
-            <SpikePane focused={focused} body="Filter · New jot">
-              <CardTitleBar title="Jots" sidebar onClose={noop} />
-            </SpikePane>
-          </SpikeRow>
-
-          <SpikeRow caption="Lens as shipped — a content card's bar on a rail">
+          <SpikeRow caption="As shipped, for comparison — a content card's bar on a rail">
             <SpikePane focused={focused} body="Cards · Layouts · Sessions">
               <CardTitleBar title="Lens" onClose={noop} />
             </SpikePane>

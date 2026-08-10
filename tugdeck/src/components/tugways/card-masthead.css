@@ -23,14 +23,28 @@
   flex-direction: column;
   min-width: 0;
   flex: 1 1 auto;
+  /* `border-box` so the tier's own height is what `100%` means. Under
+     content-box the block's top padding is added on top of the full tier and
+     the box reports ~9px taller than the chrome it sits in. */
+  box-sizing: border-box;
   block-size: 100%;
   justify-content: flex-start;
-  gap: 1px;
+  /* Where the sub-lines start, so they hang off the TITLE rather than off the
+     masthead's edge — the icon sits in a leading gutter the way the session
+     row's phase dot does, and the three lines share one vertical. Derived from
+     the glyph's advance rather than tuned, so a retuned icon size cannot leave
+     the ladder behind. Zero when there is no glyph: nothing to hang off.
+     (The session row states the same idea as `--tugx-session-row-title-inset`
+     with `sub-align="title"`; this is that arithmetic for a plain icon.) */
+  --tugx-card-masthead-gutter: 0px;
+  /* NO row gap. The leading between the lines is the LINE BOXES' — each line
+     pairs its size token with that size's line-height token (13/19, 12/17,
+     11/15), which is where the deck's vertical rhythm is stated. A gap here
+     would be a second, unrelated answer to the same question, and it is how
+     the first pass ended up with three lines mashed against the tier's top
+     edge and 15px of dead air under them. */
   padding-block-start: calc(
-    (
-        var(--tug-chrome-height) - var(--tug-font-size-sm) *
-          var(--tug-line-height-tight)
-      ) / 2
+    (var(--tug-chrome-height) - var(--tug-line-height-sm)) / 2
   );
   /* The control cluster is a flex sibling that occupies only the FIRST band;
      the two beneath it are dead space. The negative margin takes this block
@@ -48,11 +62,17 @@
 /* Alone among the three, this line shares its band with the pane's controls,
    so it alone stops short of them: the measured cluster, its start margin,
    and one gap of air. */
+.card-masthead[data-icon="true"] {
+  --tugx-card-masthead-gutter: calc(
+    var(--tug-icon-size-md) + var(--tug-space-sm)
+  );
+}
+
 .card-masthead-lead {
   display: flex;
   align-items: center;
   min-width: 0;
-  line-height: var(--tug-line-height-tight);
+  block-size: var(--tug-line-height-sm);
   padding-inline-end: calc(
     var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) +
       var(--tug-space-xs)
@@ -88,6 +108,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-sm);
   font-weight: var(--tug-font-weight-medium);
   color: var(--tugx-pane-title-fg-inactive);
 }
@@ -99,9 +120,25 @@
 
 /* ── Description and detail ────────────────────────────────────────────── */
 
-/* The ladder is the session masthead's, so the two tiers read as one tier
-   wearing two contents: title full, description 85%, detail 65%, mixed rather
-   than made translucent so a highlight inside the run keeps its own paint. */
+/* The lower lines, as one block hung off the title. The indent lives here
+   rather than on each line: this element is LTR whatever a path line inside it
+   says about its own direction, so `padding-inline-start` lands where it
+   reads. `min-width: 0` so the lines inside can ellipsize. */
+.card-masthead-sub {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-inline-start: var(--tugx-card-masthead-gutter);
+}
+
+/* Three lines, three steps, on every axis at once — indent off the title, size
+   down the scale, and ink down the ladder. The first pass stepped only the ink
+   and set both sub-lines at `xs`, which made the path and the summary read as
+   the same thing said twice.
+
+   The ink ladder is the session masthead's (title full, 85%, 60%), mixed
+   rather than made translucent so a highlight inside a run keeps its own
+   paint. */
 
 /* @tug-renders-on: --tugx-pane-title-bar-bg-active */
 .card-masthead-description {
@@ -110,7 +147,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--tug-font-size-xs);
-  line-height: var(--tug-line-height-tight);
+  line-height: var(--tug-line-height-xs);
   color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 85%, transparent);
 }
 
@@ -120,9 +157,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--tug-font-size-xs);
-  line-height: var(--tug-line-height-tight);
-  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 65%, transparent);
+  font-size: var(--tug-font-size-2xs);
+  line-height: var(--tug-line-height-2xs);
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 60%, transparent);
 }
 
 /* A path clips its HEAD, so the filename it ends in survives the truncation
@@ -135,10 +172,13 @@
 /* An actionable description says so on hover and not before — a permanent
    underline on a path would read as a link the whole strip long. The title
    bar is a drag surface, so the line takes pointer events back for itself. */
+/* Content-width rather than stretched, so the hover rule underlines the path
+   and not the empty run to the card's edge. `align-self` is how a column flex
+   item asks for that; the cap has to net out the gutter the margin spends. */
 .card-masthead-description[data-actionable="true"] {
   cursor: pointer;
   pointer-events: auto;
-  width: fit-content;
+  align-self: flex-start;
   max-width: 100%;
 }
 

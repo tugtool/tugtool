@@ -322,41 +322,76 @@ body {
  *   36px title bar, tinted band → a utility card wearing its type's name
  *   30px label, flush ground    → a rail, which is a tool and not a document
  *
- * The rail's is the quiet one. Flush ground instead of the title band, so the
- * rail reads as one panel rather than a card with a lid; a hairline divider
- * doing the work the tint used to; a small tracked label instead of an
- * icon-and-title, because a rail's name is a section heading and not a
- * document's. The height is a knob with its default at the point of use — a
- * theme that wants to retune the tier declares `--tug-rail-chrome-height`.
+ * What every rail shares: a FLUSH ground instead of the tinted title band, so
+ * the rail reads as one panel rather than a card with a lid, with the hairline
+ * divider doing the work the tint used to. The ground does not change with
+ * focus — that is the whole of what flush means, and a rail that lit up would
+ * be a card with a lid again; the label carries focus instead.
  *
- * The tier is redeclared on the BAR rather than on the pane. A rail's chrome
- * height would properly be published pane-wide, the way the masthead's is, so
- * that the scrim and the banner seat below it — but the pane learns it from a
- * descendant's attribute, and `:has()` does not invalidate on a descendant
- * attribute change in WebKit. When this lands, `TugPane` stamps the role on
- * the pane element from the `sidebarSide` it already has, and this rule moves
- * up there beside the masthead's.
+ * What a rail wears ON that ground is `data-rail-variant`, and it is an open
+ * question with four candidate answers rendered side by side in the
+ * `gallery-card-chrome` fixture. A tracked label alone on an empty bar was the
+ * first pass and was not enough: at 11px with a lone close box at the far end,
+ * the bar read as unfinished rather than as quiet.
+ *
+ *   label     — the first pass. Uppercase, tracked, no glyph.
+ *   icon      — an accent-tinted glyph and a sentence-case name.
+ *   underline — the name over a short accent rule, like a selected tab.
+ *   chip      — the name inside a raised pill, a tool's tag.
+ *
+ * Exactly one survives adoption, and `data-rail-variant` goes away with the
+ * losers: `TugPane` will pass only the role.
+ *
+ * The height is a knob with its default at the point of use — a theme retuning
+ * the tier declares `--tug-rail-chrome-height`. The tier is redeclared on the
+ * BAR rather than on the pane. It would properly be published pane-wide, the
+ * way the masthead's is, so the scrim and the banner seat below it — but the
+ * pane learns it from a descendant's attribute, and `:has()` does not
+ * invalidate on a descendant attribute change in WebKit. When this lands,
+ * `TugPane` stamps the role on the pane element from the `sidebarSide` it
+ * already has, and this rule moves up there beside the masthead's.
  */
 .tug-pane-title-bar[data-role="sidebar"] {
-  --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 30px);
+  --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 32px);
   padding-inline: var(--tug-space-sm);
+  /* The bar's own `space-between` distributes THREE children, so a variant
+     that shows a glyph got its name pushed to the bar's center, halfway to the
+     close box and nowhere near the icon it belongs to. A rail packs its name
+     against the leading edge and lets the controls claim the trailing one. */
+  justify-content: flex-start;
 }
 
-/* The rail's ground does NOT change with focus — that is the whole of what
-   "flush" means here, and a rail that lit up would be a card with a lid again.
-   Both states are stated because the focused title-bar rule below outranks a
-   single attribute selector; the label is what carries focus instead. */
+.tug-pane-title-bar[data-role="sidebar"] .tug-pane-title-bar-controls {
+  margin-inline-start: auto;
+}
+
+/* Both states are stated because the focused title-bar rule below outranks a
+   single attribute selector. */
 /* @tug-renders-on: --tugx-pane-bg */
 .tug-pane .tug-pane-title-bar[data-role="sidebar"],
 .tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] {
   background-color: var(--tugx-pane-bg);
 }
 
-/* The rail's name. Tracked, uppercase, and a step down in size — the voice
-   Lens already speaks in its own section bands, brought up into the chrome so
-   the bar and the bands below it read as one column. */
-/* @tug-renders-on: --tugx-pane-bg */
+/* The name, in every variant: content-width rather than stretched, so a
+   variant that draws a rule or a pill around it draws around the WORD and not
+   across the bar. The close box still sits at the far end — it is a sibling in
+   the controls cluster, which owns the trailing edge. */
 .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  flex: 0 1 auto;
+}
+
+/* A glyph belongs to the variants that asked for one. */
+.tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
+  display: none;
+}
+
+/* ---- variant: label — uppercase, tracked, no glyph ---------------------- */
+
+/* The voice Lens already speaks in its own section bands, brought up into the
+   chrome so the bar and the bands below it read as one column. */
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-rail-variant="label"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
   font-size: var(--tug-font-size-2xs);
   font-weight: var(--tug-font-weight-semibold);
   letter-spacing: 0.06em;
@@ -365,15 +400,95 @@ body {
 }
 
 /* @tug-renders-on: --tugx-pane-bg */
-.tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+.tug-pane[data-rail-variant="label"][data-focused="true"]
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
   color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 80%, transparent);
 }
 
-/* A rail's name is a heading, and a heading does not take a glyph — the icon
-   is the registry's answer to "which card is this" in a tab row and a picker,
-   both of which still get it. */
-.tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
-  display: none;
+/* ---- variant: icon — an accent glyph and a sentence-case name ----------- */
+
+.tug-pane[data-rail-variant="icon"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
+  display: inline-flex;
+  color: var(--tug7-element-global-icon-normal-active-rest);
+}
+
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-rail-variant="icon"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tugx-pane-title-fg-inactive);
+}
+
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-rail-variant="icon"][data-focused="true"]
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
+  color: var(--tugx-pane-title-fg-active);
+}
+
+/* ---- variant: underline — the name over a short accent rule ------------- */
+
+/* The rule is the width of the WORD, which is what makes it read as a tab
+   indicator rather than as a second divider. It sits inside the bar's own
+   height, so this variant costs no extra tier. */
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-rail-variant="underline"]
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
+  font-size: var(--tug-font-size-xs);
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.03em;
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 85%, transparent);
+  padding-block-end: 3px;
+  border-block-end: 2px solid var(--tug7-element-global-fill-normal-accent-rest);
+  /* The rule is drawn on the text's own box, so the box has to sit where the
+     text does — the bar centers it, and the border adds to the bottom. */
+  align-self: center;
+  margin-block-start: 5px;
+}
+
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-rail-variant="underline"][data-focused="true"]
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
+  color: var(--tugx-pane-title-fg-active);
+}
+
+/* An unfocused rail's rule steps back rather than vanishing — the indicator is
+   telling you WHICH rail this is, which stays true when the focus leaves. */
+.tug-pane[data-rail-variant="underline"]:not([data-focused="true"])
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
+  border-block-end-color: color-mix(
+    in oklab,
+    var(--tug7-element-global-fill-normal-accent-rest) 45%,
+    transparent
+  );
+}
+
+/* ---- variant: chip — the name inside a raised pill ---------------------- */
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-raised-rest */
+.tug-pane[data-rail-variant="chip"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  font-size: var(--tug-font-size-2xs);
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 85%, transparent);
+  background-color: var(--tug7-surface-global-primary-normal-raised-rest);
+  border: 1px solid var(--tug7-element-global-border-normal-default-rest);
+  border-radius: var(--tug-radius-sm);
+  padding: 1px var(--tug-space-sm);
+  align-self: center;
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-raised-rest */
+.tug-pane[data-rail-variant="chip"][data-focused="true"]
+  .tug-pane-title-bar[data-role="sidebar"]
+  .tug-pane-title {
+  color: var(--tugx-pane-title-fg-active);
+  border-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 
 /* When a tab bar sits directly below, drop the title-bar divider so the title

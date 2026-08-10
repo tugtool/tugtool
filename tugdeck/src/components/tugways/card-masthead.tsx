@@ -61,7 +61,14 @@ export function CardMasthead({
   const actionable = onActivateDescription !== undefined;
 
   return (
-    <div className="card-masthead" data-testid="card-masthead">
+    <div
+      className="card-masthead"
+      data-testid="card-masthead"
+      // Whether there is a glyph to hang the lower lines off. CSS cannot ask
+      // that question of a conditionally-rendered child, and the answer sets
+      // the whole ladder's indent.
+      data-icon={IconComponent !== null ? "true" : undefined}
+    >
       <div className="card-masthead-lead">
         {IconComponent && (
           <span className="card-masthead-icon" data-testid="card-masthead-icon">
@@ -73,24 +80,31 @@ export function CardMasthead({
         </span>
       </div>
 
-      {payload.description !== null && (
-        <span
-          className="card-masthead-description"
-          data-testid="card-masthead-description"
-          data-kind={isPath ? "path" : undefined}
-          data-actionable={actionable ? "true" : undefined}
-          dir={isPath ? "rtl" : undefined}
-          onClick={onActivateDescription}
-        >
-          {descriptionText(payload)}
-        </span>
-      )}
+      {/* The lower lines are indented as a BLOCK, not one at a time. A path
+          line carries `dir="rtl"` to clip its head, and on that element
+          `margin-inline-start` resolves to the RIGHT — so a per-line indent
+          silently skipped the one line that most needed it. The wrapper is
+          LTR, so its padding lands where it reads. */}
+      <div className="card-masthead-sub">
+        {payload.description !== null && (
+          <span
+            className="card-masthead-description"
+            data-testid="card-masthead-description"
+            data-kind={isPath ? "path" : undefined}
+            data-actionable={actionable ? "true" : undefined}
+            dir={isPath ? "rtl" : undefined}
+            onClick={onActivateDescription}
+          >
+            {descriptionText(payload)}
+          </span>
+        )}
 
-      {payload.detail !== null && payload.detail !== undefined && (
-        <span className="card-masthead-detail" data-testid="card-masthead-detail">
-          {payload.detail}
-        </span>
-      )}
+        {payload.detail !== null && payload.detail !== undefined && (
+          <span className="card-masthead-detail" data-testid="card-masthead-detail">
+            {payload.detail}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
