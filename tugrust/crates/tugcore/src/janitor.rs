@@ -963,6 +963,11 @@ mod tests {
     /// listener with a saturated backlog fails `connect()` with
     /// `ECONNREFUSED` — the same errno a corpse gives. Errno discipline
     /// alone cannot tell them apart, so the age floor is what saves it.
+    ///
+    /// The premise is the macOS kernel's: Linux queues past a full backlog
+    /// instead of refusing, so the saturation the test needs cannot be built
+    /// there and the assertion below would be testing nothing.
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_saturated_live_listener_survives() {
         let root = tempfile::tempdir().unwrap();
