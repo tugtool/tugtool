@@ -68,6 +68,7 @@ import {
   type CardMastheadPayload,
 } from "@/lib/card-title-store";
 import { SessionMasthead } from "@/components/tugways/session-masthead";
+import { CardMasthead } from "@/components/tugways/card-masthead";
 import { composePaneTitleBarText } from "@/lib/pane-title";
 import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
 import { TugPopupMenu } from "@/components/tugways/internal/tug-popup-menu";
@@ -243,6 +244,18 @@ export interface CardTitleBarProps {
    * @selector [data-masthead="true"]
    */
   masthead?: CardMastheadPayload | null;
+  /**
+   * Whether this pane is a RAIL rather than a card in the slot band. A rail's
+   * chrome is a different thing wearing a different look — a slimmer tier, a
+   * flush ground instead of the tinted title band, and a tracked label in
+   * place of an icon-and-title — because the layout imposer already treats it
+   * as a different thing and the chrome should say so.
+   *
+   * Passed by `TugPane` from the same `sidebarSide` that already decides
+   * whether this bar gets a width control.
+   * @selector [data-role="sidebar"]
+   */
+  sidebar?: boolean;
   onClose?: () => void;
   onDragStart?: (event: React.PointerEvent) => void;
 }
@@ -261,6 +274,7 @@ function CardTitleBar({
   onRevealPane,
   onSetWidth,
   masthead = null,
+  sidebar = false,
   onClose,
   onDragStart,
 }: CardTitleBarProps, ref) {
@@ -275,6 +289,17 @@ function CardTitleBar({
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest(".tug-button")) return;
+      // Only the primary button moves a pane, and the guard is load-bearing
+      // rather than tidy. The drag takes POINTER CAPTURE on the frame at
+      // pointer-down; WebKit then retargets every later event of that pointer
+      // to the capture element — including the `contextmenu` that a right
+      // press raises. So a right-click anywhere in the title bar arrived at
+      // `.tug-pane` rather than at the thing under the cursor, no handler
+      // inside the bar ever saw it, and the app's own document-level fallback
+      // answered every one of them with "No Actions". The masthead's three
+      // lines live in that bar, which is how a session row with copies on it
+      // came to look like a surface with nothing to offer.
+      if (event.button !== 0) return;
       onDragStart?.(event);
     },
     [onDragStart],
@@ -521,6 +546,7 @@ function CardTitleBar({
       className="tug-pane-title-bar"
       data-slot="tug-pane-title-bar"
       data-masthead={masthead !== null ? "true" : undefined}
+      data-role={sidebar ? "sidebar" : undefined}
       onPointerDown={handleTitleBarPointerDown}
       data-testid="tug-pane-title-bar"
       // The title bar is an ACTIVATION/DRAG gesture surface, never a
@@ -537,7 +563,24 @@ function CardTitleBar({
           one is saying its own name in its own three lines, and a registry
           icon plus a duplicate title beside them would be two answers to one
           question. The pane's controls below are untouched. */}
-      {masthead !== null ? (
+      {masthead === null ? (
+        <>
+          {IconComponent && (
+            <span className="tug-pane-icon" data-testid="tug-pane-icon">
+              {React.createElement(IconComponent)}
+            </span>
+          )}
+
+          <span className="tug-pane-title" data-testid="tug-pane-title">
+            {title}
+          </span>
+        </>
+      ) : masthead.kind === "card-masthead" ? (
+        // A document card's lines. No key: unlike a session there is no dwell
+        // queue or open placard to carry across, so reconciling a new path
+        // onto the same element is exactly right.
+        <CardMasthead payload={masthead} />
+      ) : (
         // Keyed by session, so a payload naming a DIFFERENT session remounts
         // rather than reconciling. A new session is a new entity, which is
         // what [L26]'s test asks: the masthead holds the PULSE dwell queue's
@@ -551,18 +594,6 @@ function CardTitleBar({
           sessionId={masthead.sessionId}
           cardId={activeCardId}
         />
-      ) : (
-        <>
-          {IconComponent && (
-            <span className="tug-pane-icon" data-testid="tug-pane-icon">
-              {React.createElement(IconComponent)}
-            </span>
-          )}
-
-          <span className="tug-pane-title" data-testid="tug-pane-title">
-            {title}
-          </span>
-        </>
       )}
 
       <div ref={controlsElRef} className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">

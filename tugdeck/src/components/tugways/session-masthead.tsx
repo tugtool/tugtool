@@ -91,7 +91,6 @@ import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 import { useSessionPhase } from "@/lib/code-session-store/use-session-phase";
 import { SESSION_PHASE_LABELS } from "@/lib/code-session-store/session-phase-visual";
-import { sessionActivityBeat } from "@/lib/session-activity-line";
 import { useSessionCreatedAtMs } from "@/lib/session-created-at";
 import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
@@ -102,7 +101,6 @@ import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useSessionBranch } from "@/lib/changeset-all-store";
 import {
   groupPulseHistory,
-  latestLineForScope,
   linesForScope,
   usePulse,
   type PulseLineEntry,
@@ -480,47 +478,11 @@ export function SessionMasthead({
   const createdAtMs = useSessionCreatedAtMs(cardId, row);
   // The last few pulses for this session — shown in the activity line's popover.
   const history = linesForScope(pulse.lines, sessionId, PULSE_HISTORY_COUNT);
-  // Right-click → Copy the beat's raw text. A read for the CLIPBOARD, not for
-  // the line: what the line shows is the row's ladder, paced by its dwell, and
-  // this is the newest beat the feed holds. Within a dwell window the two can
-  // differ by one line, and the newest is the honest thing to hand a paste.
-  //
-  // Only a BEAT copies. A rest sentence, a caller's override, and the
-  // compaction pin are all text the row composed rather than news the session
-  // sent, and none of them is something a paste wants — the atom copy on the
-  // title is what those states offer instead. The pin used to copy, on the
-  // strength of being marked `placeholder: false` so it could reach the
-  // markdown pipeline; that flag was about rendering and never about the
-  // clipboard, and reading it as both is what let one composed line copy while
-  // the others did not.
-  const newestBeat = sessionActivityBeat(
-    latestLineForScope(pulse.lines, sessionId, pulse.cleared.get(sessionId)),
-  );
-  const copyLine = useCopyableButton(
-    pulse.enabled && newestBeat !== null ? newestBeat.text : "",
-  );
-  // Right-click the TITLE → Copy the session atom's full flavor set: the
-  // citation as plain text with the atom sidecar beside it, so a paste back
-  // into a Tug surface returns the chip rather than the string ([D132]).
-  const copyAtom = useCopyableButton(
-    sessionCitation(identity, { project: true }),
-    () => writeSessionAtomToClipboard(identity),
-  );
-  // Right-click the SUMMARY panel's citation → Copy that flat string alone. The
-  // title's gesture above writes the atom's whole flavor set; this one writes
-  // exactly the text the row is showing, which is the point of the row.
+  // Right-click the SUMMARY panel's citation → Copy that flat string alone.
+  // The row's own menu offers the atom's whole flavor set; this one writes
+  // exactly the text the row it sits on is showing, which is that row's point.
   const copyCitation = useCopyableButton(
     sessionCitation(identity, { project: true }),
-  );
-  // One node, two readers: the copy hook's own callback ref and the popover's
-  // anchor ref.
-  const copyRef = copyLine.ref;
-  const stageRef = useCallback(
-    (el: HTMLElement | null): void => {
-      stageElRef.current = el;
-      copyRef(el);
-    },
-    [copyRef],
   );
 
   return (
@@ -551,12 +513,29 @@ export function SessionMasthead({
         pace
         markdown
         activityClassName="session-masthead-pulse-text"
-        // Right-click on the title copies the atom.
-        nameProps={{
-          ref: copyAtom.ref as React.Ref<HTMLSpanElement>,
-          onContextMenu: copyAtom.onContextMenu,
-          className: "session-masthead-title",
-        }}
+        /*
+          Right-click ANYWHERE on the three lines offers the session's copies —
+          the atom, the citation, the id, the description, the newest beat.
+          Claimed by the row rather than by the runs inside it, because the
+          title's copy surface is exactly as wide as its glyphs and everything
+          around it used to answer with something else or with nothing: the
+          description line and the masthead's own ground fell through to the
+          app's "No Actions" ([D132]).
+
+          With the menu here the identity's hover card is off. It was naming
+          the session and its description two lines under a row already showing
+          both, and the facts it added — the citation, the lineage — are things
+          to act on, which a tooltip cannot offer.
+        */
+        identityMenu
+        /*
+          This row IS this card's chrome, so the menu offers no way to "go to"
+          the session — the card to raise is the one the pointer is in. The
+          title bar renders above the card host, so the context that answers
+          this everywhere else cannot see it from here.
+        */
+        hostCardId={cardId}
+        nameProps={{ className: "session-masthead-title" }}
         /*
           The tape is the entry point to the expanded Activity card: clicking it
           opens a popover of per-channel small-multiples for this session. The
@@ -582,14 +561,11 @@ export function SessionMasthead({
           </TugPopover>
         )}
         stageProps={{
-          ref: stageRef as React.Ref<HTMLSpanElement>,
-          onContextMenu: copyLine.onContextMenu,
+          ref: stageElRef as React.Ref<HTMLSpanElement>,
           onClick: () => setHistoryOpen((open) => !open),
           className: "session-masthead-stage",
         }}
       />
-      {copyAtom.contextMenu}
-      {copyLine.contextMenu}
       {copyCitation.contextMenu}
 
       {/*
@@ -693,6 +669,10 @@ export function SessionMasthead({
                   identity={identity}
                   tier="chip"
                   size="2xs"
+                  // This panel is the card's own chrome, so the chip's menu
+                  // offers no way to "go to" a session the pointer is already
+                  // in — see the row's `hostCardId` above.
+                  hostCardId={cardId}
                   className="session-masthead-telemetry-atom"
                 />
               </TelemetryRow>

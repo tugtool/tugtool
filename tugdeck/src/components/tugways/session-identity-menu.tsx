@@ -1,0 +1,338 @@
+/**
+ * useSessionIdentityMenu — the right-click menu a session row offers, for the
+ * whole row.
+ *
+ * A session row shows four facts and, until this hook, offered copies of them
+ * through three unrelated claimants over two dead zones. The title span claimed
+ * a single-item Copy that wrote the atom; the title's `TugLabel` claimed the
+ * blank space beside it with the generic label menu, which copied the name; the
+ * pulse stage claimed the activity line with a Copy of the beat. The
+ * description line and the row's own background claimed nothing at all and fell
+ * through to the app's "No Actions" fallback — and the description is the run a
+ * reader is most likely to want out of the row, because it is the only one they
+ * cannot read anywhere else.
+ *
+ * So: ONE menu, claimed by the row, listing every copy the row can offer.
+ * Which pixel the press landed on no longer decides which menu opens, only
+ * whether the two run-specific items at the bottom have anything to give.
+ *
+ *   Show Session / Resume Session   go to the session, however it must be reached
+ *   ─────
+ *   Copy as Atom           ⌘C   the citation + the atom sidecar — pastes as the chip
+ *   Copy as Citation            the flat string, for outside Tug
+ *   Copy Session ID             the full UUID, which nothing on screen shows
+ *   ─────
+ *   Copy Description            the whole synopsis, past the row's elision
+ *   Copy Activity Line          the newest beat, when the session is running one
+ *
+ * **The first item is one item, not two.** A reader right-clicking a session
+ * wants to GET to it; whether that costs a raise or a resume is the app's
+ * problem, not theirs. So the item says which of the two it will be and does
+ * it — `Show Session` when a card already holds the session, `Resume Session`
+ * when none does. It is absent only where it could say nothing useful: on the
+ * session's own card (the masthead), where the card to raise is the one the
+ * pointer is in, and on a citation the ledger cannot resolve, which names no
+ * session to go to. A session another process holds is shown DISABLED rather
+ * than dropped — it is a real session, and it is unresumable for a reason a
+ * reader can act on.
+ *
+ * The two lower items are DISABLED rather than absent when they have nothing:
+ * a menu whose height changes with the session's state is a menu whose items
+ * move under the pointer between one right-click and the next. A surface that
+ * carries no such fact AT ALL — a citation chip has no activity feed behind it
+ * — omits the item instead, which is a different thing: what is constant per
+ * surface is the menu, and a permanently dead row is not information.
+ *
+ * `TugEditorContextMenu` rather than the Radix-backed `TugContextMenu`, for the
+ * reason `useCopyableText` uses it: its items write to the clipboard inside the
+ * mousedown, and it moves no focus — a row is chrome, and a copy from it must
+ * not take the key view away from the card the reader is working in.
+ *
+ * Laws: [L11] controls emit actions, responders handle them — every item is a
+ *       typed action dispatched to this hook's own responder;
+ *       [L06] no appearance passes through React state.
+ *
+ * @module components/tugways/session-identity-menu
+ */
+
+import React from "react";
+
+import { getRegistryHandler } from "@/action-dispatch";
+import { dispatchCommand } from "@/command-dispatch";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { commandShortcut, keymapRegistry } from "@/components/tugways/keymap-registry";
+import { useResponderChain } from "@/components/tugways/responder-chain-provider";
+import {
+  TugEditorContextMenu,
+  type TugEditorContextMenuEntry,
+} from "@/components/tugways/tug-editor-context-menu";
+import { useOptionalResponder } from "@/components/tugways/use-responder";
+import { CardIdContext } from "@/lib/card-id-context";
+import { useCardIdForSession } from "@/lib/card-session-binding-store";
+import { writeSessionAtomToClipboard } from "@/lib/session-atom";
+import { useCitedSession } from "@/lib/session-citation-store";
+import { useSessionLedgerRow } from "@/lib/session-ledger-store";
+import { sessionCitation, type SessionIdentity } from "@/lib/session-identity";
+
+/** What the menu is offered for, and what each item has to write. */
+export interface SessionIdentityMenuOptions {
+  /** The session. Every identity item is derived from this record. */
+  identity: SessionIdentity;
+  /**
+   * The description IN FULL — what the row would show under no width budget.
+   * The item is disabled when there is none, which is a session whose
+   * description is still the date it was created; omit the option entirely on
+   * a surface that carries no description at all, and the item is absent.
+   */
+  description?: string | null;
+  /**
+   * The newest live beat, or null. Only a beat: the rest sentence and the
+   * compaction pin are text the row composed rather than news the session
+   * sent, and neither is something a paste wants. Omitted on a surface with no
+   * activity feed behind it (a citation chip), where the item is absent rather
+   * than permanently dead.
+   */
+  activity?: string | null;
+  /**
+   * The card this menu is MOUNTED IN, when the surface knows it and the
+   * context cannot say.
+   *
+   * The go-to item asks whether the session's card is the card the pointer is
+   * already in, and {@link CardIdContext} answers that everywhere inside a card
+   * host. A card's own chrome is the exception: the masthead renders in the
+   * pane's title bar, which is above the host and therefore outside the
+   * context, so without this it would offer to raise the card it is the title
+   * of.
+   */
+  hostCardId?: string | null;
+  /**
+   * Off, the hook is inert — no responder is registered, the handler does
+   * nothing, and `contextMenu` is null, so the press falls through to whatever
+   * claimed it before. A knob rather than a second component because hooks
+   * cannot be called conditionally, and because the surfaces that do not want
+   * the menu (the picker's cells) render this component anyway.
+   * @default true
+   */
+  enabled?: boolean;
+}
+
+/** Wiring for the row: attach both, render the menu beside it. */
+export interface SessionIdentityMenuResult {
+  /** Attach to the row's `ref` — the responder's element. */
+  ref: (el: HTMLElement | null) => void;
+  /** Attach to the row's `onContextMenu`. */
+  onContextMenu: (e: React.MouseEvent) => void;
+  /** Render alongside the row; holds the menu portal. Null when disabled. */
+  contextMenu: React.ReactNode;
+}
+
+/** Plain text to the clipboard, when there is any. */
+function writeText(text: string): void {
+  if (text.length > 0) void navigator.clipboard.writeText(text);
+}
+
+export function useSessionIdentityMenu({
+  identity,
+  description,
+  activity,
+  hostCardId,
+  enabled = true,
+}: SessionIdentityMenuOptions): SessionIdentityMenuResult {
+  const manager = useResponderChain();
+  const [menuState, setMenuState] = React.useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const closeMenu = React.useCallback(() => setMenuState(null), []);
+
+  const citation = sessionCitation(identity, { project: true });
+  const descriptionText = description?.trim() ?? "";
+  const activityText = activity?.trim() ?? "";
+
+  // Where the session is, and whether it is here. The host card is the one
+  // this menu is mounted in; it and the session's card being the same is the
+  // masthead case, where a Show would raise the pointer's own card.
+  const contextCardId = React.useContext(CardIdContext);
+  const hostCard = hostCardId ?? contextCardId;
+  const openCardId = useCardIdForSession(identity.id);
+  const isOwnCard = openCardId !== null && openCardId === hostCard;
+  // The ledger's word about a session no card holds — its project dir, which a
+  // resume needs and no identity record carries, and its state, which says
+  // whether another process is holding it. Asked only when it is needed: a
+  // session with a card open answers both questions already, and the empty id
+  // is how {@link useCitedSession} is told not to ask ([L02] — the ask lives in
+  // that hook's effect, never in this render).
+  const wantsLedger = enabled && identity.resolved && openCardId === null;
+  const cited = useCitedSession(wantsLedger ? identity.id : "");
+  // The listing's row for the same session, as its own subscription — the
+  // resolver's answer is a SNAPSHOT taken when the chip first asked, and a
+  // session that was live then is exactly the one that stops being live while
+  // its menu is being read. Liveness therefore comes from the row, which every
+  // `session_updated` push patches, and the resolver answers only for what it
+  // cannot go stale about: where the session's project is.
+  const row = useSessionLedgerRow(identity.id, "");
+  const projectDir =
+    row?.project_dir ?? (cited.status === "found" ? cited.projectDir : "");
+  const state = row?.state ?? (cited.status === "found" ? cited.state : null);
+  // Held by another process — the same rule the `/resume` overlay's rows
+  // enforce, since a second claim on a live session is not a resume.
+  const heldElsewhere = state === "live";
+
+  const showSession = React.useCallback((): void => {
+    if (openCardId === null) return;
+    // The registry's own raise — the same funnel a Lens row's click and a
+    // chip's click go through, so three gestures cannot drift into three
+    // raises ([L30]).
+    dispatchCommand("focus-session-card", { cardId: openCardId });
+  }, [openCardId]);
+
+  const resumeSession = React.useCallback((): void => {
+    if (projectDir.length === 0 || heldElsewhere) return;
+    const sessionId = cited.status === "found" ? cited.sessionId : identity.id;
+    // The registry handler directly, not `dispatchCommand`: this verb is a
+    // menu-only action over a sampled target and so has no command-registry
+    // row for a command id to name ([ACTIONS_OUTSIDE_THE_TABLE]). The deck
+    // work lives in `action-dispatch.ts`, which is the only place that holds
+    // the DeckManager and the connection.
+    getRegistryHandler(TUG_ACTIONS.RESUME_SESSION)?.({ sessionId, projectDir });
+  }, [cited, identity.id, projectDir, heldElsewhere]);
+
+  // The atom, with the flat citation as its fallback. `writeSessionAtomToClipboard`
+  // answers false in a browser-mode run, where the native pasteboard bridge that
+  // carries the private sidecar is not installed — there the citation IS the
+  // whole of what can be written.
+  // An unresolvable citation has no session to mint an atom for, so it writes
+  // what it can say honestly: its own text.
+  const copyAtom = React.useCallback((): void => {
+    if (identity.resolved && writeSessionAtomToClipboard(identity)) return;
+    writeText(citation);
+  }, [identity, citation]);
+
+  const responderId = React.useId();
+  const { responderRef, ResponderScope } = useOptionalResponder({
+    id: responderId,
+    actions: {
+      // A bare COPY — the ⌘C a reader reaches for with the row under the key
+      // view — means the atom. It is the richest form and the one every other
+      // Tug surface hands back as a chip.
+      [TUG_ACTIONS.COPY]: copyAtom,
+      [TUG_ACTIONS.SHOW_SESSION]: showSession,
+      [TUG_ACTIONS.RESUME_SESSION]: resumeSession,
+      [TUG_ACTIONS.COPY_SESSION_ATOM]: copyAtom,
+      [TUG_ACTIONS.COPY_SESSION_CITATION]: () => writeText(citation),
+      [TUG_ACTIONS.COPY_SESSION_ID]: () => writeText(identity.id),
+      [TUG_ACTIONS.COPY_SESSION_DESCRIPTION]: () => writeText(descriptionText),
+      [TUG_ACTIONS.COPY_SESSION_ACTIVITY]: () => writeText(activityText),
+    },
+  });
+
+  const ref = React.useCallback(
+    (el: HTMLElement | null): void => {
+      responderRef(enabled ? el : null);
+    },
+    [responderRef, enabled],
+  );
+
+  const onContextMenu = React.useCallback(
+    (e: React.MouseEvent): void => {
+      if (!enabled || manager === null) return;
+      e.preventDefault();
+      // Claimed, not merely handled — the same rule `useCopyableText` follows.
+      // The runs inside this row are copyables of their own and every one of
+      // them is on this row's path, so a press that only suppressed the native
+      // menu would open a stack of them over one point.
+      e.stopPropagation();
+      setMenuState({ x: e.clientX, y: e.clientY });
+    },
+    [enabled, manager],
+  );
+
+  // Every shortcut hint comes from the command's live binding ([P11]), so the
+  // registry is a subscription ([L02]) and a rebind repaints the menu.
+  useSyncKeymap();
+  const items = React.useMemo<TugEditorContextMenuEntry[]>(() => {
+    const entries: TugEditorContextMenuEntry[] = [];
+    // Go to the session — a raise when a card holds it, a resume when none
+    // does. Absent on the session's own card and on a citation that resolves
+    // to nothing; see the module docblock.
+    if (identity.resolved && !isOwnCard) {
+      entries.push(
+        openCardId !== null
+          ? { action: TUG_ACTIONS.SHOW_SESSION, label: "Show Session" }
+          : {
+              action: TUG_ACTIONS.RESUME_SESSION,
+              label: "Resume Session",
+              // Held by another process, or the ledger has not answered yet —
+              // a resume with no project dir has no JSONL to point at.
+              disabled: heldElsewhere || projectDir.length === 0,
+            },
+        { type: "separator" },
+      );
+    }
+    entries.push(
+      {
+        action: TUG_ACTIONS.COPY_SESSION_ATOM,
+        label: "Copy as Atom",
+        shortcut: commandShortcut(TUG_ACTIONS.COPY),
+        disabled: !identity.resolved,
+      },
+      { action: TUG_ACTIONS.COPY_SESSION_CITATION, label: "Copy as Citation" },
+      { action: TUG_ACTIONS.COPY_SESSION_ID, label: "Copy Session ID" },
+    );
+    if (description !== undefined || activity !== undefined) {
+      entries.push({ type: "separator" });
+    }
+    if (description !== undefined) {
+      entries.push({
+        action: TUG_ACTIONS.COPY_SESSION_DESCRIPTION,
+        label: "Copy Description",
+        disabled: descriptionText.length === 0,
+      });
+    }
+    if (activity !== undefined) {
+      entries.push({
+        action: TUG_ACTIONS.COPY_SESSION_ACTIVITY,
+        label: "Copy Activity Line",
+        disabled: activityText.length === 0,
+      });
+    }
+    return entries;
+  }, [
+    identity.resolved,
+    isOwnCard,
+    openCardId,
+    heldElsewhere,
+    projectDir,
+    description,
+    activity,
+    descriptionText,
+    activityText,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    keymapRegistry.getSnapshot(),
+  ]);
+
+  // Inside this hook's own ResponderScope, so the menu's targeted dispatch
+  // lands on the responder above rather than on whatever surrounds the row.
+  const contextMenu =
+    enabled && manager !== null ? (
+      <ResponderScope>
+        <TugEditorContextMenu
+          open={menuState !== null}
+          x={menuState?.x ?? 0}
+          y={menuState?.y ?? 0}
+          items={items}
+          onClose={closeMenu}
+        />
+      </ResponderScope>
+    ) : null;
+
+  return { ref, onContextMenu, contextMenu };
+}
+
+/** The keymap as a subscription, so a live rebind repaints the hints. */
+function useSyncKeymap(): void {
+  React.useSyncExternalStore(
+    keymapRegistry.subscribe,
+    keymapRegistry.getSnapshot,
+    () => 0,
+  );
+}

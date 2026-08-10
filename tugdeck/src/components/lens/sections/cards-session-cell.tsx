@@ -77,6 +77,13 @@ export function CardsSessionRow({
       // the 28px glyph above is a wide indent to spend on a rail this narrow.
       subAlign="edge"
       tape
+      // A monitor row answers a right-click with the session's copies — the
+      // atom, the citation, the id, the description, the newest beat — over
+      // its whole surface, the same menu the masthead offers. A rail is where
+      // a reader is most likely to be gathering a session to name it
+      // somewhere else, and it is the surface with the least room to show the
+      // description it holds.
+      identityMenu
       highlight={filterQuery}
       slots={<SlotPicker cardId={cardId} />}
       // The row is its own reorder handle — a vertical drag from anywhere on

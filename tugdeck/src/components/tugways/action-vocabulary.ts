@@ -149,12 +149,36 @@ export const TUG_ACTIONS = {
   //              the chip an `@` mention mints rather than as its path
   //              characters, so it reads as one object and travels as one;
   //              every other kind arrives as its text.
+  // COPY_SESSION_ATOM: payload — none. Copy the session the right-click
+  //              landed on as its atom: the citation as `text/plain` with the
+  //              private atom sidecar beside it, so a paste back into any Tug
+  //              editor returns the chip rather than the string. Also what a
+  //              bare COPY over a session row means, so the ⌘C a reader
+  //              reaches for first is the richest form.
+  // COPY_SESSION_CITATION: payload — none. The same session as the flat
+  //              sanctioned string — `<project>/<callsign> (<short id>)` —
+  //              for anywhere outside Tug, where the sidecar means nothing.
+  // COPY_SESSION_ID: payload — none. The session's full UUID, which is what
+  //              every CLI verb and every JSONL path wants and what no
+  //              rendered surface shows.
+  // COPY_SESSION_DESCRIPTION: payload — none. The session's standing
+  //              description IN FULL, past whatever the row had room for.
+  // COPY_SESSION_ACTIVITY: payload — none. The newest live beat for that
+  //              session. Only a beat copies: a rest sentence and a
+  //              compaction pin are text the row composed rather than news
+  //              the session sent, and the item is disabled when there is
+  //              none.
   CUT:                 "cut",
   COPY:                "copy",
   COPY_AS_PLAIN_TEXT:  "copy-as-plain-text",
   COPY_COMMAND:        "copy-command",
   COPY_COMMAND_AS_PLAIN_TEXT: "copy-command-as-plain-text",
   COPY_ANNOTATION_VALUE: "copy-annotation-value",
+  COPY_SESSION_ATOM:   "copy-session-atom",
+  COPY_SESSION_CITATION: "copy-session-citation",
+  COPY_SESSION_ID:     "copy-session-id",
+  COPY_SESSION_DESCRIPTION: "copy-session-description",
+  COPY_SESSION_ACTIVITY: "copy-session-activity",
   INSERT_INTO_COMPOSER: "insert-into-composer",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
@@ -818,6 +842,21 @@ export const TUG_ACTIONS = {
   //                         See [tugplan-session-picker-redesign §D14](
   //                         ../../../roadmap/tugplan-session-picker-redesign.md#d14-no-per-cell-popovers).
   REQUEST_TRASH_SESSION: "request-trash-session",
+
+  // SHOW_SESSION:           payload — none. Raise the card already showing the
+  //                         session the right-click landed on: front its pane
+  //                         and give it the key view. The menu offers this only
+  //                         when a card holds that session, and never on the
+  //                         session's OWN card, where it would raise the card
+  //                         the pointer is already in.
+  // RESUME_SESSION:         payload — none. The other half of that pair, for a
+  //                         session no card holds: open a fresh session card
+  //                         and restore the session into it. A session another
+  //                         process holds is not resumable and the item is
+  //                         disabled rather than absent, so the menu's height
+  //                         does not depend on what the ledger last said.
+  SHOW_SESSION:          "show-session",
+  RESUME_SESSION:        "resume-session",
 
   // ---- Meta ----
   //

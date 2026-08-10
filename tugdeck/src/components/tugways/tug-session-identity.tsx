@@ -36,11 +36,16 @@
  * The chip's hover carries the full identity and the citation as a
  * `TugTooltip`, not a placard: `TugTooltip` is explicitly non-interactive and
  * evaporates on any deliberate action, so a button inside one would be
- * unreachable. Copy is a right-click instead — the idiom every other Tug chip
- * already uses — and it is a REAL atom copy: the citation as plain text, with
- * the `dev.tug.prompt-atoms` sidecar beside it, so a paste back into a Tug
- * surface returns the chip rather than the string. The masthead's telemetry
- * placard carries the same citation on a `TugCopyBadge` for a click path.
+ * unreachable. The acting surface is a right-click instead — the idiom every
+ * other Tug chip already uses — and it is the session's whole menu
+ * ({@link useSessionIdentityMenu}), not a lone Copy: how to reach the session
+ * (Show it, or Resume it where no card holds it), then the two forms the chip
+ * can travel as. **Copy as Atom** writes the citation as plain text with the
+ * `dev.tug.prompt-atoms` sidecar beside it, so a paste back into a Tug surface
+ * returns the chip; **Copy as Citation** writes the flat string alone, for
+ * anywhere outside Tug. ⌘C over the chip means the atom, the richer of the
+ * two. The masthead's telemetry placard carries the same citation on a
+ * `TugCopyBadge` for a click path.
  *
  * An unresolvable citation keeps its shape — the reader still needs to know
  * what kind of thing is named — takes a dashed border and muted ink, forces its
@@ -69,11 +74,10 @@ import {
   type TugProgressIndicatorPhaseVisual,
 } from "@/components/tugways/tug-progress-indicator";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import { useCopyableText } from "@/components/tugways/use-copyable-text";
+import { useSessionIdentityMenu } from "@/components/tugways/session-identity-menu";
 import { useCardIdForSession } from "@/lib/card-session-binding-store";
 import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 import { useCitedSession } from "@/lib/session-citation-store";
-import { writeSessionAtomToClipboard } from "@/lib/session-atom";
 import {
   sessionCitation,
   sessionIdentityLine,
@@ -154,6 +158,27 @@ export interface TugSessionIdentityProps
    * open it. Omitted (or `missing`) leaves the atom inert.
    */
   onOpen?: () => void;
+  /**
+   * The card this chip is MOUNTED IN, for the menu's go-to item. Only a chip
+   * that is a card's own chrome needs to say — a pane's title bar renders
+   * above the card host whose context every other mount reads. See
+   * {@link SessionIdentityMenuOptions.hostCardId}.
+   */
+  hostCardId?: string;
+  /**
+   * Whether hovering the runs shows the identity card.
+   *
+   * Off where the mount site offers the same facts as a right-click menu. The
+   * two were stepping on each other on the row surfaces: the tooltip named the
+   * session and its description directly under a row already showing both, and
+   * every fact it added — the citation, the lineage — was a thing the reader
+   * wanted to ACT on, which a tooltip cannot offer because it is by law
+   * non-interactive. The menu can, so where there is a menu the hover is
+   * silence. The chip tier keeps it: a citation in a commit line or a Gazette
+   * post has no row under it to say any of this.
+   * @default true
+   */
+  tooltip?: boolean;
 }
 
 /**
@@ -196,6 +221,8 @@ export const TugSessionIdentity = React.forwardRef<
     dot = true,
     highlight = "",
     onOpen,
+    hostCardId,
+    tooltip = true,
     className,
     ...rest
   },
@@ -223,26 +250,29 @@ export const TugSessionIdentity = React.forwardRef<
     [onOpen],
   );
 
-  // Right-click → Copy. A resolving atom writes ALL its flavors: the citation
-  // as plain text for anywhere outside Tug, and the atom sidecar beside it so
-  // a paste back into a Tug surface returns the chip rather than the string.
-  // A missing one has no atom to write, so it copies its text and nothing
-  // more.
-  const copyHostRef = React.useRef<HTMLElement | null>(null);
-  const copy = useCopyableText({
-    ref: copyHostRef,
-    forwardedRef: ref,
-    getText: () => sessionCitation(identity, { project: true }),
-    write: isMissing
-      ? undefined
-      : () => writeSessionAtomToClipboard(identity),
-    disabled: !isChip,
-    copyMenu: true,
-  });
+  // Right-click → the session's own menu: how to GET to the session, then the
+  // two copies an atom can be (the sidecar-carrying atom, and the flat
+  // citation for anywhere outside Tug) and its id. The same hook the row
+  // surfaces mount, so a session answers one menu wherever it is shown — the
+  // chip carries no description or activity of its own, so those two items are
+  // absent here rather than permanently dead.
+  const {
+    ref: menuRef,
+    onContextMenu: openMenu,
+    contextMenu,
+  } = useSessionIdentityMenu({ identity, hostCardId, enabled: isChip });
+  const composedRef = React.useCallback(
+    (el: HTMLSpanElement | null): void => {
+      menuRef(el);
+      if (typeof ref === "function") ref(el);
+      else if (ref) (ref as React.MutableRefObject<HTMLSpanElement | null>).current = el;
+    },
+    [menuRef, ref],
+  );
 
   const body = (
     <span
-      ref={copy.composedRef as React.Ref<HTMLSpanElement>}
+      ref={composedRef}
       className={cn("tug-session-identity", className)}
       data-slot="tug-session-identity"
       data-tier={tier}
@@ -250,7 +280,7 @@ export const TugSessionIdentity = React.forwardRef<
       data-missing={isMissing ? "true" : undefined}
       data-interactive={interactive ? "true" : undefined}
       onClick={interactive ? handleClick : undefined}
-      onContextMenu={isChip ? copy.handleContextMenu : undefined}
+      onContextMenu={isChip ? openMenu : undefined}
       {...rest}
     >
       {isChip || dot ? (
@@ -287,7 +317,9 @@ export const TugSessionIdentity = React.forwardRef<
     </span>
   );
 
-  const tipped = isMissing ? (
+  const tipped = !tooltip ? (
+    body
+  ) : isMissing ? (
     // The tooltip carries the sentence, not the tag — repeating a name the
     // reader can already see says nothing about why it did not resolve.
     <TugTooltip content="Session not found">{body}</TugTooltip>
@@ -299,7 +331,7 @@ export const TugSessionIdentity = React.forwardRef<
   return (
     <>
       {tipped}
-      {copy.contextMenu}
+      {contextMenu}
     </>
   );
 });

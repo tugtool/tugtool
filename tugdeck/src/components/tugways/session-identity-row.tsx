@@ -90,6 +90,7 @@ import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { PulseBeatText } from "@/components/tugways/pulse-beat-text";
 import { SessionActivitySparkline } from "@/components/tugways/session-activity-sparkline";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
+import { useSessionIdentityMenu } from "@/components/tugways/session-identity-menu";
 import {
   TugSessionRow,
   TUG_SESSION_ROW_STACK_DOT_SIZE,
@@ -491,10 +492,32 @@ export interface SessionIdentityRowProps
   /** Class on the activity run itself, for a surface styling its ink. */
   activityClassName?: string;
   /**
-   * Props for the element wrapping the TITLE — the masthead's right-click copy
-   * handle. The identity runs are rendered inside whatever this describes.
+   * Props for the element wrapping the TITLE. The identity runs are rendered
+   * inside whatever this describes.
    */
   nameProps?: React.ComponentProps<"span">;
+  /**
+   * Whether the WHOLE row answers a right-click with the session's copies —
+   * the atom, the citation, the id, the description, the newest beat. See
+   * {@link useSessionIdentityMenu}.
+   *
+   * On, the identity's hover card is off, and that pairing is the point rather
+   * than a side effect: the tooltip and the menu were showing the same facts
+   * over the same pixels, and only one of them can be acted on.
+   *
+   * Off for the picker's cells, which are pure render functions and are a list
+   * to pick FROM — a right-click there is a gesture aimed at the picking, not
+   * at the session.
+   * @default false
+   */
+  identityMenu?: boolean;
+  /**
+   * The card this row is MOUNTED IN, for the menu's go-to item. Only a surface
+   * that is a card's own chrome needs to say — the masthead renders in the
+   * pane title bar, above the card host whose context every other mount reads.
+   * See {@link SessionIdentityMenuOptions.hostCardId}.
+   */
+  hostCardId?: string;
 }
 
 export function SessionIdentityRow({
@@ -515,6 +538,8 @@ export function SessionIdentityRow({
   markdown = false,
   activityClassName,
   nameProps,
+  identityMenu = false,
+  hostCardId,
   className,
   ...rest
 }: SessionIdentityRowProps): React.ReactElement {
@@ -607,6 +632,21 @@ export function SessionIdentityRow({
   // Paced HERE rather than in a leaf, so a swap re-renders the row and
   // `TugPulse` measures the new text — see {@link useDwellDisplay}.
   const entry = useDwellDisplay(target, pace);
+
+  // ── The row's own menu ────────────────────────────────────────────────
+  // Fed the NEWEST beat rather than the one on screen: within a dwell window
+  // the two differ by a line, and the newest is the honest thing to hand a
+  // paste. The description item is offered for a written synopsis and for a
+  // prompt standing in for one, but not for the created-on stamp, which is a
+  // fact the row composed rather than anything the session said.
+  const menu = useSessionIdentityMenu({
+    identity,
+    description:
+      identity.description === null && prompt.length === 0 ? null : descriptionFull,
+    activity: beat?.text ?? null,
+    hostCardId,
+    enabled: identityMenu,
+  });
   const ActivityRun = markdown ? ActivityMarkdownText : ActivityText;
   const activity = (
     <ActivityRun
@@ -642,10 +682,15 @@ export function SessionIdentityRow({
       tier="line"
       dot={false}
       highlight={highlight}
+      // Where the row answers a right-click, the hover says nothing. Both were
+      // showing the session's name and description over a row already showing
+      // both, and only one of them can be acted on.
+      tooltip={!identityMenu}
     />
   );
 
   return (
+    <>
     <TugSessionRow
       // The row's own class, always, ahead of whatever the mount adds. A bare
       // `TugSessionRow` and one of these are the same element otherwise — same
@@ -670,6 +715,19 @@ export function SessionIdentityRow({
       activity={activity}
       sparkline={sparkline}
       {...rest}
+      // After the mount's own props, deliberately: the row-wide menu is the
+      // last word on the right-click, and the element the responder registers
+      // on has to be this one. No mount site passes either today.
+      ref={menu.ref as React.Ref<HTMLDivElement>}
+      // CAPTURE, so the row is asked before anything inside it. The runs are
+      // copyables in their own right — the title sits inside a `TugLabel`, and
+      // a label is intrinsically copyable — so on the bubble the title's press
+      // was claimed by the label and answered with Cut/Copy/Paste/Select All
+      // over the label's text, which is the row's title spelled out rather
+      // than the session. One menu for the row means the row is asked first.
+      onContextMenuCapture={menu.onContextMenu}
     />
+    {menu.contextMenu}
+    </>
   );
 }
