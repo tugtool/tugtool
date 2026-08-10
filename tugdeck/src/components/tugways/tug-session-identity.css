@@ -27,6 +27,17 @@
   gap: var(--tugx-session-identity-icon-gap, 6px);
   min-width: 0;
   white-space: nowrap;
+  /* The mark is not a paragraph, and it must not inherit one's first-line
+     indent. `text-indent` inherits, and an `inline-flex` is its own block
+     container — so a citation dropped into a hanging-indent context (the
+     History card's commit subject hangs its wrapped lines under the sha with
+     `text-indent: -9ch`) applied that indent to its OWN first line: the pill's
+     shrink-to-fit width was computed against a negative indent and came out a
+     third of its content, and the run inside was shifted bodily left, out of
+     the pill, so the reader saw the tail of the callsign in a chip too small
+     to hold it. Zeroed here rather than at the mount: any surface that hangs
+     its wrapped lines is entitled to, and the atom is entitled to ignore it. */
+  text-indent: 0;
 }
 
 /* The dot is a RING box: it paints at a fraction of its size and the ring

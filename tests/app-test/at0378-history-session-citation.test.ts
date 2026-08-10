@@ -42,7 +42,19 @@
  *      foreign commit then renders as a findable session, and a click on it
  *      does nothing at all.
  *
+ *   D. **The chip holds what it says.** Its runs start inside its own pill and
+ *      none of them elides. `text-indent` INHERITS, and an `inline-flex` is its
+ *      own block container — so the History subject's hanging indent
+ *      (`text-indent: -9ch`, which hangs a wrapped subject under the sha) was
+ *      applied to the chip's own first line: the pill's shrink-to-fit width came
+ *      out a third of its content and the run was shifted bodily left, out of
+ *      the pill, leaving the reader the TAIL of the callsign in a chip too small
+ *      to hold it (`bouncy-clock` read as `ock`). Measured, because the text is
+ *      all still there in the DOM and every content assertion above passes with
+ *      the mark unreadable on screen.
+ *
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-identity.css
  * @covers tugdeck/src/lib/session-identity.ts
  * @covers tugdeck/src/lib/session-citation-store.ts
  */
@@ -169,6 +181,39 @@ describe.skipIf(!SHOULD_RUN)(
             // And it still says what the commit named — a callsign or, for a
             // legacy tagless trailer, the short id. Never nothing.
             expect(mark.text.length).toBeGreaterThan(0);
+          }
+
+          // ---- D. The chip is big enough to hold what it says. -------------
+          const fit = await app.evalJS<
+            { text: string; slack: number; elided: boolean; inside: boolean }[]
+          >(
+            `Array.from(document.querySelectorAll(${JSON.stringify(CHIP)})).map(
+              function (chip) {
+                var box = chip.getBoundingClientRect();
+                var runs = Array.from(chip.querySelectorAll(
+                  ".tug-session-identity-name, .tug-session-identity-callsign"));
+                return {
+                  text: (chip.textContent || "").trim(),
+                  // What the pill has left over its own content. Negative means
+                  // the pill is narrower than the mark inside it.
+                  slack: Math.round((box.width - chip.scrollWidth) * 100) / 100,
+                  elided: runs.some(function (r) {
+                    return r.scrollWidth > r.getBoundingClientRect().width + 1;
+                  }),
+                  // Every run's ink starts inside the pill it belongs to. A
+                  // negative first-line indent moves it left of its own border.
+                  inside: runs.every(function (r) {
+                    return r.getBoundingClientRect().left >= box.left - 0.5;
+                  }),
+                };
+              })`,
+          );
+          note(`at0378 chip fit: ${JSON.stringify(fit.slice(0, 3))}`);
+          expect(fit.length).toBeGreaterThan(0);
+          for (const chip of fit) {
+            expect(chip.inside).toBe(true);
+            expect(chip.elided).toBe(false);
+            expect(chip.slack).toBeGreaterThanOrEqual(-1);
           }
 
           // ---- B. No raw id, and no trailer line in any body. ---------------
