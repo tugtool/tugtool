@@ -37,13 +37,17 @@
  * activity meters bin on absolute wall-clock indices and that is what decays a
  * stalled stream to baseline.
  *
- * THE SCROLL NEVER MOVES AHEAD OF ITS PIXELS. An origin change is painted
- * first and applied only when the surface acknowledges those pixels exist —
- * one path, no fast path, with a watchdog so a lost acknowledgement cannot
- * freeze (or, on a wake, permanently pause) the tape. Moving the transform in
- * the same tick as a repaint that travels through a worker is what used to
- * show a blank or truncated tape: the viewport landed on cleared canvas for as
- * long as the round-trip took. The full protocol is Spec S01, in
+ * THE SCROLL NEVER MOVES AHEAD OF ITS PIXELS — AND THE PIXELS NEVER BLANK
+ * BEHIND THE SCROLL. An origin change is painted first and applied only when
+ * the surface acknowledges those pixels exist — one path, no fast path, with
+ * a watchdog so a lost acknowledgement cannot freeze (or, on a wake,
+ * permanently pause) the tape. The proposal is drawn WITHOUT clearing, into
+ * its own region of the canvas, so the picture the unmoved transform is
+ * showing survives the whole acknowledgement window; ordinary paints hold
+ * their fire meanwhile and the commit flushes them. And a stopped scroll is
+ * never resumed from its held position — the clock ran on while it was
+ * paused — it is RE-REGISTERED by writing the committed origin back as the
+ * animation's start time. The full protocol is Spec S01, in
  * `lib/sparkline-tape.ts`.
  *
  * WHERE THE POLICY IS. Everything above is a statement about *when* — when to
@@ -250,6 +254,7 @@ interface Painter {
     t0: number,
     now: number,
     ack: number | null,
+    clear: boolean,
   ): void;
   /** Re-read the resolved color and weights, then repaint. */
   refreshColors(t0: number): void;
@@ -380,13 +385,14 @@ function makePainter(
     worker.postMessage(init, [offscreen]);
     ackRoutes.set(id, onAck);
     return {
-      draw(tape, t0, now, ack) {
+      draw(tape, t0, now, ack, clear) {
         worker.postMessage({
           kind: "tape",
           id,
           points: tape.slice(),
           t0,
           now,
+          clear,
           ...(ack === null ? {} : { ack }),
         } satisfies SparklineWorkerRequest);
       },
@@ -410,9 +416,9 @@ function makePainter(
   let last: { tape: readonly SparklinePoint[]; t0: number } = { tape: [], t0: 0 };
   let released = false;
   return {
-    draw(tape, t0, now, ack) {
+    draw(tape, t0, now, ack, clear) {
       last = { tape, t0 };
-      if (ctx !== null) drawSparkline(ctx, geometry, colors, tape, t0);
+      if (ctx !== null) drawSparkline(ctx, geometry, colors, tape, t0, clear);
       if (ack === null) return;
       // This branch draws SYNCHRONOUSLY, so acking from here would re-enter
       // the tape's own paint() call and move the scroll from inside it. Defer
@@ -656,22 +662,22 @@ export function TugSparkline({
      * onto a released canvas the first time the geometry changed.
      */
     const surface: SparklineSurface = {
-      paint(points, t0, ack) {
-        painterRef.current?.draw(points, t0, clock(), ack);
+      paint(points, t0, ack, clear) {
+        painterRef.current?.draw(points, t0, clock(), ack, clear);
       },
       setEpochStart(timelineMs) {
         // An exact write, not a cancel-and-recreate: `startTime` resolves the
         // animation's origin with no pending-start slop, keeps the same
         // Animation object (so the compositor keeps the layer and nothing can
         // be orphaned), and — because it also clears any hold time — restarts
-        // a paused scroll on its own.
+        // a paused scroll on its own. That side effect is the surface's whole
+        // resume story: the tape never replays from a held position, because
+        // the clock runs on while a tape is paused and a hold-relative
+        // `play()` would come back mis-registered by the entire quiet spell.
         if (anim !== null) anim.startTime = timelineMs;
       },
       pause() {
         anim?.pause();
-      },
-      resume() {
-        anim?.play();
       },
       stampChannel(channel, t0) {
         // Appearance rides the DOM attribute, never React state ([L06]).
@@ -680,7 +686,11 @@ export function TugSparkline({
           else container.setAttribute("data-activity-channel", channel);
         }
         // The stamp is what the tint CSS selects on, so the resolved color
-        // has just changed under the canvas.
+        // has just changed under the canvas. A null `t0` means a rebase is in
+        // flight and the tape will flush the repaint at its commit.
+        if (t0 !== null) painterRef.current?.refreshColors(t0);
+      },
+      refreshColors(t0) {
         painterRef.current?.refreshColors(t0);
       },
     };
@@ -764,7 +774,10 @@ export function TugSparkline({
     // This is a callback set, not a timer or an observer — it costs nothing
     // at rest.
     const repaintColors = (): void => {
-      painterRef.current?.refreshColors(live.committedT0());
+      // Through the tape, not straight to the painter: mid-rebase the canvas
+      // holds two origins' pixels and a colour repaint must wait for the
+      // commit, which is the tape's call to make.
+      live.refreshColors();
     };
     subscribeThemeChange(repaintColors);
 

@@ -38,11 +38,13 @@ const CLOCK_BASE = 50_000;
 // ----------------------------------------------------------------- harness
 
 interface SurfaceCall {
-  kind: "paint" | "setEpochStart" | "pause" | "resume" | "stampChannel";
-  /** `paint` / `stampChannel`: the epoch origin the call carried. */
-  t0?: number;
+  kind: "paint" | "setEpochStart" | "pause" | "stampChannel" | "refreshColors";
+  /** `paint` / `stampChannel` / `refreshColors`: the origin the call carried. */
+  t0?: number | null;
   /** `paint`: the acknowledgement sequence, or null for an ordinary paint. */
   ack?: number | null;
+  /** `paint`: whether the surface was wiped before drawing. */
+  clear?: boolean;
   /** `paint`: how many points went out. */
   points?: number;
   /** `paint`: the newest plotted value — what the right edge is drawing. */
@@ -135,10 +137,13 @@ function seriesOf(level: number): number[] {
  * The two invariants the whole rebase design exists to guarantee, asserted
  * over a recorded trace:
  *
- *  - ORDERING — every `setEpochStart(t)` is preceded by a `paint` that carried
- *    `t` and asked for an acknowledgement. No origin ever moves ahead of the
- *    pixels for it, and no origin moves on the back of an unacknowledged
- *    paint.
+ *  - ORDERING — every `setEpochStart(t)` that MOVES the origin is preceded by
+ *    a `paint` that carried `t` and asked for an acknowledgement. No origin
+ *    ever moves ahead of the pixels for it, and no origin moves on the back
+ *    of an unacknowledged paint. A `setEpochStart` carrying the current
+ *    committed origin is not a move at all — it is a stopped scroll
+ *    re-registering onto pixels already drawn for that origin (a wake, a
+ *    park), and needs no new pixels.
  *  - SINGLE `t0` — between two origin moves, every ordinary paint agrees on
  *    the committed origin. The one exception is the single rebase paint that
  *    proposes the next one, and there is exactly one of those per interval.
@@ -152,16 +157,22 @@ function assertRebaseOrdering(calls: SurfaceCall[]): void {
         proposed.add(call.t0 ?? Number.NaN);
         continue;
       }
-      committed ??= call.t0;
-      expect(call.t0).toBe(committed);
+      committed ??= call.t0 ?? undefined;
+      expect(call.t0).toBe(committed ?? Number.NaN);
       continue;
     }
     if (call.kind !== "setEpochStart") continue;
+    const target = call.timelineMs ?? Number.NaN;
+    if (committed === undefined || target === committed) {
+      // A re-registration onto the committed origin, not an origin move.
+      committed = target;
+      continue;
+    }
     // One origin may be proposed more than once — an orphaned sequence is
     // re-issued on the next tick — but never two DIFFERENT origins, and the
     // one that lands is the one that was painted.
-    expect([...proposed]).toEqual([call.timelineMs ?? Number.NaN]);
-    committed = call.timelineMs;
+    expect([...proposed]).toEqual([target]);
+    committed = target;
     proposed = new Set();
   }
 }
@@ -201,11 +212,12 @@ function makeHarness(
   const calls: SurfaceCall[] = [];
   let built: SparklineTape | null = null;
   const surface: SparklineSurface = {
-    paint(points, t0, ack) {
+    paint(points, t0, ack, clear) {
       calls.push({
         kind: "paint",
         t0,
         ack,
+        clear,
         points: points.length,
         lastV: points.length > 0 ? points[points.length - 1].v : undefined,
       });
@@ -220,11 +232,11 @@ function makeHarness(
     pause() {
       calls.push({ kind: "pause" });
     },
-    resume() {
-      calls.push({ kind: "resume" });
-    },
     stampChannel(channel, t0) {
       calls.push({ kind: "stampChannel", channel, t0 });
+    },
+    refreshColors(t0) {
+      calls.push({ kind: "refreshColors", t0 });
     },
     ...surfaceOverrides,
   };
@@ -257,12 +269,15 @@ function makeHarness(
 // ------------------------------------------------------------------- tests
 
 describe("SparklineTape — birth", () => {
-  test("a tape with no activity is born inert: one paint, no timers", () => {
+  test("a tape with no activity is born inert: one paint, a parked scroll, no timers", () => {
     const h = makeHarness();
     h.tape.start(h.clock.now());
 
+    // The scroll the component creates at mount is running; a born-idle tape
+    // stops it immediately rather than paying for a compositor animation
+    // until its first epoch end.
     expect(h.paints()).toHaveLength(1);
-    expect(h.kinds()).toEqual(["paint"]);
+    expect(h.kinds()).toEqual(["paint", "pause"]);
     expect(h.clock.pending).toBe(0);
     expect(h.tape.debugState().state).toBe("flat-dormant");
   });
@@ -371,7 +386,6 @@ describe("SparklineTape — reduced motion", () => {
 
     expect(h.kinds()).not.toContain("setEpochStart");
     expect(h.kinds()).not.toContain("pause");
-    expect(h.kinds()).not.toContain("resume");
   });
 });
 
@@ -550,8 +564,8 @@ describe("SparklineTape — the acknowledgement contract", () => {
       },
       setEpochStart() {},
       pause() {},
-      resume() {},
       stampChannel() {},
+      refreshColors() {},
     };
     victim = new SparklineTape(reentrant, {
       now: () => CLOCK_BASE,
@@ -702,7 +716,7 @@ describe("SparklineTape — the ack-gated rebase", () => {
     assertRebaseOrdering(h.calls);
   });
 
-  test("a wake whose ack is lost still resumes — a paused tape is the failure", () => {
+  test("a wake whose ack is lost still restarts — a paused tape is the failure", () => {
     const h = makeHarness({ getSeries: () => seriesOf(0.5) }, {}, null);
     h.tape.start(h.clock.now());
     const origin = h.tape.committedT0();
@@ -711,19 +725,22 @@ describe("SparklineTape — the ack-gated rebase", () => {
     expect(h.kinds()).toContain("pause");
     h.clock.advance(EPOCH_MS + 1_000);
     // Activity arriving while hidden does not wake, but it does mean there is
-    // something to show on re-entry — so this is the wake that resumes.
+    // something to show on re-entry — so this is the wake that restarts.
     h.tape.onActivity();
     const mark = h.calls.length;
     h.tape.setVisible(true);
 
     // The rebase is in flight and nothing will ever answer it, so the scroll
     // is still stopped: this is the failure the watchdog exists to bound.
-    expect(h.kinds().slice(mark)).not.toContain("resume");
+    expect(h.kinds().slice(mark)).not.toContain("setEpochStart");
     h.clock.advance(REBASE_ACK_TIMEOUT_MS + 10);
 
     expect(h.tape.committedT0()).toBe(origin + EPOCH_MS);
+    // The setEpochStart write is BOTH the origin move and the restart — it
+    // clears the hold — and a wake must not be put back to sleep after it.
     const order = h.kinds().slice(mark);
-    expect(order.indexOf("resume")).toBeGreaterThan(order.indexOf("setEpochStart"));
+    expect(order).toContain("setEpochStart");
+    expect(order.slice(order.indexOf("setEpochStart"))).not.toContain("pause");
   });
 
   test("a late ack after the watchdog committed is a no-op", () => {
@@ -798,11 +815,12 @@ describe("SparklineTape — off screen is a pause, not a teardown", () => {
     h.clock.advance(SAMPLE_MS);
 
     const order = h.kinds().slice(mark);
-    // Paint first, then the origin, then the scroll. Resuming before the
-    // origin moved would run the scroll from a stale one.
+    // Paint first, then the origin — whose write is also the restart, so a
+    // wake is never re-paused after it. Restarting before the origin moved
+    // would run the scroll from a stale one.
     expect(order.indexOf("paint")).toBeGreaterThanOrEqual(0);
     expect(order.indexOf("setEpochStart")).toBeGreaterThan(order.indexOf("paint"));
-    expect(order.indexOf("resume")).toBeGreaterThan(order.indexOf("setEpochStart"));
+    expect(order.slice(order.indexOf("setEpochStart"))).not.toContain("pause");
     assertRebaseOrdering(h.calls);
   });
 
@@ -838,10 +856,10 @@ describe("SparklineTape — off screen is a pause, not a teardown", () => {
     // Flatness earns no shortcut: the origin still moved through a paint.
     expect(h.tape.committedT0()).toBe(origin + EPOCH_MS);
     assertRebaseOrdering(h.calls);
-    // And the scroll is still stopped — the tape had nothing recent to show,
-    // so it stays inert rather than being restarted by the rebase.
+    // And the scroll is still stopped — the setEpochStart write cleared the
+    // hold, so an inert tape is re-paused after its origin moves.
     const order = h.kinds();
-    expect(order.lastIndexOf("pause")).toBeGreaterThan(order.lastIndexOf("resume"));
+    expect(order.lastIndexOf("pause")).toBeGreaterThan(order.lastIndexOf("setEpochStart"));
   });
 
   test("entering either dormancy emits no paint and no origin move", () => {
@@ -900,11 +918,17 @@ describe("SparklineTape — off screen is a pause, not a teardown", () => {
     expect(h.calls.slice(mark)).toHaveLength(0);
     expect(h.tape.debugState().state).toBe("hidden-paused");
 
-    // Re-entry rebuilds from the caller's real history and resumes live.
+    // Re-entry rebuilds from the caller's real history and resumes live. No
+    // boundary was crossed, so the restart is a bare re-registration onto the
+    // committed origin — never a hold-relative replay.
     h.tape.setVisible(true);
     expect(h.tape.debugState().state).toBe("live");
     expect(h.kinds().slice(mark)).toContain("paint");
-    expect(h.kinds().slice(mark)).toContain("resume");
+    const restarts = h.calls
+      .slice(mark)
+      .filter((c) => c.kind === "setEpochStart");
+    expect(restarts).toHaveLength(1);
+    expect(restarts[0].timelineMs).toBe(h.tape.committedT0());
   });
 
   test("no scenario in the suite ever recreates or cancels the scroll", () => {
@@ -922,7 +946,13 @@ describe("SparklineTape — off screen is a pause, not a teardown", () => {
       h.tape.onActivity();
       h.clock.advance(SAMPLE_MS * 3);
     }
-    const allowed = new Set(["paint", "setEpochStart", "pause", "resume", "stampChannel"]);
+    const allowed = new Set([
+      "paint",
+      "setEpochStart",
+      "pause",
+      "stampChannel",
+      "refreshColors",
+    ]);
     for (const kind of h.kinds()) expect(allowed.has(kind)).toBe(true);
     assertRebaseOrdering(h.calls);
   });
@@ -1157,12 +1187,16 @@ describe("SparklineTape — surviving a canvas swapped out from under it", () =>
     const mark = h.calls.length;
     h.tape.repaint();
     const emitted = h.calls.slice(mark);
-    expect(emitted).toHaveLength(1);
-    expect(emitted[0].kind).toBe("paint");
+    // A repaint is not a rebase: it redraws what is already true, and then —
+    // because the scroll was paused at some OLDER clock reading while the
+    // fresh paint assumes the clock — re-parks the paused position onto the
+    // committed origin. Without the park a resolution change while resting
+    // could leave the viewport past the ink: a vanished flatline.
+    expect(emitted.map((c) => c.kind)).toEqual(["paint", "setEpochStart", "pause"]);
     expect(emitted[0].t0).toBe(h.tape.committedT0());
-    // A repaint is not a rebase: it redraws what is already true.
     expect(emitted[0].ack).toBeNull();
     expect(emitted[0].points).toBeGreaterThan(0);
+    expect(emitted[1].timelineMs).toBe(h.tape.committedT0());
   });
 
   test("cancel-then-repaint mid-rebase leaves the tape able to roll over again", () => {
@@ -1199,6 +1233,175 @@ describe("SparklineTape — surviving a canvas swapped out from under it", () =>
     expect(reissued.length).toBeGreaterThan(1);
     expect(reissued[reissued.length - 1].t0).toBe(origin + EPOCH_MS);
     assertRebaseOrdering(h.calls);
+  });
+});
+
+describe("SparklineTape — the ack window neither blanks nor clobbers", () => {
+  /** Drive a live tape across `spanMs`, keeping its own tick running. */
+  const driveLive = (h: Harness, spanMs: number, level: { v: number }): void => {
+    for (let elapsed = 0; elapsed < spanMs; elapsed += SAMPLE_MS) {
+      level.v = level.v === 0.2 ? 0.8 : 0.2;
+      h.clock.advance(SAMPLE_MS);
+      h.tape.onActivity();
+    }
+  };
+
+  test("no ordinary paint lands between a proposal and its commit", () => {
+    const level = { v: 0.2 };
+    const h = makeHarness({ getSeries: () => seriesOf(level.v) }, {}, null);
+    h.tape.start(h.clock.now());
+    driveLive(h, EPOCH_MS, level);
+    // A settle tick fires while the proposal's ack is outstanding…
+    driveLive(h, SAMPLE_MS, level);
+    // …and the watchdog then commits the move.
+    h.clock.advance(REBASE_ACK_TIMEOUT_MS + 10);
+
+    const idxAsk = h.calls.findIndex((c) => c.kind === "paint" && c.ack !== null);
+    const idxMove = h.calls.findIndex((c) => c.kind === "setEpochStart");
+    expect(idxAsk).toBeGreaterThanOrEqual(0);
+    expect(idxMove).toBeGreaterThan(idxAsk);
+    // THE CLOBBER, pinned. An ordinary committed-origin paint issued in that
+    // window lands after the proposal in the surface's queue, so the origin
+    // move puts the viewport over stale-origin pixels — a blank tape for a
+    // tick, or until the NEXT event if that tick was the burst's last.
+    const between = h.calls.slice(idxAsk + 1, idxMove);
+    expect(between.filter((c) => c.kind === "paint")).toHaveLength(0);
+  });
+
+  test("the commit flushes one clear paint at the new origin", () => {
+    const level = { v: 0.2 };
+    const h = makeHarness({ getSeries: () => seriesOf(level.v) }, {}, null);
+    h.tape.start(h.clock.now());
+    const origin = h.tape.committedT0();
+    driveLive(h, EPOCH_MS, level);
+    driveLive(h, SAMPLE_MS, level);
+    h.clock.advance(REBASE_ACK_TIMEOUT_MS + 10);
+
+    // Paints held their fire during the ack window and the proposal did not
+    // clear, so the commit squares the canvas: everything appended since the
+    // proposal, drawn at the newly committed origin, over a full wipe.
+    const idxMove = h.calls.findIndex((c) => c.kind === "setEpochStart");
+    const flush = h.calls.slice(idxMove + 1).find((c) => c.kind === "paint");
+    expect(flush?.t0).toBe(origin + EPOCH_MS);
+    expect(flush?.ack).toBeNull();
+    expect(flush?.clear).toBe(true);
+  });
+
+  test("an origin-moving proposal paints without clearing; everything else clears", () => {
+    const level = { v: 0.2 };
+    const h = makeHarness({ getSeries: () => seriesOf(level.v) });
+    h.tape.start(h.clock.now());
+    driveLive(h, EPOCH_MS + 2_000, level);
+
+    // The proposal draws into its own region and leaves the committed picture
+    // intact for the transform still in force — that is what makes the ack
+    // window a freeze instead of a blank flash.
+    const asked = h.paints().filter((p) => p.ack !== null);
+    expect(asked.length).toBeGreaterThan(0);
+    for (const paint of asked) expect(paint.clear).toBe(false);
+    for (const paint of h.paints().filter((p) => p.ack === null)) {
+      expect(paint.clear).toBe(true);
+    }
+  });
+
+  test("a forced same-origin re-registration clears as usual", () => {
+    const h = makeHarness({ getSeries: () => seriesOf(0.5) });
+    h.tape.start(h.clock.now());
+    const mark = h.calls.length;
+    // Same origin, same region: an unclear overdraw would double the
+    // translucent area fill instead of protecting anything.
+    h.tape.resyncRegistration();
+    const asked = h.calls
+      .slice(mark)
+      .filter((c) => c.kind === "paint" && c.ack !== null);
+    expect(asked).toHaveLength(1);
+    expect(asked[0].clear).toBe(true);
+  });
+
+  test("a channel change mid-rebase stamps the DOM now, repaints at the commit", () => {
+    let channel = "text";
+    const level = { v: 0.2 };
+    const h = makeHarness(
+      { getSeries: () => seriesOf(level.v), getColorChannel: () => channel },
+      {},
+      null,
+    );
+    h.tape.start(h.clock.now());
+    driveLive(h, EPOCH_MS - SAMPLE_MS, level);
+    // The boundary tick proposes first, then appends — so this stamp lands
+    // while the proposal's ack is in flight.
+    channel = "tools";
+    driveLive(h, SAMPLE_MS, level);
+    h.clock.advance(REBASE_ACK_TIMEOUT_MS + 10);
+
+    const idxMove = h.calls.findIndex((c) => c.kind === "setEpochStart");
+    expect(idxMove).toBeGreaterThan(-1);
+    // The attribute is DOM, not canvas: it moves immediately, with a null t0
+    // that tells the surface NOT to repaint colours yet…
+    const stamped = h.calls
+      .slice(0, idxMove)
+      .filter((c) => c.kind === "stampChannel" && c.channel === "tools");
+    expect(stamped).toHaveLength(1);
+    expect(stamped[0].t0).toBeNull();
+    // …and the colour repaint rides the commit, at the new committed origin.
+    const flushed = h.calls
+      .slice(idxMove)
+      .filter((c) => c.kind === "refreshColors");
+    expect(flushed).toHaveLength(1);
+    expect(flushed[0].t0).toBe(h.tape.committedT0());
+  });
+});
+
+describe("SparklineTape — a stopped scroll re-registers, never replays", () => {
+  test("a same-epoch wake is one start-time write at the committed origin", () => {
+    let level = 0;
+    const h = makeHarness({ getSeries: () => seriesOf(level) });
+    h.tape.start(h.clock.now());
+    expect(h.tape.debugState().state).toBe("flat-dormant");
+    const origin = h.tape.committedT0();
+
+    h.clock.advance(30_000); // well inside the first epoch
+    const mark = h.calls.length;
+    level = 0.8;
+    h.tape.onActivity();
+
+    // No boundary was crossed, so there is nothing to rebase and no ack to
+    // wait for — but the clock ran 30s while the scroll was paused, so a
+    // hold-relative resume would come back 30s of pixels out of register:
+    // the viewport on older ink, or past the ink entirely, until the
+    // self-check caught it a tick later and snapped. The restart must BE the
+    // registration write.
+    const emitted = h.calls.slice(mark);
+    expect(
+      emitted.filter((c) => c.kind === "paint" && c.ack !== null),
+    ).toHaveLength(0);
+    const writes = emitted.filter((c) => c.kind === "setEpochStart");
+    expect(writes).toHaveLength(1);
+    expect(writes[0].timelineMs).toBe(origin);
+    expect(h.tape.debugState().state).toBe("live");
+  });
+
+  test("a flat re-entry inside the same epoch repaints and re-parks", () => {
+    const h = makeHarness({ getSeries: () => seriesOf(0.5) });
+    h.tape.start(h.clock.now());
+    h.clock.advance(DORMANT_AFTER_MS + 500);
+    expect(h.tape.debugState().state).toBe("flat-dormant");
+    const origin = h.tape.committedT0();
+
+    hide(h);
+    h.clock.advance(30_000);
+    const mark = h.calls.length;
+    h.tape.setVisible(true);
+
+    // Nothing recent to show and no boundary crossed: the picture is
+    // re-derived and the PAUSED position is registered back onto the clock.
+    // Without the park the viewport stays where the pause held it — 30s
+    // behind a paint that assumes the clock — a truncated or vanished
+    // resting flatline.
+    const emitted = h.calls.slice(mark);
+    expect(emitted.map((c) => c.kind)).toEqual(["paint", "setEpochStart", "pause"]);
+    expect(emitted[1].timelineMs).toBe(origin);
+    expect(h.tape.debugState().state).toBe("flat-dormant");
   });
 });
 
@@ -1291,5 +1494,44 @@ describe("drawSparkline — the staircase, pinned", () => {
       "lineTo 100 0.5",
       "stroke",
     ]);
+  });
+
+  test("clear: false draws without wiping the surface", () => {
+    const ops: string[] = [];
+    const ctx = new Proxy(
+      {},
+      {
+        get(_target, prop) {
+          if (typeof prop !== "string") return undefined;
+          return (): void => {
+            ops.push(prop);
+          };
+        },
+        set: () => true,
+      },
+    ) as unknown as CanvasRenderingContext2D;
+
+    drawSparkline(
+      ctx,
+      {
+        width: 60,
+        svgWidth: 100,
+        height: 22,
+        dpr: 2,
+        baselineY: 20.5,
+        amplitude: 20,
+        pxPerSec: 4,
+        retainMs: 19_000,
+      },
+      { line: "#fff", area: "#fff", lineAlpha: 0.85, areaAlpha: 0.16, lineWidth: 1 },
+      [{ t: 0, v: 0.5 }],
+      0,
+      false,
+    );
+
+    // The whole point of the flag: the committed picture elsewhere on the
+    // canvas survives an origin-moving proposal's draw.
+    expect(ops).not.toContain("clearRect");
+    expect(ops).toContain("stroke");
   });
 });

@@ -151,16 +151,38 @@ export interface SparklineSurface {
    * Post the whole tape for `t0`. `ack` non-null ⇒ the surface must call
    * {@link SparklineTape.onPainted} once those pixels exist — and must do so
    * ASYNCHRONOUSLY, or the rebase would run re-entrantly inside this very
-   * call.
+   * call. `clear` false ⇒ draw WITHOUT wiping the canvas: an origin-moving
+   * rebase paints its proposal into the proposal's own (disjoint) region and
+   * leaves the committed picture — which the still-unmoved transform is
+   * showing — intact, so no viewport position ever looks at blank canvas
+   * while the acknowledgement is in flight.
    */
-  paint(points: readonly SparklinePoint[], t0: number, ack: number | null): void;
-  /** Move the scroll origin. Only ever called from the tape's epoch protocol. */
+  paint(
+    points: readonly SparklinePoint[],
+    t0: number,
+    ack: number | null,
+    clear: boolean,
+  ): void;
+  /**
+   * Register the scroll: write the animation's start time. Writing a resolved
+   * start time also clears any hold, so this is ALSO the resume verb — there
+   * is deliberately no `resume()` that replays from a held position, because
+   * the clock runs on while a tape is paused and a hold-relative resume would
+   * come back mis-registered by the whole dormant spell. Called with a NEW
+   * origin only from the epoch protocol's commit; called with the CURRENT
+   * committed origin wherever a stopped scroll re-registers.
+   */
   setEpochStart(timelineMs: number): void;
-  /** Stop / start the scroll. */
+  /** Stop the scroll. Restarting is a {@link setEpochStart} write. */
   pause(): void;
-  resume(): void;
-  /** The dominant-channel stamp + the colour repaint it forces. */
-  stampChannel(channel: string | null, t0: number): void;
+  /**
+   * The dominant-channel stamp. `t0` non-null ⇒ also repaint the colours for
+   * it; null ⇒ write the attribute only — the canvas refresh is deferred
+   * because a rebase is in flight, and the commit flushes it.
+   */
+  stampChannel(channel: string | null, t0: number | null): void;
+  /** Re-read the resolved colours and repaint the current tape for `t0`. */
+  refreshColors(t0: number): void;
 }
 
 /** The seams a test replaces: the clock, the timers, and the data reads. */
@@ -313,6 +335,13 @@ export class SparklineTape {
   private pauseTimer: number | null = null;
   /** True while a `surface.paint` call is on the stack — see `onPainted`. */
   private painting = false;
+  /**
+   * Whether the scroll is currently stopped. The component creates the
+   * animation running and registered, so a born-live tape has nothing to
+   * restart; every stop and every restart below goes through
+   * {@link stopScroll} / {@link registerScroll} so this cannot drift.
+   */
+  private scrollStopped = false;
 
   /**
    * The rebase in flight, if any. `pendingSeq` is the newest sequence issued;
@@ -324,8 +353,15 @@ export class SparklineTape {
   private pendingSeq = 0;
   private readonly pending = new Map<number, number>();
   private watchdog: number | null = null;
-  /** Set when the rebase in flight is a wake: resume once the origin moves. */
+  /** Set when the rebase in flight is a wake: stay running once the origin moves. */
   private resumeAfterRebase = false;
+  /**
+   * A colour change (channel stamp or theme swap) landed while a rebase was in
+   * flight. Repainting colours then would clear the canvas and redraw one
+   * origin, blanking the other's viewport — so the refresh waits for the
+   * commit, which flushes it against the newly committed origin.
+   */
+  private colorsStale = false;
 
   constructor(surface: SparklineSurface, options: SparklineTapeOptions) {
     this.surface = surface;
@@ -357,9 +393,12 @@ export class SparklineTape {
     if (this.flatPastWindow(originMs)) {
       // Born inert: paint the static picture once and wait for the clock — an
       // idle session costs nothing from the first frame. A steady gauge level
-      // is as inert as a zero rate: its line is flat at the level.
+      // is as inert as a zero rate: its line is flat at the level. The scroll
+      // the component just created is running — stop it, or a born-idle tape
+      // pays for a compositor animation until its first epoch end.
       this.transition("flat-dormant");
       this.paint();
+      this.stopScroll();
     } else {
       this.wakeLive(originMs);
     }
@@ -478,25 +517,43 @@ export class SparklineTape {
     // COMMIT AND MOVE ARE ONE OPERATION. The pixels for this origin exist;
     // the transform may now assume them. Do not separate these two lines.
     this.committed = proposed;
+    this.scrollStopped = false;
     this.surface.setEpochStart(this.committed);
+    // Flush. Ordinary paints held their fire while the rebase was in flight —
+    // a clear-paint at either origin would have blanked the other's viewport —
+    // so the canvas may be missing points appended since the proposal, and it
+    // still carries the retired origin's ink. One clear paint squares it.
+    this.paint();
+    if (this.colorsStale) {
+      this.colorsStale = false;
+      this.surface.refreshColors(this.committed);
+    }
     if (this.resumeAfterRebase) {
-      // A wake resumes only after the origin has moved: resuming first would
-      // run the scroll from a stale origin, which is this plan's own defect
-      // wearing a different hat.
+      // A wake stays running: the setEpochStart write above cleared the hold
+      // and registered the scroll in the same stroke — only AFTER the origin
+      // moved, because resuming first would run the scroll from a stale
+      // origin, which is this plan's own defect wearing a different hat.
       this.resumeAfterRebase = false;
-      this.surface.resume();
       return;
     }
     // Writing a resolved start time also clears the animation's hold, so a
     // dormant tape that rebased — because it woke after a long hidden spell
     // and its origin had gone stale — would quietly start scrolling. Put it
     // back where dormancy left it.
-    if (this.state !== "live") this.surface.pause();
+    if (this.state !== "live") this.stopScroll();
   }
 
-  /** Repaint the current tape unchanged — the canvas underneath was replaced. */
+  /**
+   * Repaint the current tape unchanged — the canvas underneath was replaced.
+   * A non-live tape re-parks afterwards: its scroll was paused at some older
+   * clock reading, and a fresh committed-origin paint under that stale hold
+   * can put the viewport onto empty canvas. Registering the paused position
+   * back onto the clock is what keeps a resting flatline visible across a
+   * resolution change.
+   */
   repaint(): void {
     this.paint();
+    this.parkScroll();
   }
 
   /**
@@ -509,14 +566,27 @@ export class SparklineTape {
     this.pendingSeq += 1;
     this.pending.clear();
     if (!this.resumeAfterRebase) return;
-    // The origin never moved, so the scroll is still registered where it was
-    // paused: resuming here is correct, and leaving it paused would strand the
-    // tape with no tick to re-propose from.
+    // The origin never moved, so restarting is a re-registration onto it —
+    // leaving the scroll paused would strand the tape with no tick to
+    // re-propose from.
     this.resumeAfterRebase = false;
-    this.surface.resume();
+    this.registerScroll();
   }
 
-  /** The `t0` every paint uses. Public: the theme repaint needs the same one. */
+  /**
+   * The colours under the canvas changed (theme swap). Deferred while a rebase
+   * is in flight — see {@link colorsStale} — and painted for the committed
+   * origin otherwise, which is the origin the pixels on screen were drawn for.
+   */
+  refreshColors(): void {
+    if (this.pending.size > 0) {
+      this.colorsStale = true;
+      return;
+    }
+    this.surface.refreshColors(this.committed);
+  }
+
+  /** The `t0` every paint uses. Public: the wake divergence log reads it. */
   committedT0(): number {
     return this.committed;
   }
@@ -615,20 +685,76 @@ export class SparklineTape {
   }
 
   /**
-   * `t0` defaults to the committed origin, which is what EVERY ordinary paint
-   * uses. The one caller that overrides it is {@link rebase}, whose paint
-   * proposes the next origin — and the transform does not follow until that
-   * paint is acknowledged.
+   * The ordinary paint: the committed origin, a full clear. HELD while a
+   * rebase is in flight — the canvas then carries the committed picture (which
+   * the still-unmoved transform is showing) AND the proposal's picture (which
+   * the acknowledgement is about to move onto), and a clear-paint at either
+   * origin would blank the other's viewport. The tape keeps appending
+   * meanwhile; the commit flushes one clear paint that squares everything.
    */
-  private paint(t0: number = this.committed, ack: number | null = null): void {
+  private paint(): void {
+    if (this.pending.size > 0) return;
     const now = this.opts.now();
     pruneSparklineTape(this.tape, now, DORMANT_AFTER_MS);
     this.painting = true;
     try {
-      this.surface.paint(this.tape, t0, ack);
+      this.surface.paint(this.tape, this.committed, null, true);
     } finally {
       this.painting = false;
     }
+  }
+
+  /**
+   * The rebase's own paint. When the origin actually moves, it draws WITHOUT
+   * clearing: the proposal's ink lands in its own region — origins differ by
+   * whole epochs, several viewport-widths apart — and the committed picture
+   * stays intact for the transform still in force, so the ack window shows a
+   * freeze, never a blank. A FORCED same-origin rebase (the registration
+   * self-check re-registering a drifted scroll) clears as usual: same origin,
+   * same region, and an overdraw would double the translucent area fill.
+   */
+  private paintProposal(t0: number, ack: number): void {
+    const now = this.opts.now();
+    pruneSparklineTape(this.tape, now, DORMANT_AFTER_MS);
+    this.painting = true;
+    try {
+      this.surface.paint(this.tape, t0, ack, t0 === this.committed);
+    } finally {
+      this.painting = false;
+    }
+  }
+
+  /** Stop the scroll, and remember that it is stopped. */
+  private stopScroll(): void {
+    if (!this.opts.motion) return;
+    this.scrollStopped = true;
+    this.surface.pause();
+  }
+
+  /**
+   * Restart a stopped scroll by REGISTERING it: write the committed origin
+   * back as the start time, which clears the hold and lands the scroll where
+   * the clock says — never where the pause left it, because the clock ran on
+   * through the whole stopped spell. A scroll that is already running is
+   * already registered (the self-check polices drift) and is left alone.
+   */
+  private registerScroll(): void {
+    if (!this.opts.motion || !this.scrollStopped) return;
+    this.scrollStopped = false;
+    this.surface.setEpochStart(this.committed);
+  }
+
+  /**
+   * Register a stopped scroll onto the committed origin and keep it stopped.
+   * The setEpochStart write moves the paused position onto the clock — over
+   * pixels just painted for that same origin, whose held tail covers the
+   * quiet stretch — and the pause puts the hold back. Live tapes and
+   * reduced-motion tapes have nothing to park.
+   */
+  private parkScroll(): void {
+    if (!this.opts.motion || this.state === "live") return;
+    this.registerScroll();
+    this.stopScroll();
   }
 
   /**
@@ -674,6 +800,13 @@ export class SparklineTape {
     // dormancy forever.
     this.lastChangeAt = now;
     this.stampedChannel = channel;
+    if (this.pending.size > 0) {
+      // Mid-rebase the attribute may move now — it is DOM, not canvas — but
+      // the colour repaint waits for the commit like every other paint.
+      this.colorsStale = true;
+      this.surface.stampChannel(channel, null);
+      return;
+    }
     this.surface.stampChannel(channel, this.committed);
   }
 
@@ -698,22 +831,20 @@ export class SparklineTape {
    * There is no fast path for a flat tape, and adding one would ship the exact
    * defect this exists to prevent. The tempting argument — "a flat tape is a
    * horizontal line, and translating a horizontal line changes nothing" — is
-   * false: `drawSparkline` clears the whole surface and begins its path at
-   * `xOf(tape[0].t)`, so everything left of the oldest retained point is
-   * EMPTY. At a rollover the stale pixels put the ink near the canvas's right
-   * end while the post-move viewport sits at its left — blank, for one
-   * round-trip, on every idle rollover. And the shortcut buys nothing anyway:
-   * the stall an ack costs is only perceptible while something is moving, and
-   * while something is moving the tape is not flat.
+   * false: `drawSparkline` begins its path at `xOf(tape[0].t)`, so everything
+   * left of the oldest retained point is EMPTY, and a translated flat line is
+   * only pixel-identical where there is actually ink. And the shortcut buys
+   * nothing anyway: the stall an ack costs is only perceptible while something
+   * is moving, and while something is moving the tape is not flat.
    *
    * The rollover therefore freezes for one round-trip, and that is the
-   * accepted trade. While the ack is outstanding the scroll sits at its
-   * `fill: forwards` end position — the CORRECT pixels, simply not moving —
-   * and ordinary paints keep drawing against the committed origin, over-running
-   * the epoch's end by at most that round-trip. `svgWidth = width + epochPx +
-   * 8` reserves the slack for precisely this. It cannot be pre-empted by
-   * painting ahead: the canvas holds one origin at a time, so a pre-painted
-   * next-epoch canvas would be wrong for the transform still in force.
+   * accepted trade. The freeze really is a freeze: the proposal is painted
+   * WITHOUT clearing (see {@link paintProposal}), so the committed picture the
+   * transform is still showing survives the whole ack window, and ordinary
+   * paints hold their fire until the commit flushes them ({@link paint}). At
+   * the epoch's end the scroll sits at its `fill: forwards` end position over
+   * those intact pixels; `svgWidth = width + epochPx + 8` reserves the slack
+   * past the boundary.
    */
   private rebase(newT0: number, force = false): boolean {
     // Nothing to do — unless the caller is the registration self-check, which
@@ -727,7 +858,7 @@ export class SparklineTape {
     const seq = ++this.pendingSeq;
     this.pending.clear();
     this.pending.set(seq, newT0);
-    this.paint(newT0, seq);
+    this.paintProposal(newT0, seq);
     this.clearWatchdog();
     // A lost ack must not freeze — or, on a wake, permanently pause — the tape.
     this.watchdog = this.opts.setTimeout(() => {
@@ -884,7 +1015,7 @@ export class SparklineTape {
     this.transition("flat-dormant");
     this.stopSettle();
     this.stopFlatOff();
-    if (this.opts.motion && wasLive) this.surface.pause();
+    if (wasLive) this.stopScroll();
   }
 
   /**
@@ -914,7 +1045,7 @@ export class SparklineTape {
     if (this.state !== "live") return;
     this.transition("hidden-paused");
     this.stopSettle();
-    if (this.opts.motion) this.surface.pause();
+    this.stopScroll();
   }
 
   /**
@@ -931,11 +1062,18 @@ export class SparklineTape {
     this.lastEventAt = now;
     this.rebuildTape(now);
     if (this.opts.motion) {
-      // Resume is ordered AFTER the origin moves, so it rides the rebase's
-      // acknowledgement when there is one. With no boundary to cross there is
-      // nothing to wait for and the scroll restarts immediately.
+      // The restart is ordered AFTER the origin moves, so it rides the
+      // rebase's acknowledgement when there is one. With no boundary to cross
+      // the scroll restarts immediately — as a REGISTRATION, not a replay:
+      // writing the committed origin back as the start time clears the hold
+      // and lands the scroll where the clock says, not where the pause left
+      // it. The clock ran on through dormancy, and a hold-relative resume
+      // would come back shifted by that whole quiet spell — the viewport on
+      // older ink, or past the ink entirely — until the self-check caught it
+      // a tick later and snapped. The jump forward is safe because the paint
+      // it lands on holds the pen's value flat to the canvas's edge.
       if (this.rollover(now)) this.resumeAfterRebase = true;
-      else this.surface.resume();
+      else this.registerScroll();
     }
     this.appendPoint(now);
     this.startSettle();
@@ -958,10 +1096,15 @@ export class SparklineTape {
       // The picture is now known to be flat, so the state settles to the more
       // specific of the two. The scroll stays stopped either way — `onPainted`
       // re-pauses after the origin moves, because writing a resolved start
-      // time clears the animation's hold.
+      // time clears the animation's hold; the no-rollover path parks
+      // explicitly, because the fresh paint assumes the clock and the paused
+      // scroll was held at some older reading.
       this.transition("flat-dormant");
       this.rebuildTape(now);
-      if (!this.rollover(now)) this.paint();
+      if (!this.rollover(now)) {
+        this.paint();
+        this.parkScroll();
+      }
       return;
     }
     this.wakeLive(now);

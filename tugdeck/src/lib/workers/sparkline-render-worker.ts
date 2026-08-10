@@ -83,6 +83,12 @@ export type SparklineWorkerRequest =
       now: number;
       /** Present only on a rebase paint; answered with `painted`. */
       ack?: number;
+      /**
+       * False on an origin-moving rebase paint: the proposal draws into its
+       * own (disjoint) region of the canvas and leaves the committed origin's
+       * pixels — which the still-unmoved transform is showing — untouched.
+       */
+      clear?: boolean;
     }
   | { kind: "colors"; id: number; colors: SparklineColors; t0: number }
   | { kind: "dispose"; id: number };
@@ -99,8 +105,8 @@ interface Entry {
 
 const entries = new Map<number, Entry>();
 
-function paint(entry: Entry, t0: number): void {
-  drawSparkline(entry.ctx, entry.geo, entry.colors, entry.tape, t0);
+function paint(entry: Entry, t0: number, clear = true): void {
+  drawSparkline(entry.ctx, entry.geo, entry.colors, entry.tape, t0, clear);
 }
 
 self.onmessage = (event: MessageEvent<SparklineWorkerRequest>): void => {
@@ -122,7 +128,7 @@ self.onmessage = (event: MessageEvent<SparklineWorkerRequest>): void => {
     case "tape": {
       entry.tape = msg.points;
       pruneSparklineTape(entry.tape, msg.now, entry.geo.retainMs);
-      paint(entry, msg.t0);
+      paint(entry, msg.t0, msg.clear ?? true);
       // After the draw, so the commit for this task is already queued.
       if (msg.ack !== undefined) {
         const painted: SparklineWorkerResponse = {

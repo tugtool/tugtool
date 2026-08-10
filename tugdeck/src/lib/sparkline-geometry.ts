@@ -83,6 +83,12 @@ export function pruneSparklineTape(
  * measured from, so x is the same function of time the WAAPI translate
  * assumes — the two must agree or the tape would slide against its own
  * motion.
+ *
+ * `clear: false` draws WITHOUT wiping the surface first. A rebase paint uses
+ * it to lay the proposed origin's picture into its own region of the canvas
+ * while the committed origin's picture — which the still-unmoved transform is
+ * showing — stays intact. The two regions cannot collide: origins differ by at
+ * least one epoch, which is several viewport-widths of separation.
  */
 export function drawSparkline(
   ctx: Ctx,
@@ -90,10 +96,11 @@ export function drawSparkline(
   colors: SparklineColors,
   tape: readonly SparklinePoint[],
   t0: number,
+  clear = true,
 ): void {
   const { dpr, svgWidth, height, baselineY, amplitude, width, pxPerSec } = geo;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, svgWidth, height);
+  if (clear) ctx.clearRect(0, 0, svgWidth, height);
   if (tape.length === 0) return;
 
   const xOf = (t: number): number => width + ((t - t0) / 1000) * pxPerSec;
