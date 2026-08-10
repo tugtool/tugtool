@@ -38,7 +38,10 @@
  *  3. **{@link SessionIdentityRowProps.tape}** — whether the activity
  *     sparkline draws. The picker's rows are a list to pick FROM rather than a
  *     monitor, so they carry none, and a row reserving width for a graph it does
- *     not draw is width taken from the text for nothing.
+ *     not draw is width taken from the text for nothing. Where it IS asked for
+ *     it draws unconditionally: a session with no work behind it gets a
+ *     flatline, because an instrument that disappears when it reads zero cannot
+ *     be told apart from one that is broken.
  *
  * Everything past those three is either the same on every surface (both
  * ladders, the beat grammar, the `pulse/enabled` gate) or is a piece of the
@@ -126,6 +129,13 @@ import type { SessionRow } from "@/protocol";
  * may hold no state at all.
  */
 export const MIN_DWELL_MS = 1_800;
+
+/**
+ * The handle on a row whose parts came from the stores, as distinct from a bare
+ * {@link TugSessionRow} handed its parts by a mount site. The gallery's specimen
+ * is the second kind and must stay findable as such.
+ */
+const IDENTITY_ROW_CLASS = "session-identity-row";
 
 /** What the activity line is showing: a live beat, or a composed sentence. */
 interface DisplayEntry {
@@ -291,14 +301,22 @@ function ActivityMarkdownText({
  * node, no animation, because two different strings cross-fading in one box
  * interleave their glyphs into a smash.
  *
- * `enabled: false` is a pass-through: the target is returned verbatim and
- * nothing is ever scheduled or written. A knob rather than a second component
- * for two reasons. Hooks cannot be called conditionally — and, the load-bearing
- * one, the swap has to re-render the ROW rather than a leaf inside it.
- * `TugPulse` measures its own middle truncation in an effect that runs when
- * `TugPulse` renders; a dwell living below it swaps the text where that effect
- * cannot see it, and the run silently stops truncating (at0375's tape-gap
- * assertion is what says so).
+ * `enabled: false` is a pass-through: the target is returned verbatim, the
+ * effect returns before it reads anything, and no timer is ever scheduled. A
+ * knob rather than a second component for two reasons. Hooks cannot be called
+ * conditionally — and, the load-bearing one, the swap has to re-render the ROW
+ * rather than a leaf inside it. `TugPulse` measures its own middle truncation in
+ * an effect that runs when `TugPulse` renders; a dwell living below it swaps the
+ * text where that effect cannot see it, and the run silently stops truncating
+ * (at0375's tape-gap assertion is what says so).
+ *
+ * **Disabled is inert, not absent.** The `useState` and the three refs are still
+ * declared when `enabled` is false — a `TugListView` cell bound by the
+ * pure-renderer rule ([D17]) mounts this and gets state it never uses. That
+ * holds only because the disabled return ignores `current` entirely; a future
+ * edit that read `current` outside the `enabled` guard would hand a recycled
+ * cell the previous row's line. Read the guard as the contract, not the
+ * ceremony.
  *
  * Local presentation data: refs and timers, changing WHAT text exists rather
  * than how it looks, so no appearance passes through React state ([L06]/[L22]).
@@ -410,9 +428,9 @@ export interface SessionIdentityRowProps
 
   // ── Knob 3: the tape (knob 2, `subAlign`, is TugSessionRow's) ──────────
   /**
-   * Whether the activity sparkline draws. Gated by `pulse/enabled` besides —
-   * the tape is the feed's instrument, and it goes when the feed is off even
-   * though the line beneath it stays and keeps reporting the session's facts.
+   * Whether the activity sparkline draws — and where it is asked for, it draws
+   * ALWAYS. A session with no work behind it shows a flatline; that is the
+   * instrument reading zero, not a reason to take the instrument away.
    * @default false
    */
   tape?: boolean;
@@ -498,6 +516,7 @@ export function SessionIdentityRow({
   markdown = false,
   activityClassName,
   nameProps,
+  className,
   ...rest
 }: SessionIdentityRowProps): React.ReactElement {
   // Identity, through the one resolver — so a `/rename` or a callsign reroll
@@ -518,16 +537,13 @@ export function SessionIdentityRow({
   const facts = rowOverride ?? ledgerRow;
 
   // When the session was made. Two sources, resolved once and shared, so a
-  // masthead and a Lens row cannot date the same session differently.
-  const cardCreatedAtMs = useSessionCreatedAtMs(cardId, sessionId, projectDir);
+  // masthead and a Lens row cannot date the same session differently. The row
+  // is handed over rather than read again — `facts` is already whichever row
+  // this mount trusts, and the resolver's own second read of the same row was
+  // a duplicate subscription on every session row in the app.
+  const cardCreatedAtMs = useSessionCreatedAtMs(cardId, facts);
   const createdAtMs =
-    rowOverride != null
-      ? rowOverride.created_at > 0
-        ? rowOverride.created_at
-        : null
-      : cardCreatedAtMs !== null && cardCreatedAtMs > 0
-        ? cardCreatedAtMs
-        : null;
+    cardCreatedAtMs !== null && cardCreatedAtMs > 0 ? cardCreatedAtMs : null;
 
   const pulse = usePulse();
   const compaction = useSyncExternalStore(
@@ -592,8 +608,16 @@ export function SessionIdentityRow({
   );
 
   // ── The tape ──────────────────────────────────────────────────────────
-  const drawTape = tape && pulse.enabled;
-  const tapeNode = drawTape ? (
+  // Unconditional wherever the mount asks for one — a session that has done no
+  // work yet shows a FLATLINE, which is the instrument reading zero rather than
+  // the instrument being absent. An accessory that comes and goes with the
+  // data it reports is one the reader cannot trust: nothing on screen
+  // distinguishes "this session is quiet" from "the tape is not here", and the
+  // line beneath it moves out to the row's edge and back every time the
+  // distinction flips. `pulse/enabled` does not gate it either, for the same
+  // reason the activity line survives that toggle: chrome that got shorter
+  // when a preference changed would move every card in the pane.
+  const tapeNode = tape ? (
     <SessionActivitySparkline sessionId={sessionId} />
   ) : undefined;
   const sparkline =
@@ -614,6 +638,17 @@ export function SessionIdentityRow({
 
   return (
     <TugSessionRow
+      // The row's own class, always, ahead of whatever the mount adds. A bare
+      // `TugSessionRow` and one of these are the same element otherwise — same
+      // `data-slot`, same classes — and `data-slot` cannot carry the difference
+      // because the shape owns that name and this composes it rather than
+      // replacing it. So: the one mark that says a row's parts came from the
+      // stores rather than from a mount site's own hand.
+      className={
+        className !== undefined
+          ? `${IDENTITY_ROW_CLASS} ${className}`
+          : IDENTITY_ROW_CLASS
+      }
       indicator={
         <SessionPhaseDot sessionId={sessionId} size={dotSize} drift={drift} />
       }

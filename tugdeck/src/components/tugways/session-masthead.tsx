@@ -30,11 +30,13 @@
  * card mounting `TugPaneBanner`: pane-class furniture, session-class content
  * inside it.
  *
- * The width control does not render on a masthead-bearing pane ([D132]): the
- * title row is identity plus its own telemetry wave, and width is reachable by
- * its command and by the Lens's width presets. Everything else in the pane's
- * controls cluster stays — the slot-stack badge, the `…` section menu, and the
- * close X.
+ * The pane's whole controls cluster renders over this tier — the slot-stack
+ * badge, the `…` section menu, the width control, and the close X — and the
+ * summary widget below stands on that same row rather than replacing any of
+ * them. The width control was suppressed here for a while on the argument that
+ * the title row was already identity plus a widget; the Session card is the
+ * pane whose width is retuned most often, so that left the control missing from
+ * the one surface that most wanted it.
  *
  * Keyed by `sessionId`, which is all the pane knows and all it should: the
  * chrome names a session and this component resolves what to say about it.
@@ -63,7 +65,7 @@
 import "./session-masthead.css";
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
-import { Waves } from "lucide-react";
+import { Summary } from "lucide-react";
 
 import {
   TugPopover,
@@ -471,18 +473,26 @@ export function SessionMasthead({
   // and the listing deliberately omits it. The row's own three lines read the
   // same facts through the same hook inside `SessionIdentityRow`.
   const row = useSessionLedgerRow(sessionId, projectDir);
-  // Not `row.created_at`: the shared resolver also reads the card's own
-  // replay anchor, which is the only source for a freshly-bound card in a
-  // project nothing has listed yet.
-  const createdAtMs = useSessionCreatedAtMs(cardId, sessionId, projectDir);
+  // Not `row.created_at` alone: the shared resolver falls through to the card's
+  // own replay anchor, which is the only source for a freshly-bound card in a
+  // project nothing has listed yet. The row above is what it reads — handed
+  // over rather than looked up a second time.
+  const createdAtMs = useSessionCreatedAtMs(cardId, row);
   // The last few pulses for this session — shown in the activity line's popover.
   const history = linesForScope(pulse.lines, sessionId, PULSE_HISTORY_COUNT);
   // Right-click → Copy the beat's raw text. A read for the CLIPBOARD, not for
   // the line: what the line shows is the row's ladder, paced by its dwell, and
   // this is the newest beat the feed holds. Within a dwell window the two can
   // differ by one line, and the newest is the honest thing to hand a paste.
-  // A composed rest sentence is not a beat and copies nothing; the atom copy on
-  // the title is what that row offers instead.
+  //
+  // Only a BEAT copies. A rest sentence, a caller's override, and the
+  // compaction pin are all text the row composed rather than news the session
+  // sent, and none of them is something a paste wants — the atom copy on the
+  // title is what those states offer instead. The pin used to copy, on the
+  // strength of being marked `placeholder: false` so it could reach the
+  // markdown pipeline; that flag was about rendering and never about the
+  // clipboard, and reading it as both is what let one composed line copy while
+  // the others did not.
   const newestBeat = sessionActivityBeat(
     latestLineForScope(pulse.lines, sessionId, pulse.cleared.get(sessionId)),
   );
@@ -630,7 +640,7 @@ export function SessionMasthead({
             aria-label="Session telemetry"
             title="Session telemetry"
           >
-            <Waves size={14} aria-hidden />
+            <Summary size={14} aria-hidden />
           </button>
         </TugPopoverTrigger>
         <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>

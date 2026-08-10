@@ -377,6 +377,14 @@ function Band({
  * `lens-cards-list` declares — the reading inset, the zeroed indicator
  * gutter, and the rail's trailing edge — so widths read here are widths the
  * Lens has.
+ *
+ * The row's own knobs are set to the Lens's answers for the same reason, and
+ * they have to be set EXPLICITLY: the row defaults to the dense stack's
+ * settings, which is right for the two surfaces that mount it through
+ * `SessionIdentityRow` and wrong for the rail this frame is drawing. A gallery
+ * specimen that took the defaults would be indented 28px where the Lens indents
+ * 10, and the one surface that exists to keep the row from drifting would be
+ * the drifted one.
  */
 function SessionFrame({
   fixture,
@@ -397,6 +405,16 @@ function SessionFrame({
             aria-hidden
           />
         }
+        // The size the indicator above was BUILT at, which is what the row
+        // measures the title's leading by. Two numbers that have to agree —
+        // the mount that ships states it once through `SessionIdentityRow`'s
+        // `dotSize`; a direct mount states it twice or reads a title inset
+        // corrected for a dot it isn't drawing.
+        indicatorSize={ROW_PHASE_DOT_SIZE}
+        // The rail's answer: outdented from the title, not flush with it. A
+        // title inset measured off this 28px glyph is a wide indent to spend on
+        // a column this narrow — which is the whole reason the knob exists.
+        subAlign="edge"
         name={fixture.name}
         slots={<TugSlotLayout count={3} states={SLOT_STATES} size="sm" />}
         activity={fixture.activity}

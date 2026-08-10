@@ -49,6 +49,14 @@ import {
 /** What the tape says it is, on every surface that draws one. */
 const SPARK_TITLE = "Session activity — text, tokens, tools, and subagents";
 
+/**
+ * The handle on this instrument, as distinct from any other tape the app draws.
+ * `TugSparkline` owns `data-slot="tug-sparkline"` and takes a closed prop list,
+ * so a class is the mechanism available — and it is the one the Lens's copy
+ * already used.
+ */
+const SPARK_CLASS = "session-activity-spark";
+
 export interface SessionActivitySparklineProps {
   /** Whose activity. An empty id draws an empty tape rather than throwing. */
   sessionId: string;
@@ -92,7 +100,18 @@ export function SessionActivitySparkline({
       curve={TUG_SESSION_SPARK_CURVE}
       width={width}
       height={height}
-      className={className}
+      // Its own class, always, on top of whatever the mount adds. A session's
+      // tape is a findable thing and a generic sparkline is not, so this is what
+      // a test or a stylesheet names to reach THIS instrument rather than
+      // walking the structure around it. The Lens's `.sessions-monitor-spark`
+      // used to be that handle and went with the Lens-only copy of the tape; a
+      // selector that has to spell out `.tug-pulse-trailing .tug-sparkline`
+      // instead is naming three components to find one.
+      className={
+        className !== undefined
+          ? `${SPARK_CLASS} ${className}`
+          : SPARK_CLASS
+      }
       title={SPARK_TITLE}
     />
   );

@@ -6,11 +6,14 @@
  * reports. Two sources, in this order:
  *
  *  1. **The session ledger's `created_at`** — the authority. It is present at
- *     zero turns, which is exactly the state a fallback is reporting on. Read
- *     through `useSessionLedgerRow` rather than off the workspace listing: a
- *     just-spawned session is content-empty, the listing deliberately omits it
- *     so nobody is offered an abandoned session to resume into, and the by-id
- *     lookup is what still answers for the card that holds it.
+ *     zero turns, which is exactly the state a fallback is reporting on. The
+ *     row is the CALLER's, not a read of this hook's own: every surface that
+ *     wants the date is already holding the row for the facts beside it, and a
+ *     second `useSessionLedgerRow` here was a duplicate subscription and a
+ *     duplicate `findRow` scan on every session row in the app. The caller
+ *     supplies whichever row it trusts — a picker's payload in hand, or the
+ *     by-id lookup for the card that holds a just-spawned session the workspace
+ *     listing deliberately omits.
  *  2. **The card's replay-derived anchor** — `sessionCreatedAtMs` on the card's
  *     own session store, which covers the window before the ledger answers. It
  *     is derived from the first turn entry in the JSONL, so it says nothing
@@ -21,7 +24,8 @@
  * because a masthead and a Lens row dating the same session differently is the
  * failure one resolver exists to prevent ([D123]).
  *
- * Laws: [L02] both reads enter through `useSyncExternalStore`.
+ * Laws: [L02] the replay read enters through `useSyncExternalStore`; the
+ *       ledger row arrives as a prop from the caller's own subscription.
  *
  * @module lib/session-created-at
  */
@@ -29,16 +33,21 @@
 import { useSyncExternalStore } from "react";
 
 import { cardServicesStore } from "@/lib/card-services-store";
-import { useSessionLedgerRow } from "@/lib/session-ledger-store";
+import type { SessionRow } from "@/protocol";
 
 /** Stable no-op subscribe for a card whose services aren't constructed yet. */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 
-/** When the session bound to `cardId` was made, in ms, or null. */
+/**
+ * When the session was made, in ms, or null.
+ *
+ * @param cardId The card holding the session, when one does — the replay
+ *   anchor's scope. A row for a session no card holds passes none.
+ * @param row The session's ledger row, as the caller already read it.
+ */
 export function useSessionCreatedAtMs(
   cardId: string | undefined,
-  tugSessionId: string,
-  projectDir: string,
+  row: SessionRow | null,
 ): number | null {
   const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
     cardId === undefined ? null : cardServicesStore.getServices(cardId),
@@ -49,6 +58,5 @@ export function useSessionCreatedAtMs(
     store !== null ? () => store.getSnapshot().sessionCreatedAtMs : () => null,
     () => null,
   );
-  const row = useSessionLedgerRow(tugSessionId, projectDir);
   return row?.created_at ?? replayCreatedAtMs;
 }

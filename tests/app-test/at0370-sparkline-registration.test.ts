@@ -76,7 +76,7 @@ const sid = (n: number): string =>
 const lensRow = (session: string): string =>
   `.lens-cards-list .session-row-content[data-session-id="${session}"]`;
 const lensSpark = (session: string): string =>
-  `${lensRow(session)} .tug-pulse-trailing .tug-sparkline`;
+  `${lensRow(session)} .session-activity-spark`;
 
 /**
  * The tape's own scroll container, found the way the component finds it —
@@ -243,7 +243,7 @@ describe.skipIf(!SHOULD_RUN)("AT0370: the sparkline stays registered", () => {
           "monitor rows / tapes mounted",
           await app.evalJS<string>(
             `document.querySelectorAll(".lens-cards-list .session-row-content").length
-               + " / " + document.querySelectorAll(".lens-cards-list .tug-pulse-trailing .tug-sparkline").length`,
+               + " / " + document.querySelectorAll(".lens-cards-list .session-activity-spark").length`,
           ),
         );
 

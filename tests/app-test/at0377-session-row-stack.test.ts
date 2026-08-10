@@ -45,6 +45,7 @@
  * dependence on whatever sessions the host happens to have.
  *
  * @covers tugdeck/src/components/tugways/session-identity-row.tsx
+ * @covers tugdeck/src/lib/session-created-at.ts
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/tugways/session-phase-dot.tsx
