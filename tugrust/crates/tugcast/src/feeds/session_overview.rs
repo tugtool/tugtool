@@ -167,7 +167,13 @@ const MAX_HEADLINE_CHARS: usize = 56;
 /// register, one line above the first, which is what it was doing. Room for a
 /// clause and its qualifier is what makes the two lines read as two levels
 /// rather than as one sentence printed twice.
-const MAX_SYNOPSIS_CHARS: usize = 110;
+///
+/// 72, not more: the line's real display room is the Lens row and the picker
+/// row, both of which cut around 96 characters mid-word — and a description
+/// that routinely arrives clipped, by this budget's `…` or the row's, reads as
+/// a broken line rather than a standing one. The budget is the display's, and
+/// the wording asks the model for less than it so the clip is the exception.
+const MAX_SYNOPSIS_CHARS: usize = 72;
 
 /// Joiners a headline's dispensable tail hangs from.
 ///
@@ -4593,7 +4599,7 @@ mod tests {
     /// which is how it ended up printing one.
     #[test]
     fn the_description_register_keeps_what_a_headline_would_lose() {
-        let long = "Rework how a session names itself and adopt the new identity at every surface that cites one";
+        let long = "Rework how a session names itself and adopt it at every surface";
         let as_headline = headline_register_report(long);
         let as_description = synopsis_register_report(long);
 

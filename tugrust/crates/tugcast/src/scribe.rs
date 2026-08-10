@@ -607,6 +607,12 @@ pub fn prompt_from_jsonl_line(line: &str, since_ms: i64, max_chars: usize) -> Op
     if text.is_empty() {
         return None;
     }
+    // A slash-command envelope opens a turn but is a command, not an ask: its
+    // raw `<command-name>` markup must never ride a digest into a headline or
+    // a standing description.
+    if crate::external_sessions::is_command_envelope(text) {
+        return None;
+    }
     Some(text.chars().take(max_chars).collect())
 }
 
@@ -790,6 +796,27 @@ mod tests {
         // An add/add conflict (no ancestor) still composes.
         let no_base = compose_file_merge_prompt("f", None, b"O", b"T", "");
         assert!(no_base.contains("did not exist"));
+    }
+
+    /// A slash command persists as a `<command-name>` envelope. It opens a
+    /// turn, but it is not an ask: its raw markup must never ride a digest
+    /// into a headline or a standing description.
+    #[test]
+    fn a_command_envelope_is_not_a_prompt() {
+        let envelope = "<command-name>/compact</command-name> \
+                        <command-message>compact</command-message> \
+                        <command-args></command-args>";
+        let line = format!(
+            r#"{{"type":"user","message":{{"role":"user","content":"{envelope}"}}}}"#
+        );
+        assert_eq!(prompt_from_jsonl_line(&line, 0, 500), None);
+
+        let prose = r#"{"type":"user","message":{"role":"user","content":"fix the flaky test"}}"#;
+        assert_eq!(
+            prompt_from_jsonl_line(prose, 0, 500).as_deref(),
+            Some("fix the flaky test"),
+            "a genuine ask still extracts"
+        );
     }
 
     #[test]

@@ -76,6 +76,8 @@
  * @covers tugdeck/src/components/tugways/tug-session-row.tsx
  * @covers tugdeck/src/components/tugways/tug-session-row.css
  * @covers tugdeck/src/components/tugways/tug-pulse.css
+ * @covers tugdeck/src/components/tugways/pulse-beat-text.tsx
+ * @covers tugdeck/src/components/tugways/pulse-beat-text.css
  */
 
 import { describe, expect, test } from "bun:test";

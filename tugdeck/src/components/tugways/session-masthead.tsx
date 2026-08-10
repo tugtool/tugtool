@@ -85,6 +85,8 @@ import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
 import { useCopyableButton } from "@/components/tugways/use-copyable-text";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances";
 import { formatByteSize } from "@/components/tugways/cards/session-picker-format";
+import { PulseBeatText } from "@/components/tugways/pulse-beat-text";
+import { parseBeatFileTarget } from "@/lib/pulse-line/beat-file-target";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
 import { useSessionPhase } from "@/lib/code-session-store/use-session-phase";
@@ -415,10 +417,18 @@ function SessionPulseHistoryBeat({
   text: string;
   intent?: string;
 }): React.ReactElement {
-  const render = React.useMemo(() => renderPulseLine(text), [text]);
+  // The same split every beat surface makes: a file-tool beat wears its
+  // target as a file reference; anything else takes the markdown pipeline.
+  const fileBeat = React.useMemo(() => parseBeatFileTarget(text), [text]);
+  const render = React.useMemo(
+    () => (fileBeat !== null ? null : renderPulseLine(text)),
+    [fileBeat, text],
+  );
   const copy = useCopyableButton(composeLineCopy(intent, text));
   const primary =
-    render.html.length === 0 ? (
+    fileBeat !== null ? (
+      <PulseBeatText text={text} />
+    ) : render === null || render.html.length === 0 ? (
       <>{text}</>
     ) : (
       <span dangerouslySetInnerHTML={{ __html: render.html }} />
@@ -458,12 +468,22 @@ function PulseLineText({
     (n: number) => n + 1,
     0,
   );
+  // A file-tool beat wears its target as a file reference, not a spelled-out
+  // path — the beat grammar is tried first, and only a miss pays for the
+  // markdown pipeline below.
+  const fileBeat = React.useMemo(
+    () => (entry.placeholder ? null : parseBeatFileTarget(entry.text)),
+    [entry],
+  );
   // engineEpoch keys the memo so the resolved KaTeX engine re-renders the SAME
   // entry with real typesetting (the first pass showed the escaped source
   // while the engine loaded).
   const render = React.useMemo(
-    () => (entry.placeholder ? null : renderPulseLine(entry.text)),
-    [entry, engineEpoch],
+    () =>
+      entry.placeholder || fileBeat !== null
+        ? null
+        : renderPulseLine(entry.text),
+    [entry, fileBeat, engineEpoch],
   );
   React.useEffect(() => {
     const pending = render?.pending;
@@ -476,6 +496,9 @@ function PulseLineText({
       live = false;
     };
   }, [render]);
+  if (fileBeat !== null) {
+    return <PulseBeatText text={entry.text} className={className} />;
+  }
   if (render === null || render.html.length === 0) {
     return <span className={className}>{entry.text}</span>;
   }

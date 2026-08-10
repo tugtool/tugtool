@@ -1362,9 +1362,12 @@ DIGEST:"
 ///  - **The register.** `headline_rules!` is dropped for a summary's rules:
 ///    articles and conjunctions are allowed, the budget is
 ///    `MAX_SYNOPSIS_CHARS` rather than 56, and the line is asked to name the
-///    undertaking *and* its reach. A line held to headline register beside a
+///    undertaking and its object. A line held to headline register beside a
 ///    headline reads as a headline however carefully its subject was chosen —
-///    the two levels have to differ in voice, not only in scope.
+///    the two levels have to differ in voice, not only in scope. The wording
+///    asks for less than the budget on purpose: the first cut at this line
+///    said "about 110 characters" and the model filled every one of them,
+///    which overran the Lens and picker rows and shipped clipped mid-word.
 ///
 /// What is kept from the headline wording is the extractive instruction, for
 /// the same reason it is there: `ground_headline` refuses a description whose
@@ -1386,8 +1389,8 @@ Write it as a sentence, not as a headline:
 
 START WITH A VERB, in the plain command form: Rework, Repair, Trace, Port, Audit, Bundle, Investigate, Extend. Not \"Fixing\", not \"Working on\" — Rework, Repair.
 ARTICLES AND CONJUNCTIONS ARE ALLOWED. \"the\", \"a\", \"and\" — use them where the sentence wants them. This is the one line that gets to read as English.
-NAME THE WORK AND ITS REACH: what is being done, and to what — the subsystem, the surfaces, the span. That second half is what makes it a description rather than a title.
-ROOM FOR ABOUT 110 CHARACTERS — one sentence, no second sentence.
+NAME THE WORK AND ITS OBJECT: what is being done, and to what. One subject and one object — never a list of surfaces, parts, or steps.
+BE BRIEF. ROOM FOR ABOUT 65 CHARACTERS, and shorter is better — a line that runs long is cut off mid-word on every surface that shows it.
 SENTENCE CASE. Proper names keep their capitals — Lens, Finder, Keychain, CodeMirror.
 No period at the end. No quotes.
 

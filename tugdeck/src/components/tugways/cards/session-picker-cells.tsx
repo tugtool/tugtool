@@ -70,6 +70,7 @@ import type {
 } from "@/components/tugways/tug-list-view";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
+import { PulseBeatText } from "@/components/tugways/pulse-beat-text";
 import {
   TugSessionRow,
   TUG_SESSION_ROW_STACK_DOT_SIZE,
@@ -341,9 +342,15 @@ export const SessionResumeCell: TugListViewCellRenderer<SessionsDataSource> = ({
       description={renderFilterHighlight(description, filterQuery)}
       descriptionStandIn={descriptionStandIn}
       // The live beat takes no highlight — it is not a searchable fact; the
-      // composed rest sentence and the state lines do.
+      // composed rest sentence and the state lines do. A file-tool beat wears
+      // its target as a file reference — glyph + basename, full path on hover
+      // — never a spelled-out path.
       activity={
-        beat !== null ? activity : renderFilterHighlight(activity, filterQuery)
+        beat !== null ? (
+          <PulseBeatText text={activity} />
+        ) : (
+          renderFilterHighlight(activity, filterQuery)
+        )
       }
       // Every row gets a dot, including the closed ones — which is most of
       // them. A session whose live state cannot be reached reads idle, so the

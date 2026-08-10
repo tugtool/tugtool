@@ -45,6 +45,7 @@ import {
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { TugSparkline } from "@/components/tugways/tug-sparkline";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
+import { PulseBeatText } from "@/components/tugways/pulse-beat-text";
 import {
   COMPACTING_PULSE_TEXT,
   compactionProgressStore,
@@ -215,11 +216,13 @@ export function CardsSessionRow({
       description={renderFilterHighlight(description, filterQuery)}
       descriptionStandIn={descriptionStandIn}
       // Highlighted over what the line actually shows: the composed rest
-      // sentence takes the mark; a live beat is not a searchable fact.
+      // sentence takes the mark; a live beat is not a searchable fact. A
+      // file-tool beat wears its target as a file reference, never a
+      // spelled-out path.
       activity={
         pulseText === restLine
           ? renderFilterHighlight(pulseText, filterQuery)
-          : pulseText
+          : <PulseBeatText text={pulseText} />
       }
       sparkline={<RowSparkline tugSessionId={tugSessionId} />}
     />

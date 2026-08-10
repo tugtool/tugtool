@@ -337,7 +337,7 @@ const COMMAND_ENVELOPE_OPEN_TAGS: [&str; 3] =
 ///
 /// Requires `<command-name>` and requires the whole string to be envelope
 /// tags plus whitespace, so prose quoting the tags is not mistaken for one.
-fn is_command_envelope(text: &str) -> bool {
+pub(crate) fn is_command_envelope(text: &str) -> bool {
     if !text.contains("<command-name>") {
         return false;
     }
@@ -920,10 +920,14 @@ fn parse_session_file_inner(
                         &content,
                     );
                     // `last_user_prompt` tracks the last genuine prompt — a
-                    // wake envelope opens a turn but is not a prompt.
+                    // wake envelope opens a turn but is not a prompt, and a
+                    // slash-command envelope opens a turn but is a command:
+                    // its raw `<command-name>` markup is not description
+                    // text, and the previous prose prompt stays the row's
+                    // human-meaningful line.
                     if counts && !is_wake {
                         let text = submission_text(&content);
-                        if !text.is_empty() {
+                        if !text.is_empty() && !is_command_envelope(text.trim_start()) {
                             last_prompt = Some(truncate_prompt(&text));
                         }
                     }
@@ -1725,6 +1729,33 @@ mod tests {
         assert_eq!(m.name.as_deref(), Some("Scan fixture session"));
         assert_eq!(m.created_at, 1780308000000, "first record timestamp");
         assert!(m.last_used_at > 0);
+    }
+
+    /// A slash command persists as a `<command-name>` envelope and opens a
+    /// turn, but it is a command, not a prompt: the row's human-meaningful
+    /// line stays the last PROSE prompt, and raw envelope markup never
+    /// becomes `last_user_prompt`.
+    #[test]
+    fn a_command_envelope_does_not_replace_the_last_prompt() {
+        let root = tempfile::tempdir().unwrap();
+        let envelope = "<command-name>/compact</command-name> \
+                        <command-message>compact</command-message> \
+                        <command-args></command-args>";
+        let content = format!(
+            r#"{{"type":"user","uuid":"u1","parentUuid":null,"sessionId":"{SESSION_A}","cwd":"{PROJECT}","message":{{"role":"user","content":"real ask"}}}}
+{{"type":"assistant","uuid":"a1","parentUuid":"u1","sessionId":"{SESSION_A}","message":{{"role":"assistant","content":[{{"type":"text","text":"done"}}]}}}}
+{{"type":"user","uuid":"u2","parentUuid":"a1","sessionId":"{SESSION_A}","message":{{"role":"user","content":"{envelope}"}}}}
+"#
+        );
+        seed(root.path(), PROJECT, SESSION_A, &content);
+        let metas = scan_external_sessions(root.path(), PROJECT);
+        assert_eq!(metas.len(), 1);
+        assert_eq!(
+            metas[0].last_user_prompt.as_deref(),
+            Some("real ask"),
+            "the envelope opened a turn but must not become the prompt"
+        );
+        assert_eq!(metas[0].turn_count, 2, "the command still counts as a turn");
     }
 
     #[test]
