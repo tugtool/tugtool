@@ -101,6 +101,9 @@ const IDLE_SNAPSHOT: WorkspaceSnapshot = Object.freeze({
   status: "idle",
   rows: EMPTY_ROWS,
 });
+
+/** Stable no-op subscribe for a ledger read whose answer cannot change. */
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 const PENDING_SNAPSHOT: WorkspaceSnapshot = Object.freeze({
   status: "pending",
   rows: EMPTY_ROWS,
@@ -572,15 +575,26 @@ export function _resetSessionLedgerStoreForTest(): void {
  * workspace listing is still kicked and subscribed exactly as before; what it
  * adds is the fallback to {@link SessionLedgerStore.findRow}, which also sees
  * the spawn-time row a fresh session's listing deliberately leaves out.
+ *
+ * @param held A row the CALLER already holds, when it does — the picker browses
+ *   a whole workspace and has every row in hand before it mounts a single one.
+ *   Given, it is the answer, and this hook registers no listener and issues no
+ *   lookup: a surface that is already holding the row does not need to be woken
+ *   to be told about it. That is the difference between a picker row costing two
+ *   ledger subscriptions and costing none, times however many sessions the
+ *   workspace has.
  */
 export function useSessionLedgerRow(
   sessionId: string,
   projectDir: string,
+  held?: SessionRow | null,
 ): SessionRow | null {
+  const haveHeld = held !== undefined && held !== null;
   // The workspace listing: read for the rows it holds, and — the reason it is
   // read even when the answer comes from elsewhere — to kick and subscribe the
-  // listing for `projectDir` exactly as before.
-  const snapshot = useSessionLedger(projectDir);
+  // listing for `projectDir` exactly as before. A caller holding its own row
+  // wants neither, and the empty path is how this hook says so.
+  const snapshot = useSessionLedger(haveHeld ? "" : projectDir);
   // The row as its OWN subscription, not a read taken beside the one above.
   // `useSyncExternalStore` re-renders on a changed SNAPSHOT, and a row held
   // detached ({@link SessionLedgerStore.detachedRows}) never enters the
@@ -590,11 +604,14 @@ export function useSessionLedgerRow(
   // referentially stable while the row is unchanged, which is the contract this
   // needs.
   const found = useSyncExternalStore(
-    subscribeToLedger,
+    haveHeld ? NOOP_SUBSCRIBE : subscribeToLedger,
     () =>
-      sessionId.length === 0 ? null : (_activeStore?.findRow(sessionId) ?? null),
+      haveHeld || sessionId.length === 0
+        ? null
+        : (_activeStore?.findRow(sessionId) ?? null),
     () => null,
   );
+  if (haveHeld) return held;
   const listed =
     sessionId.length === 0
       ? null
@@ -606,7 +623,13 @@ export function useSessionLedger(projectDir: string): WorkspaceSnapshot {
   return useSyncExternalStore(
     // The module bus, not `_activeStore.subscribe` — see {@link hookListeners}
     // for why resolving the store at subscribe time left early readers deaf.
-    subscribeToLedger,
+    //
+    // The empty path registers nothing. Its snapshot is the idle constant
+    // whatever the store holds, so a listener on it could only ever wake a
+    // reader to hand it the same object back — and the empty path is what every
+    // caller with no workspace to ask about passes, which on a picker row is
+    // one dead listener per session in the list.
+    projectDir.length === 0 ? NOOP_SUBSCRIBE : subscribeToLedger,
     () => {
       if (projectDir.length === 0) return IDLE_SNAPSHOT;
       const store = _activeStore;

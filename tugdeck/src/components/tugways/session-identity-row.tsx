@@ -99,8 +99,7 @@ import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { truncateForDisplay } from "@/components/tugways/cards/session-picker-format";
 import {
   COMPACTING_PULSE_TEXT,
-  compactionProgressStore,
-  isCompactingCard,
+  useIsCompactingCard,
 } from "@/lib/compaction-progress-store";
 import { parseBeatFileTarget } from "@/lib/pulse-line/beat-file-target";
 import { formatRestingStamp } from "@/lib/pulse-line/resting-line";
@@ -532,9 +531,11 @@ export function SessionIdentityRow({
 
   // The session's own ledger row: the turn count, the on-disk size, when it
   // last moved, and the first prompt — the description's middle rung and the
-  // activity's rest form. The caller's row wins when it has one.
-  const ledgerRow = useSessionLedgerRow(sessionId, projectDir);
-  const facts = rowOverride ?? ledgerRow;
+  // activity's rest form. The caller's row wins when it has one, and it wins
+  // INSIDE the hook rather than after it: a picker that already holds every row
+  // in the workspace should not also be listening to the ledger for each of
+  // them, and `??` on the way out would have left it doing exactly that.
+  const facts = useSessionLedgerRow(sessionId, projectDir, rowOverride);
 
   // When the session was made. Two sources, resolved once and shared, so a
   // masthead and a Lens row cannot date the same session differently. The row
@@ -546,10 +547,10 @@ export function SessionIdentityRow({
     cardCreatedAtMs !== null && cardCreatedAtMs > 0 ? cardCreatedAtMs : null;
 
   const pulse = usePulse();
-  const compaction = useSyncExternalStore(
-    compactionProgressStore.subscribe,
-    compactionProgressStore.getSnapshot,
-  );
+  // Scoped to THIS card, not the whole runs map: a map snapshot changes
+  // identity on every write to any card, so one `/compact` re-rendered every
+  // session row in the app. A row with no card subscribes to nothing at all.
+  const compacting = useIsCompactingCard(cardId);
 
   // ── The description ladder ([D132]) ───────────────────────────────────
   const prompt = facts?.last_user_prompt?.trim() ?? "";
@@ -590,7 +591,7 @@ export function SessionIdentityRow({
   const target: DisplayEntry =
     activityOverride !== null && activityOverride.length > 0
       ? composedEntry(activityOverride)
-      : isCompactingCard(compaction, cardId)
+      : compacting
         ? COMPACTING_ENTRY
         : beat !== null
           ? { key: beat.key, text: beat.text, placeholder: false }

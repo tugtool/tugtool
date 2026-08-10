@@ -49,8 +49,13 @@ export function useSessionCreatedAtMs(
   cardId: string | undefined,
   row: SessionRow | null,
 ): number | null {
-  const services = useSyncExternalStore(cardServicesStore.subscribe, () =>
-    cardId === undefined ? null : cardServicesStore.getServices(cardId),
+  // No card, no listener. The services lookup already answered `null` for an
+  // absent `cardId`, but it answered it from inside a live subscription — so a
+  // picker listing a workspace of closed sessions woke every one of its rows on
+  // every card construction in the app to recompute the same `null`.
+  const services = useSyncExternalStore(
+    cardId === undefined ? NOOP_SUBSCRIBE : cardServicesStore.subscribe,
+    () => (cardId === undefined ? null : cardServicesStore.getServices(cardId)),
   );
   const store = services?.codeSessionStore ?? null;
   const replayCreatedAtMs = useSyncExternalStore(

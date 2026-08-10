@@ -32,6 +32,8 @@
  * ([L02] external state reaches React through `useSyncExternalStore`).
  */
 
+import { useCallback, useSyncExternalStore } from "react";
+
 /** How a compaction run settled. */
 export type CompactionOutcome = "succeeded" | "canceled" | "failed";
 
@@ -140,3 +142,41 @@ class CompactionProgressStore {
 }
 
 export const compactionProgressStore = new CompactionProgressStore();
+
+/** Stable no-op subscribe for a row that has no card to be compacting. */
+const NOOP_SUBSCRIBE = (): (() => void) => () => {};
+
+/** Stable `false` for the same. */
+const NEVER_COMPACTING = (): boolean => false;
+
+/**
+ * Whether THIS card has a compaction in flight — the card-scoped door onto the
+ * store, and the one every rendering surface should use.
+ *
+ * Two things it does that reading {@link CompactionProgressStore.getSnapshot}
+ * directly does not, both of which matter because the caller is a session row
+ * and session rows come by the listful:
+ *
+ *  - **The snapshot is this card's boolean, not the whole runs map.** A map read
+ *    changes identity on every write to any card, so one card compacting
+ *    re-rendered every session row in the app — the masthead, all of the Lens's
+ *    monitor rows, and every row in an open picker. A boolean compares equal
+ *    across an unrelated card's run and React bails out.
+ *  - **No `cardId`, no subscription.** A row for a session no card holds can
+ *    never be compacting ({@link isCompactingCard} answers `false` for
+ *    `undefined` before it reads anything), so it registers no listener at all
+ *    rather than one that wakes it to compute `false` again.
+ */
+export function useIsCompactingCard(cardId: string | undefined): boolean {
+  return useSyncExternalStore(
+    cardId === undefined ? NOOP_SUBSCRIBE : compactionProgressStore.subscribe,
+    useCallback(
+      () =>
+        cardId === undefined
+          ? false
+          : isCompactingCard(compactionProgressStore.getSnapshot(), cardId),
+      [cardId],
+    ),
+    NEVER_COMPACTING,
+  );
+}
