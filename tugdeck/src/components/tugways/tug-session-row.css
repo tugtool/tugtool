@@ -90,8 +90,19 @@ body {
      declared on the row's pulse element below (that component's documented
      mount-site override). The knob is aliased rather than reached for so the
      row's tuning numbers read together here, and so tuning the Lens rail
-     cannot move a tape on some other stacked mount. */
+     cannot move a tape on some other stacked mount.
+
+     This is the TWO-line value — a nudge off the line it rides. The
+     three-level stack derives its own from the pair it must center on; see
+     below. */
   --tugx-session-row-spark-rise: 3px;
+  /* The description's band, as a LENGTH, because two rules need the same
+     number: the line sets its own leading from it, and the tape's lift is
+     derived from it. Left as a ratio it would be a number one rule knew and
+     the other guessed. */
+  --tugx-session-row-description-line: calc(
+    var(--tug-font-size-sm) * var(--tug-line-height-tight)
+  );
 }
 
 /* ── The content column ───────────────────────────────────────────────────
@@ -253,6 +264,40 @@ body {
   gap: var(--tugx-session-identity-line-gap, 1px);
 }
 
+/* Where the TAPE sits on the three-level stack, DERIVED rather than tuned.
+   The tape reports on the pair beneath the title — the description and the
+   activity are one group, and the graph belongs to the group, not to the last
+   line of it — so it reads centered on the two together. That is one rule, and
+   every mount that wears the stack should land on it identically.
+
+   It was two numbers instead, one per surface, and both of them were wrong in
+   opposite directions: the Lens sat 5px below the pair's center and the
+   masthead, carrying a second lift of its own on top of this one, 4px above it.
+   Two hand-tuned lifts cannot agree, and the eye reads the disagreement as two
+   different instruments.
+
+   The arithmetic: the tape rides the LAST line of the pair, centered in it.
+   Its center is therefore already the second line's center, and the pair's
+   center is exactly half a first line — plus the step between them — above
+   that. So the lift is half the description's band plus half the step, from
+   the same two values those pieces are built out of.
+
+   Scoped to the stack: a two-line mount has no pair to center on, and keeps
+   the nudge declared above.
+
+   Measured, both mounts land a third of a pixel above the pair's exact center
+   — the engine lays the description's line box out at whole pixels while its
+   leading is fractional. The same third of a pixel on both, which is the
+   point: what was two surfaces disagreeing by 9px is now one vertical. */
+.tug-session-row:has(.tug-session-row-description) {
+  --tugx-session-row-spark-rise: calc(
+    (
+        var(--tugx-session-row-description-line) +
+          var(--tugx-session-identity-line-gap, 1px)
+      ) / 2
+  );
+}
+
 /* Where the TITLE's ink starts, as a distance from the row's leading edge —
    the dot's advance, less the room its ink does not use, plus the air after
    it. Published rather than left for each mount to re-derive: a stack whose
@@ -287,7 +332,7 @@ body {
      ONE vertical; it is `0px` on a mount with no tape, and this costs nothing
      there. */
   padding-inline-end: var(--tugx-session-row-spark-reserve, 0px);
-  line-height: var(--tug-line-height-tight);
+  line-height: var(--tugx-session-row-description-line);
 }
 
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
