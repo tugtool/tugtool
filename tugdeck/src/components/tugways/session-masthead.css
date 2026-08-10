@@ -89,7 +89,24 @@
   --tugx-list-row-pressed-bg: transparent;
   --tugx-list-row-selected-pressed-bg: transparent;
   --tugx-session-row-leading-inset: 0px;
-  --tugx-session-row-trailing-inset: 0px;
+  /* The tape stands off the masthead's trailing edge by exactly enough to sit
+     CENTERED under the pane's three always-present controls, rather than flush
+     with the cluster's outer box edge. Flush read as hanging right: each
+     control sits a 14px glyph in a 28px box, so the cluster's INK stops 7px
+     short of the edge the tape ran to, and the eye centers on ink.
+
+     Derived from the pair it centers between — three `sm` control boxes and
+     the tape's own advance — so neither a retuned button size nor a retuned
+     graph width leaves this number behind. Three, as a literal: the width
+     control and the close box are always there and the section menu with them,
+     while the stack badge comes and goes, and a tape that slid sideways as
+     cards stacked would be worse than one that never moved. */
+  --tugx-session-row-trailing-inset: calc(
+    (
+        var(--tug-button-sm-height) * 3 -
+          var(--tugx-session-row-spark-width, 0px)
+      ) / 2
+  );
   /* The three-level stack's block padding stands its block off the RULES
      between rail rows. Chrome has no rules, and the tier's own top padding is
      what seats the block — 12px on top of it drops the title line clear of the
@@ -109,11 +126,16 @@
 
 /* The title line shares its band with the pane's controls and the telemetry
    widget, so it alone stops short of both: the cluster, its start margin, the
-   widget's 28px box, and one gap of air. */
+   widget's 28px box, and one gap of air.
+
+   Less the trailing inset, which the column above already charges every line:
+   the inset exists to seat the TAPE under the controls' ink, and the title's
+   stop is measured from the widget it must clear. Left uncompensated the two
+   would compound and the name would truncate a whole inset early. */
 .session-masthead-row .tug-session-row-name-line {
   padding-inline-end: calc(
     var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) + 28px +
-      var(--tug-space-xs)
+      var(--tug-space-xs) - var(--tugx-session-row-trailing-inset)
   );
 }
 
@@ -128,10 +150,17 @@
    of. `max()` because which one intrudes further is a live question: the
    cluster's width is measured at runtime and grows with a stack badge, and the
    tape's advance is the instrument's. Reserving only the cluster left a long
-   description ending under the graph. */
+   description ending under the graph.
+
+   The cluster's term is less the trailing inset, for the reason the title
+   line's is; the tape's is not, because the reserve is measured from the
+   column's own trailing edge and the tape now sits on it. */
 .session-masthead-row .tug-session-row-description {
   padding-inline-end: max(
-    calc(var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)),
+    calc(
+      var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) -
+        var(--tugx-session-row-trailing-inset)
+    ),
     var(--tugx-session-row-spark-reserve, 0px)
   );
 }
