@@ -1,0 +1,45 @@
+/**
+ * gallery-card-chrome.css — frame for the chrome-tier spike.
+ *
+ * Styles the FIXTURE only. Every tier on display draws itself from
+ * `tug-pane.css` / `card-masthead.css`; what this file adds is the pane-shaped
+ * box those tiers need to sit in, since the gallery has no deck.
+ *
+ * @tug-pairings
+ * | Element                                      | Surface                                           | Role          | Context               |
+ * |----------------------------------------------|---------------------------------------------------|---------------|-----------------------|
+ * | --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | informational | .cg-spike-pane-body   |
+ */
+
+.cg-spike-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  margin-block-end: var(--tug-space-lg);
+}
+
+/* The pane box. `overflow: hidden` clips to the rounded corner exactly as the
+   real frame does — which is also what gives the masthead's phase-dot ring and
+   the title bar's leading padding the same relationship they have in a deck. */
+.cg-spike-pane {
+  border: 1px solid var(--tugx-pane-border);
+  border-radius: var(--tug-radius-md);
+  overflow: hidden;
+  background-color: var(--tugx-pane-bg);
+  box-shadow: var(--tugx-pane-shadow-inactive);
+  max-width: 620px;
+}
+
+.cg-spike-pane[data-focused="true"] {
+  box-shadow: var(--tugx-pane-shadow-active);
+}
+
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.cg-spike-pane-body {
+  padding: var(--tug-space-md);
+  min-height: 44px;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  background-color: var(--tug7-surface-global-primary-normal-default-rest);
+}

@@ -1,0 +1,148 @@
+/**
+ * card-masthead.css — the document card's masthead tier.
+ *
+ * @tug-pairings
+ * | Element                                      | Surface                          | Role          | Context                     |
+ * |----------------------------------------------|----------------------------------|---------------|-----------------------------|
+ * | --tugx-pane-title-fg-active                  | --tugx-pane-title-bar-bg-active  | content       | .card-masthead-title        |
+ * | --tugx-pane-title-bar-icon-active            | --tugx-pane-title-bar-bg-active  | control       | .card-masthead-icon         |
+ * | --tugx-pane-title-fg-active                  | --tugx-pane-title-bar-bg-active  | informational | .card-masthead-description  |
+ */
+
+/**
+ * The tier. Top-aligned rather than centered, for the reason the session
+ * masthead is: three lines centered in 72px put the lead line a few pixels
+ * from the pane's top edge, where every other card's title sits ten down. So
+ * the lead line seats exactly where a ONE-LINE title bar seats its title —
+ * centered in the first `--tug-chrome-height` band — and the lines below hang
+ * into the tier's remaining room. The pane's controls center in that same
+ * band, so the name and the close box sit on one row.
+ */
+.card-masthead {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  block-size: 100%;
+  justify-content: flex-start;
+  gap: 1px;
+  padding-block-start: calc(
+    (
+        var(--tug-chrome-height) - var(--tug-font-size-sm) *
+          var(--tug-line-height-tight)
+      ) / 2
+  );
+  /* The control cluster is a flex sibling that occupies only the FIRST band;
+     the two beneath it are dead space. The negative margin takes this block
+     under that dead space to the card's padding edge, so the description and
+     detail run the full card width. The lead line reserves the cluster back
+     below. Width is the pane's own measurement; the space-xs term is the
+     cluster's start margin. */
+  margin-inline-end: calc(
+    -1 * (var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs))
+  );
+}
+
+/* ── Lead line ─────────────────────────────────────────────────────────── */
+
+/* Alone among the three, this line shares its band with the pane's controls,
+   so it alone stops short of them: the measured cluster, its start margin,
+   and one gap of air. */
+.card-masthead-lead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  line-height: var(--tug-line-height-tight);
+  padding-inline-end: calc(
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) +
+      var(--tug-space-xs)
+  );
+}
+
+.card-masthead-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tug-icon-size-md);
+  height: var(--tug-icon-size-md);
+  flex-shrink: 0;
+  margin-right: var(--tug-space-sm);
+  color: var(--tugx-pane-title-bar-icon-inactive);
+}
+
+.card-masthead-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
+.tug-pane[data-focused="true"] .card-masthead-icon {
+  color: var(--tugx-pane-title-bar-icon-active);
+}
+
+/* The name is the pane's title, and paints from the pane's title token — a
+   masthead does not get a second answer to what a card title looks like. */
+.card-masthead-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  font-weight: var(--tug-font-weight-medium);
+  color: var(--tugx-pane-title-fg-inactive);
+}
+
+/* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
+.tug-pane[data-focused="true"] .card-masthead-title {
+  color: var(--tugx-pane-title-fg-active);
+}
+
+/* ── Description and detail ────────────────────────────────────────────── */
+
+/* The ladder is the session masthead's, so the two tiers read as one tier
+   wearing two contents: title full, description 85%, detail 65%, mixed rather
+   than made translucent so a highlight inside the run keeps its own paint. */
+
+/* @tug-renders-on: --tugx-pane-title-bar-bg-active */
+.card-masthead-description {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-tight);
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 85%, transparent);
+}
+
+/* @tug-renders-on: --tugx-pane-title-bar-bg-active */
+.card-masthead-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-tight);
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 65%, transparent);
+}
+
+/* A path clips its HEAD, so the filename it ends in survives the truncation
+   that a long directory chain guarantees. `unicode-bidi: plaintext` keeps the
+   run's own direction under the `dir="rtl"` that does the clipping. */
+.card-masthead-description[data-kind="path"] {
+  unicode-bidi: plaintext;
+}
+
+/* An actionable description says so on hover and not before — a permanent
+   underline on a path would read as a link the whole strip long. The title
+   bar is a drag surface, so the line takes pointer events back for itself. */
+.card-masthead-description[data-actionable="true"] {
+  cursor: pointer;
+  pointer-events: auto;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.card-masthead-description[data-actionable="true"]:hover {
+  text-decoration: underline;
+  color: var(--tugx-pane-title-fg-active);
+}

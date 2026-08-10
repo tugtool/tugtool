@@ -31,6 +31,7 @@ import { GalleryMutation } from "./gallery-mutation";
 import { GalleryTabBar } from "./gallery-tab-bar";
 import { GalleryDefaultButton } from "./gallery-default-button";
 import { GalleryTitleBar } from "./gallery-title-bar";
+import { GalleryCardChrome } from "./gallery-card-chrome";
 import { GalleryMutationTx } from "./gallery-mutation-tx";
 import { GalleryObservableProps } from "./gallery-observable-props";
 import { GalleryThemeEditor } from "./gallery-theme-editor";
@@ -1345,6 +1346,16 @@ export function registerGalleryCards(): void {
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.layout,
+  });
+
+  registerCard({
+    componentId: "gallery-card-chrome",
+    contentFactory: (_cardId) => <GalleryCardChrome />,
+    defaultMeta: { title: "Card Chrome Tiers", icon: "PanelsTopLeft", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.layout,
   });
 

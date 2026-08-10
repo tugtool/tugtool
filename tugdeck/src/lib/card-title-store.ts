@@ -17,12 +17,19 @@
  * ## The masthead sidecar
  *
  * A card may also ask for a taller chrome tier by publishing a
- * {@link CardMastheadPayload} beside its string. The payload is a
- * **key, not a snapshot** — it names which session the chrome is
- * about, and the chrome resolves what to display from the identity
- * stores at render. That is deliberate: a snapshot here would make
- * this store a second notification path for identity, and there is
- * exactly one ({@link useSessionIdentity}).
+ * {@link CardMastheadPayload} beside its string. Which of the two
+ * payload kinds it publishes decides where the displayed lines come
+ * from, and the rule behind the split is one rule:
+ *
+ * **A fact that lives in a store travels as a key; a fact the card
+ * itself holds travels as a value.** A session's lines come from
+ * {@link useSessionIdentity} and move under a fixed identity, so
+ * {@link SessionMastheadPayload} names the session and the chrome
+ * resolves the rest — a snapshot would make this store a second
+ * notification path for identity, and there is exactly one. A
+ * document card's path and summary have no store behind them, so
+ * {@link DocumentMastheadPayload} carries the strings and the card's
+ * own `set()` call is the notification.
  *
  * The string channel survives alongside it for **reader
  * compatibility**, not for notification: `get()` is what the tab bar,
@@ -45,12 +52,68 @@
  */
 
 /**
- * A card's request for the masthead chrome tier, and the key the chrome
- * resolves its content from. Never a snapshot of what to display.
+ * A Session card's request for the masthead tier, and the key the chrome
+ * resolves its content from. Never a snapshot of what to display: session
+ * identity lives in {@link useSessionIdentity} and its lines change under a
+ * fixed key, so a snapshot here would be a second notification path for it.
  */
-export interface CardMastheadPayload {
+export interface SessionMastheadPayload {
   readonly kind: "session-masthead";
   readonly sessionId: string;
+}
+
+/**
+ * A document card's request for the masthead tier, carrying the lines to
+ * display.
+ *
+ * The strings travel here rather than behind a key because a document card's
+ * masthead has no identity store standing behind it — a path, a dirty mark, a
+ * diff's file count are facts the card already holds and already publishes
+ * through this store's string channel. There is no second notification path
+ * to create: the card's own `set()` call IS the notification, which is the
+ * rule the session payload's key exists to protect.
+ */
+export interface DocumentMastheadPayload {
+  readonly kind: "card-masthead";
+  /** Lead line — the document's name. Truncates at the tail. */
+  readonly title: string;
+  /** Second line — where the document lives, or what it summarizes. */
+  readonly description: string | null;
+  /**
+   * What the description IS, which decides how it clips: a `"path"` keeps its
+   * tail (the filename) and sheds its head, anything else clips normally.
+   */
+  readonly descriptionKind?: "path" | "text";
+  /** Third line — quieter still, and optional; most cards stop at two. */
+  readonly detail?: string | null;
+  /** Lead-line glyph, resolved against the lucide `icons` map by the chrome. */
+  readonly icon?: string;
+}
+
+/** A card's request for the masthead chrome tier. */
+export type CardMastheadPayload = SessionMastheadPayload | DocumentMastheadPayload;
+
+/**
+ * Payload equality, by kind. Guards the store's notify — see {@link
+ * CardTitleStore.set}.
+ */
+function sameMasthead(
+  a: CardMastheadPayload | undefined,
+  b: CardMastheadPayload | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "session-masthead") {
+    return a.sessionId === (b as SessionMastheadPayload).sessionId;
+  }
+  const other = b as DocumentMastheadPayload;
+  return (
+    a.title === other.title &&
+    a.description === other.description &&
+    (a.descriptionKind ?? "text") === (other.descriptionKind ?? "text") &&
+    (a.detail ?? null) === (other.detail ?? null) &&
+    a.icon === other.icon
+  );
 }
 
 class CardTitleStore {
@@ -70,9 +133,7 @@ class CardTitleStore {
   set(cardId: string, title: string, masthead?: CardMastheadPayload): void {
     const sameTitle = this._overrides.get(cardId) === title;
     const prev = this._mastheads.get(cardId);
-    const sameMasthead =
-      prev?.kind === masthead?.kind && prev?.sessionId === masthead?.sessionId;
-    if (sameTitle && sameMasthead) return;
+    if (sameTitle && sameMasthead(prev, masthead)) return;
     this._overrides.set(cardId, title);
     if (masthead === undefined) this._mastheads.delete(cardId);
     else this._mastheads.set(cardId, masthead);

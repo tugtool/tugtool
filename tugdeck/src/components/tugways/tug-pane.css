@@ -305,6 +305,77 @@ body {
   margin-block-start: 4px;
 }
 
+/* ============================================================================
+   The rail tier — a sidebar pane's title bar
+   ========================================================================= */
+
+/**
+ * A rail is not a card in the slot band, and the layout imposer has always
+ * known it: a sidebar pane pins to a deck edge, takes its width from the
+ * allocator rather than a preset, and insets the band the content cards live
+ * in. Until now its chrome said none of that — Lens wore the same tinted
+ * title band as a Diff.
+ *
+ * So the deck's three chrome tiers are three looks:
+ *
+ *   72px masthead, tinted band  → a document card saying its own name
+ *   36px title bar, tinted band → a utility card wearing its type's name
+ *   30px label, flush ground    → a rail, which is a tool and not a document
+ *
+ * The rail's is the quiet one. Flush ground instead of the title band, so the
+ * rail reads as one panel rather than a card with a lid; a hairline divider
+ * doing the work the tint used to; a small tracked label instead of an
+ * icon-and-title, because a rail's name is a section heading and not a
+ * document's. The height is a knob with its default at the point of use — a
+ * theme that wants to retune the tier declares `--tug-rail-chrome-height`.
+ *
+ * The tier is redeclared on the BAR rather than on the pane. A rail's chrome
+ * height would properly be published pane-wide, the way the masthead's is, so
+ * that the scrim and the banner seat below it — but the pane learns it from a
+ * descendant's attribute, and `:has()` does not invalidate on a descendant
+ * attribute change in WebKit. When this lands, `TugPane` stamps the role on
+ * the pane element from the `sidebarSide` it already has, and this rule moves
+ * up there beside the masthead's.
+ */
+.tug-pane-title-bar[data-role="sidebar"] {
+  --tugx-pane-chrome-height: var(--tug-rail-chrome-height, 30px);
+  padding-inline: var(--tug-space-sm);
+}
+
+/* The rail's ground does NOT change with focus — that is the whole of what
+   "flush" means here, and a rail that lit up would be a card with a lid again.
+   Both states are stated because the focused title-bar rule below outranks a
+   single attribute selector; the label is what carries focus instead. */
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane .tug-pane-title-bar[data-role="sidebar"],
+.tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] {
+  background-color: var(--tugx-pane-bg);
+}
+
+/* The rail's name. Tracked, uppercase, and a step down in size — the voice
+   Lens already speaks in its own section bands, brought up into the chrome so
+   the bar and the bands below it read as one column. */
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  font-size: var(--tug-font-size-2xs);
+  font-weight: var(--tug-font-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-inactive) 80%, transparent);
+}
+
+/* @tug-renders-on: --tugx-pane-bg */
+.tug-pane[data-focused="true"] .tug-pane-title-bar[data-role="sidebar"] .tug-pane-title {
+  color: color-mix(in oklab, var(--tugx-pane-title-fg-active) 80%, transparent);
+}
+
+/* A rail's name is a heading, and a heading does not take a glyph — the icon
+   is the registry's answer to "which card is this" in a tab row and a picker,
+   both of which still get it. */
+.tug-pane-title-bar[data-role="sidebar"] .tug-pane-icon {
+  display: none;
+}
+
 /* When a tab bar sits directly below, drop the title-bar divider so the title
    bar and tab bar read as one continuous chrome. The tab bar carries its own
    bottom divider against the content. Single-tab cards (no tab bar, content
