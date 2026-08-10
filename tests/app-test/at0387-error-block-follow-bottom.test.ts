@@ -352,6 +352,97 @@ describe.skipIf(!SHOULD_RUN)("AT0387: error block vs follow-bottom", () => {
   );
 
   test(
+    "a pixel of jitter under fresh growth does not release the live edge",
+    async () => {
+      const app = await standUp("at0387-jitter");
+      try {
+        expect((await readSnap(app)).following).toBe(true);
+
+        // The field capture, reproduced. Three scroll events: pinned at
+        // the edge twice while the document grew, then `scrollTop`
+        // 20492 → 20491 in the same frame `scrollHeight` went 21712 →
+        // 21778. One pixel of sub-pixel rounding read as "scrolled up",
+        // and 66px of arriving content put the live distance at 67 —
+        // over the 60px band — so follow-bottom released.
+        //
+        // Growth and jitter land in ONE synchronous block, because that
+        // is the shape: no scroll event is delivered between them, so
+        // the rule sees the new position against the grown extent while
+        // the extent the user was last SHOWN is still the old one.
+        // Driven through the bottom spacer rather than by streaming a
+        // turn, so the two land in a single tick with nothing racing;
+        // React owns that height and restores it on the next commit,
+        // and the test puts it back regardless.
+        const drive = await app.evalJS<{
+          grewBy: number;
+          movedBy: number;
+          liveDist: number;
+        }>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  var bs = el.querySelector(".tug-list-view-spacer--bottom");
+  window.__at0387 = { restore: bs.style.height };
+  var before = { sh: el.scrollHeight, top: el.scrollTop };
+  bs.style.height = (bs.offsetHeight + 200) + "px";
+  void el.scrollHeight;
+  el.scrollTop = before.top - 1;
+  return {
+    grewBy: el.scrollHeight - before.sh,
+    movedBy: el.scrollTop - before.top,
+    liveDist: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop),
+  };
+})()`);
+        await new Promise((r) => setTimeout(r, 500));
+
+        const after = await readSnap(app);
+        const flips = await readFollowBottom(app);
+        note("at0387-jitter", { drive, flips, following: after.following });
+
+        // The drive has to have produced the failing conditions, or the
+        // assertion below passes for the wrong reason.
+        expect(drive.grewBy).toBeGreaterThan(60);
+        expect(drive.movedBy).toBe(-1);
+        expect(drive.liveDist).toBeGreaterThan(60);
+
+        // One pixel is not a gesture, and content arriving is not the
+        // user leaving.
+        expect(flips.filter((f) => f.source === "unattributed-scroll-up"))
+          .toHaveLength(0);
+        expect(after.following).toBe(true);
+        expect(after.buttonVisible).toBe("false");
+
+        // The control, on the same scroller moments later: a real
+        // upward move of the same unattributed kind — a native
+        // scrollbar drag delivers exactly this and nothing else — still
+        // releases the edge. The rule got narrower, not weaker.
+        await app.evalJS<boolean>(`(function () {
+  var el = document.querySelector('${SCROLLER}');
+  var bs = el.querySelector(".tug-list-view-spacer--bottom");
+  bs.style.height = window.__at0387.restore;
+  void el.scrollHeight;
+  el.scrollTop = el.scrollTop - 900;
+  return true;
+})()`);
+        await new Promise((r) => setTimeout(r, 500));
+
+        const parked = await readSnap(app);
+        const parkedFlips = await readFollowBottom(app);
+        note("at0387-jitter-control", {
+          flips: parkedFlips,
+          following: parked.following,
+          dist: parked.distance,
+        });
+        expect(parkedFlips.filter((f) => f.source === "unattributed-scroll-up"))
+          .not.toHaveLength(0);
+        expect(parked.following).toBe(false);
+        expect(parked.buttonVisible).toBe("true");
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "a flip record names the scroller and carries the scroll events behind it",
     async () => {
       const app = await standUp("at0387-record");

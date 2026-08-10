@@ -1035,6 +1035,14 @@ export class SmartScroll {
       this._scrollTopSeeded = true;
     }
 
+    // The document height as of the PREVIOUS scroll event, captured
+    // before the line below overwrites it. This is the extent the user
+    // had actually been shown when they last moved; the intent rules
+    // below judge their new position against it, because content that
+    // arrived since is not something they did. See
+    // `_isAwayFromShownBottom`.
+    const shownHeight = this._lastScrollEventHeight;
+
     // The baseline is now current again — every write up to this
     // point has been accounted for by an event.
     this._writesSinceScrollEvent = 0;
@@ -1129,11 +1137,35 @@ export class SmartScroll {
         // via `noteExternalWrite` — syncing `_lastScrollTop` to the
         // clamped position — so its deferred scroll event arrives with
         // no upward delta and never reaches this rule.
+        //
+        // **Growth is the other exception, and it is the common one.**
+        // The `isAtBottom` guard alone asks "how far is the user from
+        // the bottom NOW" — a question whose answer changes when the
+        // bottom moves, which during streaming it does constantly. A
+        // field capture caught the whole failure in three scroll
+        // events: pinned at the edge (`dist` 0) twice while the
+        // document grew, then a `scrollTop` of 20492 → 20491 in the
+        // same frame that `scrollHeight` went 21712 → 21778. One pixel
+        // of sub-pixel rounding satisfied "scrolled up", and 66 pixels
+        // of arriving content put `dist` at 67, over the band — so a
+        // transcript the user was reading at the live edge released it
+        // and stranded them behind the jump-to-bottom button. That is
+        // this rule mistaking *the bottom moving away from the user*
+        // for *the user moving away from the bottom*.
+        //
+        // Hence both readings must agree: away from the live bottom AND
+        // away from the bottom of what the user had actually been
+        // shown. Growth fails the second — the position is unchanged
+        // against the extent it was measured in — while every real
+        // upward gesture passes both, since a drag moves the position
+        // against a height that is not moving. See
+        // `_isAwayFromShownBottom`.
         if (
           !suppressIdleReengage &&
           this._isFollowingBottom &&
           scrollTop < this._lastScrollTop &&
-          !this.isAtBottom
+          !this.isAtBottom &&
+          this._isAwayFromShownBottom(scrollTop, shownHeight)
         ) {
           this._setFollowingBottom(false, 'unattributed-scroll-up');
         }
@@ -1442,6 +1474,31 @@ export class SmartScroll {
    */
   private _applyAnchoringGate(): void {
     this._container.style.overflowAnchor = this._isFollowingBottom ? 'none' : '';
+  }
+
+  /**
+   * True when `scrollTop` sits outside the at-bottom band measured
+   * against `shownHeight` — the document extent as of the PREVIOUS
+   * scroll event, which is the last extent the user was actually shown.
+   *
+   * This is the direction-of-blame test for an upward move at idle.
+   * Distance from the live bottom cannot answer it during streaming:
+   * the live bottom is a moving target, and a user who has not moved at
+   * all measures further from it after every append. Distance from the
+   * bottom they were last shown holds still unless THEY move, which is
+   * exactly the question the intent rule is asking.
+   *
+   * An unseeded height (0, before the first scroll event) is no
+   * evidence and does not block — the same convention
+   * {@link isSettledAtBottom} uses for its resting reading. It cannot
+   * matter in practice: the first scroll event seeds `_lastScrollTop`
+   * to the current position, so no upward delta is inferred on it.
+   */
+  private _isAwayFromShownBottom(scrollTop: number, shownHeight: number): boolean {
+    if (shownHeight <= 0) return true;
+    const shownDistance =
+      shownHeight - this._container.clientHeight - Math.max(0, scrollTop);
+    return shownDistance > AT_BOTTOM_PX;
   }
 
   /**
