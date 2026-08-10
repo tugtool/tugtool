@@ -190,8 +190,15 @@ function coerceRevealOnOpen(
  * stand-in rung of the document description ladder ([D132]). A draft does sit
  * on disk, under the Tug drafts directory, but not anywhere the reader put it,
  * and the line's question is where the document LIVES.
+ *
+ * Two words, in the slot's own terms. The line holds a PATH once there is one,
+ * so its stand-in answers the same question a path answers rather than
+ * restating the save state the line below it already carries — "Not saved to a
+ * file" over "Draft" said one thing twice, in a sentence where the rest of the
+ * ladder shows a place. The tier tells the two apart by TYPE: a stand-in is
+ * italic where a real path is not.
  */
-const UNNAMED_PLACE = "Not saved to a file";
+const UNNAMED_PLACE = "No file";
 
 // ---------------------------------------------------------------------------
 // Human-readable error copy

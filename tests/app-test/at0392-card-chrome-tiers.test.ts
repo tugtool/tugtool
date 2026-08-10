@@ -317,9 +317,13 @@ describe.skipIf(!SHOULD_RUN)("at0392 — the three chrome tiers", () => {
           })()`,
         );
         const menuSave = await app.menuItemState("file.save");
-        expect(menuSave.found).toBe(true);
         note("at0392 save row", `${saveRow.shortcut} disabled=${saveRow.disabled}`);
         expect(saveRow.disabled).toBe(true);
+        // `MenuItemState` is a union on `found`, so the narrowing is the
+        // assertion: an absent File ▸ Save is exactly the disagreement this
+        // comparison exists to catch, and it must fail rather than typecheck
+        // its way into reading `enabled` off the not-found arm.
+        if (!menuSave.found) throw new Error("File ▸ Save is not in the native menu");
         expect(saveRow.disabled).toBe(menuSave.enabled === false);
         // The chord is shown, and it is the one the table holds.
         expect(saveRow.shortcut).not.toBeNull();

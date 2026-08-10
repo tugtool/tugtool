@@ -60,6 +60,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { launchTugApp, note, type App } from "./_harness";
+import { decodePngFile } from "./_harness/png";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -647,6 +648,9 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         const untitled = await app.evalJS<{
           description: string;
           stamp: string | null;
+          fontStyle: string;
+          rect: { left: number; top: number; width: number; height: number };
+          innerWidth: number;
           detail: string;
         } | null>(`(function () {
           var heads = document.querySelectorAll('[data-slot="card-masthead"]');
@@ -656,14 +660,20 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
             if (title === null || title.innerText.indexOf("Untitled") !== 0) continue;
             var desc = head.querySelector('[data-testid="card-masthead-description"]');
             var detail = head.querySelector('[data-testid="card-masthead-detail"]');
+            // The quieter ink and the italic both land on the ROW's
+            // description element — this span's parent — because that is where
+            // the row stamps a stand-in.
+            var line = desc === null ? null : desc.parentElement;
+            var r = line === null ? null : line.getBoundingClientRect();
             return {
               description: desc === null ? "" : desc.innerText,
-              // The quieter ink lands on the ROW's description element, which
-              // is this span's parent — that is where the row stamps it.
-              stamp:
-                desc === null || desc.parentElement === null
-                  ? null
-                  : desc.parentElement.getAttribute("data-stamp"),
+              stamp: line === null ? null : line.getAttribute("data-stamp"),
+              fontStyle: line === null ? "" : getComputedStyle(line).fontStyle,
+              rect:
+                r === null
+                  ? { left: 0, top: 0, width: 0, height: 0 }
+                  : { left: r.left, top: r.top, width: r.width, height: r.height },
+              innerWidth: window.innerWidth,
               detail: detail === null ? "" : detail.innerText,
             };
           }
@@ -671,9 +681,42 @@ describe.skipIf(!SHOULD_RUN)("at0212: Text card manual save", () => {
         })()`);
         note("at0212 untitled masthead", JSON.stringify(untitled));
         expect(untitled).not.toBeNull();
-        expect(untitled!.description.length).toBeGreaterThan(0);
+        expect(untitled!.description).toBe("No file");
         expect(untitled!.stamp, "a stand-in reads a step quieter").toBe("true");
+        expect(untitled!.fontStyle, "and in the other type").toBe("italic");
         expect(untitled!.detail).toBe("Draft");
+
+        // …and it actually PAINTS. `font-style: italic` on a weight with no
+        // bundled italic face renders nothing at all in this WKWebView — no
+        // synthesized oblique — while the element keeps a normal rect, a
+        // normal computed color, and its text content. Every assertion above
+        // passes on a blank line, so the only honest guard is ink.
+        const shot = await app.screenshot();
+        try {
+          const png = decodePngFile(shot.path);
+          const scale = png.width / untitled!.innerWidth;
+          const r = untitled!.rect;
+          // The run only, not the line box: the description stretches to the
+          // pane's width, and counting its empty tail would drown the glyphs.
+          const x0 = Math.round(r.left * scale);
+          const x1 = Math.round((r.left + Math.min(r.width, 90)) * scale);
+          const y0 = Math.round(r.top * scale);
+          const y1 = Math.round((r.top + r.height) * scale);
+          let ink = 0;
+          for (let y = y0; y < y1; y++) {
+            for (let x = x0; x < x1; x++) {
+              const i = (y * png.width + x) * 4;
+              // The band is a flat tint; type ink is far off it in luminance.
+              const lum =
+                0.299 * png.rgba[i]! + 0.587 * png.rgba[i + 1]! + 0.114 * png.rgba[i + 2]!;
+              if (lum > 110) ink += 1;
+            }
+          }
+          note("at0212 stand-in ink", `${ink}px in ${x1 - x0}×${y1 - y0}`);
+          expect(ink, "the italic stand-in paints glyphs").toBeGreaterThan(40);
+        } finally {
+          fs.rmSync(shot.path, { force: true });
+        }
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

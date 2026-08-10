@@ -66,6 +66,24 @@
   );
 }
 
+/* ── A stand-in for the place ───────────────────────────────────────────────
+   The second line answers WHERE the document lives, and a card that cannot
+   answer it publishes a stand-in rather than nothing ([D132]) — the tier is a
+   fixed three lines, so an empty run here is a hole between two filled ones.
+   The shared frame already paints a stand-in a step quieter; a document tier
+   adds ITALIC, because this line's real content is a path and the difference
+   between "where it is" and "there is no where yet" should be legible as type
+   rather than only as a shade of gray.
+
+   Italic is a live face here, not a synthesized slant: `public/fonts.css`
+   bundles IBM Plex Sans Italic at 400, which is the weight this line inherits.
+   A rule that lands on a weight with no italic face paints NOTHING in the
+   app's WKWebView — no synthesized oblique — so the guard for this is pixels:
+   at0212 screenshots the line and counts ink in it. */
+.card-masthead-row .tug-session-row-description[data-stamp="true"] {
+  font-style: italic;
+}
+
 /* ── The path line ─────────────────────────────────────────────────────────
    A path clips its HEAD, so the filename it ends in survives the truncation
    that a long directory chain guarantees. `unicode-bidi: plaintext` keeps the
