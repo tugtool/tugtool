@@ -24,11 +24,26 @@
   align-items: center;
 }
 
+/* The summary stands OFF the drawing rather than sitting on it: two lines of
+   type immediately above a bordered picture read as a label stuck to it, and
+   the summary is the statement the drawing illustrates. A step wider than the
+   air inside the summary itself, so the caption and its note read as one
+   block. */
 .layouts-plan-layer {
   display: none;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--tug-space-lg);
+}
+
+/* Caption and note, as one block — the AI mixer's readout-over-scope-line,
+   at the same air between them. */
+.layouts-plan-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  text-align: center;
 }
 
 .layouts-plan-layer[data-plan-layer="committed"] {
@@ -54,17 +69,46 @@
 
 /* The plan's caption is the section's one statement of what the deck is doing,
    so it leads the plan the way the AI mixer's readout leads its channels: the
-   answers stated first, the drawing under them showing what they come to. A
-   step under that readout's size — the Lens is a narrower surface than the
-   settings page — but above the body size, so it reads as the plan's heading
-   rather than as a line of text next to it. */
+   answers stated first, the drawing under them showing what they come to. It
+   wears that readout's type outright — the header TITLE size, the leading
+   value bold and the rest a step down — rather than an approximation of it, so
+   the two mixers read as one family across two surfaces. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .layouts-plan-caption {
-  font-size: var(--tug-font-size-md);
-  font-weight: var(--tug-font-weight-bold);
-  line-height: var(--tug-line-height-tight);
+  font-size: var(--tugx-header-title-size);
+  line-height: var(--tugx-header-title-lh);
   color: var(--tug7-element-global-text-normal-default-rest);
   white-space: nowrap;
+}
+
+/* The first value carries the most weight: the arrangement is the decision the
+   width qualifies, exactly as the model is the one the effort and mode do. */
+.layouts-plan-caption-value {
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+.layouts-plan-caption-value:first-child {
+  font-weight: var(--tug-font-weight-bold);
+}
+
+/* The separator is punctuation, not content — quieter than the values it
+   stands between. Its spacing is the literal spaces around the glyph, not a
+   margin, so the caption's text reads correctly when taken as a string. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.layouts-plan-caption-sep {
+  white-space: pre;
+  font-weight: var(--tug-font-weight-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The note: what the caption's values come to on screen. Directly under the
+   caption because it qualifies it — the caption says WHAT is set, this says
+   what that gets you — and at the mixer's explanatory size and voice. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.layouts-plan-note {
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-normal);
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* The axes: two columns — captions and controls — sized to their content and

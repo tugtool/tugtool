@@ -68,6 +68,7 @@ import { getDeckStore } from "@/lib/deck-store-registry";
 import {
   CONTENT_WIDTH_LABELS,
   CONTENT_WIDTH_PRESETS,
+  CONTENT_WIDTH_PX,
   IMPOSITION_KINDS,
   isContentWidth,
   isImpositionKind,
@@ -201,14 +202,62 @@ function LayoutsCollapsedSummary(): React.ReactElement {
   return <>{KIND_LABELS[kind ?? DEFAULT_IMPOSITION_KIND]}</>;
 }
 
-/** One plan layer: a drawing and the caption naming it. */
+/**
+ * What an arrangement COMES TO, in plain words — the note under the caption.
+ *
+ * The caption names the answers (`Three Up · Slim`); this says what they mean
+ * on screen, in the same voice the AI mixer's channel descriptions use. It is
+ * the only place the width presets' actual measures are stated, so the note
+ * earns its line rather than paraphrasing the caption: `Slim` is a name, `675
+ * px` is the fact behind it.
+ *
+ * The card count is a DIGIT, matching the Cards control's own segments (`1 2 3
+ * 4 5 6`) rather than the caption's spelled-out kind — the note reads as a
+ * reading of the controls, which is what it is.
+ */
+function planNote(kind: ImpositionKind, width: ContentWidth): string {
+  const slots = slotCount(kind);
+  const px = CONTENT_WIDTH_PX[width];
+  return slots === 1
+    ? `1 card at a time, ${px} px wide`
+    : `${slots} cards side by side, ${px} px each`;
+}
+
+/** One plan layer: a drawing, the caption naming it, and the note under it. */
 interface PlanLayer {
   /** `axis:value` — the id a hovered/cursored segment resolves to. */
   previewId: string;
-  caption: string;
+  /** The caption's values, in order — rendered with the separator between
+   *  them, so the punctuation is the stylesheet's rather than the string's. */
+  caption: readonly string[];
+  /** What those values come to — see {@link planNote}. */
+  note: string;
   kind: ImpositionKind;
   rails: MiniatureRails;
   width: ContentWidth;
+}
+
+/** The caption's values, with a muted separator between them and the first
+ *  carrying the weight — the AI mixer's readout, worn by the Lens. */
+function PlanCaption({
+  values,
+}: {
+  values: readonly string[];
+}): React.ReactElement {
+  return (
+    <span className="layouts-plan-caption">
+      {values.map((value, index) => (
+        <React.Fragment key={value}>
+          {index > 0 && (
+            // The spaces live in the text, not in a margin, so the caption
+            // reads correctly when it is taken as a string.
+            <span className="layouts-plan-caption-sep"> · </span>
+          )}
+          <span className="layouts-plan-caption-value">{value}</span>
+        </React.Fragment>
+      ))}
+    </span>
+  );
 }
 
 /**
@@ -330,19 +379,24 @@ function LayoutsSectionBody({
 
   // ---- The layers: the committed plan and every offerable answer ----
 
-  const committedCaption = `${KIND_LABELS[kind]} · ${CONTENT_WIDTH_LABELS[contentWidth]}`;
+  const committedCaption = [
+    KIND_LABELS[kind],
+    CONTENT_WIDTH_LABELS[contentWidth],
+  ];
 
   const layers: PlanLayer[] = [
     ...IMPOSITION_KINDS.map((k) => ({
       previewId: `kind:${k}`,
-      caption: `${KIND_LABELS[k]} · ${CONTENT_WIDTH_LABELS[contentWidth]}`,
+      caption: [KIND_LABELS[k], CONTENT_WIDTH_LABELS[contentWidth]],
+      note: planNote(k, contentWidth),
       kind: k,
       rails,
       width: contentWidth,
     })),
     ...CONTENT_WIDTH_PRESETS.map((preset) => ({
       previewId: `width:${preset}`,
-      caption: `${KIND_LABELS[kind]} · ${CONTENT_WIDTH_LABELS[preset]}`,
+      caption: [KIND_LABELS[kind], CONTENT_WIDTH_LABELS[preset]],
+      note: planNote(kind, preset),
       kind,
       rails,
       width: preset,
@@ -350,7 +404,11 @@ function LayoutsSectionBody({
     ...sidebars.flatMap((entry) =>
       SIDES.map((side) => ({
         previewId: `side:${entry.componentId}:${side}`,
-        caption: `${entry.title} ${SIDE_LABELS[side]}`,
+        caption: [`${entry.title} ${SIDE_LABELS[side]}`],
+        // The arrangement is unchanged by a rail moving sides, so the note
+        // stands as it is: the caption says what the preview would change,
+        // the note what it would leave alone.
+        note: planNote(kind, contentWidth),
         kind,
         rails: railsOf(imposition, sidebars, {
           componentId: entry.componentId,
@@ -394,7 +452,12 @@ function LayoutsSectionBody({
           aria-hidden="true"
         >
           <div className="layouts-plan-layer" data-plan-layer="committed">
-            <span className="layouts-plan-caption">{committedCaption}</span>
+            <div className="layouts-plan-summary">
+              <PlanCaption values={committedCaption} />
+              <span className="layouts-plan-note">
+                {planNote(kind, contentWidth)}
+              </span>
+            </div>
             <LayoutMiniature
               kind={kind}
               rails={rails}
@@ -408,7 +471,10 @@ function LayoutsSectionBody({
               data-plan-preview-id={layer.previewId}
               key={layer.previewId}
             >
-              <span className="layouts-plan-caption">{layer.caption}</span>
+              <div className="layouts-plan-summary">
+                <PlanCaption values={layer.caption} />
+                <span className="layouts-plan-note">{layer.note}</span>
+              </div>
               <LayoutMiniature
                 kind={layer.kind}
                 rails={layer.rails}
