@@ -45,7 +45,7 @@ import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPay
 import { requestLogout } from "./lib/logout-store";
 import { requestConfigureTug } from "./lib/configure-tug-request-store";
 import { sessionSpawnErrorStore } from "./lib/session-spawn-error-store";
-import { notifySpawnRejected } from "./lib/session-restore";
+import { fireRestore, notifySpawnRejected } from "./lib/session-restore";
 import { appInfoStore } from "./lib/app-info-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { getAppLifecycle } from "./lib/app-lifecycle";
@@ -661,6 +661,31 @@ export function initActionDispatch(
       commitMutation: () => deckManager.activateCard(cardId),
     });
     flashPaneBorder(pane.id);
+  });
+
+  // resume-session: open a fresh session card and restore a session into it.
+  // The counterpart of `focus-session-card` for a session no card holds —
+  // dispatched by the session identity menu, whose one item reads "Show
+  // Session" or "Resume Session" depending on which of the two applies.
+  //
+  // The card is created first and restored into second, which is the same
+  // order startup restore uses ([L27] disposal aside): `fireRestore` only
+  // needs a card id to key its expectation on, and the card mounts on the
+  // restoring placeholder because the registry entry is what that placeholder
+  // reads.
+  registerAction(TUG_ACTIONS.RESUME_SESSION, (payload) => {
+    const sessionId = payload.sessionId;
+    const projectDir = payload.projectDir;
+    if (typeof sessionId !== "string" || typeof projectDir !== "string") {
+      console.warn("resume-session: missing sessionId or projectDir", payload);
+      return;
+    }
+    const cardId = deckManager.addCard("session");
+    if (cardId === null) {
+      console.warn("resume-session: no session card registration");
+      return;
+    }
+    fireRestore(cardId, sessionId, projectDir, connection);
   });
 
   // show-card: Show a card by componentId. The Swift app menu sends

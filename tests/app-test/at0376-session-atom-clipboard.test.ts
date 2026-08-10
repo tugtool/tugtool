@@ -155,11 +155,12 @@ describe.skipIf(!SHOULD_RUN)("at0376 — the session atom on the clipboard", () 
           { timeoutMs: 20_000 },
         );
 
-        // Right-click on the chip offers Copy — the affordance every Tug chip
-        // has, and the reason the hover surface is a tooltip rather than a
-        // placard. Assert the menu exists with an enabled Copy item; the
-        // gesture that fires it is `useCopyableText`'s, shared with every
-        // other copyable chip in the app.
+        // Right-click on the chip offers the session's menu — the affordance
+        // every Tug chip has, and the reason the hover surface is a tooltip
+        // rather than a placard. Assert the menu exists with an enabled
+        // `Copy as Atom`, which is the item this file's write is behind; the
+        // rest of the menu (the go-to verb, the citation, the id) is
+        // `useSessionIdentityMenu`'s and is pinned by at0387.
         await app.evalJS<null>(`(function(){
           var chip = document.querySelector(${JSON.stringify(CHIP)});
           var r = chip.getBoundingClientRect();
@@ -177,15 +178,15 @@ describe.skipIf(!SHOULD_RUN)("at0376 — the session atom on the clipboard", () 
         const copyItem = await app.evalJS<{ label: string; disabled: string }>(
           `(function(){
             var item = document.querySelector(
-              ${JSON.stringify(MENU)} + ' [role="menuitem"]');
-            if (item === null) throw new Error("the chip's menu has no items");
+              ${JSON.stringify(MENU)} + ' [data-item-action="copy-session-atom"]');
+            if (item === null) throw new Error("the chip's menu has no atom copy");
             return {
               label: item.textContent || "",
               disabled: item.getAttribute("aria-disabled") || "",
             };
           })()`,
         );
-        expect(copyItem.label).toContain("Copy");
+        expect(copyItem.label).toContain("Copy as Atom");
         expect(copyItem.disabled).not.toBe("true");
         await app.nativeKey("Escape");
 

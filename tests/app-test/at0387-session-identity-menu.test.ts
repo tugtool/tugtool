@@ -30,7 +30,14 @@
  * already showing both, and everything it added was a thing to act on, which a
  * tooltip cannot offer because it is by law non-interactive.
  *
+ * The second test gates the item the menu LEADS with: a way to the session
+ * itself. It reads `Show Session` while a card holds it and raises that card;
+ * once no card does, the same item reads `Resume Session` and opens one. Both
+ * halves are driven through the menu on a Gazette atom — a citation in foreign
+ * context, which is the surface the item exists for.
+ *
  * @covers tugdeck/src/components/tugways/session-identity-menu.tsx
+ * @covers tugdeck/src/action-dispatch.ts
  * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
@@ -362,14 +369,13 @@ describe.skipIf(!SHOULD_RUN)("at0387 — the session row's own menu", () => {
           `document.querySelector(${JSON.stringify(MASTHEAD)}) === null`,
           { timeoutMs: 10_000 },
         );
+        // The closed card took the key view with it; the Gazette is the surface
+        // the next press lands in, so it takes it back first.
+        await app.click(GAZETTE);
         await app.evalJS<null>(rightClickChip());
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(MENU)}) !== null`,
           { timeoutMs: 8_000 },
-        );
-        note(
-          "at0387 chip menu (just after close)",
-          JSON.stringify(await app.evalJS(menuRows())),
         );
         // The ledger's answer for a session no card holds arrives over
         // `resolve_sessions`, and the item is disabled until it does — so the
@@ -389,18 +395,22 @@ describe.skipIf(!SHOULD_RUN)("at0387 — the session row's own menu", () => {
         expect(noCard[0].action).toBe("resume-session");
         expect(noCard[0].label).toBe("Resume Session");
 
-        // ---- …and Resume opens a card and restores INTO it. ----------------
+        // ---- …and Resume opens a card to restore into. ---------------------
         //
-        // The restoring placeholder is the proof the whole path ran: it mounts
-        // off the restore registry entry, which only exists once a fresh card
-        // was created and `spawn_session(mode=resume)` went out for THIS
-        // session. Where that spawn lands afterwards is tugcode's business and
-        // at0376's / the restore tests' subject, not this one's.
+        // A NEW card is the proof the item's whole path ran — the responder,
+        // the registry handler that holds the deck, and `fireRestore` — since
+        // the deck was left with no session card at all a moment ago. Where
+        // that spawn lands afterwards is the restore tests' subject, not this
+        // one's: an app-test ledger row has no JSONL behind it, so the card is
+        // rightly on its way to the picker.
+        const gazetteCards = await app.evalJS<number>(
+          `document.querySelectorAll('.tug-pane [data-card-host]').length`,
+        );
         await app.nativeClickAtElement(
           `${MENU} [data-item-action="resume-session"]`,
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-testid="session-card-restoring"]') !== null`,
+          `document.querySelectorAll('.tug-pane [data-card-host]').length > ${gazetteCards}`,
           { timeoutMs: 15_000 },
         );
         note(
