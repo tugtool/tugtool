@@ -133,6 +133,59 @@ body {
   min-inline-size: 0;
 }
 
+/* The title's TEXT BOX is a plain single-line ellipsis box here, not the
+   label's `-webkit-line-clamp` box.
+
+   `TugLabel maxLines={1}` clamps with `display: -webkit-box`, which is a legacy
+   box: it hands its child no resolvable available width. The title's child is
+   the session identity — an `inline-flex` whose two runs negotiate the line
+   between them (the name gives way, the callsign never does) — and that
+   negotiation is only as good as the width it is given. Inside the clamp box
+   the identity resolved at max-content and overflowed the row (measured 536px
+   of identity inside a 303px title), so the name elided against a width that
+   had nothing to do with the row: the mark truncated with half the line
+   standing empty beside it.
+
+   One line, ellipsis at the end, `min-inline-size: 0` so it can actually take
+   the shrink — which is what `maxLines={1}` means anyway. A STRING title still
+   elides here, by `text-overflow`; a node title is now given the row's real
+   slack and elides itself.
+
+   An ELEMENT title is then taken block-level for the length of this line. The
+   identity ships `inline-flex` because its citation register is a chip set in
+   running prose, and an inline-level box is shrink-to-fit — which, under the
+   `nowrap` it also declares, is exactly its max-content. An inline mark cannot
+   be squeezed, so the name run had nothing to give way from however wide the
+   row grew. As a block-level flex box it fills the title it was handed and does
+   its own eliding against the real measure.
+
+   `> *` and not the identity by name: the masthead wraps the identity in its own
+   inline-flex span (the right-click-copies-the-atom handle), and an inline
+   wrapper reintroduces the same max-content sizing one level up. Whatever
+   element a mount puts here is the box that must carry the row's measure. Text
+   nodes are untouched, so a plain STRING title still elides by `text-overflow`
+   above. */
+.tug-session-row-name-line .tug-list-row-title .tug-label-text {
+  display: block;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tug-session-row-name-line .tug-list-row-title .tug-label-text > * {
+  display: flex;
+  /* Its own ink, clamped at the row. `max-content` is what an inline box would
+     have taken anyway, so a mark that fits keeps its exact width — the box does
+     not swell to the line and take a right-click surface with it — and one that
+     does not fit is clamped to the measure and shrinks INSIDE it, which is the
+     eliding an inline box could not do. */
+  inline-size: max-content;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+
 /* The indicator, when it rides the name line. A fixed advance with visible
    overflow: the box charges the line for `--tugx-session-row-dot-advance` and
    the indicator inside it is centered at its own size, free to breathe past
