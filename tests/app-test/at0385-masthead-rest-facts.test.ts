@@ -23,7 +23,13 @@
  * touching this surface, which is what makes the repaint attributable to the
  * push rather than to traffic that would have repainted it anyway.
  *
+ * The same idle card also gates the TAPE at rest: a session that has done no
+ * work draws a flatline rather than nothing. This is the only test whose
+ * subject is a card before any beat, so it is the only place an accessory that
+ * quietly waited for data would be caught.
+ *
  * @covers tugdeck/src/lib/session-ledger-store.ts
+ * @covers tugdeck/src/components/tugways/session-activity-sparkline.tsx
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/components/tugways/session-identity-row.tsx
  * @covers tugdeck/src/lib/session-activity-line.ts
@@ -101,6 +107,40 @@ describe.skipIf(!SHOULD_RUN)("at0385 — the activity line at rest", () => {
         const before = await app.evalJS<string>(pulseText());
         note("at0385 before", JSON.stringify(before));
         expect(before).not.toContain(`${TURNS} turns`);
+
+        // And the tape is DRAWN beside that line, on a session that has done no
+        // work at all — a flatline, which is the instrument reading zero rather
+        // than the instrument being absent. Asserted here because this is the
+        // one test whose whole subject is a card at rest: everywhere else a beat
+        // has already been published by the time the tape is looked at, so an
+        // accessory that only appeared once data arrived would pass.
+        //
+        // Two reads, because either alone is weak: the element proves it is
+        // mounted and laid out, and the tape's own plotted state proves the
+        // canvas has a flat line on it rather than nothing.
+        const tape = await app.evalJS<{ width: number; height: number } | null>(
+          `(function(){
+             var el = document.querySelector(${JSON.stringify(
+               `${MASTHEAD} [data-slot="tug-sparkline"]`,
+             )});
+             if (el === null) return null;
+             var r = el.getBoundingClientRect();
+             return { width: Math.round(r.width), height: Math.round(r.height) };
+           })()`,
+        );
+        note("at0385 tape at rest", JSON.stringify(tape));
+        expect(tape).not.toBeNull();
+        expect(tape!.width).toBeGreaterThan(0);
+        expect(tape!.height).toBeGreaterThan(0);
+        const flat = await app.evalJS<{ points: number; lastV: number } | null>(
+          `window.__tug.sparklineTapeState(${JSON.stringify(
+            `${MASTHEAD} [data-slot="tug-sparkline"]`,
+          )})`,
+        );
+        note("at0385 tape state at rest", JSON.stringify(flat));
+        expect(flat).not.toBeNull();
+        expect(flat!.points).toBeGreaterThan(0);
+        expect(flat!.lastV).toBe(0);
 
         // ---- The push, and what the line does with it. ---------------------
         //

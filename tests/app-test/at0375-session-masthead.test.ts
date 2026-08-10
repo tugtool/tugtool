@@ -54,13 +54,15 @@
  *      content, so the test drives a real beat through the production pulse
  *      parser rather than measuring an empty band.
  *
- *   F. **The width control is absent from a masthead pane, and nothing else in
- *      the cluster is.** Written as an ABSENCE assertion on that one testid,
- *      never as an equality check on the cluster's button list — which is
- *      legitimately longer or shorter depending on whether the Session card
- *      stands in a stack. The stack badge in particular is asserted PRESENT on
- *      a stacked Session card: it describes the slot rather than the card, and
- *      it is the only way into the panes behind it.
+ *   F. **The width control is on a masthead pane, like every other pane.**
+ *      Written as a count on that one testid, never as an equality check on the
+ *      cluster's button list — which is legitimately longer or shorter
+ *      depending on whether the Session card stands in a stack. It was
+ *      suppressed here for a while, which left the pane whose width is retuned
+ *      most often as the only one without the control; this is what stops that
+ *      returning. The stack badge is asserted PRESENT alongside it on a stacked
+ *      Session card: it describes the slot rather than the card, and it is the
+ *      only way into the panes behind it.
  *
  * Nothing here hangs off an animation: background app-test windows run no
  * rAF, so every assertion reads settled geometry.
@@ -313,19 +315,22 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         );
         expect(strips).toBe(0);
 
-        // ---- F. No width control on a masthead pane. -----------------------
-        // An ABSENCE assertion on that one testid. Never an equality check on
-        // the cluster's button list: it is legitimately longer when the Session
-        // card stands in a stack, and shorter when the card contributes no
-        // section menu.
+        // ---- F. The width control is on a masthead pane too. ---------------
+        // A count on that one testid. Never an equality check on the cluster's
+        // button list: it is legitimately longer when the Session card stands
+        // in a stack, and shorter when the card contributes no section menu.
+        //
+        // The Session card is the pane whose width is retuned most often, so it
+        // is the last pane that should be missing the control. It was suppressed
+        // here for a while — this assertion is what stops that returning.
         const widthButtons = await app.evalJS<number>(
           `document.querySelectorAll(
              ${JSON.stringify(PANE)} +
              ' [data-testid="tug-pane-title-bar-width-button"]').length`,
         );
-        expect(widthButtons).toBe(0);
-        // The close X is still there, so the absence above is the control
-        // leaving rather than the whole cluster failing to render.
+        expect(widthButtons).toBe(1);
+        // The close X is there beside it, so the count above is one member of a
+        // rendered cluster rather than the cluster's only survivor.
         const closeButtons = await app.evalJS<number>(
           `document.querySelectorAll(
              ${JSON.stringify(PANE)} +
@@ -424,10 +429,10 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         expect(onText.tabs).toBe(CHROME_HEIGHT);
         expect(onText.chromeVar).toBe(`${CHROME_HEIGHT}px`);
 
-        // And the width control is BACK on the non-masthead tab of the very same
-        // pane. This is the flip [D132] records as accepted rather than a bug —
-        // and it is what proves the suppression is a condition on the active
-        // card's masthead rather than the control having been deleted.
+        // And the width control is on the non-masthead tab of the very same
+        // pane. Paired with F above, this is the claim that the cluster does not
+        // reshuffle as the active card changes: the control the reader reaches
+        // for is in the same place on both tabs.
         const widthOnText = await app.evalJS<number>(
           `document.querySelectorAll(
              ${JSON.stringify(PANE)} +
@@ -687,7 +692,7 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
   );
 
   test(
-    "a stacked Session card keeps its slot badge and still has no width control",
+    "a stacked Session card carries both its slot badge and the width control",
     async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0375c-"));
       const app = await launchTugApp({
@@ -712,10 +717,10 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
           { timeoutMs: 15_000 },
         );
 
-        // The badge describes the SLOT, not the card, and it is the only way
-        // into the panes behind this one — so suppressing the width control must
-        // not have taken it along. Written as two counts on two testids, never
-        // as an equality check on the cluster's button list.
+        // A stacked Session pane carries the whole cluster: the badge, which
+        // describes the SLOT and is the only way into the panes behind this one,
+        // and the width control beside it. Written as two counts on two testids,
+        // never as an equality check on the cluster's button list.
         const controls = await app.evalJS<{ badge: number; width: number }>(
           `({
             badge: document.querySelectorAll(
@@ -728,7 +733,7 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
         );
         note("stacked masthead controls", JSON.stringify(controls));
         expect(controls.badge).toBe(1);
-        expect(controls.width).toBe(0);
+        expect(controls.width).toBe(1);
 
         // And the badge is actually visible rather than merely mounted: the
         // Session pane is the narrower of the pair, so it is not occluded.

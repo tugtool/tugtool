@@ -651,21 +651,16 @@ function CardTitleBar({
             `TugButton`, matching the stack badge and section menu beside it —
             pane chrome is one of that component's sanctioned composers.
 
-            NOT on a masthead-bearing pane ([D132]). The masthead's first row is
-            identity plus its own telemetry wave, and this is the one member of
-            the cluster that competes with the name for a row that is now three
-            lines of ink. Width stays reachable by its command and by the Lens's
-            width presets, so the affordance is relocated rather than removed —
-            which the stack badge and the section menu beside it have no second
-            door for, and is the other half of why they stay.
-
-            The condition is the ACTIVE card's masthead, so a pane holding a
-            Session card and a non-Session card in one stack shows the button on
-            one tab and not the other. That flip is accepted: suppressing on "any
-            card in this stack wears a masthead" would take a cross-card fact the
-            title bar does not hold, to buy consistency for a control whose whole
-            point is that it acts on the pane you are looking at. */}
-        {onSetWidth !== undefined && masthead === null && (
+            On EVERY pane that has a width, masthead-bearing ones included. It
+            was suppressed on those for a while, on the reasoning that the
+            masthead's first row is identity plus its own telemetry wave and
+            this control competed with the name for it. The Session card is the
+            pane whose width is retuned most often, so the one surface that most
+            needs the control was the one that did not have it — and a control
+            that appears on some panes and not others is a cluster the eye
+            cannot learn. It sits immediately before the close box, which is
+            where it lands on every other pane. */}
+        {onSetWidth !== undefined && (
           <TugPopupMenu
             trigger={
               <TugButton
