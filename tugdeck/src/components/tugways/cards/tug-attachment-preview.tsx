@@ -209,6 +209,65 @@ function snapshotKey(snap: ReadonlyArray<TileSnapshot>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Does the row fit?
+// ---------------------------------------------------------------------------
+
+/** The flag the compose strip's stylesheet keys its scrolling pose on. */
+const SCROLLS_ATTR = "data-scrolls";
+
+/**
+ * Mark the compose strip when its row does not fit, so the stylesheet can pay
+ * for the scrollbar out of the tile height.
+ *
+ * A DOM write, never React state ([L06]) — this is appearance, and nothing
+ * above the strip has any use for the answer.
+ *
+ * **The flag is decided at the row's NATURAL size, always.** That is the whole
+ * subtlety: the flag SHRINKS the tiles, and a shorter tile is a narrower tile
+ * (width follows the image's aspect), so a row measured while already flagged
+ * can easily be found to fit — clear the flag, the tiles grow back, it
+ * overflows again, and the strip flickers between the two forever. Dropping
+ * the flag before the read makes the answer a pure function of the images and
+ * the box's width, so it converges in one pass and stays converged. The read
+ * is synchronous and nothing paints between the two writes.
+ *
+ * Observed rather than computed-once because both inputs move on their own: the
+ * card resizes, and a tile has no width at all until its image decodes (the
+ * `<img>` is `width: auto` over a data URL). Watching the cells covers the
+ * second — their widths are exactly what changes when pixels land.
+ */
+function useComposeStripScrolls(
+  stripRef: React.RefObject<HTMLDivElement | null>,
+  active: boolean,
+  // Re-observes when the tile set changes: cells come and go with it.
+  tiles: ReadonlyArray<TileSnapshot>,
+): void {
+  React.useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (strip === null || !active) return;
+
+    const measure = (): void => {
+      strip.removeAttribute(SCROLLS_ATTR);
+      // Forces the layout that the removal above invalidated, which is the
+      // point: this is the natural row's width, not the flagged row's.
+      const overflows = strip.scrollWidth > strip.clientWidth;
+      strip.toggleAttribute(SCROLLS_ATTR, overflows);
+    };
+
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(strip);
+    for (const cell of strip.querySelectorAll(
+      ".tug-attachment-preview__cell",
+    )) {
+      observer.observe(cell);
+    }
+    return () => observer.disconnect();
+  }, [stripRef, active, tiles]);
+}
+
+// ---------------------------------------------------------------------------
 // Strip component — the public face
 // ---------------------------------------------------------------------------
 
@@ -342,12 +401,25 @@ export const TugAttachmentPreview = React.forwardRef<
     });
   }, [atoms, openPreview]);
 
+  // The strip needs its own handle on its root to measure the row, and the
+  // host may have asked for one too — so the callback feeds both.
+  const stripRef = React.useRef<HTMLDivElement | null>(null);
+  const setStripEl = React.useCallback(
+    (el: HTMLDivElement | null): void => {
+      stripRef.current = el;
+      if (typeof ref === "function") ref(el);
+      else if (ref !== null && ref !== undefined) ref.current = el;
+    },
+    [ref],
+  );
+  useComposeStripScrolls(stripRef, deletable, tiles);
+
   // Empty atoms → no DOM. The host surface sees no strip contribution.
   if (tiles.length === 0) return null;
 
   return (
     <div
-      ref={ref}
+      ref={setStripEl}
       data-slot="tug-attachment-preview"
       data-deletable={deletable ? "" : undefined}
       className={className}

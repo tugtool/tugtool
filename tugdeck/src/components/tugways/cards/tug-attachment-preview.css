@@ -11,7 +11,9 @@
  *  - **Compose (`[data-deletable]`, the override section below):** a
  *    single-row, fixed-HEIGHT strip — height drives the tile, width follows
  *    aspect (capped) — so the strip's height is constant regardless of
- *    image aspect, count, or load state. That constant lets the prompt-entry
+ *    image aspect, count, or load state. It scrolls horizontally past the
+ *    row's width, with no bar shown on either axis: a visible one would take
+ *    its 12px out of that constant. That constant lets the prompt-entry
  *    reserve its Z4C zone up front (no hop) and the Session card steal exactly
  *    that height from the editor (see `tug-prompt-entry.css` / `session-card.css`).
  *    Each compose tile also carries a ✕ delete overlay.
@@ -49,11 +51,17 @@
                          prompt-entry zone that hosts the compose strip pins
                          its own height to fit `tile-height` + caption (see
                          `--tug-prompt-entry-attach-height` in session-card.css) —
-                         change `tile-height` and that constant together.
+                         change `tile-height` and that constant together. It is
+                         `tile-height-rest` at rest and a step under it on a
+                         row that scrolls, which buys the scrollbar's height
+                         out of the tile rather than out of the zone.
+       - `tile-height-rest` — that rest value, named so the scrolling height
+                         can be derived from it instead of restating it.
        - `tile-max-width` — cap on a compose tile's aspect-driven width so a
                          panorama can't run away. */
   --tugx-attachment-tile-size: 64px;
-  --tugx-attachment-tile-height: 56px;
+  --tugx-attachment-tile-height-rest: 56px;
+  --tugx-attachment-tile-height: var(--tugx-attachment-tile-height-rest);
   --tugx-attachment-tile-max-width: 112px;
 
   display: flex;
@@ -269,21 +277,64 @@
  * from the editor's empty floor. Transcript tiles keep the fixed-WIDTH,
  * wrapping grid defined by the base rules above. */
 [data-slot="tug-attachment-preview"][data-deletable] {
+  /* The app's scrollbars are the classic, space-TAKING kind — `tug.css` gives
+     every scroller a 12px `::-webkit-scrollbar`. This box is content-sized, so
+     a bar along its bottom does not grow the box; it takes its height out of
+     the content area. That is the whole of the scrolling story here, and the
+     number is stated once, HERE, because two rules depend on it: the tile
+     height the row shrinks to, and the room reserved under the tiles for the
+     bar to land in. */
+  --tugx-attachment-scrollbar-height: 12px;
+
   flex-wrap: nowrap;
   overflow-x: auto;
+  /* One row, so there is nothing to scroll DOWN to — and the axis is shut off
+     outright rather than left to resolve on its own. A non-`visible`
+     `overflow-x` computes the other axis to `auto`, so this box was one image
+     away from a vertical scrollbar it has no content for. */
+  overflow-y: hidden;
+  /* FILL the zone rather than being sized by the tiles. A content-sized scroll
+     box cannot host a space-taking scrollbar: the bar comes out of the height
+     the content already claimed, so the row overflows downward by exactly the
+     bar's height however the tiles are tuned. Given the zone's height outright,
+     the box has a fixed budget and the bar is simply spent from it. */
+  height: 100%;
+  box-sizing: border-box;
   align-items: center;
   margin-top: 0;
   /* Reserve room for a tile's keyboard focus ring inside this scroll box.
      The compose strip is the Z4C cycle's attachment stops; the leaf ring is
      an `outline` offset just outside each tile (`focus-ring.css`), and a
-     scrolling container clips it on every edge (a non-`visible` `overflow-x`
-     forces `overflow-y` to `auto` too). Padding the ring's full reach —
-     offset + width — keeps the outline painting inside the clip box rather
+     scrolling container clips it on every edge. Padding the ring's full reach
+     — offset + width — keeps the outline painting inside the clip box rather
      than sheared off at the tile boundary. The hosting zone reserves enough
      height above the strip to absorb this (see `--tug-prompt-entry-attach-
      height` in session-card.css). */
   padding: calc(
     var(--tugx-focus-ring-offset) + var(--tugx-focus-ring-width)
+  );
+}
+
+/* ── Scrolling: the row pays for its own bar ────────────────────────────────
+   `[data-scrolls]` is written by the strip when the row does not fit — see
+   `useComposeStripScrolls`, which measures the row at its NATURAL size so the
+   flag cannot chase its own effect.
+
+   The zone this strip sits in is a CONSTANT height, and that constant is
+   load-bearing twice over: the prompt-entry reserves it the instant an atom
+   drops, and the Session card steals exactly it from the editor's floor. So
+   the bar cannot be paid for by growing — the tiles give up the height
+   instead. A preview a step smaller on the rows that scroll is a far better
+   trade than a bar that shoves the strip past the height its zone clips at,
+   which is what produced the second, vertical scrollbar. */
+[data-slot="tug-attachment-preview"][data-deletable][data-scrolls] {
+  /* 44 = 56 − the bar, and that is the whole of it: the box's height is the
+     zone's either way, so the height the bar takes is the height the tile has
+     to give. Derived rather than written as 44, so retuning either the rest
+     height or the bar's thickness carries this with it. */
+  --tugx-attachment-tile-height: calc(
+    var(--tugx-attachment-tile-height-rest) -
+      var(--tugx-attachment-scrollbar-height)
   );
 }
 
