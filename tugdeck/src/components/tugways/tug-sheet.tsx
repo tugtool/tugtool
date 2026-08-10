@@ -957,12 +957,59 @@ export function TugSheetContent({
     const measure = (): void => {
       const frame = paneFrameEl.getBoundingClientRect();
       const anchor = bottomAnchorEl.getBoundingClientRect();
-      clip.style.bottom = `${Math.max(0, frame.bottom - anchor.bottom)}px`;
+      // Where the panel would rest if the band above the anchor held it.
+      const restInset = Math.max(0, frame.bottom - anchor.bottom);
+      // The anchor is a PREFERENCE, not a ceiling. When the panel needs more
+      // height than the band between the title bar and the anchor — the
+      // Session card's prompt entry grown tall leaves the view slot only a
+      // sliver — pushing the whole panel up against the title bar and making
+      // it scroll is the wrong trade: a sheet is a panel, read at a glance,
+      // and the region below the anchor is exactly what a modal is entitled
+      // to paint over. So the clip's bottom edge slides DOWN over that region
+      // by however much the panel is short, stopping `SHEET_CANVAS_GAP` above
+      // the frame's bottom edge. A panel that fits stays where its chips are.
+      const content = sheetContentRef.current;
+      let inset = restInset;
+      if (content !== null) {
+        const cs = getComputedStyle(content);
+        const px = (value: string): number => Number.parseFloat(value) || 0;
+        const marginBottom = px(cs.marginBottom);
+        const gutters = px(cs.marginTop) + marginBottom;
+        // `scrollHeight` is the panel's natural height whether or not the cap
+        // is currently biting, so this measure is stable against its own
+        // write — the loop quiesces on the second pass.
+        const needed =
+          content.scrollHeight +
+          px(cs.borderTopWidth) +
+          px(cs.borderBottomWidth) +
+          gutters;
+        const band = frame.bottom - restInset - clip.getBoundingClientRect().top;
+        const shortfall = needed - band;
+        if (shortfall > 0) {
+          // How far down the panel may go: `SHEET_CANVAS_GAP` above the frame's
+          // bottom edge, or above the viewport's when the pane runs off the
+          // bottom of the window (the same "never below the viewport" reading
+          // the canvas clamp takes). Expressed as an inset from the frame
+          // bottom, which is what the clip's `bottom` is measured in.
+          const floor = Math.max(
+            0,
+            frame.bottom -
+              Math.min(frame.bottom, window.innerHeight) +
+              SHEET_CANVAS_GAP -
+              marginBottom,
+          );
+          inset = Math.max(floor, restInset - shortfall);
+        }
+      }
+      clip.style.bottom = `${inset}px`;
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(paneFrameEl);
     observer.observe(bottomAnchorEl);
+    // The panel's own height is an input now: an accordion row opening inside
+    // the AI mixer is what tips a fitting sheet into an overflowing one.
+    if (sheetContentRef.current !== null) observer.observe(sheetContentRef.current);
     window.addEventListener("resize", measure);
     return () => {
       observer.disconnect();

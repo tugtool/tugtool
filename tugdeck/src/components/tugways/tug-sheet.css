@@ -87,6 +87,11 @@ body {
  * band rather than the canvas — which is why the JS canvas clamp stands down
  * for this anchor.
  *
+ * The anchor is where the panel PREFERS to rest, not a ceiling: when the panel
+ * needs more height than the band, that effect slides the clip's bottom edge
+ * down past the anchor — over the prompt entry — instead of letting the panel
+ * ride up under the title bar and scroll.
+ *
  * For the Session card's Z4B pickers the anchor is the view slot, so the panel
  * rests just above the Z2 status bar (or above the find bar while it is open,
  * matching where the Changes / History shades rise from) and grows upward,
@@ -100,9 +105,13 @@ body {
 }
 
 .tug-sheet-clip[data-vertical-anchor="bottom"] .tug-sheet-content {
-  /* Mirror of the top anchor's `space-a auto 0`: the gap moves to the bottom. */
-  margin: 0 auto var(--tugx-sheet-space-a);
-  max-height: calc(100% - var(--tugx-sheet-space-b));
+  /* Mirror of the top anchor's `space-a auto 0`: the gap moves to the bottom.
+     The equal top gutter is what the panel keeps once it is tall enough to fill
+     the clip — and, being a real margin rather than a term inside the
+     `max-height` calc, it is a px value the bottom-anchor effect can read back
+     when it works out whether the panel fits (see `tug-sheet.tsx`). */
+  margin: var(--tugx-sheet-space-a) auto var(--tugx-sheet-space-a);
+  max-height: calc(100% - 2 * var(--tugx-sheet-space-a));
 }
 
 /* ---- Content panel (the sheet itself) ---- */
