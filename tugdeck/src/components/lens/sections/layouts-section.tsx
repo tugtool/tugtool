@@ -1,5 +1,5 @@
 /**
- * layouts-section.tsx — the Lens **Layouts** section: the deck's layout picker.
+ * layouts-section.tsx — the Lens **Layout** section: the deck's layout picker.
  *
  * Every layout decision the deck has is made here, on three axes. **Cards** says
  * how the cards are arranged; **Card Width** says how wide they read; **Sidebar
@@ -515,7 +515,7 @@ function LayoutsSectionBody({
 export function registerLayoutsSection(): void {
   registerLensSection({
     kind: SECTION_KIND,
-    title: "Layouts",
+    title: "Layout",
     glyph: <Columns3 size={14} />,
     collapsedSummary: () => <LayoutsCollapsedSummary />,
     body: (host) => <LayoutsSectionBody host={host} />,
