@@ -158,6 +158,16 @@ export interface SessionIdentityContext {
    */
   recordedTag?: string | null;
   /**
+   * A project leaf-name recorded **elsewhere** — the `<project>` head of a
+   * session atom's `<project>/<callsign>` value. The same contract as
+   * {@link recordedTag}, for the other half of the reference: it fills
+   * {@link SessionIdentity.project} only when no ledger-fed source supplies a
+   * project dir, and it never makes the identity
+   * {@link SessionIdentity.resolved} — what a reference recorded is what it
+   * said, never evidence that this ledger can find what it named.
+   */
+  recordedProject?: string | null;
+  /**
    * The ledger's own answer that it holds this session, from a
    * `resolve_sessions` round trip (`session-citation-store.ts`).
    *
@@ -234,6 +244,12 @@ export function composeSessionIdentity(input: {
    * see the field's own note.
    */
   recordedTag?: string | null;
+  /**
+   * A project leaf-name the reference recorded. Fills `project` only when
+   * `projectDir` supplies none, and never affects `resolved` — see the
+   * context field's own note.
+   */
+  recordedProject?: string | null;
   projectDir?: string | null;
   branch?: string | null;
   state?: SessionRow["state"] | null;
@@ -247,9 +263,13 @@ export function composeSessionIdentity(input: {
   const name = input.name?.trim() || null;
   const synopsis = input.synopsis?.trim() || null;
   const projectDir = input.projectDir?.trim() ?? "";
+  const recordedProject = input.recordedProject?.trim() || null;
   const branch = input.branch?.trim() || null;
   return {
-    project: projectDir.length > 0 ? projectLeafName(projectDir) : "",
+    project:
+      projectDir.length > 0
+        ? projectLeafName(projectDir)
+        : (recordedProject ?? ""),
     branch,
     tag,
     // Resolvability rests only on ledger-fed facts. `recordedTag` is
@@ -307,6 +327,7 @@ export function resolveSessionIdentity(
     synopsis: sessionSynopsisStore.getSynopsis(sessionId),
     tag: sessionTagStore.getTag(sessionId),
     recordedTag: context?.recordedTag ?? null,
+    recordedProject: context?.recordedProject ?? null,
     projectDir: context?.projectDir ?? boundProjectDirFor(sessionId),
     branch: context?.branch ?? null,
     state: context?.state ?? null,
@@ -383,6 +404,7 @@ export function useSessionIdentity(
     synopsis,
     tag,
     recordedTag: context?.recordedTag ?? null,
+    recordedProject: context?.recordedProject ?? null,
     projectDir: context?.projectDir ?? boundProjectDir,
     branch: context?.branch ?? null,
     state: context?.state ?? null,
@@ -406,14 +428,18 @@ export function useSessionIdentity(
  * disappears with it. A lone name run may ellipsize — it is then the only run
  * there is.
  *
- * No `project/` prefix. {@link sessionIdentityLine} keeps that and is a
- * different channel; see its own note for why it must not change.
+ * The callsign run wears the `project/` prefix — `tugtool/frothy-nurse` —
+ * because the project a session works against is how a reader places it in a
+ * list of sessions from many projects. The composed run is exactly
+ * {@link sessionIdentityLine}, so the title and the Line channel cannot spell
+ * the same session two ways. A session with no known project degrades to the
+ * bare callsign.
  */
 export function sessionTitleParts(identity: SessionIdentity): {
   name: string;
   callsign: string | null;
 } {
-  const label = identity.tag ?? identity.shortId;
+  const label = sessionIdentityLine(identity);
   if (identity.customName === null) return { name: label, callsign: null };
   return { name: identity.customName, callsign: label };
 }

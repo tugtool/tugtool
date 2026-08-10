@@ -99,14 +99,14 @@ describe("chipMark", () => {
 });
 
 describe("the session chip face", () => {
-  test("a session shows its callsign, not the project run it is cited by", () => {
+  test("a session shows the full project/callsign run — the title grammar's own spelling", () => {
     expect(
       chipDisplayLabel("session", "tugtool/quirky-hull", "tugtool/quirky-hull"),
-    ).toBe("quirky-hull");
-    // A fork's callsign is a callsign; the segments are not a path.
+    ).toBe("tugtool/quirky-hull");
+    // A fork's lineage rides the callsign; the segments are not a path.
     expect(
       chipDisplayLabel("session", "tugtool/quirky-hull-A1", "tugtool/quirky-hull-A1"),
-    ).toBe("quirky-hull-A1");
+    ).toBe("tugtool/quirky-hull-A1");
   });
 
   test("is a pill in text ink — outside the shared atom family", () => {

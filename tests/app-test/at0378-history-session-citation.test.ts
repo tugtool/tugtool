@@ -151,7 +151,7 @@ describe.skipIf(!SHOULD_RUN)(
             `Array.from(document.querySelectorAll(${JSON.stringify(CHIP)}))
               .map(function (el) { return (el.textContent || "").trim(); })`,
           );
-          note(`at0378 session chips on screen: ${chips.length}`);
+          note("at0378 session chips on screen", chips.length);
           expect(chips.length).toBeGreaterThan(0);
           // Every chip says something — an empty atom would be a chip that
           // resolved to nothing AND had nothing recorded to fall back on.
@@ -178,9 +178,7 @@ describe.skipIf(!SHOULD_RUN)(
               })`,
           );
           const unresolved = marks.filter((m) => m.missing);
-          note(
-            `at0378 unresolvable chips: ${unresolved.length} of ${marks.length}`,
-          );
+          note("at0378 unresolvable chips", `${unresolved.length} of ${marks.length}`);
           expect(unresolved.length).toBeGreaterThan(0);
           // Inert: no click, on every one of them. A chip that offered a
           // gesture into a session it cannot find is the failure this pins.
@@ -216,7 +214,7 @@ describe.skipIf(!SHOULD_RUN)(
                 };
               })`,
           );
-          note(`at0378 chip fit: ${JSON.stringify(fit.slice(0, 3))}`);
+          note("at0378 chip fit", fit.slice(0, 3));
           expect(fit.length).toBeGreaterThan(0);
           for (const chip of fit) {
             expect(chip.inside).toBe(true);
@@ -277,7 +275,7 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(ROW)})
               .getAttribute("data-expanded") === "true"`,
           );
-          note(`at0378 row folded after copy: ${foldedAfter}`);
+          note("at0378 row folded after copy", foldedAfter);
           expect(foldedAfter).toBe(false);
 
           // ---- B. No raw id, and no trailer line in any body. ---------------
@@ -287,7 +285,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(viewText).not.toContain("Tug-Session:");
           expect(viewText).not.toContain("Tug-Session-Id:");
           const uuid = UUID_ANYWHERE.exec(viewText);
-          if (uuid !== null) note(`at0378 unexpected uuid on screen: ${uuid[0]}`);
+          if (uuid !== null) note("at0378 unexpected uuid on screen", uuid[0]);
           expect(uuid).toBeNull();
         } finally {
           await app.close();

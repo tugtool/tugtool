@@ -21,15 +21,29 @@ export function isSessionAtomType(type: string): boolean {
  * The callsign inside a session atom's value — `quirky-hull` out of
  * `tugtool/quirky-hull`.
  *
- * The callsign is what the atom **displays** (Spec S05's title grammar carries
- * no project prefix) and what it **resolves through**: the ledger answers a
+ * The callsign is what the atom **resolves through**: the ledger answers a
  * callsign on `resolve_sessions`, which is how a chip holding no id reaches one
- * and so shows a live dot. The `project/` run stays in the value, the tooltip,
- * the citation, and the wire marker.
+ * and so shows a live dot. Display keeps the whole `<project>/<callsign>` run —
+ * the title grammar wears the project prefix — so this helper is a resolution
+ * key, never a display form.
  *
  * Pure. A value with no `/` is already a callsign and returns unchanged.
  */
 export function sessionAtomCallsign(value: string): string {
   const slash = value.lastIndexOf("/");
   return slash >= 0 ? value.slice(slash + 1) : value;
+}
+
+/**
+ * The project leaf-name inside a session atom's value — `tugtool` out of
+ * `tugtool/quirky-hull`, or null for a bare-callsign value.
+ *
+ * This is what a transcript chip hands the identity resolver as
+ * `recordedProject`: an unresolvable atom still shows the project its value
+ * recorded, without claiming the ledger can find the session.
+ */
+export function sessionAtomProject(value: string): string | null {
+  const slash = value.lastIndexOf("/");
+  if (slash <= 0) return null;
+  return value.slice(0, slash);
 }

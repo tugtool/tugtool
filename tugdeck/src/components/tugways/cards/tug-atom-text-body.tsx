@@ -44,7 +44,11 @@ import {
 } from "@/lib/tug-atom-img";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
-import { isSessionAtomType, sessionAtomCallsign } from "@/lib/session-atom";
+import {
+  isSessionAtomType,
+  sessionAtomCallsign,
+  sessionAtomProject,
+} from "@/lib/session-atom";
 import {
   annotationOpensSurface,
   dataAttributesForPayload,
@@ -212,7 +216,9 @@ export const TugAtomTextBody = React.forwardRef<
         // The transcript is a React surface, so the atom mounts the live
         // component rather than a bake of it: its dot reads the session's phase
         // this second and its title tracks a rename ([P14]). The chip resolves
-        // through the callsign, which is all the wire marker records.
+        // through the callsign; the value's `<project>/` head rides along as
+        // the recorded project, so even an unresolvable atom shows the
+        // project its value named.
         if (isSessionAtomType(seg.atom.type)) {
           const callsign = sessionAtomCallsign(seg.atom.value);
           return (
@@ -220,6 +226,9 @@ export const TugAtomTextBody = React.forwardRef<
               key={`a-${i}`}
               citedId={callsign}
               recordedTag={callsign}
+              context={{
+                recordedProject: sessionAtomProject(seg.atom.value),
+              }}
             />
           );
         }

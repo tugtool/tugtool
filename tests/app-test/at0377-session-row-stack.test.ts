@@ -238,11 +238,14 @@ describe.skipIf(!SHOULD_RUN)("at0377 — the three-level identity stack", () => 
         // Every row leads with the session's dot, closed sessions included —
         // a cardless session reads idle rather than getting no mark at all.
         expect(shape.dots).toBe(1);
-        // The callsign leads — an `adjective-noun` from the lexicon, minted at
-        // scan time. Not the prompt snippet the row used to open with, and
-        // never the raw UUID. These fixtures carry no user-set name, so the
-        // callsign IS the whole title.
-        expect(shape.title.trim()).toMatch(/^[a-z]+-[a-z]+(-[A-Z]\d+)*$/);
+        // The identity line leads — `project/callsign`, the callsign an
+        // `adjective-noun` from the lexicon, minted at scan time. Not the
+        // prompt snippet the row used to open with, and never the raw UUID.
+        // These fixtures carry no user-set name, so the line IS the whole
+        // title.
+        expect(shape.title.trim()).toMatch(
+          /^[\w.-]+\/[a-z]+-[a-z]+(-[A-Z]\d+)*$/,
+        );
 
         // ---- B. Tight leading, one vertical for the pair. ------------------
         const geometry = await app.evalJS<{

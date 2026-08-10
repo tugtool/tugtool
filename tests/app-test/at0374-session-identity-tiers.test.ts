@@ -134,9 +134,9 @@ describe.skipIf(!SHOULD_RUN)("at0374 — TugSessionIdentity chip and line tiers"
           expect(mark.names).toBe(1);
           expect(mark.callsigns).toBeLessThanOrEqual(1);
           expect(mark.text.length).toBeGreaterThan(0);
-          // No `project/` prefix in the title ink — that is the Line channel's,
-          // and it survives in the tooltip and the citation.
-          expect(mark.text).not.toContain("/");
+          // The `project/` prefix rides the title ink ([P05] amendment): every
+          // fixture on the bench carries a project, so every mark spells it.
+          expect(mark.text).toContain("/");
         }
         // Both registers are on the bench, so the loop above covered both.
         expect(marks.some((m) => m.tier === "chip")).toBe(true);

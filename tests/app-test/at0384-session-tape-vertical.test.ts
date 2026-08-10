@@ -149,14 +149,14 @@ describe.skipIf(!SHOULD_RUN)("at0384 — the tape's vertical", () => {
         const masthead = await app.evalJS<TapeGeometry>(
           measureJS(".session-masthead-row"),
         );
-        note("masthead tape: " + JSON.stringify(masthead));
+        note("masthead tape", masthead);
         expect(Math.abs(masthead.offset)).toBeLessThanOrEqual(
           CENTERING_TOLERANCE_PX,
         );
 
         // ---- B. The Lens row. ---------------------------------------------
         const lens = await app.evalJS<TapeGeometry>(measureJS(LENS_ROW));
-        note("lens tape: " + JSON.stringify(lens));
+        note("lens tape", lens);
         expect(Math.abs(lens.offset)).toBeLessThanOrEqual(
           CENTERING_TOLERANCE_PX,
         );

@@ -88,43 +88,65 @@ describe("customName and description", () => {
 });
 
 describe("sessionTitleParts", () => {
-  test("a named session leads with the name and the callsign follows", () => {
+  test("a named session leads with the name and the prefixed callsign follows", () => {
     const parts = sessionTitleParts(
       identity({ name: "Refactor the Lens", tag: "stocky-pixie" }),
     );
     expect(parts).toEqual({
       name: "Refactor the Lens",
-      callsign: "stocky-pixie",
+      callsign: "tugtool/stocky-pixie",
     });
   });
 
-  test("an unnamed session's title IS its callsign, with no second run", () => {
+  test("an unnamed session's title IS the identity line, with no second run", () => {
     expect(sessionTitleParts(identity({ tag: "stocky-pixie" }))).toEqual({
-      name: "stocky-pixie",
+      name: "tugtool/stocky-pixie",
       callsign: null,
     });
+  });
+
+  test("a session with no known project degrades to the bare callsign", () => {
+    expect(
+      sessionTitleParts(identity({ tag: "stocky-pixie", projectDir: null })),
+    ).toEqual({ name: "stocky-pixie", callsign: null });
   });
 
   test("a legacy tagless session degrades to its short id, never the UUID", () => {
     expect(sessionTitleParts(identity({ tag: null }))).toEqual({
-      name: SHORT,
+      name: `tugtool/${SHORT}`,
       callsign: null,
     });
     expect(
       sessionTitleParts(identity({ name: "The mint work", tag: null })),
-    ).toEqual({ name: "The mint work", callsign: SHORT });
+    ).toEqual({ name: "The mint work", callsign: `tugtool/${SHORT}` });
   });
 
   test("the description is not a title candidate — it is the line beneath", () => {
     expect(
       sessionTitleParts(identity({ synopsis: "Reworking the pane chrome" })),
-    ).toEqual({ name: "stocky-pixie", callsign: null });
+    ).toEqual({ name: "tugtool/stocky-pixie", callsign: null });
   });
 
-  test("a name never carries a project prefix — that is the Line channel", () => {
+  test("the callsign run IS the Line channel — one spelling, two readers", () => {
     const named = identity({ name: "Refactor the Lens" });
     expect(sessionTitleParts(named).name).not.toContain("/");
+    expect(sessionTitleParts(named).callsign).toBe(sessionIdentityLine(named));
     expect(sessionIdentityLine(named)).toBe("tugtool/stocky-pixie");
+  });
+
+  test("a recorded project fills the prefix for display without resolving", () => {
+    const cited = identity({
+      projectDir: null,
+      recordedProject: "gazette",
+      ledgerKnown: false,
+      tag: null,
+      recordedTag: "kooky-taper",
+    });
+    expect(sessionTitleParts(cited)).toEqual({
+      name: "gazette/kooky-taper",
+      callsign: null,
+    });
+    expect(cited.resolved).toBe(false);
   });
 });
 

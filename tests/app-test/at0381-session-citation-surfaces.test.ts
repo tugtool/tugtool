@@ -191,13 +191,12 @@ describe.skipIf(!SHOULD_RUN)("at0381 — every citation surface names the sessio
             })`,
         );
         expect(chips).toHaveLength(2);
-        // B. The resolvable one is the callsign, and no part of the UUID.
+        // B. The resolvable one is the identity line, and no part of the UUID.
         const resolved = chips.find((c) => !c.missing);
-        // The atom's title ink is the callsign with no `project/` in front of
-        // it — the prefix is `sessionIdentityLine`'s channel, which the tab
-        // strip above reads, and it survives in the tooltip and the citation.
-        expect(resolved?.text).toContain(TAG);
-        expect(resolved?.text).not.toContain("tugtool/");
+        // The atom's title ink wears the `project/` prefix ([P05] amendment) —
+        // the same `project/callsign` Line the tab strip above reads, so the
+        // chip and the tab cannot spell one session two ways.
+        expect(resolved?.text).toContain(`tugtool/${TAG}`);
         expect(resolved?.text).not.toContain(SESSION_ID);
         // The whole rail is free of raw ids, not merely this chip.
         const railText = await app.evalJS<string>(

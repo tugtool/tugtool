@@ -17,15 +17,17 @@
  * quiet idle dot rather than a red one.
  *
  * **The title is two runs, not one.** The user's own name leads, then a quieter
- * ` : <callsign>` ({@link sessionTitleParts}). Which run gives way under a
- * width squeeze depends on the register, and both rules are the gallery's: on
- * a title surface (the line tier) the callsign is the permanent citable handle
- * the reader scans a list by, so it survives and the name elides; on the atom
- * (the chip tier) the user's own words survive and the minted handle elides —
- * the tooltip and every copy path still carry it whole. A session with no name
- * renders the bare callsign, which may then elide since it is the only run
- * there is. No `project/` prefix: that is `sessionIdentityLine`'s channel and
- * it survives in the tooltip and citation.
+ * ` : <project>/<callsign>` ({@link sessionTitleParts}). Which run gives way
+ * under a width squeeze depends on the register, and both rules are the
+ * gallery's: on a title surface (the line tier) the callsign is the permanent
+ * citable handle the reader scans a list by, so it survives and the name
+ * elides; on the atom (the chip tier) the user's own words survive and the
+ * minted handle elides — the tooltip and every copy path still carry it whole.
+ * A session with no name renders the bare `<project>/<callsign>`, which may
+ * then elide since it is the only run there is. The `project/` prefix rides
+ * the callsign run — the project a session works against is how a reader
+ * places it — and a session with no known project degrades to the callsign
+ * alone.
  *
  * **The atom paints in text ink.** The pill's run and border take the ordinary
  * text color and a `currentcolor` mix; the dot is its only color channel,

@@ -36,8 +36,8 @@ Two findings from the code survey make server work unavoidable, and both were co
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- A Session card's masthead shows three rows — `[dot] <title>  [wave]`, the description, and the activity line with its tape — with **no** width-control icon and **no** `project/` prefix on the title. The pane's own controls beside it are untouched: the slot-stack badge, the `…` section menu, and the close X all stay ([P15]). (Verify: app-test asserts `[data-slot="session-masthead"]` has exactly one dot and three text rows, and that no `[data-testid="tug-pane-title-bar-width-button"]` exists inside a masthead pane — an *absence* assertion, never an exact button list, which would go red the moment a Session card joins a stack and the badge appears.)
-- A session with a user-set name renders `<name> : <callsign>` on the masthead, the Lens row, the picker row, and the atom; a session without one renders the bare callsign. (Verify: unit tests on the formatter `sessionTitleParts`; app-test reads the rendered runs on all four.)
+- A Session card's masthead shows three rows — `[dot] <title>  [wave]`, the description, and the activity line with its tape — with **no** width-control icon, and the title's callsign run spelled `<project>/<callsign>` (the [P05] amendment). The pane's own controls beside it are untouched: the slot-stack badge, the `…` section menu, and the close X all stay ([P15]). (Verify: app-test asserts `[data-slot="session-masthead"]` has exactly one dot and three text rows, and that no `[data-testid="tug-pane-title-bar-width-button"]` exists inside a masthead pane — an *absence* assertion, never an exact button list, which would go red the moment a Session card joins a stack and the badge appears.)
+- A session with a user-set name renders `<name> : <project>/<callsign>` on the masthead, the Lens row, the picker row, and the atom; a session without one renders the bare `<project>/<callsign>` ([P05] amendment). (Verify: unit tests on the formatter `sessionTitleParts`; app-test reads the rendered runs on all four.)
 - Under a width squeeze on a named session, the **callsign** is the run that ellipsizes and the user's name survives intact. (Verify: app-test measures `scrollWidth`/`clientWidth` on the two runs in a narrowed pane.)
 - No surface renders the string `PULSE`. (Verify: a unit-test grep gate over `tugdeck/src/components/` and `tugdeck/src/lib/` asserting no user-facing `PULSE` literal outside gallery cards and internal identifiers.)
 - The phase dot never paints danger for a session whose liveness is merely unknown. (Verify: unit test on `useSessionPhase`'s no-card fallback returning the `idle` key, plus an app-test on a picker row for a closed session.)
@@ -118,7 +118,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 **Answered by the ledger instead.** The consumer this question anticipated arrived — a live transcript chip needs an id to subscribe with — and the payload still did not have to widen: `resolve_sessions` resolves a callsign ([P14]'s amendment). The callsign was already "a unique permanent key"; what was missing was somewhere to redeem it. An atom pasted into a document that outlives this ledger is unchanged by that, and the flat-text citation beside it remains the durable form.
 
-#### [Q02] Should the Changes card's session title adopt the new grammar? (DEFERRED) {#q02-changeset-title-grammar}
+#### [Q02] Should the Changes card's session title adopt the new grammar? (RESOLVED) {#q02-changeset-title-grammar}
 
 **Question:** `session_row_title` in `tugrust/crates/tugcast/src/feeds/changeset.rs` composes a session's display title server-side with the old precedence — user name, else callsign, else prompt snippet, else short id. The new grammar is `<name> : <callsign>`, with both present.
 
@@ -130,7 +130,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 
 **Plan to resolve:** Follow-on. The Changes card was not among the five surfaces named for this rollout, and the grammar change there is independent of everything here.
 
-**Resolution:** DEFERRED — tracked in [#roadmap].
+**Resolution:** RESOLVED with the [P05] amendment (2026-08-09). `session_row_title` and `session_display_name` both compose the identity grammar — `<name> : <project>/<callsign>`, `<project>/<callsign>` unnamed — with the legacy tagless fallbacks (user name → prompt snippet → `id[..8]`) unchanged, so the hash-equality sniff still holds.
 
 #### [Q03] Does the masthead keep the sparkline and activity-line popovers? (DECIDED) {#q03-masthead-popovers}
 
@@ -226,9 +226,11 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 - Known readers to update: `session-masthead.tsx`, `session-picker-cells.tsx`, `tug-session-identity.tsx` (the tooltip body), `components/lens/sections/cards-section.tsx`, `components/lens/sections/cards-data-source.ts`.
 - `cards-section.tsx` uses `identity.title` for a close-button label and a filter-highlighted run; both take `customName ?? description ?? tag` explicitly at the call site rather than a revived merge.
 
-#### [P05] The title grammar is `<customName> : <callsign>`, and the callsign gives way first (DECIDED) {#p05-title-grammar}
+#### [P05] The title grammar is `<customName> : <project>/<callsign>`, and the callsign gives way first (DECIDED, amended) {#p05-title-grammar}
 
-**Decision:** A named session's title renders the custom name in the title weight, then a quieter ` : <callsign>`. An unnamed session renders the bare callsign. Under a width squeeze the **callsign** truncates and the custom name survives. A new pure formatter `sessionTitleParts(identity): { name: string; callsign: string | null }` produces the two runs. `sessionIdentityLine` is **unchanged**.
+**Decision:** A named session's title renders the custom name in the title weight, then a quieter ` : <project>/<callsign>`. An unnamed session renders the bare `<project>/<callsign>`. Under a width squeeze the **callsign run** truncates and the custom name survives. A new pure formatter `sessionTitleParts(identity): { name: string; callsign: string | null }` produces the two runs. `sessionIdentityLine` is **unchanged** — the callsign run is composed *as* that Line string, so the title and the pane-title channel cannot spell the same session two ways.
+
+**Amendment (2026-08-09) — the `project/` prefix returns.** The first cut of this decision dropped the prefix from title ink on the grounds that the surrounding card already implied the project. In use it did not: with sessions from several projects open at once, a glance across mastheads, picker rows, and Lens rows could not say which project a callsign worked against, and the prefix earns its run. The grammar above is the amended one; every implication below that said "no `project/` prefix" is reversed, and the callsign run everywhere is `<project>/<callsign>` (degrading to the bare callsign only when no project is known).
 
 **Rationale:**
 - A user-supplied name is the user explicitly saying what the session is called; it cannot rank below a callsign Tug minted for itself.
@@ -238,7 +240,7 @@ This plan uses explicit `{#anchor}` headings and rich `**References:**` lines. P
 **Implications:**
 - Two runs in the DOM, not one — which is a deliberate departure from the shipped chip's one-text-node rule, and `at0374`'s node-counting assertion changes accordingly ([R05]).
 - CSS: the name run is `flex: none` when a callsign follows it, and the callsign run carries `min-width: 0; overflow: hidden; text-overflow: ellipsis`. When the name run stands alone it takes `min-width: 0` and may ellipsize, since it is then the only run there is.
-- The masthead drops the `project/` prefix from its title ink; the prefix survives in the tooltip, the citation, and the telemetry popover.
+- ~~The masthead drops the `project/` prefix from its title ink; the prefix survives in the tooltip, the citation, and the telemetry popover.~~ Reversed by the amendment above: the title ink carries the prefix, and the tooltip, citation, and popover keep it too.
 
 #### [P06] Two levels under the title, not three (DECIDED) {#p06-two-levels}
 
@@ -431,11 +433,11 @@ Two independent facts, both scan-derived:
 
 `sessionTitleParts(identity: SessionIdentity): { name: string; callsign: string | null }`, a pure function in `tugdeck/src/lib/session-identity.ts`.
 
-- `customName` non-null → `{ name: customName, callsign: tag ?? shortId }`.
-- `customName` null → `{ name: tag ?? shortId, callsign: null }`.
+- The callsign run is the Line string — `sessionIdentityLine(identity)`, i.e. `<project>/<tag ?? shortId>`, degrading to the bare `tag ?? shortId` when no project is known ([P05] amendment).
+- `customName` non-null → `{ name: customName, callsign: line }`.
+- `customName` null → `{ name: line, callsign: null }`.
 - Rendered as two runs joined by `" : "`. The separator belongs to the callsign run so it disappears with it.
 - Truncation: the callsign run ellipsizes; the name run does not, unless it is the only run.
-- No `project/` prefix. `sessionIdentityLine` retains it and is untouched.
 
 **Spec S02: The description line** {#s02-description-line}
 
@@ -481,6 +483,7 @@ Sizes: `TUG_SESSION_ROW_INDICATOR_SIZE` (28) for the Lens; 16 for the masthead a
 **Spec S05: The atom face** {#s05-atom-face}
 
 - Resolved: rounded pill, transparent ground, `currentcolor`-mix border, text-ink run, live dot, right-click → Copy, click → raise when a card exists.
+- The run is the [P05] title grammar, prefix included: `<project>/<callsign>`, or `<custom-name> : <project>/<callsign>` once named. An atom the ledger cannot resolve still shows the `<project>/` head its value recorded (`recordedProject`, the display-only sibling of `recordedTag`).
 - Missing: same shape, dashed border, muted ink, forced idle dot, fully inert, tooltip `Session not found`.
 - Pending: inert and **not** slashed or dashed — claiming "not found" before asking is the same lie in the other direction.
 - Payloads unchanged: `text/plain` is the citation, the sidecar is the generic atom segment, the wire marker is the backticked mention. No `text/html`.
@@ -920,7 +923,7 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 
 | Criterion | Verified by |
 |---|---|
-| Masthead: three rows, one dot, no width control, no `project/` prefix | `at0375` (`masthead shape` = 1 dot / 3 rows / 0 headlines; width-button absence; the button's return on the same pane's non-masthead tab), `at0373` (no `tugtool/` in the bar) |
+| Masthead: three rows, one dot, no width control, `project/callsign` title | `at0375` (`masthead shape` = 1 dot / 3 rows / 0 headlines; width-button absence; the button's return on the same pane's non-masthead tab), `at0373` (`tugtool/` leads the callsign run in the bar) |
 | `<name> : <callsign>` on masthead, Lens row, picker row, atom | `session-identity.test.ts` (`sessionTitleParts`, all four cases), `at0379` (masthead, both runs), `at0373` (Lens row, both runs), `at0377` (picker), `at0374` (atom + line tier) |
 | Under a squeeze the callsign elides, the name survives | `at0374` claim B (`scrollWidth`/`clientWidth` on the two runs in a narrowed mount) |
 | No surface renders `PULSE` | `pulse-ink-gate.test.ts`, `at0282` (masthead and Lens row ink), `at0280` (the agentless posture) |
@@ -977,7 +980,7 @@ Both list surfaces paint the Lens/picker filter query over their rows with `rend
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [x] The masthead shows three rows with no width control and no `project/` prefix, and the pane's stack badge, section menu, and close X are all still there (`at0375`, three tests).
+- [x] The masthead shows three rows with no width control, its title callsign run spelled `project/callsign` ([P05] amendment), and the pane's stack badge, section menu, and close X are all still there (`at0375`, three tests).
 - [x] `<name> : <callsign>` renders on all four graphical surfaces, and the callsign is the run that truncates (`at0374` B; `at0373`/`at0377`/`at0379`; `sessionTitleParts` units).
 - [x] No user-facing `PULSE` ink anywhere (grep gate, plus `at0282`/`at0280` over rendered ink).
 - [x] A closed or cardless session shows an idle dot, never a red one (`use-session-phase` units; `at0377` D).

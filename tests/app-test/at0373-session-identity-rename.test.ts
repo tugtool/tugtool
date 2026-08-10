@@ -10,11 +10,12 @@
  * is correct, the wiring is not — which is why the hook's contract can only be
  * pinned against the real app.
  *
- *   A. **A Session pane's title bar reads the session's own name, and nothing
- *      else.** No `(branch)` suffix — the branch left identity and is telemetry
- *      now — and no `project/` prefix, which belongs to `sessionIdentityLine`,
- *      the pane-title CHANNEL the tab strip and the Window menu read. A Session
- *      pane's bar wears the masthead, and the masthead's ink is the name.
+ *   A. **A Session pane's title bar reads the session's identity line, and
+ *      nothing else.** No `(branch)` suffix — the branch left identity and is
+ *      telemetry now — and the callsign run wears the `project/` prefix ([P05]
+ *      amendment): the bar spells `tugtool/stocky-pixie`, the same Line string
+ *      the tab strip and the Window menu read, so one glance says which
+ *      project the session works against.
  *
  *   B. **An identity change repaints a live surface with no reload.** The
  *      change arrives the way the wire delivers it — a real `session_updated`
@@ -135,11 +136,11 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
         // test that only checked for the word "main".
         expect(barText).toContain(TAG);
         expect(barText).not.toContain("(");
-        // And no `project/` prefix: that belongs to `sessionIdentityLine`, the
-        // pane-title CHANNEL the tab strip and the Window menu read (asserted on
-        // a stacked tab in at0381). A Session pane's bar wears the masthead, and
-        // the masthead's title ink is the session's own name.
-        expect(barText).not.toContain("tugtool/");
+        // The `project/` prefix leads the callsign run ([P05] amendment): the
+        // bar spells the same `project/callsign` Line the tab strip and the
+        // Window menu read, so a glance across cards says which project each
+        // session works against.
+        expect(barText).toContain(`tugtool/${TAG}`);
         // The UUID never leads, and never appears at all in a name.
         expect(barText).not.toContain(SESSION_ID);
 
@@ -237,7 +238,7 @@ describe.skipIf(!SHOULD_RUN)("at0373 — session identity is one resolver, subsc
         // Two runs, sized separately — which is what lets the callsign be the
         // one that elides under a squeeze (at0374 measures that).
         expect(runs.name).toContain(RENAME);
-        expect(runs.callsign).toContain(REROLLED_TAG);
+        expect(runs.callsign).toContain(`tugtool/${REROLLED_TAG}`);
         // The Line string the pane-title channel carries is a different, and
         // deliberately CONSTANT, thing: `sessionIdentityLine` has no name arm, so
         // the tab strip and the Window menu read the same string before and after

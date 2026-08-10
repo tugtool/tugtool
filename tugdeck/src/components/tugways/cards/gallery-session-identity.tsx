@@ -29,9 +29,12 @@
  *   wire under a live card.
  * - **The user's name leads.** A custom name is the user explicitly telling
  *   us what the session is called, and it cannot ride below a callsign we
- *   minted ourselves. The title grammar is `<custom-name> : <callsign>` when
- *   a name exists, bare `<callsign>` when not — in the masthead, the rows,
- *   the picker, and the atom, all four. This obliges the resolver to stop
+ *   minted ourselves. The title grammar is
+ *   `<custom-name> : <project>/<callsign>` when a name exists, bare
+ *   `<project>/<callsign>` when not — in the masthead, the rows, the picker,
+ *   and the atom, all four. (An earlier revision dropped the `project/`
+ *   prefix from title ink; that is reversed — seeing the project a session
+ *   works against is worth the run.) This obliges the resolver to stop
  *   conflating: `SessionIdentity.title` (the `name ?? synopsis` merge)
  *   retires in favor of `customName` and `description` as separate fields.
  * - **Two levels under the title, not three.** The stack is title /
@@ -53,8 +56,8 @@
  *   title row; the wave (telemetry) widget and close remain. Right-clicking
  *   the title copies the session ATOM — all flavors — and the telemetry
  *   popover displays the atom itself alongside the flat citation.
- * - **The atom is live.** It renders `[dot] <callsign>` or
- *   `[dot] <custom-name> : <callsign>`, and both the dot and the name track
+ * - **The atom is live.** It renders `[dot] <project>/<callsign>` or
+ *   `[dot] <custom-name> : <project>/<callsign>`, and both the dot and the name track
  *   the running app — a rename mid-conversation repaints every mounted atom.
  *   So the atom is a COMPONENT with subscriptions, never a static string or
  *   a baked image. The liveness plumbing is designed in the atom section's
@@ -354,25 +357,32 @@ function Dot({
 // The title grammar — the user's name leads
 // ---------------------------------------------------------------------------
 
+/** The Line run a fixture's callsign wears: `<project>/<callsign>`. */
+function line(f: IdentityFixture): string {
+  return `${f.project}/${f.tag}`;
+}
+
 /**
- * The title run: `<custom-name> : <callsign>` when the user has named the
- * session, bare `<callsign>` when not. The custom name carries the title
- * weight — it is the user's explicit word on what this session is called —
- * and the callsign steps back to a quieter regular-weight run beside it,
- * still present because it is the session's permanent, citable handle.
+ * The title run: `<custom-name> : <project>/<callsign>` when the user has
+ * named the session, bare `<project>/<callsign>` when not. The custom name
+ * carries the title weight — it is the user's explicit word on what this
+ * session is called — and the project-prefixed callsign steps back to a
+ * quieter regular-weight run beside it, still present because it is the
+ * session's permanent, citable handle and the project is how a reader places
+ * it among sessions from many projects.
  */
 function TitleRun({ f }: { f: IdentityFixture }): React.ReactElement {
   if (f.userName === null) {
     return (
       <span className="gsi-title">
-        <span className="gsi-title-name">{f.tag}</span>
+        <span className="gsi-title-name">{line(f)}</span>
       </span>
     );
   }
   return (
     <span className="gsi-title">
       <span className="gsi-title-name">{f.userName}</span>
-      <span className="gsi-title-callsign">{` : ${f.tag}`}</span>
+      <span className="gsi-title-callsign">{` : ${line(f)}`}</span>
     </span>
   );
 }
@@ -552,8 +562,8 @@ function ProtoRow({
 // ---------------------------------------------------------------------------
 
 /**
- * The proposed atom face: `[dot] <callsign>`, or
- * `[dot] <custom-name> : <callsign>` once the user names the session. The
+ * The proposed atom face: `[dot] <project>/<callsign>`, or
+ * `[dot] <custom-name> : <project>/<callsign>` once the user names the session. The
  * rounded pill shape survives from the shipped chip; the session color does
  * not — the run and the border paint in ordinary text ink, and the LIVE dot
  * is the pill's only color channel. A missing (unresolvable) atom forces
@@ -587,11 +597,11 @@ function ProtoAtom({
       </span>
       <span className="gsi-atom-run">
         {f.userName === null ? (
-          <span className="gsi-atom-name">{f.tag}</span>
+          <span className="gsi-atom-name">{line(f)}</span>
         ) : (
           <>
             <span className="gsi-atom-name">{f.userName}</span>
-            <span className="gsi-atom-callsign">{` : ${f.tag}`}</span>
+            <span className="gsi-atom-callsign">{` : ${line(f)}`}</span>
           </>
         )}
       </span>
@@ -760,12 +770,15 @@ export function GallerySessionIdentity(): React.ReactElement {
           <>
             When a user names a session they are explicitly telling us what
             it is called, and that name cannot sit below a callsign we
-            minted. The grammar: <code>{"<custom-name> : <callsign>"}</code>{" "}
-            when named, bare <code>{"<callsign>"}</code> when not. The custom
-            name takes the title weight; the callsign steps back to a
-            quieter run — still present, because it is the permanent citable
-            handle a rename never changes. This obliges the resolver to
-            stop conflating: <code>SessionIdentity.title</code> (the{" "}
+            minted. The grammar:{" "}
+            <code>{"<custom-name> : <project>/<callsign>"}</code> when named,
+            bare <code>{"<project>/<callsign>"}</code> when not. The custom
+            name takes the title weight; the project-prefixed callsign steps
+            back to a quieter run — still present, because it is the
+            permanent citable handle a rename never changes, and the project
+            is how a reader places the session among sessions from many
+            projects. This obliges the resolver to stop conflating:{" "}
+            <code>SessionIdentity.title</code> (the{" "}
             <code>name ?? synopsis</code> merge) splits into{" "}
             <code>customName</code> and <code>description</code>.
           </>
@@ -850,17 +863,18 @@ export function GallerySessionIdentity(): React.ReactElement {
           </div>
         </Frame>
         <p className="gsi-blurb">
-          Two deltas from the shipped masthead, both deliberate. The{" "}
-          <code>project/</code> prefix leaves the title ink — the masthead
-          is inside the project&apos;s own card, and the prefix survives in
-          the tooltip, the citation, and the telemetry popover. And the
-          standing-intent line is cut: the stack is two levels under the
+          One delta from the earlier masthead, deliberate: the
+          standing-intent line is cut — the stack is two levels under the
           title, description then activity, because the description already
           says what the session is for and two goal-shaped lines read as an
           echo. The intent survives in the activity history popover, heading
           its run of beats. Mid-turn the description stays the description —
           it updates when the agent rewrites it, on its own clock — and the
-          activity line alone carries the turn&apos;s live beat.
+          activity line alone carries the turn&apos;s live beat. The{" "}
+          <code>project/</code> prefix stays in the title ink — a revision
+          briefly dropped it, and it came back: even inside the
+          project&apos;s own card, the prefix is how a glance across many
+          cards says which project each session works against.
         </p>
       </Section>
 
@@ -905,9 +919,9 @@ export function GallerySessionIdentity(): React.ReactElement {
         title="The atom — a live pill"
         blurb={
           <>
-            The atom face becomes <code>{"[dot] <callsign>"}</code> — or{" "}
-            <code>{"[dot] <custom-name> : <callsign>"}</code> once the user
-            names the session. Both parts are <strong>live</strong>: the dot
+            The atom face becomes <code>{"[dot] <project>/<callsign>"}</code>{" "}
+            — or <code>{"[dot] <custom-name> : <project>/<callsign>"}</code>{" "}
+            once the user names the session. Both parts are <strong>live</strong>: the dot
             reads the session&apos;s phase this second, and a rename
             repaints every mounted atom. So the atom is a component with
             subscriptions, never a static string or a baked image — pasted

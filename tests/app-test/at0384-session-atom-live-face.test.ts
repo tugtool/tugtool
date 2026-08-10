@@ -24,9 +24,9 @@
  *      settle **not** `data-missing`; a chip that stayed dashed would mean the
  *      round trip never resolved, which is what the id-only ledger did.
  *
- *   C. **It reads as the title, not as the citation.** The run is the callsign
- *      alone — the `project/` prefix is `sessionIdentityLine`'s channel and lives
- *      in the tooltip and the flat citation, never in the chip's ink.
+ *   C. **It reads as the title, not as the citation.** The run is the [P05]
+ *      title grammar, prefix included — `tugtool/stocky-pixie` — and the wire
+ *      marker's backtick-`@` spelling never survives as prose beside the chip.
  *
  * The composer's own pasted atom is a Canvas bake and stays one ([P14]); its
  * face is pinned in `at0376`, on the real pasteboard.
@@ -206,9 +206,8 @@ describe.skipIf(!SHOULD_RUN)("at0384 — the session atom's live face", () => {
         expect(chip.missing).not.toBe("true");
 
         // ---- C. It reads as the title, never as the citation. ---------------
-        expect(chip.text).toContain(TAG);
-        expect(chip.text).not.toContain("tugtool/");
-        // Nor is the marker left as prose beside it.
+        expect(chip.text).toContain(`tugtool/${TAG}`);
+        // The marker is never left as prose beside it.
         expect(
           await app.evalJS<string>(
             `(document.querySelector(${JSON.stringify(BODY)}).textContent || "")`,

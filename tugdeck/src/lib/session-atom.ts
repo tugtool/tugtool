@@ -37,6 +37,7 @@ export {
   SESSION_ATOM_TYPE,
   isSessionAtomType,
   sessionAtomCallsign,
+  sessionAtomProject,
 } from "@/lib/session-atom-shape";
 
 /**

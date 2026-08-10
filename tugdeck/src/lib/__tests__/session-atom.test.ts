@@ -16,6 +16,7 @@ import {
   SESSION_ATOM_TYPE,
   sessionAtomClipboardPayload,
   sessionAtomCallsign,
+  sessionAtomProject,
   sessionAtomSegment,
 } from "@/lib/session-atom";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
@@ -73,7 +74,7 @@ describe("sessionAtomClipboardPayload", () => {
 });
 
 describe("sessionAtomCallsign", () => {
-  test("is what the chip displays and resolves through", () => {
+  test("is what the chip resolves through — the display keeps the whole run", () => {
     // The atom carries no id: the callsign is the whole of what a chip — in the
     // composer, or replayed from a wire marker — has to reach the ledger with.
     expect(sessionAtomCallsign(sessionAtomSegment(identity()).value)).toBe(
@@ -86,6 +87,19 @@ describe("sessionAtomCallsign", () => {
 
   test("a value that is already a callsign passes through", () => {
     expect(sessionAtomCallsign("syrupy-beam")).toBe("syrupy-beam");
+  });
+});
+
+describe("sessionAtomProject", () => {
+  test("is the value's recorded project head, for display", () => {
+    expect(sessionAtomProject(sessionAtomSegment(identity()).value)).toBe(
+      "tugtool",
+    );
+    expect(sessionAtomProject("tugtool/syrupy-beam-A1-B2")).toBe("tugtool");
+  });
+
+  test("a bare-callsign value records no project", () => {
+    expect(sessionAtomProject("syrupy-beam")).toBeNull();
   });
 });
 

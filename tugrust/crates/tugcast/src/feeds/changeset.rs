@@ -598,9 +598,10 @@ pub(crate) async fn compose_snapshot(
 /// - every **live** session gains an entry — fileless when it owns no dirty
 ///   files — so the card can list every open session, clean or not;
 /// - every session entry with a matching ledger row takes its
-///   `display_name` from [`session_row_title`] (the chooser's rule:
-///   user-set name → callsign → prompt snippet → id prefix) and its `live`
-///   flag from the row's state.
+///   `display_name` from [`session_row_title`] (the identity grammar:
+///   `<name> : <project>/<callsign>`, with the legacy tagless fallbacks
+///   name → prompt snippet → id prefix) and its `live` flag from the row's
+///   state.
 ///
 /// Entries re-sort to (sessions by id, dashes by ref) so injection order
 /// never perturbs diff-suppression.
@@ -727,18 +728,37 @@ fn entry_sort_key(entry: &ChangesetEntry) -> (u8, &str) {
 /// (`name_user_set = false`) does not front, so a tagged session reads as
 /// its callsign rather than as a machine-written title.
 fn session_row_title(row: &SessionRow) -> String {
+    // The identity grammar (Spec S05, amended): a tagged row is
+    // `<project>/<callsign>`, led by ` : ` and the user's name when one
+    // exists. The project leaf is how a reader places a session among
+    // sessions from many projects; a row with no project degrades to the
+    // bare callsign.
+    if let Some(tag) = &row.tag {
+        let tag = tag.trim();
+        if !tag.is_empty() {
+            let leaf = project_leaf_name(&row.project_dir);
+            let line = if leaf.is_empty() {
+                tag.to_owned()
+            } else {
+                format!("{leaf}/{tag}")
+            };
+            if row.name_user_set {
+                if let Some(name) = &row.name {
+                    let name = name.trim();
+                    if !name.is_empty() {
+                        return format!("{name} : {line}");
+                    }
+                }
+            }
+            return line;
+        }
+    }
     if row.name_user_set {
         if let Some(name) = &row.name {
             let trimmed = name.trim();
             if !trimmed.is_empty() {
                 return trimmed.to_owned();
             }
-        }
-    }
-    if let Some(tag) = &row.tag {
-        let trimmed = tag.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_owned();
         }
     }
     if let Some(prompt) = &row.last_user_prompt {
@@ -748,6 +768,19 @@ fn session_row_title(row: &SessionRow) -> String {
         }
     }
     row.session_id.chars().take(8).collect()
+}
+
+/// The trailing path component of a project dir — the project's leaf-name
+/// identity, mirroring the deck's `projectLeafName`. Trailing slashes are
+/// ignored; an empty or slash-only dir yields the trimmed input.
+fn project_leaf_name(dir: &str) -> String {
+    let trimmed = dir.trim_end_matches('/');
+    let leaf = trimmed.rsplit('/').next().unwrap_or("");
+    if leaf.is_empty() {
+        trimmed.to_owned()
+    } else {
+        leaf.to_owned()
+    }
 }
 
 /// Collapse whitespace runs to single spaces and truncate to `max` chars
@@ -763,22 +796,37 @@ fn snippet_for_display(s: &str, max: usize) -> String {
     }
 }
 
-/// Owner display name: the session's `name` when the user set it, else its
-/// callsign `tag`, else the first 8 chars of the session id.
+/// Owner display name, on the same identity grammar as [`session_row_title`]:
+/// `<name> : <project>/<callsign>` for a named tagged row,
+/// `<project>/<callsign>` for a bare one, else the user-set `name`, else the
+/// first 8 chars of the session id.
 ///
 /// The id hash stays the exact `id[..8]` form for a tagless legacy row —
 /// the client's hash-equality sniff still recognizes it.
 fn session_display_name(pfe: &ProjectFileEvent) -> String {
+    if let Some(tag) = &pfe.owner_tag {
+        if !tag.is_empty() {
+            let leaf = project_leaf_name(&pfe.event.project_dir);
+            let line = if leaf.is_empty() {
+                tag.clone()
+            } else {
+                format!("{leaf}/{tag}")
+            };
+            if pfe.owner_name_user_set {
+                if let Some(name) = &pfe.owner_name {
+                    if !name.is_empty() {
+                        return format!("{name} : {line}");
+                    }
+                }
+            }
+            return line;
+        }
+    }
     if pfe.owner_name_user_set {
         if let Some(name) = &pfe.owner_name {
             if !name.is_empty() {
                 return name.clone();
             }
-        }
-    }
-    if let Some(tag) = &pfe.owner_tag {
-        if !tag.is_empty() {
-            return tag.clone();
         }
     }
     let id = &pfe.event.tug_session_id;
@@ -1950,28 +1998,39 @@ mod tests {
             SessionState::Live,
         );
 
-        // A tagged row speaks its callsign, not the prompt snippet.
+        // A tagged row speaks the identity line — `<project>/<callsign>` —
+        // not the prompt snippet.
         let tagged = SessionRow {
             tag: Some("stocky-pixie".to_owned()),
             ..base.clone()
         };
-        assert_eq!(session_row_title(&tagged), "stocky-pixie");
+        assert_eq!(session_row_title(&tagged), "proj/stocky-pixie");
 
-        // A user-set name still outranks the callsign.
+        // A user-set name leads, and the identity line stays beside it.
         let renamed = SessionRow {
             name: Some("the parser work".to_owned()),
             name_user_set: true,
             ..tagged.clone()
         };
-        assert_eq!(session_row_title(&renamed), "the parser work");
+        assert_eq!(
+            session_row_title(&renamed),
+            "the parser work : proj/stocky-pixie"
+        );
 
-        // An auto `aiTitle` does not front — the callsign wins.
+        // An auto `aiTitle` does not front — the identity line wins.
         let auto_titled = SessionRow {
             name: Some("Parser bug investigation".to_owned()),
             name_user_set: false,
+            ..tagged.clone()
+        };
+        assert_eq!(session_row_title(&auto_titled), "proj/stocky-pixie");
+
+        // No project dir → the bare callsign, never a stray slash.
+        let projectless = SessionRow {
+            project_dir: String::new(),
             ..tagged
         };
-        assert_eq!(session_row_title(&auto_titled), "stocky-pixie");
+        assert_eq!(session_row_title(&projectless), "stocky-pixie");
     }
 
     #[test]
@@ -2025,7 +2084,7 @@ mod tests {
     #[test]
     fn session_display_name_speaks_the_callsign_before_the_hash() {
         let tagged = project_file_event("sess-aaaaaaaa", None, false, Some("stocky-pixie"));
-        assert_eq!(session_display_name(&tagged), "stocky-pixie");
+        assert_eq!(session_display_name(&tagged), "proj/stocky-pixie");
 
         let renamed = project_file_event(
             "sess-aaaaaaaa",
@@ -2033,7 +2092,10 @@ mod tests {
             true,
             Some("stocky-pixie"),
         );
-        assert_eq!(session_display_name(&renamed), "the parser work");
+        assert_eq!(
+            session_display_name(&renamed),
+            "the parser work : proj/stocky-pixie"
+        );
 
         let auto_titled = project_file_event(
             "sess-aaaaaaaa",
@@ -2041,7 +2103,7 @@ mod tests {
             false,
             Some("stocky-pixie"),
         );
-        assert_eq!(session_display_name(&auto_titled), "stocky-pixie");
+        assert_eq!(session_display_name(&auto_titled), "proj/stocky-pixie");
 
         // A legacy tagless row still degrades to exactly id[..8] — the
         // client's hash-equality sniff depends on that form.

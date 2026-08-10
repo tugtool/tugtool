@@ -14,7 +14,8 @@
     "forceConsistentCasingInFileNames": true,
     "paths": {
       "@/_harness": ["./_harness/index.ts"],
-      "@/_harness/*": ["./_harness/*"]
+      "@/_harness/*": ["./_harness/*"],
+      "@/*": ["../../tugdeck/src/*"]
     }
   },
   "include": ["**/*.ts"],

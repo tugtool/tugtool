@@ -52,7 +52,11 @@ import { createPortal } from "react-dom";
 import { TugMarkdownBlock } from "../tug-markdown-block";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
-import { isSessionAtomType, sessionAtomCallsign } from "@/lib/session-atom";
+import {
+  isSessionAtomType,
+  sessionAtomCallsign,
+  sessionAtomProject,
+} from "@/lib/session-atom";
 import {
   TRANSCRIPT_CHIP_BASE_FONT_SIZE,
   TUG_ATOM_CHAR,
@@ -315,12 +319,16 @@ export const TugAtomMarkdownBody = React.forwardRef<
         createPortal(
           // A session atom portals the live identity chip instead of a generic
           // one: same surface, same portal, a subscribed component rather than
-          // a drawing of one ([P14]). The callsign is what it resolves through
-          // — the wire marker records nothing else.
+          // a drawing of one ([P14]). The callsign is what it resolves through;
+          // the value's `<project>/` head rides along as the recorded project
+          // so an unresolvable atom still shows the project its value named.
           isSessionAtomType(atom.type) ? (
             <TugSessionCitation
               citedId={sessionAtomCallsign(atom.value)}
               recordedTag={sessionAtomCallsign(atom.value)}
+              context={{
+                recordedProject: sessionAtomProject(atom.value),
+              }}
             />
           ) : (
             <TugAtomChip

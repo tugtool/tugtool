@@ -148,7 +148,7 @@ describe.skipIf(!SHOULD_RUN)("at0383 — the row title elides against the row", 
 
         // ---- A. The long name elides into the row's real measure. ----------
         const long = await app.evalJS<RowGeometry>(measureJS(LENS_ROW));
-        note("long name: " + JSON.stringify(long));
+        note("long name", long);
         // The identity is sized BY the title, not by its own content: the
         // defect showed as an identity wider than the box holding it.
         expect(long.identity.w).toBeCloseTo(long.title.w, 0);
@@ -163,7 +163,7 @@ describe.skipIf(!SHOULD_RUN)("at0383 — the row title elides against the row", 
         // ---- B. A short name does not elide, and slack remains. ------------
         await rename(SHORT_NAME);
         const short = await app.evalJS<RowGeometry>(measureJS(LENS_ROW));
-        note("short name: " + JSON.stringify(short));
+        note("short name", short);
         expect(short.name.scrollW).toBeLessThanOrEqual(short.name.w + 1);
         expect(short.callsign.scrollW).toBeLessThanOrEqual(short.callsign.w + 1);
         // The point of the pair: at the SAME row width, the short name is a
@@ -177,7 +177,7 @@ describe.skipIf(!SHOULD_RUN)("at0383 — the row title elides against the row", 
         const masthead = await app.evalJS<RowGeometry>(
           measureJS(".session-masthead-row"),
         );
-        note("masthead: " + JSON.stringify(masthead));
+        note("masthead", masthead);
         expect(masthead.identity.scrollW).toBeLessThanOrEqual(
           masthead.title.w + 1,
         );

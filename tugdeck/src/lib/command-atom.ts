@@ -29,10 +29,7 @@
  */
 
 import type { ContentBlock } from "@/protocol";
-import {
-  isSessionAtomType,
-  sessionAtomCallsign,
-} from "@/lib/session-atom-shape";
+import { isSessionAtomType } from "@/lib/session-atom-shape";
 
 /** Strip a single leading slash so the helpers are idempotent on a
  *  value that already carries one (defensive — `value` is canonically
@@ -56,14 +53,15 @@ export function commandWireText(value: string, args?: string): string {
  * The label a chip displays. A slash command shows its leading slash
  * (`/tugplug:commit`) — the slash *is* the command, and is the marker that
  * sets it apart in the shared atom-chip family (a command leads with `/`, a
- * file leads with its icon). Every other atom type shows its stored `label`.
+ * file leads with its icon). Every other atom type shows its stored `label` —
+ * a session's is the full `<project>/<callsign>` run, the title grammar's own
+ * spelling.
  */
 export function chipDisplayLabel(
   type: string,
   label: string,
   value: string,
 ): string {
-  if (isSessionAtomType(type)) return sessionAtomCallsign(value);
   if (type !== "command") return label;
   return "/" + bareName(value);
 }
