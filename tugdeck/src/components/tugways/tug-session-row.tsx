@@ -57,6 +57,7 @@ import { sparklineCurves } from "./tug-sparkline";
 import { TugLabel } from "./tug-label";
 import { TugListRow, type TugListRowProps } from "./tug-list-row";
 import { TugPulse, type TugPulsePreset } from "./tug-pulse";
+import { TugTooltip } from "./tug-tooltip";
 
 /**
  * How a session row packs its furniture — the one fit that ships.
@@ -207,12 +208,18 @@ export const TUG_SESSION_SPARK_CURVE = sparklineCurves.gamma(0.6);
  *
  * `0px` when the mount passes no tape (the picker's rows) — a row reserving
  * room for a graph it does not draw is width taken from the text for nothing.
+ *
+ * The tape's bare width goes out beside the sum, because a mount that places
+ * the tape against furniture of its own (the masthead centers it under the
+ * pane's control cluster) needs the graph's own advance rather than the air.
  */
 const SPARK_RESERVE_STYLE = {
+  "--tugx-session-row-spark-width": `${TUG_SESSION_ROW_SPARK_WIDTH}px`,
   "--tugx-session-row-spark-reserve": `calc(${TUG_SESSION_ROW_SPARK_WIDTH}px + var(--tugx-pulse-trailing-gap))`,
 } as React.CSSProperties;
 
 const NO_SPARK_RESERVE_STYLE = {
+  "--tugx-session-row-spark-width": "0px",
   "--tugx-session-row-spark-reserve": "0px",
 } as React.CSSProperties;
 
@@ -317,6 +324,33 @@ export interface TugSessionRowProps
   description?: React.ReactNode;
 
   /**
+   * The description's COMPLETE text, for the hover that shows what the line
+   * could not fit. Given, hovering the description opens a tooltip carrying
+   * this; a line that is already showing its description whole opens nothing.
+   *
+   * Separate from {@link description} because that one is rendered ink — the
+   * mount site's filter highlight wraps it in elements, and a tooltip cannot
+   * read a string back out of a ReactNode. Only the mount site holds the
+   * source text, so only the mount site can hand it over.
+   */
+  descriptionFull?: string;
+
+  /**
+   * Whether {@link description} is a SHORTENED form of {@link descriptionFull}
+   * — a mount that caps the text by character count before it ever reaches the
+   * DOM ([TugSessionRowProps.description] is then already ellipsized).
+   *
+   * It exists because the two ways a description goes short are not both
+   * visible to a measurement. CSS elision leaves the whole string in the DOM
+   * and shows the overflow in `scrollWidth`, which the tooltip detects on its
+   * own; a character cap hands the DOM a string that already fits, so nothing
+   * about the element says the reader is missing anything. Set, the hover is
+   * unconditional; unset, it opens only when the line is actually clipped.
+   * @default false
+   */
+  descriptionElided?: boolean;
+
+  /**
    * Whether {@link description} is a fact STANDING IN for a description nobody
    * has written yet — the session's own first prompt, or its creation stamp.
    * Painted a step quieter, so the reader can tell a described session from one
@@ -358,6 +392,39 @@ export interface TugSessionRowProps
   disabled?: boolean;
 }
 
+/**
+ * Give the description line its hover, or hand it back untouched.
+ *
+ * Untouched is the common case and deliberately costs nothing: a mount that
+ * passes no complete text (or whose description is empty) renders exactly the
+ * span it did before, with no tooltip machinery around it — these rows are
+ * drawn by the dozen in the Lens and the picker.
+ *
+ * `truncated` is inverted from `elided` because the two say the same thing
+ * from opposite ends: a line the mount already shortened needs no measurement
+ * to know something is missing, while an unshortened line has to be measured
+ * against its own box. Either way the tooltip never opens over a line that is
+ * showing its description whole.
+ */
+function withDescriptionHover(
+  line: React.ReactElement,
+  full: string | undefined,
+  elided: boolean,
+): React.ReactElement {
+  if (full === undefined || full.length === 0) return line;
+  return (
+    <TugTooltip
+      content={full}
+      truncated={!elided}
+      side="bottom"
+      align="start"
+      arrow={false}
+    >
+      {line}
+    </TugTooltip>
+  );
+}
+
 export const TugSessionRow = React.forwardRef<
   HTMLDivElement,
   TugSessionRowProps
@@ -371,6 +438,8 @@ export const TugSessionRow = React.forwardRef<
     name,
     slots,
     description,
+    descriptionFull,
+    descriptionElided = false,
     descriptionStandIn = false,
     activity,
     sparkline,
@@ -426,18 +495,31 @@ export const TugSessionRow = React.forwardRef<
         </span>
         {/* The description. Present whenever the prop is — an empty one keeps
             its line rather than collapsing it, so a description arriving does
-            not move the line beneath. A row that wants two lines omits it. */}
-        {description !== undefined ? (
-          <span
-            className="tug-session-row-description"
-            data-empty={
-              description === null || description === "" ? "true" : undefined
-            }
-            data-stamp={descriptionStandIn ? "true" : undefined}
-          >
-            {description}
-          </span>
-        ) : null}
+            not move the line beneath. A row that wants two lines omits it.
+
+            Hovering it shows the whole text when the line could not fit it.
+            The description is the row's longest run and the one a reader is
+            most likely to have written something long into, and it is the one
+            line here with no other surface that shows it in full — the title
+            is a name, the activity is a live beat, but a synopsis that runs
+            past the row's edge was simply unreadable. `truncated` mode does
+            the measuring, so nothing opens over a line that is already whole
+            ([L06]: measured off the live element, no state, no re-render). */}
+        {description !== undefined
+          ? withDescriptionHover(
+              <span
+                className="tug-session-row-description"
+                data-empty={
+                  description === null || description === "" ? "true" : undefined
+                }
+                data-stamp={descriptionStandIn ? "true" : undefined}
+              >
+                {description}
+              </span>,
+              descriptionFull,
+              descriptionElided,
+            )
+          : null}
         {/* The activity, and the tape that rides it. Nothing about how the line
             reads is decided here: `TugPulse` owns the face, the leading, where
             the baseline falls, and what a line with nothing to say says. Its

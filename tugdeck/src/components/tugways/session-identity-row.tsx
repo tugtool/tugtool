@@ -572,6 +572,14 @@ export function SessionIdentityRow({
       ),
     [descriptionSource, descriptionMaxChars],
   );
+  // The same text under no budget at all — what the hover shows when the line
+  // cannot fit the description. Flattened by the same call, so the tooltip and
+  // the line differ in LENGTH only and the reader is reading the continuation
+  // of the run they hovered rather than a differently-shaped one.
+  const descriptionFull = React.useMemo(
+    () => truncateForDisplay(descriptionSource, Number.MAX_SAFE_INTEGER),
+    [descriptionSource],
+  );
   const descriptionStandIn = identity.description === null;
 
   // ── The activity ladder ───────────────────────────────────────────────
@@ -656,6 +664,8 @@ export function SessionIdentityRow({
       indicatorSize={dotSize}
       name={nameProps !== undefined ? <span {...nameProps}>{runs}</span> : runs}
       description={renderFilterHighlight(description, highlight)}
+      descriptionFull={descriptionFull}
+      descriptionElided={description !== descriptionFull}
       descriptionStandIn={descriptionStandIn}
       activity={activity}
       sparkline={sparkline}

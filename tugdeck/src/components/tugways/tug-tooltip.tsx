@@ -4,7 +4,8 @@
  * Provides TugTooltipProvider (shared delay config) and TugTooltip (inline
  * API: child element becomes the trigger, content + optional shortcut badge
  * rendered inside the tooltip bubble). Supports truncation-aware mode where
- * the tooltip is suppressed when the trigger content is not actually clipped.
+ * the tooltip is suppressed when the trigger content is not actually clipped —
+ * measured at the open transition, so hover and focus opens are gated alike.
  *
  * ## Keyboard model — passive, never a focus stop
  *
@@ -41,7 +42,8 @@
  * flow back through the `open` prop. Truncation suppression and
  * controlled-mode forwarding behave exactly as before.
  *
- * Laws: [L06] appearance via CSS/DOM — truncation suppress ref, not state,
+ * Laws: [L06] appearance via CSS/DOM — truncation measured off the live
+ *       element at the open edge, not state,
  *       [L11] controls emit actions; responders handle actions,
  *       [L13] motion compliance — animation durations scale via --tug-timing,
  *       [L14] Radix Presence owns DOM lifecycle — use CSS keyframes,
@@ -134,9 +136,18 @@ export interface TugTooltipProps {
   delayDuration?: number;
   /**
    * Only show when the trigger content is visually clipped (overflow ellipsis).
-   * Measures scrollWidth vs clientWidth (and scrollHeight vs clientHeight) on
-   * each pointerenter. Suppresses open when content fits; never blocks close.
-   * Uses a ref for suppress state — no React state, no re-render. [L06]
+   * Measures scrollWidth vs clientWidth (and scrollHeight vs clientHeight) at
+   * the open transition. Suppresses open when content fits; never blocks close.
+   * Reads the live element, no React state, no re-render. [L06]
+   *
+   * Measured at the OPEN EDGE rather than on pointerenter, which is where this
+   * started. Two things were wrong with the earlier point. React synthesizes
+   * `onPointerEnter` from `pointerover`, so the handler was subject to an event
+   * the caller never dispatches directly and a synthetic hover skipped the
+   * measurement entirely — leaving the previous measurement standing. And a
+   * tooltip opened by FOCUS never sees a pointer at all, so a keyboard user got
+   * the bubble whether or not anything was clipped. The open edge is the one
+   * moment both paths pass through, and it is when the answer is wanted.
    * @default false
    */
   truncated?: boolean;
@@ -164,6 +175,15 @@ export interface TugTooltipProps {
   onOpenChange?: (open: boolean) => void;
   /** The trigger element. Rendered with Radix asChild — no wrapper div. */
   children: React.ReactElement;
+}
+
+/**
+ * Whether an element is showing less than it holds — the question `truncated`
+ * mode asks. One synchronous read of both axes, so an element clipped by a
+ * `nowrap` line and one clipped by a `max-height` both answer yes.
+ */
+function isClipped(el: Element): boolean {
+  return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight;
 }
 
 /**
@@ -204,9 +224,6 @@ export function TugTooltip({
   // prop on the next render.
   const [openMirror, setOpenMirror] = React.useState<boolean>(defaultOpen ?? false);
 
-  // Ref holds suppress flag — appearance concern only, no re-render needed [L06].
-  const suppressOpenRef = React.useRef(false);
-
   // Ref to the trigger DOM element for truncation measurement.
   const triggerElRef = React.useRef<Element | null>(null);
 
@@ -225,7 +242,7 @@ export function TugTooltip({
   function handleOpenChange(nextOpen: boolean) {
     // Never block close — only suppress open when a gate says so. [L06]
     if (nextOpen === true) {
-      if (truncated && suppressOpenRef.current) {
+      if (truncated && triggerElRef.current !== null && !isClipped(triggerElRef.current)) {
         return;
       }
       if (suppressOpen && triggerElRef.current && suppressOpen(triggerElRef.current)) {
@@ -267,19 +284,6 @@ export function TugTooltip({
     triggerElRef.current = el;
   }, []);
 
-  function handlePointerEnter() {
-    if (!truncated) return;
-    const el = triggerElRef.current;
-    if (!el) {
-      suppressOpenRef.current = false;
-      return;
-    }
-    // Synchronous DOM measurement — one read, no layout thrash.
-    const isClipped =
-      el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight;
-    suppressOpenRef.current = !isClipped;
-  }
-
   // Radix Root props: always bind open + onOpenChange to our mirror so
   // the observeDispatch effect has a stable gate and a programmatic
   // close path. delayDuration is forwarded only when the caller
@@ -290,26 +294,14 @@ export function TugTooltip({
     onOpenChange: handleOpenChange,
   };
 
-  // Clone the child to attach the callback ref + pointerEnter handler for
-  // truncation measurement. The Radix asChild trigger merges these.
-  // The ref is also attached when `suppressOpen` is provided, so the
-  // gate in handleOpenChange can read the live trigger element. [L06]
+  // Clone the child to attach the callback ref, so both open-edge gates —
+  // truncation measurement and the caller's `suppressOpen` — can read the live
+  // trigger element. The Radix asChild trigger merges it. Nothing else is
+  // added: the child keeps its own handlers untouched. [L06]
   const needsTriggerRef = truncated || suppressOpen !== undefined;
   const trigger = needsTriggerRef
     ? React.cloneElement(children, {
         ref: triggerCallbackRef,
-        ...(truncated
-          ? {
-              onPointerEnter: (e: React.PointerEvent) => {
-                handlePointerEnter();
-                // Preserve any existing onPointerEnter on the child.
-                const existing = (children.props as Record<string, unknown>).onPointerEnter;
-                if (typeof existing === "function") {
-                  (existing as (e: React.PointerEvent) => void)(e);
-                }
-              },
-            }
-          : {}),
       } as Record<string, unknown>)
     : children;
 
