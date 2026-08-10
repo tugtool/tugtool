@@ -89,6 +89,7 @@ import { getCardCloseGuard } from "@/lib/card-close-guard";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { classifyFileKind } from "@/lib/file-kinds";
 import { lensStore } from "@/lib/lens-store/lens-store";
+import { sessionNameStore } from "@/lib/session-name-store";
 import { sessionTagStore } from "@/lib/session-tag-store";
 
 import {
@@ -635,6 +636,12 @@ function useCardsInputs(filterQuery: string): {
     sessionTagStore.subscribe,
     sessionTagStore.getVersion,
   );
+  // The user's name is not in the label, but it is on the row and the filter
+  // matches it — so a `/rename` must re-run the projection too.
+  const nameVersion = useSyncExternalStore(
+    sessionNameStore.subscribe,
+    sessionNameStore.getVersion,
+  );
   const dataSource = useLensCardsDataSource({
     cardsRowOrder,
     groupOrder,
@@ -642,6 +649,7 @@ function useCardsInputs(filterQuery: string): {
     filterQuery,
     bindings,
     tagVersion,
+    nameVersion,
   });
   return { dataSource };
 }

@@ -702,12 +702,13 @@ export function SessionMasthead({
     branch,
   });
   const ledger = useSessionLedger(projectDir);
-  // Ask for this workspace's rows once. `useSessionLedger` is a read: it never
-  // fetches, and the ledger store DROPS a `session_updated` push for a workspace
-  // it has not listed — so a bound card in a project nothing opened the picker
-  // for would never see its own turn count, size, or last-used stamp, which is
-  // exactly what the activity line reports at rest. An event kick, not a state
-  // mirror ([L02]), and the same one the picker already performs on open.
+  // Re-validate this workspace's rows once for this card. The hook's first read
+  // of an unseen path already issues `list_sessions`; what it cannot do is
+  // notice that a path listed earlier in the session has drifted — terminal
+  // sessions and other out-of-band JSONL writers emit no `session_updated`, and
+  // the turn count, size, and last-used stamp they move are exactly what the
+  // activity line reports at rest. Stale-while-revalidate, the same kick the
+  // picker performs on open. An event, not a state mirror ([L02]).
   // Latched only on a kick that actually landed: the store singleton does not
   // exist until the connection is up, and the masthead mounts before that — a
   // ref set on the way past would swallow the one request this ever makes.

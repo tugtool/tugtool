@@ -278,6 +278,61 @@ describe("SessionLedgerStore", () => {
     store.dispose();
   });
 
+  it("findRow answers for a content-bearing push into a workspace nobody listed", () => {
+    // The masthead's whole rest form — turn count, on-disk size, when it last
+    // moved — is this row. A card bound without the picker (a restored deck)
+    // has no listing for its project, and dropping the push left that line with
+    // nothing to report but `Ready.`
+    const { store } = newStore();
+    publishSessionUpdated({
+      session_id: "s1",
+      fields: makeRow({
+        session_id: "s1",
+        project_dir: "/unlisted",
+        turn_count: 7,
+        last_user_prompt: "hello",
+        last_used_at: 1_700_000_009_000,
+      }),
+    });
+    expect(store.findRow("s1")?.turn_count).toBe(7);
+    // The BROWSE still sees nothing: no listing settled, so there is no list.
+    expect(store.getSnapshot("/unlisted").rows).toHaveLength(0);
+    store.dispose();
+  });
+
+  it("a settled listing takes over from the detached copy", () => {
+    const { store } = newStore();
+    publishSessionUpdated({
+      session_id: "s1",
+      fields: makeRow({
+        session_id: "s1",
+        project_dir: "/proj",
+        turn_count: 7,
+        last_user_prompt: "hello",
+      }),
+    });
+    expect(store.findRow("s1")?.turn_count).toBe(7);
+    store.getSnapshot("/proj");
+    publishListSessionsOk({
+      dir_exists: true,
+      project_dir: "/proj",
+      sessions: [
+        makeRow({
+          session_id: "s1",
+          project_dir: "/proj",
+          turn_count: 9,
+          last_user_prompt: "hello",
+        }),
+      ],
+    });
+    const listed = store.getSnapshot("/proj").rows;
+    // The listing is authoritative, and it is the same object the browse
+    // shows — not a staler copy held beside it.
+    expect(store.findRow("s1")).toBe(listed[0]);
+    expect(store.findRow("s1")?.turn_count).toBe(9);
+    store.dispose();
+  });
+
   it("session_updated { removed: true } drops the row", () => {
     const { store } = newStore();
     store.getSnapshot("ws-1");

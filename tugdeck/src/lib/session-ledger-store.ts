@@ -332,6 +332,10 @@ export class SessionLedgerStore {
         }
         for (const row of sorted) {
           this.rowLocations.set(row.session_id, { projectDir: project_dir });
+          // The listing is authoritative for everything it carries, so a row
+          // held detached while this path had no listing is now a second,
+          // staler answer to the same question.
+          this.detachedRows.delete(row.session_id);
         }
         // Status settles to "ready" on the phase-1 emit already — the
         // ledger rows are usable immediately, so the picker is interactive
@@ -410,8 +414,9 @@ export class SessionLedgerStore {
   /**
    * Patch a single row by id. The push carries the post-write row state;
    * we drop into the matching `projectDir` snapshot, replace or insert by
-   * id, re-sort, and emit. If the path isn't cached yet, ignore — the
-   * picker will pick up the row when it next calls `getSnapshot`.
+   * id, re-sort, and emit. A path with no settled listing has no list to
+   * patch, so the row is held detached instead of dropped — see the branch's
+   * own note, and {@link detachedRows}.
    */
   private patchRow(sessionId: string, row: SessionRow): void {
     // A content-empty row never enters the list — see `isEmptySessionRow`.
@@ -427,9 +432,6 @@ export class SessionLedgerStore {
       this.tick();
       return;
     }
-    // It has content now, so the list is its home and the detached copy
-    // would only be a second, staler answer to the same question.
-    this.detachedRows.delete(sessionId);
     // Locate the cache slot via the reverse index, falling back to the
     // payload's `project_dir` if the index doesn't yet know about this
     // session (the row was created on the server before the picker ever
@@ -438,12 +440,21 @@ export class SessionLedgerStore {
     const projectDir = located?.projectDir ?? row.project_dir;
     const cached = this.snapshots.get(projectDir);
     if (cached === undefined || cached.status !== "ready") {
-      // Path isn't cached yet; nothing to patch into. Update the reverse
-      // index opportunistically so a later patch with the same id can
-      // find its way home.
+      // No listing to patch into — but the push carried the whole row, and a
+      // card bound to this session is asking about THIS session, not browsing
+      // the workspace. Held detached ({@link detachedRows}) so `findRow`
+      // answers it: dropping it left every masthead in an unlisted project
+      // with no turn count, no size, and no last-used stamp, which is the
+      // entire rest form of the activity line. The browse still sees nothing
+      // until a real listing settles, and that settle takes the row over.
+      this.detachedRows.set(sessionId, row);
       this.rowLocations.set(sessionId, { projectDir });
+      this.tick();
       return;
     }
+    // The listing is its home now, so the detached copy would only be a
+    // second, staler answer to the same question.
+    this.detachedRows.delete(sessionId);
     const existingIdx = cached.rows.findIndex((r) => r.session_id === sessionId);
     let nextRows: SessionRow[];
     if (existingIdx >= 0) {
@@ -495,9 +506,40 @@ export class SessionLedgerStore {
  */
 let _activeStore: SessionLedgerStore | null = null;
 
+/**
+ * Hook subscriptions, held at MODULE level rather than on the store.
+ *
+ * A card's masthead mounts before the connection is up, so its first
+ * `useSyncExternalStore` subscribe runs while {@link _activeStore} is still
+ * null. A subscribe that resolved the store at call time had nothing to
+ * subscribe to and returned a no-op teardown — and since React only re-subscribes
+ * when the subscribe function's identity changes, that reader stayed deaf for the
+ * life of the mount: it never re-read, so it never reached the `getSnapshot` that
+ * kicks `list_sessions`, so a card bound without the picker never listed its own
+ * workspace and the activity line had no turn count, size, or last-used stamp to
+ * report. The bus outlives the store; {@link attachSessionLedgerStore} forwards
+ * the store's ticks into it and wakes everyone already waiting.
+ */
+const hookListeners = new Set<() => void>();
+
+function subscribeToLedger(listener: () => void): () => void {
+  hookListeners.add(listener);
+  return () => {
+    hookListeners.delete(listener);
+  };
+}
+
+function notifyLedgerHooks(): void {
+  for (const listener of [...hookListeners]) listener();
+}
+
 export function attachSessionLedgerStore(conn: TugConnection): SessionLedgerStore {
   if (_activeStore !== null) return _activeStore;
   _activeStore = new SessionLedgerStore(conn);
+  _activeStore.subscribe(notifyLedgerHooks);
+  // The wake that lets a pre-connection reader re-read — and on that read,
+  // kick the list it could not ask for before.
+  notifyLedgerHooks();
   return _activeStore;
 }
 
@@ -535,24 +577,36 @@ export function useSessionLedgerRow(
   sessionId: string,
   projectDir: string,
 ): SessionRow | null {
+  // The workspace listing: read for the rows it holds, and — the reason it is
+  // read even when the answer comes from elsewhere — to kick and subscribe the
+  // listing for `projectDir` exactly as before.
   const snapshot = useSessionLedger(projectDir);
+  // The row as its OWN subscription, not a read taken beside the one above.
+  // `useSyncExternalStore` re-renders on a changed SNAPSHOT, and a row held
+  // detached ({@link SessionLedgerStore.detachedRows}) never enters the
+  // workspace snapshot — so a push that moved only the detached row left the
+  // workspace read referentially identical, React bailed out of the render, and
+  // the surface kept showing the facts from before the turn. `findRow` is
+  // referentially stable while the row is unchanged, which is the contract this
+  // needs.
+  const found = useSyncExternalStore(
+    subscribeToLedger,
+    () =>
+      sessionId.length === 0 ? null : (_activeStore?.findRow(sessionId) ?? null),
+    () => null,
+  );
   const listed =
     sessionId.length === 0
       ? null
       : (snapshot.rows.find((r) => r.session_id === sessionId) ?? null);
-  if (listed !== null) return listed;
-  // Same store, already subscribed above — a detached row's arrival ticks
-  // those listeners, so this re-reads on the same wake.
-  return _activeStore?.findRow(sessionId) ?? null;
+  return listed ?? found;
 }
 
 export function useSessionLedger(projectDir: string): WorkspaceSnapshot {
   return useSyncExternalStore(
-    (listener) => {
-      const store = _activeStore;
-      if (store === null) return () => {};
-      return store.subscribe(listener);
-    },
+    // The module bus, not `_activeStore.subscribe` — see {@link hookListeners}
+    // for why resolving the store at subscribe time left early readers deaf.
+    subscribeToLedger,
     () => {
       if (projectDir.length === 0) return IDLE_SNAPSHOT;
       const store = _activeStore;

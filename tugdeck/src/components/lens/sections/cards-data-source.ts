@@ -57,6 +57,7 @@ import {
 } from "@/lib/file-view-open-registry";
 import type { LensCardsRowOrder } from "@/lib/lens-store/types";
 import { sessionIdentityLineForBinding } from "@/lib/session-identity";
+import { sessionNameStore } from "@/lib/session-name-store";
 import {
   getOpenTextCard,
   getOpenTextCardsVersion,
@@ -169,6 +170,17 @@ export interface CardIdentity {
   readonly group: LensCardsGroup;
   /** The name the row shows. */
   readonly title: string;
+  /**
+   * A SECOND run the row shows, when the row's title is not the whole of what
+   * it says: a bound session's user-set name, which leads its title line with
+   * `title`'s `<project>/<callsign>` beside it.
+   *
+   * Never a fallback for {@link title} — the two are separate runs on separate
+   * measures. It exists so the filter can match what the reader can see: a
+   * session the user renamed `parser rewrite` is findable by that name, which
+   * is the name they gave it and the only one they are likely to type.
+   */
+  readonly displayName: string | null;
   /** The bound file path, for file-kind cards that have one. */
   readonly path: string | null;
   /** The card wears its unsaved-changes mark. Viewers are read-only, so never. */
@@ -266,6 +278,8 @@ export interface CardsResolvers {
   viewPath: (cardId: string) => string | null;
   /** The label a bound session row displays. */
   sessionLabel: (binding: CardSessionBinding) => string;
+  /** The user-set name a bound session row shows beside its label, if any. */
+  sessionName: (binding: CardSessionBinding) => string | null;
   /** The registration's fallback title for a card with none of its own. */
   defaultTitle: (componentId: string) => string;
   /** The registration's lucide icon name, for the generic cells. */
@@ -288,6 +302,7 @@ export const DEFAULT_RESOLVERS: CardsResolvers = {
   // version tokens move (they are inputs to the section's memo), which is the
   // sanctioned non-React path into the resolver.
   sessionLabel: (binding) => sessionIdentityLineForBinding(binding),
+  sessionName: (binding) => sessionNameStore.getName(binding.tugSessionId),
   defaultTitle: (componentId) =>
     getRegistration(componentId)?.defaultMeta.title ?? "",
   icon: (componentId) =>
@@ -316,10 +331,18 @@ export interface LensCardsInputs {
    * tier — `<project>/<callsign>` — so the callsign is the one identity fact
    * it reads, and it is read at recompute time: a tag arriving late (or a
    * ledger reroll replacing the optimistic one) must re-run the projection.
-   * This is how the section says "it changed". The name and synopsis do not
-   * appear in the Line string and are deliberately not inputs here.
+   * This is how the section says "it changed". The synopsis does not appear in
+   * the Line string and is deliberately not an input here.
    */
   readonly tagVersion: unknown;
+  /**
+   * Version token for the name store. The user's name is not in the Line
+   * string, but it IS on the row and it is what the filter matches
+   * ({@link CardIdentity.displayName}) — so a `/rename` has to re-run the
+   * projection, or the session stays findable only under the name it had
+   * before the user changed it.
+   */
+  readonly nameVersion: unknown;
 }
 
 /** Which cell renders a single-card pane of this group. */
@@ -357,6 +380,7 @@ interface PaneEntry {
 function matchFields(identity: CardIdentity): (string | null)[] {
   return [
     identity.title,
+    identity.displayName,
     identity.path !== null ? displayDir(dirname(identity.path)) : null,
   ];
 }
@@ -369,6 +393,7 @@ function resolveCard(
 ): CardIdentity {
   const binding = bindings.get(card.id);
   let title: string;
+  let displayName: string | null = null;
   let path: string | null = null;
   let unsaved = false;
 
@@ -384,6 +409,7 @@ function resolveCard(
     title = path !== null ? basename(path) : card.title || "File";
   } else if (binding !== undefined) {
     title = r.sessionLabel(binding);
+    displayName = r.sessionName(binding);
   } else {
     title = card.title || r.defaultTitle(card.componentId) || card.componentId;
   }
@@ -393,6 +419,7 @@ function resolveCard(
     componentId: card.componentId,
     group,
     title,
+    displayName,
     path,
     unsaved,
     tugSessionId: binding?.tugSessionId ?? null,
@@ -720,7 +747,8 @@ export class LensCardsDataSource implements TugListViewDataSource {
       this.inputs.filterQuery === next.filterQuery &&
       this.inputs.registryVersion === next.registryVersion &&
       this.inputs.bindings === next.bindings &&
-      this.inputs.tagVersion === next.tagVersion
+      this.inputs.tagVersion === next.tagVersion &&
+      this.inputs.nameVersion === next.nameVersion
     ) {
       return false;
     }

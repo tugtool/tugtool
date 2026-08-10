@@ -169,6 +169,13 @@ export function useCopyableText({
     (e: React.MouseEvent) => {
       if (disabled || !manager) return;
       e.preventDefault();
+      // The gesture is CLAIMED, not merely handled. Copyables nest — every
+      // `TugLabel` is one, and a row's title is a copyable span inside a
+      // `TugLabel` — so a right-click that only suppressed the native menu
+      // kept bubbling and every copyable ancestor on the path opened its own
+      // menu at the same point. The innermost one is the one the pointer is
+      // on, and it is the only one whose text the user asked for.
+      e.stopPropagation();
       setMenuState({ x: e.clientX, y: e.clientY });
     },
     [disabled, manager],
