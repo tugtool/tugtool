@@ -135,6 +135,16 @@
   white-space: nowrap;
 }
 
+/* A row whose control has nothing to arrange — a side carrying fewer than two
+   sidebar cards. The control fades itself off the shared disabled knob
+   (`tug-choice-group.css`); the caption reads the same knob so the pair dims
+   as one row rather than as a live label beside a dead control. The row is
+   `display: contents`, so this styles the caption directly rather than
+   fading a box that paints nothing. */
+.layouts-section-row[data-disabled] .layouts-section-caption {
+  opacity: var(--tugx-control-disabled-opacity);
+}
+
 .layouts-section-row [data-slot="tug-choice-group"] {
   justify-self: start;
 }

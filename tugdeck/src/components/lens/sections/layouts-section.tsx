@@ -328,7 +328,15 @@ function LayoutsSectionBody({
   // gated on visible members would sit under a miniature that disagreed with
   // it; worse, it would vanish exactly when a split side dropped to one card,
   // taking the only Lens-side way to un-split with it ([P08]).
-  const sharedSides = SIDES.filter((side) => (rails[side] ?? 0) > 1);
+  //
+  // Both sides get a row EITHER WAY; a side with nothing to arrange gets a
+  // disabled one. A row that came and went as cards moved edges made the
+  // panel's own height a function of the arrangement — the rows below it
+  // jumped every time, and the reader had to notice an absence to learn that
+  // a side could be split at all. A dimmed control states the same fact and
+  // holds its place.
+  const isShared = (side: SidebarSide): boolean => (rails[side] ?? 0) > 1;
+  const sharedSides = SIDES.filter(isShared);
 
   // Every control reports selection by dispatching `selectValue` up the
   // responder chain ([L11]) — there are no change callbacks — so the section
@@ -644,16 +652,21 @@ function LayoutsSectionBody({
             );
           })}
 
-          {/* One row per side that two or more sidebar cards are assigned to:
-              the arrangement that side's rail stands under. Below the position
-              rows, because which edge a card holds is the question you answer
-              first — a side has to be shared before it can be split. */}
-          {sharedSides.map((side, index) => {
+          {/* One row per side, always both: the arrangement that side's rail
+              stands under. Below the position rows, because which edge a card
+              holds is the question you answer first — a side has to be shared
+              before it can be split. A side carrying fewer than two sidebar
+              cards has nothing to arrange, so its row is disabled rather than
+              absent, and it previews nothing: a hover cannot rehearse a
+              gesture the control will not accept. */}
+          {SIDES.map((side, index) => {
             const captionId = `${RAIL_CAPTION_ID_PREFIX}${side}`;
+            const shared = isShared(side);
             return (
               <div
                 className="layouts-section-row"
-                data-preview-axis={`railmode:${side}`}
+                data-preview-axis={shared ? `railmode:${side}` : undefined}
+                data-disabled={shared ? undefined : ""}
                 key={side}
               >
                 <TugLabel
@@ -671,6 +684,7 @@ function LayoutsSectionBody({
                   size="xs"
                   sidePadding="xs"
                   reselect
+                  disabled={!shared}
                   focusGroup={host.focusGroup}
                   focusOrder={
                     LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER + sidebars.length + index

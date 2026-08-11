@@ -696,6 +696,31 @@ describe.skipIf(!SHOULD_RUN)(
             expect(rowPaneIds, "rows list in rail order, top to bottom").toEqual(
               railOrderPaneIds,
             );
+
+            // ── The Lens offers a rail row for BOTH sides, always. ──
+            // The seed shares the right side and leaves the left empty, so
+            // this is the asymmetric case: the row that can act and the row
+            // that cannot stand side by side, and the one that cannot is
+            // disabled rather than absent. A row that came and went with the
+            // arrangement moved every control below it.
+            await app.dispatchControlAction("focus-lens");
+            await app.waitForCondition<boolean>(
+              `document.querySelectorAll('[data-testid^="lens-layouts-rail-"]').length === 2`,
+              { timeoutMs: 5_000 },
+            );
+            const railRowState = await app.evalJS<Record<string, boolean>>(
+              `["left", "right"].reduce(function (out, side) {
+                var el = document.querySelector(
+                  '[data-testid="lens-layouts-rail-' + side + '"]',
+                );
+                out[side] = el !== null && el.hasAttribute("data-disabled");
+                return out;
+              }, {})`,
+            );
+            expect(
+              railRowState,
+              "the shared side acts; the empty side is present but disabled",
+            ).toEqual({ left: true, right: false });
           } finally {
             await app.close().catch(() => undefined);
           }

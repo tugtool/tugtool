@@ -82,7 +82,7 @@ const TUG_PROMPT_ENTRY_DEFAULT_ROUTE = "❯";
 // geometry brittleness, never reaching the selection-paint assertion —
 // and the underlying property (selection survives deactivation at the
 // correct DOM position) is already covered by this editor, which shares
-// the same EM engine. See AT0038 in app-test-inventory.md.
+// the same EM engine.
 type PromptComponentId = "gallery-prompt-entry";
 
 function tabSelectorFor(cardId: string): string {

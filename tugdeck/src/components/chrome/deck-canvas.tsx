@@ -1621,11 +1621,21 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   >(new Map());
   /**
    * Which frames a rail mode flip fades rather than moves, computed when the
-   * settle arms and consumed by the Last pass. Crossing into a split reveals
-   * every member behind the front one at its final tile — geometry final from
-   * the first frame, opacity the only thing that animates — and crossing back
-   * to a stack sends those members out through the same fade while their
-   * geometry tweens carry them home behind the front member.
+   * settle arms and consumed by the Last pass.
+   *
+   * A faded frame is **never** also a moved one. The rail's TOP member is the
+   * only frame a mode flip moves: its top-left corner and its width are the
+   * same on both sides of the gesture, so only its bottom edge travels, and it
+   * crosses by its real height. Every other member is arriving somewhere it
+   * has never been (split) or leaving for somewhere it will not be seen
+   * (stack) — there is no path between those two places worth watching, and
+   * animating one is a card sliding across the rail for no reason. So they
+   * fade, and hold still while they do.
+   *
+   * The basis is rail ORDER, not z-order. Both members of a stack draw the
+   * same rect, so which of them is in front is invisible until the flip; if it
+   * decided which frame moved, the same gesture would animate a different card
+   * depending on what the user last clicked.
    */
   const settleFadePlanRef = useRef<Map<string, "in" | "out">>(new Map());
   /** Each rail's mode as of the last settle, so a mode flip is detectable
@@ -1743,10 +1753,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         }
       }
 
-      // A rail whose mode flipped fades its buried members rather than
-      // moving them; every member but the frontmost (the latest of the
-      // rail's panes in z-order, which a mode flip does not change) is
-      // planned here for the Last pass. Skipped under reduced motion with
+      // A rail whose mode flipped moves its TOP member and fades every other
+      // one — `settleFadePlanRef` says why the basis is rail order rather
+      // than z-order. `rail.members` is already in effective rail order, so
+      // the top member is simply the first. Skipped under reduced motion with
       // the rest of the choreography, but the mode record always advances —
       // a stale record would read the next flip against the wrong shore.
       const fadePlan = settleFadePlanRef.current;
@@ -1758,17 +1768,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           const prevMode = prevModes.get(rail.side);
           if (prevMode === undefined || prevMode === rail.mode) continue;
           if (rail.members.length < 2) continue;
-          let frontmostPaneId = rail.members[0].paneId;
-          let frontmostZ = -1;
-          for (const member of rail.members) {
-            const z = state.panes.findIndex((p) => p.id === member.paneId);
-            if (z > frontmostZ) {
-              frontmostZ = z;
-              frontmostPaneId = member.paneId;
-            }
-          }
-          for (const member of rail.members) {
-            if (member.paneId === frontmostPaneId) continue;
+          for (const member of rail.members.slice(1)) {
             fadePlan.set(member.paneId, rail.mode === "split" ? "in" : "out");
           }
         }
@@ -1872,19 +1872,49 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         composite: "replace",
         slotCancelMode: "snap-to-end",
       } as const;
-      if (fade === "in") {
-        // A member a split just revealed: its geometry is final from the
-        // first frame — the tile is its true place, and the stacked full-run
-        // rect it was measured at was never a pose the user saw — so opacity
-        // is the only thing that moves.
+      if (fade !== undefined) {
+        // A member a mode flip revealed or retired. It does not travel:
+        // opacity is the only thing that animates, and the frame holds one
+        // pose for the whole fade.
+        //
+        // Revealed (`in`), that pose is its final tile, which the commit has
+        // already put it at — the stacked full-run rect it was measured at
+        // was never a pose the user saw. Retired (`out`), it is the tile it
+        // is leaving, and holding it takes a static inverse: the commit has
+        // already moved the frame to the full run it will occupy invisibly
+        // behind the top member, and letting that landing show would be the
+        // card sliding across the rail that this branch exists to prevent.
+        // The transform is one keyframe repeated, so nothing interpolates.
+        if (fade === "out") {
+          const { dx, dy } = flipDelta(firstRect, lastRect);
+          frame.style.transformOrigin = "0 0";
+          restores.push(inlineRestorer(frame, "height"));
+          frame.style.height = `${firstRect.height}px`;
+          const held = `translate(${dx}px, ${dy}px)`;
+          anims.push(
+            animate(
+              frame,
+              [
+                { transform: held, offset: 0 },
+                { transform: held, offset: 1 },
+              ],
+              { ...settleOpts, easing: "linear", key: "imposer-flip" },
+            ),
+          );
+        }
         restores.push(inlineRestorer(frame, "opacity"));
         anims.push(
           animate(
             frame,
-            [
-              { opacity: 0, offset: 0 },
-              { opacity: 1, offset: 1 },
-            ],
+            fade === "in"
+              ? [
+                  { opacity: 0, offset: 0 },
+                  { opacity: 1, offset: 1 },
+                ]
+              : [
+                  { opacity: 1, offset: 0 },
+                  { opacity: 0, offset: 1 },
+                ],
             { ...settleOpts, easing: "ease", key: "imposer-fade" },
           ),
         );
@@ -1900,17 +1930,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           sx !== 1 && scaleDistortion(sx) <= MAX_FLIP_SCALE_DISTORTION;
         const widthTweens = sx !== 1 && !widthSmears;
         const heightTweens = Math.abs(firstRect.height - lastRect.height) >= 0.5;
-        // A frame that did not move, did not change size, and has no fade
-        // gets no animation at all.
-        if (
-          dx === 0 &&
-          dy === 0 &&
-          sx === 1 &&
-          !heightTweens &&
-          fade === undefined
-        ) {
-          continue;
-        }
+        // A frame that did not move and did not change size gets no animation
+        // at all.
+        if (dx === 0 && dy === 0 && sx === 1 && !heightTweens) continue;
         if (dx !== 0 || dy !== 0 || widthSmears) {
           // The scale anchors the frame's top-left corner, which is the
           // corner `dx` and `dy` were measured from. Set for every transform
@@ -1946,23 +1968,6 @@ export function DeckCanvas(_props: DeckCanvasProps) {
               frame,
               springSizeKeyframes("height", firstRect.height, lastRect.height),
               { ...settleOpts, easing: "linear", key: "imposer-size-h" },
-            ),
-          );
-        }
-        if (fade === "out") {
-          // A member a stack just retired: its geometry tween carries it home
-          // behind the front member while the tile the user was reading fades
-          // from under them. It ends fully occluded, which is what makes the
-          // restored opacity invisible.
-          restores.push(inlineRestorer(frame, "opacity"));
-          anims.push(
-            animate(
-              frame,
-              [
-                { opacity: 1, offset: 0 },
-                { opacity: 0, offset: 1 },
-              ],
-              { ...settleOpts, easing: "ease", key: "imposer-fade" },
             ),
           );
         }
