@@ -199,7 +199,7 @@ import { useCardId } from "./use-card-state-preservation";
 import { useCompanionPopupBinding } from "./use-companion-popup-binding";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
-import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import { TAB_CONSUME_ATTRIBUTE, TAB_RELEASE_ATTRIBUTE } from "./focus-manager";
 import type { FocusPolicy } from "./focus-manager";
 import { useFocusable } from "./use-focusable";
 import type { ActionHandler, ActionHandlerResult } from "./responder-chain";
@@ -1220,9 +1220,11 @@ function buildExtensions(
     keepCaretVisible,
     scrollbarAtCap,
     undoMenuStatePlugin,
-    // `tabMovesFocus` fields suppress the marker so the document-level focus
-    // walk advances focus on Tab instead of the surface swallowing it to indent.
-    initial.tabMovesFocus ? [] : tabConsumeMarker,
+    // `tabMovesFocus` fields swap the "Tab is mine" marker for its opposite:
+    // the walk's yield test is structural (any contentEditable owns Tab), so
+    // dropping the consume marker alone left the field swallowing Tab into an
+    // indent. The release marker is the field saying so out loud.
+    initial.tabMovesFocus ? tabReleaseMarker : tabConsumeMarker,
   ];
 }
 
@@ -1247,6 +1249,19 @@ const tabConsumeMarker = EditorView.updateListener.of((update) => {
   } else {
     update.view.contentDOM.removeAttribute(TAB_CONSUME_ATTRIBUTE);
   }
+});
+
+/**
+ * The `tabMovesFocus` counterpart ([P04]): tell the walk this surface RELEASES
+ * Tab, overruling the structural "a contentEditable owns Tab" default.
+ *
+ * A `contentAttributes` facet rather than an update listener, because this is a
+ * standing property of the surface and not a state it enters — the attribute
+ * has to be on `contentDOM` from the first paint, and an update listener does
+ * not run until something updates.
+ */
+const tabReleaseMarker = EditorView.contentAttributes.of({
+  [TAB_RELEASE_ATTRIBUTE]: "true",
 });
 
 export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEditorProps>(

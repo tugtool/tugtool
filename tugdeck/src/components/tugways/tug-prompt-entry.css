@@ -240,10 +240,10 @@ body {
   color: var(--tug7-element-control-icon-outlined-danger-rest);
 }
 
-/* Open-shade default stand-down ([P17]).
+/* Open-shade default stand-down ([P17]) — HISTORY only.
  *
- * A shade (Changes / History) carries its own Done, which holds the card's
- * persistent default ring for as long as it is mounted. The shade's modal scope
+ * The History shade carries its own Done, which holds the card's persistent
+ * default ring for as long as it is mounted. The shade's modal scope
  * is deliberately carved back to the transcript region so the prompt entry stays
  * live beneath its bottom edge — which means a click into the composer restores
  * `data-entry-keyboard` on the entry shell and lights the Z5 submit as a second
@@ -251,8 +251,11 @@ body {
  * as two live controls; exactly one may.
  *
  * The shade is the one, so the composer's entry-shell promotion stands down
- * while `data-shade-open` is on the card: the standing fill returns to outlined
- * and the shell's ring is suppressed. Both rules carry the card attribute, which
+ * while `data-shade-open="history"` is on the card: the standing fill returns to
+ * outlined and the shell's ring is suppressed. Changes is deliberately excluded
+ * — it has no Done, and its act (the commit) is performed by the composer's own
+ * Z5, so standing that ring down would leave Return promised by nobody. Both
+ * rules carry the card attribute, which
  * outweighs the `.tug-entry-shell[data-entry-keyboard]` lit rules in
  * `tug-entry-shell.css` by one attribute selector — the same specificity
  * relationship the `[data-cycling]` block above has. On shade close the
@@ -261,7 +264,7 @@ body {
  * The `:not()` guards mirror the lit rule they override, so a submit the ring
  * actually lands on (Tab'd onto beneath an open shade) still promotes normally
  * — it is a focused stop like any other, not a standing default. */
-[data-shade-open="true"]
+[data-shade-open="history"]
   .tug-entry-shell[data-entry-keyboard]
   .tug-prompt-entry-submit-button.tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) {
   background-color: var(--tug7-surface-control-primary-outlined-action-rest);
@@ -269,12 +272,12 @@ body {
   border-color: var(--tug7-element-control-border-outlined-action-rest);
 }
 /* @tug-renders-on: --tug7-surface-control-primary-outlined-action-rest */
-[data-shade-open="true"]
+[data-shade-open="history"]
   .tug-entry-shell[data-entry-keyboard]
   .tug-prompt-entry-submit-button.tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-outlined-action-rest);
 }
-[data-shade-open="true"]
+[data-shade-open="history"]
   .tug-entry-shell[data-entry-keyboard]
   [data-tug-entry-default]:not([data-key-view-kbd]):not([data-key-cursor]) {
   outline: none;

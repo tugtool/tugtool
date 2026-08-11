@@ -138,22 +138,25 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(hasCloseX).toBe(false);
 
-            // Done wears the persistent default ring: the engine stamps
-            // `data-default-ring` on it because the key view rests on the
-            // (non-button) commit list, and the button paints the outer outline.
-            const ring = await app.evalJS<{ marked: boolean; outline: boolean }>(
+            // Done wears the shade's one ring, and wears it as the shade's key
+            // view — not as a persistent default beneath a key view elsewhere.
+            // The commit list used to hold the key view and the engine stamped
+            // `data-default-ring` on Done underneath it, which painted two
+            // rings at once; the list left the walk and Done is now both marks
+            // in one ([#shade-focus], at0399).
+            const ring = await app.evalJS<{ keyView: boolean; outline: boolean }>(
               `(function(){
                 var b = document.querySelector('[data-testid="session-history-done"]');
-                if (!b) return { marked: false, outline: false };
+                if (!b) return { keyView: false, outline: false };
                 var cs = getComputedStyle(b);
                 var w = parseFloat(cs.outlineWidth) || 0;
                 return {
-                  marked: b.hasAttribute("data-default-ring"),
+                  keyView: b.hasAttribute("data-key-view-kbd"),
                   outline: cs.outlineStyle !== "none" && w > 0,
                 };
               })()`,
             );
-            expect(ring.marked).toBe(true);
+            expect(ring.keyView).toBe(true);
             expect(ring.outline).toBe(true);
 
             // ...and Done is the ONLY default button on screen. The shade's
@@ -161,8 +164,10 @@ describe.skipIf(!SHOULD_RUN)(
             // edge, so a click into the composer restores the entry shell's
             // `data-entry-keyboard` — which used to light the Z5 submit as a
             // second filled + ringed default right below Done. The card's
-            // `data-shade-open` stands that promotion down: the shade owns the
-            // default while it is open ([P17]).
+            // `data-shade-open="history"` stands that promotion down: THIS
+            // shade owns the default while it is open ([P17]). Named, not a
+            // bare boolean — Changes has no Done and keeps the composer's
+            // default, so the stand-down is History's alone.
             await app.nativeClickAtElement(
               '[data-card-id="D"] .tug-prompt-entry .cm-content',
             );
@@ -185,16 +190,21 @@ describe.skipIf(!SHOULD_RUN)(
                 var cs = submit ? getComputedStyle(submit) : null;
                 var w = cs ? (parseFloat(cs.outlineWidth) || 0) : 0;
                 return {
-                  shadeOpen: card !== null && card.getAttribute("data-shade-open") === "true",
+                  shadeOpen: card !== null && card.getAttribute("data-shade-open") === "history",
                   submitOutline: cs !== null && cs.outlineStyle !== "none" && w > 0,
-                  doneRing: done !== null && done.hasAttribute("data-default-ring"),
+                  doneRing:
+                    done !== null &&
+                    (function(){
+                      var dcs = getComputedStyle(done);
+                      return dcs.outlineStyle !== "none" && (parseFloat(dcs.outlineWidth) || 0) > 0;
+                    })(),
                 };
               })()`,
             );
             expect(standDown.shadeOpen).toBe(true);
             // The caret is in the composer, yet its submit wears no ring.
             expect(standDown.submitOutline).toBe(false);
-            // Done still holds the one default ring.
+            // Done still holds the one ring on screen.
             expect(standDown.doneRing).toBe(true);
 
             // The plain-sheet History has no resize grabber.

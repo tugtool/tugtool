@@ -322,6 +322,12 @@ const SESSION_CYCLE_ORDER_CHANGES = 4;
 // every constant beneath them to no effect.
 const SESSION_CYCLE_ORDER_AI = 5;
 const SESSION_CYCLE_ORDER_SUBMIT = 7;
+// Commit mode replaces the single Z5 submit with a three-button rail — Cancel
+// ✕, Auto-Message ✎, Commit ↑ — so it takes 5…7, landing Commit on the submit's
+// own slot because Commit IS the submit there. Slot 5 is the AI chip's, which
+// only the code route mounts (Table T01): the rail and that chip are never
+// co-mounted, the same non-overlap that lets Cwd and Changes share slot 4.
+const SESSION_CYCLE_ORDER_COMMIT_BASE = 5;
 // The find bar's four controls ([D122]) — query field, option group, Find
 // previous, Find next — occupy 8…11 while the bar is open, and nothing at all
 // while it is closed (the stops unmount with it, and the walk skips what is
@@ -4180,7 +4186,18 @@ export function SessionCardBody({
     // ([P10] revised) starting at SESSION_CYCLE_ORDER_STATUS_BASE; the status-bar
     // region is wrapped in a second `cycle.CycleScope` (below) sharing this
     // card's mode id.
-    statusRowFocusGroup: SESSION_CYCLE_GROUP,
+    //
+    // An open shade takes them back out. A shade rises from the entry region's
+    // top edge and covers everything above it, Z2 included — and the Changes
+    // shade is passive, so the walk is NOT trapped into it the way History's
+    // is. Left registered, the five cells stayed in the cycle while sitting
+    // behind the shade: five Tab stops in a row that paint their ring on a
+    // covered element and so look like nothing at all. A stop you cannot see
+    // is a ghost, and the cure is not to paint it but to not stop there.
+    // Passing an undefined group is how `SessionTelemetryStatusRow` leaves the
+    // walk entirely.
+    statusRowFocusGroup:
+      shadeView === "none" ? SESSION_CYCLE_GROUP : undefined,
     statusRowFocusOrderBase: SESSION_CYCLE_ORDER_STATUS_BASE,
     // The `/btw` placard's body (there is no BTW cell; `/btw` opens it).
     sideQuestionStore,
@@ -4248,16 +4265,23 @@ export function SessionCardBody({
         // felt. Engine-derived from the store ([L02]); appearance via the
         // attribute, never React state ([L06]).
         data-inline-dialog-pending={inlineDialogPending ? "true" : undefined}
-        // Open-shade signal ([P17]). Set while either shade view (Changes /
-        // History) is showing. The shade's Done holds the card's persistent
+        // Open-shade signal ([P17]) — the shade's NAME, not a bare boolean,
+        // because the two shades differ on the one question the attribute is
+        // read for: who owns Return.
+        //
+        // History carries its own Done, which holds the card's persistent
         // default ring, and the shade's modal carve-out deliberately leaves the
         // prompt entry live beneath its bottom edge — so a click into the
         // composer puts `data-entry-keyboard` back on the entry shell and lights
-        // a SECOND default button beside Done. The stand-down CSS in
-        // `tug-prompt-entry.css` keys on this ancestor, the same way the
-        // `data-cycling` fill suppression above does. Appearance via the
+        // a SECOND default beside Done. The stand-down CSS in
+        // `tug-prompt-entry.css` keys on `="history"` for exactly that.
+        //
+        // Changes carries no Done at all: its act is the commit, and the button
+        // that performs it is the composer's own Z5. Standing the composer's
+        // default down there took the ring away and gave it to nobody, which is
+        // why the Changes Z5 wore no ring ([#chord-ring]). Appearance via the
         // attribute, never React state ([L06]).
-        data-shade-open={shadeView === "none" ? undefined : "true"}
+        data-shade-open={shadeView === "none" ? undefined : shadeView}
       >
         {/*
           Card body is a plain flex column ([L06]/[L13] — no JS sizing).
@@ -4556,6 +4580,7 @@ export function SessionCardBody({
               disabled={replayHoldActive}
               submitFocusGroup={SESSION_CYCLE_GROUP}
               submitFocusOrder={SESSION_CYCLE_ORDER_SUBMIT}
+              commitFocusOrderBase={SESSION_CYCLE_ORDER_COMMIT_BASE}
               routeFocusGroup={SESSION_CYCLE_GROUP}
               routeFocusOrder={SESSION_CYCLE_ORDER_ROUTE}
               editorFocusGroup={SESSION_CYCLE_GROUP}

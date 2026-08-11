@@ -23,7 +23,7 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, ATTACHED_LIST_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, TAB_RELEASE_ATTRIBUTE, ATTACHED_LIST_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
 import { arrowDirection, type SpatialDirection } from "./spatial-order";
 import { keyboardAccessStore } from "../../keyboard-access-store";
@@ -450,13 +450,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // directory switcher and the find bar's controls out of keyboard reach.
       // The single-line/multi-line test is structural (tag kind), not a content
       // test, so it is not the emptiness rule this mode exists to delete.
+      //
+      // A multi-line surface can OPT OUT of that structural default with
+      // `data-tug-tab-release` — the dialog answer field, which is multi-line
+      // for wrapping rather than for indenting and whose Tab has to reach the
+      // dialog's buttons. Checked first, because it is the surface overruling
+      // the default drawn from its own kind.
       const active = document.activeElement;
+      const releasesTab =
+        active instanceof Element &&
+        active.closest(`[${TAB_RELEASE_ATTRIBUTE}="true"]`) !== null;
       const surfaceConsumes =
-        (active instanceof Element &&
+        !releasesTab &&
+        ((active instanceof Element &&
           active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
-        (active instanceof HTMLElement &&
-          (active.isContentEditable || active.tagName === "TEXTAREA")) ||
-        focusManager.keyViewConsumesTab();
+          (active instanceof HTMLElement &&
+            (active.isContentEditable || active.tagName === "TEXTAREA")) ||
+          focusManager.keyViewConsumesTab());
       if (surfaceConsumes) return;
       // (2) Everything else walks — a single-line field, the nowhere state (an
       // active card with no caret), an engine-routed stop. In mode OFF the walk

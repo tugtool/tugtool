@@ -87,7 +87,6 @@ import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { useCommitMetaFields } from "@/lib/commit-meta-fields";
 import { useCommitFilterScope } from "@/lib/commit-filter-scope";
 import {
-  useFocusable,
   useFocusManager,
   useSeedKeyView,
 } from "@/components/tugways/use-focusable";
@@ -178,41 +177,35 @@ export function SessionHistoryView({
     },
   });
 
-  // Focus language ([P14]): the scrolling commit list holds the shade's key
-  // view (order 0) — a NON-button — so the Done button (order 1) wears the
-  // filled double-ring as the persistent default and Return commits it, exactly
-  // like a dialog's Save beside its field. The list is the key view because the
-  // default ring only projects onto Done while the key view is not itself a
-  // button. Seeded / registered only while History is the active slot so the
-  // hidden pane never claims the key view.
+  // Focus language ([P14]): the shade's one Tab stop is Done, and Done is the
+  // shade's seeded key view.
+  //
+  // The commit list is deliberately NOT a stop. A stop has to be worth landing
+  // on — some act belongs to it — and the list is a transcript-like reading
+  // surface with no act of its own. Worse, while it held the key view the shade
+  // painted TWO rings at once: the list's keyboard-focus ring and, because the
+  // key view was a non-button, Done's persistent default ring beneath it. One
+  // keyboard, one mark. With Done holding the key view its own ring IS the
+  // Return promise, and the deck shows exactly one.
+  //
+  // What it should mean to Tab into a scrolling reading surface is a real
+  // question and an open one; until it has an answer, the list is out.
   const focusGroup = useId();
-  const LIST_ORDER = 0;
   const DONE_ORDER = 1;
-  // The filter field registers BEHIND the list at order -1 with a `skip`
-  // policy, exactly as the Lens section bands do: click-reachable and
+  // The filter field registers BEHIND Done at order -1 with a `skip` policy,
+  // exactly as the Lens section bands do: click-reachable and
   // ArrowDown-escapable, but out of the Tab walk and never the seeded key
-  // view — the list stays the shade's opening destination, so Return still
+  // view — Done stays the shade's opening destination, so Return still
   // means Done.
   const FILTER_ORDER = -1;
   const focusGated = active && onClose !== undefined;
-  useSeedKeyView(focusGated ? `${focusGroup}:${LIST_ORDER}` : null);
-  const { focusableRef: listFocusableRef } = useFocusable({
-    id: `${focusGroup}-list`,
-    group: focusGroup,
-    order: LIST_ORDER,
-    register: focusGated,
-  });
+  useSeedKeyView(focusGated ? `${focusGroup}:${DONE_ORDER}` : null);
 
   // The scroller node, for the intersection root and the top-up measurement.
-  // `useFocusable` hands back a callback ref, so the two compose here.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const setScrollerRef = useCallback(
-    (el: HTMLDivElement | null): void => {
-      scrollerRef.current = el;
-      listFocusableRef(el);
-    },
-    [listFocusableRef],
-  );
+  const setScrollerRef = useCallback((el: HTMLDivElement | null): void => {
+    scrollerRef.current = el;
+  }, []);
 
   // ── Filtering ────────────────────────────────────────────────────────────
   const [filterQuery, setFilterQuery] = useState("");
@@ -221,13 +214,13 @@ export function SessionHistoryView({
   const filterDelegate = useMemo<TugFilterFieldDelegate>(
     () => ({
       filterFieldDidChangeQuery: setFilterQuery,
-      // ArrowDown hands the key view down to the list, the same landing a
-      // click on a row would make.
+      // ArrowDown leaves the field for the shade's one stop — Done, in the
+      // footer below. The list is not a stop, so there is nothing between them.
       filterFieldDidRequestAdvance: () => {
         if (cardId === null) return;
         focusManager?.place(
           cardId,
-          { kind: "focus-key", focusKey: `${focusGroup}:${LIST_ORDER}` },
+          { kind: "focus-key", focusKey: `${focusGroup}:${DONE_ORDER}` },
           { modality: "keyboard" },
         );
       },
@@ -419,15 +412,15 @@ export function SessionHistoryView({
         ref={setScrollerRef}
         className="session-history-view"
         data-slot="session-history-view"
-        tabIndex={0}
       >
         {children}
       </div>
       {/* Plain-sheet footer ([P17]): History takes over neither the composer's
           Z5 nor a commit mode, so it carries its own dismissal — a Done button
-          in the lower right (the shade's persistent default; Escape / Cmd-.
-          still close it too). The actions row follows the sheet-gallery spec
-          (`.tug-sheet-actions`: right-aligned, sheet spacing). */}
+          in the lower right, which is both the shade's seeded key view and its
+          sole Tab stop (Escape / Cmd-. still close it too). The actions row
+          follows the sheet-gallery spec (`.tug-sheet-actions`: right-aligned,
+          sheet spacing). */}
       {onClose !== undefined ? (
         <div
           className="session-history-view-footer tug-sheet-actions"

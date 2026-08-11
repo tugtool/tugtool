@@ -365,6 +365,25 @@ export const KEY_VIEW_ATTRIBUTE = "data-key-view";
 export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
 
 /**
+ * The opposite declaration: a multi-line text surface stating "Tab is **not**
+ * mine — walk." Set by a `TugTextEditor` mounted with `tabMovesFocus`.
+ *
+ * It exists because the Tab pipeline's yield test is deliberately STRUCTURAL:
+ * a contentEditable or `TEXTAREA` owns Tab by virtue of being multi-line, since
+ * indent is a real meaning it has. That is the right default and it is why a
+ * composer eats Tab. But a short answer field inside a dialog is multi-line for
+ * wrapping, not for indenting — its Tab has to reach the dialog's buttons, or
+ * the field is a jail with no way out but the mouse.
+ *
+ * The absence of {@link TAB_CONSUME_ATTRIBUTE} could not say this: the
+ * structural test runs whether or not that marker is present, so a
+ * `tabMovesFocus` field still swallowed Tab into an indent. Only a positive
+ * declaration, checked FIRST, can release it — the surface is the one that
+ * knows.
+ */
+export const TAB_RELEASE_ATTRIBUTE = "data-tug-tab-release";
+
+/**
  * DOM marker a text field sets on the wrapper **containing** its `<input>` to
  * declare an **attached list** ([P08], Spec S02): while the caret is inside,
  * ↑/↓ drive that list's cursor and never leave the field.

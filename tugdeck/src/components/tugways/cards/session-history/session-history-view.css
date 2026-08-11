@@ -51,10 +51,6 @@
   align-self: center;
 }
 
-/* The list holds the shade's key view (a non-button, so the Done button wears
-   the persistent default ring). It is focusable but not an input — suppress the
-   raw focus outline; the visible "Return's home" cue is Done's ring. */
-.session-history-view:focus,
-.session-history-view:focus-visible {
-  outline: none;
-}
+/* The list is a reading surface, not a focus stop — it takes no DOM focus at
+   all, so it has no focus outline to suppress. Done is the shade's one stop and
+   its ring is the whole of the shade's focus language. */

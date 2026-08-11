@@ -163,7 +163,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 66 → 67 with at0398 (the chord ring): the invariant that at most one
     // control may promise Return is checked from the projection commit, so an
     // edit to the projection is the edit that would break it.
-    "tugdeck/src/components/tugways/focus-manager.ts": 67,
+    //
+    // 67 → 68 with at0400 (the tab release): the marker a text surface sets to
+    // release Tab is declared here, beside the marker for claiming it — the two
+    // are one contract and belong in one place.
+    "tugdeck/src/components/tugways/focus-manager.ts": 68,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the
@@ -177,8 +181,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     "tugdeck/src/components/tugways/tug-text-editor/clipboard-filters.ts": 30,
     // The editor substrate itself — every text surface in the app is this
     // component, so a test of any of them names it. Crossed the budget with
-    // the arrow-exit prop (at0343).
-    "tugdeck/src/components/tugways/tug-text-editor.tsx": 21,
+    // the arrow-exit prop (at0343). 21 → 22 with at0400 (the tab release):
+    // `tabMovesFocus` is this component's prop and the release marker is what
+    // it now projects, so a test of that behavior names the substrate.
+    "tugdeck/src/components/tugways/tug-text-editor.tsx": 22,
     // The composer: every test that types into a Session card goes through it.
     // Crossed the budget with the arrow-exit handoff (at0343), which is the
     // prompt entry's own prop and has no smaller home. 21 → 22 with the
@@ -190,7 +196,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 23 → 24 with at0398 (the chord ring): the Z5 is the button that
     // declares `data-default-chord`, derived from the composer's own
     // effective return action, so the declaration has nowhere smaller to live.
-    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 24,
+    // 24 → 25 with at0399 (the shade's focus language): commit mode's Z5 rail
+    // — Cancel / Auto-Message / Commit — is rendered here, and Commit is where
+    // the entry-default declaration and its chord live for that route.
+    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 25,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The host itself: the whole menu bar, the window, the app lifecycle and
     // every control frame live in this one file, so any test that reads a
@@ -273,7 +282,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // component that declares the sheet's stops. 21 → 22 with Insert File…
     // (at0354): the card-content responder that keeps the command live while
     // focus sits outside the composer is declared here.
-    "tugdeck/src/components/tugways/cards/session-card.tsx": 22,
+    // 22 → 23 with at0399 (the shade's focus language): the card is what names
+    // the open shade (`data-shade-open`) and what takes the Z2 status cells
+    // out of the cycle while one is covering them.
+    "tugdeck/src/components/tugways/cards/session-card.tsx": 23,
 };
 
 interface TestCoverage {

@@ -177,6 +177,8 @@ Deriving it is also why the Lens builds its order in a **layout effect** rather 
 
 **`Tab` in mode OFF splits by the KIND of surface, never by its content.** A **multi-line** surface (contentEditable / `TEXTAREA`) and anything advertising `data-tug-tab-consume` own `Tab`, because indent and completion-accept are real `Tab` meanings. A **single-line `INPUT`** does not: a plain field has no indent, so a `Tab` there is a request to leave — it engages KBF and takes one step, exactly like the **nowhere** state (an active card with no caret). The split is structural, so it is not the emptiness rule in another costume.
 
+**A multi-line surface may opt out with `data-tug-tab-release`, and only it can.** Some surfaces are multi-line for *wrapping* rather than for *indenting* — the question dialog's free-text answer field is the case: it has no indent to insert and its `Tab` has to reach the dialog's buttons, or the field is a jail with the mouse as the only way out. The declaration has to be **positive**, and that is the correction: the field had carried `tabMovesFocus` from the day it was written, but all that prop did was withhold `data-tug-tab-consume` — and an *absence* cannot outrank a structural rule that never consulted it. The walk now reads `data-tug-tab-release` **before** the kind test, because the surface is the one that knows what its own `Tab` means. Pinned by at0400.
+
 **The engine never hands `Tab` to WebKit.** A `Tab` the walk cannot spend is consumed, with a dev-log warning, rather than yielded: a native `Tab` would land DOM focus somewhere the engine does not know about, which is the state the whole model exists to prevent. An empty walk is a tripwire — some subtree was never authored as engine stops.
 
 **A text stop the engine MOVED to is parked; a seeded one grants.** This is the state the mode restores, and the rule an author cannot derive from "rings exist iff engaged" alone:
@@ -246,6 +248,20 @@ A raw "focus the editor" claim is a bug even when it *looks* harmless: under a m
 
 Boundaries pinned by tests: window blur→focus (at0148), resting-card activation clicks for every click target (at0201), cross-card click-away/click-back onto a modal card — title bar and content, both dialog kinds (at0203).
 
+## A stop is a place you can see, and a shade names itself {#shade-focus}
+
+Two rules that a passive shade broke in two different ways, and that generalize past it.
+
+**A stop that is covered is not a stop.** The Session card's shades rise from the entry region's top edge and cover everything above — transcript, header, and the Z2 status bar. History is modal, so the walk is trapped into it and the question never arose; **Changes is passive**, and the five Z2 status cells stayed registered underneath it. Tabbing past the Changes chip then produced five consecutive landings whose ring painted on a covered element: nothing moved on screen, five times, and then the sixth Tab returned to the editor. That is a **ghost tab**, and ghost tabs are always a bug — a stop you cannot see is indistinguishable from a key that does nothing. The cure is never to paint harder; it is to leave the walk. A region that a surface covers **unregisters its stops for as long as the cover is up** (`statusRowFocusGroup` goes `undefined`, which is how a component leaves the walk entirely). The corollary is the test: every Tab landing must paint a mark somewhere in the stop's own subtree, which is what at0399 asserts across the whole live cycle.
+
+**A stop must also be worth landing on.** The History shade's scrolling commit list was a stop, and it earned two rings: the list's own keyboard ring, plus — because the key view was a **non-button** — the persistent default ring the engine then projected onto Done beneath it. Both painted at once. The list had no act of its own; it is a reading surface, and what it should mean to Tab into one is a real question with no answer yet. So it left the walk, Done became the shade's seeded key view and its only stop, and Done's single ring now says both *where the keyboard is* and *what `Return` does*. **One keyboard, one mark.**
+
+**A shade signal carries the shade's NAME, never a boolean.** `data-shade-open` stood the composer's default ring down on the premise that "the shade owns the default". That is true of History, which has a Done; it is false of Changes, which has no Done at all and whose act — the commit — is performed by the **composer's own Z5**. The bare boolean took the ring away and gave it to nobody, which is why the Changes Z5 wore none. The attribute now reads `"history"` / `"changes"`, the stand-down keys on `="history"`, and commit mode's Commit button declares `data-tug-entry-default` with its `shift` chord exactly as the prompt route's submit does — the two are never co-mounted, so exactly one entry default lights ([#chord-ring]). The general form: when a signal is read to answer *who owns something*, a boolean can only ever assert that **someone** does.
+
+Pinned by at0399.
+
+---
+
 ## No dead surface inside a text substrate
 
 A text editor's interactive surface is its **host**, not its content box. CM6 owns pointer selection and (previously) drag acceptance only within `contentDOM`, which is content-sized — so a host taller than its content (the Dev prompt opens at a min-height) had a blank band that *looked* like editor but ate the caret on click (WebKit's mousedown focus default blurred to body) and refused file drops. The rules:
@@ -306,6 +322,7 @@ For any focusable, the engine projects these attributes; CSS reads them ([L06]).
 | `data-mods` | `<html>` | the modifiers physically held, space-separated. Read only by the chord ring, as `[data-mods~="shift"]` ([#chord-ring]) |
 | `data-key-within` | a container that is **not** an item-group | the quiet "contains the active control" outline |
 | `data-key-within` | an **item-group** (descend target or not) | nothing — suppressed |
+| `data-tug-tab-release` | a **multi-line text surface** | nothing — it is a **contract**, not appearance ([L24]): "my `Tab` is not mine". Read by the walk ahead of the surface-kind test, and the only way a contentEditable gives `Tab` back |
 | `data-attached-cursor` | a row of an **attached list** | the same leading-edge bar the movement cursor draws — and **exempt from the mode gate**, because it is a text field's statement about which row its `Return` means, not a focus position |
 
 **`data-key-view-kbd` means "a ring is painted here", not "the key view is here".** It is withheld outright in mode OFF — and while a caret is granted ([#kbf-paint-route]) — which is how the gate stands ~40 component selectors down at once with no cascade change — prefixing the paint rules with `html[data-kbf]` instead would raise the leaf rule above every item-group suppression and repaint the double ring this language spent three attempts removing. The **unflavored** `data-key-view` is the position record and is stamped in both modes; every behavioral reader uses it, and so must any test asking *where is the keyboard* rather than *is a ring painted*.

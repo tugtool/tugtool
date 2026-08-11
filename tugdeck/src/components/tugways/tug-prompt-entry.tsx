@@ -918,6 +918,16 @@ export interface TugPromptEntryProps {
   /** Order of the submit within {@link submitFocusGroup}. Defaults to 0. */
   submitFocusOrder?: number;
   /**
+   * Order of the FIRST of commit mode's three Z5 buttons — Cancel ✕,
+   * Auto-Message ✎, Commit ↑ — within {@link submitFocusGroup}; the three take
+   * consecutive orders from here. Commit mode replaces the single submit
+   * button with this rail, and without a base the rail was unreachable by
+   * keyboard: the walk ran off the Changes chip straight past three live
+   * controls. Omitted by non-cycling hosts, exactly like
+   * {@link submitFocusOrder}.
+   */
+  commitFocusOrderBase?: number;
+  /**
    * Authors the `Z4A` route popup trigger into a focus group ([P02]) —
    * forwarded to the trigger `TugButton`'s `focusGroup`, surfaced on the
    * entry like {@link submitFocusGroup}. The trigger is one Tab stop;
@@ -1062,6 +1072,7 @@ export const TugPromptEntry = React.forwardRef<
     disabled = false,
     submitFocusGroup,
     submitFocusOrder,
+    commitFocusOrderBase,
     routeFocusGroup,
     routeFocusOrder,
     editorFocusGroup,
@@ -3485,6 +3496,11 @@ export const TugPromptEntry = React.forwardRef<
   const commitPending = commitSnap?.commitPhase === "pending";
   const commitCanLand =
     commitSnap !== null && commitSnap.canLandIgnoringMessage;
+  // The rail's three consecutive cycle stops. Undefined base means a
+  // non-cycling host, and `undefined + n` would be `NaN` — so the whole rail
+  // stays off the walk together, the way the single submit does.
+  const commitOrder = (offset: number): number | undefined =>
+    commitFocusOrderBase === undefined ? undefined : commitFocusOrderBase + offset;
   const commitToolbarTrailing = (
     <>
       {/* The chord is read, not authored: Cancel holds two bindings (⌘. and ⎋)
@@ -3506,6 +3522,8 @@ export const TugPromptEntry = React.forwardRef<
           // otherwise it exits commit mode ([P06]).
           onClick={commitDrafting ? cancelCommitDraft : exitCommitMode}
           aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+          focusGroup={submitFocusGroup}
+          focusOrder={commitOrder(0)}
           icon={<X size={16} strokeWidth={2.5} />}
         />
       </TugActionTooltip>
@@ -3533,6 +3551,8 @@ export const TugPromptEntry = React.forwardRef<
           aria-pressed={commitDrafting || undefined}
           onClick={handleCommitAutoMessage}
           aria-label="Auto-message"
+          focusGroup={submitFocusGroup}
+          focusOrder={commitOrder(1)}
           data-testid="tug-prompt-entry-commit-auto"
           icon={<PencilSparkles size={16} strokeWidth={2} />}
         />
@@ -3554,9 +3574,17 @@ export const TugPromptEntry = React.forwardRef<
           size="lg"
           emphasis="filled"
           role="action"
+          // Return's home in commit mode — the Z5 the composer's own key
+          // lands on, exactly as the prompt route's submit is on the prompt
+          // route. The two are never co-mounted, so the entry shell still
+          // lights exactly one default ([#chord-ring]).
+          data-tug-entry-default=""
+          data-default-chord={submitChord}
           disabled={commitDrafting || commitPending || !commitCanLand}
           onClick={performSubmit}
           aria-label="Commit"
+          focusGroup={submitFocusGroup}
+          focusOrder={commitOrder(2)}
           data-testid="tug-prompt-entry-commit-button"
           icon={<ArrowUp size={16} strokeWidth={2.5} />}
         />
