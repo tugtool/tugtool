@@ -3412,16 +3412,23 @@ export const TugPromptEntry = React.forwardRef<
     ) : undefined;
 
   // What the primary Z5's bubble says the keyboard does. In `submit` the
-  // button is the submit key's pointer twin, so it shows that key. In `stop`
-  // it is Stop, whose chord is the registry's to hold ([P11]) — unbound today,
-  // so the bubble shows the phrase alone and gains the chip the day Stop is
-  // bound, with nothing here to rewrite. The four inert modes are native
-  // `disabled`, which never opens a bubble at all.
+  // button is the submit key's pointer twin, so it shows that key.
+  //
+  // In `stop` the twin is CANCEL_DIALOG, not INTERRUPT_SESSION: Escape / ⌘.
+  // land on this entry's CANCEL_DIALOG handler and call the same
+  // `popInteractive()` the button's own SUBMIT branch calls — Stop ≡ Esc, one
+  // gesture. INTERRUPT_SESSION is the Session ▸ Stop menu item, which carries
+  // no binding, so reading it here would have shown the phrase alone forever
+  // while two live chords went unnamed. The chord is read, not authored, and
+  // the registry picks which of Cancel's two it shows ([P11]) — the same
+  // single-chip face the commit rail's ✕ wears.
+  //
+  // The four inert modes are native `disabled`, which never opens a bubble.
   const submitTooltipShortcut =
     submitView.dataMode === "submit"
       ? submitChordLabel
       : submitView.dataMode === "stop"
-        ? commandShortcut(TUG_ACTIONS.INTERRUPT_SESSION)
+        ? commandShortcut(TUG_ACTIONS.CANCEL_DIALOG)
         : undefined;
 
   const entryToolbarTrailing = (
