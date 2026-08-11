@@ -319,6 +319,8 @@ Payload: `{project_dir, owner_kind, owner_id, message?, selection?, edited, clea
 
 **Spec S05: Draft `project_dir` spelling contract** {#s05-draft-project-dir}
 
+> **Superseded.** Drafts are keyed by the canonical `workspace_key`, not by any spelling of `project_dir`, and the union-on-read below is gone with the raw spelling that required it. See "A draft is addressed by its workspace key" in [tracking-changes.md](../../tuglaws/tracking-changes.md#the-landing-workflow). The text below is kept as the record of what was built.
+
 Writers store `project_dir` **canonical**: tugcast through the `CanonicalPath` gateway (as the draft engine's `EntryKey` already carries), `tugutil draft` via `std::fs::canonicalize` on `--project`. Readers query **canonical with raw union** — exactly the legacy-tolerant pattern compose already uses for `file_events` in `feeds/changeset.rs` (query the canonical spelling; union the raw spelling when it differs). This applies to `changeset_drafts_for_project` (compose), `get_changeset_draft`, and `tugdash-core::ops::dash_draft_message`. Without this contract, a skill-written draft with a differently-spelled path (firmlink/symlink split) silently fails to attach to its entry — the same canonicalization split that bit `file_events` before [P05] of the changesets plan.
 
 **Spec S04: Receipt block** {#s04-receipt-block}

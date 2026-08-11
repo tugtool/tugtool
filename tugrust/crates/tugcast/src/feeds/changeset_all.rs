@@ -224,25 +224,17 @@ pub(crate) async fn compose_aggregate(
         }
 
         // The unattributed bucket's maintained draft (Spec S10), attached only
-        // when the bucket has files. Spec S05 spelling contract: query the
-        // canonical project spelling first, fall back to the raw one.
+        // when the bucket has files. Keyed by `workspace_key` — the spelling
+        // every draft row is written under — so there is one lookup and no
+        // spelling to reconcile.
         let unattributed_draft = if snapshot.unattributed.is_empty() {
             None
         } else {
             ledger
                 .and_then(|l| {
-                    let canonical = crate::path_resolver::CanonicalPath::from_raw(&project_dir);
-                    let row = l
-                        .changeset_draft("unattributed", "", canonical.as_str())
+                    l.changeset_draft("unattributed", "", snapshot.workspace_key.as_ref())
                         .ok()
-                        .flatten();
-                    if row.is_some() || canonical.as_str() == dir_str {
-                        row
-                    } else {
-                        l.changeset_draft("unattributed", "", &dir_str)
-                            .ok()
-                            .flatten()
-                    }
+                        .flatten()
                 })
                 .as_ref()
                 .map(super::changeset::draft_from_row)

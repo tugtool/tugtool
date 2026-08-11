@@ -36,8 +36,16 @@ use crate::session_ledger::{ChangesetDraftRow, SessionLedger};
 pub type SessionResolver = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
 
 /// Identity of a changeset entry across recomputes.
+///
+/// `workspace_key` is the identity — the canonical spelling the workspace
+/// registry produced through the [L29] gateway, and the only thing that is
+/// ever compared, persisted, or put on the wire. `project_dir` is the raw
+/// registry directory, which L29 permits for exactly one use: handing to the
+/// git invocations in [`generate_for_entry`]. It is not an identity and must
+/// never be matched against anything.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct EntryKey {
+    workspace_key: String,
     project_dir: String,
     owner_kind: String,
     owner_id: String,
@@ -51,21 +59,22 @@ struct EntryKey {
 /// is a wholly separate worker and is never touched ([P06]).
 pub type DraftTaskRegistry = Arc<StdMutex<HashMap<DraftIdentity, JoinHandle<()>>>>;
 
-/// Canonical `(project, owner_kind, owner_id)` key into [`DraftTaskRegistry`].
-/// Canonicalized so a raw-spelled cancel request finds a canonical-keyed task,
-/// mirroring `read_draft`'s Spec S05 tolerance.
+/// `(workspace_key, owner_kind, owner_id)` key into [`DraftTaskRegistry`].
+///
+/// No canonicalization here, and that is the point: `workspace_key` arrives
+/// canonical from the gateway on both sides — the aggregate composed it, and
+/// the client echoes back the one it was given — so there is nothing left to
+/// reconcile. The gateway ran once, where the path was born.
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct DraftIdentity {
-    project: String,
+    workspace_key: String,
     owner_kind: String,
     owner_id: String,
 }
 
-fn draft_identity(project_dir: &str, owner_kind: &str, owner_id: &str) -> DraftIdentity {
+fn draft_identity(workspace_key: &str, owner_kind: &str, owner_id: &str) -> DraftIdentity {
     DraftIdentity {
-        project: crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir))
-            .as_str()
-            .to_owned(),
+        workspace_key: workspace_key.to_owned(),
         owner_kind: owner_kind.to_owned(),
         owner_id: owner_id.to_owned(),
     }
@@ -132,7 +141,7 @@ pub fn spawn_on_demand_draft(
     resolver: SessionResolver,
     tasks: &DraftTaskRegistry,
     snapshot: WorkspacesChangesetSnapshot,
-    project_dir: &str,
+    workspace_key: &str,
     owner_kind: &str,
     owner_id: &str,
     force: bool,
@@ -144,17 +153,12 @@ pub fn spawn_on_demand_draft(
         scribe,
         resolver,
     };
-    // Match the project under the Spec S05 spelling contract: the aggregate
-    // keys entries by the canonical path, but the request carries whatever
-    // spelling the card was bound with (a `/u/...` symlink, a raw mount point).
-    // Canonicalize both sides so a raw-spelled request still finds its
-    // canonical-keyed entry — the same tolerance `read_draft` already applies.
-    let req_canonical = crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir));
+    // A string compare, not a path reconciliation: both sides carry the
+    // registry's canonical `workspace_key` ([L29]).
     let Some(entry) = eligible_entries(snapshot).into_iter().find(|p| {
         p.key.owner_kind == owner_kind
             && p.key.owner_id == owner_id
-            && crate::path_resolver::CanonicalPath::from_raw(Path::new(&p.key.project_dir)).as_str()
-                == req_canonical.as_str()
+            && p.key.workspace_key == workspace_key
     }) else {
         return false;
     };
@@ -165,7 +169,7 @@ pub fn spawn_on_demand_draft(
             &deps.ledger,
             &key.owner_kind,
             &key.owner_id,
-            &key.project_dir,
+            &key.workspace_key,
         )
         .map(|row| row.edited)
         .unwrap_or(false);
@@ -177,7 +181,7 @@ pub fn spawn_on_demand_draft(
     // Register the generation so a cancel (or a superseding request) can abort
     // it. A fresh request for the same entry supersedes the in-flight one —
     // abort the old task before spawning, so two scribes never race to persist.
-    let identity = draft_identity(&key.project_dir, &key.owner_kind, &key.owner_id);
+    let identity = draft_identity(&key.workspace_key, &key.owner_kind, &key.owner_id);
     let handle = tokio::spawn(async move {
         generate_for_entry(&deps, &key, &target).await;
     });
@@ -199,11 +203,11 @@ pub fn spawn_on_demand_draft(
 /// untouched.
 pub fn cancel_draft(
     tasks: &DraftTaskRegistry,
-    project_dir: &str,
+    workspace_key: &str,
     owner_kind: &str,
     owner_id: &str,
 ) -> bool {
-    let identity = draft_identity(project_dir, owner_kind, owner_id);
+    let identity = draft_identity(workspace_key, owner_kind, owner_id);
     let Ok(mut map) = tasks.lock() else {
         return false;
     };
@@ -222,13 +226,13 @@ pub fn cancel_draft(
 /// resets identically.
 pub fn send_draft_cancelled(
     control_tx: &broadcast::Sender<Frame>,
-    project_dir: &str,
+    workspace_key: &str,
     owner_kind: &str,
     owner_id: &str,
 ) {
     let body = serde_json::json!({
         "action": "changeset_draft_state",
-        "project_dir": project_dir,
+        "workspace_key": workspace_key,
         "owner_kind": owner_kind,
         "owner_id": owner_id,
         "state": "cancelled",
@@ -239,25 +243,20 @@ pub fn send_draft_cancelled(
     ));
 }
 
-/// Read the persisted draft for an entry under the Spec S05 spelling
-/// contract: query the canonical project spelling first, fall back to the
-/// raw one when it differs.
+/// Read the persisted draft for an entry, keyed by the canonical
+/// `workspace_key` the row was written under. One lookup, one spelling — the
+/// raw-spelling union this used to carry existed only because the wire shipped
+/// a raw `project_dir`, and there is no longer a second spelling to union.
 pub(crate) fn read_draft(
     ledger: &SessionLedger,
     owner_kind: &str,
     owner_id: &str,
-    project_dir: &str,
+    workspace_key: &str,
 ) -> Option<ChangesetDraftRow> {
-    let canonical = crate::path_resolver::CanonicalPath::from_raw(Path::new(project_dir));
-    if let Ok(Some(row)) = ledger.changeset_draft(owner_kind, owner_id, canonical.as_str()) {
-        return Some(row);
-    }
-    if canonical.as_str() != project_dir {
-        if let Ok(Some(row)) = ledger.changeset_draft(owner_kind, owner_id, project_dir) {
-            return Some(row);
-        }
-    }
-    None
+    ledger
+        .changeset_draft(owner_kind, owner_id, workspace_key)
+        .ok()
+        .flatten()
 }
 
 /// Pull the eligible entries out of a snapshot with their generation targets.
@@ -265,6 +264,9 @@ pub(crate) fn read_draft(
 fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> {
     let mut out = Vec::new();
     for project in snapshot.projects {
+        // The identity ([L29] gateway output) and the git cwd (raw), kept
+        // apart on purpose — see `EntryKey`.
+        let workspace_key = project.snapshot.workspace_key.clone();
         let project_dir = project.project_dir.clone();
         if project.no_repo {
             continue;
@@ -288,6 +290,7 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                         .collect();
                     out.push(PendingEntry {
                         key: EntryKey {
+                            workspace_key: workspace_key.clone(),
                             project_dir: project_dir.clone(),
                             owner_kind: "session".to_string(),
                             owner_id,
@@ -310,6 +313,7 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                     let branch = owner_id.clone();
                     out.push(PendingEntry {
                         key: EntryKey {
+                            workspace_key: workspace_key.clone(),
                             project_dir: project_dir.clone(),
                             owner_kind: "dash".to_string(),
                             owner_id,
@@ -337,6 +341,7 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                 .collect();
             out.push(PendingEntry {
                 key: EntryKey {
+                    workspace_key: workspace_key.clone(),
                     project_dir: project_dir.clone(),
                     owner_kind: "unattributed".to_string(),
                     owner_id: String::new(),
@@ -402,17 +407,16 @@ async fn generate_for_entry(deps: &EngineDeps, key: &EntryKey, target: &DraftTar
                 &deps.ledger,
                 &key.owner_kind,
                 &key.owner_id,
-                &key.project_dir,
+                &key.workspace_key,
             )
             .and_then(|existing| existing.selection);
-            // Spec S05 write contract: the stored project spelling is
-            // canonical, whatever spelling the snapshot carried.
-            let canonical_project =
-                crate::path_resolver::CanonicalPath::from_raw(Path::new(&key.project_dir));
+            // The stored key is the canonical `workspace_key` verbatim — the
+            // gateway ran when the registry composed it, so there is nothing
+            // to canonicalize here ([L29]: gateway once, at the source).
             let row = ChangesetDraftRow {
                 owner_kind: key.owner_kind.clone(),
                 owner_id: key.owner_id.clone(),
-                project_dir: canonical_project.as_str().to_owned(),
+                project_dir: key.workspace_key.clone(),
                 fingerprint,
                 message,
                 updated_at: now_millis(),
@@ -629,7 +633,7 @@ async fn git_output(dir: &Path, args: &[&str]) -> Option<String> {
 fn send_state(deps: &EngineDeps, key: &EntryKey, state: &str, detail: Option<&str>) {
     let mut body = serde_json::json!({
         "action": "changeset_draft_state",
-        "project_dir": key.project_dir,
+        "workspace_key": key.workspace_key,
         "owner_kind": key.owner_kind,
         "owner_id": key.owner_id,
         "state": state,
@@ -646,7 +650,7 @@ fn send_state(deps: &EngineDeps, key: &EntryKey, state: &str, detail: Option<&st
 fn send_delta(deps: &EngineDeps, key: &EntryKey, text: &str) {
     let body = serde_json::json!({
         "action": "changeset_draft_delta",
-        "project_dir": key.project_dir,
+        "workspace_key": key.workspace_key,
         "owner_kind": key.owner_kind,
         "owner_id": key.owner_id,
         "text": text,
@@ -744,6 +748,9 @@ mod tests {
         (dir, root)
     }
 
+    /// A one-session snapshot for `project_dir`, whose `workspace_key` is that
+    /// same string: the fixture's checkout is already the canonical spelling,
+    /// and the key is what requests address the entry by.
     fn session_snapshot(project_dir: &str, status: &str) -> WorkspacesChangesetSnapshot {
         let entry = ChangesetEntry::Session {
             owner_id: "s1".to_string(),
@@ -768,7 +775,7 @@ mod tests {
                 display_name: "proj".to_string(),
                 no_repo: false,
                 snapshot: ChangesetSnapshot {
-                    workspace_key: "ws".to_string(),
+                    workspace_key: project_dir.to_string(),
                     branch: "main".to_string(),
                     ahead: 0,
                     behind: 0,
@@ -798,7 +805,7 @@ mod tests {
                 display_name: "proj".to_string(),
                 no_repo: false,
                 snapshot: ChangesetSnapshot {
-                    workspace_key: "ws".to_string(),
+                    workspace_key: project_dir.to_string(),
                     branch: "main".to_string(),
                     ahead: 0,
                     behind: 0,
@@ -931,26 +938,47 @@ mod tests {
         );
     }
 
+    /// The match is exact on `workspace_key`, with no spelling tolerance —
+    /// and that is the [L29] contract, not a gap in it. A raw spelling of the
+    /// same checkout is not a key; there is exactly one canonical key, minted
+    /// by the registry, and everything that addresses an entry carries it. A
+    /// request bearing anything else is a caller that skipped the gateway, and
+    /// it fails loudly here rather than drafting under a key its own overlay
+    /// will never read back.
+    #[cfg(unix)]
     #[tokio::test]
-    async fn matches_a_raw_spelled_project_against_a_canonical_keyed_entry() {
-        // The aggregate keys entries by the canonical path; the /commit dialog
-        // requests with whatever spelling the card was bound with (a `/u/...`
-        // symlink, a raw mount point). A raw spelling that canonicalizes to the
-        // entry's key must still match ([Spec S05]) — the regression behind the
-        // dialog's "nothing to generate" over a session that owns its files.
-        // On macOS `dir.path()` (`/var/folders/…`) and its canonicalization
-        // (`/private/var/folders/…`) are a real spelling split, so this exercises
-        // the tolerance; where the two coincide the match still holds.
-        let (dir, root) = init_repo();
+    async fn a_non_canonical_spelling_is_not_a_key() {
+        let (_dir, root) = init_repo();
         let canonical = root.to_string_lossy().to_string();
-        let raw = dir.path().to_string_lossy().to_string();
+        let link_dir = tempfile::tempdir().unwrap();
+        let link = link_dir.path().join("linked-repo");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+        let raw = link.to_string_lossy().to_string();
+
         let ledger = Arc::new(SessionLedger::open_in_memory().unwrap());
         let fake = FakeScribe::new("Change a.txt");
-        let snap = session_snapshot(&canonical, "M");
+
         assert!(
-            request(fake.clone(), ledger.clone(), snap, "s1", &raw),
-            "a raw-spelled request ({raw}) must match the canonical-keyed entry ({canonical})"
+            !request(
+                fake.clone(),
+                ledger.clone(),
+                session_snapshot(&canonical, "M"),
+                "s1",
+                &raw,
+            ),
+            "a symlink spelling ({raw}) must not resolve to the canonical entry ({canonical})"
         );
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "no scribe call");
+
+        // The canonical key, by contrast, matches.
+        assert!(request(
+            fake.clone(),
+            ledger.clone(),
+            session_snapshot(&canonical, "M"),
+            "s1",
+            &canonical,
+        ));
         wait_for_calls(&fake, 1).await;
     }
 
@@ -1045,14 +1073,14 @@ mod tests {
         );
     }
 
-    /// Spec S05 read contract: a draft stored under the canonical project
-    /// spelling is found through a raw (symlink) spelling of the same
-    /// checkout.
+    /// A draft row is read by its `workspace_key` and by nothing else. The
+    /// canonical-then-raw union this used to perform is gone with the raw
+    /// spelling that made it necessary: one key, one lookup, no guessing.
     #[cfg(unix)]
     #[test]
-    fn read_draft_unions_canonical_and_raw_spellings() {
+    fn read_draft_keys_on_the_workspace_key_alone() {
         let (_dir, root) = init_repo();
-        let canonical = root.to_string_lossy().to_string();
+        let workspace_key = root.to_string_lossy().to_string();
         let link_dir = tempfile::tempdir().unwrap();
         let link = link_dir.path().join("linked-repo");
         std::os::unix::fs::symlink(&root, &link).unwrap();
@@ -1062,18 +1090,25 @@ mod tests {
             .upsert_changeset_draft(&ChangesetDraftRow {
                 owner_kind: "session".to_string(),
                 owner_id: "s1".to_string(),
-                project_dir: canonical.clone(),
+                project_dir: workspace_key.clone(),
                 fingerprint: "fp".to_string(),
-                message: "Canonical-spelled draft".to_string(),
+                message: "Canonical-keyed draft".to_string(),
                 updated_at: 1,
                 edited: true,
                 selection: None,
             })
             .unwrap();
 
-        let via_raw = read_draft(&ledger, "session", "s1", &link.to_string_lossy())
-            .expect("found through the raw spelling");
-        assert_eq!(via_raw.message, "Canonical-spelled draft");
+        assert_eq!(
+            read_draft(&ledger, "session", "s1", &workspace_key)
+                .expect("found by its key")
+                .message,
+            "Canonical-keyed draft"
+        );
+        assert!(
+            read_draft(&ledger, "session", "s1", &link.to_string_lossy()).is_none(),
+            "a symlink spelling is not the key the row was written under"
+        );
     }
 
     #[tokio::test]

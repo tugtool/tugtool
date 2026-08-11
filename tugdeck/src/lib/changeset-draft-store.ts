@@ -6,9 +6,18 @@
  * the source of truth. While the engine is regenerating, it broadcasts
  * `changeset_draft_state` (drafting → ready/error) and `changeset_draft_delta`
  * (accumulated text) frames so a visible card fills in live. This store keys
- * those by `(project_dir, owner_kind, owner_id)` and exposes them to the card
- * via `useSyncExternalStore` ([L02]); the streaming text is a nicety over the
- * persisted message, never a replacement.
+ * those by `(workspace_key, owner_kind, owner_id)` and exposes them to the
+ * card via `useSyncExternalStore` ([L02]); the streaming text is a nicety over
+ * the persisted message, never a replacement.
+ *
+ * The key is `workspace_key` and never a `project_dir`, and that is [L29]
+ * doing real work: a directory has many spellings, this store compares keys as
+ * plain strings, and there is no canonicalization gateway in the deck to
+ * reconcile two of them. `workspace_key` is the one spelling the registry
+ * minted through the gateway; the deck receives it, echoes it back on every
+ * verb, and never constructs a path key of its own. Key an overlay on anything
+ * else and a reply lands on a key nothing reads — which is exactly how a
+ * `drafting` overlay latches read-only forever.
  *
  * Attached once at boot with {@link attachChangesetDraftStore}; consumed via
  * {@link useChangesetDraft}.
@@ -49,8 +58,8 @@ const DRAFT_STALL_MS = 90_000;
  *  composer re-opens for typing and Auto-Message can be requested again. */
 const STALLED_DETAIL = "Auto-Message stalled — try again";
 
-function overlayKey(projectDir: string, ownerKind: string, ownerId: string): string {
-  return `${projectDir}|${ownerKind}|${ownerId}`;
+function overlayKey(workspaceKey: string, ownerKind: string, ownerId: string): string {
+  return `${workspaceKey}|${ownerKind}|${ownerId}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -108,13 +117,13 @@ export class ChangesetDraftStore {
    * draft replies `ready` without a scribe call.
    */
   requestDraft(
-    projectDir: string,
+    workspaceKey: string,
     ownerKind: string,
     ownerId: string,
     force = false,
   ): void {
     this._connection.sendControlFrame("changeset_draft_request", {
-      project_dir: projectDir,
+      workspace_key: workspaceKey,
       owner_kind: ownerKind,
       owner_id: ownerId,
       force,
@@ -128,9 +137,9 @@ export class ChangesetDraftStore {
    * terminal `cancelled` `changeset_draft_state`, which this store folds back
    * to the idle overlay.
    */
-  cancelDraft(projectDir: string, ownerKind: string, ownerId: string): void {
+  cancelDraft(workspaceKey: string, ownerKind: string, ownerId: string): void {
     this._connection.sendControlFrame("changeset_draft_cancel", {
-      project_dir: projectDir,
+      workspace_key: workspaceKey,
       owner_kind: ownerKind,
       owner_id: ownerId,
     });
@@ -144,7 +153,7 @@ export class ChangesetDraftStore {
    * `selection: null` clears the overrides.
    */
   setDraft(
-    projectDir: string,
+    workspaceKey: string,
     ownerKind: string,
     ownerId: string,
     fields: {
@@ -155,7 +164,7 @@ export class ChangesetDraftStore {
     },
   ): void {
     this._connection.sendControlFrame("changeset_draft_set", {
-      project_dir: projectDir,
+      workspace_key: workspaceKey,
       owner_kind: ownerKind,
       owner_id: ownerId,
       ...(fields.message !== undefined ? { message: fields.message } : {}),
@@ -175,11 +184,11 @@ export class ChangesetDraftStore {
     if (!isRecord(body) || typeof body.action !== "string") return;
     const action = body.action;
     if (action !== "changeset_draft_state" && action !== "changeset_draft_delta") return;
-    const projectDir = typeof body.project_dir === "string" ? body.project_dir : null;
+    const workspaceKey = typeof body.workspace_key === "string" ? body.workspace_key : null;
     const ownerKind = typeof body.owner_kind === "string" ? body.owner_kind : null;
     const ownerId = typeof body.owner_id === "string" ? body.owner_id : "";
-    if (projectDir === null || ownerKind === null) return;
-    const key = overlayKey(projectDir, ownerKind, ownerId);
+    if (workspaceKey === null || ownerKind === null) return;
+    const key = overlayKey(workspaceKey, ownerKind, ownerId);
 
     if (action === "changeset_draft_delta") {
       const text = typeof body.text === "string" ? body.text : "";
@@ -243,8 +252,8 @@ export class ChangesetDraftStore {
     for (const listener of [...this._listeners]) listener();
   }
 
-  overlay(projectDir: string, ownerKind: string, ownerId: string): DraftOverlay {
-    return this._overlays.get(overlayKey(projectDir, ownerKind, ownerId)) ?? IDLE;
+  overlay(workspaceKey: string, ownerKind: string, ownerId: string): DraftOverlay {
+    return this._overlays.get(overlayKey(workspaceKey, ownerKind, ownerId)) ?? IDLE;
   }
 
   dispose(): void {
@@ -287,13 +296,13 @@ export function _resetChangesetDraftStoreForTest(): void {
 
 /** Test-only: fire one entry's stall watchdog as if `DRAFT_STALL_MS` elapsed. */
 export function _fireDraftStallForTest(
-  projectDir: string,
+  workspaceKey: string,
   ownerKind: string,
   ownerId: string,
 ): void {
   if (_activeStore === null) return;
   (_activeStore as unknown as { _fireStall(k: string): void })._fireStall(
-    overlayKey(projectDir, ownerKind, ownerId),
+    overlayKey(workspaceKey, ownerKind, ownerId),
   );
 }
 
@@ -311,7 +320,7 @@ export function _ingestDraftFrameForTest(body: unknown): void {
  * store is attached (gallery / fixtures).
  */
 export function useChangesetDraft(
-  projectDir: string,
+  workspaceKey: string,
   ownerKind: string,
   ownerId: string,
 ): DraftOverlay & { requestDraft: () => void } {
@@ -321,11 +330,11 @@ export function useChangesetDraft(
       if (store === null) return () => {};
       return store.subscribe(listener);
     },
-    () => _activeStore?.overlay(projectDir, ownerKind, ownerId) ?? IDLE,
+    () => _activeStore?.overlay(workspaceKey, ownerKind, ownerId) ?? IDLE,
     () => IDLE,
   );
   const requestDraft = (): void => {
-    _activeStore?.requestDraft(projectDir, ownerKind, ownerId);
+    _activeStore?.requestDraft(workspaceKey, ownerKind, ownerId);
   };
   return { ...overlay, requestDraft };
 }

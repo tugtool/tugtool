@@ -1644,8 +1644,12 @@ fn changeset_commit_message(request: &ChangesetCommitPayload, tag: Option<&str>)
 /// draft is requested for. `owner_id` may be empty (the unattributed pseudo-
 /// entry), so it is not filtered non-empty. `force` is the confirmed
 /// Regenerate — the only path that overwrites an edited draft ([P03]).
+///
+/// The project is named by `workspace_key`, the registry's canonical spelling
+/// ([L29]) — never a `project_dir`, which is raw and has as many spellings as
+/// the checkout has symlinks pointing at it.
 struct ChangesetDraftRequestPayload {
-    project_dir: String,
+    workspace_key: String,
     owner_kind: String,
     owner_id: String,
     force: bool,
@@ -1656,12 +1660,12 @@ fn parse_changeset_draft_request_payload(
 ) -> Result<ChangesetDraftRequestPayload, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
-    let project_dir = value
-        .get("project_dir")
+    let workspace_key = value
+        .get("workspace_key")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or(ControlError::InvalidProjectDir {
-            reason: "missing_project_dir",
+            reason: "missing_workspace_key",
         })?
         .to_string();
     let owner_kind = value
@@ -1679,7 +1683,7 @@ fn parse_changeset_draft_request_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     Ok(ChangesetDraftRequestPayload {
-        project_dir,
+        workspace_key,
         owner_kind,
         owner_id,
         force,
@@ -1690,7 +1694,7 @@ fn parse_changeset_draft_request_payload(
 /// Auto-Message the user cancelled. Same identity shape as the request; no
 /// force / message fields.
 struct ChangesetDraftCancelPayload {
-    project_dir: String,
+    workspace_key: String,
     owner_kind: String,
     owner_id: String,
 }
@@ -1700,12 +1704,12 @@ fn parse_changeset_draft_cancel_payload(
 ) -> Result<ChangesetDraftCancelPayload, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
-    let project_dir = value
-        .get("project_dir")
+    let workspace_key = value
+        .get("workspace_key")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or(ControlError::InvalidProjectDir {
-            reason: "missing_project_dir",
+            reason: "missing_workspace_key",
         })?
         .to_string();
     let owner_kind = value
@@ -1719,7 +1723,7 @@ fn parse_changeset_draft_cancel_payload(
         .ok_or(ControlError::Malformed)?
         .to_string();
     Ok(ChangesetDraftCancelPayload {
-        project_dir,
+        workspace_key,
         owner_kind,
         owner_id,
     })
@@ -1731,7 +1735,7 @@ fn parse_changeset_draft_cancel_payload(
 /// value untouched; `selection: null` clears the overrides; `clear: true`
 /// deletes the whole row.
 struct ChangesetDraftSetPayload {
-    project_dir: String,
+    workspace_key: String,
     owner_kind: String,
     owner_id: String,
     message: Option<String>,
@@ -1747,12 +1751,12 @@ fn parse_changeset_draft_set_payload(
 ) -> Result<ChangesetDraftSetPayload, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
-    let project_dir = value
-        .get("project_dir")
+    let workspace_key = value
+        .get("workspace_key")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .ok_or(ControlError::InvalidProjectDir {
-            reason: "missing_project_dir",
+            reason: "missing_workspace_key",
         })?
         .to_string();
     let owner_kind = value
@@ -1785,7 +1789,7 @@ fn parse_changeset_draft_set_payload(
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
     Ok(ChangesetDraftSetPayload {
-        project_dir,
+        workspace_key,
         owner_kind,
         owner_id,
         message,
@@ -3964,7 +3968,7 @@ impl AgentSupervisor {
             resolver,
             &self.draft_tasks,
             snapshot,
-            &request.project_dir,
+            &request.workspace_key,
             &request.owner_kind,
             &request.owner_id,
             request.force,
@@ -3989,13 +3993,13 @@ impl AgentSupervisor {
     fn do_changeset_draft_cancel(&self, request: &ChangesetDraftCancelPayload) {
         crate::feeds::draft_engine::cancel_draft(
             &self.draft_tasks,
-            &request.project_dir,
+            &request.workspace_key,
             &request.owner_kind,
             &request.owner_id,
         );
         crate::feeds::draft_engine::send_draft_cancelled(
             &self.control_tx,
-            &request.project_dir,
+            &request.workspace_key,
             &request.owner_kind,
             &request.owner_id,
         );
@@ -4003,29 +4007,19 @@ impl AgentSupervisor {
 
     /// Handle a `changeset_draft_set` CONTROL request (Spec S01): a partial
     /// upsert of one draft row — message edits, selection dispositions, or
-    /// the post-landing `clear`. Writes go through the ledger under the
-    /// canonical project spelling (Spec S05); the global aggregate bump fires
-    /// so the next frame carries the change.
+    /// the post-landing `clear`. The row is keyed by the request's canonical
+    /// `workspace_key`, which is what every draft row is keyed by; the global
+    /// aggregate bump fires so the next frame carries the change.
     fn do_changeset_draft_set(&self, request: &ChangesetDraftSetPayload) {
         let Some(ledger) = self.session_ledger.clone() else {
             return;
         };
-        let canonical = crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(
-            &request.project_dir,
-        ));
         if request.clear {
             let _ = ledger.delete_changeset_draft(
                 &request.owner_kind,
                 &request.owner_id,
-                canonical.as_str(),
+                &request.workspace_key,
             );
-            if canonical.as_str() != request.project_dir {
-                let _ = ledger.delete_changeset_draft(
-                    &request.owner_kind,
-                    &request.owner_id,
-                    &request.project_dir,
-                );
-            }
             self.registry.changeset_all_bump().notify_one();
             return;
         }
@@ -4033,7 +4027,7 @@ impl AgentSupervisor {
             &ledger,
             &request.owner_kind,
             &request.owner_id,
-            &request.project_dir,
+            &request.workspace_key,
         );
         let (fingerprint, prior_message, prior_edited, prior_selection) = existing
             .map(|e| (e.fingerprint, e.message, e.edited, e.selection))
@@ -4041,7 +4035,7 @@ impl AgentSupervisor {
         let row = crate::session_ledger::ChangesetDraftRow {
             owner_kind: request.owner_kind.clone(),
             owner_id: request.owner_id.clone(),
-            project_dir: canonical.as_str().to_owned(),
+            project_dir: request.workspace_key.clone(),
             fingerprint,
             message: request.message.clone().unwrap_or(prior_message),
             updated_at: crate::feeds::draft_engine::now_millis(),
@@ -4061,26 +4055,26 @@ impl AgentSupervisor {
     }
 
     /// Post-landing cleanup for a dash's join draft ([P14]): joins and
-    /// releases both delete the `dash:<branch>` row (canonical and raw
-    /// project spellings), so a reused dash name never inherits a dead
-    /// dash's clobber-protected message.
+    /// releases both delete the `dash:<branch>` row, so a reused dash name
+    /// never inherits a dead dash's clobber-protected message.
+    ///
+    /// `project_dir` is whatever spelling the landing verb was called with, so
+    /// it passes the [L29] gateway here — one call, at the boundary — to reach
+    /// the key the row was written under.
     fn clear_dash_draft(
         ledger: &crate::session_ledger::SessionLedger,
         project_dir: &str,
         dash: &str,
     ) {
         let owner_id = format!("tugdash/{dash}");
-        let canonical =
-            crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(project_dir));
-        let _ = ledger.delete_changeset_draft("dash", &owner_id, canonical.as_str());
-        if canonical.as_str() != project_dir {
-            let _ = ledger.delete_changeset_draft("dash", &owner_id, project_dir);
-        }
+        let key = crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(project_dir));
+        let _ = ledger.delete_changeset_draft("dash", &owner_id, key.as_str());
     }
 
     /// Broadcast a `changeset_draft_state` error for a request that matched no
     /// eligible entry ([Q02]) — the same wire shape the generation task's
-    /// `send_state` emits, so the client overlay renders it identically.
+    /// `send_state` emits, down to the `workspace_key` identity, so the client
+    /// overlay renders it identically and, crucially, receives it at all.
     fn send_changeset_draft_error(
         control_tx: &broadcast::Sender<Frame>,
         request: &ChangesetDraftRequestPayload,
@@ -4088,7 +4082,7 @@ impl AgentSupervisor {
     ) {
         let body = serde_json::json!({
             "action": "changeset_draft_state",
-            "project_dir": request.project_dir,
+            "workspace_key": request.workspace_key,
             "owner_kind": request.owner_kind,
             "owner_id": request.owner_id,
             "state": "error",
@@ -7714,8 +7708,13 @@ mod tests {
         }
     }
 
+    /// A one-session snapshot. `project_dir` is the raw checkout (the git cwd
+    /// the engine runs in) and `workspace_key` is the canonical identity every
+    /// draft frame, registry entry, and ledger row is keyed by — production
+    /// keeps them apart, so the fixture does too.
     fn draft_session_snapshot(
         project_dir: &str,
+        workspace_key: &str,
     ) -> tugcast_core::types::WorkspacesChangesetSnapshot {
         use tugcast_core::types::{
             ChangesetEntry, ChangesetFile, ChangesetSnapshot, ProjectChangeset,
@@ -7744,7 +7743,7 @@ mod tests {
                 display_name: "proj".to_string(),
                 no_repo: false,
                 snapshot: ChangesetSnapshot {
-                    workspace_key: "ws".to_string(),
+                    workspace_key: workspace_key.to_string(),
                     branch: "main".to_string(),
                     ahead: 0,
                     behind: 0,
@@ -7800,13 +7799,13 @@ mod tests {
         // Store the aggregate watch frame the request resolves against.
         let (_wtx, wrx) = watch::channel(Frame::new(
             FeedId::CHANGESET_ALL,
-            serde_json::to_vec(&draft_session_snapshot(&root_str)).unwrap(),
+            serde_json::to_vec(&draft_session_snapshot(&root_str, &root_str)).unwrap(),
         ));
         sup.changeset_watch.set(wrx).ok();
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "changeset_draft_request",
-            "project_dir": root_str,
+            "workspace_key": root_str,
             "owner_kind": "session",
             "owner_id": "s1",
         }))
@@ -7874,7 +7873,7 @@ mod tests {
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "changeset_draft_request",
-            "project_dir": "/nope",
+            "workspace_key": "/nope",
             "owner_kind": "session",
             "owner_id": "s1",
         }))
@@ -7902,7 +7901,7 @@ mod tests {
 
         let payload = serde_json::to_vec(&serde_json::json!({
             "action": "changeset_draft_cancel",
-            "project_dir": "/nope",
+            "workspace_key": "/nope",
             "owner_kind": "session",
             "owner_id": "s1",
         }))
@@ -7920,6 +7919,79 @@ mod tests {
         assert_eq!(body["owner_id"], "s1");
     }
 
+    /// Every terminal draft frame is addressed by `workspace_key`, and by
+    /// nothing else. The client overlay map compares this string literally and
+    /// has no gateway to reconcile a second spelling with, so a frame that
+    /// carried a raw `project_dir` instead would land on a key nothing reads —
+    /// which is how a `drafting` overlay latches the composer read-only with
+    /// no exit ([L29]).
+    #[tokio::test]
+    async fn terminal_draft_frames_are_addressed_by_workspace_key() {
+        for (verb, state) in [
+            ("changeset_draft_request", "error"),
+            ("changeset_draft_cancel", "cancelled"),
+        ] {
+            let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+            sup.session_ledger = Some(Arc::new(
+                crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+            ));
+            sup.set_scribe(ScribeContext {
+                spawner: Arc::new(DraftScribe("unused".to_string())),
+                model: Arc::new(|| "haiku".to_string()),
+            });
+            let empty = tugcast_core::types::WorkspacesChangesetSnapshot {
+                projects: vec![],
+                ledger_degraded: false,
+            };
+            let (_wtx, wrx) = watch::channel(Frame::new(
+                FeedId::CHANGESET_ALL,
+                serde_json::to_vec(&empty).unwrap(),
+            ));
+            sup.changeset_watch.set(wrx).ok();
+
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "action": verb,
+                "workspace_key": "/canonical/ws",
+                "owner_kind": "session",
+                "owner_id": "s1",
+            }))
+            .unwrap();
+            sup.handle_control(verb, &payload, 1).await;
+
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), control_rx.recv())
+                .await
+                .expect("a control frame")
+                .expect("sender alive");
+            let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            assert_eq!(body["state"], state, "{verb} terminal state");
+            assert_eq!(body["workspace_key"], "/canonical/ws", "{verb} identity");
+            assert!(
+                body.get("project_dir").is_none(),
+                "{verb} must not address a client by a raw project_dir"
+            );
+        }
+    }
+
+    /// A payload that names only a `project_dir` is refused outright rather
+    /// than resolved by guesswork — the whole point of the key being canonical
+    /// is that there is nothing left to guess.
+    #[tokio::test]
+    async fn draft_request_without_workspace_key_is_refused() {
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_draft_request",
+            "project_dir": "/u/src/tugtool",
+            "owner_kind": "session",
+            "owner_id": "s1",
+        }))
+        .unwrap();
+        assert!(matches!(
+            parse_changeset_draft_request_payload(&payload),
+            Err(ControlError::InvalidProjectDir {
+                reason: "missing_workspace_key"
+            })
+        ));
+    }
+
     #[tokio::test]
     async fn changeset_draft_set_partially_upserts_and_clears() {
         let (mut sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
@@ -7930,7 +8002,7 @@ mod tests {
 
         // A message write creates the row with the edited pin.
         let payload = serde_json::to_vec(&serde_json::json!({
-            "project_dir": "/proj",
+            "workspace_key": "/proj",
             "owner_kind": "session",
             "owner_id": "s1",
             "message": "Hand-tuned message",
@@ -7949,7 +8021,7 @@ mod tests {
         // A selection-only write keeps the message and the edited pin
         // (edited is monotonic through this verb).
         let payload = serde_json::to_vec(&serde_json::json!({
-            "project_dir": "/proj",
+            "workspace_key": "/proj",
             "owner_kind": "session",
             "owner_id": "s1",
             "selection": {"include": ["a.rs"], "exclude": []},
@@ -7967,7 +8039,7 @@ mod tests {
 
         // An explicit null clears the selection without touching the message.
         let payload = serde_json::to_vec(&serde_json::json!({
-            "project_dir": "/proj",
+            "workspace_key": "/proj",
             "owner_kind": "session",
             "owner_id": "s1",
             "selection": serde_json::Value::Null,
@@ -7984,7 +8056,7 @@ mod tests {
 
         // `clear` deletes the row (the post-landing path).
         let payload = serde_json::to_vec(&serde_json::json!({
-            "project_dir": "/proj",
+            "workspace_key": "/proj",
             "owner_kind": "session",
             "owner_id": "s1",
             "edited": false,

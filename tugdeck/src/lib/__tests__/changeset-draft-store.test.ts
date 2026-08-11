@@ -1,7 +1,7 @@
 /**
  * changeset-draft-store — the live draft overlay over the maintained-draft
  * engine's CONTROL frames (Spec S10, [P24]): drafting → deltas → ready/error,
- * keyed by (project_dir, owner_kind, owner_id).
+ * keyed by (workspace_key, owner_kind, owner_id).
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
@@ -28,7 +28,7 @@ function fakeConnWithDisconnect() {
   return { conn, disconnect: () => notify?.({ disconnected: true }) };
 }
 
-const KEY = { project_dir: "/p", owner_kind: "session", owner_id: "s1" };
+const KEY = { workspace_key: "/p", owner_kind: "session", owner_id: "s1" };
 
 beforeEach(() => _resetChangesetDraftStoreForTest());
 
@@ -116,14 +116,14 @@ describe("changeset draft overlay", () => {
     _ingestDraftFrameForTest({ action: "changeset_draft_state", ...KEY, state: "drafting" });
     _ingestDraftFrameForTest({
       action: "changeset_draft_state",
-      project_dir: "/p",
+      workspace_key: "/p",
       owner_kind: "dash",
       owner_id: "tugdash/x",
       state: "drafting",
     });
     _ingestDraftFrameForTest({
       action: "changeset_draft_state",
-      project_dir: "/p",
+      workspace_key: "/p",
       owner_kind: "dash",
       owner_id: "tugdash/x",
       state: "ready",

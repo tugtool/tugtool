@@ -23,8 +23,10 @@
  *
  * The commit and draft triggers are pass-throughs to the shipping app-level
  * verb / draft stores keyed by one identity (`entryKey` /
- * `(projectDir, "session", tugSessionId)`), so the view and the entry read
- * the same round-trip state.
+ * `(workspaceKey, "session", tugSessionId)`), so the view and the entry read
+ * the same round-trip state. Draft addressing uses `workspaceKey` — the
+ * registry's canonical spelling ([L29]) — never `projectDir`, which is the
+ * raw path the card was bound with and is for display and file links only.
  *
  * @module lib/changes-route-controller
  */
@@ -51,7 +53,11 @@ export interface ChangesRouteBinding {
   tugSessionId: string;
   /** Canonical key of the workspace this card's project lives in. */
   workspaceKey: string;
-  /** Absolute checkout root — the commit target and file-link base. */
+  /**
+   * Absolute checkout root as the card was bound with — the commit target and
+   * file-link base. A RAW path ([L29]): display and OS-facing uses only, never
+   * an identity. Draft addressing keys on `workspaceKey`.
+   */
   projectDir: string;
 }
 
@@ -332,7 +338,7 @@ export class ChangesRouteController {
       delete selection.hunks;
     }
     getChangesetDraftStore()?.setDraft(
-      this.projectDir,
+      this.workspaceKey,
       this.draftOwnerKind,
       this.tugSessionId,
       { selection },
@@ -390,7 +396,7 @@ export class ChangesRouteController {
    *  ([P03]). */
   requestDraft(force = false): void {
     getChangesetDraftStore()?.requestDraft(
-      this.projectDir,
+      this.workspaceKey,
       this.draftOwnerKind,
       this.tugSessionId,
       force,

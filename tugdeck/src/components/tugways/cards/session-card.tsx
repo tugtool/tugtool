@@ -1323,6 +1323,10 @@ const PICKER_ORDER_PATH = 0;
 // (`session-picker-cycle:2…5`) are a stable contract the app-tests and a baked
 // corpus snapshot address by string, so they must not shift.
 const PICKER_ORDER_BROWSE = -0.5;
+// The path combo box's chevron sits at the field's right edge, between the
+// field and the filter in reading order — fractional for the same
+// stable-focus-key reason as Browse above.
+const PICKER_ORDER_CHEVRON = 0.5;
 const PICKER_ORDER_FILTER = 1;
 const PICKER_ORDER_SESSIONS = 2;
 const PICKER_ORDER_TRASH_ALL = 3;
@@ -1351,7 +1355,11 @@ const pickerFocusKey = (order: number): string =>
  * memoize.
  */
 const PICKER_SPATIAL_ORDER: SpatialOrder = rowGridOrder([
-  [pickerFocusKey(PICKER_ORDER_BROWSE), pickerFocusKey(PICKER_ORDER_PATH)],
+  [
+    pickerFocusKey(PICKER_ORDER_BROWSE),
+    pickerFocusKey(PICKER_ORDER_PATH),
+    pickerFocusKey(PICKER_ORDER_CHEVRON),
+  ],
   [pickerFocusKey(PICKER_ORDER_FILTER)],
   [pickerFocusKey(PICKER_ORDER_SESSIONS)],
   [pickerFocusKey(PICKER_ORDER_TRASH_ALL)],
@@ -2080,6 +2088,7 @@ function SessionProjectPickerForm({
           focusGroup={PICKER_CYCLE_GROUP}
           focusOrder={PICKER_ORDER_PATH}
           browseFocusOrder={PICKER_ORDER_BROWSE}
+          chevronFocusOrder={PICKER_ORDER_CHEVRON}
         />
       </label>
       <PickerCellProvider value={cellContextValue}>
@@ -2439,12 +2448,39 @@ export function SessionCardBody({
   // turns the prompt entry into the message editor; the changes sheet's
   // visibility is separate card chrome (the `ShadeViewController`), coupled by
   // the card below.
+  //
+  // Rebuilt whenever its stores swap identity, NOT once per mount. A card
+  // outlives its session: `/clear` and a re-bind hand `cardServicesStore` a
+  // fresh `changesController` + `codeSessionStore` while this component stays
+  // mounted (deliberately — that is what keeps the project picker from
+  // flashing). A controller captured once therefore goes on addressing the
+  // PREVIOUS session forever: its `fileCount` reads a changeset nobody is
+  // adding to, its land gate reads a dead store's turn state, and its
+  // Auto-Message asks the backend to draft for a session that owns no files —
+  // a commit composer wired to a corpse while the sheet above it renders the
+  // live session's changes.
   const commitModeControllerRef = useRef<CommitModeController | null>(null);
-  if (commitModeControllerRef.current === null) {
+  const commitModeStoresRef = useRef<{
+    changesController: ChangesRouteController;
+    codeSessionStore: CodeSessionStore;
+  } | null>(null);
+  const commitModeStores = commitModeStoresRef.current;
+  if (
+    commitModeControllerRef.current === null ||
+    commitModeStores === null ||
+    commitModeStores.changesController !== changesController ||
+    commitModeStores.codeSessionStore !== codeSessionStore
+  ) {
+    // A session swap is not a state the mode should survive: the new session
+    // has its own changeset and its own draft, so the composer starts closed
+    // rather than carrying the old session's commit message into it. The
+    // outgoing controller is disposed by the effect below, whose cleanup runs
+    // on exactly this identity change — render stays free of side effects.
     commitModeControllerRef.current = new CommitModeController({
       changesController,
       codeSessionStore,
     });
+    commitModeStoresRef.current = { changesController, codeSessionStore };
   }
   const commitModeController = commitModeControllerRef.current;
   useEffect(

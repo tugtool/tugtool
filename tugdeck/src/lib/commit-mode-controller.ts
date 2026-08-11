@@ -181,15 +181,14 @@ export class CommitModeController {
     const commitError = commit?.error ?? null;
 
     const draftStore = getChangesetDraftStore();
-    // Key the overlay by the aggregate's CANONICAL project spelling, not the
-    // raw path the card was bound with (`changesController.projectDir` can be a
-    // `/u/...` symlink). The backend emits the `changeset_draft_state`/`delta`
-    // frames under the snapshot's canonical `project_dir`, and `changes.project`
-    // is that same snapshot's project — so this string is byte-identical to the
-    // frames, and the live stream lands in the overlay instead of missing it.
+    // Every draft read and write in this controller keys on `workspaceKey` —
+    // the registry's canonical spelling, which the backend stamps on every
+    // draft frame ([L29]). `changesController.projectDir` is the raw path the
+    // card was bound with and can be any spelling of the same directory; it is
+    // not an identity and is never used as one here.
     const overlay =
       draftStore?.overlay(
-        changes.project.project_dir,
+        changesController.workspaceKey,
         "session",
         changesController.tugSessionId,
       ) ?? null;
@@ -256,7 +255,7 @@ export class CommitModeController {
     const seed = seedMessage?.trim() ?? "";
     if (seed.length > 0) {
       getChangesetDraftStore()?.setDraft(
-        this.deps.changesController.projectDir,
+        this.deps.changesController.workspaceKey,
         "session",
         this.deps.changesController.tugSessionId,
         { message: seed, edited: true },
@@ -315,7 +314,7 @@ export class CommitModeController {
   /** Persist a message edit into the changeset draft ([P05]; `edited` pin rides). */
   persistMessage(text: string): void {
     getChangesetDraftStore()?.setDraft(
-      this.deps.changesController.projectDir,
+      this.deps.changesController.workspaceKey,
       "session",
       this.deps.changesController.tugSessionId,
       { message: text, edited: true },
@@ -335,7 +334,7 @@ export class CommitModeController {
   cancelDraft(): void {
     const { changesController } = this.deps;
     getChangesetDraftStore()?.cancelDraft(
-      changesController.projectDir,
+      changesController.workspaceKey,
       "session",
       changesController.tugSessionId,
     );
@@ -391,7 +390,7 @@ export class CommitModeController {
       unsubscribe();
       if (phase === "done") {
         getChangesetDraftStore()?.setDraft(
-          changesController.projectDir,
+          changesController.workspaceKey,
           "session",
           changesController.tugSessionId,
           { clear: true },
