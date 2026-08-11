@@ -8,13 +8,20 @@
  *
  * Control surface exercised (same path Swift's "Show Lens" menu +
  * Cmd-L / Opt-Cmd-L take):
- *   - `toggle-lens`  → `deckManager.toggleLensPane()` (presence = open).
+ *   - `toggle-lens`  → `toggleSidebarCard()`, the three-state shortcut:
+ *     hidden → show + activate, showing but inactive → activate,
+ *     showing and active → hide.
  *   - `focus-lens`   → chain → deck-canvas FOCUS_LENS handler → stash
  *     prior FR, `showLensPane()`, `transferFocusForActivation`.
  *
  * Scenarios:
- *   1. toggle-lens shows the anchored rail; a second toggle hides it.
- *   2. focus-lens opens + moves the first responder into the Lens; a
+ *   1. toggle-lens shows the anchored rail; a second toggle hides it —
+ *      the rail it showed is the active card, so the second press is
+ *      the hide state.
+ *   2. with the first responder elsewhere, toggle-lens on a showing
+ *      rail activates it rather than hiding it; only the press after
+ *      that takes it away.
+ *   3. focus-lens opens + moves the first responder into the Lens; a
  *      second focus-lens restores the previously-focused card.
  *
  * Escape-to-focus-out (the deck-canvas CANCEL_DIALOG handler) is verified
@@ -30,6 +37,7 @@
  * skipping the fit-clamp — is pinned by the `serialization` unit tests
  * (`layout-tree.test.ts`).
  *
+ * @covers tugdeck/src/sidebar-toggle.ts
  * @covers tugdeck/src/components/lens/
  * @covers tugdeck/src/lib/lens-store/
  * @covers tugdeck/src/layout-tree.ts
@@ -111,6 +119,67 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(await lensPaneExists(app)).toBe(true);
 
+            await dispatch(app, "toggle-lens");
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) === null`,
+              { timeoutMs: 3_000 },
+            );
+            expect(await lensPaneExists(app)).toBe(false);
+          } finally {
+            await app.close();
+          }
+        } finally {
+          rmTempTugbank(tugbankPath);
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "toggle-lens activates a showing rail before it will hide it",
+      async () => {
+        const tugbankPath = mkTempTugbank();
+        try {
+          seedTugbankForLaunch(tugbankPath);
+          const app = await launchTugApp({
+            testName: "at0231-lens-toggle-activate",
+            env: { TUGBANK_PATH: tugbankPath },
+            persistInTestMode: true,
+          });
+          try {
+            await app.seedDeckState({ state: priorCardDeck(), focusCardId: "A" });
+            await app.waitForCondition<boolean>(
+              `window.__tug.assertHostRootRegistered("A")`,
+              { timeoutMs: 5_000 },
+            );
+
+            // Hidden → show and activate.
+            await dispatch(app, "toggle-lens");
+            await app.waitForCondition<boolean>(
+              `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) !== null`,
+              { timeoutMs: 3_000 },
+            );
+            const lensCardId = await app.evalJS<string | null>(
+              `window.__tug.getActiveCardId()`,
+            );
+            expect(lensCardId).not.toBe("A");
+            expect(lensCardId).not.toBeNull();
+
+            // Put the first responder back on the free card: the rail is now
+            // showing but not active — the middle state.
+            await app.dispatchControlAction("focus-session-card", {
+              cardId: "A",
+            });
+            expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`)).toBe("A");
+
+            // Showing but inactive → activate, and the rail stays up.
+            await dispatch(app, "toggle-lens");
+            expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`)).toBe(
+              lensCardId,
+            );
+            expect(await lensPaneExists(app)).toBe(true);
+
+            // Showing and active → hide.
             await dispatch(app, "toggle-lens");
             await app.waitForCondition<boolean>(
               `document.querySelector(${JSON.stringify(LENS_PANE_SELECTOR)}) === null`,

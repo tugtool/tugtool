@@ -26,6 +26,7 @@ import type { ResponderChainManager } from "./components/tugways/responder-chain
 import { FeedId } from "./protocol";
 import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
+import { toggleSidebarCard } from "./sidebar-toggle";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-registry";
 import { advanceKeyViewFocus, getFocusManager, BASE_FOCUS_MODE } from "@/components/tugways/focus-manager";
@@ -36,6 +37,7 @@ import { flashCardPane, flashPaneBorder } from "@/lib/flash-pane-border";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
 import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
+import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
@@ -470,25 +472,21 @@ export function initActionDispatch(
     }
   });
 
-  // toggle-lens: Show/hide the Lens rail. Fired by the Swift menu's
-  // "Show Lens" item (⌃⌘L) and the browser-dev keybinding. Presence of
-  // the Lens pane's presence is the open state ([P02]).
+  // toggle-lens / toggle-jots / toggle-gazette: the three-state sidebar
+  // shortcut — show-and-activate, activate, hide ({@link toggleSidebarCard}).
+  // Fired by the Swift menu's "Show Lens" (⌃⌘L), "Show Jots" (⌃⌘J), and "Show
+  // Gazette" (⌃⌘G) items and the browser-dev keybindings; the deck-canvas key
+  // handlers run the same performer.
   registerAction("toggle-lens", () => {
-    deckManager.toggleLensPane();
+    toggleSidebarCard(deckManager, LENS_CARD_ID);
   });
 
-  // toggle-jots: Show/hide the Jots rail, the same presence-is-open model the
-  // Lens uses. Fired by the Swift menu's "Show Jots" item (⌃⌘J) and the
-  // browser-dev keybinding — the sidebar-toggle grammar's other half.
   registerAction("toggle-jots", () => {
-    deckManager.toggleSidebarPane(JOTS_CARD_ID);
+    toggleSidebarCard(deckManager, JOTS_CARD_ID);
   });
 
-  // toggle-gazette: Show/hide the Gazette rail, the third of the sidebar
-  // toggles. Fired by the Swift menu's "Show Gazette" item (⌃⌘G) and the
-  // browser-dev keybinding.
   registerAction("toggle-gazette", () => {
-    deckManager.toggleSidebarPane(GAZETTE_CARD_ID);
+    toggleSidebarCard(deckManager, GAZETTE_CARD_ID);
   });
 
   // next/previous-keyboard-focus: move the keyboard focus ring one stop, the

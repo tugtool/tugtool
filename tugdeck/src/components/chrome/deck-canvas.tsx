@@ -25,6 +25,7 @@ import { useResponderChain } from "@/components/tugways/responder-chain-provider
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { applyBagFocus, transferFocusForActivation } from "@/focus-transfer";
+import { toggleSidebarCard } from "@/sidebar-toggle";
 import { CANVAS_BACKGROUND_ATTRIBUTE } from "@/gesture-interpreter";
 import { TugPane } from "./tug-pane";
 import { CardHost } from "./card-host";
@@ -844,19 +845,19 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           commitMutation: () => store.activateCard(incomingCardId),
         });
       },
-      // ⌃⌘L — toggle the Lens rail's visibility (presence = open, [P02]).
-      // Pure visibility; focus semantics belong to FOCUS_LENS.
+      // ⌃⌘L / ⌃⌘J / ⌃⌘G — the three-state sidebar shortcut: show-and-activate
+      // a hidden rail, activate a showing one, hide the rail that already holds
+      // the keyboard ({@link toggleSidebarCard}). The `toggle-*` control
+      // actions run the same performer, so the menu item and the chord cannot
+      // drift apart.
       [TUG_ACTIONS.TOGGLE_LENS]: (_event: ActionEvent) => {
-        store.toggleLensPane();
+        toggleSidebarCard(store, LENS_CARD_ID);
       },
-      // ⌃⌘J — the same presence-is-open toggle for the Jots rail. Pure
-      // visibility, like its Lens sibling; NEW_JOT is the one that focuses.
       [TUG_ACTIONS.TOGGLE_JOTS]: (_event: ActionEvent) => {
-        store.toggleSidebarPane(JOTS_CARD_ID);
+        toggleSidebarCard(store, JOTS_CARD_ID);
       },
-      // ⌃⌘G — the same presence-is-open toggle for the Gazette rail.
       [TUG_ACTIONS.TOGGLE_GAZETTE]: (_event: ActionEvent) => {
-        store.toggleSidebarPane(GAZETTE_CARD_ID);
+        toggleSidebarCard(store, GAZETTE_CARD_ID);
       },
       // ⌘J — capture in one gesture: reveal the Jots rail if it is hidden,
       // then open a fresh jot's editor. The reveal takes the same

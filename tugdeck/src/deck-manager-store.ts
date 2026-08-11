@@ -201,22 +201,19 @@ export interface IDeckManagerStore {
    */
   showLensPane: () => string | null;
 
-  /** Hide the Lens by closing its anchored pane. No-op when not open. */
-  hideLensPane: () => void;
-
-  /** Toggle the Lens open/closed. */
-  toggleLensPane: () => void;
-
   /**
-   * Show a sidebar card by componentId — the generalization the Lens trio
-   * above now delegates to. Activates the card if its rail is already open,
-   * else creates the pinned pane at the width it reopens at. Returns the card
-   * id, or null when the card type is unregistered.
+   * Show a sidebar card by componentId — the generalization `showLensPane`
+   * delegates to. Activates the card if its rail is already open, else creates
+   * the pinned pane at the width it reopens at. Returns the card id, or null
+   * when the card type is unregistered.
    */
   showSidebarPane: (componentId: string) => string | null;
 
-  /** Toggle a sidebar card open/closed (presence is the open state). */
-  toggleSidebarPane: (componentId: string) => void;
+  /**
+   * Hide a sidebar card by closing its pane (presence is the open state,
+   * [P02]). No-op when it is not open.
+   */
+  hideSidebarPane: (componentId: string) => void;
 
   /**
    * Re-solve every pinned sidebar rail's width so the imposed chain tiles

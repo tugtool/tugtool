@@ -1270,17 +1270,6 @@ export class DeckManager implements IDeckManagerStore {
     return this.showSidebarPane(LENS_CARD_ID);
   }
 
-  /** Hide the Lens by closing its pane (the presence-is-open
-   *  model, [P02]). No-op when the Lens is not open. */
-  hideLensPane(): void {
-    this.hideSidebarPane(LENS_CARD_ID);
-  }
-
-  /** Toggle the Lens open/closed. */
-  toggleLensPane(): void {
-    this.toggleSidebarPane(LENS_CARD_ID);
-  }
-
   /**
    * Show a sidebar card: if it already exists, raise/activate it; otherwise
    * create its pinned rail pane at the width it reopens at. The pinned
@@ -1312,18 +1301,6 @@ export class DeckManager implements IDeckManagerStore {
     if (!card) return;
     const pane = this.deckState.panes.find((p) => p.cardIds.includes(card.id));
     if (pane) this.handlePaneClosed(pane.id);
-  }
-
-  /** Toggle a sidebar card open/closed. */
-  toggleSidebarPane(componentId: string): void {
-    const exists = this.deckState.cards.some(
-      (c) => c.componentId === componentId,
-    );
-    if (exists) {
-      this.hideSidebarPane(componentId);
-    } else {
-      this.showSidebarPane(componentId);
-    }
   }
 
   /**
