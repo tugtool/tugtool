@@ -86,6 +86,17 @@ const ROUTE_HAS_KEY_VIEW = `(function(){
   return el ? el.hasAttribute("data-key-view-kbd") : false;
 })()`;
 
+// ⌥⇥ engages the mode WHERE THE KEYBOARD ALREADY IS — with the caret in the
+// editor, that is the editor's own stop, parked. Engaging is not a movement
+// through the order, so this is where every walk below starts from. (This file
+// used to expect the route chip here, from the retired rule that entry seeded
+// the commit-home.) Mirrors at0140's `EDITOR_STOP_RINGED`.
+const EDITOR_STOP_RINGED = `(function(){
+  return document.querySelector(${JSON.stringify(
+    `${CARD} [data-slot="tug-prompt-entry"] [data-key-view-kbd][data-slot="tug-text-editor"]`,
+  )}) !== null;
+})()`;
+
 const EDITOR_FOCUSED = `(function(){
   var el = document.querySelector(${JSON.stringify(EDITOR)});
   return el !== null && document.activeElement === el;
@@ -168,15 +179,18 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
           { timeoutMs: 6000 },
         );
 
-        // ⌥⇥ to start cycling (route seeded).
+        // ⌥⇥ to start cycling. The ring lands on the editor's own stop, parked.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await app.waitForCondition<boolean>(EDITOR_STOP_RINGED, { timeoutMs: 6000 });
 
-        // Tab to the TIME status cell and Return to open its popover.
-        // route→Claude→Session→Project→Mode→Model→Effort→submit→STATE→TIME
-        // (9 Tabs; the submit is a live stop now that the editor has content).
-        for (let i = 0; i < 9; i++) await app.nativeKey("Tab");
+        // Tab to the TIME status cell and Return to open its popover. The editor
+        // is the LAST stop, so the first Tab wraps to the route:
+        // editor→route→Claude Code→AI→submit→STATE→TIME — 6 Tabs, with the
+        // submit a live stop now that the editor has content. (The chip count
+        // used to be seven: Session / Project left the route with the Z4B diet
+        // and Mode / Model / Effort merged into the one AI chip.)
+        for (let i = 0; i < 6; i++) await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });
         await app.nativeKey("Return");
         await app.waitForCondition<boolean>(POPOVER_OPEN, { timeoutMs: 6000 });
@@ -187,6 +201,13 @@ describe.skipIf(!SHOULD_RUN)("AT0157: Escape over a cycle is mode-stack ordering
         // FIRST Escape: the top mode is the popover trap → it closes; the ring
         // returns to the TIME cell; the card is STILL cycling and DOM focus did
         // not fall back to the editor. (at0140 step 6 pins this half too.)
+        //
+        // This is also the case that bounds the mode's trap-exit rule: leaving
+        // an engaging trap clears the KBF manual bit, but only when the pop
+        // returns to REST. Here it returns into the enclosing cycle, whose
+        // engagement IS that bit — clearing it would close the cycle this step
+        // asserts survives, and the second Escape below would have nothing left
+        // to exit.
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(`${POPOVER_OPEN} === false`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(hasKeyView(Z2_TIME), { timeoutMs: 6000 });

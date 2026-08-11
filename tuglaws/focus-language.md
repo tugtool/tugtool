@@ -79,28 +79,43 @@ The mode is **derived, never latched** — `FocusManager.kbfEngaged()` recompute
 
 Four derivation inputs are not four gestures, and the difference is where this gets missed: three of the inputs are conditions that hold or don't, and only the **manual bit** has transitions in the ordinary sense. So the complete list is short, and it is worth having in one place because a missing exit reads to the user as a stuck ring rather than as an absent rule.
 
+These tables are **derived from the writers, not from memory**, and they carry their sites so they can be re-derived: a `grep` for `setKbfManual|toggleKbfManual|clearKbfManualForPointer|kbfAtRest|kbf: false|hasEngagingTrap` must find no site a row does not name. That check is the audit — the first version of this inventory was written from the design and was already missing a real exit (the trapped-surface one, below) by the time it was committed.
+
 **Engages:** {#kbf-engages}
 
 | | mechanism |
 |---|---|
-| Accessibility keyboard-access mode is on | permanent — the mode never disengages while this holds |
-| ⌥⇥, or View ▸ Keyboard Focus | the manual bit (`toggleKbfManual`). A live caret makes it *re-engage* rather than toggle off, so the gesture is never a no-op at the place it is most often pressed |
-| `Tab` / `⇧Tab` from a single-line `INPUT` or from the **nowhere** state; View ▸ Next / Previous Keyboard Focus | `advanceKeyViewFocus` engages before it steps, so both doors behave identically ([P07]) |
-| A **trapped** focus mode entry on the active context | a sheet, dialog, popover, or menu, unless it opts out with `kbf: false` (the typing-first carve-out) |
-| The key card becomes a card whose registration declares `kbfAtRest` | Class B — the Lens, a diff card. Arriving there engages with no gesture at all |
+| Accessibility keyboard-access mode is on | permanent — the mode never disengages while this holds. `setKeyboardAccessMode` (`focus-manager.ts:3786`), fed from the platform store (`responder-chain-provider.tsx:403`) |
+| ⌥⇥, or View ▸ Keyboard Focus | the manual bit — `toggleKbfManual` (`focus-manager.ts:3886`), from the action (`action-dispatch.ts:535`) and from a card already inside a cycle (`use-cycle-mode.tsx:286`). A live caret makes it *re-engage* rather than toggle off, so the gesture is never a no-op at the place it is most often pressed ([P09]) |
+| `Tab` / `⇧Tab` from a single-line `INPUT` or from the **nowhere** state; View ▸ Next / Previous Keyboard Focus | `advanceKeyViewFocus` sets the bit before it steps (`focus-manager.ts:4272`), so the chord (`responder-chain-provider.tsx:465`) and the menu items (`action-dispatch.ts:495`) behave identically ([P07]) |
+| A card's own focus cycle is entered | `use-cycle-mode.tsx:229` sets the bit as the cycle goes up. The cycle mode itself is pushed `kbf: false` — the mode is on because the *bit* is, not because the cycle traps, which is what keeps the engagement non-circular |
+| A **trapped** focus mode entry on the active context | Class A, `hasEngagingTrap` (`focus-manager.ts:1801`): a sheet, dialog, popover, or menu, unless it opts out with `kbf: false` (`use-cycle-mode.tsx:240` and the completion popup, `tug-completion-popup.tsx:233` — the two typing-first carve-outs) |
+| The key card becomes a card that declares `kbfAtRest` | Class B (`focus-manager.ts:3845`, settled on every key-card change at `:2538`). Arriving there engages with no gesture at all, and the arrival seeds a ring if the card has none |
+
+**Class B is a registration, not a list of cards** (`kbfAtRest` in `card-registry.ts:248`). The current members, so the class can be recognized on sight: **Lens** (`lens-register-card.tsx:50`), **Jots** (`jots-card-registration.tsx:49`), **Gazette** (`gazette-card-registration.tsx:47`), **DevTools** (`devtools-card.tsx:105`), **Keyboard** (`keyboard-card.tsx:55`), **Settings** (`settings-card.tsx:178`), and two gallery cards (`gallery-registrations.tsx:951,976`). The shared property is that the card is *navigated* rather than typed into: its resting state is a set of stops, so a ring is what it should wear at rest.
+
+**The obligation the registration carries: a Class B card must offer stops.** The mode engages on arrival, and "an empty group never holds the keyboard" applies at card scale too — a card that engages with nothing to ring puts the user in a mode with no visible position. Gazette was exactly that case (`kbfAtRest` with no `useFocusable`, no list, no seed) and now registers its composer field and Ask button (`gazette-card.tsx`, `GAZETTE_FOCUS_GROUP`). Its transcript posts and their ref chips are still not stops; that is a gap in coverage, not a violation, because the card does hold the keyboard somewhere the user can see.
+
+**Sidebar cards are where Class B is felt**, since their shortcuts move the key card without any focus gesture:
+
+| gesture | what the mode does |
+|---|---|
+| ⌃⌘L / ⌃⌘J / ⌃⌘G — the three-state sidebar shortcut (`sidebar-toggle.ts:33`) | *show-and-activate* and *activate* both transfer the key card to a Class B card → **engages**, no gesture, ring on the rail's remembered key view. The third state, *hide*, transfers away → **disengages**, unless the manual bit is independently set |
+| ⌘L (`FOCUS_LENS`) | the same engagement going in; its second press — focus back out to the stashed card — is the disengaging leg, by the same key-card rule |
+| ⌘J (`NEW_JOT`) | activates Jots **and** opens a jot's editor, so Class B engages and the editor's own descend claim then grants a caret. This is a *seed*, not a movement, so the stop does not park ([P12]) — the card holds the mode and the caret holds the keys |
 
 **Disengages:** {#kbf-disengages}
 
 | | mechanism |
 |---|---|
-| ⌥⇥ again, from a parked stop | the toggle's other half |
-| `Escape` at the base mode with the manual bit set | rung (6) of the ladder — the Lens / diff-card case, where there is no cycle mode for rung (5) to pop |
-| Any `pointerdown` in the deck | *using the mouse leaves keyboard mode.* One document listener, so it covers cards with no cycle scope too |
-| A printable character — or `Escape` — at a parked text stop | the grant ([P12]) — the keystroke asks for the caret, and a caret is mode OFF. **The caret lands where the ring stands**, never at the card's resting editor: Escape with the ring parked on the find bar's query field leaves the caret blinking in the query field. This holds at rung (5) (the grant pre-empts the cycle pop) and at rung (6) alike, and the exit machinery yields to it — a cycle pop re-asserts a granted stop rather than focusing the restored pre-cycle key view, and `restingFocus` declines when the route is already `dom-granted` |
-| The trapped surface closes | **derived, so nothing has to fire.** The input simply stops holding |
-| The key card changes away from a `kbfAtRest` card | same — the input stops holding |
-| A cycle mode is popped (`useCycleMode`'s exit) | the cycle clears the bit it set |
-| **A card is created** | a new card brings its own resting focus, so a ring left over from the gesture that opened it points at the deck the user just replaced. Hung off card CONSTRUCTION, not off the deck's several add paths, so a path added later cannot miss it |
+| ⌥⇥ again, from a parked stop | the toggle's other half (`focus-manager.ts:3886`) |
+| `Escape` at the base mode with the manual bit set | rung (6) of the ladder (`responder-chain-provider.tsx:990`) — the Lens / diff-card case, where there is no cycle mode for rung (5) to pop |
+| Any `pointerdown` in the deck | *using the mouse leaves keyboard mode.* `clearKbfManualForPointer` (`focus-manager.ts:3904`) from one document listener (`responder-chain-provider.tsx:1522`), so it covers cards with no cycle scope too |
+| A printable character — or `Escape` — at a parked text stop | the grant ([P12]) — the keystroke asks for the caret, and a caret is mode OFF. **The caret lands where the ring stands**, never at the card's resting editor: Escape with the ring parked on the find bar's query field leaves the caret blinking in the query field. This holds at rung (5) (`responder-chain-provider.tsx:909`, where the grant pre-empts the cycle pop) and at rung (6) alike, and it is the printable branch's own sequence (`:942`); the exit machinery yields to it — a cycle pop re-asserts a granted stop rather than focusing the restored pre-cycle key view, and `restingFocus` declines when the route is already `dom-granted` |
+| **An engaging trap is left** — a sheet dismissed, a dialog closed, a menu put away | two halves, and the second one is easy to miss. Class A is **derived**, so the input simply stops holding; but the **manual bit** is stored, and it can be set on either side of the surface — ⌥⇥ pressed *inside* it, or a mode the user turned on before the gesture that opened it. Either way the bit would outlive the surface and leave a ring on the deck the user just came back to. So `popFocusMode` **clears the manual bit** when the popped entry is a trap that engages (`focus-manager.ts:1654`), and lets the derivation answer from what is still true — a Class B card underneath keeps the mode on its own authority. Two guards, and the second one is the one that is easy to miss: `trapped && kbf !== false` — the cycle and the completion popup manage their own bit, and a non-trapped descend scope is a move *within* the mode, not out of it — **and the mode stack must now be empty.** A popover opened *from* a cycle stop pops back into the cycle, whose engagement is carried by this very bit; clearing it there would close the cycle the user is still in, and the second `Escape` they expect to exit with would have nothing left to exit (at0157). The rule is about returning to **rest**, not about any pop. (Note also that a plain `Tab` inside a trap does **not** set the bit — `advanceKeyViewFocus` sets it only when the mode is off, and inside a trap it is already on; ⌥⇥ is the gesture that writes it there.) |
+| The key card changes away from a Class B card | derived — the input stops holding (`focus-manager.ts:2538`) |
+| A cycle mode is popped (`useCycleMode`'s exit) | the cycle clears the bit it set (`use-cycle-mode.tsx:205`), except when the exit was itself a caret grant, which it yields to |
+| **A card is created** | a new card brings its own resting focus, so a ring left over from the gesture that opened it points at the deck the user just replaced (`responder-chain-provider.tsx:1556`). Hung off card CONSTRUCTION, not off the deck's several add paths, so a path added later cannot miss it |
 
 It projects as one attribute, `data-kbf` on `<html>`. CSS reads it only as `html:not([data-kbf])` suppressions; the ring's own trigger is **withheld at the projection** instead, which is why the gate cannot miss a rule and why no painting rule's specificity changes (see the contract table below).
 

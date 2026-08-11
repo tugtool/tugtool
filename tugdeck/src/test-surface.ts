@@ -766,6 +766,19 @@ export interface TugTestSurface {
   reprojectFocus(): void;
 
   /**
+   * The KBF **manual bit** — the one derivation input that is stored rather
+   * than derived, and so the only one whose exits have to be written.
+   *
+   * The projected `data-kbf` attribute answers *is the mode on*, which is the
+   * user-visible fact and what most assertions want. It cannot answer *why*:
+   * inside a trapped surface the mode is on from the trap whatever the bit
+   * says, so a test that means to pin the bit's own lifecycle — set by a `Tab`
+   * inside a sheet, cleared when the sheet is left — has to read it directly.
+   * `null` when no `FocusManager` is mounted.
+   */
+  kbfManual(): boolean | null;
+
+  /**
    * The live pointer gesture's classification, or `null` between gestures.
    *
    * One record per gesture, computed once at capture-phase pointerdown and read
@@ -1848,6 +1861,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     reprojectFocus(): void {
       getFocusManager()?.reproject();
+    },
+
+    kbfManual(): boolean | null {
+      return getFocusManager()?.kbfManual() ?? null;
     },
 
     currentGesture() {

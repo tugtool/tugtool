@@ -55,6 +55,20 @@ import "./gazette-card.css";
  *  sub-pixel scroll height and for the reader who nudged the wheel once. */
 const FOLLOW_SLACK_PX = 24;
 
+/**
+ * The card's focus group — the Jots shape, one group for every stop the card
+ * offers, walked in the order the eye reads them.
+ *
+ * The card registers `kbfAtRest` (Class B): arriving here engages keyboard-focus
+ * mode with no gesture, so it owes the mode somewhere to put the ring. The
+ * composer's two controls are that, and for now they are all of it — the
+ * transcript's posts and their ref chips are not stops yet, which is why the
+ * composer starts at 0 rather than reserving the negative band Jots gives its
+ * chrome. A composer reached this way PARKS (ring, no caret) like any text stop
+ * the engine moved to; `Return` or a printable grants the caret.
+ */
+const GAZETTE_FOCUS_GROUP = "gazette-card";
+
 /** Props for {@link GazetteContent}. */
 export interface GazetteContentProps {
   /** The host card's id — the card's own identity, stamped for tests. */
@@ -286,6 +300,9 @@ export function GazetteContent({
  * One question at a time: while an answer is outstanding the field is disabled
  * and says so. The store enforces the same rule — this is the affordance, not
  * the guarantee.
+ *
+ * Its two controls are the card's keyboard stops — see {@link
+ * GAZETTE_FOCUS_GROUP}.
  */
 function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement {
   const editorRef = useRef<TugMessageEditorHandle | null>(null);
@@ -318,6 +335,8 @@ function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement 
           pending ? "Waiting for an answer…" : "Ask the Operator…"
         }
         aria-label="Ask the Operator"
+        focusGroup={GAZETTE_FOCUS_GROUP}
+        focusOrder={0}
         disabled={pending}
         borderless={false}
         lineWrap
@@ -334,6 +353,8 @@ function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement 
         emphasis="filled"
         className="gazette-composer-send"
         data-testid="gazette-composer-send"
+        focusGroup={GAZETTE_FOCUS_GROUP}
+        focusOrder={1}
         disabled={pending || empty}
         onClick={submit}
       >

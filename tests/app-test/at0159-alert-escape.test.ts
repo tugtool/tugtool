@@ -11,6 +11,12 @@
  *   - Escape closes it (the engine ladder → the alert's cancel);
  *   - focus returns into the opener card (not stranded in the removed overlay).
  *
+ * The alert is also the cheapest engaging trap in the app to open and dismiss,
+ * which makes it the right place to pin the mode's **trap-exit** rule: ⌥⇥
+ * pressed inside a trapped surface sets the KBF manual bit, and that bit must
+ * not outlive the surface — otherwise dismissing leaves a ring standing on the
+ * deck the user just came back to.
+ *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/components/tugways/tug-alert.tsx
@@ -20,7 +26,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
@@ -103,6 +109,71 @@ describe.skipIf(!SHOULD_RUN)("AT0159: tug-alert Escape is engine-owned", () => {
           })()`,
           { timeoutMs: 6000 },
         );
+      } catch (err) {
+        const tail = app.tailLog(200);
+        if (tail !== "") {
+          process.stderr.write(`\n[at0159-alert-escape] log tail:\n${tail}\n`);
+        }
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a Tab pressed inside the alert does not outlive it — dismissing leaves KBF",
+    async () => {
+      const app = await launchTugApp({ testName: "at0159-alert-kbf-exit" });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(TRIGGER)}) !== null`,
+          { timeoutMs: 6000 },
+        );
+
+        // The alert is a TRAPPED, engaging mode: opening it engages KBF with no
+        // gesture (Class A of the derivation).
+        await app.nativeClickAtElement(TRIGGER);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(ALERT)}) !== null &&
+           document.documentElement.hasAttribute("data-kbf")`,
+          { timeoutMs: 6000 },
+        );
+
+        // ⌥⇥ inside the alert sets the MANUAL bit. `Tab` would not: it engages
+        // through `advanceKeyViewFocus`, which sets the bit only when the mode
+        // is OFF, and inside a trap it is already on from the trap. ⌥⇥ is the
+        // toggle itself and writes the bit unconditionally — which is exactly
+        // the input a closing surface cannot retract by ceasing to hold, since
+        // it is stored rather than derived.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(
+          `window.__tug.kbfManual() === true`,
+          { timeoutMs: 6000 },
+        );
+
+        // Dismiss. Leaving an engaging trap leaves the mode: the pop clears the
+        // manual bit and lets the derivation answer from what is still true.
+        // The opener here is a plain gallery card (not `kbfAtRest`), so the
+        // honest answer is OFF — no ring left pointing at a surface the user
+        // has already closed.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(ALERT)}) === null`,
+          { timeoutMs: 6000 },
+        );
+        await app.waitForCondition<boolean>(
+          `document.documentElement.hasAttribute("data-kbf") === false &&
+           window.__tug.kbfManual() === false`,
+          { timeoutMs: 6000 },
+        );
+        note("dismissing the alert left KBF: no data-kbf, manual bit clear");
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {

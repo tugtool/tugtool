@@ -13,6 +13,9 @@
  *     the card; a second press puts it away. The binding is registry-routed and
  *     menu-eligible, so this exercises the chord table and the menu item's
  *     handler at once — the two places a sidebar toggle can be wired wrong.
+ *     Arriving also engages keyboard-focus mode, because the card registers
+ *     `kbfAtRest` — and a card that engages the mode has to have a stop for it
+ *     to ring, which is asserted alongside.
  *  2. **A post renders as its author wrote it.** Frames go in through
  *     `publishGazettePost`, which hands the bytes to the production parser and
  *     the production fold, so what lands on screen came off the same code path a
@@ -113,6 +116,27 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CARD)}) !== null`,
           { timeoutMs: 10_000 },
+        );
+
+        // ── 1b. The rail engages KBF, and it has somewhere to put the ring. ─
+        // Gazette registers `kbfAtRest` (Class B): arriving here engages
+        // keyboard-focus mode with no gesture at all. A card that engages the
+        // mode owes it a stop — "an empty group never holds the keyboard" at
+        // card scale — so the assertion is both halves together: the mode is
+        // on AND something inside the rail wears the ring.
+        await app.waitForCondition<boolean>(
+          `document.documentElement.hasAttribute("data-kbf") &&
+           document.querySelector(${JSON.stringify(`${CARD} [data-key-view-kbd]`)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+        note(
+          "ringed stop on arrival",
+          await app.evalJS<string>(
+            `(function () {
+              var el = document.querySelector(${JSON.stringify(`${CARD} [data-key-view-kbd]`)});
+              return el === null ? "none" : (el.getAttribute("data-testid") || el.tagName);
+            })()`,
+          ),
         );
 
         // ── 2. Posts render as their authors wrote them. ──────────────────

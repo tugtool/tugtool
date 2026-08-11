@@ -1640,6 +1640,30 @@ export class FocusContext {
     // `currentFocusMode`, which subscribers observe (e.g. a card's `cycling`
     // flag) independently of the key view.
     this.notify();
+    // Leaving an ENGAGING TRAP **all the way back to rest** leaves the mode: the
+    // surface auto-engaged it, so the surface closing is the exit. Class A is
+    // derived and needs nothing here, but the MANUAL bit is stored — ⌥⇥ inside
+    // the surface writes it, and so does the mode the user turned on before the
+    // gesture that opened it — so without this clear the bit outlives the
+    // surface and leaves a ring on the deck the user just came back to. Cleared
+    // rather than remembered: the derivation then answers from what is still
+    // true, so a `kbfAtRest` card underneath keeps the mode on its own
+    // authority.
+    //
+    // Two guards, and the second one is the one that is easy to miss:
+    //
+    //  - `trapped && kbf !== false` — the two opt-outs manage their own bit (a
+    //    focus cycle IS the manual bit; the completion popup opens and closes
+    //    mid-typing and must not touch it), and a non-trapped descend scope is a
+    //    move within the mode, not out of it.
+    //  - **the stack is now empty.** A popover opened FROM a cycle stop pops
+    //    back into the cycle, and the cycle's engagement is carried by this very
+    //    bit — clearing it there would close the cycle the user is still in, and
+    //    the second Escape they expect to exit with would have nothing to exit.
+    //    The rule is about returning to REST, not about any pop.
+    if (entry.trapped && entry.kbf !== false && this.modeStack.length === 0) {
+      this.coord.setKbfManual(false);
+    }
     // Popping the last engaging trap disengages the mode (Spec S01) — derived,
     // so the surface closing IS the disengagement, with nothing to unlatch.
     this.coord.settleKbfEngagement();
