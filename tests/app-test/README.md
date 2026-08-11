@@ -9,9 +9,6 @@ For the harness **architecture** — what it is, the trusted-event problem, life
 - [`tuglaws/app-test-harness.md`](../../tuglaws/app-test-harness.md) —
   harness architecture reference. Read first if anything in this README
   feels under-explained.
-- [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
-  — canonical AT-tag catalog. Every `at{NNNN}-*.test.ts` filename
-  prefix MUST match an entry there.
 - [`tuglaws/code-signing-mac.md`](../../tuglaws/code-signing-mac.md) —
   the Apple Developer ID signing pipeline that keeps the macOS
   Accessibility grant stable across rebuilds. Read this when AX is
@@ -262,11 +259,10 @@ Step-by-step:
 
 1. **Decide: smoke or scenario?** See
    [`tuglaws/app-test-harness.md`](../../tuglaws/app-test-harness.md)
-   for the classification rule. If you're adding a scenario, also add
-   the inventory entry in
-   [`tuglaws/app-test-inventory.md`](../../tuglaws/app-test-inventory.md)
-   first — pick the next unused `AT{NNNN}` (high-water mark and "next
-   available" are both at the top of the inventory).
+   for the classification rule. For a scenario, take the next free
+   `AT{NNNN}` straight from the directory — `ls at* | tail -1` — and
+   name the file. There is no registry to update first; the number is
+   a stable id, and what the test is for goes in its header docblock.
 
 2. **Name the file.**
    - Scenario: `tests/app-test/at{NNNN}-<slug>.test.ts`.

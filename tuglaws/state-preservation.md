@@ -476,24 +476,25 @@ Axes compose: a card with a `useCardStatePreservation` engine, three opt-in `use
 
 ---
 
-## Relationship to AT-tags
+## The app-tests that gate this protocol
 
-The [A9] protocol is gated end-to-end by AT-tags from [app-test-inventory.md](app-test-inventory.md). Each tag pins one transition or one component-roster axis of the protocol; the inventory is the regression catalog.
+Each of these pins one transition or one component-roster axis of [A9]. They are listed here by file, because the file is the durable reference — there is no AT-tag catalog (see [app-test-harness.md](app-test-harness.md#atnnnn-slugtestts--at-numbered-scenarios)).
 
-| AT-tag | Gate |
-|--------|------|
-| [AT0001](app-test-inventory.md#at0001-intra-pane-tab-switch--fc-focus-loss) | Intra-pane tab switch — FC focus loss |
-| [AT0002](app-test-inventory.md#at0002-intra-pane-tab-switch--em-focus-loss) | Intra-pane tab switch — EM focus loss |
-| [AT0004](app-test-inventory.md#at0004-app-resign--become-active-focus-restore) | App resign → become-active focus restore |
-| [AT0006](app-test-inventory.md#at0006-cross-pane-move--focus-restore) | Cross-pane move — focus restore |
-| [AT0008](app-test-inventory.md#at0008-oncardactivated-hook--infrastructure) | `onCardActivated` hook — infrastructure |
-| [AT0009](app-test-inventory.md#at0009-inactive-mount-em-card) | Inactive-mount EM card |
-| [AT0010](app-test-inventory.md#at0010-markdown-view-copy-selection-persistence) | Markdown-view copy-selection persistence |
-| [AT0014](app-test-inventory.md#at0014-scroll-persistence) | Scroll persistence |
-| [AT0017](app-test-inventory.md#at0017-savestate-rpc-parity) | `saveState` RPC parity |
-| [AT0024](app-test-inventory.md#at0024-no-component-level-state-preservation-protocol) | Component State Preservation Protocol foundational gate |
-| [AT0027](app-test-inventory.md#at0027-layout-state--split-pane-divider-accordion-expansion) | Layout state — split-pane divider, accordion expansion |
-| [AT0029](app-test-inventory.md#at0029-scroll-key-audit-across-components) | Scroll-key audit across components |
+| Test | Gate |
+|------|------|
+| [`at0001-tab-switch-fc`](../tests/app-test/at0001-tab-switch-fc.test.ts) | Intra-pane tab switch — FC caret round-trip |
+| [`at0004-app-resign-return`](../tests/app-test/at0004-app-resign-return.test.ts) | App resign → become-active focus restore |
+| [`at0006-cross-pane-drag`](../tests/app-test/at0006-cross-pane-drag.test.ts) | Cross-pane move — focus restore |
+| [`at0010-markdown-selection`](../tests/app-test/at0010-markdown-selection.test.ts) | Markdown-view copy-selection persistence |
+| [`at0010-cold-boot-selection`](../tests/app-test/at0010-cold-boot-selection.test.ts) | The same selection across a full process restart |
+| [`at0014-scroll-persistence`](../tests/app-test/at0014-scroll-persistence.test.ts) | Scroll persistence across activation paths |
+| [`at0014-cold-boot-scroll`](../tests/app-test/at0014-cold-boot-scroll.test.ts) | Region-scroll restore across a full process restart |
+| [`at0017-savestate-rpc-parity`](../tests/app-test/at0017-savestate-rpc-parity.test.ts) | `saveState` RPC captures the same axes as the will-phase save |
+| [`at0024-prompt-state-roundtrip`](../tests/app-test/at0024-prompt-state-roundtrip.test.ts) | The foundational round-trip matrix, reload + relaunch |
+| [`at0027-layout-state-persistence`](../tests/app-test/at0027-layout-state-persistence.test.ts) | Layout state — accordion expansion, split-pane divider |
+| [`at0037-deck-wide-restore-consistency`](../tests/app-test/at0037-deck-wide-restore-consistency.test.ts) | Multi-card restore preserves the active/inactive invariants |
+
+The EM-flavored halves of several of these (tab switch, cross-pane move, inactive mount) were retired on 2026-08-11 — they asserted the same orchestrator contract as their FC counterparts, differing only in which component reacquired focus. [`at0032-em-cold-boot-selection`](../tests/app-test/at0032-em-cold-boot-selection.test.ts) is kept as the EM representative, on the restore path where a break would be silent.
 
 The capture-phase invariant itself is gated by [`smoke-capture-phase-save.test.ts`](../tests/app-test/harness-smoke/smoke-capture-phase-save.test.ts) — the architecture-level smoke test that asserts capture runs before any DOM mutation in the same commit.
 
@@ -526,7 +527,7 @@ Secondary sources — where the protocol is wired up in practice.
 - [lifecycle-delegates.md](lifecycle-delegates.md) — The deck-level `TugCardDelegate` event pipe (`cardWillActivate` / `cardDidActivate` / etc.). The preservation-layer callbacks (`onCardActivated`, `onSave`, `onRestore`) ride atop this pipe — when a `cardWillDeactivate` lifecycle moment fires for card A and `cardWillActivate` fires for card B, the framework dispatches `onCardWillDeactivate` on A's preservation record and (after restore) `onCardActivated` on B's.
 - [pane-model.md](pane-model.md) — Deck → Pane → Card hierarchy; cards are the unit of preservation, panes own geometry, the deck owns the per-card bag cache.
 - [responder-chain.md](responder-chain.md) — First-responder promotion drives the `isActive` flag in `onRestore`; `applyBagFocus` (Phase E.11) interacts with the responder chain on cold-boot restore.
-- [app-test-inventory.md](app-test-inventory.md) — Every AT-tag that gates this protocol. The regression catalog.
+- [app-test-harness.md](app-test-harness.md) — The harness that runs the tests listed above, and the naming rule for `at{NNNN}` files.
 - [`roadmap/tugplan-hmr-state-preservation.md`](../roadmap/tugplan-hmr-state-preservation.md) — Step-by-step history of the HMR-as-known-transition extension (capture-side bridge, restore-side count-based remount detection, substrate-local snapshot for Fast Refresh's soft-refresh path, and the design rationale behind each layer).
 - [Vite HMR API](https://vitejs.dev/guide/api-hmr.html) — `import.meta.hot.on` events, including `vite:beforeUpdate` and `vite:beforeFullReload`, which the bridge module subscribes to.
 - [tuglaws.md](tuglaws.md) — [L23] (state preservation across bookkeeping operations); [L09] / [L10] (Pane vs. Card responsibilities); [L03] (`useLayoutEffect` for registrations).

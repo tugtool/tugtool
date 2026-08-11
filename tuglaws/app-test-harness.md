@@ -241,9 +241,13 @@ Smoke tests are not numbered. The filename describes what the gate asserts. Add 
 
 ### `at{NNNN}-<slug>.test.ts` — AT-numbered scenarios
 
-Every AT-numbered file gates a regression case enumerated in [app-test-inventory.md](app-test-inventory.md). The `at{NNNN}` prefix MUST match an inventory entry. The AT-tag is the durable identifier; the slug after it can be re-edited as the test's framing evolves. To add a new scenario, add the inventory entry first (next-available `AT{NNNN}` is tracked at the top of the inventory), then write the test. The order matters because the inventory entry is the spec the test is gating; writing the test first invites the test to drift away from the case the inventory was supposed to cover.
+The `at{NNNN}` prefix is a stable unique id, nothing more. Allocate the next free number by looking at the directory — `ls tests/app-test/at* | tail -1` — and name the file. The number never changes once assigned and is never reused, so a test can be cited durably from a commit message or a roadmap doc; the slug after it can be re-edited freely as the test's framing evolves.
 
-The inventory-vs-test relationship is the durable one. Filenames change when the slug stops matching the framing; AT-tags do not. The reverse mapping (inventory entry → which test file gates it) is provided by the AT-tag prefix; the forward mapping (test file → which inventory entry it gates) is in the test's `describe` block as a natural-language reference and in the file header as a comment.
+There is deliberately **no central registry of AT numbers.** There was one — `tuglaws/app-test-inventory.md`, a catalog that every test was supposed to be registered in before it was written. Nothing checked it, so it drifted: by the time it was retired (2026-08-11) it had stopped tracking new tags around AT0181, leaving a majority of the live suite unlisted, while still carrying entries for tests that had been deleted. A registry that no tooling reads is a second copy of the truth that decays silently, and reconciling it costs more than it ever repaid. The directory listing is the registry.
+
+What a test *is for* belongs in the test, not in a catalog beside it: the header docblock states the case, and `@covers` states the source it gates — and `@covers` is machine-checked by `just app-test-covers-check`, which is why it has not drifted.
+
+A consequence worth stating plainly: numbers may collide, and several do (`at0335-` prefixes three unrelated tests today). A collision is untidy, not broken — the filename is the identity as far as every tool is concerned. Prefer a fresh number, but do not renumber an existing file to resolve one; the citation stability is worth more than the tidiness.
 
 ---
 
@@ -279,7 +283,6 @@ Procedural reference for test authors.
 
 ## Cross-Links
 
-- [app-test-inventory.md](app-test-inventory.md) — The AT-tag catalog. Scenario tests gate the cases enumerated there; the harness is the engine that runs them.
 - [code-signing-mac.md](code-signing-mac.md) — The signing pipeline that keeps the AX grant stable across rebuilds. The harness depends on it transitively for every native-gesture test.
 - [`roadmap/tugplan-in-app-bridge.md`](../roadmap/tugplan-in-app-bridge.md) — Design rationale. Decisions [D01]–[D14], transport choreography, the trusted-event problem in detail, the fidelity-envelope spec.
 - [`roadmap/tugplan-harness-extensions.md`](../roadmap/tugplan-harness-extensions.md) — Phase A native-event family (CGEvent gestures, keyboard, app-lifecycle), tugcode subprocess control.
