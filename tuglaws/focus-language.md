@@ -68,10 +68,11 @@ A whole **container** that becomes the key view (popover, sheet, alert, inline-d
 
 ### The mode division comes first — [KBF]
 
-**Rings exist if and only if keyboard-focus mode (KBF) is engaged.** That one sentence governs everything below it, and it is the difference between an interface with a mode and one that re-decides on every keystroke.
+**Rings exist if and only if keyboard-focus mode (KBF) is engaged — and a blinking caret and a focus ring are mutually exclusive.** Those two sentences govern everything below them, and together they are the difference between an interface with a mode and one that re-decides on every keystroke.
 
 - **Mode OFF.** Text surfaces own their keys unconditionally. A caret keeps all four arrows whatever its content and wherever it sits in its document; no ring, cursor bar, or containment mark paints anywhere in the deck; the keyboard is either in a text surface or nowhere. Nothing about the *content* of a field enters into it.
 - **Mode ON.** The engine owns the movement keys. Rings paint, arrows move the ring along the spatial plane, `Tab` walks the linear order, `Space` commits.
+- **Mode ON with a granted caret.** The mode holds — the trap or registration that engaged it is still true — but the **paint stands down**: no `data-kbf`, no rings, the caret is the focus mark. The keyboard belongs to the text surface (that is what `dom-granted` means), so painting engine marks around a live caret would promise steering the engine is not doing. The next park brings the paint back. See [the paint keys on the route](#kbf-paint-route).
 
 The mode is **derived, never latched** — `FocusManager.kbfEngaged()` recomputes on every read from four inputs: accessibility keyboard-access mode (permanently engaged), the manual bit (⌥⇥ or View ▸ Keyboard Focus), a **trapped** mode entry on the active context that has not opted out with `kbf: false`, and the key card's `kbfAtRest` registration. Being derived is what makes a surface closing *be* the disengagement: there is no state to strand.
 
@@ -118,6 +119,14 @@ These tables are **derived from the writers, not from memory**, and they carry t
 | **A card is created** | a new card brings its own resting focus, so a ring left over from the gesture that opened it points at the deck the user just replaced (`responder-chain-provider.tsx:1556`). Hung off card CONSTRUCTION, not off the deck's several add paths, so a path added later cannot miss it |
 
 It projects as one attribute, `data-kbf` on `<html>`. CSS reads it only as `html:not([data-kbf])` suppressions; the ring's own trigger is **withheld at the projection** instead, which is why the gate cannot miss a rule and why no painting rule's specificity changes (see the contract table below).
+
+#### The paint keys on the route {#kbf-paint-route}
+
+The attribute answers *is the mode painting*, not *is the mode on*, and the two diverge on exactly one axis: is a caret live. `kbfPainting()` (`focus-manager.ts`) is `kbfEngaged() && route === "engine-routed" && !hasLiveNativeGrant()`, and it — not the engagement — is what `computeProjection` writes as `data-kbf` and folds into the ring trigger. The third clause exists because the route alone under-counts carets by one class: a **bare native text control** (a `TugInput`, a filter field) is granted real DOM focus by `focusKeyView`'s native branch while its route deliberately stays `engine-routed` — dispatch and the watchdog's legality predicate are built on that symmetry — so the paint reads the live grant directly. A granted caret therefore reads as mode-paint-off (caret blinks, no rings anywhere) and a parked stop as mode-paint-on (ring, no caret), with the mode itself unmoved throughout. This is what dissolves the seeded-sheet coexistence without touching the seed rule: a `useSeedKeyView` sheet still opens trap-engaged and caret-holding — a seed is a placement, so the stop grants rather than parks ([P12]) — but the paint no longer contradicts the caret, and the first `Tab` parks and brings the rings up. The ⌥⇥ re-engage overlap ([P09], bit set while the route is still `dom-granted`) and the ⌘F grant resolve the same way, at the moment the route flips. The `data-default-ring` promise is deliberately outside this gate — it names Return's home, not the mode — so a seeded sheet shows exactly a caret plus the default ring, which are the two keys that actually work.
+
+**Accessibility mode is exempt**, as it is everywhere else: Class C grants every text stop a caret with the marks up, so there the pair is legal and `data-kbf` stays projected.
+
+Mechanically, the route is written through one setter (`FocusContext.setRoute`), which repaints on every flip — including the two no placement covers: a grant landing on the *same* key view (`setKeyView`'s unchanged-pair early return skips its reproject) and the watchdog's grant-lost fallback. JS asks the truth question of `kbfEngaged()` (exposed to tests as `__tug.kbfEngaged()`); an assertion about what the user *sees* reads the attribute. The dev-mode backstop is in the caret layer: a painted caret while `data-kbf` is projected records a `kbf-caret-divergence` deck-trace event, the KBF sibling of `caret-responder-divergence`. Pinned end to end by at0397 over the rename sheet — the canonical caret-first seeded surface.
 
 This division replaced three ambient mechanisms that between them decided the same question from DOM state on every keydown — an arrow-release policy keyed on whether a field was empty, a two-press boundary latch at a document edge, and emptiness-conditioned `Tab`/arrow handoffs from a text surface to its host. Each existed to compensate for the absence of a **parked** state, and all three are gone.
 
@@ -268,7 +277,7 @@ For any focusable, the engine projects these attributes; CSS reads them ([L06]).
 
 | Attribute | On | Renders |
 |-----------|----|---------|
-| `data-kbf` | `<html>` | nothing directly — it is the **mode gate**. Present iff KBF is engaged. CSS reads it only as `html:not([data-kbf])` suppressions, anchored on `html` so they outrank the item-group rules on specificity |
+| `data-kbf` | `<html>` | nothing directly — it is the **mode gate**. Present iff KBF is **painting** — engaged with no caret granted ([#kbf-paint-route]). CSS reads it only as `html:not([data-kbf])` suppressions, anchored on `html` so they outrank the item-group rules on specificity |
 | `data-key-view-kbd` | a **leaf** | ring (role) + faint behind-tint (role) |
 | `data-key-view-kbd` | an **item-group container** | nothing — the leaf ring is suppressed; the cursor item carries the whole mark |
 | `data-key-cursor` | an **item** in a chip group | ring (role), offset so it survives atop a fill |
@@ -279,7 +288,7 @@ For any focusable, the engine projects these attributes; CSS reads them ([L06]).
 | `data-key-within` | an **item-group** (descend target or not) | nothing — suppressed |
 | `data-attached-cursor` | a row of an **attached list** | the same leading-edge bar the movement cursor draws — and **exempt from the mode gate**, because it is a text field's statement about which row its `Return` means, not a focus position |
 
-**`data-key-view-kbd` means "a ring is painted here", not "the key view is here".** It is withheld outright in mode OFF, which is how the gate stands ~40 component selectors down at once with no cascade change — prefixing the paint rules with `html[data-kbf]` instead would raise the leaf rule above every item-group suppression and repaint the double ring this language spent three attempts removing. The **unflavored** `data-key-view` is the position record and is stamped in both modes; every behavioral reader uses it, and so must any test asking *where is the keyboard* rather than *is a ring painted*.
+**`data-key-view-kbd` means "a ring is painted here", not "the key view is here".** It is withheld outright in mode OFF — and while a caret is granted ([#kbf-paint-route]) — which is how the gate stands ~40 component selectors down at once with no cascade change — prefixing the paint rules with `html[data-kbf]` instead would raise the leaf rule above every item-group suppression and repaint the double ring this language spent three attempts removing. The **unflavored** `data-key-view` is the position record and is stamped in both modes; every behavioral reader uses it, and so must any test asking *where is the keyboard* rather than *is a ring painted*.
 
 `data-key-cursor` and `data-key-within` are the other way round: they carry position and containment truth in both modes, so in mode OFF their **paint** is suppressed rather than their attribute withheld. `data-default-ring` is exempt from the gate entirely — it is a promise about `Return`, not a focus position.
 

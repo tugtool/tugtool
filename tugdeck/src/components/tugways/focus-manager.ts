@@ -315,14 +315,17 @@ function cssEscapeId(id: string): string {
 export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
 
 /**
- * DOM projection of **KBF mode** — keyboard-focus mode — on the document root:
- * present (empty value) while the mode is engaged, absent otherwise. The mode's
+ * DOM projection of **KBF mode's paint** on the document root: present (empty
+ * value) while the mode is engaged AND painting, absent otherwise. The mode's
  * one public mark ([P02]).
  *
- * Engaged means the engine owns the movement keys and rings paint; disengaged
- * means text surfaces own their keys unconditionally and no ring paints
- * anywhere. The bit is derived, never latched — see
- * {@link FocusManager.kbfEngaged}.
+ * The attribute answers *is the mode painting*, not *is the mode on* — the two
+ * diverge exactly while a caret is live: a granted caret stands the mode's
+ * whole visual vocabulary down (a blinking caret and a focus ring are mutually
+ * exclusive), while the mode itself stays engaged and the next park brings the
+ * paint back. JS asks the truth question of {@link FocusManager.kbfEngaged};
+ * the DOM wears the paint answer, {@link FocusManager.kbfPainting}. Both are
+ * derived, never latched.
  *
  * CSS selects on it as `html:not([data-kbf])` suppressions only, anchored the
  * way the `data-app-active` rule in `focus-ring.css` is; the ring's own trigger
@@ -427,9 +430,9 @@ export interface FocusProjection extends FocusProjectionState {
   /** Whether that element should also carry `data-key-view-kbd`. */
   keyViewKbd: boolean;
   /**
-   * Whether KBF mode is engaged — the deck-global bit projected as
-   * {@link KBF_ATTRIBUTE} on the document root. Derived, never stored; see
-   * {@link FocusManager.kbfEngaged}.
+   * Whether KBF mode is **painting** — engaged with the paint standing, the
+   * bit projected as {@link KBF_ATTRIBUTE} on the document root. Derived,
+   * never stored; see {@link FocusManager.kbfPainting}.
    */
   kbf: boolean;
   /** The element that should carry `data-key-within`. */
@@ -996,11 +999,12 @@ export class FocusContext {
       // effect, so it must settle whether or not there is a document to land
       // the keyboard in. Deriving it after the guard left the route frozen at
       // the old mode's answer in every DOM-free context.
-      this.route =
+      this.setRoute(
         this.coord.responderHasFocusContract(this.keyViewId) &&
-        !this.parksTextStop()
+          !this.parksTextStop()
           ? "dom-granted"
-          : "engine-routed";
+          : "engine-routed",
+      );
     }
     if (typeof document === "undefined") return false;
     if (this.route === "dom-granted") return this.grantTextSurface();
@@ -1031,6 +1035,10 @@ export class FocusContext {
     ) {
       const granted = this.grantTextSurface();
       this.coord.settleResponderForKeyView();
+      // The route did not flip (this class grants under `engine-routed`), so
+      // no `setRoute` repaint fires — but the paint reads the live grant
+      // (`hasLiveNativeGrant`), and the grant just changed its answer.
+      this.reproject();
       return granted;
     }
     // Accessibility mode ([P10]): real DOM focus mirrors the engine-routed
@@ -1048,6 +1056,10 @@ export class FocusContext {
     // The park moves no useful focusin, so the chain register tracks the
     // key view explicitly (see settleResponderForKeyView).
     this.coord.settleResponderForKeyView();
+    // A park that retired a live NATIVE grant flipped no route (that class
+    // grants under `engine-routed`), so repaint here — the paint's
+    // `hasLiveNativeGrant` answer just changed under an unchanged key view.
+    this.reproject();
     return parked;
   }
 
@@ -1152,7 +1164,7 @@ export class FocusContext {
    * working on the enclosing engine target instead of going dead.
    */
   noteGrantLost(): void {
-    this.route = "engine-routed";
+    this.setRoute("engine-routed");
   }
 
   // ---- Focus target (record + realize) ----
@@ -1187,6 +1199,40 @@ export class FocusContext {
   /** The keyboard route of this context's current target (Spec S02). */
   keyboardRoute(): KeyboardRoute {
     return this.route;
+  }
+
+  /**
+   * The one writer of {@link route}. The KBF paint keys on the route (a
+   * granted caret stands `data-kbf` and the rings down; a park brings them
+   * back), so a route flip is a repaint trigger in its own right — including
+   * the flips no placement covers: a grant landing on the SAME key view
+   * (`setKeyView`'s unchanged-pair early return skips its reproject) and the
+   * watchdog's grant-lost fallback. `reproject` is active-gated and
+   * diff-then-write, so a background context's flip and an unchanged answer
+   * both cost nothing.
+   */
+  private setRoute(next: KeyboardRoute): void {
+    if (this.route === next) return;
+    this.route = next;
+    this.reproject();
+  }
+
+  /**
+   * Whether the current key view is a bare native text control HOLDING real
+   * DOM focus — the granted-but-engine-routed class. The route deliberately
+   * stays `engine-routed` for these (`focusKeyView`'s native branch; dispatch
+   * and the watchdog's legality predicate are built on that symmetry), but
+   * the caret is as live as any contract grant's, so the mode's paint
+   * ({@link FocusManager.kbfPainting}) reads this alongside the route.
+   */
+  hasLiveNativeGrant(): boolean {
+    if (typeof document === "undefined") return false;
+    const el = this.keyViewElement();
+    return (
+      el !== null &&
+      this.coord.isBareNativeControl(el) &&
+      document.activeElement === el
+    );
   }
 
   /**
@@ -1383,7 +1429,7 @@ export class FocusContext {
   ): PlaceResult {
     switch (target.kind) {
       case "none":
-        this.route = this.classifyRoute(target);
+        this.setRoute(this.classifyRoute(target));
         // No destination: the keyboard is engine-owned at nothing — park
         // the sink (active context only) so `activeElement` is legal.
         if (this.isActive()) this.coord.parkKeySink();
@@ -1397,7 +1443,7 @@ export class FocusContext {
         if (record === undefined || !this.isRecordRendered(record)) {
           return "unrealized";
         }
-        this.route = this.classifyRoute(target);
+        this.setRoute(this.classifyRoute(target));
         this.setKeyView(target.id, modality === "keyboard");
         this.focusKeyView();
         return "placed";
@@ -1410,7 +1456,7 @@ export class FocusContext {
           if (`${record.group}:${record.order}` !== target.focusKey) continue;
           if (!this.isRecordRendered(record)) continue;
           this.pendingRealizeKey = null;
-          this.route = this.classifyRoute(target);
+          this.setRoute(this.classifyRoute(target));
           this.setKeyView(record.id, modality === "keyboard");
           this.focusKeyView();
           return "placed";
@@ -1430,7 +1476,7 @@ export class FocusContext {
         }
         // `focusKeyView` honors the responder focus contract first, so a
         // substrate (CM6 editor) lands its own caret.
-        this.route = this.classifyRoute(target);
+        this.setRoute(this.classifyRoute(target));
         this.setKeyView(target.responderId, modality === "keyboard");
         this.focusKeyView();
         return "placed";
@@ -1455,7 +1501,7 @@ export class FocusContext {
         // Idempotency: a redundant mount-time re-`focus()` can drop focus
         // to body in WebKit; when the control already holds focus, the
         // placement's word is already true.
-        this.route = this.classifyRoute(target);
+        this.setRoute(this.classifyRoute(target));
         if (el.ownerDocument.activeElement !== el) {
           el.focus(
             opts?.preventScroll === true ? { preventScroll: true } : undefined,
@@ -1496,11 +1542,11 @@ export class FocusContext {
               active.closest(`[${KEY_SINK_ATTRIBUTE}]`) !== null
             )
           ) {
-            this.route = this.classifyRoute(target);
+            this.setRoute(this.classifyRoute(target));
             return "placed";
           }
         }
-        this.route = this.classifyRoute(target);
+        this.setRoute(this.classifyRoute(target));
         store.invokeEnginePaintMirrorAsActive(this.cardId);
         return "placed";
       }
@@ -3161,18 +3207,20 @@ export class FocusManager {
       // signal, since `:focus-visible` is unreliable for programmatic focus) —
       // and, when the ring-follows-pointer policy is on, on any pointer-driven
       // key-view change too.
-      // …and only while KBF mode is engaged ([P04] mechanism 1). This is the
-      // whole ring gate: `focus-ring.css` calls this attribute "One trigger",
-      // and it is exactly that — a pure paint signal, not a position record.
-      // Withholding it here stands ~40 selectors across ~20 component
-      // stylesheets down at once with NO cascade change, where prefixing the
-      // paint rules with `html[data-kbf]` would raise them above every
-      // item-group suppression and repaint the double ring ([R04]). The
-      // unflavored `data-key-view` is untouched, so every behavioral reader —
-      // the engine-leaf delivery, the watchdog — sees no change.
+      // …and only while KBF mode is PAINTING ([P04] mechanism 1) — engaged
+      // with no caret granted. This is the whole ring gate: `focus-ring.css`
+      // calls this attribute "One trigger", and it is exactly that — a pure
+      // paint signal, not a position record. Withholding it here stands ~40
+      // selectors across ~20 component stylesheets down at once with NO
+      // cascade change, where prefixing the paint rules with `html[data-kbf]`
+      // would raise them above every item-group suppression and repaint the
+      // double ring ([R04]). The unflavored `data-key-view` is untouched, so
+      // every behavioral reader — the engine-leaf delivery, the watchdog —
+      // sees no change.
       keyViewKbd:
-        (state.keyViewKeyboard || this.ringFollowsPointer) && this.kbfEngaged(),
-      kbf: this.kbfEngaged(),
+        (state.keyViewKeyboard || this.ringFollowsPointer) &&
+        this.kbfPainting(),
+      kbf: this.kbfPainting(),
       keyWithinEl,
       defaultRingEl: ringTop !== null && !ctx.keyViewIsButton() ? ringTop : null,
       legalActive: this.legalKeyboardElement().legal,
@@ -3831,6 +3879,15 @@ export class FocusManager {
   private lastKbfEngaged = false;
 
   /**
+   * The last **paint** answer ({@link kbfPainting}), the second change
+   * detector: the paint also moves when the keyboard route or the access
+   * mode flips under an unchanged engagement (a granted caret standing the
+   * marks down inside a still-engaged trap), and those settles must repaint
+   * without re-landing the keyboard.
+   */
+  private lastKbfPainted = false;
+
+  /**
    * Whether keyboard-focus mode is engaged (Spec S01) — the one question the
    * ring gate, the movement stages, and the projection all ask.
    *
@@ -3855,6 +3912,31 @@ export class FocusManager {
     const componentId = this.keyCardComponentId();
     if (componentId === null) return false;
     return getRegistration(componentId)?.kbfAtRest === true;
+  }
+
+  /**
+   * Whether the engaged mode is **painting** — the answer `data-kbf` and the
+   * ring trigger project. A blinking caret and a focus ring are mutually
+   * exclusive: while a caret is live — the route is `dom-granted`, or a bare
+   * native control holds a granted caret under the engine route
+   * ({@link FocusContext.hasLiveNativeGrant}) — the caret is the focus mark,
+   * so the mode's visual vocabulary stands down and comes back with the next
+   * park. The mode itself does not move — a seeded sheet is engaged
+   * caret-first with no rings, and its first Tab parks and paints.
+   *
+   * Accessibility mode is exempt, as it is everywhere else: Class C grants
+   * every text stop a caret by design, and assistive tech needs the marks up
+   * regardless.
+   */
+  kbfPainting(): boolean {
+    if (!this.kbfEngaged()) return false;
+    if (this.accessMode === "accessibility") return true;
+    const ctx = this.activeContext();
+    if (ctx.keyboardRoute() !== "engine-routed") return false;
+    // A granted BARE NATIVE control keeps the engine route (dispatch and
+    // watchdog legality are built on that), but its caret is live all the
+    // same — the paint stands down for it exactly as for a contract grant.
+    return !ctx.hasLiveNativeGrant();
   }
 
   /**
@@ -3967,6 +4049,16 @@ export class FocusManager {
     if (flipped) {
       this.reproject();
       this.activeContext().focusKeyView();
+    }
+    // The PAINT is its own answer ({@link kbfPainting}) and can move under an
+    // unchanged engagement — an access-mode flip over a granted caret is the
+    // case no route flip covers (`setRoute` repaints those). Read AFTER the
+    // re-land above, which may itself have settled the route. Repaint only:
+    // the keyboard is where it belongs, the marks are what moved.
+    const painted = this.kbfPainting();
+    if (painted !== this.lastKbfPainted) {
+      this.lastKbfPainted = painted;
+      if (!flipped) this.reproject();
     }
     // But ALWAYS notify. The manual bit is observable state in its own right
     // (`kbfManual()`), and consumers subscribe to it: a card already engaged by

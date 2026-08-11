@@ -14,8 +14,10 @@
  *     menu-eligible, so this exercises the chord table and the menu item's
  *     handler at once — the two places a sidebar toggle can be wired wrong.
  *     Arriving also engages keyboard-focus mode, because the card registers
- *     `kbfAtRest` — and a card that engages the mode has to have a stop for it
- *     to ring, which is asserted alongside.
+ *     `kbfAtRest` — and a card that engages the mode has to have a stop to put
+ *     the keyboard on. Gazette's first stop is its composer, a text stop the
+ *     engagement seeds, so the arrival state is a granted caret with the
+ *     mode's paint standing down ([#kbf-paint-route]), asserted alongside.
  *  2. **A post renders as its author wrote it.** Frames go in through
  *     `publishGazettePost`, which hands the bytes to the production parser and
  *     the production fold, so what lands on screen came off the same code path a
@@ -118,23 +120,40 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           { timeoutMs: 10_000 },
         );
 
-        // ── 1b. The rail engages KBF, and it has somewhere to put the ring. ─
+        // ── 1b. The rail engages KBF, and it has somewhere to put the caret. ─
         // Gazette registers `kbfAtRest` (Class B): arriving here engages
         // keyboard-focus mode with no gesture at all. A card that engages the
         // mode owes it a stop — "an empty group never holds the keyboard" at
-        // card scale — so the assertion is both halves together: the mode is
-        // on AND something inside the rail wears the ring.
+        // card scale — and Gazette's first stop is its composer, a text stop
+        // the engagement SEEDS: a seed is a placement, so it grants rather
+        // than parks ([P12]), the caret lands in the field, and the mode's
+        // paint stands down for it (`data-kbf` keys on the route —
+        // [#kbf-paint-route]). So the assertion is all three halves together:
+        // the mode is ON (`kbfEngaged`), the paint is DOWN, and the caret is
+        // in the composer. A ring here alongside the caret is the pre-(B)
+        // coexistence bug; paint up with no caret means the seed never landed.
         await app.waitForCondition<boolean>(
-          `document.documentElement.hasAttribute("data-kbf") &&
-           document.querySelector(${JSON.stringify(`${CARD} [data-key-view-kbd]`)}) !== null`,
+          `window.__tug.kbfEngaged() === true &&
+           !document.documentElement.hasAttribute("data-kbf") &&
+           (function () {
+             var field = document.querySelector(${JSON.stringify(`${CARD} [data-testid="gazette-composer-field"]`)});
+             return field !== null && document.activeElement !== null &&
+               field.contains(document.activeElement);
+           })()`,
           { timeoutMs: 10_000 },
         );
         note(
-          "ringed stop on arrival",
+          "arrival",
           await app.evalJS<string>(
             `(function () {
-              var el = document.querySelector(${JSON.stringify(`${CARD} [data-key-view-kbd]`)});
-              return el === null ? "none" : (el.getAttribute("data-testid") || el.tagName);
+              var ringed = document.querySelector(${JSON.stringify(`${CARD} [data-key-view-kbd]`)});
+              var active = document.activeElement;
+              return JSON.stringify({
+                engaged: window.__tug.kbfEngaged(),
+                kbf: document.documentElement.hasAttribute("data-kbf"),
+                ringed: ringed === null ? null : (ringed.getAttribute("data-testid") || ringed.tagName),
+                active: active === null ? null : (active.getAttribute("data-slot") || active.tagName),
+              });
             })()`,
           ),
         );

@@ -421,6 +421,18 @@ export type DeckTraceEvent = {
       firstResponderId: string | null;
     }
   | {
+      // Dev-only invariant probe, the KBF sibling of
+      // `caret-responder-divergence` (same source, `caret-layer.ts`). A
+      // painted caret and a projected `data-kbf` are mutually exclusive by
+      // construction — the projection stands the mode's paint down while the
+      // route is `dom-granted` — so a caret painting under the attribute
+      // means a route flip escaped its repaint (accessibility mode, where
+      // the pair is legal, is exempted at the probe). Recorded once per
+      // divergence transition.
+      kind: "kbf-caret-divergence";
+      editorResponderId: string | null;
+    }
+  | {
       // Fired by `SmartScroll.engage` / `SmartScroll.disengage` — the
       // typed funnel for follow-bottom intent. `following` is the
       // requested state (true = follow the live edge, false =
@@ -544,6 +556,7 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "engine-paint-mirror-inactive" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "kbf-caret-divergence" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "scroll-displacement" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "extent-rebase" }>, StampedFields>;

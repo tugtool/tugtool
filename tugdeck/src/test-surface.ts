@@ -769,14 +769,26 @@ export interface TugTestSurface {
    * The KBF **manual bit** — the one derivation input that is stored rather
    * than derived, and so the only one whose exits have to be written.
    *
-   * The projected `data-kbf` attribute answers *is the mode on*, which is the
-   * user-visible fact and what most assertions want. It cannot answer *why*:
-   * inside a trapped surface the mode is on from the trap whatever the bit
-   * says, so a test that means to pin the bit's own lifecycle — set by a `Tab`
-   * inside a sheet, cleared when the sheet is left — has to read it directly.
-   * `null` when no `FocusManager` is mounted.
+   * The projected `data-kbf` attribute answers *is the mode painting* —
+   * engagement with no caret granted — which is the user-visible fact and
+   * what most assertions want. It cannot answer *why the mode is on*: inside
+   * a trapped surface the mode is on from the trap whatever the bit says, so
+   * a test that means to pin the bit's own lifecycle — set by ⌥⇥ inside a
+   * sheet, cleared when the sheet is left — has to read it directly. `null`
+   * when no `FocusManager` is mounted.
    */
   kbfManual(): boolean | null;
+
+  /**
+   * The KBF **engagement truth** ({@link FocusManager.kbfEngaged}) — is the
+   * mode on, whether or not it is painting. Diverges from the `data-kbf`
+   * attribute exactly while a caret is granted inside an engaged mode (a
+   * seeded sheet on open, a ⌘F grant, `Enter` at a parked stop): the mode
+   * stays on, the paint stands down. An assertion about the mode's *state*
+   * reads this; an assertion about what the user *sees* reads the attribute.
+   * `null` when no `FocusManager` is mounted.
+   */
+  kbfEngaged(): boolean | null;
 
   /**
    * The live pointer gesture's classification, or `null` between gestures.
@@ -1865,6 +1877,10 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
 
     kbfManual(): boolean | null {
       return getFocusManager()?.kbfManual() ?? null;
+    },
+
+    kbfEngaged(): boolean | null {
+      return getFocusManager()?.kbfEngaged() ?? null;
     },
 
     currentGesture() {

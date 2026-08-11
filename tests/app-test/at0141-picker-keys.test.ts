@@ -293,7 +293,21 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
           `document.querySelector(${JSON.stringify(DROPDOWN)}) === null`,
           { timeoutMs: 6000 },
         );
-        expect(await app.evalJS<boolean>(hasKeyView(PATH))).toBe(true);
+        // The UNFLAVORED key-view mark: the field holds a granted caret here,
+        // and a granted caret stands the mode's paint down — `data-key-view-kbd`
+        // is withheld while the route is dom-granted, so reading the ring
+        // flavor would assert paint the engine correctly is not showing. The
+        // claim is positional (Enter committed the pick without leaving), and
+        // `data-key-view` is the positional mark.
+        expect(
+          await app.evalJS<boolean>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(PATH)});
+              return el !== null && el.hasAttribute("data-key-view");
+            })()`,
+          ),
+          "Enter committed the pick with the key view still on the field",
+        ).toBe(true);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") {

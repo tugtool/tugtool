@@ -152,6 +152,13 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // field with a list under it, and which of the two an arrow reaches is a
     // route decision — the same predicate at0345 points at, arrived at from the
     // other side. An edit to the navigator is the edit that would break it.
+    //
+    // Held at 66 through an add and a delete: at0397 (the paint keys on the
+    // route — `data-kbf` and the ring trigger project from `kbfPainting()`,
+    // so an edit to the projection or the route setter is the edit that
+    // would break it) joined as at0138 retired (its document-level ⌥⇥ probe
+    // predated the window-capture keybinding stage, and the reach-and-match
+    // behavior it guarded is pinned by at0345/at0159/at0397).
     "tugdeck/src/components/tugways/focus-manager.ts": 66,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,

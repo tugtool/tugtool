@@ -90,6 +90,7 @@ import type { Extension } from "@codemirror/state";
 
 import { getResponderChainManager } from "@/action-dispatch";
 import { deckTrace } from "@/deck-trace";
+import { getFocusManager, KBF_ATTRIBUTE } from "../focus-manager";
 import { revealFocusTarget } from "../focus-reveal";
 
 /**
@@ -246,6 +247,46 @@ function checkCaretResponderInvariant(view: EditorView): void {
 }
 
 /**
+ * Transition detector for {@link checkKbfPaintInvariant}, keyed like
+ * {@link lastInvariantSignature}: report once per divergence, once per
+ * recovery, never per repaint.
+ */
+const lastKbfPaintSignature = new WeakMap<EditorView, string>();
+
+/**
+ * Dev-only invariant probe, the KBF half: a painted caret and a projected
+ * `data-kbf` are mutually exclusive — the projection stands the mode's paint
+ * down while the keyboard route is `dom-granted`, and this layer only paints
+ * while `view.hasFocus`, which IS the granted state. Both up at once means a
+ * route flip escaped its repaint, and the deck is showing a caret and focus
+ * rings simultaneously. Accessibility mode is the one legal overlap (every
+ * text stop takes a caret with the marks up) and is exempted here the way it
+ * is exempted at the projection.
+ */
+function checkKbfPaintInvariant(view: EditorView): void {
+  const manager = getFocusManager();
+  if (manager === null) return;
+  if (manager.keyboardAccessMode() === "accessibility") return;
+  const projected = document.documentElement.hasAttribute(KBF_ATTRIBUTE);
+  const signature = projected ? "diverged" : INVARIANT_OK;
+  if (lastKbfPaintSignature.get(view) === signature) return;
+  lastKbfPaintSignature.set(view, signature);
+  if (!projected) return;
+
+  const editorResponderId =
+    view.dom.closest("[data-responder-id]")?.getAttribute("data-responder-id") ??
+    null;
+  deckTrace.record({ kind: "kbf-caret-divergence", editorResponderId });
+  console.error(
+    `[caret-layer] KBF paint divergence: editor ` +
+      `'${editorResponderId ?? "unknown"}' is painting a caret while ` +
+      `\`${KBF_ATTRIBUTE}\` is projected. A granted caret must stand the ` +
+      `mode's paint down — a route flip escaped its repaint. See the ` +
+      `deck-trace ring for the surrounding event sequence.`,
+  );
+}
+
+/**
  * Caret-overlay layer. Paints a single `tug-text-editor-caret` div at the
  * head of the main selection when the editor is focused and the
  * selection is collapsed.
@@ -268,6 +309,7 @@ export const tugCaretLayer: Extension = layer({
     // responder. Probe fires once per divergence transition.
     if (process.env.NODE_ENV !== "production") {
       checkCaretResponderInvariant(view);
+      checkKbfPaintInvariant(view);
     }
     const sel = view.state.selection.main;
     if (!sel.empty) return [];

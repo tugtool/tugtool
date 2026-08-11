@@ -125,9 +125,18 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(ADD_INPUT)}) !== null`,
             { timeoutMs: 4000 },
           );
+          // An Enter-descend onto a text input is a GRANT: the caret lands in
+          // the field and the mode's paint stands down ([#kbf-paint-route]),
+          // so the landing mark is the caret plus the UNFLAVORED
+          // `data-key-view` — asserting the ring flavor here would demand
+          // paint the engine correctly is not showing.
           await app.nativeKey("Enter");
           await app.waitForCondition<boolean>(
-            `(function(){var el=document.querySelector(${JSON.stringify(ADD_INPUT)});return el!==null && el.hasAttribute("data-key-view-kbd");})()`,
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(ADD_INPUT)});
+              return el !== null && el.hasAttribute("data-key-view") &&
+                document.activeElement === el;
+            })()`,
             { timeoutMs: 4000 },
           );
 
