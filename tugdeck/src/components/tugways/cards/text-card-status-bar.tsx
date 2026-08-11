@@ -58,6 +58,15 @@ export interface TextCardStatusBarProps {
   languageId: string;
   /** Override the card's syntax highlighting / file type. */
   onSetLanguage: (id: string) => void;
+  /**
+   * Register the two popups as focus-engine stops in this group. The Text
+   * card passes its cycle group, which is what puts the line-ending and
+   * file-type menus on the Tab tour ([P09]/[P10]); omit and the strip is
+   * mouse-only.
+   */
+  focusGroup?: string;
+  /** Order of the line-ending popup; the file-type popup takes the next slot. */
+  focusOrder?: number;
 }
 
 export function TextCardStatusBar({
@@ -66,6 +75,8 @@ export function TextCardStatusBar({
   onSetLineEnding,
   languageId,
   onSetLanguage,
+  focusGroup,
+  focusOrder = 0,
 }: TextCardStatusBarProps) {
   const stats = useSyncExternalStore(statsStore.subscribe, statsStore.getSnapshot);
 
@@ -95,12 +106,16 @@ export function TextCardStatusBar({
             label={LINE_ENDING_LABEL[lineEnding]}
             items={LINE_ENDING_ITEMS}
             senderId={lineEndingSenderId}
+            focusGroup={focusGroup}
+            focusOrder={focusOrder}
           />
           <TugPopupButton
             size="xs"
             label={languageLabel}
             items={LANGUAGE_ITEMS}
             senderId={languageSenderId}
+            focusGroup={focusGroup}
+            focusOrder={focusOrder + 1}
           />
         </div>
 

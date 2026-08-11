@@ -75,6 +75,33 @@ A whole **container** that becomes the key view (popover, sheet, alert, inline-d
 
 The mode is **derived, never latched** — `FocusManager.kbfEngaged()` recomputes on every read from four inputs: accessibility keyboard-access mode (permanently engaged), the manual bit (⌥⇥ or View ▸ Keyboard Focus), a **trapped** mode entry on the active context that has not opted out with `kbf: false`, and the key card's `kbfAtRest` registration. Being derived is what makes a surface closing *be* the disengagement: there is no state to strand.
 
+#### The whole inventory of entering and leaving {#kbf-transitions}
+
+Four derivation inputs are not four gestures, and the difference is where this gets missed: three of the inputs are conditions that hold or don't, and only the **manual bit** has transitions in the ordinary sense. So the complete list is short, and it is worth having in one place because a missing exit reads to the user as a stuck ring rather than as an absent rule.
+
+**Engages:** {#kbf-engages}
+
+| | mechanism |
+|---|---|
+| Accessibility keyboard-access mode is on | permanent — the mode never disengages while this holds |
+| ⌥⇥, or View ▸ Keyboard Focus | the manual bit (`toggleKbfManual`). A live caret makes it *re-engage* rather than toggle off, so the gesture is never a no-op at the place it is most often pressed |
+| `Tab` / `⇧Tab` from a single-line `INPUT` or from the **nowhere** state; View ▸ Next / Previous Keyboard Focus | `advanceKeyViewFocus` engages before it steps, so both doors behave identically ([P07]) |
+| A **trapped** focus mode entry on the active context | a sheet, dialog, popover, or menu, unless it opts out with `kbf: false` (the typing-first carve-out) |
+| The key card becomes a card whose registration declares `kbfAtRest` | Class B — the Lens, a diff card. Arriving there engages with no gesture at all |
+
+**Disengages:** {#kbf-disengages}
+
+| | mechanism |
+|---|---|
+| ⌥⇥ again, from a parked stop | the toggle's other half |
+| `Escape` at the base mode with the manual bit set | rung (6) of the ladder — the Lens / diff-card case, where there is no cycle mode for rung (5) to pop |
+| Any `pointerdown` in the deck | *using the mouse leaves keyboard mode.* One document listener, so it covers cards with no cycle scope too |
+| A printable character at a parked text stop | the grant ([P12]) — the character asks for the caret, and a caret is mode OFF |
+| The trapped surface closes | **derived, so nothing has to fire.** The input simply stops holding |
+| The key card changes away from a `kbfAtRest` card | same — the input stops holding |
+| A cycle mode is popped (`useCycleMode`'s exit) | the cycle clears the bit it set |
+| **A card is created** | a new card brings its own resting focus, so a ring left over from the gesture that opened it points at the deck the user just replaced. Hung off card CONSTRUCTION, not off the deck's several add paths, so a path added later cannot miss it |
+
 It projects as one attribute, `data-kbf` on `<html>`. CSS reads it only as `html:not([data-kbf])` suppressions; the ring's own trigger is **withheld at the projection** instead, which is why the gate cannot miss a rule and why no painting rule's specificity changes (see the contract table below).
 
 This division replaced three ambient mechanisms that between them decided the same question from DOM state on every keydown — an arrow-release policy keyed on whether a field was empty, a two-press boundary latch at a document edge, and emptiness-conditioned `Tab`/arrow handoffs from a text surface to its host. Each existed to compensate for the absence of a **parked** state, and all three are gone.
@@ -118,7 +145,12 @@ The distinction is carried as an **arrival kind recorded on the placement**, nev
 
 > **History.** Entry used to seed the **commit-home** unconditionally, from the pre-mode design where ⌥⇥ *started a tour* and a tour needs a starting line. That it silently moved the user's place went unnoticed for as long as it did because the ring it moved *from* was invisible: the composer's editor was still carrying a blanket `outline: none` from the retired "a text editor never wears a ring" axiom, so the only visible effect of ⌥⇥ was a ring appearing on the submit button, which reads as a seed rather than as a jump.
 
-**A flush editor insets its ring, and draws it on the substrate.** An editor filling its host edge to edge — the entry shell's composer, the Text card — has no room outside its box for the standard outset ring, which would paint over the card's neighbours or off its edge entirely. It insets by the ring's own width instead. And because the CodeMirror substrate is an opaque in-flow child covering the host to the pixel, the inset ring has to be drawn on **that** box, not on the stop element: an outline inset on the host paints underneath the substrate's background and is never seen. Both corrections are geometry, not policy — the trigger is the same `data-key-view-kbd` every other stop uses.
+**A flush editor insets its ring, and has to find a box that survives.** An editor filling its host edge to edge — the entry shell's composer, the Text card — has no room outside its box for the standard outset ring, which would paint over the card's neighbours or off its edge entirely. It insets by the ring's own width instead. Where it *draws* is then a question of what covers what, and the answer differs per editor because an `outline` paints in its own element's layer and nothing on an ancestor can lift it above a descendant:
+
+- The **composer** draws on the CodeMirror substrate (`.cm-editor`), not on the stop element, because the substrate is an opaque in-flow child covering the host to the pixel — an outline inset on the host paints underneath it and is never seen.
+- The **Text card** cannot use that box either, because `.cm-gutters` is a `position: sticky`, `z-index: 200`, opaque child of it and covers the ring's left segment: the result is a rectangle missing its left side, with its top and bottom edges starting at the gutter's right boundary. So it draws a positioned pseudo-element on the stop itself, in a stacking context on the host, at a layer above the gutter's. That is legal *because it is on the stop* — an `::after` border on an editor's inner box would be the same ring drawn a second way, which the ring language rules out.
+
+All of it is geometry, not policy — the trigger is the same `data-key-view-kbd` every other stop uses, and the rule to carry away is that a flush editor's ring needs a box chosen by measurement, not by analogy with the last one.
 
 **Accessibility mode never parks.** An engine-routed key view there mirrors real DOM focus onto the key-view element, so parking a text stop would put focus on the field's *wrapper* and leave an assistive-tech user with no caret in any field until they typed. Text stops grant exactly as they always did.
 

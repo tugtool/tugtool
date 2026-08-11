@@ -75,6 +75,14 @@ export interface TextCardFindBarProps {
    * (the wrap graphic anchors to the card).
    */
   cardRootRef: React.RefObject<HTMLElement | null>;
+  /**
+   * Register the bar's stops in the card's cycle group, so the bar takes its
+   * seat in the card's one Tab order rather than opening a walk of its own
+   * ([P10]) — the same wiring the Session card's bar uses.
+   */
+  focusGroup?: string;
+  /** First of the bar's consecutive stop orders. */
+  focusOrderBase?: number;
 }
 
 /** The Text card drives the shared bar's imperative surface directly. */
@@ -84,7 +92,7 @@ export const TextCardFindBar = React.forwardRef<
   TextCardFindBarHandle,
   TextCardFindBarProps
 >(function TextCardFindBar(
-  { getDelegate, onClose, cardRootRef }: TextCardFindBarProps,
+  { getDelegate, onClose, cardRootRef, focusGroup, focusOrderBase }: TextCardFindBarProps,
   ref,
 ): React.ReactElement {
   const getDelegateRef = useRef(getDelegate);
@@ -113,6 +121,8 @@ export const TextCardFindBar = React.forwardRef<
       className="text-card-find-bar"
       dataSlot="text-card-find-bar"
       inputTestId="text-card-find-input"
+      focusGroup={focusGroup}
+      focusOrderBase={focusOrderBase}
     />
   );
 });

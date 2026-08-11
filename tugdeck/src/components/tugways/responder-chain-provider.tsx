@@ -1513,7 +1513,29 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("focusin", promoteOnFocusIn, { capture: true });
     document.addEventListener("contextmenu", fallbackContextMenu);
 
+    // **Creating a card leaves KBF mode.** A new card arrives with its own
+    // resting focus and its own idea of where the keyboard belongs, so a ring
+    // left over from the gesture that opened it is pointing at the deck the
+    // user just replaced. Hung off CONSTRUCTION rather than off each of the
+    // deck's several add paths (`addCard`, `addCardToPane`,
+    // `showSingletonCard`, the sidebar rail) so no path can be added later
+    // that misses it — the same reason the pointer rule above is one document
+    // listener instead of a per-cycle-consumer hook.
+    //
+    // The wildcard subscription initial-syncs for every already-constructed
+    // card, synchronously inside `observeCardDidFinishConstruction`; `settled`
+    // gates that replay out, so restoring a deck at launch is not read as
+    // creating one card per restored card.
+    let settled = false;
+    const unsubscribeCardConstruction =
+      getCardLifecycle()?.observeCardDidFinishConstruction(null, () => {
+        if (!settled) return;
+        focusManager.setKbfManual(false);
+      }) ?? null;
+    settled = true;
+
     return () => {
+      unsubscribeCardConstruction?.();
       document.removeEventListener("keydown", noteKeyboardInput, { capture: true });
       document.removeEventListener("pointerdown", notePointerInput, { capture: true });
       document.removeEventListener("keydown", focusWalkListener, { capture: true });

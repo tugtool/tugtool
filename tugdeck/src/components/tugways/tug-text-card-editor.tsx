@@ -133,6 +133,7 @@ import { languageForExtension, tugEditingHighlightStyle } from "@/lib/language-r
 import { mdListHangingIndent } from "./tug-text-editor/list-hanging-indent";
 import { anchorLinkExtension } from "./tug-text-card-editor/anchor-links";
 import { useOptionalResponder } from "./use-responder";
+import { useFocusable } from "./use-focusable";
 import { useCardId } from "./use-card-state-preservation";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import { TUG_ACTIONS, type TugAction } from "./action-vocabulary";
@@ -445,6 +446,14 @@ export interface TugTextCardEditorProps {
    * on every selection or document change.
    */
   onStats?: (stats: EditorStats) => void;
+  /**
+   * Register the editor as a focus-engine stop in this group ([P02]).
+   * Omit and the editor registers nothing — it is then reachable only by
+   * click and by the card's own focus reclaim, never by Tab or by a ring.
+   */
+  focusGroup?: string;
+  /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
+  focusOrder?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -465,6 +474,8 @@ export const TugTextCardEditor = React.forwardRef<
     onFindNavigated,
     onSaveCommand,
     onStats,
+    focusGroup,
+    focusOrder = 0,
   },
   ref,
 ) {
@@ -1352,12 +1363,27 @@ export const TugTextCardEditor = React.forwardRef<
     focus: () => viewRef.current?.focus(),
   });
 
+  // Focus-engine stop ([P02]), opt-in via `focusGroup` — the same wiring the
+  // prompt entry's editor uses. Registered under the SAME id as the responder
+  // above, so the engine resolves this editor's focus CONTRACT
+  // (`view.focus()`) instead of walking the host for a tabbable child, and
+  // `classifyRoute` reads that contract to route the keyboard `dom-granted`
+  // when the stop takes a caret. The focusable element is the host wrapper, so
+  // the ring paints on the editor's own box.
+  const { focusableRef } = useFocusable({
+    id: responderId,
+    group: focusGroup ?? "",
+    order: focusOrder,
+    register: focusGroup !== undefined,
+  });
+
   const composedHostRef = useCallback(
     (el: HTMLDivElement | null) => {
       hostRef.current = el;
       responderRef(el);
+      focusableRef(el);
     },
-    [responderRef],
+    [responderRef, focusableRef],
   );
 
   return (
@@ -1366,6 +1392,7 @@ export const TugTextCardEditor = React.forwardRef<
         ref={composedHostRef}
         data-slot="tug-text-card-editor"
         data-tug-select="custom"
+        data-focus-stop={focusGroup !== undefined ? "true" : undefined}
         className={cn("tug-text-card-editor", className)}
       />
       {contextMenu}

@@ -104,8 +104,43 @@ import {
 import { useResponderChain } from "../responder-chain-provider";
 import { useResponder } from "../use-responder";
 import { useFocusManager } from "../use-focusable";
+import { useCycleMode } from "../use-cycle-mode";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
+
+// ---------------------------------------------------------------------------
+// Keyboard-focus cycle ([P09]/[P10])
+// ---------------------------------------------------------------------------
+
+/**
+ * The Text card's cycle stops all register in one group. `CycleScope` keys the
+ * group into this card's own focus mode, so two Text cards on screen never
+ * share a walk.
+ */
+const TEXT_CARD_CYCLE_GROUP = "text-card-cycle";
+
+/** The status strip's line-ending popup; the file-type popup takes the next slot. */
+const TEXT_CARD_CYCLE_ORDER_LINE_ENDING = 0;
+/**
+ * The find bar's four consecutive stops — query field, the two navigation
+ * arrows, the options control.
+ */
+const TEXT_CARD_CYCLE_ORDER_FIND_BASE = 4;
+/**
+ * **The editor is LAST, and the order is load-bearing rather than taste.**
+ * The lowest order in a group is what the engine seeds when the group's
+ * membership changes, and this editor is a responder with a focus CONTRACT —
+ * so seeding it does not merely ring it, it GRANTS it real DOM focus. With the
+ * editor at 0, opening the find bar re-seeded the group and the grant pulled
+ * the caret straight back out of the query field ([P06] `grantTextSurface`).
+ * A control-first order puts a ring-only stop in the seat instead, which is
+ * why the Session card's editor sits last too.
+ *
+ * ⌥⇥ still rings the editor when the caret is in it: entering a mode keeps the
+ * key view where the keyboard already is rather than seeding
+ * (`enterModeAtKeyView`), and that landing is a movement, so the stop parks.
+ */
+const TEXT_CARD_CYCLE_ORDER_EDITOR = 19;
 
 // ---------------------------------------------------------------------------
 // Bag payload
@@ -861,6 +896,18 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // start above the editor and never reach it. Key-card dispatch starts at
   // this node regardless of where focus sits, which is the same reason the
   // Session card registers its ⌘K and ⌘F here.
+  // Keyboard-focus-cycling ([P09]/[P10]). The Text card is text-first: its
+  // resting key view is the editor, which owns Tab for indentation, so the
+  // card's other keyboard destinations are only reachable once ⌥⇥ has traded
+  // Tab away. The cycle's stops are the editor itself and the status strip's
+  // two popups; entering rings the editor (a parked text stop — the ring is
+  // there, the caret is not, [P12]) and Tab walks on to the line-ending and
+  // file-type menus and wraps. Relinquishing lands the caret back in the
+  // editor.
+  const cycle = useCycleMode({
+    restingFocus: () => editorRef.current?.focus(),
+  });
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -873,6 +920,13 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       },
       [TUG_ACTIONS.SHOW_EDITOR_OPTIONS]: () => {
         void presentTextCardOptionsSheet(showSheet, cardId);
+      },
+      // ⌥⇥ toggles keyboard-focus-cycling ([P09]/[P10]). Registered on the
+      // card-content responder for the same reason the Session card does it
+      // there: key-card dispatch starts at this node wherever focus sits, so
+      // the gesture works from the editor's caret.
+      [TUG_ACTIONS.CYCLE_FOCUS_MODE]: () => {
+        cycle.toggle();
       },
     },
     validateAction: (action) =>
@@ -1030,33 +1084,49 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         className="text-card text-card--editor"
         data-slot="text-card"
       >
-        <TugTextCardEditor
-          ref={editorRef}
-          store={store}
-          readOnly={snapshot.readOnly}
-          settings={editorSettings}
-          languageExt={effectiveLanguageExt}
-          className="text-card-editor"
-          onFindRequested={openFindBar}
-          onFindNavigated={() => findBarRef.current?.refreshCount()}
-          onSaveCommand={onSaveCommand}
-          onStats={statsStore.set}
-        />
-        {findOpen ? (
-          <TextCardFindBar
-            ref={findBarRef}
-            getDelegate={() => editorRef.current}
-            onClose={closeFindBar}
-            cardRootRef={cardRootRef}
+        <cycle.CycleScope>
+          <TugTextCardEditor
+            ref={editorRef}
+            store={store}
+            focusGroup={TEXT_CARD_CYCLE_GROUP}
+            focusOrder={TEXT_CARD_CYCLE_ORDER_EDITOR}
+            readOnly={snapshot.readOnly}
+            settings={editorSettings}
+            languageExt={effectiveLanguageExt}
+            className="text-card-editor"
+            onFindRequested={openFindBar}
+            onFindNavigated={() => findBarRef.current?.refreshCount()}
+            onSaveCommand={onSaveCommand}
+            onStats={statsStore.set}
           />
+        </cycle.CycleScope>
+        {/* Under the SAME cycle the editor and the status strip use, so the
+         * bar's stops take their seat in the card's one Tab order instead of
+         * opening a walk of their own ([P10]) — the Session card wires its bar
+         * the same way. */}
+        {findOpen ? (
+          <>
+            <TextCardFindBar
+              ref={findBarRef}
+              getDelegate={() => editorRef.current}
+              onClose={closeFindBar}
+              cardRootRef={cardRootRef}
+              focusGroup={TEXT_CARD_CYCLE_GROUP}
+              focusOrderBase={TEXT_CARD_CYCLE_ORDER_FIND_BASE}
+            />
+          </>
         ) : null}
-        <TextCardStatusBar
-          statsStore={statsStore}
-          lineEnding={snapshot.lineEnding}
-          onSetLineEnding={setLineEnding}
-          languageId={effectiveLanguageId}
-          onSetLanguage={setLanguageOverrideId}
-        />
+        <cycle.CycleScope>
+          <TextCardStatusBar
+            statsStore={statsStore}
+            lineEnding={snapshot.lineEnding}
+            onSetLineEnding={setLineEnding}
+            languageId={effectiveLanguageId}
+            onSetLanguage={setLanguageOverrideId}
+            focusGroup={TEXT_CARD_CYCLE_GROUP}
+            focusOrder={TEXT_CARD_CYCLE_ORDER_LINE_ENDING}
+          />
+        </cycle.CycleScope>
         {renderSheet()}
         <TugPaneBanner
           visible={conflict !== null && snapshot.saveMode === "automatic"}
