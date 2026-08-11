@@ -1820,6 +1820,22 @@ export const SessionTranscriptHost = forwardRef<
       return s.loadingPrevious || deriveColdRestoreActive(s);
     }, [codeSessionStore]),
   );
+  // The Z0 strip is a RESUME surface. Its whole content is the load window —
+  // "Turns displayed X of Y" plus the "Load N more" action — and a session
+  // opened `new` has no window to page: nothing was replayed, nothing is
+  // older, so the strip can only ever render empty. An empty chrome strip
+  // under the masthead reads as a broken control, so a new session gets no
+  // strip at all. `sessionMode` is fixed for the store's lifetime (a re-bind
+  // constructs a fresh store), so this never flips mid-card and the "the
+  // strip never mounts/unmounts, so the transcript never hops" property
+  // holds within a card. [L02]
+  const showZ0Strip = useSyncExternalStore(
+    codeSessionStore.subscribe,
+    useCallback(
+      () => codeSessionStore.getSnapshot().sessionMode === "resume",
+      [codeSessionStore],
+    ),
+  );
   const [settlingAfterLoad, setSettlingAfterLoad] = useState(false);
   const prevLoadActiveRef = useRef(loadActive);
   useLayoutEffect(() => {
@@ -2178,7 +2194,7 @@ export const SessionTranscriptHost = forwardRef<
   // attribute + CSS var, never React state.
   useLayoutEffect(() => {
     const root = rootRef.current;
-    if (root === null || !listMounted) return;
+    if (root === null || !listMounted || !showZ0Strip) return;
     const scroll = root.querySelector<HTMLElement>(".tug-list-view");
     if (scroll === null) return;
     let frame: number | null = null;
@@ -2210,7 +2226,7 @@ export const SessionTranscriptHost = forwardRef<
       mo.disconnect();
       delete root.dataset.z0Fill;
     };
-  }, [listMounted]);
+  }, [listMounted, showZ0Strip]);
 
   // History-collapse expansion overrides ([P02], Spec S02). ONE
   // instance per card, owned HERE because the host never unmounts
@@ -2530,6 +2546,11 @@ export const SessionTranscriptHost = forwardRef<
       data-slot="session-card-transcript"
       data-testid="session-card-transcript"
       data-replaying={(isReplaying && !loadingPrevious) || undefined}
+      // No Z0 strip on a `new` session: the list's zeroed top padding (which
+      // exists so the strip sits flush at the scroll top) has to come back,
+      // or the first entry would butt against the masthead. Mirrored onto
+      // the root as an attribute so CSS can restore it ([L06]).
+      data-no-z0={!showZ0Strip || undefined}
     >
       {listMounted ? (
         // The transcript region: the load overlay's inert + scrim target
@@ -2548,7 +2569,9 @@ export const SessionTranscriptHost = forwardRef<
               // with the content (off-screen when scrolled down, first at the
               // top) and stays topmost as older turns prepend below it.
               leadingContent={
-                <SessionTranscriptTopRow codeSessionStore={codeSessionStore} />
+                showZ0Strip ? (
+                  <SessionTranscriptTopRow codeSessionStore={codeSessionStore} />
+                ) : undefined
               }
               // Freeze the per-commit scroll battery across the restore
               // replay, each load-previous bracket, and the post-reveal

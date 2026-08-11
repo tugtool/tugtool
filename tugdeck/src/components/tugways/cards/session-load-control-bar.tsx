@@ -3,8 +3,10 @@
  * pieces so the resting strip is part of the scrolling content while the
  * in-flight progress stays a non-shifting overlay:
  *
- *   - {@link SessionTranscriptTopRow} — the permanent Z0 row, mounted as the
- *     list's `leadingContent`. It is the transcript's first scrolling row:
+ *   - {@link SessionTranscriptTopRow} — the Z0 row, mounted as the list's
+ *     `leadingContent` on a RESUMED session only (a `new` session has no load
+ *     window to report, so the host mounts no strip at all — see
+ *     `session-card-transcript.tsx`). It is the transcript's first scrolling row:
  *     off-screen when scrolled down, the first thing reached at the top, and
  *     the topmost row as older turns prepend below it. Resting content only —
  *     "Turns displayed X of Y" + a "Load N more" / "All loaded" status,
@@ -79,8 +81,8 @@ export interface SessionLoadControlBarProps {
 }
 
 /**
- * The permanent Z0 row — the transcript's first scrolling row. Mounted as
- * the list's `leadingContent`, so it scrolls with the content (off-screen
+ * The Z0 row — the transcript's first scrolling row on a resumed session.
+ * Mounted as the list's `leadingContent`, so it scrolls with the content (off-screen
  * when scrolled down, the first thing reached at the top) and stays the
  * topmost row as older turns prepend below it. Resting content only — the
  * in-flight progress is the {@link SessionLoadOverlay}'s job — so it never

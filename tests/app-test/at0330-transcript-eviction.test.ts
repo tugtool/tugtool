@@ -171,7 +171,7 @@ async function scrollTo(app: App, frac: number): Promise<void> {
 
 describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
   test(
-    "far scroll keeps the viewport populated, contiguous, and Z0-topped",
+    "far scroll keeps the viewport populated, contiguous, and row-0-topped",
     async () => {
       const app = await standUp("at0330-far-scroll");
       try {
@@ -218,37 +218,36 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
           });
         }
 
-        // At the very top, the permanent Z0 row is the first thing in the
-        // scroll content — above the top spacer, not buried by it.
+        // At the very top, row 0 is the first thing in the scroll content —
+        // the top spacer never grows underneath it and buries it. This is a
+        // NEW session, so there is no Z0 strip at all (it reports a load
+        // window, and a new session has none); the resumed case, where the
+        // strip is present and must top the content, is asserted in the
+        // hidden-restore test below.
         await scrollTo(app, 0);
         const top = await app.evalJS<{
-          firstSlot: string | null;
-          leadingTop: number;
+          hasLeading: boolean;
+          firstCellTop: number;
           firstCellIndex: number;
           spacerTop: number;
         }>(`(function () {
   var el = document.querySelector('${SCROLLER}');
-  // The list renders a sticky top-spacer element as its first child — it
-  // carries the top breathing room's height and is list chrome, not scroll
-  // content — so "the first thing in the scroll content" is the child after it.
-  var kids = Array.prototype.slice.call(el.children).filter(function (k) {
-    return !k.classList.contains("tug-list-view-top-spacer");
-  });
-  var lead = el.querySelector(".tug-list-view-leading");
   var firstCell = el.querySelector("[data-tug-list-cell-index]");
   var box = el.getBoundingClientRect();
   return {
-    firstSlot: kids.length ? kids[0].getAttribute("data-slot") || kids[0].className : null,
-    leadingTop: lead ? Math.round(lead.getBoundingClientRect().top - box.top) : -9999,
+    hasLeading: el.querySelector(".tug-list-view-leading") !== null,
+    firstCellTop: firstCell ? Math.round(firstCell.getBoundingClientRect().top - box.top) : -9999,
     firstCellIndex: firstCell ? Number(firstCell.getAttribute("data-tug-list-cell-index")) : -1,
     spacerTop: Math.round(parseFloat(el.querySelector(".tug-list-view-spacer--top").style.height) || 0),
   };
 })()`);
-        expect(top.firstSlot).toBe("tug-list-view-leading");
+        expect(top.hasLeading).toBe(false);
         expect(top.firstCellIndex).toBe(0);
         expect(top.spacerTop).toBe(0);
-        // Z0 sits at the top of the scrollport, not pushed below a spacer.
-        expect(Math.abs(top.leadingTop)).toBeLessThanOrEqual(2);
+        // Row 0 sits at the top of the scrollport (under the list's own top
+        // padding, which the strip's absence restores), not pushed below a
+        // grown spacer.
+        expect(top.firstCellTop).toBeLessThanOrEqual(24);
       } finally {
         await app.close();
       }
@@ -830,6 +829,30 @@ describe.skipIf(!SHOULD_RUN)("AT0330: transcript DOM eviction", () => {
         expect(revealed.fallbacks).toBeGreaterThanOrEqual(0);
         expect(revealed.fallbacks).toBeLessThanOrEqual(1);
         expect(revealed.anchor).not.toBeNull();
+
+        // A RESUMED session keeps the Z0 strip: it reports the load window
+        // ("Turns displayed X of Y" + "Load N more"), and it is the first
+        // thing in the scroll content — above the top spacer, never buried
+        // by it once the spacer grows for evicted rows.
+        const z0 = await app.evalJS<{
+          firstSlot: string | null;
+          text: string;
+        }>(`(function () {
+  var el = document.querySelector('${FIXTURE_SCROLLER}');
+  // The list renders a sticky top-spacer element as its first child — it
+  // carries the top breathing room's height and is list chrome, not scroll
+  // content — so "the first thing in the scroll content" is the child after it.
+  var kids = Array.prototype.slice.call(el.children).filter(function (k) {
+    return !k.classList.contains("tug-list-view-top-spacer");
+  });
+  var lead = el.querySelector(".tug-list-view-leading");
+  return {
+    firstSlot: kids.length ? kids[0].getAttribute("data-slot") || kids[0].className : null,
+    text: lead ? lead.textContent.replace(/\\s+/g, " ").trim() : "",
+  };
+})()`);
+        expect(z0.firstSlot).toBe("tug-list-view-leading");
+        expect(z0.text).toContain("Turns displayed");
 
         // Exactness: the evicted document matches the fully-mounted one.
         await app.evalJS<boolean>(

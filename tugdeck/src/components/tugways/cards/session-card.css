@@ -484,6 +484,15 @@
   --tugx-pin-stack-top: 36px;
 }
 
+/* A `new` session mounts no Z0 strip — it has no load window to report, so
+   the strip could only render empty. The top breathing room the strip's
+   `margin-block-end` was carrying comes back to the list itself here, or the
+   first entry butts against the masthead. The host mirrors the strip's
+   absence onto the transcript root as `data-no-z0` ([L06]). */
+.session-card-transcript[data-no-z0] .tug-list-view {
+  --tugx-list-view-padding-block-start: var(--tug-space-md);
+}
+
 /* Tighten the gap between an entry's body and its trailing controls
    (e.g. the per-entry copy button). The base token reads as standard
    editorial spacing for transcript-style rows; in this consumer the
