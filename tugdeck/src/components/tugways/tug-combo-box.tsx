@@ -61,7 +61,7 @@ import { ChevronDown } from "lucide-react";
 
 import { TugInput } from "./tug-input";
 import { useFocusable, useFocusManager } from "./use-focusable";
-import { TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
+import { ATTACHED_LIST_ATTRIBUTE, TAB_CONSUME_ATTRIBUTE } from "./focus-manager";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 
 /** One combo-box row: what to commit, how to render it, and how it behaves. */
@@ -549,7 +549,24 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
     );
 
     return (
-      <div className={`tug-combo-box${className !== undefined ? ` ${className}` : ""}`}>
+      <div
+        className={`tug-combo-box${className !== undefined ? ` ${className}` : ""}`}
+        // The attached-list contract: while the caret is in the field, ↑/↓ drive
+        // THIS list's highlight and never leave the field. Without the
+        // declaration the engine's spatial stage claims a bare arrow whenever
+        // the mode is engaged — and a combo box inside a sheet is always
+        // engaged, because the sheet's trap engages it — so the highlight would
+        // sit still while the ring walked out of the field. The list's own
+        // `onKeyDown` does the moving, as it always has; this only says whose
+        // arrows they are.
+        //
+        // Declared while the list is OPEN, and in `menuMode` while it is closed
+        // too: there the closed-field ArrowDown is the gesture that opens the
+        // menu, which the same stage would otherwise eat. A completing combo box
+        // with a closed list yields its arrows to the plane, which is right —
+        // there is no list to drive.
+        {...(open || menuMode ? { [ATTACHED_LIST_ATTRIBUTE]: "" } : {})}
+      >
         {leadingAccessory}
         <TugInput
           ref={setInputRef}

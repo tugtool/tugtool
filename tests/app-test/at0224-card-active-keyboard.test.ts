@@ -48,7 +48,7 @@
  *      commit path) owns ⌘F immediately: the created-and-activated card
  *      completes its activation focus claim at mount / engine-hook
  *      registration; typing then shows the RESULTS badge.
- *   5. Cycle (Ctrl-`) to a NEVER-FOCUSED text card: ⌘F works immediately
+ *   5. Step laterally (⇧⌘[) to a NEVER-FOCUSED text card: ⌘F works immediately
  *      (the reconciler resolves the card's default-focus target), and a
  *      subsequent title-bar click does not wedge the keyboard (⌘G still
  *      routes).
@@ -557,9 +557,12 @@ describe.skipIf(!SHOULD_RUN)("AT0224: active-card keyboard contract", () => {
         await app.nativeClickAtElement(promptEditorSelector("B"));
         await expectInvariant(app, "B", "after clicking into the prompt card");
 
-        // Cycle (Ctrl-`) to the text card's pane — an activation with no
-        // click and no focusin, on a card that has never been focused.
-        await dispatchChord(app, "Backquote", "`", { ctrl: true });
+        // Step laterally (⇧⌘[) to the text card — an activation with no click
+        // and no focusin, on a card that has never been focused. This used to
+        // be Cycle Panes (Ctrl-`), which was retired for the lateral/depth
+        // card-navigation pair ([D129]); the gesture changed, the claim did
+        // not.
+        await dispatchChord(app, "BracketLeft", "[", { meta: true, shift: true });
         await expectInvariant(app, "T", "after cycling to the never-focused text card");
 
         // ⌘F must open the cycled-to card's find bar.

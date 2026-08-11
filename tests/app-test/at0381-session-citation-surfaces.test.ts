@@ -124,7 +124,11 @@ describe.skipIf(!SHOULD_RUN)("at0381 — every citation surface names the sessio
         expect(tabText).not.toContain("Session");
         expect(tabText).not.toContain(SESSION_ID);
         // The Text tab is unaffected — the gate came out, the rule did not
-        // change for the card it used to be scoped to.
+        // change for the card it used to be scoped to. Its name is "Untitled"
+        // rather than the seeded registry title: a text card with no file
+        // publishes its own name too, and a live override REPLACES the registry
+        // title. That IS the rule under test, read on the neighbouring tab —
+        // the tab wears the card's name, never its type.
         const textTab = await app.evalJS<string>(
           `(function(){
             var tab = document.querySelector(
@@ -132,7 +136,8 @@ describe.skipIf(!SHOULD_RUN)("at0381 — every citation surface names the sessio
             return tab === null ? "" : (tab.innerText || "").trim();
           })()`,
         );
-        expect(textTab).toContain("File");
+        expect(textTab).toContain("Untitled");
+        expect(textTab).not.toContain("File");
 
         // ---- B / C. The Gazette's refs. ------------------------------------
         await app.nativeKey("g", ["cmd", "ctrl"]);

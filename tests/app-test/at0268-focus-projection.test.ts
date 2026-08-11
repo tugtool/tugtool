@@ -181,21 +181,30 @@ describe.skipIf(!SHOULD_RUN)("AT0268: focus marks are a projection of engine sta
         const deselected = await snapshot(app);
         expect(deselected.keyViewCount).toBe(0);
 
-        // Reactivate the card. Its marks must come back exactly as they were —
-        // the descended state included, since the mode stack never moved.
+        // Reactivate the card. Its marks come back as they were — the descended
+        // state included, since the mode stack never moved.
+        //
+        // With ONE mark legitimately changed: `keyViewKbd`. The round trip was
+        // made with the POINTER, and using the mouse leaves keyboard-focus mode
+        // ([P05]); in mode OFF the keyboard-ness is withheld at the projection
+        // ([P04]), so the key view comes back marked but not ringed. That is the
+        // mode doing its job, not the projection losing state — the key view
+        // itself, the descend, the mode stamp and the within mark all return
+        // intact, which is what this step is about.
         await app.nativeClickAtElement(TITLE);
         await app.waitForCondition<boolean>(keyboardIsInCard("A"), { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-key-view]') !== null`,
           { timeoutMs: 6000 },
         );
+        const afterPointerRoundTrip = { ...descended, keyViewKbd: false };
         const restored = await snapshot(app);
-        expect(restored).toEqual(descended);
+        expect(restored).toEqual(afterPointerRoundTrip);
 
         // (4) Asking the engine to project again from unchanged state changes
         // nothing — the pass is a convergence, not an accumulation.
         await app.evalJS<null>(`(window.__tug.reprojectFocus(), null)`);
-        expect(await snapshot(app)).toEqual(descended);
+        expect(await snapshot(app)).toEqual(afterPointerRoundTrip);
 
         const report = await app.evalJS<{ violations: number }>(
           `window.__tug.getFocusInvariantReport()`,

@@ -225,13 +225,23 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         await tabUntil(app, OPEN, 4);
 
         // (B) The engine walk owns Tab inside the sheet, and Open (last) wraps to
-        // the Browse button (the first stop, order -0.5); one more Tab lands DOM
-        // focus on the path field's real <input> (order 0).
+        // the Browse button (the first stop, order -0.5); one more Tab lands the
+        // key view on the path field (order 0).
+        //
+        // It lands PARKED, not with a caret. The sheet's trap engages KBF, and a
+        // text stop the engine MOVED to wears the ring while the key sink holds
+        // DOM focus ([P12]) — this used to assert the <input> held focus, from
+        // before the mode restored the parked state. The seed assertion above
+        // already reads it this way for the Sessions landing; this is the same
+        // rule one stop along.
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(BROWSE), { timeoutMs: 6000 });
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(PATH), { timeoutMs: 6000 });
-        expect(await app.evalJS<boolean>(PATH_INPUT_FOCUSED)).toBe(true);
+        expect(
+          await app.evalJS<boolean>(PATH_INPUT_FOCUSED),
+          "a walked-to text stop parks — ring, no caret",
+        ).toBe(false);
 
         // (C) The dropdown is closed, so the path field does NOT own Tab: Tab
         // leaves it — first for the Sessions filter field (order 1), then the
@@ -248,6 +258,11 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         // path field, then ArrowDown opens the dropdown (seeded with the recents)
         // and a second ArrowDown moves the highlight to a DIFFERENT row.
         await tabUntil(app, PATH, 6);
+        // Walking here parks the stop, so take the caret before driving the
+        // field's own keys: `Return` at a parked text stop grants it without
+        // typing ([P12]). With the caret live the field owns ↑/↓ through its
+        // attached-list contract, which is what opens and drives the dropdown.
+        await pressKey(app, "Enter");
         await app.waitForCondition<boolean>(PATH_INPUT_FOCUSED, { timeoutMs: 6000 });
         await pressKey(app, "ArrowDown");
         await app.waitForCondition<boolean>(
