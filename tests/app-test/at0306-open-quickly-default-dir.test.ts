@@ -36,7 +36,10 @@
  *   query field to the chooser, Enter claims the caret, ↓ opens the seed, ↓
  *   moves the highlight, Return accepts — and the key view comes back to the
  *   query field, because the user's next act after choosing a scope is typing a
- *   filename.
+ *   filename. It closes on the result list's own truthfulness, read as computed
+ *   style: the highlight paints the solid selection fill while the field holds
+ *   the caret, and stands down to an outline the moment the walk parks
+ *   elsewhere and no key can move it.
  *
  *   Test 5 pins the changed-only guard on re-scoping, on the path where it is
  *   load-bearing. `TugComboBox` settles on blur, so leaving the chooser settles
@@ -44,7 +47,7 @@
  *   place under its canonical name and re-seeds the key view, and the Tab walk
  *   appears to skip the chevron after it. It has to be driven with the MOUSE, because only a
  *   pointer grants the field real DOM focus — a keyboard walk parks it, and a
- *   parked field never blurs (at0396 test 2's docblock records that probe).
+ *   parked field never blurs, so no keyboard sequence can reach the settle.
  *
  *   Test 6 pins the two exits that belong to the surface rather than the field:
  *   Escape resolves against the dialog's own focus mode from wherever the ring
@@ -65,8 +68,10 @@
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/lib/open-file-in-card.ts
  * @covers tugdeck/src/components/tugways/tug-modal-input-dialog.tsx
+ * @covers tugdeck/src/components/tugways/tug-modal-input-dialog.css
  * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
  * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
+ * @covers tugdeck/src/components/tugways/tug-combo-box.css
  * @covers tugdeck/src/components/tugways/tug-file-chooser.tsx
  * @covers tugdeck/src/lib/dir-existence.ts
  * @covers tugdeck/src/settings-api.ts
@@ -98,6 +103,8 @@ const MARKER = "at0306-marker.txt";
 
 /** The scope row: its path field, its Browse… button, and its dropdown. */
 const CHOOSER = `${PANEL} input.tug-file-chooser-input`;
+/** The chooser's menu-mode chevron — the scope row's third focus stop. */
+const CHEVRON = `${PANEL} .tug-combo-box-chevron`;
 const BROWSE = `${PANEL} [data-slot="tug-file-chooser-browse"]`;
 const DROPDOWN = '[data-slot="tug-modal-input-dialog-chooser-overlay"]';
 const DROPDOWN_ITEMS = `${DROPDOWN} li`;
@@ -557,6 +564,47 @@ describe.skipIf(!SHOULD_RUN)(
              })()`,
             { timeoutMs: 15000 },
           );
+
+          // The result highlight is the query field's cursor: ↑/↓ and every
+          // keystroke that re-queries are the field's, so the solid selection
+          // fill is only truthful while the field holds the caret. Read as
+          // COMPUTED style, not as an attribute — the row keeps `data-selected`
+          // either way, and the whole point is what it paints. `box-shadow` is
+          // the discriminator: the live fill has none, the stood-down one is an
+          // inset outline over a fraction-strength wash.
+          const highlightPaint = `(function () {
+            var panel = document.querySelector(${JSON.stringify(PANEL)});
+            var row = document.querySelector(
+              ${JSON.stringify(ROWS)} + '[data-selected="true"]'
+            );
+            return {
+              caret: panel !== null && panel.hasAttribute("data-query-caret"),
+              shadow: row === null ? "(no row)" : getComputedStyle(row).boxShadow,
+            };
+          })()`;
+          type Paint = { caret: boolean; shadow: string };
+          const live = await app.evalJS<Paint>(highlightPaint);
+          note(`highlight with the caret in the field: ${JSON.stringify(live)}`);
+          expect(live.caret, "the query field holds the caret").toBe(true);
+          expect(live.shadow, "a live highlight is the plain selection fill").toBe(
+            "none",
+          );
+
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `${RING} === "tug-modal-input-dialog:1"`,
+            { timeoutMs: 8000 },
+          );
+          const parked = await app.evalJS<Paint>(highlightPaint);
+          note(`highlight with the walk parked on Browse: ${JSON.stringify(parked)}`);
+          expect(
+            parked.caret,
+            "stepping the walk off the field takes the caret with it",
+          ).toBe(false);
+          expect(
+            parked.shadow !== "none" && parked.shadow !== "(no row)",
+            "the highlight stands down to an outline once no key can move it",
+          ).toBe(true);
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });
@@ -580,7 +628,7 @@ describe.skipIf(!SHOULD_RUN)(
         // The MOUSE is what makes this reachable: only a pointer grants the
         // chooser real DOM focus. A keyboard walk parks the stop instead, and a
         // parked field never blurs, so the settle never fires — which is why
-        // at0396's walk cannot pin this.
+        // test 4's keyboard walk cannot pin this.
         const base = mkdtempSync(`${tmpdir()}/at0306-settle-`);
         mkdirSync(`${base}/tug`);
         writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
@@ -643,6 +691,26 @@ describe.skipIf(!SHOULD_RUN)(
           note(
             `after Tab off the chooser: ring=${await app.evalJS<string>(RING)}`,
           );
+
+          // The chevron is a live control, and a live control fills with its
+          // role colour under the ring — the doubled treatment the Browse
+          // button at the other end of the bar wears. A ghost glyph carrying a
+          // bare outline reads as a stray box beside the field, so this is
+          // asserted as PAINT: the resting chevron is transparent, the one
+          // holding the ring is not.
+          const chevronFill = await app.evalJS<string>(
+            `(function () {
+               var el = document.querySelector('${CHEVRON}');
+               return el === null ? "(none)" : getComputedStyle(el).backgroundColor;
+             })()`,
+          );
+          note(`chevron fill while it holds the ring: ${chevronFill}`);
+          expect(
+            chevronFill !== "(none)" &&
+              chevronFill !== "transparent" &&
+              chevronFill !== "rgba(0, 0, 0, 0)",
+            "the chevron holding the ring fills like every other live control",
+          ).toBe(true);
 
           // The walk landed on the chevron rather than bouncing back to the query
           // field, and the scope is exactly what it was.

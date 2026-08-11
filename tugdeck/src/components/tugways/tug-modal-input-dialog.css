@@ -1,6 +1,7 @@
 /* @tug-pairings {
   --tugx-modal-input-fg           | --tugx-modal-input-bg           | content
   --tugx-modal-input-border       | --tugx-modal-input-bg           | informational
+  --tugx-modal-input-border       | --tugx-modal-input-header-bg    | informational
   --tugx-modal-input-row-sel-fg   | --tugx-modal-input-row-sel-bg   | control
   --tugx-modal-input-placeholder  | --tugx-modal-input-bg           | content
 } */
@@ -11,6 +12,7 @@
  * |--------------------------------------|--------------------------------------|---------------|-----------------------------------------------------|
  * | --tugx-modal-input-fg                | --tugx-modal-input-bg                | content       | .tug-modal-input-dialog-input / -row (color)        |
  * | --tugx-modal-input-border            | --tugx-modal-input-bg                | informational | .tug-modal-input-dialog (border-color)              |
+ * | --tugx-modal-input-border            | --tugx-modal-input-header-bg         | informational | .tug-modal-input-dialog-header (border-bottom)      |
  * | --tugx-modal-input-row-sel-fg        | --tugx-modal-input-row-sel-bg        | control       | .tug-modal-input-dialog-row[data-selected] (bg+fg)  |
  * | --tugx-modal-input-placeholder       | --tugx-modal-input-bg                | content       | .tug-modal-input-dialog-input::placeholder (color)  |
  */
@@ -26,6 +28,7 @@
 body {
   --tugx-modal-input-overlay-bg:  var(--tug7-surface-overlay-primary-normal-dim-rest);
   --tugx-modal-input-bg:          var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-modal-input-header-bg:   var(--tug7-surface-global-primary-normal-sunken-rest);
   --tugx-modal-input-fg:          var(--tug7-element-global-text-normal-default-rest);
   --tugx-modal-input-border:      var(--tug7-element-global-border-normal-default-rest);
   --tugx-modal-input-shadow:      var(--tug7-element-global-shadow-normal-overlay-rest);
@@ -102,12 +105,21 @@ body {
  * The rule below it is the seam between the header's controls and the query
  * field, the same seam the list draws under the field — three bands, two
  * rules, one surface.
+ *
+ * The band sits a step BELOW the panel's own surface (`sunken` against
+ * `overlay`, recessed in both light and dark). A chooser is chrome about the
+ * search, not part of it, and on the flat panel it read as a control balanced
+ * on top of the typing line; recessed, it reads as the strip the typing line
+ * sits on. Its vertical padding is a notch over the horizontal rhythm for the
+ * same reason — the controls in it want a little air off the two seams.
  */
 .tug-modal-input-dialog-header {
   display: flex;
   align-items: center;
   gap: var(--tug-space-md);
-  padding: var(--tug-space-md) var(--tug-space-xl);
+  padding: var(--tug-space-lg) var(--tug-space-xl);
+  /* @tug-renders-on: --tugx-modal-input-header-bg */
+  background-color: var(--tugx-modal-input-header-bg);
   border-bottom: 1px solid var(--tugx-modal-input-border);
 }
 
@@ -225,6 +237,28 @@ body {
   /* @tug-renders-on: --tugx-modal-input-row-sel-bg */
   background-color: var(--tugx-modal-input-row-sel-bg);
   color: var(--tugx-modal-input-row-sel-fg);
+}
+
+/* The highlight stands down while the caret is out of the query field. The row
+   is still the one Return would open, so the mark stays — but a solid selection
+   fill is reserved for a selection something can currently move (`focus-ring.css`,
+   the prominence hierarchy), and with the walk parked on a header control
+   nothing can. It drops to the fill's own hue at a fraction of its strength,
+   outlined so the row still reads as marked rather than merely tinted, and the
+   text returns to the panel's own colour because the on-colour was chosen
+   against the solid fill. `data-query-caret` is written by the panel's
+   focusin/focusout sync. */
+.tug-modal-input-dialog:not([data-query-caret])
+  .tug-modal-input-dialog-row[data-selected="true"] {
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  background-color: color-mix(
+    in srgb,
+    var(--tugx-modal-input-row-sel-bg) 22%,
+    transparent
+  );
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--tugx-modal-input-row-sel-bg) 55%, transparent);
+  color: var(--tugx-modal-input-fg);
 }
 
 /* Stands where the list would: same seam and rhythm as a row, but prose rather

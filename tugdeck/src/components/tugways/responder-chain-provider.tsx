@@ -910,11 +910,23 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             // trap: a kbf:false surface (the modal input dialog, a cycle) is
             // where a park is the manual mode's doing and Escape's first
             // meaning is to undo it; an auto-engaging sheet keeps its
-            // Escape-closes contract, parked stop or not. The manual bit is
+            // Escape-closes contract, parked stop or not.
+            //
+            // And gated on the mode PAINTING, which is the rung's whole
+            // licence: Escape cancels a mode the user can SEE. Engagement and
+            // paint come apart — a bit the deck set before a launcher opened
+            // keeps the mode engaged inside it while a live caret stands the
+            // marks down — and in that state this rung spent the press
+            // un-parking a stop nothing marked: a modal surface that did not
+            // close, for a mode that was not showing. In a modal state Escape
+            // exits the modal state; the only thing that outranks that is a
+            // ring on screen saying the keyboard is somewhere else. The manual
+            // bit is
             // cleared before the grant (the printable branch's sequence) so
             // the re-landing grants rather than re-parks; a second Escape
             // then falls through here — no parked stop — and closes.
             if (
+              focusManager.kbfPainting() &&
               !focusManager.hasEngagingTrap() &&
               focusManager.hasParkedTextStop()
             ) {

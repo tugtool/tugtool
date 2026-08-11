@@ -217,6 +217,28 @@ function renderEmpty(
  */
 const MODAL_INPUT_FADE_DURATION = "--tug-motion-duration-fast";
 
+/**
+ * The close's deadline, independent of the fade. Motion is a courtesy and the
+ * dismissal is the answer, so the answer may never be the animation's to
+ * withhold: whichever comes first — `finished`, or this — closes the dialog,
+ * once.
+ *
+ * This is not defensive padding. `finished` genuinely does not always settle:
+ * a window whose rAF is suspended (backgrounded, or merely covered — a covered
+ * window reads `visibilityState: "hidden"`) freezes the animation mid-flight,
+ * and a group superseded on the same key never resolves either. Both leave the
+ * promise pending forever, and with the close gated on it the panel sits at
+ * `data-closing` — faded, pointer-dead, and latched against every later close
+ * gesture by the re-entry guard. An unclosable modal is the worst outcome in
+ * the surface's whole repertoire, and it is reachable from a user simply
+ * looking at another window.
+ *
+ * Comfortably past `fast` (100ms) so it never pre-empts a fade that is really
+ * running, and short enough that a stalled one is not a hang the user waits
+ * through.
+ */
+const MODAL_INPUT_CLOSE_DEADLINE_MS = 250;
+
 export function TugModalInputDialog({
   placeholder = "Search",
   provider,
@@ -243,11 +265,15 @@ export function TugModalInputDialog({
   // Every close path funnels through `closeWith`: it fades the panel and
   // overlay out, THEN invokes the caller's callback — which is what unmounts
   // the dialog, so the DOM is still there for the fade and no consumer has to
-  // hold presence state. `finished` resolves (or rejects) whether or not the
-  // animation ran — reduced motion and a background window both settle it —
-  // and the callback runs either way, so a close can never hang on motion
-  // (the TugSheet exit's contract). The guard makes a second close gesture
-  // during the fade a no-op rather than a double-fire.
+  // hold presence state. The guard makes a second close gesture during the
+  // fade a no-op rather than a double-fire.
+  //
+  // The dismissal is RACED against the fade rather than sequenced after it:
+  // `finished` settling and `MODAL_INPUT_CLOSE_DEADLINE_MS` elapsing both call
+  // `finish`, and `settle` makes sure only the first one counts. Awaiting
+  // `finished` alone is what let a stalled animation latch the panel shut
+  // (see the deadline's own comment) — motion decorates the close, it does not
+  // gate it.
   const closingRef = useRef(false);
   const closeWith = useCallback((finish: () => void) => {
     if (closingRef.current) return;
@@ -260,6 +286,15 @@ export function TugModalInputDialog({
     // The surface has answered; nothing inside it may take another press
     // mid-fade ([L06] — a DOM attribute, styled in the CSS).
     panelEl.setAttribute("data-closing", "");
+    let settled = false;
+    let deadline = 0;
+    const settle = (): void => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(deadline);
+      finish();
+    };
+    deadline = window.setTimeout(settle, MODAL_INPUT_CLOSE_DEADLINE_MS);
     const g = group({ duration: MODAL_INPUT_FADE_DURATION });
     g.animate(panelEl, [{ opacity: 1 }, { opacity: 0 }], {
       key: "modal-input-panel",
@@ -271,7 +306,7 @@ export function TugModalInputDialog({
         easing: "ease-in",
       });
     }
-    g.finished.then(finish).catch(finish);
+    g.finished.then(settle).catch(settle);
   }, []);
   const requestDismiss = useCallback(
     () => closeWith(onDismiss),
@@ -378,6 +413,40 @@ export function TugModalInputDialog({
         easing: "ease-out",
       });
     }
+  }, [panel]);
+
+  // The list's highlight belongs to the query field, so it only reads as live
+  // while the field holds the caret. ↑/↓ and every keystroke that re-queries
+  // arrive at the field's own `onKeyDown` ([P08], the attached-list contract) —
+  // once the walk parks on a header control or ⌥⇥ parks the field itself, there
+  // is no key that moves the highlight, and a full-strength selection fill
+  // claiming otherwise is a resting lie. The panel carries the answer as an
+  // attribute and the CSS dims the row; appearance through DOM, never React
+  // state ([L06]).
+  //
+  // `focusin` / `focusout` rather than the input's own handlers because the
+  // caret can also leave without the field ever being told — the engine parks
+  // `activeElement` on the dialog's key sink, which is a focus move inside the
+  // panel and reaches this listener on the way up.
+  useLayoutEffect(() => {
+    if (panel === null) return;
+    const sync = (): void => {
+      const field = panel.querySelector<HTMLInputElement>(
+        "input.tug-modal-input-dialog-input",
+      );
+      if (field !== null && document.activeElement === field) {
+        panel.setAttribute("data-query-caret", "");
+      } else {
+        panel.removeAttribute("data-query-caret");
+      }
+    };
+    sync();
+    panel.addEventListener("focusin", sync);
+    panel.addEventListener("focusout", sync);
+    return () => {
+      panel.removeEventListener("focusin", sync);
+      panel.removeEventListener("focusout", sync);
+    };
   }, [panel]);
 
   // Keep the highlighted row in view as the selection moves.

@@ -160,6 +160,135 @@ describe.skipIf(!SHOULD_RUN)("at0213: Open Quickly dialog", () => {
   );
 
   test(
+    "Escape cancels the manual mode first, and dismisses on the next press",
+    async () => {
+      // Escape has two meanings inside a typing-first dialog and they are
+      // ORDERED, not exclusive: at a ⌥⇥-parked text stop it hands the caret
+      // back (the ring says "you are here", Escape says "stop steering"), and
+      // with the caret live it closes the surface. The ladder rung that grants
+      // sits ahead of the surface's own dismiss, so the risk this pins is that
+      // the grant never lets go — an Escape that cancels the mode and then
+      // keeps cancelling it, leaving the dialog unclosable from the keyboard.
+      const app = await launchTugApp({
+        testName: "at0213-open-quickly-escape",
+        // ⌥⇥ and Escape are real key events against a frontmost app.
+        foreground: true,
+      });
+      try {
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+          { timeoutMs: 20000 },
+        );
+        await openDialog(app);
+        await app.waitForCondition<boolean>(
+          `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+          { timeoutMs: 8000 },
+        );
+
+        const state = `(function () {
+          var input = document.querySelector(${JSON.stringify(INPUT)});
+          var ringed = document.querySelector("[data-key-view-kbd]");
+          var panel = document.querySelector(${JSON.stringify(PANEL)});
+          return {
+            closing: panel !== null && panel.hasAttribute("data-closing"),
+            opacity: panel === null ? "(none)" : getComputedStyle(panel).opacity,
+            dialog: panel !== null,
+            caret: input !== null && document.activeElement === input,
+            mode: document.documentElement.hasAttribute("data-kbf"),
+            engaged: window.__tug.kbfEngaged(),
+            manual: window.__tug.kbfManual(),
+            ringed: ringed === null ? "(none)" : (ringed.getAttribute("data-tug-focus-key") || ringed.tagName),
+          };
+        })()`;
+        type State = {
+          closing: boolean;
+          opacity: string;
+          dialog: boolean;
+          caret: boolean;
+          mode: boolean;
+          engaged: boolean | null;
+          manual: boolean | null;
+          ringed: string;
+        };
+
+        // ⌥⇥ engages the mode over the live caret, which PARKS the field: the
+        // ring lands where the caret was.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(
+          `document.documentElement.hasAttribute("data-kbf")`,
+          { timeoutMs: 8000 },
+        );
+        const engaged = await app.evalJS<State>(state);
+        note(`after ⌥⇥: ${JSON.stringify(engaged)}`);
+        expect(engaged.dialog, "⌥⇥ leaves the dialog open").toBe(true);
+        expect(engaged.ringed, "⌥⇥ parks the ring on the query field").toBe(
+          "tug-modal-input-dialog:0",
+        );
+
+        // First Escape: the mode goes, the caret comes back, the dialog stays.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+          { timeoutMs: 8000 },
+        );
+        const cancelled = await app.evalJS<State>(state);
+        note(`after the first Escape: ${JSON.stringify(cancelled)}`);
+        expect(
+          cancelled.dialog,
+          "Escape at a parked stop cancels the mode, never the dialog",
+        ).toBe(true);
+        expect(cancelled.caret, "…and hands the caret back to the field").toBe(
+          true,
+        );
+
+        // Second Escape: no parked stop left, so the rung falls through to the
+        // surface's dismiss. THIS is the one that regressed.
+        await app.nativeKey("Escape");
+        await waitGone(app, PANEL);
+        expect(
+          await exists(app, OVERLAY),
+          "the blocking overlay goes with the dialog",
+        ).toBe(false);
+
+        // And the same ladder from the other starting state: the deck already
+        // in the mode when the dialog opens. The manual bit is the DECK's here,
+        // not something the dialog's own ⌥⇥ set, so the grant rung must still
+        // let go on the press after it — otherwise a user who works in the mode
+        // finds the launcher unclosable, which is the state a fresh app-test
+        // deck never reaches on its own.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(
+          `document.documentElement.hasAttribute("data-kbf")`,
+          { timeoutMs: 8000 },
+        );
+        await openDialog(app);
+        const onOpen = await app.evalJS<State>(state);
+        note(`dialog opened with the deck already engaged: ${JSON.stringify(onOpen)}`);
+        // ONE press. The deck's bit is not the dialog's, and the dialog opens
+        // with it cleared, so there is no invisible mode for Escape to spend
+        // itself leaving — the launcher's first Escape is the launcher's.
+        expect(onOpen.dialog, "the dialog is up").toBe(true);
+        await app.nativeKey("Escape");
+        await settle(400);
+        note(
+          `after one Escape: ${JSON.stringify(await app.evalJS<State>(state))}`,
+        );
+        expect(
+          await exists(app, PANEL),
+          "one Escape closes the dialog even when the deck was already in the mode",
+        ).toBe(false);
+        expect(
+          await app.evalJS<boolean | null>(`window.__tug.kbfManual()`),
+          "…and the deck gets its own mode back on the way out",
+        ).toBe(true);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
     "⌘. dismisses, and an outside click dismisses without activating what it hit",
     async () => {
       const app = await launchTugApp({
