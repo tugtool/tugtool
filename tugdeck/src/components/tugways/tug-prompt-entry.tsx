@@ -1809,6 +1809,13 @@ export const TugPromptEntry = React.forwardRef<
   // leaves the ring solid, which is then true.
   const submitChord =
     (returnActionOverride ?? "newline") === "newline" ? "shift" : undefined;
+  // The same chord spelled for a tooltip bubble. Authored rather than read
+  // from the registry, and deliberately so: the composer's submit key is the
+  // editor's own Return, text-editing currency handled by the CM6 keymap
+  // rather than a registry command ([#non-goals]) — there is no binding to
+  // read. Deriving it from `submitChord` is what keeps the bubble and the
+  // shell's default ring from ever disagreeing about which key submits.
+  const submitChordLabel = submitChord === "shift" ? "⇧⏎" : "⏎";
   const submitButtonModeRef = useRef(submitButtonMode);
   useLayoutEffect(() => {
     submitButtonModeRef.current = submitButtonMode;
@@ -3404,6 +3411,19 @@ export const TugPromptEntry = React.forwardRef<
       />
     ) : undefined;
 
+  // What the primary Z5's bubble says the keyboard does. In `submit` the
+  // button is the submit key's pointer twin, so it shows that key. In `stop`
+  // it is Stop, whose chord is the registry's to hold ([P11]) — unbound today,
+  // so the bubble shows the phrase alone and gains the chip the day Stop is
+  // bound, with nothing here to rewrite. The four inert modes are native
+  // `disabled`, which never opens a bubble at all.
+  const submitTooltipShortcut =
+    submitView.dataMode === "submit"
+      ? submitChordLabel
+      : submitView.dataMode === "stop"
+        ? commandShortcut(TUG_ACTIONS.INTERRUPT_SESSION)
+        : undefined;
+
   const entryToolbarTrailing = (
     <>
             {/*
@@ -3418,16 +3438,21 @@ export const TugPromptEntry = React.forwardRef<
               Stop branch of the SUBMIT handler.
             */}
             {submitView.dataMode === "stop" && (
-              <TugPushButton
-                className="tug-prompt-entry-queue-button"
-                subtype="icon"
-                size="lg"
-                emphasis="filled"
-                role="action"
-                onClick={performSubmit}
-                aria-label="Queue prompt"
-                icon={<Plus size={16} strokeWidth={2.5} />}
-              />
+              // The chord is the editor's, not the button's own: while a turn
+              // runs, the submit key queues, and this button is that key's
+              // pointer twin — so it says the key.
+              <TugTooltip content="Queue prompt" shortcut={submitChordLabel}>
+                <TugPushButton
+                  className="tug-prompt-entry-queue-button"
+                  subtype="icon"
+                  size="lg"
+                  emphasis="filled"
+                  role="action"
+                  onClick={performSubmit}
+                  aria-label="Queue prompt"
+                  icon={<Plus size={16} strokeWidth={2.5} />}
+                />
+              </TugTooltip>
             )}
             {/*
               ONE button node across every mode ([L26]) — only
@@ -3435,55 +3460,64 @@ export const TugPromptEntry = React.forwardRef<
               change. `data-mode` drives the per-mode visual via CSS
               ([L06]); `submitView` is the pure projection of the
               lifecycle `submitButtonMode`.
+
+              The bubble is one wrapper for the same reason the button is one
+              node: its type never changes across a mode transition, only its
+              phrase and its chip.
             */}
-            <TugPushButton
-              className="tug-prompt-entry-submit-button"
-              data-mode={submitView.dataMode}
-              // Return's home while the caret is in this composer — the shell
-              // lights the default ring and stands the fill down when the caret
-              // moves to another entry surface (the find bar).
-              data-tug-entry-default=""
-              data-default-chord={submitChord}
-              action={TUG_ACTIONS.SUBMIT}
-              subtype="icon"
-              size="lg"
-              emphasis="filled"
-              focusGroup={submitFocusGroup}
-              focusOrder={submitFocusOrder}
-              role={submitView.danger ? "danger" : "action"}
-              disabled={submitView.disabled}
-              aria-label={submitView.ariaLabel}
-              icon={
-                submitView.icon === "stop" ? (
-                  <Square size={14} strokeWidth={3} />
-                ) : (
-                  <ArrowUp size={16} strokeWidth={2.5} />
-                )
-              }
-              // The arbitration tell, expressed as a button activity: while a
-              // submit is parked on the shell-vs-Claude decision, the Z5 arrow
-              // trades places with the wave — the same glyph every other "the
-              // system is deciding" moment wears, so the pause reads as one of
-              // that family rather than as a new vocabulary. `busy` because
-              // the motion is the swapped-in glyph's own, not the arrow's.
-              //
-              // The button mounts both halves and the swap comes out of the
-              // cascade, which is what lets `setArbitrating` write the
-              // attribute by hand: a parked submit must not re-render the
-              // composer ([L06]). Offered only in `submit` mode — a running
-              // turn shows the Stop square, and a stop gesture must never be
-              // dressed up as progress.
-              activityIcon={
-                submitView.icon === "stop" ? undefined : (
-                  <TugProgressIndicator
-                    variant="wave"
-                    state="running"
-                    role="inherit"
-                    size={14}
-                  />
-                )
-              }
-            />
+            <TugTooltip
+              content={submitView.ariaLabel}
+              shortcut={submitTooltipShortcut}
+            >
+              <TugPushButton
+                className="tug-prompt-entry-submit-button"
+                data-mode={submitView.dataMode}
+                // Return's home while the caret is in this composer — the shell
+                // lights the default ring and stands the fill down when the caret
+                // moves to another entry surface (the find bar).
+                data-tug-entry-default=""
+                data-default-chord={submitChord}
+                action={TUG_ACTIONS.SUBMIT}
+                subtype="icon"
+                size="lg"
+                emphasis="filled"
+                focusGroup={submitFocusGroup}
+                focusOrder={submitFocusOrder}
+                role={submitView.danger ? "danger" : "action"}
+                disabled={submitView.disabled}
+                aria-label={submitView.ariaLabel}
+                icon={
+                  submitView.icon === "stop" ? (
+                    <Square size={14} strokeWidth={3} />
+                  ) : (
+                    <ArrowUp size={16} strokeWidth={2.5} />
+                  )
+                }
+                // The arbitration tell, expressed as a button activity: while a
+                // submit is parked on the shell-vs-Claude decision, the Z5 arrow
+                // trades places with the wave — the same glyph every other "the
+                // system is deciding" moment wears, so the pause reads as one of
+                // that family rather than as a new vocabulary. `busy` because
+                // the motion is the swapped-in glyph's own, not the arrow's.
+                //
+                // The button mounts both halves and the swap comes out of the
+                // cascade, which is what lets `setArbitrating` write the
+                // attribute by hand: a parked submit must not re-render the
+                // composer ([L06]). Offered only in `submit` mode — a running
+                // turn shows the Stop square, and a stop gesture must never be
+                // dressed up as progress.
+                activityIcon={
+                  submitView.icon === "stop" ? undefined : (
+                    <TugProgressIndicator
+                      variant="wave"
+                      state="running"
+                      role="inherit"
+                      size={14}
+                    />
+                  )
+                }
+              />
+            </TugTooltip>
     </>
   );
 
@@ -3563,10 +3597,14 @@ export const TugPromptEntry = React.forwardRef<
             ? "Commit"
             : "Unavailable while a turn is running or the changeset is empty"
         }
-        // Authored, and deliberately so: ⇧⏎ is the editor's own submit key,
-        // text-editing currency handled by the CM6 keymap rather than a
-        // registry command ([#non-goals]). There is no binding to read.
-        shortcut={commitCanLand ? "⇧⏎" : undefined}
+        // Authored, and deliberately so: the composer's submit key is the
+        // editor's own, text-editing currency handled by the CM6 keymap rather
+        // than a registry command ([#non-goals]). There is no binding to read
+        // — but there IS a setting, so the label is derived from the same
+        // `submitChord` the entry shell's default ring reads, never spelled
+        // ⇧⏎ by hand: at `returnAction: submit` a hand-spelled ⇧⏎ names a key
+        // that inserts a newline.
+        shortcut={commitCanLand ? submitChordLabel : undefined}
       >
         <TugPushButton
           className="tug-prompt-entry-commit-button"
