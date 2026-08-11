@@ -43,7 +43,7 @@ export function registerLensCard(): void {
     family: "lens",
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
-    defaultMeta: { title: "Lens", icon: "Telescope", closable: true },
+    defaultMeta: { title: "Lens", icon: "Microscope", closable: true },
     hidden: true,
     // Every row here is an engine focus stop and the arrows are how the Lens
     // is read, so it engages KBF mode the moment it is the key card ([P10]).

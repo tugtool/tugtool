@@ -318,7 +318,7 @@ export function GalleryCardChrome(): React.ReactElement {
               means adding one to those three registrations. */}
           <SpikeRow caption="Focused and unfocused, together — the pair is the point, not either alone">
             <SpikePane focused body="Cards · Layouts · Sessions">
-              <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
+              <CardTitleBar title="Lens" icon="Microscope" sidebar onClose={noop} />
             </SpikePane>
             <SpikePane focused={false} body="Filter · New jot">
               <CardTitleBar title="Jots" icon="NotebookPen" sidebar onClose={noop} />
@@ -336,7 +336,7 @@ export function GalleryCardChrome(): React.ReactElement {
 
           <SpikeRow caption="Follows the checkbox, for stepping between the two">
             <SpikePane focused={focused} body="Cards · Layouts · Sessions">
-              <CardTitleBar title="Lens" icon="Telescope" sidebar onClose={noop} />
+              <CardTitleBar title="Lens" icon="Microscope" sidebar onClose={noop} />
             </SpikePane>
           </SpikeRow>
 
