@@ -105,6 +105,23 @@ function basename(path: string): string {
   return slash === -1 ? path : path.slice(slash + 1);
 }
 
+/**
+ * The scoped file's path as the READER knows it, not as git names it.
+ *
+ * A descriptor's `paths` are repo-relative, which for a file at the repo root
+ * is the bare filename — and a masthead whose first line is `notes.md` and
+ * whose second line is also `notes.md` has spent a line saying nothing. The
+ * descriptor carries the project dir that resolves it (`tug-changes-list`
+ * builds every scoped pop-out with one), so the line answers *where* with a
+ * whole path and falls back to the relative one only when there is no root to
+ * resolve against.
+ */
+function scopedDisplayPath(descriptor: DiffDescriptor, scopedPath: string): string {
+  const root = descriptor.root;
+  if (root === undefined || root.length === 0) return scopedPath;
+  return `${root.replace(/\/+$/, "")}/${scopedPath}`;
+}
+
 /** The header label for a descriptor's document. */
 function descriptorLabel(descriptor: DiffDescriptor): string {
   if (descriptor.kind === "range") {
@@ -232,7 +249,7 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
             kind: "card-masthead" as const,
             icon: "GitCompareArrows",
             title: basename(scopedPath),
-            description: scopedPath,
+            description: scopedDisplayPath(descriptor, scopedPath),
             descriptionKind: "path" as const,
             detail:
               file === undefined ? null : stats(file.added, file.removed),

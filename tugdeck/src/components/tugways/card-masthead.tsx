@@ -19,7 +19,7 @@
  * The chrome tier's geometry and the row's seating in it are
  * `masthead-frame.css` — shared with the Session card's masthead for the same
  * reason. What is genuinely this card's own is here: the glyph, and a path line
- * that clips its head and can be acted on.
+ * that truncates in the middle (`TugPath`) and can be acted on.
  *
  * @module components/tugways/card-masthead
  */
@@ -29,6 +29,7 @@ import { icons } from "lucide-react";
 
 import type { DocumentMastheadPayload } from "@/lib/card-title-store";
 import { TugSessionRow } from "@/components/tugways/tug-session-row";
+import { TugPath } from "@/components/tugways/tug-path";
 
 import "./masthead-frame.css";
 import "./card-masthead.css";
@@ -44,16 +45,6 @@ export interface CardMastheadProps {
   onActivateDescription?: () => void;
 }
 
-/**
- * A path renders start-truncated so the filename survives, and carries a
- * leading Left-to-Right mark so `dir="rtl"` doesn't reorder its leading "/"
- * to the end and make an absolute path look relative. Same treatment the Text
- * card's path strip has always used; it moves here with the line.
- */
-function descriptionText(payload: DocumentMastheadPayload): string {
-  const text = payload.description ?? "";
-  return payload.descriptionKind === "path" ? `‎${text}` : text;
-}
 
 export function CardMasthead({
   payload,
@@ -103,8 +94,8 @@ export function CardMasthead({
            sub-line indent, and the tape's centering all key off
            `:has(> .tug-session-row-description)` — so omitting it would not
            merely drop a line, it would hand the masthead a two-line row's
-           whole geometry. `dir="rtl"` is what clips a path at its head; the
-           row's own line does the eliding.
+           whole geometry. The row's own line does the eliding for prose; a
+           PATH does its own, in the middle, through `TugPath`.
            A card that names no place publishes a STAND-IN, not `null`: the
            tier is a fixed three lines, so an empty run here is a hole between
            two filled ones rather than a shorter masthead. The empty branch
@@ -113,16 +104,23 @@ export function CardMasthead({
         description={
           payload.description === null ? (
             ""
+          ) : isPath ? (
+            <TugPath
+              path={payload.description}
+              className="card-masthead-description"
+              data-testid="card-masthead-description"
+              data-kind="path"
+              data-actionable={actionable ? "true" : undefined}
+              onClick={onActivateDescription}
+            />
           ) : (
             <span
               className="card-masthead-description"
               data-testid="card-masthead-description"
-              data-kind={isPath ? "path" : undefined}
               data-actionable={actionable ? "true" : undefined}
-              dir={isPath ? "rtl" : undefined}
               onClick={onActivateDescription}
             >
-              {descriptionText(payload)}
+              {payload.description}
             </span>
           )
         }

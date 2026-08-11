@@ -1,10 +1,9 @@
 /**
  * middle-ellipsis-path.css — `MiddleEllipsisPath`.
  *
- * The `<code>` is a flex row of a shrinkable head and a fixed-length
- * tail. The head ellipsizes from its trailing edge; the tail (the
- * filename) stays pinned. No scrollbar, no hover-expand — a long path
- * collapses in the middle and the full value rides a tooltip.
+ * The `<code>` is the slot, the mono face, and the flex line the path fills.
+ * The head/tail mechanism itself is `TugPath`'s (`tug-path.css`) — this file
+ * only seats it in a tool-block header row.
  *
  * @tug-pairings: none — header fragment, decoration over composition.
  *   Consumes only `--tugx-block-*` inherited from the chrome;
@@ -12,7 +11,9 @@
  *
  * Tuglaw cross-check:
  *  - [L19] file pair; the slot host is `data-slot="tool-block-path"`.
- *  - [L20] introduces no `--tugx-*` slot; rides the chrome's tokens.
+ *  - [L20] introduces no `--tugx-*` slot; rides the chrome's tokens, and
+ *    tunes the composed `TugPath` only through the flex terms that seat it
+ *    in this row.
  */
 
 .tool-block-path {
@@ -24,15 +25,8 @@
   white-space: nowrap;
 }
 
-.tool-block-path-head {
-  flex: 0 1 auto;
+/* The composed path takes the header's remaining run. */
+.tool-block-path > .tug-path {
+  flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tool-block-path-tail {
-  flex: 0 0 auto;
-  white-space: nowrap;
 }

@@ -1,0 +1,45 @@
+/**
+ * tug-path.css — `TugPath`.
+ *
+ * A flex row of a shrinkable head and a tail that stays. The head ellipsizes
+ * from its trailing edge; the tail holds the filename. No measurement, no
+ * scrollbar, no hover-expand.
+ *
+ * The two `flex-shrink` values are the whole mechanism. The head's is enormous
+ * so that shrinking is spent there first: with equal shrink the browser divides
+ * the deficit in proportion to each run's own width, which takes bites out of
+ * the filename while the directory chain is still whole. The tail keeps a
+ * shrink of 1 rather than 0 so a filename wider than its box clips instead of
+ * pushing the row open — an unshrinkable tail overflows its container, and in
+ * chrome that lands under the pane's controls.
+ *
+ * No type and no ink here: the mount decides those, and a primitive that set a
+ * family or a color would be wrong in either chrome or a transcript block.
+ *
+ * @tug-pairings: none — sets no `color` or `background`.
+ */
+
+.tug-path {
+  display: flex;
+  align-items: baseline;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tug-path-head {
+  flex: 0 999 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tug-path-tail {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

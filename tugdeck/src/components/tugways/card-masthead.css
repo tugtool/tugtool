@@ -8,8 +8,8 @@
  * a second authoring of both, which is exactly why the two tiers did not match.
  *
  * What is left is the two things that genuinely belong to a document: the
- * glyph that leads its name, and a path line that clips its head and can be
- * acted on.
+ * glyph that leads its name, and a path line that truncates in the middle
+ * (`TugPath` does that; this only seats it) and can be acted on.
  *
  * @tug-pairings
  * | Element                           | Surface                          | Role    | Context             |
@@ -85,11 +85,15 @@
 }
 
 /* ── The path line ─────────────────────────────────────────────────────────
-   A path clips its HEAD, so the filename it ends in survives the truncation
-   that a long directory chain guarantees. `unicode-bidi: plaintext` keeps the
-   run's own direction under the `dir="rtl"` that does the clipping. */
+   A path truncates in the MIDDLE — `TugPath` does it, in flex, and this only
+   seats the run in the line. `inline-flex` because the line is a text run
+   among text runs and a block-level flex child would claim a line box of its
+   own; the max-width is what still holds it inside the reserve the line keeps
+   for the pane's control cluster. */
 .card-masthead-description[data-kind="path"] {
-  unicode-bidi: plaintext;
+  display: inline-flex;
+  max-inline-size: 100%;
+  vertical-align: bottom;
 }
 
 /* An actionable description says so on hover and not before — a permanent

@@ -129,7 +129,7 @@ export function useHelpSheet({
     void showSheet({
       title: "Help",
       icon: "CircleQuestionMark",
-      displayWidth: "lg",
+      displayWidth: "xl",
       content: (close) => (
         <HelpSheetBody
           sessionMetadataStore={sessionMetadataStore}

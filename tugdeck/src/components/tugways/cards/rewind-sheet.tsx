@@ -118,7 +118,7 @@ export function useRewindSheet({
       title: "Rewind",
       icon: "History",
       description: "Pick a turn to return to. Newer turns are discarded.",
-      displayWidth: "md",
+      displayWidth: "lg",
       content: (close) => (
         <RewindSheetBody
           rows={rows}

@@ -5,8 +5,13 @@
  * shrinks and ellipsizes from its trailing edge while a fixed-length
  * tail (the filename plus a little of its directory) stays pinned, so
  * a long path collapses as `/Users/koci…RTY_NOTICES.md` rather than
- * end-truncating away the filename or growing a scrollbar. Pure CSS —
- * two flex children, no measurement.
+ * end-truncating away the filename or growing a scrollbar.
+ *
+ * The truncation itself is `TugPath`'s — the same mechanism the document
+ * masthead's path line wears, authored once. What this adds is the tool
+ * block's own: the `<code>` slot and mono face, transcript Find, the
+ * tooltip, and a FIXED tail length, because these paths stand in a column
+ * where a per-filename split would ragged the tails.
  *
  * A hover tooltip surfaces the full path, but only when it is actually
  * clipped: `TugTooltip`'s `suppressOpen` gate runs `pathTooltipSuppressed`
@@ -16,7 +21,8 @@
  * Per [#bk-conformance] item 8 this is THE path-truncation pattern for
  * tool-block headers. `ReadToolBlock` and `EditToolBlock` both
  * compose it; a new tool block with a `Tool · {path}` header should too,
- * rather than re-deriving the head/tail split.
+ * rather than composing `TugPath` directly and re-deriving the tail
+ * length, the slot, and the tooltip around it.
  *
  * Laws:
  *  - [L06] no React state — the truncation is pure CSS; the tooltip's
@@ -36,25 +42,23 @@ import "./middle-ellipsis-path.css";
 import React from "react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugPath, pathHeadClipped } from "@/components/tugways/tug-path";
 
 /**
  * Number of trailing characters of the path kept unshrinkable so the
- * filename (and a little of its directory) always stays legible.
+ * filename (and a little of its directory) always stays legible. A
+ * fixed count rather than the filename, because these paths stand in a
+ * COLUMN and a per-row split would ragged the tails.
  */
 const PATH_TAIL_LENGTH = 20;
 
 /**
  * Tooltip-suppression predicate for the path: suppress (return `true`)
- * unless the head segment is actually clipped. The head shrinks to
- * absorb truncation, so the path is truncated exactly when the head's
- * `scrollWidth` exceeds its `clientWidth`. An absent head (path shorter
- * than the pinned tail — the full path is already visible) is never
- * truncated. Measured fresh on each hover by `TugTooltip`.
+ * unless the head segment is actually clipped, so a path showing whole
+ * never explains itself. Measured fresh on each hover by `TugTooltip`.
  */
 export function pathTooltipSuppressed(trigger: Element): boolean {
-  const head = trigger.querySelector(".tool-block-path-head");
-  if (head === null) return true;
-  return head.scrollWidth <= head.clientWidth;
+  return !pathHeadClipped(trigger);
 }
 
 export interface MiddleEllipsisPathProps {
@@ -81,23 +85,21 @@ export function MiddleEllipsisPath({
   path,
   findable = false,
 }: MiddleEllipsisPathProps): React.ReactElement {
-  const head =
-    path.length > PATH_TAIL_LENGTH ? path.slice(0, -PATH_TAIL_LENGTH) : "";
-  const tail =
-    path.length > PATH_TAIL_LENGTH ? path.slice(-PATH_TAIL_LENGTH) : path;
   return (
     <TugTooltip
       content={path}
       side="bottom"
       suppressOpen={pathTooltipSuppressed}
     >
+      {/* The `<code>` is the slot and the mono face; the truncation is
+          `TugPath`'s, so the head/tail split is authored once for every
+          surface that shows a path. */}
       <code
         data-slot="tool-block-path"
         className="tool-block-path"
         data-tugx-findable={findable ? "" : undefined}
       >
-        <span className="tool-block-path-head">{head}</span>
-        <span className="tool-block-path-tail">{tail}</span>
+        <TugPath path={path} tailLength={PATH_TAIL_LENGTH} />
       </code>
     </TugTooltip>
   );

@@ -46,6 +46,7 @@
  * @covers tugdeck/src/lib/card-title-store.ts
  * @covers tugdeck/src/components/tugways/cards/text-card.tsx
  * @covers tugdeck/src/components/tugways/cards/diff-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-path.tsx
  *
  * The File viewer's masthead is asserted in `at0310-file-view-open`, where the
  * real PNG and PDF fixtures already are — the page count needs a real
@@ -95,6 +96,8 @@ const LONG_NAME =
  * on the payload.
  */
 const SCOPED_FILE = "tugdeck/src/lib/git-diff-store.ts";
+/** The project the scoped path is relative to. */
+const SCOPED_ROOT = "/Users/tester/src/tugtool";
 
 function textDeck() {
   return {
@@ -426,7 +429,14 @@ describe.skipIf(!SHOULD_RUN)("at0392 — the three chrome tiers", () => {
           cardStates: {
             A: {
               content: {
-                descriptor: { kind: "head", paths: [SCOPED_FILE] },
+                // With a root, as every scoped pop-out `tug-changes-list`
+                // builds carries one. The root is what turns git's
+                // repo-relative path into the path the reader knows.
+                descriptor: {
+                  kind: "head",
+                  root: SCOPED_ROOT,
+                  paths: [SCOPED_FILE],
+                },
               },
             },
           },
@@ -440,9 +450,28 @@ describe.skipIf(!SHOULD_RUN)("at0392 — the three chrome tiers", () => {
         // The masthead says which file — `setMasthead`, the sidecar-only
         // publish that exists for exactly this case.
         expect(await textOf(app, MASTHEAD_TITLE)).toBe("git-diff-store.ts");
-        expect(await textOf(app, MASTHEAD_DESCRIPTION)).toContain(
-          "git-diff-store.ts",
-        );
+
+        // And the second line says WHERE, which is a different fact from the
+        // first. Git's own path is repo-relative, so a file at the repo root
+        // would put the filename on both lines and spend one saying nothing;
+        // the descriptor's root is what resolves it.
+        const scopedPath = await app.evalJS<{
+          text: string;
+          head: string;
+          tail: string;
+        }>(`(() => {
+             const el = document.querySelector(${JSON.stringify(MASTHEAD_DESCRIPTION)});
+             return {
+               text: el.textContent,
+               head: el.querySelector(".tug-path-head").textContent,
+               tail: el.querySelector(".tug-path-tail").textContent,
+             };
+           })()`);
+        note("at0392 scoped path", JSON.stringify(scopedPath));
+        expect(scopedPath.text).toBe(`${SCOPED_ROOT}/${SCOPED_FILE}`);
+        expect(scopedPath.text).not.toBe(await textOf(app, MASTHEAD_TITLE));
+        // Split for a middle ellipsis: the filename is the run that stays.
+        expect(scopedPath.tail).toBe("/git-diff-store.ts");
 
         // And the TAB still says "Diff". The title override REPLACES the
         // registry string, so publishing one here would rename the tab after

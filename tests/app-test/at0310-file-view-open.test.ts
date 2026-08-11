@@ -34,6 +34,8 @@
  * @covers tugdeck/src/components/tugways/cards/file-view-card.tsx
  * @covers tugdeck/src/components/tugways/cards/pdf-view.tsx
  * @covers tugdeck/src/lib/card-title-store.ts
+ * @covers tugdeck/src/components/tugways/tug-path.tsx
+ * @covers tugdeck/src/components/tugways/tug-path.css
  * @covers tugdeck/src/lib/pdf-runtime.ts
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
@@ -44,7 +46,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { deflateSync } from "node:zlib";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -251,16 +253,77 @@ describe.skipIf(!SHOULD_RUN)("at0310 — image opens in a viewer card", () => {
         // ---- A viewer is a DOCUMENT card, so its pane wears the masthead.
         //
         // Three lines from three different sources: the basename the card
-        // already displayed, the full path it is bound to (start-truncated,
-        // so what survives is the tail), and a kind label composed from the
-        // classifier's coarse answer plus the extension — "image" is not what
-        // a reader calls a PNG.
+        // already displayed, the full path it is bound to, and a kind label
+        // composed from the classifier's coarse answer plus the extension —
+        // "image" is not what a reader calls a PNG.
         expect(await paneTier(app)).toBeCloseTo(72, 0);
         expect(await mastheadLine(app, "card-masthead-title")).toBe("gradient.png");
         expect(await mastheadLine(app, "card-masthead-description")).toContain(
           "gradient.png",
         );
         expect(await mastheadLine(app, "card-masthead-detail")).toBe("PNG image");
+
+        // ---- …and the path truncates in the MIDDLE.
+        //
+        // A path's two informative ends are its root and its filename, and
+        // end truncation destroys the second: the reader is left with a
+        // directory chain they already knew. The head run absorbs the
+        // shrinking, so the claim is that the head is clipped while the tail
+        // — the filename — measures out whole. Both runs are real text
+        // whatever the box does, so the assertion is on layout and not on
+        // the string.
+        // Whether the fixture's temp dir happens to overflow this pane is not
+        // something to leave to chance, so the squeeze is applied: the line is
+        // measured at its natural width, then again capped narrow — the same
+        // constraint a narrower pane imposes, since the cap is on the run's
+        // own box — and restored.
+        const truncation = await app.evalJS<{
+          head: string;
+          tail: string;
+          natural: { headClipped: boolean; tailWhole: boolean; withinLine: boolean };
+          squeezed: { headClipped: boolean; tailWhole: boolean; withinLine: boolean };
+        }>(`(() => {
+           const card = document.querySelector('[data-slot="file-view-card"]');
+           const pane = card.closest(".tug-pane");
+           const path = pane.querySelector('[data-testid="card-masthead-description"]');
+           const head = path.querySelector(".tug-path-head");
+           const tail = path.querySelector(".tug-path-tail");
+           const measure = () => ({
+             headClipped: head.scrollWidth > head.clientWidth,
+             // A run whose glyphs all fit reports no overflow; the filename
+             // must be one of those, which is the entire point of the split.
+             tailWhole: tail.scrollWidth <= tail.clientWidth,
+             // And the run still stops inside the line it was given — an
+             // unshrinkable tail would push the path out under the pane's
+             // controls instead of clipping.
+             withinLine:
+               Math.round(path.getBoundingClientRect().right) <=
+               Math.round(path.parentElement.getBoundingClientRect().right) + 1,
+           });
+           const natural = measure();
+           const previous = path.style.maxInlineSize;
+           path.style.maxInlineSize = "220px";
+           const squeezed = measure();
+           path.style.maxInlineSize = previous;
+           return {
+             head: head.textContent,
+             tail: tail.textContent,
+             natural,
+             squeezed,
+           };
+         })()`);
+        note("at0310 path truncation", JSON.stringify(truncation));
+        // Both runs are real text whatever the box does, so the path stays
+        // whole to a reader who copies it out of the DOM.
+        expect(truncation.tail).toBe("/gradient.png");
+        expect(truncation.head + truncation.tail).toBe(file);
+        expect(truncation.natural.tailWhole).toBe(true);
+        expect(truncation.natural.withinLine).toBe(true);
+        expect(truncation.squeezed.headClipped, "the directory chain gives way").toBe(
+          true,
+        );
+        expect(truncation.squeezed.tailWhole, "the filename survives").toBe(true);
+        expect(truncation.squeezed.withinLine).toBe(true);
 
         // The card's one verb reaches its pane's `…` menu. Membership is the
         // card's to publish; the row's label and enablement are the command

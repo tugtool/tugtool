@@ -812,7 +812,7 @@ export function usePermissionRulesSheet({
     void showSheet({
       title: "Permissions",
       icon: "ShieldCheck",
-      displayWidth: "md",
+      displayWidth: "lg",
       content: (close) => (
         <PermissionRulesSheetBody
           cwd={cwd}
