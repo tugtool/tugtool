@@ -35,6 +35,8 @@ export type RpcMethod =
   | "nativeKey"
   | "nativeType"
   | "holdModifier"
+  | "pressHeldModifiers"
+  | "releaseHeldModifiers"
   | "simulateAppResign"
   | "simulateAppBecomeActive"
   | "simulateAppHide"
@@ -295,6 +297,16 @@ export type Request =
       method: "holdModifier";
       modifiers: readonly NativeModifier[];
       innerVerbs: readonly InnerNativeVerb[];
+    }
+  | {
+      id: number;
+      method: "pressHeldModifiers";
+      modifiers: readonly NativeModifier[];
+    }
+  | {
+      id: number;
+      method: "releaseHeldModifiers";
+      modifiers: readonly NativeModifier[];
     }
   | {
       id: number;

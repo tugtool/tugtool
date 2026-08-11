@@ -99,6 +99,19 @@
   --tugx-focus-ring-width: 1.5px;
   --tugx-focus-ring-offset: 2px;
   --tugx-focus-ring-radius: 6px;
+  /* The CHORD ring's line style — the one knob for the whole treatment. A
+     default button that plain Return does NOT fire (its activation is a chord,
+     today only Shift+Return) wears the same double ring in this style instead
+     of `solid`, and reverts to `solid` for exactly as long as the chord's
+     modifier is held (`data-mods` — see `modifier-latch.ts`). Every wearer on
+     every paint path resolves the dash from here, so tuning it is one edit:
+     `dotted`, or back to `solid` to retire the distinction entirely.
+
+     Paired width knob, because a dash at the ring's hairline 1.5px may not
+     read: it defaults to the solid ring's width and exists so the chord ring
+     can be thickened WITHOUT thickening every ring in the deck. */
+  --tugx-focus-ring-chord-style: dashed;
+  --tugx-focus-ring-chord-width: var(--tugx-focus-ring-width);
   /* Drag-and-drop accent ring thickness — one knob for every drop affordance
      (editor, composer input area, attachment zone, tab-bar drop targets). */
   --tugx-drop-ring-width: 2px;

@@ -187,6 +187,11 @@ export type DeckTraceEventShape = {
       editorResponderId: string | null;
     }
   | {
+      kind: "return-promise-collision";
+      count: number;
+      wearers: string;
+    }
+  | {
       kind: "follow-bottom";
       following: boolean;
       source: string;
@@ -239,6 +244,7 @@ export const HARNESS_KNOWN_TRACE_KINDS = [
   "macrotask-focus-claim",
   "caret-responder-divergence",
   "kbf-caret-divergence",
+  "return-promise-collision",
   "follow-bottom",
   "scroll-displacement",
   "extent-rebase",
@@ -478,6 +484,8 @@ export function summarizeEvent(e: DeckTraceEventShape): string {
       return `caret-responder-divergence editor=${fmt(e.editorResponderId)} firstResponder=${fmt(e.firstResponderId)}`;
     case "kbf-caret-divergence":
       return `kbf-caret-divergence editor=${fmt(e.editorResponderId)}`;
+    case "return-promise-collision":
+      return `return-promise-collision count=${e.count} wearers=${fmt(e.wearers)}`;
     case "follow-bottom":
       return `follow-bottom ${e.following ? "engage" : "disengage"} source=${fmt(e.source)}`;
     case "scroll-displacement":

@@ -294,12 +294,20 @@ export const NOTE_MARKER = "TUG-NOTE: ";
  *
  * `value` is JSON-serialized; a value that will not serialize is stringified.
  */
-export function note(label: string, value: unknown): void {
+export function note(label: string, ...value: [unknown] | []): void {
   let encoded: string;
-  try {
-    encoded = JSON.stringify({ label, value });
-  } catch {
-    encoded = JSON.stringify({ label, value: String(value) });
+  // Label-only is a legitimate note — a probe that already formatted its
+  // finding into the label has no separate value, and the summary renders it
+  // without a trailing `: null`. Rest-tuple rather than an optional parameter
+  // so "omitted" and "explicitly undefined" stay distinguishable here.
+  if (value.length === 0) {
+    encoded = JSON.stringify({ label });
+  } else {
+    try {
+      encoded = JSON.stringify({ label, value: value[0] });
+    } catch {
+      encoded = JSON.stringify({ label, value: String(value[0]) });
+    }
   }
   console.log(`${NOTE_MARKER}${encoded}`);
 }
@@ -1074,6 +1082,18 @@ export class App {
   /** Type ASCII text (non-ASCII is rejected with a typed error). */
   nativeType(text: string): Promise<void> {
     return client.nativeType(this as HarnessCaller, text);
+  }
+
+  /**
+   * Hold `modifiers` down for the duration of `body`, which CAN introspect
+   * the app (unlike `holdModifier`'s buffered thunk). For assertions about
+   * what a held modifier looks like — the chord ring's dashed→solid flip.
+   */
+  withModifiersHeld(
+    modifiers: readonly NativeModifier[],
+    body: () => Promise<void>,
+  ): Promise<void> {
+    return client.withModifiersHeld(this as HarnessCaller, modifiers, body);
   }
 
   // -------------------------------------------------------------------

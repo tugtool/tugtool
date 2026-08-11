@@ -1587,7 +1587,7 @@ app-test *FILES:
             fi
             if command -v jq >/dev/null 2>&1; then
                 printf '%s' "$njson" | jq -r \
-                    '"    \(.label): " + (if (.value|type) == "string" then .value else (.value|tojson) end)' \
+                    '"    \(.label)" + (if has("value") then ": " + (if (.value|type) == "string" then .value else (.value|tojson) end) else "" end)' \
                     2>/dev/null || printf '    %s\n' "$njson"
             else
                 printf '    %s\n' "$njson"

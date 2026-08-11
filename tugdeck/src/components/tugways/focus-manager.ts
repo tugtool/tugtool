@@ -45,6 +45,7 @@
 
 import { createContext } from "react";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
+import { deckTrace } from "@/deck-trace";
 import type { TugAction } from "./action-vocabulary";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
@@ -3339,8 +3340,73 @@ export class FocusManager {
     ) {
       this.mirrorKeyViewFocus();
     }
+
+    if (process.env.NODE_ENV !== "production") {
+      this.checkReturnPromiseInvariant();
+    }
     return writes;
   }
+
+  /**
+   * Dev-only invariant: **at most one control on screen may promise Return**
+   * ([#chord-ring]).
+   *
+   * The double ring says "Return fires this" and the chord variant says
+   * "Return fires this once the modifier is down"; both are claims on the same
+   * key, so two lit at once means one of them is lying and the user has no way
+   * to tell which. The claim is currently structural rather than arbitrated —
+   * the engine projects `data-default-ring` onto at most one node, and the
+   * entry-shell path lights only inside the shell holding the keyboard, so the
+   * two cannot coincide. Structural is not the same as checked, and this is
+   * the check.
+   *
+   * Deliberately NOT an arbitration. Promoting the entry-shell path into the
+   * engine's default-ring stack would be the other way to guarantee it, and
+   * [P14] rules it out: that stack holds STANDING mount-scoped claims, and two
+   * mounted shells would contend for one slot to express something that is not
+   * standing at all.
+   *
+   * Signature-deduped so a steady collision reports once rather than once per
+   * reprojection, the same shape as the caret invariants in `caret-layer.ts`.
+   */
+  private checkReturnPromiseInvariant(): void {
+    if (typeof document === "undefined") return;
+    const enabled = ":not(:disabled):not([aria-disabled='true'])";
+    const wearers = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        `[data-default-ring]${enabled},` +
+          `.tug-entry-shell[data-entry-keyboard] [data-tug-entry-default]${enabled}`,
+      ),
+    );
+    const signature =
+      wearers.length <= 1
+        ? "ok"
+        : wearers
+            .map(
+              (el) =>
+                el.getAttribute("data-testid") ??
+                el.getAttribute("aria-label") ??
+                el.className,
+            )
+            .join(" | ");
+    if (this.lastReturnPromiseSignature === signature) return;
+    this.lastReturnPromiseSignature = signature;
+    if (wearers.length <= 1) return;
+
+    deckTrace.record({
+      kind: "return-promise-collision",
+      count: wearers.length,
+      wearers: signature,
+    });
+    console.error(
+      `[tugways] ${wearers.length} controls are promising Return at once ` +
+        `(${signature}) — the double ring speaks for one key and only one ` +
+        `control may claim it.`,
+    );
+  }
+
+  /** Last {@link checkReturnPromiseInvariant} answer, for its dedupe. */
+  private lastReturnPromiseSignature = "";
 
   /**
    * Resolve the one legal `activeElement` for the current engine state

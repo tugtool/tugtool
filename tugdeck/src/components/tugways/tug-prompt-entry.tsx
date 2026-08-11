@@ -1790,6 +1790,14 @@ export const TugPromptEntry = React.forwardRef<
   // Code's Z5 button follows the Claude session lifecycle unchanged.
   const submitButtonMode = claudeSubmitButtonMode;
   const submitView = resolveSubmitButtonView(submitButtonMode);
+  // The chord that fires the Z5, when a plain Return does not
+  // ([#chord-ring]). The editor's Return is a user setting shipping as
+  // `newline`, and `resolveEnterAction` flips the base action on Shift — so at
+  // the default it is SHIFT+Return that submits, and the shell's default ring
+  // has to say so. `undefined` (the `submit` setting) omits the attribute and
+  // leaves the ring solid, which is then true.
+  const submitChord =
+    (returnActionOverride ?? "newline") === "newline" ? "shift" : undefined;
   const submitButtonModeRef = useRef(submitButtonMode);
   useLayoutEffect(() => {
     submitButtonModeRef.current = submitButtonMode;
@@ -3424,6 +3432,7 @@ export const TugPromptEntry = React.forwardRef<
               // lights the default ring and stands the fill down when the caret
               // moves to another entry surface (the find bar).
               data-tug-entry-default=""
+              data-default-chord={submitChord}
               action={TUG_ACTIONS.SUBMIT}
               subtype="icon"
               size="lg"

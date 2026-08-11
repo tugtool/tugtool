@@ -355,6 +355,25 @@ Step-by-step:
    reject. Flatten modifier sets (`["cmd", "shift"]`) instead of
    nesting scopes.
 
+   **To look at the app while a modifier is down, use
+   `withModifiersHeld` instead.** `holdModifier` ships its whole thunk
+   as one RPC, which is why nothing inside it can introspect;
+   `withModifiersHeld` issues the press and the release as separate
+   round trips, so the body gets the ordinary caller and `evalJS` /
+   `waitForCondition` / `screenshot` all work:
+
+   ```ts
+   await app.withModifiersHeld(["shift"], async () => {
+     // The chord ring resolves dashed → solid while Shift is down.
+     expect(await ringStyle(app)).toBe("solid");
+   });
+   ```
+
+   The release runs in a `finally`, and Swift releases anything still
+   held at connection close — a modifier left down outlives the test
+   process and turns the next keystroke on the machine into a system
+   chord.
+
 11. **Keybinding chords: dispatch a synthetic `KeyboardEvent`, not
     `nativeKey`.** This is the one place item 8 inverts. A keybinding is
     defined purely by `event.code` + modifier flags — the keymap

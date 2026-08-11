@@ -470,6 +470,15 @@ const EVENT_FIXTURES: Record<
     following: true,
     evicting: true,
   },
+  "kbf-caret-divergence": {
+    kind: "kbf-caret-divergence",
+    editorResponderId: "composer-A",
+  },
+  "return-promise-collision": {
+    kind: "return-promise-collision",
+    count: 2,
+    wearers: "session-history-done | tug-prompt-entry-submit-button",
+  },
   "extent-rebase": {
     kind: "extent-rebase",
     from: 19618,

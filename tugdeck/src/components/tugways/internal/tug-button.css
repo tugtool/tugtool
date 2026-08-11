@@ -1821,8 +1821,42 @@ body {
    also matches `[data-default-ring]`). Suppressed while disabled — a disabled
    default has nothing to commit. */
 .tug-button[data-default-ring]:not(:disabled):not([aria-disabled="true"]) {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline: var(--tugx-default-ring-width, var(--tugx-focus-ring-width))
+    var(--tugx-default-ring-style, solid) var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
+}
+
+/* ----------------------------------------------------------------------------
+   The CHORD variant of the default ring ([#chord-ring])
+   ----------------------------------------------------------------------------
+   `data-default-chord` is the button's OWN static declaration — "plain Return
+   does not fire me; this chord does" — never engine-owned, so it composes with
+   the engine's `data-default-ring` without touching the projection. Dashed says
+   the promise is conditional; the condition is the modifier, and while that
+   modifier is held (`data-mods` on <html>) a Return really would fire this
+   button, so the ring goes solid for exactly that long.
+
+   Expressed as the two KNOBS the ring rules read, not as `outline-*`
+   longhands. A longhand override here would out-specify the rules that
+   legitimately take the ring AWAY — a shade-open composer stands its default
+   ring down (`tug-prompt-entry.css`), and a chord wearer must stand down with
+   it rather than resurrect the outline through the back door. Setting only
+   custom properties keeps every `outline: none` in the language winning on the
+   cascade, exactly as it did before this variant existed.
+
+   Both paint paths read the same two knobs (`internal/tug-button.css` here and
+   `tug-entry-shell.css`), so the chord look is one definition, and a wearer
+   that is painting no ring at all is unaffected by carrying them. Only style
+   and width move: colour, offset, the filled promotion, and the
+   background-window stand-down are the plain default ring's, because this IS
+   the plain default ring wearing a qualifier. --- */
+[data-default-chord="shift"] {
+  --tugx-default-ring-style: var(--tugx-focus-ring-chord-style);
+  --tugx-default-ring-width: var(--tugx-focus-ring-chord-width);
+}
+html[data-mods~="shift"] [data-default-chord="shift"] {
+  --tugx-default-ring-style: solid;
+  --tugx-default-ring-width: var(--tugx-focus-ring-width);
 }
 
 /* The persistent ring goes quiet while the OS window is not foreground, matching

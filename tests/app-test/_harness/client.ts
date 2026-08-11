@@ -1200,6 +1200,36 @@ export function nativeKey(
 }
 
 /**
+ * Hold `modifiers` down across the awaited `body`, then release them —
+ * the introspectable sibling of {@link holdModifier}.
+ *
+ * `holdModifier` buffers its inner verbs into a single RPC, so nothing inside
+ * it can look at the app; that is the right shape for "post this chord" and
+ * the wrong one for "what does the UI look like while this key is down". Here
+ * the press and the release are separate round trips and `body` receives the
+ * ordinary caller, so `evalJS` / `waitForCondition` / `screenshot` all work
+ * normally in between. The chord ring is the reason it exists: a Shift+Return
+ * default paints dashed until Shift is actually down.
+ *
+ * The release is in a `finally`, so a failed assertion inside `body` still
+ * lets go of the modifier. (Swift backstops the same thing at connection
+ * close — a modifier left down at the windowserver turns the next keystroke
+ * anywhere on the machine into a system chord.)
+ */
+export async function withModifiersHeld(
+  caller: HarnessCaller,
+  modifiers: readonly NativeModifier[],
+  body: () => Promise<void>,
+): Promise<void> {
+  await caller.rpcCall<void>("pressHeldModifiers", { modifiers });
+  try {
+    await body();
+  } finally {
+    await caller.rpcCall<void>("releaseHeldModifiers", { modifiers });
+  }
+}
+
+/**
  * Type an ASCII string. Non-ASCII input is rejected by the Swift
  * side with `NativeTypeAsciiOnlyError` before any events are posted.
  */

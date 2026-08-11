@@ -433,6 +433,18 @@ export type DeckTraceEvent = {
       editorResponderId: string | null;
     }
   | {
+      // Dev-only invariant probe, recorded from the focus manager's
+      // projection commit ([#chord-ring]). The double ring — solid or in
+      // its chord variant — says "Return fires this", and two controls saying
+      // it at once leaves the user no way to tell which one means it.
+      // `wearers` is a `|`-joined identifier list (testid, else aria-label,
+      // else class) so the report names the offenders. Recorded once per
+      // collision transition, not per reprojection.
+      kind: "return-promise-collision";
+      count: number;
+      wearers: string;
+    }
+  | {
       // Fired by `SmartScroll.engage` / `SmartScroll.disengage` — the
       // typed funnel for follow-bottom intent. `following` is the
       // requested state (true = follow the live edge, false =
@@ -557,6 +569,7 @@ export type DeckTraceEventInput =
   | Omit<Extract<DeckTraceEvent, { kind: "macrotask-focus-claim" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "caret-responder-divergence" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "kbf-caret-divergence" }>, StampedFields>
+  | Omit<Extract<DeckTraceEvent, { kind: "return-promise-collision" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "follow-bottom" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "scroll-displacement" }>, StampedFields>
   | Omit<Extract<DeckTraceEvent, { kind: "extent-rebase" }>, StampedFields>;

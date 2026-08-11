@@ -186,7 +186,9 @@ final class TestHarnessConnection {
              "nativeMouseUp",
              "nativeKey",
              "nativeType",
-             "holdModifier":
+             "holdModifier",
+             "pressHeldModifiers",
+             "releaseHeldModifiers":
             dispatchNativeVerb(id: id, verbObj: obj)
         case "checkAccessibilityPermission":
             dispatchCheckAccessibilityPermission(id: id, verbObj: obj)
@@ -839,6 +841,15 @@ final class TestHarnessConnection {
         case "holdModifier":
             try executeHoldModifier(verbObj: verbObj, handlers: handlers)
 
+        // The persistent-hold pair ([#chord-ring]'s test dependency): unlike
+        // `holdModifier`, these are two separate round trips, so the test can
+        // `evalJS` the UI while the modifier is down.
+        case "pressHeldModifiers":
+            handlers.pressHeldModifiers(try Self.parseModifiers(verbObj["modifiers"]))
+
+        case "releaseHeldModifiers":
+            handlers.releaseHeldModifiers(try Self.parseModifiers(verbObj["modifiers"]))
+
         default:
             throw NativeEventError.protocolError(
                 "unsupported inner verb method: \"\(method)\"",
@@ -1090,6 +1101,13 @@ final class TestHarnessConnection {
     }
 
     func close() {
+        // A test that threw mid-hold never issued its release, and a modifier
+        // left down at the windowserver outlives this process — the next
+        // keystroke on the machine becomes a system chord. Backstop the pair
+        // here, where every disconnect passes.
+        if let webView = webView {
+            NativeEventHandlers(webView: webView).releaseAllHeldModifiers()
+        }
         // Tear down any running tugcode child first so a graceful
         // disconnect (or AppDelegate.applicationShouldTerminate)
         // doesn't leak a zombie subprocess past the test.

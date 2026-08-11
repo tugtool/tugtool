@@ -34,6 +34,7 @@ import { COMMANDS_BY_ID } from "./command-registry";
 import { dispatchCommand } from "../../command-dispatch";
 import { TUG_ACTIONS } from "./action-vocabulary";
 import { selectionGuard } from "./selection-guard";
+import { installModifierLatch } from "./modifier-latch";
 import { registerResponderChainManager } from "../../action-dispatch";
 import { getCardLifecycle } from "../../lib/card-lifecycle";
 import { getAppLifecycle } from "../../lib/app-lifecycle";
@@ -1524,6 +1525,13 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     document.addEventListener("keydown", noteKeyboardInput, { capture: true });
     document.addEventListener("pointerdown", notePointerInput, { capture: true });
 
+    // ---- Held-modifier latch ----
+    // `data-mods` on <html>, read by the chord ring (a Shift+Return default
+    // paints dashed until Shift is actually down). Installed here because this
+    // is where the deck's key pipeline lives; the projection itself is
+    // appearance-only ([L06]) and belongs to no context.
+    const uninstallModifierLatch = installModifierLatch();
+
     document.addEventListener("keydown", focusWalkListener, { capture: true });
     document.addEventListener("keydown", arrowNavListener, { capture: true });
     document.addEventListener("keydown", captureListener, { capture: true });
@@ -1559,6 +1567,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     return () => {
       unsubscribeCardConstruction?.();
+      uninstallModifierLatch();
       document.removeEventListener("keydown", noteKeyboardInput, { capture: true });
       document.removeEventListener("pointerdown", notePointerInput, { capture: true });
       document.removeEventListener("keydown", focusWalkListener, { capture: true });

@@ -697,13 +697,80 @@ final class NativeEventHandlers {
     /// Shift, in press order. Read by `postKeyEvent` — see the note there.
     private var heldModifiers: [ModifierKey] = []
 
-    /// The `CGEventFlags` union of `heldModifiers`.
+    /// Modifiers held down by `pressModifier(persistent:)` and not yet
+    /// released — the ONE piece of native-event state that outlives a single
+    /// verb, and therefore the one piece that is static.
+    ///
+    /// `holdModifier`'s scope cannot answer "what does the UI look like while
+    /// this modifier is down": its inner verbs are buffered and shipped as one
+    /// RPC, so `evalJS` and `waitForCondition` are rejected inside it. A test
+    /// that needs to READ the held state — the chord ring's whole subject, a
+    /// default button that paints dashed until Shift goes down — needs the
+    /// press and the release to be separate round trips with arbitrary
+    /// introspection between them. That means the held set has to survive the
+    /// per-verb handler instance, and `NativeEventHandlers` is created fresh
+    /// per verb by design (see `dispatchNativeVerb`).
+    ///
+    /// Static rather than connection-scoped so an ordinary `nativeKey` /
+    /// `nativeClick` issued mid-hold still stamps the flag: the modifier is
+    /// physically down at the windowserver, and an event that failed to carry
+    /// it would be a lie the test could not see.
+    private static var persistentlyHeldModifiers: [ModifierKey] = []
+
+    /// The `CGEventFlags` union of everything currently down — this verb's own
+    /// `holdModifier` / transparent-Shift set plus any persistent hold.
     private var heldFlags: CGEventFlags {
         var flags: CGEventFlags = []
         for mod in heldModifiers {
             flags.insert(mod.eventFlag)
         }
+        for mod in Self.persistentlyHeldModifiers {
+            flags.insert(mod.eventFlag)
+        }
         return flags
+    }
+
+    /// Press `modifiers` and LEAVE them down across RPCs, so the caller can
+    /// `evalJS` against the UI while they are held. Every press must be paired
+    /// with {@link releaseHeldModifiers}; the harness client's `withModifierHeld`
+    /// pairs them in a `finally`, and `releaseAllHeldModifiers` is the backstop
+    /// at teardown. A modifier left down is not a cosmetic leak — the file's
+    /// own warning applies: a stale flag turns the next keystroke into a system
+    /// chord (emoji picker, dictation).
+    ///
+    /// Already-held modifiers are skipped rather than double-pressed, so a
+    /// repeated press is idempotent and its release still lands.
+    func pressHeldModifiers(_ modifiers: [ModifierKey]) {
+        activateSelf()
+        for mod in modifiers {
+            if Self.persistentlyHeldModifiers.contains(mod) { continue }
+            // Appended BEFORE the post so the modifier's own keyDown already
+            // carries its flag — what a real `flagsChanged` looks like.
+            Self.persistentlyHeldModifiers.append(mod)
+            postKeyEvent(keyCode: mod.keyCode, keyDown: true)
+        }
+        sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
+    }
+
+    /// Release `modifiers` from the persistent hold, in reverse press order.
+    func releaseHeldModifiers(_ modifiers: [ModifierKey]) {
+        for mod in modifiers.reversed() {
+            guard let index = Self.persistentlyHeldModifiers.lastIndex(of: mod) else {
+                continue
+            }
+            // Dropped BEFORE the post so the release itself no longer carries
+            // the flag.
+            Self.persistentlyHeldModifiers.remove(at: index)
+            postKeyEvent(keyCode: mod.keyCode, keyDown: false)
+        }
+        sleepMs(NATIVE_KEY_POST_SEQUENCE_SETTLE_MS)
+    }
+
+    /// Release every persistently-held modifier. Called at connection teardown
+    /// so a test that threw mid-hold cannot leave Shift down for whatever runs
+    /// next on this machine.
+    func releaseAllHeldModifiers() {
+        releaseHeldModifiers(Self.persistentlyHeldModifiers)
     }
 
     func nativeKey(key: String, modifiers: [ModifierKey] = []) throws {

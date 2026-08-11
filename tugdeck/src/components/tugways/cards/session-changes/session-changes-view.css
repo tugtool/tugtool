@@ -70,21 +70,3 @@
     transform: rotate(360deg);
   }
 }
-
-/* ---- Done action row ([P02]) — the lower-right dismiss button. ---- */
-
-.session-changes-actions {
-  padding: 4px 10px 10px;
-}
-
-/* Force the persistent default ring on the Done button ([P14]). It is the
-   shade's sole Return target, but the engine strips `data-default-ring` the
-   instant the keyboard lands on a button — so under a pointer-opened shade Done
-   holds the key view with no keyboard ring and reads ringless. Painting the
-   same outline the `[data-default-ring]` rule paints keeps the double-ring lit
-   under every open modality; when Done is the keyboard key view the identical
-   ring simply coincides. Suppressed while disabled. */
-.session-changes-done:not(:disabled):not([aria-disabled="true"]) {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
-  outline-offset: var(--tugx-focus-ring-offset);
-}

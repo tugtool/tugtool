@@ -291,9 +291,16 @@ html[data-app-active="false"]
   [data-tug-entry-default].tug-button-filled-action:not([data-key-view-kbd]):not([data-key-cursor]) svg {
   color: var(--tug7-element-control-icon-filled-action-rest);
 }
+/* Reads the same two ring knobs the engine path reads, so a chord default
+   (the composer's Z5: `returnKeyAction` ships as `newline`, so plain Return
+   inserts a line and SHIFT+Return submits) paints dashed here for the same
+   reason and from the same tokens — see the chord block in
+   `internal/tug-button.css` ([#chord-ring]). Unset on a plain wearer, where
+   the fallbacks give exactly the ring this rule always painted. */
 .tug-entry-shell[data-entry-keyboard]
   [data-tug-entry-default]:not(:disabled):not([aria-disabled="true"]) {
-  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline: var(--tugx-default-ring-width, var(--tugx-focus-ring-width))
+    var(--tugx-default-ring-style, solid) var(--tugx-focus-ring);
   outline-offset: var(--tugx-focus-ring-offset);
 }
 

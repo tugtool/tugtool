@@ -159,7 +159,11 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // would break it) joined as at0138 retired (its document-level ⌥⇥ probe
     // predated the window-capture keybinding stage, and the reach-and-match
     // behavior it guarded is pinned by at0345/at0159/at0397).
-    "tugdeck/src/components/tugways/focus-manager.ts": 66,
+    //
+    // 66 → 67 with at0398 (the chord ring): the invariant that at most one
+    // control may promise Return is checked from the projection commit, so an
+    // edit to the projection is the edit that would break it.
+    "tugdeck/src/components/tugways/focus-manager.ts": 67,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the
@@ -183,7 +187,10 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // consumed, so a test of that gesture has nowhere smaller to point.
     // 22 → 23 with Insert File… (at0354): the composer is the responder that
     // answers the command, which is also what gates its menu item.
-    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 23,
+    // 23 → 24 with at0398 (the chord ring): the Z5 is the button that
+    // declares `data-default-chord`, derived from the composer's own
+    // effective return action, so the declaration has nowhere smaller to live.
+    "tugdeck/src/components/tugways/tug-prompt-entry.tsx": 24,
     "tugdeck/src/card-state-orchestrator.ts": 21,
     // The host itself: the whole menu bar, the window, the app lifecycle and
     // every control frame live in this one file, so any test that reads a
