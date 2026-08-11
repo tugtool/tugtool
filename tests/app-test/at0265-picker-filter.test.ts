@@ -17,8 +17,9 @@
  *     leaves exactly the "New session" row. Fails if the picker started
  *     dropping that row under filter — which would make Open's fall-to-new
  *     behavior a lie and let the list go empty.
- *   - **ArrowDown lands on a match (C):** arrowing out of a non-empty filter
- *     field puts the cursor on a real session, not "New session". The list is
+ *   - **ArrowDown lands on a match (C):** an arrow in a non-empty filter
+ *     field drives the attached list's cursor onto a real session, not
+ *     "New session", while the caret stays put ([P08]). The list is
  *     `singleSelect` and commits as its cursor lands, so a wrong seed would
  *     silently overwrite the user's prior pick with "New session".
  *   - **Clear restores (D):** the ✕ returns the list to its pre-filter size.
@@ -56,7 +57,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
@@ -348,24 +349,32 @@ describe.skipIf(!SHOULD_RUN)("AT0265: the picker's filter field trims the sessio
           ),
         ).toBe(true);
 
-        // (C) ArrowDown hands the key view to the list and the cursor seeds onto
-        // a real session — never "New session".
+        // (C) The filter is an attached-list field ([P08]): ArrowDown drives
+        // the Sessions list's cursor FROM the caret — the caret stays in the
+        // field, so narrowing and choosing stay one gesture — and the cursor
+        // lands on a real session, never "New session".
         await pressKey(app, FILTER_INPUT, "ArrowDown");
         await app.waitForCondition<boolean>(
           `(function(){
-            var el = document.querySelector(${JSON.stringify(SESSIONS_LIST)});
-            return el !== null && el.hasAttribute("data-key-view-kbd");
-          })()`,
-          { timeoutMs: 6000 },
-        );
-        await app.waitForCondition<boolean>(
-          `(function(){
-            var cursor = document.querySelector('${SESSIONS_LIST} [data-key-cursor]');
+            var cursor = document.querySelector('${SESSIONS_LIST} [data-attached-cursor]');
             if (cursor === null) return false;
             return cursor.getAttribute('data-tug-list-cell-kind') === 'session-resume';
           })()`,
           { timeoutMs: 6000 },
         );
+        note(
+          "attached cursor after ArrowDown",
+          await app.evalJS<string>(`(function(){
+            var cursor = document.querySelector('${SESSIONS_LIST} [data-attached-cursor]');
+            return cursor === null ? "(none)" : (cursor.getAttribute('data-tug-list-cell-kind') || '');
+          })()`),
+        );
+        expect(
+          await app.evalJS<boolean>(
+            `document.activeElement === document.querySelector(${JSON.stringify(FILTER_INPUT)})`,
+          ),
+          "the caret never leaves the filter field — the arrow was the list's",
+        ).toBe(true);
 
         // (B) A fragment matching nothing empties the resume rows but keeps
         // "New session" — the list is never empty in the full picker.

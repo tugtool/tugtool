@@ -881,6 +881,9 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           // The single Escape ladder ([P02], Spec #escape-ladder). `keyViewCaptures`
           // and the synthetic-marker / tab-consume early-returns above are the
           // ladder's first rungs; the rest resolves against the top focus mode:
+          //  (2a) a parked TEXT stop on a stack with no Class A trap → the
+          //      grant ([P12]) — Escape asks for the caret, sited ahead of the
+          //      surface's dismiss so it takes a second Escape to close;
           //  (2) top mode registered `onEscapeDismiss` → the surface owns its close;
           //      call it and consume — the engine decides WHEN, the surface HOW;
           //  (4) a NON-trapped descended scope (accordion section, list row): ascend
@@ -896,7 +899,30 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
           //  base mode: nothing — falls through to the cancel ladder ([R04]).
           if (focusManager.currentFocusMode() !== BASE_FOCUS_MODE) {
             const onEscapeDismiss = focusManager.currentFocusModeOnEscapeDismiss();
-            if (onEscapeDismiss !== null) {
+            // Escape at a PARKED text stop asks for the caret, not the close
+            // — the same grant rungs (5) and (6) run, sited ahead of the
+            // surface's own dismiss so "stop steering" and "close the
+            // surface" stay two gestures ([P12] #printable-grant: "a
+            // printable character — or Escape — at a parked text stop").
+            // Without this rung, ⌥⇥ inside a typing-first dialog ringed the
+            // query field and the Escape meant to hand the caret back closed
+            // the whole surface instead. Gated to a stack with NO Class A
+            // trap: a kbf:false surface (the modal input dialog, a cycle) is
+            // where a park is the manual mode's doing and Escape's first
+            // meaning is to undo it; an auto-engaging sheet keeps its
+            // Escape-closes contract, parked stop or not. The manual bit is
+            // cleared before the grant (the printable branch's sequence) so
+            // the re-landing grants rather than re-parks; a second Escape
+            // then falls through here — no parked stop — and closes.
+            if (
+              !focusManager.hasEngagingTrap() &&
+              focusManager.hasParkedTextStop()
+            ) {
+              focusManager.setKbfManual(false);
+              focusManager.grantParkedTextStop();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            } else if (onEscapeDismiss !== null) {
               onEscapeDismiss();
               event.preventDefault();
               event.stopImmediatePropagation();

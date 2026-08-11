@@ -174,6 +174,14 @@ export interface TugComboBoxProps {
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0. */
   focusOrder?: number;
+  /**
+   * Author the menu-mode chevron into {@link focusGroup} as its own focus stop
+   * ([P02]), at this order. Omitted ⇒ the chevron stays a pointer-only
+   * affordance outside the walk — which reads as "Tab skips it", so a host
+   * that authors the field should author the chevron too. Only honored when
+   * {@link focusGroup} is also set and {@link menuMode} renders the chevron.
+   */
+  chevronFocusOrder?: number;
 }
 
 const DEBOUNCE_MS = 120;
@@ -208,6 +216,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       spellCheck = false,
       focusGroup,
       focusOrder = 0,
+      chevronFocusOrder,
     },
     forwardedRef,
   ) {
@@ -267,6 +276,19 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       order: focusOrder,
       register: focusGroup !== undefined,
       consumesTab: () => open,
+    });
+
+    // The chevron as its own stop, when the host authors it. A bare-native
+    // leaf: the engine lands the key view on the button and delivers Return /
+    // Space as a synthesized click, which the chevron's keyboard `onClick`
+    // below answers.
+    const chevronFocusableId = useId();
+    const { focusableRef: chevronFocusableRef } = useFocusable({
+      id: chevronFocusableId,
+      group: focusGroup ?? "",
+      order: chevronFocusOrder ?? 0,
+      register:
+        focusGroup !== undefined && chevronFocusOrder !== undefined && menuMode,
     });
 
     // Promote this field to the engine key view on a pointer press. The
@@ -610,6 +632,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
         />
         {menuMode && (
           <button
+            ref={chevronFocusableRef}
             type="button"
             className="tug-combo-box-chevron"
             data-slot="tug-combo-box-chevron"
@@ -621,6 +644,15 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
             // the toggle doesn't blur-close the list under itself.
             onMouseDown={(event) => {
               event.preventDefault();
+              promoteSelf();
+              toggleMenu();
+            }}
+            // Keyboard activation: with the key view on the chevron, the
+            // engine delivers Return / Space as a synthesized click (detail
+            // 0). A pointer press already ran on mousedown above and must not
+            // toggle twice, so real clicks (detail ≥ 1) are ignored here.
+            onClick={(event) => {
+              if (event.detail !== 0) return;
               promoteSelf();
               toggleMenu();
             }}

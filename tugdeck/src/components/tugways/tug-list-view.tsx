@@ -588,9 +588,11 @@ export interface TugListViewHandle {
    * KBF mode. Skips non-cursorable rows and does not wrap: an arrow at the end
    * of a list is a no-op, so the key can fall back to the caret.
    *
-   * The first call seeds onto the first cursorable row rather than moving, so
-   * ↓ into a fresh list selects the first item instead of the second. Returns
-   * whether the highlight moved.
+   * The first call seeds rather than moving — ↓ lands on the surface-supplied
+   * active row (`initialSelectedIndex`), else the list's own selection, else
+   * the first cursorable row — so ↓ into a fresh list highlights the row a
+   * commit would act on instead of the second row. Returns whether the
+   * highlight moved.
    */
   attachedCursorMove(direction: "up" | "down"): boolean;
 
@@ -4809,15 +4811,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       (direction: "up" | "down"): boolean => {
         const dir = direction === "down" ? 1 : -1;
         const from = attachedCursorIndexRef.current;
-        // A fresh attached cursor SEEDS rather than steps: ↓ into a list that
-        // has no highlight yet must land on the first row, not the second.
-        const next =
-          from === -1
-            ? cursorableNear(
-                dir === 1 ? 0 : dataSourceRef.current.numberOfItems() - 1,
-                dir,
-              )
-            : stepCursorableRow(from, dir);
+        // A fresh attached cursor SEEDS rather than steps, and a ↓ seed runs
+        // the same preference ladder the movement cursor's key-view seed does:
+        // the surface-supplied active row (`initialSelectedIndex`), then the
+        // list's own selection, then the first cursorable row. The picker is
+        // why the ladder matters here too — arrowing out of a non-empty filter
+        // must highlight the first MATCH, not whatever row happens to render
+        // first ("New session").
+        let next: number;
+        if (from === -1) {
+          if (dir === 1) {
+            const preferred = isCursorableRow(
+              initialSelectedIndexRef.current ?? -1,
+            )
+              ? (initialSelectedIndexRef.current as number)
+              : (selectedIndexRef.current ?? -1);
+            next = isCursorableRow(preferred)
+              ? preferred
+              : cursorableNear(0, 1);
+          } else {
+            next = cursorableNear(
+              dataSourceRef.current.numberOfItems() - 1,
+              -1,
+            );
+          }
+        } else {
+          next = stepCursorableRow(from, dir);
+        }
         if (next < 0 || next === from) return false;
         attachedCursorIndexRef.current = next;
         projectAttachedCursor();
@@ -4827,6 +4847,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       [
         cursorableNear,
         stepCursorableRow,
+        isCursorableRow,
         projectAttachedCursor,
         scrollIndexIntoView,
       ],

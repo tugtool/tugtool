@@ -22,9 +22,14 @@
  *    and never leave the field, *regardless of whether the query is empty* —
  *    which is the whole point, since emptiness is what the old rule keyed on.
  *
- * Test 2 walks the dialog's Tab order: query field (0) → the scope chooser's
- * path field (1) → Browse… (2). What it pins is that the walk reaches the third
- * stop at all — it did not, until the fix in test 3's note below.
+ * Test 2 walks the dialog's Tab order: query field (0) → Browse… (1) → the
+ * scope chooser's path field (2) → the chevron (3) — the scope row's stops in
+ * reading order, which the linear order must match because it doubles as the
+ * arrow order (the liveliness net walks it). What it pins is that the walk
+ * reaches every stop at all — the chevron had no stop, and the walk did not
+ * reach past the chooser, until the fixes in test 3's note below. Return on
+ * the chevron opens the seed menu (the engine delivers it as a synthesized
+ * click), which is the keyboard door to the dropdown.
  *
  * It does **not** pin the re-scope guard, and the probe is what settled that.
  * `TugComboBox` settles on blur, so the plan expected this Tab to settle the
@@ -70,12 +75,17 @@ const ROWS =
 const OVERLAY_ROOT = '[data-slot="tug-canvas-overlay-root"]';
 const SCOPE_FIELD = `${PANEL} input.tug-file-chooser-input`;
 const BROWSE = `${PANEL} [data-slot="tug-file-chooser-browse"]`;
+const CHEVRON = `${PANEL} [data-slot="tug-combo-box-chevron"]`;
+const CHOOSER_MENU = '[data-slot="tug-modal-input-dialog-chooser-overlay"]';
 
 /** The ring is on the scope chooser's path field. */
 const SCOPE_RINGED = `document.querySelector(${JSON.stringify(SCOPE_FIELD)})?.hasAttribute("data-key-view-kbd") === true`;
 
 /** The ring is on the Browse… button. */
 const BROWSE_RINGED = `document.querySelector(${JSON.stringify(BROWSE)})?.hasAttribute("data-key-view-kbd") === true`;
+
+/** The ring is on the combo box's chevron. */
+const CHEVRON_RINGED = `document.querySelector(${JSON.stringify(CHEVRON)})?.hasAttribute("data-key-view-kbd") === true`;
 
 /** The ring is on the query field. */
 const FIELD_RINGED = `document.querySelector(${JSON.stringify(INPUT)})?.hasAttribute("data-key-view-kbd") === true`;
@@ -238,10 +248,10 @@ describe.skipIf(!SHOULD_RUN)(
             `document.querySelector(${JSON.stringify(SCOPE_FIELD)}).value`,
           );
 
-          // Tab engages the mode and steps to the chooser's path field. It is a
-          // text stop reached by MOVEMENT, so it parks: ringed, no caret.
+          // Tab engages the mode and steps to the scope row's first stop in
+          // reading order — the Browse… folder button.
           await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(SCOPE_RINGED, { timeoutMs: 6000 });
+          await app.waitForCondition<boolean>(BROWSE_RINGED, { timeoutMs: 6000 });
           expect(
             await app.evalJS<boolean>(
               `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
@@ -253,14 +263,20 @@ describe.skipIf(!SHOULD_RUN)(
             "the caret left the query field",
           ).toBe(false);
 
-          // Tab again lands on Browse…. This is the assertion the changed-only
-          // re-scope guard exists for: the chooser settles on blur, and a
-          // re-scope fired from that settle would re-seed the key view onto the
-          // query field, so the walk would appear to skip Browse… entirely.
+          // Tab again parks the chooser's path field — a text stop reached by
+          // MOVEMENT: ringed, no caret.
           await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(BROWSE_RINGED, { timeoutMs: 6000 });
+          await app.waitForCondition<boolean>(SCOPE_RINGED, { timeoutMs: 6000 });
+
+          // Tab once more lands on the chevron. This is the assertion the
+          // changed-only re-scope guard exists for: the chooser settles on
+          // blur, and a re-scope fired from that settle would re-seed the key
+          // view onto the query field, so the walk would appear to skip the
+          // chevron entirely.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(CHEVRON_RINGED, { timeoutMs: 6000 });
           note(
-            "after two Tabs",
+            "after three Tabs",
             await app.evalJS<string>(
               `JSON.stringify({ ringed: Array.from(document.querySelectorAll("[data-key-view-kbd]")).map(function(e){ return e.getAttribute("data-slot") || e.className || e.tagName; }) })`,
             ),
@@ -277,10 +293,40 @@ describe.skipIf(!SHOULD_RUN)(
             "a Tab through the chooser leaves the scope exactly as it was",
           ).toBe(scopeBefore);
 
-          // ⇧Tab comes back to the chooser field, so the walk carries both
-          // directions.
+          // Return on the chevron opens the seed menu — the engine delivers
+          // Return to a leaf as a synthesized click, and the chevron's
+          // keyboard click path is the same toggle the pointer uses.
+          await app.nativeKey("Return");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CHOOSER_MENU)}) !== null`,
+            { timeoutMs: 6000 },
+          );
+          // Escape closes only the menu — the dialog survives.
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CHOOSER_MENU)}) === null`,
+            { timeoutMs: 6000 },
+          );
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
+            ),
+            "Escape on the open menu closes the menu, not the dialog",
+          ).toBe(true);
+
+          // Opening the menu moved the caret into the chooser field (that is
+          // the chevron's contract: the list is driven from the field). ⇧Tab
+          // from there walks BACK to Browse…, so the walk carries both
+          // directions — and the blur this causes settles the unchanged path,
+          // which the re-scope guard must swallow.
           await app.nativeKey("Tab", ["shift"]);
-          await app.waitForCondition<boolean>(SCOPE_RINGED, { timeoutMs: 6000 });
+          await app.waitForCondition<boolean>(BROWSE_RINGED, { timeoutMs: 6000 });
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(SCOPE_FIELD)}).value`,
+            ),
+            "the settle fired by leaving the field re-scoped nothing",
+          ).toBe(scopeBefore);
         } finally {
           await app.close();
         }
@@ -362,14 +408,64 @@ describe.skipIf(!SHOULD_RUN)(
             ),
           );
 
-          // ⌥⇥ engages the mode. No ring paints yet, and that is doctrine, not
-          // a gap: the caret is live (the dialog seeded it), and a caret and a
-          // ring are mutually exclusive — `kbfPainting()` stands the marks down
-          // while the route is `dom-granted` and brings them back at the next
-          // park. What must be true here is the engagement and the target.
+          // ⌥⇥ engages the mode AND parks the stop the caret is on —
+          // `toggleKbfManual` lands the gesture as a movement arrival, so the
+          // ring appears on the query field with the press and the caret goes
+          // away. Without the park the bit went up with nothing painted (a
+          // caret and a ring are mutually exclusive) and the still-granted
+          // route forced every subsequent ⌥⇥ back to true: an engagement that
+          // showed nothing and could never be turned off.
           await app.nativeKey("Tab", ["alt"]);
           await app.waitForCondition<boolean>(
             `window.__tug.kbfEngaged() === true && window.__tug.kbfManual() === true`,
+            { timeoutMs: 6000 },
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(PANEL)} + " [data-key-view-kbd]").length > 0`,
+            { timeoutMs: 6000 },
+          );
+          expect(
+            await app.evalJS<boolean>(CARET_IN_FIELD),
+            "⌥⇥ parks the granted stop — ring up, caret gone",
+          ).toBe(false);
+          // The ring is PAINTED, not merely attributed: the dialog's CSS strips
+          // TugInput's chrome from the query field, and the strip once took the
+          // global leaf ring down with it — attribute present, zero-width
+          // outline, nothing on screen.
+          const ringPaint = await app.evalJS<{ style: string; width: number }>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(INPUT)});
+              var cs = getComputedStyle(el);
+              return { style: cs.outlineStyle, width: parseFloat(cs.outlineWidth) };
+            })()`,
+          );
+          note("ring paint on the query field", JSON.stringify(ringPaint));
+          expect(ringPaint.style, "the parked query field paints a real outline").toBe("solid");
+          expect(ringPaint.width, "the ring has visible width").toBeGreaterThan(0);
+
+          // Escape at the parked stop asks for the caret, NOT the close —
+          // "stop steering" and "close the surface" are two gestures. The
+          // grant clears the manual bit, so the mode's marks stand down and
+          // the caret blinks in the query field with the dialog still up.
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(CARET_IN_FIELD, {
+            timeoutMs: 6000,
+          });
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
+            ),
+            "Escape at a parked stop cancels the mode, never the dialog",
+          ).toBe(true);
+          await app.waitForCondition<boolean>(
+            `window.__tug.kbfManual() === false`,
+            { timeoutMs: 6000 },
+          );
+
+          // Re-engage for the walk below.
+          await app.nativeKey("Tab", ["alt"]);
+          await app.waitForCondition<boolean>(
+            `window.__tug.kbfManual() === true && ${CARET_IN_FIELD} === false`,
             { timeoutMs: 6000 },
           );
           note(
@@ -391,16 +487,17 @@ describe.skipIf(!SHOULD_RUN)(
             "⌥⇥ must not dismiss the dialog — the card behind it never gets the gesture",
           ).toBe(true);
 
-          // The next Tab parks, so the ring comes up — and this is where the
-          // target is proved. The engagement is deck-global, so the card behind
-          // is free to answer it by pushing its own focus cycle ON TOP of the
-          // dialog's trap; when it did, the walk serviced a mode whose stops
-          // all sit behind the modal overlay (`pointer-events: none`), the walk
-          // order came back empty, and Tab moved nothing at all. So: the ring
-          // lands inside the dialog, and nothing rings on the card.
+          // Tab moves the ring to the next stop, still inside the panel — and
+          // this is where the target is proved. The engagement is deck-global,
+          // so the card behind is free to answer it by pushing its own focus
+          // cycle ON TOP of the dialog's trap; when it did, the walk serviced
+          // a mode whose stops all sit behind the modal overlay
+          // (`pointer-events: none`), the walk order came back empty, and Tab
+          // moved nothing at all. So: the ring lands inside the dialog, and
+          // nothing rings on the card.
           await app.nativeKey("Tab");
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(PANEL)} + " [data-key-view-kbd]").length > 0`,
+            `document.querySelectorAll(${JSON.stringify(PANEL)} + " [data-key-view-kbd]").length > 0 && ${FIELD_RINGED} === false`,
             { timeoutMs: 6000 },
           );
           expect(

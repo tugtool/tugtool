@@ -1280,6 +1280,19 @@ export class FocusContext {
   }
 
   /**
+   * Park the current key view as a MOVEMENT arrival — ringed, caret gone. The
+   * public door for an engagement gesture that must land visibly on a stop the
+   * keyboard is already at: ⌥⇥ over a live caret sets the manual bit, and
+   * without this the route stays granted, the paint stands down, and the
+   * gesture reads as a dead key ([P09] promises "return to the ring", which
+   * requires a ring). The park also moves the route to `engine-routed`, which
+   * is what lets the second ⌥⇥ read as a toggle-off.
+   */
+  parkAtKeyView(): boolean {
+    return this.landAfterMovement();
+  }
+
+  /**
    * Grant the caret at a parked text stop and re-land the keyboard — the
    * transition Return-descend and the printable-character branch both run
    * ([P12], #printable-grant).
@@ -4079,17 +4092,30 @@ export class FocusManager {
    * can seed a ring when it turned on.
    *
    * Not a blind flip. A **live caret** — the keyboard really granted to a text
-   * surface, which is what `dom-granted` means — makes ⌥⇥ a request to return
-   * to the ring, never to turn the mode off ([P09]). That is the same gesture
-   * whether the mode is off (a session card at rest, where it enters the cycle)
-   * or already forced on by a surface (a typing descend inside a sheet, where
-   * the mode cannot go off anyway and a flip would only clear a bit with no
-   * visible effect). With the ring already live, the flip is the ordinary one.
+   * surface (`dom-granted`), or a bare native control holding real focus under
+   * the engine route ({@link FocusContext.hasLiveNativeGrant}) — makes ⌥⇥ a
+   * request to return to the ring, never to turn the mode off ([P09]). That is
+   * the same gesture whether the mode is off (a session card at rest, where it
+   * enters the cycle) or already forced on by a surface (a typing descend
+   * inside a sheet). With the ring already live, the flip is the ordinary one.
+   *
+   * "Return to the ring" is honored literally: the stop the caret is on is
+   * PARKED ({@link FocusContext.parkAtKeyView}), so the ring appears where the
+   * keyboard is and the route moves to `engine-routed` — without which the
+   * paint stands down (a caret and a ring never coexist), the gesture shows
+   * nothing, and the still-granted route forces every subsequent ⌥⇥ back to
+   * `true`: a bit that can never turn off wearing a ring that never appears.
+   * A card cycle's `enterModeAtKeyView` runs the same landing; this is the
+   * same rule for the modes that have no cycle to enter — a trapped dialog,
+   * or a Class-B card at the base mode.
    */
   toggleKbfManual(): boolean {
-    const next =
-      this.keyboardRoute() === "dom-granted" ? true : !this.kbfManuallyEngaged;
+    const ctx = this.activeContext();
+    const caretLive =
+      this.keyboardRoute() === "dom-granted" || ctx.hasLiveNativeGrant();
+    const next = caretLive ? true : !this.kbfManuallyEngaged;
     this.setKbfManual(next);
+    if (next && caretLive) ctx.parkAtKeyView();
     return next;
   }
 
@@ -4286,6 +4312,10 @@ export class FocusManager {
   /** Grant the caret at a parked text stop and re-land the keyboard ([P12]). */
   grantParkedTextStop(): boolean {
     return this.activeContext().grantParkedTextStop();
+  }
+  /** Whether a Class A (auto-engaging) trap is on the active context's stack. */
+  hasEngagingTrap(): boolean {
+    return this.activeContext().hasEngagingTrap();
   }
   pushFocusMode(
     scopeId: string,

@@ -104,10 +104,17 @@ const EMPTY_PROVIDER = ((_q: string) => []) as CompletionProvider;
  */
 const MAX_ROOT_CANDIDATES = 7;
 
-/** The chooser's stop in the dialog's Tab walk (the input is order 0). */
-const SCOPE_FIELD_ORDER = 1;
-/** The chooser's Browse… button, the stop after it. */
-const SCOPE_BROWSE_ORDER = 2;
+/**
+ * The scope row's stops in the dialog's Tab walk (the query field is order 0),
+ * authored in READING order — folder button, path field, chevron, left to
+ * right as drawn. The linear order doubles as the arrow order (the liveliness
+ * net walks it when no spatial plane is declared), so an order that disagrees
+ * with the geometry turns Right on the folder button into a jump somewhere
+ * else entirely.
+ */
+const SCOPE_BROWSE_ORDER = 1;
+const SCOPE_FIELD_ORDER = 2;
+const SCOPE_CHEVRON_ORDER = 3;
 
 /**
  * The explicit default-project-path setting out of its tugbank entry, or `""`
@@ -269,6 +276,7 @@ function OpenQuicklyScopeRow({
       focusGroup={MODAL_INPUT_DIALOG_FOCUS_GROUP}
       focusOrder={SCOPE_FIELD_ORDER}
       browseFocusOrder={SCOPE_BROWSE_ORDER}
+      chevronFocusOrder={SCOPE_CHEVRON_ORDER}
       portalContainer={panel}
       overlaySlot="tug-modal-input-dialog-chooser-overlay"
     />

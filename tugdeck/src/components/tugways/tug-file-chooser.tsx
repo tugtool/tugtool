@@ -99,6 +99,12 @@ export interface TugFileChooserProps {
    */
   browseFocusOrder?: number;
   /**
+   * Author the menu-mode chevron into {@link focusGroup} at this order —
+   * forwarded to {@link TugComboBoxProps.chevronFocusOrder}. Only honored when
+   * {@link focusGroup} and {@link menuMode} are also set.
+   */
+  chevronFocusOrder?: number;
+  /**
    * `data-slot` on the completion dropdown, for a host that styles or selects
    * it. Defaults to `"tug-file-chooser-overlay"`.
    */
@@ -159,6 +165,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       focusGroup,
       focusOrder = 0,
       browseFocusOrder,
+      chevronFocusOrder,
       overlaySlot = "tug-file-chooser-overlay",
       portalContainer,
     },
@@ -247,6 +254,7 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
         portalContainer={portalContainer}
         focusGroup={focusGroup}
         focusOrder={focusOrder}
+        chevronFocusOrder={chevronFocusOrder}
       />
     );
   },

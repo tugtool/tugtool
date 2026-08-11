@@ -75,6 +75,13 @@ body {
   overflow: hidden;
 }
 
+/* The exit fade is in flight — the surface has answered, so nothing inside it
+   takes another press. The attribute is set by the close path (TugAnimator
+   runs the fade itself; this only retires the pointer). */
+.tug-modal-input-dialog[data-closing] {
+  pointer-events: none;
+}
+
 /* The accessible name Radix requires on every dialog content. The placeholder
    already says what the surface is for on screen, so the title carries the same
    words for assistive technology and takes no space. */
@@ -90,12 +97,18 @@ body {
   border: 0;
 }
 
-/* ---- Header slot — a caller's row above the field ---- */
+/* ---- Header slot — a caller's row above the field ----
+ *
+ * The rule below it is the seam between the header's controls and the query
+ * field, the same seam the list draws under the field — three bands, two
+ * rules, one surface.
+ */
 .tug-modal-input-dialog-header {
   display: flex;
   align-items: center;
   gap: var(--tug-space-md);
-  padding: var(--tug-space-md) var(--tug-space-xl) 0;
+  padding: var(--tug-space-md) var(--tug-space-xl);
+  border-bottom: 1px solid var(--tugx-modal-input-border);
 }
 
 /* The header's control takes the full width of the row — it is a peer of the
@@ -155,6 +168,36 @@ body {
 .tug-modal-input-dialog input.tug-modal-input-dialog-input::placeholder {
   /* @tug-renders-on: --tugx-modal-input-bg */
   color: var(--tugx-modal-input-placeholder);
+}
+
+/* The parked ring survives the chrome strip. The strip above flattens every
+   TugInput state — including `[data-key-view-kbd]` — to the bare search line,
+   which took the global leaf ring (`focus-ring.css`) and TugInput's own focus
+   wash down with the box chrome, so ⌥⇥ parked the field and painted nothing.
+   Restated here, after the strip and with a hover variant that outweighs the
+   strip's `:not()` chain, so the ring and wash win in every state the strip
+   names. */
+.tug-modal-input-dialog input.tug-modal-input-dialog-input[data-key-view-kbd],
+.tug-modal-input-dialog
+  input.tug-modal-input-dialog-input[data-key-view-kbd]:hover:not(:disabled):not(:read-only) {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: var(--tugx-focus-ring-offset);
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--tugx-focus-wash) 12%, transparent),
+    color-mix(in srgb, var(--tugx-focus-wash) 12%, transparent)
+  );
+}
+
+/* A backgrounded window carries no focus affordance — the same stand-down the
+   global ring and TugInput's wash observe under `[data-app-active="false"]`. */
+[data-app-active="false"]
+  .tug-modal-input-dialog
+  input.tug-modal-input-dialog-input[data-key-view-kbd],
+[data-app-active="false"]
+  .tug-modal-input-dialog
+  input.tug-modal-input-dialog-input[data-key-view-kbd]:hover:not(:disabled):not(:read-only) {
+  outline: none;
+  background-image: none;
 }
 
 /* ---- Result list ---- */

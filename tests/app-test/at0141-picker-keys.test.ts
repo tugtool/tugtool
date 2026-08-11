@@ -69,6 +69,7 @@ const PATH = '[data-tug-focus-key="session-picker-cycle:0"]';
 // fractional order so it slots before PATH while the stops below keep their
 // stable keys.
 const BROWSE = '[data-tug-focus-key="session-picker-cycle:-0.5"]';
+const CHEVRON = '[data-tug-focus-key="session-picker-cycle:0.5"]';
 const FILTER = '[data-tug-focus-key="session-picker-cycle:1"]';
 const SESSIONS = '[data-tug-focus-key="session-picker-cycle:2"]';
 const OPEN = '[data-tug-focus-key="session-picker-cycle:5"]';
@@ -244,10 +245,12 @@ describe.skipIf(!SHOULD_RUN)("AT0141: the session picker is a persistent keyboar
         ).toBe(false);
 
         // (C) The dropdown is closed, so the path field does NOT own Tab: Tab
-        // leaves it — first for the Sessions filter field (order 1), then the
-        // list. The Browse button LEADS the field now, so nothing else sits
-        // between them (and there is NO Recents stop). If the tab-consume marker
-        // were stuck on, the key view would stay on the field.
+        // leaves it — first for the combo box's chevron (order 0.5, the
+        // keyboard door to the recents dropdown), then the Sessions filter
+        // field (order 1), then the list. If the tab-consume marker were stuck
+        // on, the key view would stay on the field.
+        await pressKey(app, "Tab");
+        await app.waitForCondition<boolean>(hasKeyView(CHEVRON), { timeoutMs: 6000 });
         await pressKey(app, "Tab");
         await app.waitForCondition<boolean>(hasKeyView(FILTER), { timeoutMs: 6000 });
         await pressKey(app, "Tab");

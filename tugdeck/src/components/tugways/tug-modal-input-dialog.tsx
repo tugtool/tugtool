@@ -18,6 +18,12 @@
  * and the caller's own commit. There is no blur-dismissal and no dismiss guard:
  * focus cannot wander out of a jail, so there is nothing to approximate.
  *
+ * Every close path fades out before the consumer's callback unmounts the
+ * dialog (TugAnimator, [L13]) and the mount fades in — so the surface never
+ * pops. The fade is opacity-only: a transform keyframe would make the panel a
+ * containing block for the chooser dropdown portalled into it (see the CSS
+ * header comment), exactly while it might be open.
+ *
  * ## Typing-first
  *
  * The trap passes `kbf: false` — the typing-first carve-out in
@@ -73,6 +79,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import "./tug-modal-input-dialog.css";
 
 import { TugInput } from "./tug-input";
+import { group } from "./tug-animator";
 import { ATTACHED_LIST_ATTRIBUTE } from "./focus-manager";
 import { isCancelChordEvent } from "./keymap-registry";
 import { TUG_ACTIONS } from "./action-vocabulary";
@@ -200,6 +207,16 @@ function renderEmpty(
   );
 }
 
+/**
+ * Enter / exit fade, run by TugAnimator ([L13]) — never a CSS transition
+ * gated on unmount, which would need presence state in every consumer.
+ * Opacity ONLY: a transform keyframe would make the panel a containing block
+ * for `position: fixed` descendants for the animation's duration, and the
+ * chooser's portalled dropdown is exactly such a descendant — an exit can
+ * begin while it is open.
+ */
+const MODAL_INPUT_FADE_DURATION = "--tug-motion-duration-fast";
+
 export function TugModalInputDialog({
   placeholder = "Search",
   provider,
@@ -211,6 +228,8 @@ export function TugModalInputDialog({
 }: TugModalInputDialogProps): React.ReactElement {
   const overlayRoot = useCanvasOverlay();
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
   const responderId = useId();
   // The panel is a chain responder for Cancel, because ⌘. does not arrive as a
   // bubbling keydown: it is a capture-phase global binding dispatched to the
@@ -219,13 +238,54 @@ export function TugModalInputDialog({
   // reaches this panel and stops. Without the registration ⌘. is swallowed by
   // the binding and answered by nobody. The `onKeyDown` stays as the path for
   // a stop inside the dialog that is not itself a responder.
+  // ---- Enter / exit fade ----
+  //
+  // Every close path funnels through `closeWith`: it fades the panel and
+  // overlay out, THEN invokes the caller's callback — which is what unmounts
+  // the dialog, so the DOM is still there for the fade and no consumer has to
+  // hold presence state. `finished` resolves (or rejects) whether or not the
+  // animation ran — reduced motion and a background window both settle it —
+  // and the callback runs either way, so a close can never hang on motion
+  // (the TugSheet exit's contract). The guard makes a second close gesture
+  // during the fade a no-op rather than a double-fire.
+  const closingRef = useRef(false);
+  const closeWith = useCallback((finish: () => void) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const panelEl = panelRef.current;
+    if (panelEl === null) {
+      finish();
+      return;
+    }
+    // The surface has answered; nothing inside it may take another press
+    // mid-fade ([L06] — a DOM attribute, styled in the CSS).
+    panelEl.setAttribute("data-closing", "");
+    const g = group({ duration: MODAL_INPUT_FADE_DURATION });
+    g.animate(panelEl, [{ opacity: 1 }, { opacity: 0 }], {
+      key: "modal-input-panel",
+      easing: "ease-in",
+    });
+    if (overlayRef.current !== null) {
+      g.animate(overlayRef.current, [{ opacity: 1 }, { opacity: 0 }], {
+        key: "modal-input-overlay",
+        easing: "ease-in",
+      });
+    }
+    g.finished.then(finish).catch(finish);
+  }, []);
+  const requestDismiss = useCallback(
+    () => closeWith(onDismiss),
+    [closeWith, onDismiss],
+  );
+
   const { responderRef } = useOptionalResponder({
     id: responderId,
-    actions: { [TUG_ACTIONS.CANCEL_DIALOG]: () => onDismiss() },
+    actions: { [TUG_ACTIONS.CANCEL_DIALOG]: () => requestDismiss() },
   });
   const setPanelRef = useCallback(
     (el: HTMLDivElement | null) => {
       setPanel(el);
+      panelRef.current = el;
       (responderRef as (node: HTMLDivElement | null) => void)(el);
     },
     [responderRef],
@@ -265,7 +325,7 @@ export function TugModalInputDialog({
   const { FocusModeScope, onCloseAutoFocus } = useFocusTrap({
     active: true,
     deferDomFocusToTeardown: true,
-    onEscapeDismiss: onDismiss,
+    onEscapeDismiss: requestDismiss,
     kbf: false,
   });
 
@@ -302,6 +362,24 @@ export function TugModalInputDialog({
     `${MODAL_INPUT_DIALOG_FOCUS_GROUP}:${MODAL_INPUT_DIALOG_FIELD_ORDER}`,
   );
 
+  // Fade in on mount — panel and overlay together, before first paint
+  // ([L03] layout effect), so the surface never flashes at full opacity for
+  // a frame and then restarts from transparent.
+  useLayoutEffect(() => {
+    if (panel === null) return;
+    const g = group({ duration: MODAL_INPUT_FADE_DURATION });
+    g.animate(panel, [{ opacity: 0 }, { opacity: 1 }], {
+      key: "modal-input-panel",
+      easing: "ease-out",
+    });
+    if (overlayRef.current !== null) {
+      g.animate(overlayRef.current, [{ opacity: 0 }, { opacity: 1 }], {
+        key: "modal-input-overlay",
+        easing: "ease-out",
+      });
+    }
+  }, [panel]);
+
   // Keep the highlighted row in view as the selection moves.
   useLayoutEffect(() => {
     if (panel === null) return;
@@ -309,11 +387,14 @@ export function TugModalInputDialog({
     row?.scrollIntoView({ block: "nearest" });
   }, [selected, panel]);
 
+  // The commit rides the same fade as a dismissal: the caller's `onCommit`
+  // is what closes the dialog, so it runs at the fade's end — a beat of
+  // `--tug-motion-duration-fast`, not a pause the user can feel.
   const commit = useCallback(
     (item: CompletionItem | undefined) => {
-      if (item !== undefined) onCommit(item);
+      if (item !== undefined) closeWith(() => onCommit(item));
     },
-    [onCommit],
+    [closeWith, onCommit],
   );
 
   const onKeyDown = useCallback(
@@ -335,13 +416,13 @@ export function TugModalInputDialog({
           break;
         case "Escape":
           e.preventDefault();
-          onDismiss();
+          requestDismiss();
           break;
         default:
           break;
       }
     },
-    [items, selected, commit, onDismiss],
+    [items, selected, commit, requestDismiss],
   );
 
   return (
@@ -350,12 +431,13 @@ export function TugModalInputDialog({
       onOpenChange={(next) => {
         // Radix's own dismissal paths (an outside interaction we did not
         // prevent) land here. Escape is prevented below — the engine's ladder
-        // owns it — and ⌘. calls `onDismiss` directly.
-        if (!next) onDismiss();
+        // owns it — and ⌘. runs the same fade-then-dismiss directly.
+        if (!next) requestDismiss();
       }}
     >
       <Dialog.Portal container={overlayRoot}>
         <Dialog.Overlay
+          ref={overlayRef}
           className="tug-modal-input-dialog-overlay"
           data-slot="tug-modal-input-dialog-overlay"
         />
@@ -395,7 +477,7 @@ export function TugModalInputDialog({
             // ⌘. dismisses (macOS convention).
             if (isCancelChordEvent(e)) {
               e.preventDefault();
-              onDismiss();
+              requestDismiss();
             }
           }}
         >

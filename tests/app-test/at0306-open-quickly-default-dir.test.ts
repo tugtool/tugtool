@@ -42,7 +42,7 @@
  *   load-bearing. `TugComboBox` settles on blur, so leaving the chooser settles
  *   the path it holds; without the guard that settle re-scopes to the same
  *   place under its canonical name and re-seeds the key view, and the Tab walk
- *   appears to skip Browse…. It has to be driven with the MOUSE, because only a
+ *   appears to skip the chevron after it. It has to be driven with the MOUSE, because only a
  *   pointer grants the field real DOM focus — a keyboard walk parks it, and a
  *   parked field never blurs (at0396 test 2's docblock records that probe).
  *
@@ -485,10 +485,16 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 8000 },
           );
 
-          // Tab advances the walk to the scope row's path field, parked.
+          // Tab advances the walk through the scope row in reading order:
+          // Browse… first, then the path field, parked.
           await app.nativeKey("Tab");
           await app.waitForCondition<boolean>(
             `${RING} === "tug-modal-input-dialog:1"`,
+            { timeoutMs: 8000 },
+          );
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `${RING} === "tug-modal-input-dialog:2"`,
             { timeoutMs: 8000 },
           );
           expect(
@@ -568,7 +574,8 @@ describe.skipIf(!SHOULD_RUN)(
         // workspace to the same directory under its canonical name (every temp
         // dir on macOS is reached through a symlink, so the spelling in the
         // field is never the canonical one) and re-seed the key view onto the
-        // query field. The Tab walk would then appear to skip Browse… entirely.
+        // query field. The Tab walk would then appear to skip the chevron
+        // after the field entirely.
         //
         // The MOUSE is what makes this reachable: only a pointer grants the
         // chooser real DOM focus. A keyboard walk parks the stop instead, and a
@@ -630,14 +637,14 @@ describe.skipIf(!SHOULD_RUN)(
           // pointless re-scope.
           await app.nativeKey("Tab");
           await app.waitForCondition<boolean>(
-            `${RING} === "tug-modal-input-dialog:2"`,
+            `${RING} === "tug-modal-input-dialog:3"`,
             { timeoutMs: 8000 },
           );
           note(
             `after Tab off the chooser: ring=${await app.evalJS<string>(RING)}`,
           );
 
-          // The walk landed on Browse… rather than bouncing back to the query
+          // The walk landed on the chevron rather than bouncing back to the query
           // field, and the scope is exactly what it was.
           expect(
             await app.evalJS<boolean>(
@@ -712,9 +719,8 @@ describe.skipIf(!SHOULD_RUN)(
               { timeoutMs: 8000 },
             );
             await app.nativeKey("Tab");
-            await app.nativeKey("Tab");
             await app.waitForCondition<boolean>(
-              `${RING} === "tug-modal-input-dialog:2"`,
+              `${RING} === "tug-modal-input-dialog:1"`,
               { timeoutMs: 8000 },
             );
           };

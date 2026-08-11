@@ -110,8 +110,9 @@ function ChooserHeader({
       seed={seed}
       aria-label="Search directory"
       focusGroup={MODAL_INPUT_DIALOG_FOCUS_GROUP}
-      focusOrder={1}
-      browseFocusOrder={2}
+      focusOrder={2}
+      browseFocusOrder={1}
+      chevronFocusOrder={3}
       portalContainer={panel}
       overlaySlot="tug-modal-input-dialog-chooser-overlay"
     />
