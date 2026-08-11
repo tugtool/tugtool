@@ -1833,8 +1833,15 @@ body {
    does not fire me; this chord does" — never engine-owned, so it composes with
    the engine's `data-default-ring` without touching the projection. Dashed says
    the promise is conditional; the condition is the modifier, and while that
-   modifier is held (`data-mods` on <html>) a Return really would fire this
-   button, so the ring goes solid for exactly that long.
+   modifier is held ALONE (`data-mods` on <html>) a Return really would fire
+   this button, so the ring goes solid for exactly that long.
+
+   The held-set match is `=`, not `~=`. Shift+Return is an EXCLUSIVE chord —
+   Cmd+Shift+Return and Opt+Shift+Return submit nothing (the editor's Enter
+   handler disqualifies every other modifier combination) — so a `~=` membership
+   test, which matches every superset of the held set, would light the ring
+   solid on a keystroke that does nothing. `data-mods` lists the whole held set
+   in a fixed order (`modifier-latch.ts`) precisely so this read is exact.
 
    Expressed as the two KNOBS the ring rules read, not as `outline-*`
    longhands. A longhand override here would out-specify the rules that
@@ -1854,7 +1861,7 @@ body {
   --tugx-default-ring-style: var(--tugx-focus-ring-chord-style);
   --tugx-default-ring-width: var(--tugx-focus-ring-chord-width);
 }
-html[data-mods~="shift"] [data-default-chord="shift"] {
+html[data-mods="shift"] [data-default-chord="shift"] {
   --tugx-default-ring-style: solid;
   --tugx-default-ring-width: var(--tugx-focus-ring-width);
 }

@@ -1220,6 +1220,24 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
                 ? manager.peekDefaultButtonInScope(activePane)
                 : manager.peekDefaultButton();
           }
+          // A button that declares a chord ([#chord-ring]) is fired by that
+          // chord and by nothing else — the declaration is what the dashed ring
+          // states, so honoring it here is what keeps the ring's promise true
+          // at the activation site as well as in the paint. The match is
+          // EXCLUSIVE, the same rule `chordMatchesEvent` applies to every other
+          // binding: Shift+Return fires a `shift` wearer, plain Return and
+          // Cmd+Shift+Return do not. A button declaring no chord keeps the
+          // plain-Return contract it always had.
+          if (defaultButton !== null) {
+            const declaredChord = defaultButton.getAttribute("data-default-chord");
+            const wantsShift = declaredChord === "shift";
+            const modifiersMatch =
+              event.shiftKey === wantsShift &&
+              !event.metaKey &&
+              !event.ctrlKey &&
+              !event.altKey;
+            if (!modifiersMatch) defaultButton = null;
+          }
           if (defaultButton !== null) {
             // Press visual ([L06] — appearance via DOM). The button's
             // CSS variants treat `[data-pressing="true"]` the same as
@@ -1537,7 +1555,7 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
 
     // ---- Held-modifier latch ----
     // `data-mods` on <html>, read by the chord ring (a Shift+Return default
-    // paints dashed until Shift is actually down). Installed here because this
+    // paints dashed until Shift is actually down, alone). Installed here because this
     // is where the deck's key pipeline lives; the projection itself is
     // appearance-only ([L06]) and belongs to no context.
     const uninstallModifierLatch = installModifierLatch();

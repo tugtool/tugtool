@@ -103,7 +103,8 @@
      default button that plain Return does NOT fire (its activation is a chord,
      today only Shift+Return) wears the same double ring in this style instead
      of `solid`, and reverts to `solid` for exactly as long as the chord's
-     modifier is held (`data-mods` — see `modifier-latch.ts`). Every wearer on
+     modifier is held ALONE — the chord is exclusive, so Cmd+Shift leaves the
+     dash (`data-mods` — see `modifier-latch.ts`). Every wearer on
      every paint path resolves the dash from here, so tuning it is one edit:
      `dotted`, or back to `solid` to retire the distinction entirely.
 

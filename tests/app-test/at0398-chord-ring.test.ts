@@ -24,6 +24,9 @@
  *      which unlike `holdModifier` lets the test look at the app mid-hold),
  *      `data-mods` lands on `<html>` and the same outline computes solid —
  *      then goes back to dashed on release.
+ *   2b. **Exclusively.** Shift+Return is an exclusive chord — Cmd+Shift+Return
+ *      submits nothing — so Shift held WITH Cmd leaves the ring dashed. The
+ *      latch carries the whole held set for exactly this read.
  *   3. **The honest wearer is untouched, and only one wearer lights.** ⌘F
  *      moves the keyboard to the find bar, whose default IS fired by a plain
  *      Return: it paints solid, carries no chord attribute, and does not
@@ -39,6 +42,7 @@
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/internal/tug-button.css
  * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/styles/focus-ring.css
  */
 
@@ -114,10 +118,17 @@ function readRing(app: App, selector: string): Promise<RingRead | null> {
   );
 }
 
-/** Is the held-modifier latch reporting Shift? */
-function shiftLatched(app: App): Promise<boolean> {
+/** Is the held-modifier latch reporting Shift and nothing else? */
+function shiftLatchedAlone(app: App): Promise<boolean> {
   return app.evalJS<boolean>(
-    `(document.documentElement.getAttribute("data-mods") || "").split(" ").indexOf("shift") >= 0`,
+    `document.documentElement.getAttribute("data-mods") === "shift"`,
+  );
+}
+
+/** The whole held set the latch is reporting, `""` when the attribute is absent. */
+function heldMods(app: App): Promise<string> {
+  return app.evalJS<string>(
+    `document.documentElement.getAttribute("data-mods") || ""`,
   );
 }
 
@@ -181,10 +192,10 @@ describe.skipIf(!SHOULD_RUN)(
           let heldLatch = false;
           await app.withModifiersHeld(["shift"], async () => {
             await app.waitForCondition<boolean>(
-              `(document.documentElement.getAttribute("data-mods") || "").indexOf("shift") >= 0`,
+              `document.documentElement.getAttribute("data-mods") === "shift"`,
               { timeoutMs: 4000 },
             );
-            heldLatch = await shiftLatched(app);
+            heldLatch = await shiftLatchedAlone(app);
             heldStyle = (await readRing(app, SUBMIT))?.style ?? "";
           });
           note("z5 under held shift", { latch: heldLatch, style: heldStyle });
@@ -193,6 +204,29 @@ describe.skipIf(!SHOULD_RUN)(
             heldStyle,
             "with Shift down a Return WOULD submit, so the ring resolves to solid",
           ).toBe("solid");
+
+          // --- 2b. Shift is not enough — Shift ALONE is. ---
+          // Cmd+Shift+Return submits nothing (every keystroke path matches
+          // modifiers exactly), so the ring must stay dashed under the pair.
+          let pairMods = "";
+          let pairStyle = "";
+          await app.withModifiersHeld(["shift", "cmd"], async () => {
+            await app.waitForCondition<boolean>(
+              `(document.documentElement.getAttribute("data-mods") || "").indexOf("meta") >= 0`,
+              { timeoutMs: 4000 },
+            );
+            pairMods = await heldMods(app);
+            pairStyle = (await readRing(app, SUBMIT))?.style ?? "";
+          });
+          note("z5 under held shift+cmd", { mods: pairMods, style: pairStyle });
+          expect(
+            pairMods.split(" ").sort().join(" "),
+            "the latch carries the WHOLE held set, not just the painted-on bit",
+          ).toBe("meta shift");
+          expect(
+            pairStyle,
+            "Cmd+Shift+Return fires nothing, so the conditional promise stays conditional",
+          ).toBe("dashed");
 
           // --- 3. Dashed again on release. ---
           await app.waitForCondition<boolean>(

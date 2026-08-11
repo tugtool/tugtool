@@ -4,10 +4,19 @@
  *
  * One consumer today: the **chord ring**. A default button whose activation is
  * `Shift+Return` rather than a plain `Return` wears the double ring dashed, and
- * the dash resolves to solid exactly while Shift is physically down — the
+ * the dash resolves to solid exactly while Shift is physically down ALONE — the
  * instant at which a `Return` really would fire it. So the ring never states
  * something false at any moment, and holding Shift becomes the gesture that
  * *shows you* what Return is about to do.
+ *
+ * "Alone" is why all four modifiers are latched rather than just the one that
+ * is read. `Shift+Return` is an exclusive chord: `Cmd+Shift+Return` and
+ * `Opt+Shift+Return` do NOT submit (`resolveEnterAction`'s caller disqualifies
+ * every other modifier combination), so a ring that went solid on Shift held
+ * with Cmd would be promising a keystroke that does nothing. The attribute
+ * therefore carries the WHOLE held set and the ring matches it exactly
+ * (`[data-mods="shift"]`), not as a member (`~="shift"`), which would match
+ * every superset.
  *
  * Appearance, so it travels as a DOM attribute and never as React state
  * ([L06]) — the same shape as `data-app-active` (`deck-manager`) and `data-kbf`
@@ -33,17 +42,24 @@
 /**
  * Root attribute carrying the modifiers currently held down, space-separated,
  * absent when none are. Space-separated (rather than one attribute per
- * modifier) so CSS matches with `[data-mods~="shift"]` and the set can grow
- * without growing the projection.
+ * modifier) so the set can grow without growing the projection.
  *
- * Only `shift` is tracked. The other three earn a place here when something
- * needs to paint on them; an unread bit is a per-keystroke DOM write that buys
- * nothing.
+ * Tokens are emitted in the fixed order given by {@link MOD_TOKENS}, so an
+ * exclusive read is a plain string match: `[data-mods="shift"]` is "Shift and
+ * nothing else", with no ordering permutations to enumerate.
  */
 export const MODS_ATTRIBUTE = "data-mods";
 
-/** The one tracked modifier's token within {@link MODS_ATTRIBUTE}. */
+/** Shift's token within {@link MODS_ATTRIBUTE} — the one the chord ring reads. */
 export const MOD_SHIFT = "shift";
+
+/**
+ * Every latched modifier, in the canonical order they are written. The three
+ * besides `shift` are latched because the chord ring's read is EXCLUSIVE: it
+ * needs to know they are absent, which is not something a Shift-only latch can
+ * say.
+ */
+export const MOD_TOKENS = [MOD_SHIFT, "alt", "ctrl", "meta"] as const;
 
 /**
  * Install the latch's listeners on `document` / `window` and return the
@@ -55,25 +71,26 @@ export function installModifierLatch(): () => void {
 
   const root = document.documentElement;
   // Mirrors the attribute so the common case — a keystroke that does not
-  // change the held set — costs one boolean compare and no DOM touch. The
+  // change the held set — costs one string compare and no DOM touch. The
   // composer's typing path runs through here on every key up and down.
-  let shiftHeld = false;
+  let held = "";
 
-  const apply = (next: boolean): void => {
-    if (next === shiftHeld) return;
-    shiftHeld = next;
-    if (next) {
-      root.setAttribute(MODS_ATTRIBUTE, MOD_SHIFT);
-    } else {
+  const apply = (next: string): void => {
+    if (next === held) return;
+    held = next;
+    if (next === "") {
       root.removeAttribute(MODS_ATTRIBUTE);
+    } else {
+      root.setAttribute(MODS_ATTRIBUTE, next);
     }
   };
 
   const onKey = (event: KeyboardEvent): void => {
-    apply(event.shiftKey);
+    const flags = [event.shiftKey, event.altKey, event.ctrlKey, event.metaKey];
+    apply(MOD_TOKENS.filter((_token, i) => flags[i]).join(" "));
   };
   const onBlur = (): void => {
-    apply(false);
+    apply("");
   };
 
   // Capture phase: a chord consumed by the engine's own capture stages
@@ -87,6 +104,6 @@ export function installModifierLatch(): () => void {
     document.removeEventListener("keydown", onKey, { capture: true });
     document.removeEventListener("keyup", onKey, { capture: true });
     window.removeEventListener("blur", onBlur);
-    apply(false);
+    apply("");
   };
 }
