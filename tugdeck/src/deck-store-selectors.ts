@@ -143,8 +143,11 @@ export function slotStackOf(
 // `test-repo/petit-thaw` on its title bar and `Untitled` in every list.
 
 /**
- * One row of a slot's stack, already resolved for display. Ordered
- * topmost-first, matching the host menu-state convention.
+ * One row of a stack's picker, already resolved for display.
+ *
+ * A slot's stack and a stacked rail are ordered topmost-first, matching the
+ * host menu-state convention. A SPLIT rail is ordered top to bottom instead —
+ * nothing is occluded there, so depth is not what the rows are about.
  *
  * The title bar renders its picker from these and never reaches for the deck
  * store: it has no access to one, and chrome driven entirely by props is what
@@ -167,8 +170,14 @@ export interface SlotStackEntry {
    * Absent when the card's registration declares no icon.
    */
   icon?: string;
-  /** True for the pane currently at the front of the slot. */
-  topmost: boolean;
+  /**
+   * True for the row the picker checks — which is a different pane by
+   * arrangement, and that is why the field is not named for either one. In a
+   * stack it is the pane at the front, the only one you can see. In a split
+   * every member is visible, so it is the FOCUSED member instead, and no row
+   * is checked when focus rests outside the rail.
+   */
+  selected: boolean;
 }
 
 /**

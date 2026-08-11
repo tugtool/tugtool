@@ -815,6 +815,18 @@ export const TUG_ACTIONS = {
   //                   group, which draws one control per registered sidebar
   //                   card.
   SET_SIDEBAR_SIDE:       "set-sidebar-side",
+  // SET_RAIL_MODE: payload — `{ side, mode }`. Stack or split one side's rail:
+  //                stacked, its sidebar cards stand front-to-back and z-order
+  //                decides which you see; split, the side's run is divided
+  //                between them and every member is visible at once. Stack is
+  //                the default. Its doors are the title bar's stack badge menu
+  //                and the Lens Layouts section's per-side rail row.
+  SET_RAIL_MODE:          "set-rail-mode",
+  // EQUALIZE_RAIL: payload — `{ side }`. Divide a split rail's run equally
+  //                again, discarding the heights a seam drag set while keeping
+  //                the side's mode and member order. Its doors are the stack
+  //                badge menu and a double-click on the seam itself.
+  EQUALIZE_RAIL:          "equalize-rail",
   RESET_LAYOUT:           "reset-layout",
   ADD_CARD_TO_ACTIVE_PANE: "add-card-to-active-pane",
   FIND:                   "find",

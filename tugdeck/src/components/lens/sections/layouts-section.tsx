@@ -1,16 +1,24 @@
 /**
  * layouts-section.tsx — the Lens **Layout** section: the deck's layout picker.
  *
- * Every layout decision the deck has is made here, on three axes. **Cards** says
+ * Every layout decision the deck has is made here, on four axes. **Cards** says
  * how the cards are arranged; **Card Width** says how wide they read; **Sidebar
- * positions** says which edge each sidebar card holds. All three write the
- * deck's `imposition` record — so "where is the Lens" and "how wide is a
- * Session card" are layout questions answered beside the other layout questions
- * rather than in an app-wide preference somewhere else.
+ * positions** says which edge each sidebar card holds; and a **rail row** per
+ * shared side says whether the cards on that side stack front-to-back or
+ * divide it between them. All four write the deck's `imposition` record — so
+ * "where is the Lens" and "how wide is a Session card" are layout questions
+ * answered beside the other layout questions rather than in an app-wide
+ * preference somewhere else.
  *
  * The sidebar controls are **registry-driven**: one Left/Right group per card
  * that registered `layoutRole: "sidebar"`, in registration order. A third
  * sidebar card appears here by registering, with nothing to add in this file.
+ * The rail rows are derived the same way — a side gets one when the registry
+ * assigns two or more sidebar cards to it, open or not. That is deliberately
+ * not a live read of what is standing: this section reads no panes at all, and
+ * a row gated on visible members would both disagree with the miniature drawn
+ * directly above it and disappear at the moment a split side dropped to one
+ * card, taking the only way to un-split it along.
  *
  * The Cards axis has no *off*. One-up is the quietest arrangement rather than
  * the absence of one — a single anchor, which a card occupies only by being put
@@ -39,9 +47,9 @@
  * `useLayoutEffect`; [L06] preview visibility is DOM attributes toggled in
  * event handlers and a `MutationObserver`, never React state; [L11] every
  * control emits `selectValue` through the responder chain, which this section
- * turns into `set-imposition` / `set-content-width` / `set-sidebar-side`
- * dispatches; [L19] every control is a `TugChoiceGroup` and every caption a
- * `TugLabel`, composed rather than hand-rolled; [L30] the section never touches
+ * turns into `set-imposition` / `set-content-width` / `set-sidebar-side` /
+ * `set-rail-mode` dispatches; [L19] every control is a `TugChoiceGroup` and
+ * every caption a `TugLabel`, composed rather than hand-rolled; [L30] the section never touches
  * the deck store — it goes through the command funnel like any other door.
  *
  * @module components/lens/sections/layouts-section
@@ -72,7 +80,9 @@ import {
   IMPOSITION_KINDS,
   isContentWidth,
   isImpositionKind,
+  isRailMode,
   isSidebarSide,
+  railModeOf,
   sidebarSide,
   slotCount,
   DEFAULT_CONTENT_WIDTH,
@@ -81,6 +91,7 @@ import {
   type ContentWidth,
   type DeckImposition,
   type ImpositionKind,
+  type RailMode,
   type SidebarSide,
 } from "@/lib/layout-imposer";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
@@ -100,12 +111,14 @@ const SECTION_KIND = "layouts";
 const KIND_SENDER_ID = "lens-layouts-kind";
 const WIDTH_SENDER_ID = "lens-layouts-width";
 const SIDE_SENDER_PREFIX = "lens-layouts-side:";
+const RAIL_SENDER_PREFIX = "lens-layouts-rail:";
 
 /** Ids of the captions, so each group can point `aria-labelledby` at its own
  *  `TugLabel`. */
 const KIND_CAPTION_ID = "lens-layouts-kind-caption";
 const WIDTH_CAPTION_ID = "lens-layouts-width-caption";
 const SIDE_CAPTION_ID_PREFIX = "lens-layouts-side-caption-";
+const RAIL_CAPTION_ID_PREFIX = "lens-layouts-rail-caption-";
 
 /** The groups' focus orders. Distinct, and declared rather than defaulted,
  *  because they are separate stops: sharing an order would give two groups one
@@ -113,7 +126,8 @@ const SIDE_CAPTION_ID_PREFIX = "lens-layouts-side-caption-";
  *  stop — so the other would be unreachable by any addressed placement. Being
  *  separately ordered is also what makes them separate rows of the Lens's arrow
  *  plane, so a vertical arrow steps from one group to the next. The sidebar
- *  groups take the orders after these, one each, in registration order. */
+ *  groups take the orders after these, one each, in registration order, and the
+ *  rail rows the orders after those. */
 const LAYOUTS_KIND_FOCUS_ORDER = 0;
 const LAYOUTS_WIDTH_FOCUS_ORDER = 1;
 const LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER = 2;
@@ -134,6 +148,21 @@ const SIDES: readonly SidebarSide[] = ["left", "right"];
 const SIDE_LABELS: Record<SidebarSide, string> = {
   left: "Left",
   right: "Right",
+};
+
+/** The two arrangements a shared rail can stand under, in the order the control
+ *  offers them — stack first, because stack is the default. */
+const RAIL_MODES: readonly RailMode[] = ["stack", "split"];
+
+const RAIL_MODE_LABELS: Record<RailMode, string> = {
+  stack: "Stack",
+  split: "Split",
+};
+
+/** The caption for a side's rail row. */
+const RAIL_CAPTIONS: Record<SidebarSide, string> = {
+  left: "Left Rail",
+  right: "Right Rail",
 };
 
 /** A sidebar card the deck can place, as this section needs it. */
@@ -234,6 +263,8 @@ interface PlanLayer {
   note: string;
   kind: ImpositionKind;
   rails: MiniatureRails;
+  /** How each side's rail is arranged in this drawing. */
+  railModes: Partial<Record<SidebarSide, RailMode>>;
   width: ContentWidth;
 }
 
@@ -287,6 +318,17 @@ function LayoutsSectionBody({
   const contentWidth = imposition.contentWidth ?? DEFAULT_CONTENT_WIDTH;
   const sidebars = sidebarEntries();
   const rails = railsOf(imposition, sidebars);
+  const railModes: Partial<Record<SidebarSide, RailMode>> = {
+    left: railModeOf(imposition, "left"),
+    right: railModeOf(imposition, "right"),
+  };
+  // A side the section counts two or more sidebar cards on — the same
+  // registration-derived count the miniature above draws from, deliberately not
+  // a live read of what is open. The section reads no panes at all, and a row
+  // gated on visible members would sit under a miniature that disagreed with
+  // it; worse, it would vanish exactly when a split side dropped to one card,
+  // taking the only Lens-side way to un-split with it ([P08]).
+  const sharedSides = SIDES.filter((side) => (rails[side] ?? 0) > 1);
 
   // Every control reports selection by dispatching `selectValue` up the
   // responder chain ([L11]) — there are no change callbacks — so the section
@@ -298,6 +340,13 @@ function LayoutsSectionBody({
         const value = event.value;
         if (typeof value !== "string") return;
         const sender = event.sender;
+        if (typeof sender === "string" && sender.startsWith(RAIL_SENDER_PREFIX)) {
+          const side = sender.slice(RAIL_SENDER_PREFIX.length);
+          if (isSidebarSide(side) && isRailMode(value)) {
+            dispatchCommand(TUG_ACTIONS.SET_RAIL_MODE, { side, mode: value });
+          }
+          return;
+        }
         if (typeof sender === "string" && sender.startsWith(SIDE_SENDER_PREFIX)) {
           if (isSidebarSide(value)) {
             dispatchCommand(TUG_ACTIONS.SET_SIDEBAR_SIDE, {
@@ -391,6 +440,7 @@ function LayoutsSectionBody({
       note: planNote(k, contentWidth),
       kind: k,
       rails,
+      railModes,
       width: contentWidth,
     })),
     ...CONTENT_WIDTH_PRESETS.map((preset) => ({
@@ -399,6 +449,7 @@ function LayoutsSectionBody({
       note: planNote(kind, preset),
       kind,
       rails,
+      railModes,
       width: preset,
     })),
     ...sidebars.flatMap((entry) =>
@@ -414,6 +465,20 @@ function LayoutsSectionBody({
           componentId: entry.componentId,
           side,
         }),
+        railModes,
+        width: contentWidth,
+      })),
+    ),
+    ...sharedSides.flatMap((side) =>
+      RAIL_MODES.map((mode) => ({
+        previewId: `railmode:${side}:${mode}`,
+        caption: [`${RAIL_CAPTIONS[side]} ${RAIL_MODE_LABELS[mode]}`],
+        // Splitting a rail divides that side's run and leaves the cards'
+        // band exactly as it was, so the note says what stands.
+        note: planNote(kind, contentWidth),
+        kind,
+        rails,
+        railModes: { ...railModes, [side]: mode },
         width: contentWidth,
       })),
     ),
@@ -436,6 +501,11 @@ function LayoutsSectionBody({
   const sideItems: TugChoiceItem[] = SIDES.map((side) => ({
     value: side,
     label: SIDE_LABELS[side],
+  }));
+
+  const railModeItems: TugChoiceItem[] = RAIL_MODES.map((mode) => ({
+    value: mode,
+    label: RAIL_MODE_LABELS[mode],
   }));
 
   return (
@@ -461,6 +531,7 @@ function LayoutsSectionBody({
             <LayoutMiniature
               kind={kind}
               rails={rails}
+              railModes={railModes}
               width={contentWidth}
               selected
             />
@@ -478,6 +549,7 @@ function LayoutsSectionBody({
               <LayoutMiniature
                 kind={layer.kind}
                 rails={layer.rails}
+                railModes={layer.railModes}
                 width={layer.width}
               />
             </div>
@@ -567,6 +639,44 @@ function LayoutsSectionBody({
                   focusOrder={LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER + index}
                   aria-labelledby={captionId}
                   data-testid={`lens-layouts-side-${entry.componentId}`}
+                />
+              </div>
+            );
+          })}
+
+          {/* One row per side that two or more sidebar cards are assigned to:
+              the arrangement that side's rail stands under. Below the position
+              rows, because which edge a card holds is the question you answer
+              first — a side has to be shared before it can be split. */}
+          {sharedSides.map((side, index) => {
+            const captionId = `${RAIL_CAPTION_ID_PREFIX}${side}`;
+            return (
+              <div
+                className="layouts-section-row"
+                data-preview-axis={`railmode:${side}`}
+                key={side}
+              >
+                <TugLabel
+                  id={captionId}
+                  size="md"
+                  emphasis="proposal"
+                  className="layouts-section-caption"
+                >
+                  {RAIL_CAPTIONS[side]}
+                </TugLabel>
+                <TugChoiceGroup
+                  items={railModeItems}
+                  value={railModes[side] ?? "stack"}
+                  senderId={`${RAIL_SENDER_PREFIX}${side}`}
+                  size="xs"
+                  sidePadding="xs"
+                  reselect
+                  focusGroup={host.focusGroup}
+                  focusOrder={
+                    LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER + sidebars.length + index
+                  }
+                  aria-labelledby={captionId}
+                  data-testid={`lens-layouts-rail-${side}`}
                 />
               </div>
             );

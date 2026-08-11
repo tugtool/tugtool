@@ -4,9 +4,10 @@
  * When the deck's arrangement changes, the frames' final geometry is committed
  * in one layout pass and the crossing is a transform tween that starts at the
  * inverse of the move and ends at nothing (FLIP). This module is the pure half
- * of that: the delta between where a frame was and where it now is, and the
- * keyframes that walk one back to the other. `deck-canvas.tsx` does the
- * measuring and the animating.
+ * of that: the delta between where a frame was and where it now is, the
+ * keyframes that walk one back to the other, and the keyframes for the motion
+ * a transform is not allowed to fake. `deck-canvas.tsx` does the measuring and
+ * the animating.
  *
  * ## The form these keyframes are written in, and why it is not negotiable
  *
@@ -20,7 +21,8 @@
  *
  * Clearing the bar means: keyframes touching **only** transform-family
  * properties, transforms that are strictly 2D, a **keyword** easing, playback
- * rate 1, forward, finite. Every one of those is a rule about this file.
+ * rate 1, forward, finite. Every one of those is a rule about
+ * {@link springKeyframes}.
  *
  * The sharpest of them is the easing. A `linear(…)` with a list of stops — the
  * form {@link cssEasing} produces — cannot be expressed by Core Animation, so
@@ -30,6 +32,28 @@
  * So the spring here rides in the **keyframe offsets** instead — many frames
  * under a plain `linear` keyword trace the identical curve, and that shape a
  * compositor can run. Do not "simplify" this into an easing string.
+ *
+ * ## What a transform tween is allowed to carry, and what it is not
+ *
+ * The acceleration above has a price: the compositor rasterizes the frame once
+ * and animates the *texture*. A translation of a raster is pixel-identical to
+ * moving the element, so a frame that only moves is tweened honestly at any
+ * distance. A **scale** is not — it resamples the raster, so every border,
+ * corner radius, and glyph inside the frame is stretched rather than re-laid
+ * out, and nothing inside the frame is correct at any intermediate size.
+ *
+ * The deck's policy is therefore a cap ([D135]): a scale term may ride in the
+ * settle only while its distortion — {@link scaleDistortion}, symmetric in
+ * grow and shrink — stays within {@link MAX_FLIP_SCALE_DISTORTION}. Under the
+ * cap the smear reads as motion; over it, as deformation. A frame whose size
+ * changes by more than the cap crosses by **real geometry** instead:
+ * {@link springSizeKeyframes} walks the actual `width` or `height`, the
+ * frame's subtree lays out truthfully on every frame of the motion, and the
+ * cost — main-thread layout for that frame, for the length of the settle — is
+ * the same one the seam drag's live path already pays. Height is never
+ * smeared at all: the gestures that change a frame's height (splitting a
+ * rail, stacking one, membership churn under a split) halve or double it,
+ * which no cap admits.
  *
  * @module lib/pane-flip
  */
@@ -47,7 +71,7 @@ export interface FlipDelta {
 }
 
 /**
- * How many intervals {@link springKeyframes} cuts the curve into.
+ * How many intervals the spring-keyframe builders cut the curve into.
  *
  * A sampled curve is off from the real one by the gap between it and its
  * chords, which falls as the square of the count. At 32 the spring's steepest
@@ -57,6 +81,25 @@ export interface FlipDelta {
 export const SPRING_KEYFRAME_SAMPLES = 32;
 
 /**
+ * The most a settle tween may deform a frame's raster: a scale term whose
+ * {@link scaleDistortion} exceeds this rides as real geometry via
+ * {@link springSizeKeyframes} instead. 0.2 admits the adjacent width-preset
+ * step (675↔800, 18.5%) and nothing else; both Wide jumps and a rail split
+ * are over it.
+ */
+export const MAX_FLIP_SCALE_DISTORTION = 0.2;
+
+/**
+ * How far a scale is from the identity, symmetric in grow and shrink: a
+ * halving and a doubling both read 1.0. Zero or negative input — a frame
+ * measured mid-teardown — reads as no distortion at all.
+ */
+export function scaleDistortion(s: number): number {
+  if (s <= 0) return 0;
+  return Math.max(s, 1 / s) - 1;
+}
+
+/**
  * The distance from a frame's old position to its new one, and the ratio of its
  * old width to its new one.
  *
@@ -64,13 +107,13 @@ export const SPRING_KEYFRAME_SAMPLES = 32;
  * keeps the tween inside the transform-only form: `scaleX` is transform-family,
  * a `width` keyframe is not, and a single non-accelerable property in the effect
  * puts the whole thing back on the main thread — where it would re-run layout
- * for the frame's entire subtree on every frame of the motion.
+ * for the frame's entire subtree on every frame of the motion. Whether the
+ * scale may actually ride is the caller's cap check ([D135]); this function
+ * only reports it.
  *
- * Height is not read. The gestures that resize a frame — the deck's content
- * width, a title-bar width preset — move its vertical edges not at all: an
- * imposed pane's run is the gap-to-gap column, and a free pane's height is its
- * own stored number. A height change that happens to land in the same window
- * snaps, which is honest.
+ * Height is not carried. A height change is never smeared — the module header
+ * says why — so the settle reads the two rects' heights directly and drives
+ * {@link springSizeKeyframes} when they differ.
  *
  * A zero or absent final width reads as no scale at all, so a frame measured
  * mid-teardown yields a plain move rather than a division by zero.
@@ -126,6 +169,46 @@ export function springKeyframes(
         sx === 1
           ? move
           : `${move} scaleX(${formatScale(1 + (sx - 1) * remaining)})`,
+      offset,
+    });
+  }
+  return frames;
+}
+
+/**
+ * The keyframes that carry a frame's real `width` or `height` from `from` to
+ * `to` on the same damped spring the transform tween rides — one curve for
+ * the whole settle, whichever form each frame's motion takes.
+ *
+ * This is the over-cap form ([D135]): the property is the real one, so the
+ * frame's subtree lays out truthfully on every frame of the motion and
+ * nothing inside is ever a stretched raster. The effect is main-thread by
+ * construction — that is the point, not an accident — so it must never be
+ * merged into the transform tween's effect, whose acceleration a single
+ * non-transform property would revoke for the whole keyframe list.
+ *
+ * Both endpoints are pinned exactly as {@link springKeyframes} pins its own:
+ * the final keyframe is exactly `to`, so cancelling snap-to-end lands the
+ * frame on its committed size. The caller owns restoring the element's own
+ * inline value afterwards — TugAnimator commits an animation's final value
+ * into `el.style` on completion, and a baked pixel length where React
+ * rendered `auto` or a `calc()` would freeze the frame against the live
+ * expressions its geometry is supposed to keep reading.
+ */
+export function springSizeKeyframes(
+  property: "width" | "height",
+  from: number,
+  to: number,
+  samples: number = SPRING_KEYFRAME_SAMPLES,
+): Keyframe[] {
+  const steps = Math.max(2, Math.floor(samples));
+  const spring = dampedSpring();
+  const frames: Keyframe[] = [];
+  for (let i = 0; i <= steps; i += 1) {
+    const offset = i / steps;
+    const progress = i === 0 ? 0 : i === steps ? 1 : spring(offset);
+    frames.push({
+      [property]: `${formatPx(from + (to - from) * progress)}px`,
       offset,
     });
   }

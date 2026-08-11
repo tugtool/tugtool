@@ -35,7 +35,12 @@ import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { neighborSlot } from "@/lib/neighbor-slot";
 import { flashCardPane, flashPaneBorder } from "@/lib/flash-pane-border";
 import { isDiffDescriptor } from "@/lib/git-diff-store";
-import { isContentWidth, isImpositionKind, isSidebarSide } from "@/lib/layout-imposer";
+import {
+  isContentWidth,
+  isImpositionKind,
+  isRailMode,
+  isSidebarSide,
+} from "@/lib/layout-imposer";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
@@ -588,6 +593,32 @@ export function initActionDispatch(
       return;
     }
     deckManager.setSidebarSide(componentId, side);
+  });
+
+  // set-rail-mode: stack or split one side's rail. Dispatched by the title
+  // bar's stack badge menu and by the Lens Layouts section's per-side rail row.
+  // A side is a stack or a split — all of its visible members participate,
+  // which is why the payload names a side rather than a pair of cards.
+  registerAction(TUG_ACTIONS.SET_RAIL_MODE, (payload) => {
+    const side = payload.side;
+    const mode = payload.mode;
+    if (!isSidebarSide(side) || !isRailMode(mode)) {
+      console.warn("set-rail-mode: missing or invalid side/mode", payload);
+      return;
+    }
+    deckManager.setRailMode(side, mode);
+  });
+
+  // equalize-rail: divide a split rail's run equally again. Dispatched by the
+  // stack badge menu and by a double-click on the seam. The side's mode and
+  // member order survive — only the heights a seam drag set are discarded.
+  registerAction(TUG_ACTIONS.EQUALIZE_RAIL, (payload) => {
+    const side = payload.side;
+    if (!isSidebarSide(side)) {
+      console.warn("equalize-rail: missing or invalid side", payload);
+      return;
+    }
+    deckManager.equalizeRail(side);
   });
 
   // assign-slot: put a card's pane at a numbered position in the active

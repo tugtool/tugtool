@@ -36,6 +36,7 @@ import {
 import {
   clampSlot,
   isImpositionKind,
+  isRailMode,
   isSidebarPinned,
   isSidebarSide,
   DEFAULT_IMPOSITION_KIND,
@@ -44,6 +45,7 @@ import {
   isContentWidth,
   type DeckImposition,
   type ImpositionKind,
+  type RailArrangement,
   type SidebarEntry,
   type SidebarSide,
 } from "@/lib/layout-imposer";
@@ -302,6 +304,73 @@ function parseSidebars(
   return out;
 }
 
+/**
+ * The `rails` record from an imposition record — how each side's sidebar cards
+ * stand against one another.
+ *
+ * Additive-optional, and read defensively field by field like
+ * {@link parseSidebars}: a blob written before splitting existed carries no
+ * `rails` at all and comes back a stack on both sides, which is exactly what it
+ * was. Anything unreadable is dropped rather than defaulted, down to the whole
+ * side — an arrangement is something the user chose, and a half-read one is not
+ * that.
+ *
+ * `order` entries and `shares` keys are componentIds, so they run through
+ * {@link migrateComponentId} the same way the card table's do. The kind-rename
+ * history is a real path (`"dev"` → `"session"`), and a rail that named a card
+ * by its old id would otherwise drop that member's place on the first rename.
+ * Unknown componentIds are *kept*: the card registry is not loaded at parse
+ * time, and `effectiveRailOrder` filters to the members actually standing.
+ */
+function parseRails(
+  impositionRecord: Record<string, unknown> | undefined,
+): DeckImposition["rails"] {
+  const raw = impositionRecord?.["rails"];
+  if (raw === null || typeof raw !== "object") return undefined;
+  const rails: NonNullable<DeckImposition["rails"]> = {};
+  for (const side of ["left", "right"] as const) {
+    const value = (raw as Record<string, unknown>)[side];
+    if (value === null || typeof value !== "object") continue;
+    const entry = value as Record<string, unknown>;
+    const arrangement: RailArrangement = {};
+
+    const mode = entry["mode"];
+    if (mode !== undefined) {
+      // A mode this build cannot read means the whole side is unreadable: the
+      // order and heights below describe an arrangement, and applying them
+      // under a guessed mode would show the user something nobody chose.
+      if (!isRailMode(mode)) continue;
+      arrangement.mode = mode;
+    }
+
+    const order = entry["order"];
+    if (Array.isArray(order)) {
+      const ids = order
+        .filter((id): id is string => typeof id === "string")
+        .map(migrateComponentId);
+      if (ids.length > 0) arrangement.order = ids;
+    }
+
+    const shares = entry["shares"];
+    if (shares !== null && typeof shares === "object") {
+      const weights: Record<string, number> = {};
+      for (const [componentId, weight] of Object.entries(
+        shares as Record<string, unknown>,
+      )) {
+        if (typeof weight !== "number") continue;
+        if (!Number.isFinite(weight) || weight <= 0) continue;
+        weights[migrateComponentId(componentId)] = weight;
+      }
+      if (Object.keys(weights).length > 0) arrangement.shares = weights;
+    }
+
+    // Nothing survived: the side is absent, which is what a stack already is.
+    if (Object.keys(arrangement).length === 0) continue;
+    rails[side] = arrangement;
+  }
+  return Object.keys(rails).length > 0 ? rails : undefined;
+}
+
 // ---- Internal: v4 parser ----
 
 /**
@@ -388,12 +457,14 @@ function parseV4(
     };
   }
   const rawContentWidth = impositionRecord?.["contentWidth"];
+  const rails = parseRails(impositionRecord);
   const imposition: DeckImposition = {
     kind,
     contentWidth: isContentWidth(rawContentWidth)
       ? rawContentWidth
       : DEFAULT_CONTENT_WIDTH,
     sidebars,
+    ...(rails !== undefined ? { rails } : {}),
   };
 
   const panes: TugPaneState[] = [];

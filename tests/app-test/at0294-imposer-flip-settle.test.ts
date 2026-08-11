@@ -11,9 +11,12 @@
  *
  * Three things have to hold, and the third is the one with teeth.
  *
- * The motion must be transform-only, or it is not the cheap kind: a keyframe
- * touching a layout property puts the effect back on the main thread and the
- * whole point is lost (`roadmap/jul30-perf-brief.md#i1-sparkline-exception`).
+ * The transform tween must be transform-only, or it is not the cheap kind: a
+ * keyframe touching a layout property puts the effect back on the main thread
+ * and the whole point is lost
+ * (`roadmap/jul30-perf-brief.md#i1-sparkline-exception`). A width change past
+ * the smear cap rides a SECOND effect of its own — real `width` keyframes,
+ * main-thread by design ([D135]) — and the two must never merge.
  *
  * The frames must land where the imposer says, which is hand-computable from
  * `imposeRect`'s rule: the band is the span inset by a gap at each end, and a
@@ -186,8 +189,28 @@ async function firstKeyframeTransforms(
       var target = a.effect && a.effect.target;
       if (!target || !target.classList || !target.classList.contains("tug-pane")) return out;
       var kfs = a.effect.getKeyframes() || [];
-      if (kfs.length === 0) return out;
+      if (kfs.length === 0 || kfs[0].transform === undefined) return out;
       out[target.getAttribute("data-pane-id") || ""] = String(kfs[0].transform);
+      return out;
+    }, {})`,
+  );
+}
+
+/** Each frame's width-tween endpoints, by pane id — the real-geometry half of
+ *  an over-cap width crossing ([D135]). Absent when no width tween runs. */
+async function widthKeyframeEndpoints(
+  app: App,
+): Promise<Record<string, { first: string; last: string }>> {
+  return app.evalJS<Record<string, { first: string; last: string }>>(
+    `document.getAnimations().reduce(function (out, a) {
+      var target = a.effect && a.effect.target;
+      if (!target || !target.classList || !target.classList.contains("tug-pane")) return out;
+      var kfs = a.effect.getKeyframes() || [];
+      if (kfs.length === 0 || kfs[0].width === undefined) return out;
+      out[target.getAttribute("data-pane-id") || ""] = {
+        first: String(kfs[0].width),
+        last: String(kfs[kfs.length - 1].width),
+      };
       return out;
     }, {})`,
   );
@@ -466,7 +489,7 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "a deck-wide width change crosses too — the frames scale rather than snap",
+      "a deck-wide width change crosses too — over the cap, by real width rather than a smear",
       async () => {
         const app = await launchTugApp({
           testName: "at0294-imposer-flip-width",
@@ -490,34 +513,57 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 2_000 },
           );
           {
-            // Still transform-only: a `width` keyframe here would be the
-            // regression, because it puts the effect back on the main thread
-            // and re-runs layout for the frame's subtree every frame.
+            // 420 → 675 is over the smear cap ([D135]:
+            // `MAX_FLIP_SCALE_DISTORTION`), so each content frame carries
+            // exactly two effects: a translate-only transform tween, which
+            // stays compositor-clean, and a real `width` tween — its own
+            // effect, never merged, because one non-transform property in the
+            // transform effect's keyframes would put the whole effect on the
+            // main thread.
+            // Slot 0 anchors the band's start, so p1's left never moves under
+            // a deck width change and its whole crossing IS the width tween;
+            // p2's left shifts with the width, so it carries the translate
+            // tween beside it.
             const census = await frameAnimations(app);
-            expect(census.length).toBeGreaterThan(0);
-            for (const anim of census) {
-              expect(anim.properties.filter((p) => p !== "offset" &&
-                p !== "computedOffset" && p !== "easing" && p !== "composite"))
-                .toEqual(["transform"]);
+            const effectsByPane: Record<string, string[]> = {
+              p1: ["width"],
+              p2: ["transform", "width"],
+            };
+            for (const [paneId, effects] of Object.entries(effectsByPane)) {
+              const perEffect = census
+                .filter((anim) => anim.paneId === paneId)
+                .map((anim) =>
+                  anim.properties
+                    .filter((p) => p !== "offset" && p !== "computedOffset" &&
+                      p !== "easing" && p !== "composite")
+                    .join(","),
+                )
+                .sort();
+              expect(perEffect).toEqual(effects);
             }
-            // And the width delta really is in the tween: each content frame
-            // starts at the ratio of the old width to the new one, anchored at
-            // its left edge so the scale and the move agree about which edge
-            // the delta was measured between.
+            // The transform tween carries no scale at all — the width delta
+            // rides as real geometry, so nothing inside the frame is ever a
+            // stretched raster. A zero vertical term comes back from the
+            // engine as the one-argument `translate(0px)`, so the y is
+            // optional here.
             const starts = await firstKeyframeTransforms(app);
+            expect(starts["p2"]).toMatch(
+              /^translate\(-?[\d.]+px(, -?[\d.]+px)?\)$/,
+            );
+            // And the width tween walks the real endpoints: from the seed's
+            // width to the preset's, pinned at both ends.
+            const widths = await widthKeyframeEndpoints(app);
             for (const paneId of ["p1", "p2"]) {
-              // A zero vertical term comes back from the engine as the
-              // one-argument `translate(0px)`, so the y is optional here.
-              expect(starts[paneId]).toMatch(
-                /^translate\(-?[\d.]+px(, -?[\d.]+px)?\) scaleX\([\d.]+\)$/,
-              );
-              const scale = Number(/scaleX\(([\d.]+)\)/.exec(starts[paneId])![1]);
-              expect(scale).toBeCloseTo(PANE_WIDTH / 675, 2);
+              expect(widths[paneId]).toEqual({
+                first: `${PANE_WIDTH}px`,
+                last: "675px",
+              });
             }
+            // The origin is the transform tween's to write, so only the frame
+            // that carries one wears it.
             const origins = await inlineTransformOrigins(app);
-            for (const paneId of ["p1", "p2"]) {
-              expect(origins[paneId]).toBe("0px 0px");
-            }
+            expect(origins["p1"]).toBe("");
+            expect(origins["p2"]).toBe("0px 0px");
           }
 
           // After land: the boxes are the preset's, sitting where the imposer

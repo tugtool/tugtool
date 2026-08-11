@@ -1322,6 +1322,22 @@ export const COMMANDS: readonly CommandEntry[] = [
     internal: true,
   },
   {
+    // Its doors are the title bar's stack badge menu and the Lens Layouts
+    // section's per-side rail row; the side set is the deck's, so the payload
+    // set is runtime.
+    id: TUG_ACTIONS.SET_RAIL_MODE,
+    title: "Set Rail Mode",
+    routing: "registry",
+    internal: true,
+  },
+  {
+    // Its doors are the stack badge menu and a double-click on a seam.
+    id: TUG_ACTIONS.EQUALIZE_RAIL,
+    title: "Equalize Rail Heights",
+    routing: "registry",
+    internal: true,
+  },
+  {
     // Its door is the pane title bar's width popup.
     id: TUG_ACTIONS.SET_CARD_WIDTH,
     title: "Set Card Width",

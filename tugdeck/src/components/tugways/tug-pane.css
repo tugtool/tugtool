@@ -967,3 +967,40 @@ body {
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: var(--tug-font-size-sm);
 }
+
+/* ============================================================================
+   Rail seam — the boundary between two split rail members
+   ========================================================================= */
+
+/* The hit strip is wider than the gap it sits in (a 5px drag target is under
+   every pointing-comfort floor the deck holds), so the element itself is
+   transparent and the hairline is drawn by a centred pseudo-element. Pressing
+   anywhere in the strip starts the drag; only the hairline is visible. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
+.tug-rail-seam {
+  background: transparent;
+  /* The drag is a pointer gesture the browser must not also read as a scroll:
+     the strip overhangs each neighbour by about 2.5px, and a vertical pan
+     starting there would fight the seam for the same motion. */
+  touch-action: none;
+}
+
+.tug-rail-seam::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: var(--tugx-pane-border);
+  opacity: 0;
+  transition: opacity var(--tugx-rail-seam-reveal-duration, 120ms) ease;
+}
+
+/* The seam states itself on approach and while it is being dragged — a
+   boundary the pointer is over is a boundary the pointer can move. */
+.tug-rail-seam:hover::before,
+.tug-rail-seam[data-gesture]::before {
+  opacity: 1;
+}

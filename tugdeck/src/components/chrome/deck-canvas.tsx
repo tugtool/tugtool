@@ -19,7 +19,11 @@
 
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import { animate, type TugAnimation } from "@/components/tugways/tug-animator";
-import { getTugTiming, isTugMotionEnabled } from "@/components/tugways/scale-timing";
+import {
+  getTugTiming,
+  getTugZoom,
+  isTugMotionEnabled,
+} from "@/components/tugways/scale-timing";
 import { useResponder } from "@/components/tugways/use-responder";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
@@ -27,14 +31,23 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { applyBagFocus, transferFocusForActivation } from "@/focus-transfer";
 import { toggleSidebarCard } from "@/sidebar-toggle";
 import { CANVAS_BACKGROUND_ATTRIBUTE } from "@/gesture-interpreter";
-import { TugPane } from "./tug-pane";
+import {
+  DRAG_MOVE_THRESHOLD_PX,
+  TugPane,
+  type SidebarStackStanding,
+} from "./tug-pane";
 import { CardHost } from "./card-host";
 import { CanvasOverlayRoot } from "./canvas-overlay-root";
 import { OpenQuicklyOverlay } from "./open-quickly-overlay";
 import { DeckCommitBeacon } from "./deck-commit-beacon";
 import { usePaneFocusController } from "./pane-focus-controller";
 import { usePaneOcclusionController } from "./pane-occlusion-controller";
-import { getRegistration, getStackSizePolicy, isSidebarCard } from "@/card-registry";
+import {
+  getAllRegistrations,
+  getRegistration,
+  getStackSizePolicy,
+  isSidebarCard,
+} from "@/card-registry";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
@@ -59,7 +72,13 @@ import { openOpenQuickly } from "@/lib/open-quickly-store";
 import { clearRecentDocuments } from "@/lib/recent-documents";
 import { allocateUntitledNumber } from "@/lib/untitled-naming";
 import { cardServicesStore } from "@/lib/card-services-store";
-import { flipDelta, springKeyframes } from "@/lib/pane-flip";
+import {
+  MAX_FLIP_SCALE_DISTORTION,
+  flipDelta,
+  scaleDistortion,
+  springKeyframes,
+  springSizeKeyframes,
+} from "@/lib/pane-flip";
 import { dispatchCommand } from "@/command-dispatch";
 import {
   isSidebarPinned,
@@ -73,8 +92,15 @@ import {
   IMPOSITION_GAP_PX,
   IMPOSITION_SETTLE_MS,
   RESIZE_RETUNE_QUIET_MS,
-  sidebarStackOrder,
+  effectiveRailOrder,
+  imposeSidebarStyle,
+  railModeOf,
+  railSeamFractions,
+  railSeamProperty,
+  railSharesFromFractions,
+  IMPOSITION_GAP_BOTTOM_PX,
   sidebarWidthProperty,
+  type RailMode,
   type SidebarSide,
 } from "@/lib/layout-imposer";
 
@@ -120,20 +146,41 @@ const SIDEBAR_PANE_ZINDEX_BASE = 8990;
  *  base. Far past any real deck; the clamp is here so it cannot ever collide. */
 const SIDEBAR_PANE_ZINDEX_MAX_RANK = 9;
 
-/** One member of a side's rail. Order here is registration order, not depth:
- *  the members stand front-to-back and z-order decides which is in front. */
+/**
+ * The seam between two split rail members, level with the frontmost rank a rail
+ * can reach and still strictly below every popup.
+ *
+ * It has to be stated rather than left to document order, because the seam's
+ * hit strip is wider than the 5px gap it sits in and therefore overlaps each
+ * neighbouring frame by about 2.5px. Below the band, a press in that overlap
+ * would land on the frame instead and the seam would be undraggable along the
+ * edges that matter most.
+ */
+const RAIL_SEAM_ZINDEX = SIDEBAR_PANE_ZINDEX_BASE + SIDEBAR_PANE_ZINDEX_MAX_RANK;
+
+/** One member of a side's rail, in the rail's own vertical order: the order the
+ *  imposition records, falling back to registration order — never z-order. */
 interface SidebarRailMember {
   componentId: string;
   paneId: string;
 }
 
-/** A side's rail: the pinned sidebar panes standing on it and the width they
- *  share. They share the vertical run too — all of it, each — because a shared
- *  rail is a stack rather than a split. */
+/**
+ * A side's rail: the pinned sidebar panes standing on it, the width they share,
+ * and how they stand against one another.
+ *
+ * Stacked, they share the vertical run too — all of it, each — and z-order
+ * decides which you see. Split, they divide the run at `seams` and every one is
+ * visible.
+ */
 interface SidebarRail {
   side: SidebarSide;
   width: number;
+  mode: RailMode;
   members: readonly SidebarRailMember[];
+  /** Where the gaps fall, as fractions of the run: `members.length - 1` values
+   *  in split mode, empty in a stack (a stack has no gaps to place). */
+  seams: readonly number[];
 }
 
 /**
@@ -154,11 +201,19 @@ function paneRenderWidthOf(state: DeckState, pane: TugPaneState): number {
 
 /**
  * The rails standing on the deck's edges, at most one per side — the picture
- * the band is inset from.
+ * the band is inset from, and the order each side's members stand in.
  *
  * Same-side cards share ONE rail, so a side contributes one width however many
  * cards stand on it: the widest member's render width, since a rail narrower
  * than a member would run the chain under the edge that member paints.
+ *
+ * The componentIds are sorted into **registration** order before the
+ * imposition's stored order is applied. That is `effectiveRailOrder`'s caller
+ * contract, and it cannot be met by accident: `findSidebarPanes` walks
+ * `state.panes`, the array `activateCard` reorders, so handing its order
+ * straight in would make a split rail with no stored order follow the last
+ * raise — click the lower member and the two would swap places. Registration is
+ * a boot step, so the order this sorts into is fixed for the session.
  */
 function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
   const pinned = findSidebarPanes(state).filter(({ componentId }) =>
@@ -168,13 +223,12 @@ function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
   const paneByComponentId = new Map(
     pinned.map(({ componentId, pane }) => [componentId, pane]),
   );
+  const registered = [...getAllRegistrations().keys()].filter((componentId) =>
+    paneByComponentId.has(componentId),
+  );
   const rails: SidebarRail[] = [];
   for (const side of ["left", "right"] as const) {
-    const order = sidebarStackOrder(
-      state.imposition,
-      side,
-      pinned.map(({ componentId }) => componentId),
-    );
+    const order = effectiveRailOrder(state.imposition, side, registered);
     if (order.length === 0) continue;
     let width = 0;
     const members: SidebarRailMember[] = [];
@@ -185,10 +239,19 @@ function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
       members.push({ componentId, paneId: pane.id });
     }
     if (members.length === 0) continue;
+    const mode = railModeOf(state.imposition, side);
     rails.push({
       side,
       width,
+      mode,
       members,
+      seams:
+        mode === "split"
+          ? railSeamFractions(
+              members.map((member) => member.componentId),
+              state.imposition.rails?.[side]?.shares,
+            )
+          : [],
     });
   }
   return rails;
@@ -223,6 +286,22 @@ function sidebarRailsOf(state: DeckState): readonly SidebarRail[] {
  * rail drag's are, for the same reason. Height is not a term, because no
  * arrangement gesture changes one and the settle does not interpolate it.
  *
+ * The rail terms are read through `sidebarRailsOf`, which orders its members by
+ * the imposition and by registration — never by the panes array. Until a rail
+ * could be split that ordering was z-derived, which made this function's
+ * documented z-blindness false of the rail term: activating a rail member
+ * reordered `state.panes`, changed the term, and armed a settle window with no
+ * frame to move in it. The same fix that keeps a split rail's members from
+ * trading places on a click is what finally makes the claim above true here.
+ *
+ * A side's MODE and its SEAM FRACTIONS are terms because both move frames: a
+ * mode flip changes every member's height, and a seam drag changes two. The
+ * fractions are rounded to three decimals so sub-pixel share arithmetic cannot
+ * arm a settle nobody can see. A seam drag's own commit arms a window whose
+ * tweens are all no-ops — the drag wrote the properties live, so each frame's
+ * first and last rects are the same one — which is the coexistence the rail
+ * width terms already have.
+ *
  * The bullseye term is the DERIVED id, not the raw field, because that is
  * what the render path places from. Entering and leaving bullseye re-places
  * and re-widths a frame — a one-up placement at comfy on the way in, the
@@ -242,12 +321,243 @@ function arrangementSignature(state: DeckState): string {
   const rails = sidebarRailsOf(state)
     .map(
       (rail) =>
-        `${rail.side}:${rail.width}:${rail.members
+        `${rail.side}:${rail.width}:${rail.mode}:${rail.members
           .map((m) => m.componentId)
-          .join("+")}`,
+          .join("+")}:${rail.seams.map((f) => f.toFixed(3)).join("+")}`,
     )
     .join(";");
   return `${state.imposition.kind ?? ""}|${bullseye}|${rails}|${panes.join(",")}`;
+}
+
+/**
+ * Capture a frame's own inline value for `property` and return the hand-back.
+ *
+ * The settle's size and fade tweens ride real properties, and TugAnimator
+ * commits an animation's final value into `el.style` on completion — a baked
+ * pixel length where React rendered `auto` or a `calc()` would freeze the
+ * frame against the live expressions its geometry keeps reading (a seam drag,
+ * a window resize). The restorer runs in the settle's completion handler,
+ * after that commit lands.
+ */
+function inlineRestorer(
+  el: HTMLElement,
+  property: "width" | "height" | "opacity",
+): () => void {
+  const prev = el.style.getPropertyValue(property);
+  return () => {
+    if (prev === "") el.style.removeProperty(property);
+    else el.style.setProperty(property, prev);
+  };
+}
+
+/**
+ * How tall a seam's hit strip is. Wider than the 5px gap it sits in, because a
+ * 5px target is under every pointing-comfort floor the deck holds elsewhere;
+ * the cost is that it takes about 2.5px off each neighbour's edge, and on the
+ * lower member that edge is title bar. The seam is the smaller and more precise
+ * target of the two, so it is the one that gets the help.
+ */
+const RAIL_SEAM_HIT_PX = 10;
+
+/** The shortest each member of `rail` may be, in order — read through the same
+ *  stack policy the pane's own chrome uses, so a multi-card rail pane cannot
+ *  disagree with itself about its floor. */
+function railMemberMinHeights(
+  state: DeckState,
+  rail: SidebarRail,
+): readonly number[] {
+  return rail.members.map((member) => {
+    const pane = state.panes.find((p) => p.id === member.paneId);
+    if (pane === undefined) return 0;
+    return getStackSizePolicy(
+      state.cards
+        .filter((card) => pane.cardIds.includes(card.id))
+        .map((card) => card.componentId),
+    ).min.height;
+  });
+}
+
+interface RailSeamProps {
+  side: SidebarSide;
+  /** Which gap this is: the boundary between members `index` and `index + 1`. */
+  index: number;
+  /** The rail's width, as the `var()` fallback its horizontal pins take. */
+  railWidth: number;
+  /** Every seam of the rail, so a drag can clamp against its neighbours. */
+  fractions: readonly number[];
+  /** Each member's minimum height, in the rail's own order. */
+  minHeights: readonly number[];
+  onCommit: (side: SidebarSide, fractions: readonly number[]) => void;
+}
+
+/**
+ * The boundary between two split rail members, and the handle that moves it.
+ *
+ * Positioned from the SAME properties the frames are — its horizontal pins come
+ * from `imposeSidebarStyle` itself rather than from a second expression that
+ * says the same thing — so a seam cannot drift from the rail it divides.
+ *
+ * It does **not** participate in the settle: that walks `.tug-pane[data-pane-id]`
+ * frames and a seam is not one, so on a mode flip it appears at its final
+ * position while the frames tween to meet it. A seam is a boundary rather than
+ * a card, and a boundary that slides is a fourth moving thing to track.
+ *
+ * The drag follows `handleSidebarResizeStart` member for member — pointer
+ * capture, a move-threshold latch, one rAF-applied `setProperty` per frame,
+ * zoom-corrected deltas, and the property left as the gesture set it so no
+ * frame reads a stale value — with **one deliberate divergence: no occlusion
+ * bracket.** That bracket exists to keep a frame passing over another from
+ * being stamped `data-occluded` mid-gesture. A seam drag resizes two members
+ * that stay tiled: no frame ever passes over another, and there is nothing for
+ * the bracket to keep visible. (The reorder drag needs one for exactly the
+ * reason this does not.)
+ */
+function RailSeam({
+  side,
+  index,
+  railWidth,
+  fractions,
+  minHeights,
+  onCommit,
+}: RailSeamProps): React.ReactElement {
+  const fractionsRef = useRef(fractions);
+  fractionsRef.current = fractions;
+  const minHeightsRef = useRef(minHeights);
+  minHeightsRef.current = minHeights;
+
+  const handlePointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const seam = event.currentTarget;
+      const container = seam.parentElement;
+      if (container === null) return;
+
+      const property = railSeamProperty(side, index);
+      const zoom = getTugZoom() || 1;
+      const startClientY = event.clientY;
+      const startFractions = [...fractionsRef.current];
+      const mins = minHeightsRef.current;
+      // The run the fractions are fractions OF, in layout pixels — measured
+      // once, because a window resize mid-drag is not a thing a hand does.
+      const run =
+        container.getBoundingClientRect().height / zoom -
+        IMPOSITION_GAP_PX -
+        IMPOSITION_GAP_BOTTOM_PX;
+      if (run <= 0) return;
+
+      // How far this seam may travel before one of the two members it divides
+      // is shorter than its own floor. Each member's height is the distance
+      // between its seams less the gap they take, so each bound is that floor
+      // plus one gap, expressed as a fraction of the run.
+      const lower =
+        (index === 0 ? 0 : startFractions[index - 1]) +
+        ((mins[index] ?? 0) + IMPOSITION_GAP_PX) / run;
+      const upper =
+        (index === startFractions.length - 1 ? 1 : startFractions[index + 1]) -
+        ((mins[index + 1] ?? 0) + IMPOSITION_GAP_PX) / run;
+
+      seam.setPointerCapture(event.pointerId);
+      seam.setAttribute("data-gesture", "seam");
+
+      let fraction = startFractions[index];
+      let latestY = startClientY;
+      let rafId: number | null = null;
+      let moved = false;
+
+      const latch = (clientY: number): boolean => {
+        if (moved) return true;
+        if (Math.abs(clientY - startClientY) < DRAG_MOVE_THRESHOLD_PX) {
+          return false;
+        }
+        moved = true;
+        return true;
+      };
+
+      const computeFraction = (): number => {
+        const next =
+          startFractions[index] + (latestY - startClientY) / zoom / run;
+        // On a window too short to hold both floors the bounds cross. The
+        // squeeze is proportional and honest ([P05]) — the drag simply has
+        // nowhere to put the seam, so it holds the middle rather than
+        // snapping to a bound that would starve one member outright.
+        if (lower > upper) return (lower + upper) / 2;
+        return Math.min(upper, Math.max(lower, next));
+      };
+
+      const apply = (): void => {
+        rafId = null;
+        if (!latch(latestY)) return;
+        fraction = computeFraction();
+        container.style.setProperty(property, String(fraction));
+      };
+
+      const onPointerMove = (e: PointerEvent): void => {
+        latestY = e.clientY;
+        if (rafId === null) rafId = requestAnimationFrame(apply);
+      };
+
+      const onPointerUp = (e: PointerEvent): void => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        seam.removeEventListener("pointermove", onPointerMove);
+        seam.removeEventListener("pointerup", onPointerUp);
+        seam.releasePointerCapture(e.pointerId);
+        seam.removeAttribute("data-gesture");
+        latestY = e.clientY;
+        if (!latch(latestY)) return;
+        fraction = computeFraction();
+        // The property stays as the gesture left it: the commit re-renders at
+        // this fraction and the inset effect writes the same number back, so
+        // there is no frame where a member reads the pre-gesture seam.
+        container.style.setProperty(property, String(fraction));
+        const next = [...startFractions];
+        next[index] = fraction;
+        onCommit(side, next);
+      };
+
+      seam.addEventListener("pointermove", onPointerMove);
+      seam.addEventListener("pointerup", onPointerUp);
+    },
+    [side, index, onCommit],
+  );
+
+  const handleDoubleClick = useCallback(() => {
+    dispatchCommand(TUG_ACTIONS.EQUALIZE_RAIL, { side });
+  }, [side]);
+
+  // The horizontal pins come from the imposer itself, so the seam spans exactly
+  // the rail it divides. Only the vertical placement is the seam's own: its
+  // centre is the same expression the frames either side of it read.
+  const railStyle = imposeSidebarStyle(side, railWidth) as React.CSSProperties;
+  const centre =
+    `calc(${IMPOSITION_GAP_PX}px + var(${railSeamProperty(side, index)}, ` +
+    `${(index + 1) / (fractions.length + 1)})` +
+    ` * (100% - ${IMPOSITION_GAP_PX}px - ${IMPOSITION_GAP_BOTTOM_PX}px))`;
+
+  return (
+    <div
+      className="tug-rail-seam"
+      data-testid="tug-rail-seam"
+      data-rail-seam={`${side}:${index}`}
+      role="separator"
+      aria-orientation="horizontal"
+      onPointerDown={handlePointerDown}
+      onDoubleClick={handleDoubleClick}
+      style={{
+        ...railStyle,
+        position: "absolute",
+        top: `calc(${centre} - ${RAIL_SEAM_HIT_PX / 2}px)`,
+        bottom: "auto",
+        height: `${RAIL_SEAM_HIT_PX}px`,
+        zIndex: RAIL_SEAM_ZINDEX,
+        cursor: "row-resize",
+      }}
+    />
+  );
 }
 
 /**
@@ -353,14 +663,21 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const sidebarRails = sidebarRailsOf(deckState);
   const railWidthOf = (side: SidebarSide): number =>
     sidebarRails.find((rail) => rail.side === side)?.width ?? 0;
-  const stackByPaneId = new Map<string, { side: SidebarSide; count: number }>();
+  // Each member's standing on its rail: which side, how many share it, how they
+  // stand against one another, and where this one is in that order. The pane
+  // renders its own frame from these ([L09]) — a split member's pins are its
+  // index's share of the run.
+  const stackByPaneId = new Map<string, SidebarStackStanding>();
   for (const rail of sidebarRails) {
-    for (const member of rail.members) {
+    rail.members.forEach((member, index) => {
       stackByPaneId.set(member.paneId, {
         side: rail.side,
+        componentId: member.componentId,
         count: rail.members.length,
+        mode: rail.mode,
+        memberIndex: index,
       });
-    }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -420,6 +737,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     // front-to-back stacks of full-size panes, so both get the same badge and
     // the same picker — the rail was the one that had to be taught, because a
     // rail's members are found through the imposition rather than off the pane.
+    const rails = sidebarRailsOf(deckState);
     const railSideOf = new Map<string, SidebarSide>();
     for (const { componentId, pane } of findSidebarPanes(deckState)) {
       if (!isSidebarPinned(imposition, componentId)) continue;
@@ -439,10 +757,28 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       if (members) members.push(pane);
       else byPlace.set(place, [pane]);
     }
+    const paneById = new Map(panes.map((pane) => [pane.id, pane]));
     const map = new Map<string, readonly SlotStackEntry[]>();
-    for (const members of byPlace.values()) {
-      // Topmost first, matching the host menu-state convention.
-      const entries: SlotStackEntry[] = [...members].reverse().map((pane, i) => {
+    for (const [place, members] of byPlace.entries()) {
+      // A SPLIT rail's rows are a different list from a stack's, because the
+      // question they answer is different. In a stack the rows are a depth
+      // order and the check marks the one card you can actually see. In a
+      // split nothing is occluded: the rows read top to bottom, the order the
+      // eye reads the rail in, and the check marks the FOCUSED member — the
+      // pane the deck would act on — with nothing checked when focus rests
+      // outside the rail. Checking the topmost there would be a claim about
+      // z-order dressed up as a claim about what you are looking at.
+      const splitRail = rails.find(
+        (rail) => rail.mode === "split" && `rail:${rail.side}` === place,
+      );
+      const ordered =
+        splitRail === undefined
+          ? // Topmost first, matching the host menu-state convention.
+            [...members].reverse()
+          : splitRail.members
+              .map((member) => paneById.get(member.paneId))
+              .filter((pane): pane is TugPaneState => pane !== undefined);
+      const entries: SlotStackEntry[] = ordered.map((pane, i) => {
         // A row is a miniature of the title bar it stands for, so it takes
         // both of that title bar's parts from the same places the title bar
         // does: the icon off the active card's registration, and the title
@@ -458,7 +794,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           cardId: pane.activeCardId,
           title: paneTitleBarTextFor(pane, cardsForTitles),
           ...(icon === undefined ? {} : { icon }),
-          topmost: i === 0,
+          selected:
+            splitRail === undefined
+              ? i === 0
+              : pane.id === deckState.activePaneId,
         };
       });
       for (const pane of members) map.set(pane.id, entries);
@@ -1128,7 +1467,22 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // re-resolves in the browser's next reflow: the rail grows off its own pinned
   // edge and the cards re-impose live under the moving edge, which is the same
   // response the deck already gives a window resize.
-  const railWidths = `${railWidthOf("left")}|${railWidthOf("right")}`;
+  //
+  // The SEAMS of a split rail ride here too, and for the same reason: a split
+  // member's vertical pins are fractions of the run, so the fractions are the
+  // one number a seam drag rewrites and a window resize re-resolves for free.
+  // They belong in THIS effect rather than one of their own because the effect
+  // order in this file is load-bearing — this one is declared before the
+  // settle's Last-measure effect, so the properties are on the container before
+  // any frame is measured against them.
+  const railSummary = sidebarRails
+    .map(
+      (rail) =>
+        `${rail.side}:${rail.width}:${rail.mode}:${rail.seams
+          .map((f) => f.toFixed(4))
+          .join("+")}`,
+    )
+    .join(";");
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -1141,11 +1495,28 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           ? "0px"
           : `calc(var(${sidebarWidthProperty(side)}) + ${IMPOSITION_GAP_PX}px)`,
       );
+      // Both sides are written on every pass, and every index past the current
+      // gap count is removed rather than left standing. A rail going three
+      // members to two would otherwise leave seam 1 behind, and a frame reading
+      // it would be pinned to a seam that is no longer anywhere.
+      const seams =
+        sidebarRails.find((rail) => rail.side === side)?.seams ?? [];
+      seams.forEach((fraction, index) => {
+        el.style.setProperty(railSeamProperty(side, index), String(fraction));
+      });
+      for (
+        let index = seams.length;
+        index <= SIDEBAR_PANE_ZINDEX_MAX_RANK;
+        index += 1
+      ) {
+        el.style.removeProperty(railSeamProperty(side, index));
+      }
     }
-    // `railWidthOf` reads `sidebarRails`, which `railWidths` summarises — the
-    // widths are the only thing in it this effect writes.
+    // `railWidthOf` and the seam sweep both read `sidebarRails`, which
+    // `railSummary` summarises — the widths, modes, and fractions in it are
+    // exactly what this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [railWidths]);
+  }, [railSummary]);
 
   // ---------------------------------------------------------------------------
   // Settled-resize re-tune
@@ -1239,10 +1610,27 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const settleTimerRef = useRef<number | null>(null);
   /** Where each non-gesturing frame sat before the commit, by pane id. */
   const settleFirstRectsRef = useRef<Map<string, DOMRect>>(new Map());
-  /** The tween running on each frame, by pane id — DOM zone, never React state. */
+  /**
+   * The tweens running on each frame, by pane id — DOM zone, never React
+   * state. One frame can carry several in one settle: the transform tween,
+   * a real-geometry size tween per axis over the cap ([D135]), and a fade
+   * when a rail mode flip reveals or retires the frame's tile.
+   */
   const settleTweensRef = useRef<
-    Map<string, { el: HTMLElement; anim: TugAnimation }>
+    Map<string, { el: HTMLElement; anims: TugAnimation[] }>
   >(new Map());
+  /**
+   * Which frames a rail mode flip fades rather than moves, computed when the
+   * settle arms and consumed by the Last pass. Crossing into a split reveals
+   * every member behind the front one at its final tile — geometry final from
+   * the first frame, opacity the only thing that animates — and crossing back
+   * to a stack sends those members out through the same fade while their
+   * geometry tweens carry them home behind the front member.
+   */
+  const settleFadePlanRef = useRef<Map<string, "in" | "out">>(new Map());
+  /** Each rail's mode as of the last settle, so a mode flip is detectable
+   *  when the next one arms. */
+  const prevRailModesRef = useRef<Map<SidebarSide, RailMode> | null>(null);
   /** The raw (unscaled) settle duration read back for the current gesture. */
   const settleDurationRef = useRef(IMPOSITION_SETTLE_MS);
 
@@ -1290,15 +1678,21 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // origin, and only after the first arrangement change. Removing it is not
   // tidiness; it is what keeps the frame's geometry the store's to own ([L09]).
   //
+  // The size and fade tweens leave residue of their own — a committed pixel
+  // length where React rendered `auto` or a `calc()`, a committed opacity —
+  // and each settle's completion handler hands those back itself, because it
+  // is the one holder of the values it displaced. This function owns only
+  // what every settle writes the same way.
+  //
   // Idempotent by construction, because it runs more than once per frame: the
   // completion handler, the window sweep, and effect teardown all call it, and
   // a cancelled tween's handler lands a microtask later — after a replacement
-  // tween may already have been registered, which is why the registry entry is
-  // only dropped when it still belongs to the animation that finished.
+  // settle may already have been registered, which is why the registry entry
+  // is only dropped when it still belongs to the settle that finished.
   const clearFlipRef = useRef(
-    (paneId: string, el: HTMLElement, anim: TugAnimation | null): void => {
+    (paneId: string, el: HTMLElement, anims: readonly TugAnimation[]): void => {
       const entry = settleTweensRef.current.get(paneId);
-      if (anim === null || entry?.anim === anim) {
+      if (entry?.anims === anims) {
         settleTweensRef.current.delete(paneId);
       }
       el.style.removeProperty("transform");
@@ -1308,10 +1702,14 @@ export function DeckCanvas(_props: DeckCanvasProps) {
 
   useEffect(() => {
     const clearFlip = clearFlipRef.current;
+    prevRailModesRef.current = new Map(
+      sidebarRailsOf(store.getSnapshot()).map((rail) => [rail.side, rail.mode]),
+    );
     const arm = (): void => {
       const el = containerRef.current;
       if (el === null) return;
-      const next = arrangementSignature(store.getSnapshot());
+      const state = store.getSnapshot();
+      const next = arrangementSignature(state);
       if (next === arrangementRef.current) return;
       arrangementRef.current = next;
 
@@ -1340,10 +1738,44 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         if (motion) firstRects.set(paneId, frame.getBoundingClientRect());
         const running = settleTweensRef.current.get(paneId);
         if (running !== undefined) {
-          running.anim.cancel("snap-to-end");
-          clearFlip(paneId, frame, running.anim);
+          for (const anim of running.anims) anim.cancel("snap-to-end");
+          clearFlip(paneId, frame, running.anims);
         }
       }
+
+      // A rail whose mode flipped fades its buried members rather than
+      // moving them; every member but the frontmost (the latest of the
+      // rail's panes in z-order, which a mode flip does not change) is
+      // planned here for the Last pass. Skipped under reduced motion with
+      // the rest of the choreography, but the mode record always advances —
+      // a stale record would read the next flip against the wrong shore.
+      const fadePlan = settleFadePlanRef.current;
+      fadePlan.clear();
+      const rails = sidebarRailsOf(state);
+      const prevModes = prevRailModesRef.current;
+      if (motion && prevModes !== null) {
+        for (const rail of rails) {
+          const prevMode = prevModes.get(rail.side);
+          if (prevMode === undefined || prevMode === rail.mode) continue;
+          if (rail.members.length < 2) continue;
+          let frontmostPaneId = rail.members[0].paneId;
+          let frontmostZ = -1;
+          for (const member of rail.members) {
+            const z = state.panes.findIndex((p) => p.id === member.paneId);
+            if (z > frontmostZ) {
+              frontmostZ = z;
+              frontmostPaneId = member.paneId;
+            }
+          }
+          for (const member of rail.members) {
+            if (member.paneId === frontmostPaneId) continue;
+            fadePlan.set(member.paneId, rail.mode === "split" ? "in" : "out");
+          }
+        }
+      }
+      prevRailModesRef.current = new Map(
+        rails.map((rail) => [rail.side, rail.mode]),
+      );
 
       el.style.setProperty(
         "--tugx-imposer-settle-duration",
@@ -1369,8 +1801,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         // Every tween should have finished and swept itself by now. The sweep
         // is what guarantees no frame keeps the inline residue if one didn't.
         for (const [paneId, entry] of [...settleTweensRef.current]) {
-          entry.anim.cancel("snap-to-end");
-          clearFlip(paneId, entry.el, entry.anim);
+          for (const anim of entry.anims) anim.cancel("snap-to-end");
+          clearFlip(paneId, entry.el, entry.anims);
         }
       }, windowMs);
     };
@@ -1384,10 +1816,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // transform — nor a card whose notifications nobody will release.
       releaseSessions();
       for (const [paneId, entry] of [...settleTweensRef.current]) {
-        entry.anim.cancel("snap-to-end");
-        clearFlip(paneId, entry.el, entry.anim);
+        for (const anim of entry.anims) anim.cancel("snap-to-end");
+        clearFlip(paneId, entry.el, entry.anims);
       }
       settleFirstRectsRef.current.clear();
+      settleFadePlanRef.current.clear();
       containerRef.current?.removeAttribute("data-imposer-settling");
     };
   }, [store, holdSessions, releaseSessions]);
@@ -1414,6 +1847,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
     }
     const clearFlip = clearFlipRef.current;
     const duration = settleDurationRef.current;
+    const fadePlan = settleFadePlanRef.current;
     for (const frame of el.querySelectorAll<HTMLElement>(
       ".tug-pane[data-pane-id]",
     )) {
@@ -1422,38 +1856,132 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const firstRect = firstRects.get(paneId);
       if (firstRect === undefined) continue;
       if (frame.hasAttribute("data-gesture")) continue;
-      const { dx, dy, sx } = flipDelta(
-        firstRect,
-        frame.getBoundingClientRect(),
-      );
-      // A frame that did not move and did not change width gets no animation
-      // at all.
-      if (dx === 0 && dy === 0 && sx === 1) continue;
-      // The scale anchors the frame's left edge, which is the edge `dx` was
-      // measured between. Set for every tween, scaling or not, so the property
-      // has one value and one owner rather than depending on which kind of
-      // gesture wrote it last; `clearFlip` takes it off with the transform.
-      frame.style.transformOrigin = "0 0";
-      const anim = animate(frame, springKeyframes(dx, dy, sx), {
+      const lastRect = frame.getBoundingClientRect();
+      const fade = fadePlan.get(paneId);
+      const anims: TugAnimation[] = [];
+      const restores: Array<() => void> = [];
+      // Shared by every tween in this settle. Each rides its own effect
+      // under its own key — a size or fade property merged into the
+      // transform tween's keyframes would revoke that effect's compositor
+      // acceleration whole.
+      const settleOpts = {
         // Raw ms: TugAnimator scales by getTugTiming() itself.
         duration,
-        // A keyword easing, because the curve rides in the keyframe offsets —
-        // `lib/pane-flip.ts` says why a sampled `linear()` cannot be used here.
-        easing: "linear",
         // No retained effect after the tween ends ([D6]).
         fill: "none",
         composite: "replace",
-        key: "imposer-flip",
         slotCancelMode: "snap-to-end",
+      } as const;
+      if (fade === "in") {
+        // A member a split just revealed: its geometry is final from the
+        // first frame — the tile is its true place, and the stacked full-run
+        // rect it was measured at was never a pose the user saw — so opacity
+        // is the only thing that moves.
+        restores.push(inlineRestorer(frame, "opacity"));
+        anims.push(
+          animate(
+            frame,
+            [
+              { opacity: 0, offset: 0 },
+              { opacity: 1, offset: 1 },
+            ],
+            { ...settleOpts, easing: "ease", key: "imposer-fade" },
+          ),
+        );
+      } else {
+        const { dx, dy, sx } = flipDelta(firstRect, lastRect);
+        // Whether the width change is small enough to ride the transform
+        // tween as a raster smear, or crosses by real geometry ([D135]).
+        // Height never smears: the gestures that change it halve or double
+        // it, which no cap admits, so any height delta is a real tween.
+        // The half-pixel floor keeps sub-pixel measurement jitter from
+        // arming a layout-driving animation nobody can see.
+        const widthSmears =
+          sx !== 1 && scaleDistortion(sx) <= MAX_FLIP_SCALE_DISTORTION;
+        const widthTweens = sx !== 1 && !widthSmears;
+        const heightTweens = Math.abs(firstRect.height - lastRect.height) >= 0.5;
+        // A frame that did not move, did not change size, and has no fade
+        // gets no animation at all.
+        if (
+          dx === 0 &&
+          dy === 0 &&
+          sx === 1 &&
+          !heightTweens &&
+          fade === undefined
+        ) {
+          continue;
+        }
+        if (dx !== 0 || dy !== 0 || widthSmears) {
+          // The scale anchors the frame's top-left corner, which is the
+          // corner `dx` and `dy` were measured from. Set for every transform
+          // tween, scaling or not, so the property has one value and one
+          // owner rather than depending on which kind of gesture wrote it
+          // last; `clearFlip` takes it off with the transform.
+          frame.style.transformOrigin = "0 0";
+          anims.push(
+            animate(frame, springKeyframes(dx, dy, widthSmears ? sx : 1), {
+              ...settleOpts,
+              // A keyword easing, because the curve rides in the keyframe
+              // offsets — `lib/pane-flip.ts` says why a sampled `linear()`
+              // cannot be used here.
+              easing: "linear",
+              key: "imposer-flip",
+            }),
+          );
+        }
+        if (widthTweens) {
+          restores.push(inlineRestorer(frame, "width"));
+          anims.push(
+            animate(
+              frame,
+              springSizeKeyframes("width", firstRect.width, lastRect.width),
+              { ...settleOpts, easing: "linear", key: "imposer-size-w" },
+            ),
+          );
+        }
+        if (heightTweens) {
+          restores.push(inlineRestorer(frame, "height"));
+          anims.push(
+            animate(
+              frame,
+              springSizeKeyframes("height", firstRect.height, lastRect.height),
+              { ...settleOpts, easing: "linear", key: "imposer-size-h" },
+            ),
+          );
+        }
+        if (fade === "out") {
+          // A member a stack just retired: its geometry tween carries it home
+          // behind the front member while the tile the user was reading fades
+          // from under them. It ends fully occluded, which is what makes the
+          // restored opacity invisible.
+          restores.push(inlineRestorer(frame, "opacity"));
+          anims.push(
+            animate(
+              frame,
+              [
+                { opacity: 1, offset: 0 },
+                { opacity: 0, offset: 1 },
+              ],
+              { ...settleOpts, easing: "ease", key: "imposer-fade" },
+            ),
+          );
+        }
+      }
+      if (anims.length === 0) continue;
+      settleTweensRef.current.set(paneId, { el: frame, anims });
+      // One completion for the whole settle, after every tween's own commit
+      // has landed — TugAnimator resolves `finished` after committing, so
+      // the restorers here always run on the far side of the residue they
+      // exist to take back. `allSettled` because `finished` rejects under
+      // hold-at-current, and while this surface never asks for that mode, a
+      // bare `all` would turn a future edit into an unhandled rejection.
+      void Promise.allSettled(anims.map((anim) => anim.finished)).then(() => {
+        for (const restore of restores) restore();
+        clearFlip(paneId, frame, anims);
       });
-      settleTweensRef.current.set(paneId, { el: frame, anim });
-      // Both arms: `finished` rejects under hold-at-current, and while this
-      // surface never asks for that mode, a bare `.then` would turn a future
-      // edit into an unhandled rejection.
-      const done = (): void => clearFlip(paneId, frame, anim);
-      anim.finished.then(done, done);
     }
     firstRects.clear();
+    fadePlan.clear();
   }, [arrangement]);
 
   // Where each imposed pane sits. A slot's anchor is a pure function of the
@@ -1529,6 +2057,41 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         store,
         commitMutation: () => store.activateCard(entry.cardId),
       });
+    },
+    [store],
+  );
+
+  // A seam drag's commit: the fractions the hand left the rail at, converted
+  // back to the weights the record stores. The conversion is the imposer's
+  // named pure function rather than arithmetic inlined here — it is the one
+  // piece of new math on the persistence path, and every member the drag did
+  // not touch keeps its ratio to its untouched neighbours by construction
+  // ([P02]).
+  //
+  // The commit arms a settle whose tweens are all no-ops: the drag wrote the
+  // property live, so each frame's first and last rects are the same one. Same
+  // coexistence a rail edge drag already has.
+  const railMembersRef = useRef(sidebarRails);
+  railMembersRef.current = sidebarRails;
+  const handleSeamCommit = useCallback(
+    (side: SidebarSide, fractions: readonly number[]) => {
+      const rail = railMembersRef.current.find((r) => r.side === side);
+      if (rail === undefined) return;
+      store.setRailShares(
+        side,
+        railSharesFromFractions(
+          rail.members.map((member) => member.componentId),
+          fractions,
+        ),
+      );
+    },
+    [store],
+  );
+
+  // The corridor drag's commit: the order the hand left the rail in.
+  const handleSetRailOrder = useCallback(
+    (side: SidebarSide, order: readonly string[]) => {
+      store.setRailOrder(side, order);
     },
     [store],
   );
@@ -1671,6 +2234,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
             contentWidthPx={contentWidthPx}
             slotStack={slotStackByPaneId.get(stackState.id)}
             onRevealPane={handleRevealPane}
+            onSetRailOrder={handleSetRailOrder}
             sidebarStack={stackByPaneId.get(stackState.id)}
             isLensPane={stackState.id === lensPaneId}
             onCardMoved={store.handlePaneMoved}
@@ -1706,6 +2270,24 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           with `display: none` so they stay alive without affecting layout.
           Content factories and contexts live in CardHost; see
           card-host.tsx. */}
+      {/* One seam per gap of every split rail: the boundary between two
+          members, and the handle that moves it. Rendered here rather than by
+          either neighbour because a seam belongs to the rail, not to a card —
+          and because the two frames it divides must not disagree about where
+          it is. */}
+      {sidebarRails.flatMap((rail) =>
+        rail.seams.map((_fraction, index) => (
+          <RailSeam
+            key={`${rail.side}:${index}`}
+            side={rail.side}
+            index={index}
+            railWidth={rail.width}
+            fractions={rail.seams}
+            minHeights={railMemberMinHeights(deckState, rail)}
+            onCommit={handleSeamCommit}
+          />
+        )),
+      )}
       {cards.map((card) => {
         const hostStackId = hostStackIdByCardId.get(card.id);
         if (!hostStackId) return null;

@@ -1650,3 +1650,175 @@ describe("imposition lens side", () => {
     expect(deserialize(JSON.stringify(saved), 1920, 1080)).toEqual(restored);
   });
 });
+
+// ---- imposition.rails: how each side's cards stand against one another ----
+
+describe("imposition rails", () => {
+  function railBlob(imposition: Record<string, unknown>): string {
+    return JSON.stringify({
+      version: 4,
+      imposition,
+      cards: [
+        { id: "lens-1", componentId: "lens", title: "Lens", closable: true },
+      ],
+      panes: [
+        {
+          id: "lens-pane",
+          position: { x: 0, y: 0 },
+          size: { width: 420, height: 900 },
+          cardIds: ["lens-1"],
+          activeCardId: "lens-1",
+          title: "Lens",
+          acceptsFamilies: [],
+        },
+      ],
+    });
+  }
+
+  const railsOf = (imposition: Record<string, unknown>) =>
+    deserialize(railBlob(imposition), 1920, 1080).imposition.rails;
+
+  const sidebars = { lens: { side: "right" }, jots: { side: "right" } };
+
+  test("a split rail round-trips whole", () => {
+    const imposition = {
+      kind: "three-up",
+      contentWidth: "comfy",
+      sidebars,
+      rails: {
+        right: {
+          mode: "split",
+          order: ["jots", "lens"],
+          shares: { jots: 1.4, lens: 1 },
+        },
+      },
+    };
+    const restored = deserialize(railBlob(imposition), 1920, 1080);
+    expect(restored.imposition.rails).toEqual({
+      right: {
+        mode: "split",
+        order: ["jots", "lens"],
+        shares: { jots: 1.4, lens: 1 },
+      },
+    });
+    // serialize() emits the imposition whole, so the record survives a save.
+    const saved = serialize(restored) as { imposition: { rails?: unknown } };
+    expect(saved.imposition.rails).toEqual(restored.imposition.rails);
+    // And the saved blob restores to the same arrangement, so a split survives
+    // relaunch rather than only surviving the session that made it.
+    expect(
+      deserialize(JSON.stringify(saved), 1920, 1080).imposition,
+    ).toEqual(restored.imposition);
+  });
+
+  test("a pre-split blob has no rails at all — every side is a stack", () => {
+    expect(railsOf({ kind: "three-up", sidebars })).toBeUndefined();
+  });
+
+  test("an unreadable mode drops the whole side", () => {
+    // The order and heights below describe an arrangement; applying them under
+    // a guessed mode would show the user something nobody chose.
+    expect(
+      railsOf({
+        sidebars,
+        rails: { right: { mode: "sideways", order: ["jots", "lens"] } },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("one bad side leaves the other standing", () => {
+    expect(
+      railsOf({
+        sidebars,
+        rails: { left: { mode: "split" }, right: { mode: 7 } },
+      }),
+    ).toEqual({ left: { mode: "split" } });
+  });
+
+  test("shares are dropped per key, not per side", () => {
+    expect(
+      railsOf({
+        sidebars,
+        rails: {
+          right: {
+            mode: "split",
+            shares: {
+              lens: 2,
+              jots: -1,
+              gazette: 0,
+              a: Number.NaN,
+              b: "3",
+              c: null,
+            },
+          },
+        },
+      }),
+    ).toEqual({ right: { mode: "split", shares: { lens: 2 } } });
+  });
+
+  test("non-string order entries are dropped", () => {
+    expect(
+      railsOf({
+        sidebars,
+        rails: { right: { order: ["jots", 4, null, "lens"] } },
+      }),
+    ).toEqual({ right: { order: ["jots", "lens"] } });
+  });
+
+  test("a record nothing survives is an absent side", () => {
+    expect(
+      railsOf({
+        sidebars,
+        rails: { right: { order: [], shares: { lens: -1 } } },
+      }),
+    ).toBeUndefined();
+    expect(railsOf({ sidebars, rails: {} })).toBeUndefined();
+    expect(railsOf({ sidebars, rails: "split" })).toBeUndefined();
+    expect(railsOf({ sidebars, rails: null })).toBeUndefined();
+  });
+
+  test("componentIds in order and shares migrate through the kind-rename history", () => {
+    // The Session card shipped as `"dev"`; a rail that named a member by its
+    // old id would otherwise drop that member's place on the first rename.
+    expect(
+      railsOf({
+        sidebars,
+        rails: {
+          right: {
+            mode: "split",
+            order: ["dev", "lens"],
+            shares: { dev: 2, lens: 1 },
+          },
+        },
+      }),
+    ).toEqual({
+      right: {
+        mode: "split",
+        order: ["session", "lens"],
+        shares: { session: 2, lens: 1 },
+      },
+    });
+  });
+
+  test("a first-split-era blob keeps its per-entry order dropped and invents no rails", () => {
+    // The rejected automatic split wrote `order` inside each SidebarEntry.
+    // That field has been dropped on read since the stack shipped, and the new
+    // record is a sibling of `sidebars` — it is not built from that fossil.
+    const restored = deserialize(
+      railBlob({
+        kind: "three-up",
+        sidebars: {
+          lens: { side: "right", order: 1 },
+          jots: { side: "right", order: 0 },
+        },
+      }),
+      1920,
+      1080,
+    );
+    expect(restored.imposition.rails).toBeUndefined();
+    expect(restored.imposition.sidebars).toEqual({
+      lens: { side: "right" },
+      jots: { side: "right" },
+    });
+  });
+});

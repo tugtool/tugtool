@@ -213,6 +213,17 @@ describe("the vocabulary is fully accounted for", () => {
     }
   });
 
+  test("the rail verbs are registry-routed and bind no chord", () => {
+    // Both are named verbs a menu row and a Lens control dispatch, and neither
+    // takes a default binding ([L30]) — the deck's chord budget is not spent on
+    // an arrangement the user reaches by pointing at it.
+    for (const id of [TUG_ACTIONS.SET_RAIL_MODE, TUG_ACTIONS.EQUALIZE_RAIL]) {
+      const entry = COMMANDS_BY_ID.get(id);
+      expect(entry?.routing).toBe("registry");
+      expect(entry?.bindings ?? []).toEqual([]);
+    }
+  });
+
   test("the PDF verbs are one command per value", () => {
     const fits = COMMANDS.filter((e) => e.action === TUG_ACTIONS.ZOOM_TO_FIT);
     const modes = COMMANDS.filter((e) => e.action === TUG_ACTIONS.SET_PAGE_MODE);

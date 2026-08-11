@@ -33,7 +33,7 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 - Keep the load-bearing invariant: live window resize runs no JavaScript. Split-member vertical geometry is `calc()` over per-side seam custom properties, written by the same `deck-canvas.tsx` layout effect that writes the rail width properties.
 - Reuse the gesture precedents verbatim: the seam drag follows `handleSidebarResizeStart`'s live-property-write pattern; the corridor reorder builds on the three-phase drag machine and `pane-flip.ts`.
 - Land in dependency order: pure geometry → wire format → manager/actions → FLIP vertical scale → canvas threading + frame rendering → controls (badge menu, Layout section) → seam gesture → corridor drag → doctrine → app-test.
-- Every mode/order change animates through the existing `arrangementSignature` FLIP settle by adding rail-arrangement terms to the signature — no new animation system, but the existing one gains a vertical scale term ([P12]), because a mode flip is the first arrangement gesture that changes a frame's height and the settle cannot carry today what it was never asked to.
+- Every mode/order change animates through the existing `arrangementSignature` FLIP settle by adding rail-arrangement terms to the signature — no new animation system. The settle carries a height change as **real geometry plus a fade** ([P12] as revised by [D135]): the front member's actual `height` tweens while buried members fade in or out at their tiles, because a mode flip halves or doubles a height and a `scaleY` of that size is a raster smear, not motion.
 - Verify at the real-geometry layer: unit tests for the pure math and serialization, one app-test asserting live member rects in the running app, `bunx vite build` before any step is declared done.
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -43,7 +43,7 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 - A seam drag changes only the two adjacent members' heights, persists `shares` in the layout blob, and survives relaunch. (App-test assertion; the blob is read off disk through the harness's tugbank helper, exactly as `at0276-lens-side-persists` reads `dev.tugtool.deck.layout`/`layout`.)
 - Reordering members (via `setRailOrder`) flips the members' vertical positions and persists. (App-test assertion.)
 - A split rail's vertical order does not move when a member is activated: clicking either member leaves both frames' rects unchanged. (App-test assertion — this is [R06]'s falsifiable form.)
-- A mode flip crosses rather than cuts: during the settle both members carry a transform (`scaleY` among its terms) and neither jumps to its final height in one frame. (Manual smoke in #step-5/#step-6; the arithmetic is unit-pinned in #step-4.)
+- A mode flip crosses rather than cuts: the front member's real height tweens through the settle window while the buried member fades at its final tile, and neither jumps in one frame. (Manual smoke in #step-5/#step-6; the arithmetic is unit-pinned in #step-4 as revised by [D135].)
 - Mode survives membership churn: split right rail → close Jots → Lens takes the full run → reopen Jots → the split (mode, order, shares) re-applies. (App-test assertion.)
 - `imposition.rails` round-trips through serialize → deserialize; pre-split v4 blobs (including first-split-era blobs carrying `order` inside `SidebarEntry`) parse to stacks with no error. (Unit tests.)
 - No `ResizeObserver` or resize listener is added to the geometry path; the only geometry JS during a window resize remains the existing settled-resize retune. (Checkpoint grep.)
@@ -54,7 +54,7 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 1. `RailArrangement` model + pure geometry (seam fractions, split member styles) in `layout-imposer.ts`, unit-tested.
 2. Wire format: `imposition.rails` serialization + defensive parse.
 3. DeckManager API: `setRailMode`, `setRailOrder`, `setRailShares`, `equalizeRail`; actions `set-rail-mode`, `equalize-rail`.
-4. `lib/pane-flip.ts`: a vertical scale term in the FLIP delta and keyframes, so a mode flip crosses in height instead of cutting.
+4. `lib/pane-flip.ts`: real-geometry settle math ([D135]) — the distortion cap and `springSizeKeyframes`, so a mode flip crosses in true height instead of cutting or smearing.
 5. DeckCanvas: seam custom properties, per-member placement threading, registration-ordered rail enumeration, arrangement-signature terms.
 6. TugPane: split-member frame styles, split-aware stack badge (glyph + menu verbs + rail-ordered rows).
 7. Lens Layout section: per-shared-side Stack | Split control with miniature + preview layers.
@@ -270,16 +270,15 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Implications:** three registration sites per action, following `set-sidebar-side` exactly: `action-vocabulary.ts` (`SET_RAIL_MODE`, `EQUALIZE_RAIL`), `action-dispatch.ts` handler, `command-registry.ts` entry.
 
-#### [P12] The settle FLIP gains a vertical scale; a mode flip is the first arrangement gesture that changes height (DECIDED) {#p12-flip-sy}
+#### [P12] The settle learns height as real geometry under a distortion cap; a mode flip is the first arrangement gesture that changes height (REVISED by [D135]) {#p12-flip-sy}
 
-**Decision:** `flipDelta` gains `sy` and `springKeyframes` a `scaleY` term (#step-4). Rail mode flips, and the churn re-flows that follow from [P06], then cross rather than cut.
+**Problem (stands):** without a height term [P10] does not deliver what it claims. `flipDelta` returns `{ dx, dy, sx }` and the Last pass skips any frame with no move and no width change — so on a stack→split flip the **top** member, whose left/top/width are all unchanged, gets no tween at all and simply cuts to half the run. Split→stack cuts the same way, and so does every membership churn (close Jots and the Lens regrows the run with no other term moving).
 
-**Rationale:**
-- Without it [P10] does not deliver what it claims. `flipDelta` returns `{ dx, dy, sx }` and the Last pass skips any frame with `dx === 0 && dy === 0 && sx === 1` — so on a stack→split flip the **top** member, whose left/top/width are all unchanged, gets no tween at all and simply cuts to half the run, while the bottom member slides down at full height for the whole 300ms. Split→stack cuts the same way, and so does every membership churn (close Jots and the Lens regrows the run with no other term moving).
-- `flipDelta`'s own docstring says height is not read because "the gestures that resize a frame move its vertical edges not at all". This feature is the counterexample; the doctrine follows the code rather than the code being bent around a stale sentence.
-- The vertical distortion this introduces mid-tween is the trade `scaleX` already makes horizontally, at the same duration, on the same frames — it is not a new kind of compromise, and it stays transform-only so the motion stays off the main thread.
+**First mechanism (shipped `add443bba`, rejected on sight):** `sy`/`scaleY` in the transform tween. Its rationale claimed the vertical distortion "is the trade `scaleX` already makes horizontally" — a magnitude error: the adjacent width step deforms the raster 18.5%, a mode flip ~100%, and at that size the compositor's texture stretch reads as a smear of the frame densest with small type and thin rules. Lived verdict: terrible.
 
-**Implications:** `pane-flip.ts` is pure and unit-pinned, so this is its own step with its own tests, landing before the canvas work; `FlipDelta`'s shape is a contract three existing assertions pin, and changing it is a deliberate, visible edit. Everyday arrangement gestures keep byte-identical keyframes: the scale terms are emitted only when they are not 1.
+**Revised mechanism ([D135]):** `sy` is removed; `FlipDelta` stays `{ dx, dy, sx }`. A scale may ride the transform tween only within `MAX_FLIP_SCALE_DISTORTION` (0.2, `max(s, 1/s) − 1`); height never smears at all. The settle reads the rects' heights directly and drives `springSizeKeyframes` — the frame's real `height` on the same damped spring, through TugAnimator ([L13]), main-thread layout for that frame bounded to the settle window. A rail mode flip choreographs concurrently: the front member's height tweens while buried members fade in at their final tiles (split) or fade out while their geometry tweens carry them home behind the front member (stack). Over-cap width jumps (Comfy↔Wide, Slim↔Wide) cross by a real `width` tween by the same rule; the adjacent step keeps its under-cap `scaleX`. TugAnimator's completion commit is handed back per settle (`inlineRestorer`), so a member's `height: auto` / `width` calc survives its own animation.
+
+**Implications:** `pane-flip.ts` stays pure and unit-pinned — the cap's verdict on every preset pair is itself a test. Everyday arrangement gestures keep byte-identical keyframes: no scale term, no size tween, no fade.
 
 ---
 
@@ -313,7 +312,7 @@ All paths relative to `tugdeck/src/` unless noted. Line numbers below are approx
 2. Selecting it dispatches `set-rail-mode { side: "right", mode: "split" }` → `action-dispatch.ts` handler → `deckManager.setRailMode("right", "split")` → `_reimpose` over `withRailMode` **and** `withRailOrder`: the split materializes `order: ["lens", "jots"]` in the same imposition ([P03]), so the vertical order is stored state from the first frame rather than a fallback that a later click could move ([R06]).
 3. `_commitImposition` commits; `notify()` re-renders. `deck-canvas` derives the right rail's member placements (effective order: the stored [lens, jots]; shares absent → seam fraction 0.5), writes `--tug-rail-right-seam-0: 0.5` in the inset effect.
 4. Each member's `TugPane` renders the split style: Lens `top: calc(5px + 0 * run)`, `bottom: calc(32px + (1 − 0.5) * run + 2.5px)`; Jots `top: calc(5px + 0.5 * run + 2.5px)`, `bottom: 32px` — where `run = (100% − 5px − 32px)`.
-5. `arrangementSignature` changed (mode + order + seam terms), so the settle FLIP carries both frames from full-run overlap to their halves — the Lens by `scaleY` alone (its left, top and width are all unchanged, which is precisely why [P12]'s term is load-bearing: without it this frame gets no tween at all), Jots by a translate and a `scaleY` together. The seam element appears in the gap at its final position.
+5. `arrangementSignature` changed (mode + order + seam terms), so the settle carries both frames from full-run overlap to their halves — the front member by a real `height` tween (its left, top and width are all unchanged, which is precisely why the height term is load-bearing: without it this frame gets no motion at all), the buried member by a fade in at its final tile ([D135]). The seam element appears in the gap at its final position.
 6. Window resize: fractions re-resolve in reflow; no JS runs.
 
 ---
@@ -468,7 +467,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 | `sidebarStackOrder` | fn (retire/absorb) | `lib/layout-imposer.ts` | superseded by `effectiveRailOrder` ([P03]); rewrite docstring |
 | `parseRails` | fn | `serialization.ts` | Spec S05; `order`/`shares` keys through `migrateComponentId` |
 | `setRailMode`, `setRailOrder`, `setRailShares`, `equalizeRail` | methods | `deck-manager.ts` | Spec S04; `setRailMode(…, "split")` materializes `order` ([P03]) |
-| `FlipDelta.sy`, `flipDelta`, `springKeyframes` | field/fns (modify) | `lib/pane-flip.ts` | [P12]: `sy` before `samples`; `scaleY` term emitted only when ≠ 1 |
+| `MAX_FLIP_SCALE_DISTORTION`, `scaleDistortion`, `springSizeKeyframes` | const/fns | `lib/pane-flip.ts` | [P12] as revised by [D135]: the smear cap, and real-geometry keyframes for over-cap axes |
 | `RAIL_SEAM_ZINDEX` | const | `components/chrome/deck-canvas.tsx` | Spec S01: beside `SIDEBAR_PANE_ZINDEX_BASE`, below the 9000 overlay base |
 | `sidebarRailsOf` | fn (modify) | `components/chrome/deck-canvas.tsx` | [P03]/[R06]: sort componentIds into `getAllRegistrations()` order before `effectiveRailOrder`; `SidebarRail` grows `mode` |
 | `slotStackByPaneId` | memo (modify) | `components/chrome/deck-canvas.tsx` | [P07]: split-mode rows in rail order, the check = focused member (`activePaneId`), plus the rail's mode |
@@ -522,17 +521,18 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Model + pure geometry in layout-imposer | pending | — |
-| #step-2 | Wire format: rails serialization | pending | — |
-| #step-3 | DeckManager rail API + actions | pending | — |
-| #step-4 | FLIP vertical scale in pane-flip | pending | — |
-| #step-5 | DeckCanvas seam properties, threading, signature | pending | — |
-| #step-6 | TugPane split rendering + split-aware badge | pending | — |
-| #step-7 | Seam element: drag + equalize | pending | — |
-| #step-8 | Corridor drag reorder | pending | — |
-| #step-9 | Layout section rail rows + miniature | pending | — |
-| #step-10 | tuglaws amendments | pending | — |
-| #step-11 | App-test + integration checkpoint | pending | — |
+| #step-1 | Model + pure geometry in layout-imposer | done | `75b4ccff5` |
+| #step-2 | Wire format: rails serialization | done | `5a81f42cc` |
+| #step-3 | DeckManager rail API + actions | done | `120f04d40` |
+| #step-4 | FLIP vertical scale in pane-flip | done, then superseded by #step-12 | `add443bba` |
+| #step-5 | DeckCanvas seam properties, threading, signature | done | `3bfb88c00` |
+| #step-6 | TugPane split rendering + split-aware badge | done | `2c02cb44c` |
+| #step-7 | Seam element: drag + equalize | done | `276c6f1f7` |
+| #step-8 | Corridor drag reorder | done | `f81e4b7b8` |
+| #step-9 | Layout section rail rows + miniature | done | `0725f30eb` |
+| #step-10 | tuglaws amendments | done | `7b837b246` |
+| #step-11 | App-test + integration checkpoint | done | `c624281ce` |
+| #step-12 | Distortion cap + real-geometry settle ([D135]) | done | `1e3290a9f` |
 
 #### Step 1: Model + pure geometry in layout-imposer {#step-1}
 
@@ -612,6 +612,8 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 ---
 
 #### Step 4: FLIP vertical scale in pane-flip {#step-4}
+
+> **Superseded by [D135]** after landing as `add443bba`: the `scaleY` mechanism specified below shipped, was judged a raster smear at mode-flip magnitudes, and was replaced by the distortion cap + real-geometry tween + fade choreography recorded in [P12] (revised). The body below is the historical spec of what `add443bba` built.
 
 **Depends on:** #step-1
 
@@ -848,6 +850,25 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 - [ ] `cd tugdeck && bunx vite build`
 - [ ] `just app-test tests/app-test/at0401-sidebar-split.test.ts`
 
+#### Step 12: Distortion cap + real-geometry settle {#step-12}
+
+**Depends on:** #step-11 (this revises what #step-4 shipped, after the whole feature was standing to look at)
+
+**Commit:** `tugways(settle-real-geometry): a scale smears only under a cap; height crosses for real [D135][L06][L13]`
+
+**References:** [P12] as revised, [D135]
+
+**Why it exists:** #step-4's `scaleY` shipped and was judged on sight. The compositor animates a rasterized texture, so a scale is a screenshot smear — tolerable at the adjacent width step's 18.5%, deformation at a mode flip's ~100%.
+
+**Artifacts:**
+- `lib/pane-flip.ts`: `sy` removed; `MAX_FLIP_SCALE_DISTORTION` (0.2), `scaleDistortion` (symmetric in grow and shrink), `springSizeKeyframes` (real `width`/`height` on the same damped spring).
+- `deck-canvas.tsx`: the Last pass runs up to three effects per frame under separate keys — translate transform, size, fade — because one non-transform property in the transform effect would revoke its acceleration whole. Rail mode flips fade every member but the z-frontmost, planned against the previous rail modes when the settle arms. `inlineRestorer` hands back what TugAnimator's completion commit displaced.
+- `at0294`: over-cap width asserts translate-only transform + a real `width` tween with pinned endpoints.
+- `at0278`: the Tab walk budget spans the Layouts section's new rail rows (a #step-9 regression this step's run surfaced).
+- Doctrine: [D135] in `design-decisions.md`; the mode-flip motion paragraph in `pane-model.md`; [P12] rewritten as REVISED with #step-4 marked superseded.
+
+**Verified:** `bun test` 6411 pass · `tsc --noEmit` clean · `bunx vite build` green · `just app-test-changed` 18/18 files, 38/38 tests.
+
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
 - [ ] Auto-split or split-by-default experiments (only if the shipped feature earns them — the brief's decisions log).
@@ -857,7 +878,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 | Checkpoint | Verification |
 |------------|--------------|
 | Pure math correct | `bun test src/lib/__tests__/layout-imposer.test.ts src/lib/__tests__/pane-flip.test.ts` |
-| Settle carries height | a mode flip tweens both members' heights; everyday gestures keep byte-identical keyframes ([P12]) |
+| Settle carries height | a mode flip tweens the front member's REAL height and fades the rest; no scale term rides over the cap; everyday gestures keep byte-identical keyframes ([P12] as revised by [D135]) |
 | Wire contract stable | serialization round-trip + defensive-read + legacy-blob unit tests |
 | Real-app behavior | `just app-test tests/app-test/at0401-sidebar-split.test.ts` |
 | Nothing regressed on the rails | `at0230`, `at0276`, `at0299`, `at0231` green |

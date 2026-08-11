@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  MAX_FLIP_SCALE_DISTORTION,
   SPRING_KEYFRAME_SAMPLES,
   flipDelta,
+  scaleDistortion,
   springKeyframes,
+  springSizeKeyframes,
 } from "@/lib/pane-flip";
 import { dampedSpring } from "@/lib/unit-functions";
 
@@ -33,7 +36,7 @@ function translation(frame: Keyframe): { x: number; y: number } {
 
 /** The factor inside a `scaleX(…)` keyframe value, or 1 when there is none. */
 function scaleX(frame: Keyframe): number {
-  const match = /scaleX\(([\d.]+)\)$/.exec(String(frame.transform));
+  const match = /scaleX\(([\d.]+)\)/.exec(String(frame.transform));
   return match === null ? 1 : Number(match[1]);
 }
 
@@ -64,8 +67,11 @@ describe("flipDelta", () => {
     });
   });
 
-  test("ignores height — no arrangement gesture changes one", () => {
-    expect(flipDelta(rect(0, 0, 400, 600), rect(0, 0, 400, 200))).toEqual({
+  test("does not carry height — a height change is never smeared", () => {
+    // The top member of a fresh split: left, top, and width all unchanged, and
+    // only the height halved. Its delta is nothing at all; the settle reads
+    // the rects' heights directly and drives springSizeKeyframes instead.
+    expect(flipDelta(rect(0, 0, 400, 600), rect(0, 0, 400, 300))).toEqual({
       dx: 0,
       dy: 0,
       sx: 1,
@@ -73,7 +79,33 @@ describe("flipDelta", () => {
   });
 
   test("reads a frame with no width as unscaled rather than dividing by zero", () => {
-    expect(flipDelta(rect(0, 0, 400, 600), rect(0, 0, 0, 0)).sx).toBe(1);
+    const delta = flipDelta(rect(0, 0, 400, 600), rect(0, 0, 0, 0));
+    expect(delta.sx).toBe(1);
+  });
+});
+
+describe("scaleDistortion", () => {
+  test("is symmetric in grow and shrink", () => {
+    expect(scaleDistortion(2)).toBeCloseTo(1, 10);
+    expect(scaleDistortion(0.5)).toBeCloseTo(1, 10);
+    expect(scaleDistortion(1)).toBe(0);
+  });
+
+  test("reads a degenerate scale as no distortion at all", () => {
+    expect(scaleDistortion(0)).toBe(0);
+    expect(scaleDistortion(-1)).toBe(0);
+  });
+
+  test("the cap admits the adjacent width-preset step and nothing wider", () => {
+    expect(scaleDistortion(675 / 800)).toBeLessThanOrEqual(
+      MAX_FLIP_SCALE_DISTORTION,
+    );
+    expect(scaleDistortion(800 / 1230)).toBeGreaterThan(
+      MAX_FLIP_SCALE_DISTORTION,
+    );
+    expect(scaleDistortion(675 / 1230)).toBeGreaterThan(
+      MAX_FLIP_SCALE_DISTORTION,
+    );
   });
 });
 
@@ -133,11 +165,21 @@ describe("springKeyframes", () => {
     expect(springKeyframes(10, 0, 1, 1)).toHaveLength(3);
   });
 
+  test("a frame that only moves is tweened by the transform it always was", () => {
+    // The everyday arrangement gestures take no scale term, so their
+    // keyframes are byte-identical to what the deck has always animated.
+    for (const frame of springKeyframes(-300, -160)) {
+      expect(String(frame.transform)).toMatch(
+        /^translate\(-?[\d.]+px, -?[\d.]+px\)$/,
+      );
+    }
+  });
+
   describe("with a width change", () => {
-    const SCALED = springKeyframes(-40, 0, 675 / 1230);
+    const SCALED = springKeyframes(-40, 0, 675 / 800);
 
     test("starts at the old width's scale and ends at none", () => {
-      expect(scaleX(SCALED[0])).toBeCloseTo(675 / 1230, 5);
+      expect(scaleX(SCALED[0])).toBeCloseTo(675 / 800, 5);
       expect(SCALED[SCALED.length - 1].transform).toBe(
         "translate(0px, 0px) scaleX(1)",
       );
@@ -154,11 +196,46 @@ describe("springKeyframes", () => {
 
     test("walks the scale up on the same spring the move rides", () => {
       const spring = dampedSpring();
-      const sx = 675 / 1230;
+      const sx = 675 / 800;
       for (let i = 1; i < SPRING_KEYFRAME_SAMPLES; i += 1) {
         const remaining = 1 - spring(i / SPRING_KEYFRAME_SAMPLES);
         expect(scaleX(SCALED[i])).toBeCloseTo(1 + (sx - 1) * remaining, 4);
       }
     });
+  });
+});
+
+describe("springSizeKeyframes", () => {
+  const GROWN = springSizeKeyframes("height", 300, 640);
+
+  test("starts at the old size and ends exactly at the new one", () => {
+    expect(GROWN[0]).toEqual({ height: "300px", offset: 0 });
+    expect(GROWN[GROWN.length - 1]).toEqual({ height: "640px", offset: 1 });
+  });
+
+  test("carries only the named property and its offset", () => {
+    for (const frame of GROWN) {
+      expect(Object.keys(frame).sort()).toEqual(["height", "offset"]);
+    }
+  });
+
+  test("walks the size on the same spring the transform tween rides", () => {
+    const spring = dampedSpring();
+    for (let i = 1; i < SPRING_KEYFRAME_SAMPLES; i += 1) {
+      const progress = spring(i / SPRING_KEYFRAME_SAMPLES);
+      const value = Number(String(GROWN[i].height).replace("px", ""));
+      expect(value).toBeCloseTo(300 + 340 * progress, 2);
+    }
+  });
+
+  test("animates width by the same construction", () => {
+    const frames = springSizeKeyframes("width", 800, 1230, 4);
+    expect(frames).toHaveLength(5);
+    expect(frames[0]).toEqual({ width: "800px", offset: 0 });
+    expect(frames[frames.length - 1]).toEqual({ width: "1230px", offset: 1 });
+  });
+
+  test("honors an explicit sample count, floored at two intervals", () => {
+    expect(springSizeKeyframes("height", 0, 100, 1)).toHaveLength(3);
   });
 });

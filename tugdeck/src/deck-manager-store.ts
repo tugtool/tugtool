@@ -223,6 +223,23 @@ export interface IDeckManagerStore {
    */
   retuneSidebarAllocation: () => void;
 
+  /**
+   * Set a side's height weights — the seam drag's commit. Weights are per
+   * componentId, so a member that closes and returns keeps its height, and a
+   * reorder moves cards without moving heights ([P02]).
+   *
+   * A gesture's commit rather than a public action: nothing but the seam has
+   * business synthesizing a ratio ([P11]).
+   */
+  setRailShares: (side: SidebarSide, shares: Record<string, number>) => void;
+
+  /**
+   * Put a side's members in a stated vertical order — the corridor drag's
+   * commit, and a gesture's commit for the same reason {@link setRailShares}
+   * is.
+   */
+  setRailOrder: (side: SidebarSide, order: readonly string[]) => void;
+
 
   /**
    * Add a new card to an existing pane. Returns the new card id, or

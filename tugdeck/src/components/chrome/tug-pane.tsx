@@ -32,7 +32,15 @@ import React, {
   useSyncExternalStore,
   type CSSProperties,
 } from "react";
-import { Layers, MoreHorizontal, MoveHorizontal, X, icons } from "lucide-react";
+import {
+  Layers,
+  MoreHorizontal,
+  MoveHorizontal,
+  Rows2,
+  Rows3,
+  X,
+  icons,
+} from "lucide-react";
 import type { CardState, TugPaneState } from "@/layout-tree";
 import type { SlotStackEntry } from "@/deck-store-selectors";
 import type { CardMeta, CardSizePolicy, LayoutRole } from "@/card-registry";
@@ -40,6 +48,7 @@ import { DEFAULT_SIZE_POLICY, getRegistration } from "@/card-registry";
 import { computeSnap, computeResizeSnap } from "@/snap";
 import type { Rect, GuidePosition, SnapResult } from "@/snap";
 import { getTugZoom } from "@/components/tugways/scale-timing";
+import { animate, type TugAnimation } from "@/components/tugways/tug-animator";
 import { useResponder } from "@/components/tugways/use-responder";
 import type { ActionEvent } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -52,6 +61,7 @@ import {
   imposeSidebarStyle,
   sidebarWidthProperty,
   type PinnedFrame,
+  type RailMode,
   type SidebarSide,
   IMPOSITION_GAP_PX,
   IMPOSITION_GAP_BOTTOM_PX,
@@ -238,6 +248,24 @@ export interface CardTitleBarProps {
   /** Raise the pane a picker row names. Wired in `DeckCanvas`. */
   onRevealPane?: (entry: SlotStackEntry) => void;
   /**
+   * Set only when {@link slotStack} is a RAIL rather than a numbered slot: how
+   * that rail is arranged. Present → the stack badge is also the gateway to
+   * arranging the rail, which is the one place a shared rail already announces
+   * itself.
+   *
+   * The verbs are the *rail's*, not the pane's, which is why the mode arrives
+   * as a fact and leaves as a named verb — the bar renders from props and
+   * reports the choice, exactly as it does for a picker row or a width preset.
+   */
+  railArrangement?: { mode: RailMode };
+  /**
+   * Arrange the rail this pane stands on. `"split"` / `"stack"` set the mode;
+   * `"equalize"` divides the run evenly again. Wired by `TugPane` to the
+   * registered commands, never to a store method ([L30]) — the same path
+   * {@link onSetWidth} takes.
+   */
+  onArrangeRail?: (verb: "split" | "stack" | "equalize") => void;
+  /**
    * Apply a width preset to this pane. Present exactly when
    * {@link widthPreset} is — together they are "this pane has a width
    * control" — and wired to the `set-card-width` command, never to a store
@@ -271,6 +299,16 @@ export interface CardTitleBarProps {
   onDragStart?: (event: React.PointerEvent) => void;
 }
 
+/**
+ * The stack menu's rail verbs, as row ids.
+ *
+ * Prefixed because the same menu's other rows are keyed by paneId, and a verb
+ * that could collide with one would raise a pane instead of arranging the rail.
+ */
+const RAIL_VERB_SPLIT = "rail:split";
+const RAIL_VERB_STACK = "rail:stack";
+const RAIL_VERB_EQUALIZE = "rail:equalize";
+
 export const CardTitleBar = React.forwardRef<CardTitleBarHandle, CardTitleBarProps>(
 function CardTitleBar({
   title,
@@ -283,12 +321,18 @@ function CardTitleBar({
   activeCardId,
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
+  railArrangement,
+  onArrangeRail,
   onSetWidth,
   masthead = null,
   sidebar = false,
   onClose,
   onDragStart,
 }: CardTitleBarProps, ref) {
+  // Whether the place this badge describes is a divided rail rather than a
+  // stack of any kind — the one fact the badge's glyph, its label, and its
+  // verbs all read.
+  const railSplit = railArrangement?.mode === "split";
   // Generic title-bar `…` menu: the active card may contribute items via
   // `paneTitleBarMenuStore`. The pane renders them without knowing what
   // card published them (the `cardTitleStore` precedent) — no lens import.
@@ -676,10 +720,20 @@ function CardTitleBar({
             The condition is `slotStack.length > 1` and nothing else — no
             "am I on top?" test, which would need a second cross-pane fact the
             title bar does not have. Every pane in the stack renders it,
-            because the badge describes the SLOT and a pane the user can see is
-            entitled to tell the truth about where it stands; occlusion hides
-            it along with everything else on a fully-covered pane, so a
-            same-width stack shows exactly one. */}
+            because the badge describes the PLACE and a pane the user can see
+            is entitled to tell the truth about where it stands.
+
+            What the user sees therefore depends on the arrangement. In a slot
+            stack, or a stacked rail, occlusion hides the badge along with
+            everything else on a fully-covered pane, so a same-width stack
+            shows exactly one. In a SPLIT rail nothing is occluded, so both
+            members show one — two badges saying the same true thing about the
+            one rail they share, which is the honest reading rather than a
+            duplicate.
+
+            The badge is also the rail's gateway: its glyph states the mode,
+            and its menu carries the verbs that change it. A slot stack has no
+            such verbs and takes none of this. */}
         {slotStack.length > 1 && (
           <TugPopupMenu
             trigger={
@@ -688,9 +742,19 @@ function CardTitleBar({
                 emphasis="ghost"
                 role="action"
                 size="sm"
-                icon={<Layers />}
+                icon={
+                  railSplit ? (
+                    slotStack.length > 2 ? (
+                      <Rows3 />
+                    ) : (
+                      <Rows2 />
+                    )
+                  ) : (
+                    <Layers />
+                  )
+                }
                 className="tug-pane-title-bar-stack-badge"
-                aria-label={`Stack of ${slotStack.length} cards`}
+                aria-label={`${railSplit ? "Split" : "Stack"} of ${slotStack.length} cards`}
                 data-testid="tug-pane-title-bar-stack-badge"
               >
                 {slotStack.length}
@@ -699,27 +763,42 @@ function CardTitleBar({
             align="end"
             open={stackMenuOpen}
             onOpenChange={setStackMenuOpen}
-            items={slotStack.map((entry) => {
-              // Each row is a miniature of the title bar it stands for: the
-              // pane's own icon, then the pane's own title, in that order and
-              // from the same `CardMeta.icon` the real title bar draws.
-              const RowIcon =
-                entry.icon !== undefined && entry.icon in icons
-                  ? icons[entry.icon as keyof typeof icons]
-                  : null;
-              return {
-                id: entry.paneId,
-                label: entry.title,
-                ...(RowIcon === null
-                  ? {}
-                  : { icon: React.createElement(RowIcon) }),
-                // Set on every row, not just the front one, so the check
-                // column aligns across the menu.
-                selected: entry.topmost,
-              };
-            })}
-            onSelect={(paneId) => {
-              const entry = slotStack.find((e) => e.paneId === paneId);
+            items={[
+              ...slotStack.map((entry) => {
+                // Each row is a miniature of the title bar it stands for: the
+                // pane's own icon, then the pane's own title, in that order and
+                // from the same `CardMeta.icon` the real title bar draws.
+                const RowIcon =
+                  entry.icon !== undefined && entry.icon in icons
+                    ? icons[entry.icon as keyof typeof icons]
+                    : null;
+                return {
+                  id: entry.paneId,
+                  label: entry.title,
+                  ...(RowIcon === null
+                    ? {}
+                    : { icon: React.createElement(RowIcon) }),
+                  // Set on every row, not just the checked one, so the check
+                  // column aligns across the menu.
+                  selected: entry.selected,
+                };
+              }),
+              // The rail's own verbs, below its members. Their ids are
+              // prefixed so they cannot collide with a paneId.
+              ...(onArrangeRail === undefined || railArrangement === undefined
+                ? []
+                : railSplit
+                  ? [
+                      { id: RAIL_VERB_STACK, label: "Stack" },
+                      { id: RAIL_VERB_EQUALIZE, label: "Equalize Heights" },
+                    ]
+                  : [{ id: RAIL_VERB_SPLIT, label: "Split Vertically" }]),
+            ]}
+            onSelect={(id) => {
+              if (id === RAIL_VERB_SPLIT) return onArrangeRail?.("split");
+              if (id === RAIL_VERB_STACK) return onArrangeRail?.("stack");
+              if (id === RAIL_VERB_EQUALIZE) return onArrangeRail?.("equalize");
+              const entry = slotStack.find((e) => e.paneId === id);
               if (entry) onRevealPane?.(entry);
             }}
             data-testid="tug-pane-title-bar-stack-menu"
@@ -1077,6 +1156,89 @@ function releaseImposedFrame(
 }
 
 /**
+ * How far outside a split rail's horizontal band the pointer may stray before a
+ * reorder drag converts to a free drag.
+ *
+ * Beside {@link DRAG_MOVE_THRESHOLD_PX} because it is the same gesture's other
+ * pointer-travel constant, and here rather than in the pure imposer because it
+ * tunes a drag: the imposer has no geometry that reads it, and putting it there
+ * would only mean the drag machine importing the imposer to learn about its own
+ * threshold.
+ *
+ * Too tight and a slightly diagonal reorder unpins the card the user meant to
+ * shuffle; too loose and a deliberate drag-out feels sticky.
+ */
+const RAIL_CORRIDOR_SLOP_PX = 80;
+
+/** How long a sibling takes to slide to its previewed place during a reorder.
+ *  Shorter than the imposer's settle: this is a preview answering the hand,
+ *  not the deck coming to rest. */
+const RAIL_REORDER_SHUFFLE_MS = 140;
+
+/**
+ * One member of the rail a reorder drag is shuffling, snapshotted at the latch.
+ * Geometry is in LAYOUT pixels — the space transforms are written in — so
+ * nothing downstream has to remember to divide by the zoom twice.
+ */
+interface RailReorderMember {
+  componentId: string;
+  paneId: string;
+  el: HTMLElement;
+  /** Where the member stood when the drag latched. */
+  top: number;
+  height: number;
+}
+
+/** A reorder drag in flight: the rail it is shuffling and where it has got to. */
+interface RailReorderState {
+  side: SidebarSide;
+  /** The corridor: pointer x inside this band keeps the gesture a reorder. */
+  bandMin: number;
+  bandMax: number;
+  members: readonly RailReorderMember[];
+  /** The dragged member's componentId. */
+  dragging: string;
+  /** The order as the preview currently shows it. */
+  order: string[];
+  /** Where the members' run starts, in layout pixels. */
+  runTop: number;
+  /** The shuffle tweens in flight, by componentId. Held so the transforms can
+   *  be taken off without a still-running tween painting them back on. */
+  tweens: Map<string, TugAnimation>;
+}
+
+/** Stop every shuffle tween of `state`, leaving each sibling at the pose it was
+ *  travelling to — which the caller is about to replace outright. */
+function endRailReorderTweens(state: RailReorderState): void {
+  for (const tween of state.tweens.values()) tween.cancel("snap-to-end");
+  state.tweens.clear();
+}
+
+/**
+ * Where each member of `order` would stand, in layout pixels.
+ *
+ * Heights travel with their cards, because shares are keyed by componentId: a
+ * reorder moves cards past one another and never hands a departing card's
+ * height to whoever takes its place. That is what makes a reorder a pure
+ * translate, with no vertical scale in the settle that follows.
+ */
+function railReorderTops(
+  state: RailReorderState,
+  order: readonly string[],
+): Map<string, number> {
+  const heights = new Map(
+    state.members.map((member) => [member.componentId, member.height]),
+  );
+  const tops = new Map<string, number>();
+  let top = state.runTop;
+  for (const componentId of order) {
+    tops.set(componentId, top);
+    top += (heights.get(componentId) ?? 0) + IMPOSITION_GAP_PX;
+  }
+  return tops;
+}
+
+/**
  * How far the pointer must travel before a press becomes a gesture — on the
  * title bar (drag), on a resize handle, and on the Lens's deck-facing edge.
  *
@@ -1085,7 +1247,7 @@ function releaseImposedFrame(
  * card, or the pinned Lens — because committing a move or a resize is what
  * releases it from the arrangement, and that should take an actual drag.
  */
-const DRAG_MOVE_THRESHOLD_PX = 3;
+export const DRAG_MOVE_THRESHOLD_PX = 3;
 
 /** Height of the title bar chrome inside `.tug-pane-body` (below the outer frame). */
 const HEADER_HEIGHT_PX = 28;
@@ -1094,6 +1256,32 @@ const DEFAULT_MIN_CONTENT: { width: number; height: number } = { width: 100, hei
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/**
+ * Where a pane stands on the rail it shares — the side, the rail's arrangement,
+ * and this pane's place in it. Resolved by `DeckCanvas`, which is the only
+ * party that can see a rail's other members.
+ *
+ * In a **stack** every member takes the same geometry — one gap below the
+ * canvas top, the deeper gap above its bottom — and z-order decides which you
+ * see; `memberIndex` then means only where the member sits in the picker's
+ * list. In a **split** the index IS geometry: it names the member's share of
+ * the run, and the frame pins itself to the seams either side of it.
+ */
+export interface SidebarStackStanding {
+  /** The deck edge the rail holds. */
+  side: SidebarSide;
+  /** Which sidebar card this pane is, as the arrangement record names it —
+   *  the key an order or a height weight is stored under. */
+  componentId: string;
+  /** How many cards stand on the rail — what tells the title bar it is in a
+   *  stack worth offering a picker for. */
+  count: number;
+  /** How the members stand against one another. */
+  mode: RailMode;
+  /** This pane's place in the rail's vertical order, top to bottom. */
+  memberIndex: number;
+}
 
 /**
  * Props for the TugPane component (frame + pane chrome).
@@ -1204,22 +1392,20 @@ export interface TugPaneProps {
    */
   onRevealPane?: (entry: SlotStackEntry) => void;
   /**
-   * Set only on a pane standing in a rail: the side that rail holds and how
-   * many cards stand on it. A rail is imposed as the strip's fixed end rather
+   * Set only on a pane standing in a rail: where that rail stands and where
+   * this pane stands on it. A rail is imposed as the strip's fixed end rather
    * than a link in its chain, so its panes take a pin instead of a `placement`:
    * resizable only on the deck-facing edge, and excluded from snap and merge.
    * Resolved by `DeckCanvas` — the pane carries no marker of its own ([P04]).
-   *
-   * Every member takes the SAME geometry — one gap below the canvas top, the
-   * deeper gap above its bottom — because a shared rail is a stack, not a
-   * split: the cards stand front-to-back and z-order decides which you see.
-   * `count` is therefore not geometry; it is what tells the title bar it is
-   * standing in a stack worth offering a picker for.
    */
-  sidebarStack?: {
-    side: SidebarSide;
-    count: number;
-  };
+  sidebarStack?: SidebarStackStanding;
+  /**
+   * Commit a new vertical order for the rail this pane stands on — the
+   * corridor drag's ending. A gesture's commit rather than an action, because
+   * nothing but the gesture that shuffled the rail has any business stating
+   * what order it ended in ([P11]).
+   */
+  onSetRailOrder?: (side: SidebarSide, order: readonly string[]) => void;
   /**
    * Set on the pane hosting the Lens card, pinned or not. Separate from
    * {@link sidebarStack}, which says only where a PINNED rail stands: a Lens
@@ -1309,11 +1495,30 @@ export function TugPane({
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
   sidebarStack,
+  onSetRailOrder,
   isLensPane = false,
   bullseye = false,
   bullseyeExit,
 }: TugPaneProps) {
   const sidebarSide = sidebarStack?.side;
+  // A split rail's member takes its share of the run instead of the whole of
+  // it. Passed to the imposer rather than resolved here — the pins are its
+  // arithmetic, and a rail of one is stacked geometry whatever the mode says,
+  // so a side split while only one card stands on it looks exactly as it did.
+  const railSplit =
+    sidebarStack !== undefined &&
+    sidebarStack.mode === "split" &&
+    sidebarStack.count > 1;
+  const railMember =
+    railSplit && sidebarStack !== undefined
+      ? {
+          member: {
+            side: sidebarStack.side,
+            index: sidebarStack.memberIndex,
+            count: sidebarStack.count,
+          },
+        }
+      : undefined;
   const { id, position, size } = stackState;
   // Two derived geometry modes, both placed by `lib/layout-imposer.ts`.
   //
@@ -1838,6 +2043,44 @@ export function TugPane({
   // Appearance-zone only: set/cleared via data-drop-target attribute. [D45, Rule 4]
   const dragDropTargetEl = useRef<HTMLElement | null>(null);
 
+  // The reorder in flight, or null for every other drag in the deck. Set at the
+  // move latch on a split-rail member and cleared either at the corridor exit
+  // (the gesture becomes a free drag) or at the drop.
+  const railReorderRef = useRef<RailReorderState | null>(null);
+  // A reorder whose order has been committed but whose preview transforms are
+  // still holding the frames where the hand left them. Consumed by the layout
+  // effect below, on the commit that lands the new order.
+  const pendingRailReorderRef = useRef<RailReorderState | null>(null);
+  // The gesture reads these live rather than through its own closure, so a
+  // drag that began before the rail was split cannot act on a stale mode.
+  const sidebarStackRef = useRef(sidebarStack);
+  sidebarStackRef.current = sidebarStack;
+  const railSplitRef = useRef(railSplit);
+  railSplitRef.current = railSplit;
+  const onSetRailOrderRef = useRef(onSetRailOrder);
+  onSetRailOrderRef.current = onSetRailOrder;
+
+  /**
+   * Take the reorder's preview transforms off, on the commit that made them
+   * redundant ([L03] — a layout effect, so it runs after the DOM is updated and
+   * before anything is painted or measured against it).
+   *
+   * A layout effect rather than a frame callback because the thing being waited
+   * for is a React commit, and rAF's timing against one is a browser detail
+   * rather than a contract ([L05]). Being a child of `DeckCanvas`, this runs
+   * before the settle's own Last-measure effect — which is what leaves the
+   * siblings measured un-transformed there while their First was measured, in a
+   * store subscriber before this render, still previewed.
+   */
+  useLayoutEffect(() => {
+    const pending = pendingRailReorderRef.current;
+    if (pending === null) return;
+    pendingRailReorderRef.current = null;
+    endRailReorderTweens(pending);
+    for (const member of pending.members) member.el.style.transform = "";
+    frameRef.current?.removeAttribute("data-gesture");
+  });
+
   /**
    * Snapshot all `.tug-tab-bar[data-pane-id]` elements at drag-start (excluding
    * our own pane). Used for hit-testing during drag and on pointer-up. [D45]
@@ -1953,6 +2196,135 @@ export function TugPane({
     guideRef.current = [];
   }
 
+  /**
+   * Snapshot the rail a reorder is about to shuffle, or `null` when this pane
+   * is not a member of a split one — which is every pane in the deck but two
+   * or three, and the answer that keeps the free drag untouched.
+   */
+  function beginRailReorder(frame: HTMLElement): RailReorderState | null {
+    const side = sidebarStackRef.current?.side;
+    if (side === undefined || !railSplitRef.current) return null;
+    const zoom = getTugZoom() || 1;
+    const canvas = frame.parentElement;
+    if (canvas === null) return null;
+    const canvasRect = canvas.getBoundingClientRect();
+    const members: RailReorderMember[] = [];
+    for (const el of canvas.querySelectorAll<HTMLElement>(
+      `.tug-pane[data-rail-split][data-lens="${side}"]`,
+    )) {
+      const paneId = el.getAttribute("data-pane-id");
+      const componentId = el.getAttribute("data-rail-member");
+      if (paneId === null || componentId === null) continue;
+      const rect = el.getBoundingClientRect();
+      members.push({
+        componentId,
+        paneId,
+        el,
+        top: (rect.top - canvasRect.top) / zoom,
+        height: rect.height / zoom,
+      });
+    }
+    if (members.length < 2) return null;
+    members.sort((a, b) => a.top - b.top);
+    const dragging = members.find((member) => member.paneId === id)?.componentId;
+    if (dragging === undefined) return null;
+    const ownRect = frame.getBoundingClientRect();
+    return {
+      side,
+      bandMin: ownRect.left - RAIL_CORRIDOR_SLOP_PX * zoom,
+      bandMax: ownRect.right + RAIL_CORRIDOR_SLOP_PX * zoom,
+      members,
+      dragging,
+      order: members.map((member) => member.componentId),
+      runTop: members[0].top,
+      tweens: new Map(),
+    };
+  }
+
+  /**
+   * One frame of a reorder: move the dragged member, shuffle the preview if it
+   * has crossed a sibling, and answer whether the gesture is still a reorder.
+   *
+   * The translate is the RAW pointer delta, deliberately unclamped. A clamp to
+   * the rail's run would cost a jump at the conversion out of the corridor: the
+   * free drag that takes over re-adds the full pointer delta from the gesture's
+   * start, so the frame lands where the eye last saw it only while the reorder
+   * was showing that same full delta.
+   */
+  function applyRailReorderFrame(
+    frame: HTMLElement,
+    state: RailReorderState,
+    zoom: number,
+  ): boolean {
+    const pointer = latestDragPointer.current;
+    if (pointer.x < state.bandMin || pointer.x > state.bandMax) return false;
+
+    const dragged = state.members.find(
+      (member) => member.componentId === state.dragging,
+    );
+    if (dragged === undefined) return false;
+    const delta = (pointer.y - dragStartPointer.current.y) / zoom;
+    frame.style.transform = `translateY(${delta}px)`;
+
+    // Where the dragged member's middle now is, against where its siblings
+    // would sit if it were lifted out of the rail entirely. That comparison is
+    // stable frame to frame — the siblings' own preview positions depend on the
+    // order being computed, and reading them here would chase its own tail.
+    const centre = dragged.top + delta + dragged.height / 2;
+    const others = state.order.filter(
+      (componentId) => componentId !== state.dragging,
+    );
+    let top = state.runTop;
+    let index = 0;
+    for (const componentId of others) {
+      const member = state.members.find((m) => m.componentId === componentId);
+      const height = member?.height ?? 0;
+      if (centre > top + height / 2) index += 1;
+      top += height + IMPOSITION_GAP_PX;
+    }
+    const next = [...others];
+    next.splice(index, 0, state.dragging);
+    if (next.some((componentId, i) => componentId !== state.order[i])) {
+      state.order = next;
+      const tops = railReorderTops(state, next);
+      for (const member of state.members) {
+        if (member.componentId === state.dragging) continue;
+        const target = (tops.get(member.componentId) ?? member.top) - member.top;
+        const from = member.el.style.transform;
+        const to = target === 0 ? "" : `translateY(${target}px)`;
+        member.el.style.transform = to;
+        // A short crossing rather than a cut, on its own key so a shuffle and
+        // the imposer's settle never share a tween slot ([L13]).
+        state.tweens.set(
+          member.componentId,
+          animate(
+            member.el,
+            [
+              { transform: from === "" ? "translateY(0px)" : from },
+              { transform: to === "" ? "translateY(0px)" : to },
+            ],
+            {
+              duration: RAIL_REORDER_SHUFFLE_MS,
+              easing: "ease-out",
+              fill: "none",
+              composite: "replace",
+              key: "rail-reorder",
+              slotCancelMode: "snap-to-end",
+            },
+          ),
+        );
+      }
+    }
+    return true;
+  }
+
+  /** Take every preview transform back off, dragged member included — the state
+   *  the free drag and the un-shuffled rail both start from. */
+  function clearRailReorder(state: RailReorderState): void {
+    endRailReorderTweens(state);
+    for (const member of state.members) member.el.style.transform = "";
+  }
+
   const handleDragStart = useCallback(
     (event: React.PointerEvent) => {
       // Drag-start focus save. The pane
@@ -2057,13 +2429,50 @@ export function TugPane({
           // The move is about to expose whatever this frame was covering,
           // without a store commit; reveal every occluded pane before the
           // first moved paint and hold hides until the gesture ends.
+          //
+          // Unconditional, in BOTH modes. The bracket is not about the rail's
+          // footprint — it is about frames covering each other, which is
+          // precisely what a reorder does transiently as the dragged member
+          // translates over its sibling. Left to itself the occlusion
+          // controller would arm its hide timer and stamp a fully covered
+          // sibling `data-occluded` under the user's hand, since a paused
+          // pointer with no tween running is exactly the quiescent state it
+          // waits for. It also keeps the drop's unconditional `end()` paired.
           paneOcclusionGesture.begin();
-          // Now it is a move. A derived pane converts to free pixel geometry
-          // here, at the moment the gesture becomes one.
-          if (derivedRef.current) {
+          // A member of a SPLIT rail latches into reorder mode instead: the
+          // drag shuffles it within its rail rather than tearing it out. Only
+          // the release is conditional — everything else on this path is
+          // today's, byte for byte, because every other pane in the deck
+          // depends on it.
+          const reorder = beginRailReorder(frame);
+          if (reorder !== null) {
+            railReorderRef.current = reorder;
+          } else if (derivedRef.current) {
+            // Now it is a move. A derived pane converts to free pixel geometry
+            // here, at the moment the gesture becomes one.
             const released = releaseImposedFrame(frame, dragCanvasBounds.current);
             dragStartPosition.current = { x: released.x, y: released.y };
           }
+        }
+
+        // Reorder mode owns the rest of the frame: the member follows the
+        // pointer's vertical delta by transform (its `left`/`top` are calc
+        // pins that a pixel write would fight), its siblings preview-shuffle,
+        // and the corridor decides whether the gesture is still a reorder.
+        const reordering = railReorderRef.current;
+        if (reordering !== null) {
+          if (applyRailReorderFrame(frame, reordering, dragZoom)) return;
+          // Out of the corridor: the gesture converts, one way, into the free
+          // drag it would have been. Exactly the two lines the reorder latch
+          // skipped, and in this ORDER — `releaseImposedFrame` measures a
+          // transform-inclusive rect and does not clear the transform itself,
+          // so releasing with the translate still on would bank the drag
+          // offset into `left`/`top` AND leave the transform on top of it,
+          // doubling the frame's travel at the conversion.
+          clearRailReorder(reordering);
+          railReorderRef.current = null;
+          const released = releaseImposedFrame(frame, dragCanvasBounds.current);
+          dragStartPosition.current = { x: released.x, y: released.y };
         }
 
         // Always solo card clamping.
@@ -2149,7 +2558,17 @@ export function TugPane({
         frame.releasePointerCapture(e.pointerId);
 
         // Re-enable height transition now that the drag gesture is complete. [D07]
-        frame.removeAttribute("data-gesture");
+        //
+        // A gesture that ENDS as a reorder keeps the attribute a little
+        // longer: the order commit below arms a settle, and the settle must
+        // skip this frame — it already rests at its final visual position, and
+        // both of the settle's passes would measure it through the inline
+        // transform that puts it there. The choice is made on the mode the
+        // gesture ends in, never on the branch it latched through: one that
+        // converted out of the corridor IS a free drag by now, and drops its
+        // attribute exactly where every other drag does.
+        const reorderDrop = railReorderRef.current;
+        if (reorderDrop === null) frame.removeAttribute("data-gesture");
 
         // Remove snap guides immediately on drop. [D03]
         // Must happen before any early return (e.g. merge) to prevent guide leaks.
@@ -2187,6 +2606,37 @@ export function TugPane({
         // below (or the merge's store mutation) recomputes from final
         // geometry through the controller's store subscription.
         paneOcclusionGesture.end();
+
+        // A reorder ends here, and it ends without a measurement.
+        //
+        // The dragged member is parked at the position its new index gives it,
+        // so the commit that follows changes its LAYOUT to exactly that place
+        // and the transform holding it there becomes exactly redundant. Taking
+        // the transform off in the layout effect that runs on that same commit
+        // is therefore not a tween that has to land — it is two equal and
+        // opposite changes in one frame, which is the one arrangement that
+        // cannot flicker. The siblings need no help at all: they still wear
+        // their preview transforms when the settle measures First (so First is
+        // where the user actually sees them), the same layout effect clears
+        // those transforms before the settle measures Last, and the settle
+        // crosses them from one to the other for free.
+        if (reorderDrop !== null) {
+          railReorderRef.current = null;
+          const tops = railReorderTops(reorderDrop, reorderDrop.order);
+          const dragged = reorderDrop.members.find(
+            (member) => member.componentId === reorderDrop.dragging,
+          );
+          if (dragged !== undefined) {
+            const target = (tops.get(dragged.componentId) ?? dragged.top) - dragged.top;
+            frame.style.transform = target === 0 ? "" : `translateY(${target}px)`;
+          }
+          pendingRailReorderRef.current = reorderDrop;
+          onSetRailOrderRef.current?.(reorderDrop.side, reorderDrop.order);
+          dragOtherRects.current = [];
+          latestAltKey.current = false;
+          lastSnapResult.current = null;
+          return;
+        }
 
         // Hit-test tab bars for merge on drop. [D45]
         if (onCardMerged && activeCardId) {
@@ -2706,6 +3156,25 @@ export function TugPane({
     [id],
   );
 
+  // The rail verbs the stack badge offers, on the same path the width control
+  // takes: dispatched as registered commands rather than threaded back through
+  // `DeckCanvas` as two more props ([L30]). The title bar keeps rendering from
+  // props alone and the pane owns the dispatch.
+  const handleArrangeRail = useCallback(
+    (verb: "split" | "stack" | "equalize") => {
+      if (sidebarSide === undefined) return;
+      if (verb === "equalize") {
+        dispatchCommand(TUG_ACTIONS.EQUALIZE_RAIL, { side: sidebarSide });
+        return;
+      }
+      dispatchCommand(TUG_ACTIONS.SET_RAIL_MODE, {
+        side: sidebarSide,
+        mode: verb,
+      });
+    },
+    [sidebarSide],
+  );
+
   const closable = effectiveMeta.closable !== false;
 
   // Pane-close confirmation policy. Multi-card panes always confirm —
@@ -2746,7 +3215,7 @@ export function TugPane({
   const modeStyle: CSSProperties = bullseye
     ? imposeStyle({ slot: 0, count: 1 }, bullseyeWidth, pinnedFrame)
     : sidebarSide !== undefined
-      ? imposeSidebarStyle(sidebarSide, renderWidth)
+      ? imposeSidebarStyle(sidebarSide, renderWidth, railMember)
       : imposed && placement !== undefined
         ? imposeStyle(placement, slotWidth, pinnedFrame)
         : {
@@ -2824,6 +3293,15 @@ export function TugPane({
       // `data-lens` is NOT the same bit: it carries which edge a rail is
       // pinned to, and a released rail has rail chrome with no side.
       {...(sidebarSide !== undefined ? { "data-lens": sidebarSide } : {})}
+      // A member of a rail that is currently divided rather than stacked — the
+      // sibling bit to `data-lens`, and what the seam elements and the reorder
+      // drag find their fellow members by.
+      {...(railSplit ? { "data-rail-split": "" } : {})}
+      // Which card of the rail this frame is, so a reorder can name its
+      // members the way the record does — by componentId, not by pane id.
+      {...(railSplit && sidebarStack !== undefined
+        ? { "data-rail-member": sidebarStack.componentId }
+        : {})}
       {...(imposed && placement !== undefined && !bullseye
         ? { "data-imposed": String(placement.slot) }
         : {})}
@@ -2890,6 +3368,12 @@ export function TugPane({
             activeCardId={activeCardId}
             slotStack={slotStack}
             onRevealPane={onRevealPane}
+            {...(sidebarStack === undefined
+              ? {}
+              : {
+                  railArrangement: { mode: sidebarStack.mode },
+                  onArrangeRail: handleArrangeRail,
+                })}
             masthead={activeCardMasthead}
             sidebar={isRail}
             onClose={handleTitleBarClose}

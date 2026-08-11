@@ -60,14 +60,14 @@ const STACK: readonly SlotStackEntry[] = [
     cardId: "spike-a",
     title: "session-naming-notes.md",
     icon: "FileText",
-    topmost: true,
+    selected: true,
   },
   {
     paneId: "spike-b",
     cardId: "spike-b",
     title: "Project Diff",
     icon: "GitCompareArrows",
-    topmost: false,
+    selected: false,
   },
 ];
 

@@ -224,7 +224,12 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // accessor, and the three geometry writers that release it all live in
     // this module, and the load-bearing claim of that test is a read of the
     // store record — so it has nowhere smaller to point.
-    "tugdeck/src/deck-manager.ts": 24,
+    // 24 → 25 with the sidebar split (at0401): setRailMode, setRailShares, and
+    // setRailOrder are all this module's, and all three run in that test — the
+    // split verb, the seam drag's commit, and the reorder drag's. The rail
+    // arrangement has no smaller home: it is deck-wide state, committed through
+    // the same _reimpose funnel every other imposition change takes.
+    "tugdeck/src/deck-manager.ts": 25,
     // The pane frame itself: every test that drives a card through its title bar,
     // its handles, its close control, or its geometry names it, because there is no
     // smaller surface those gestures live on. The coupling is structural rather than

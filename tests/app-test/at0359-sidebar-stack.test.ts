@@ -1,14 +1,19 @@
 /**
- * at0359-sidebar-stack.test.ts — two sidebar cards on one side are a stack,
- * not a split.
+ * at0359-sidebar-stack.test.ts — two sidebar cards on one side are a stack by
+ * default.
  *
  * The deck ships with both sidebars defaulting to the right, so "what happens
  * when the Lens and Jots share a side" is the out-of-the-box picture rather than
  * a corner case. The answer is the one the deck already gives for two panes
  * sharing a slot: they stand **front-to-back**, same pin and same full height,
- * and z-order decides which you see. An earlier design divided the rail's height
- * between them, which spent a rail to show two half-cards — the arrangement
- * lifting Jots out of the Lens existed to escape.
+ * and z-order decides which you see.
+ *
+ * That is the DEFAULT, and this test is what pins it as one. The user may split
+ * a side instead ([D134], `at0401`) — the picker's Split Vertically row below
+ * the member rows is that door, and it is asserted here as part of the resting
+ * picture. What must not drift is what a rail does when nobody has asked for
+ * anything: an automatic split spent a rail to show two half-cards, which is
+ * the arrangement lifting Jots out of the Lens existed to escape.
  *
  * What that claim decomposes into, and what this test asserts:
  *
@@ -185,14 +190,19 @@ describe.skipIf(!SHOULD_RUN)(
           );
           note("picker rows", rows.join(" · "));
           expect(
-            rows.length,
-            "the picker lists both members of the rail",
-          ).toBe(2);
-          expect(
             rows.some((r) => r.includes("Lens")) &&
               rows.some((r) => r.includes("Jots")),
             "the rows name the two cards",
           ).toBe(true);
+          // The two members, and one verb BELOW them: on a rail the badge is
+          // also the door to the arrangement, and from a stack the offer is to
+          // split ([D134]). A slot's stack has no such verb — see at0347.
+          // Which member leads is z-order's business and is asserted above; what
+          // this pins is that the verb is one row, and the last one.
+          expect(rows.length, "two members and one verb").toBe(3);
+          expect(rows[rows.length - 1], "the verb sits below the members").toBe(
+            "Split Vertically",
+          );
 
           // Choose the one that is NOT in front, and it comes forward.
           const wanted = frontIsJots ? "Lens" : "Jots";

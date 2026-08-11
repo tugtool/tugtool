@@ -8,10 +8,11 @@
  * it, the idiom Windows 11's Snap Layouts established.
  *
  * Both edges can carry a rail and either can carry more than one card, because
- * the deck's own default stacks the Lens and Jots on the right. Those cards
- * stand front-to-back in one rail, so the picture draws them as a stack of
- * paper — the ones behind peeking out at the top — rather than as a divided
- * strip, which is a different arrangement and not the one the deck paints.
+ * the deck's own default stacks the Lens and Jots on the right. A stacked
+ * rail's cards stand front-to-back, so the picture draws them as a stack of
+ * paper — the ones behind peeking out at the top. A side the user has SPLIT is
+ * a divided strip instead, because that is then the arrangement the deck
+ * paints; the picture shows which of the two a side is standing under.
  *
  * The geometry is the allocator's settled state (see at0303): the cards tile
  * the band edge to edge with only the seam between them, and the rail absorbs
@@ -39,6 +40,7 @@ import {
   slotCount,
   type ContentWidth,
   type ImpositionKind,
+  type RailMode,
   type SidebarSide,
 } from "@/lib/layout-imposer";
 
@@ -86,6 +88,9 @@ export interface LayoutMiniatureProps {
   kind: ImpositionKind | null;
   /** How many sidebar cards stand on each side. */
   rails?: MiniatureRails;
+  /** How each side's rail is arranged. Absent — for a side or entirely — draws
+   *  a stack, which is what a rail is until the user says otherwise. */
+  railModes?: Partial<Record<SidebarSide, RailMode>>;
   /** Draw the cards. `false` draws the deck's frame and rails alone — the
    *  picture for a question that is only about which edge a sidebar holds. */
   cards?: boolean;
@@ -100,26 +105,57 @@ export interface LayoutMiniatureProps {
   selected?: boolean;
 }
 
+/** The air between two members of a divided rail, in percent of the drawing's
+ *  height — the seam's share, exaggerated for the same reason the card gap is. */
+const RAIL_SEAM_PCT = 2.5;
+
 /**
- * One side's rail, holding `count` cards front-to-back at `widthPct` of the
- * drawing.
+ * One side's rail, holding `count` cards at `widthPct` of the drawing, drawn
+ * the way that side is actually arranged.
  *
- * The members are the same size and stand in one place — that IS the geometry —
- * so a stack is drawn the way a stack of paper is: the ones behind peek out by
- * a few percent at the top. Dividing the strip would draw a rail that splits,
- * which is precisely the arrangement this is not.
+ * **Stacked**, the members are the same size and stand in one place — that IS
+ * the geometry — so it is drawn the way a stack of paper is: the ones behind
+ * peek out by a few percent at the top. **Split**, the strip is divided into
+ * equal segments with a seam between them, because the whole point of that
+ * arrangement is that every member has its own share of the run.
+ *
+ * The split drawing is the equal division rather than the side's actual
+ * heights. The picture answers "how is this side arranged", and a miniature
+ * faithful to a hand-dragged ratio would make the two answers to that question
+ * look like three.
  */
 function Rail({
   count,
   widthPct,
+  mode = "stack",
 }: {
   count: number;
   widthPct: number;
+  mode?: RailMode;
 }): React.ReactElement {
   const depth = Math.min(count - 1, 2);
+  const members = mode === "split" ? Math.min(count, 3) : depth + 1;
   return (
-    <span className="layout-mini-rail" style={{ flexBasis: `${widthPct}%` }}>
-      {Array.from({ length: depth + 1 }, (_, i) => {
+    <span
+      className="layout-mini-rail"
+      data-rail-mode={mode}
+      style={{ flexBasis: `${widthPct}%` }}
+    >
+      {Array.from({ length: members }, (_, i) => {
+        if (mode === "split") {
+          // Equal segments, seams between them: the first is flush with the
+          // top of the strip and the last with its bottom, exactly as the real
+          // rail's endpoints are the pins an unsplit rail has.
+          const span = (100 - RAIL_SEAM_PCT * (members - 1)) / members;
+          const top = i * (span + RAIL_SEAM_PCT);
+          return (
+            <span
+              key={i}
+              className="layout-mini-rail-member"
+              style={{ top: `${top}%`, bottom: `${100 - top - span}%` }}
+            />
+          );
+        }
         // Drawn back to front: the last one is the card you are looking at.
         const behind = depth - i;
         return (
@@ -147,6 +183,7 @@ function Rail({
 export function LayoutMiniature({
   kind,
   rails = {},
+  railModes,
   cards = true,
   width,
   selected = false,
@@ -183,7 +220,9 @@ export function LayoutMiniature({
       data-selected={selected ? "true" : undefined}
       aria-hidden="true"
     >
-      {left > 0 ? <Rail count={left} widthPct={railPct} /> : null}
+      {left > 0 ? (
+        <Rail count={left} widthPct={railPct} mode={railModes?.left} />
+      ) : null}
       <span className="layout-mini-field">
         {Array.from({ length: count }, (_, i) => (
           <span
@@ -196,7 +235,9 @@ export function LayoutMiniature({
           />
         ))}
       </span>
-      {right > 0 ? <Rail count={right} widthPct={railPct} /> : null}
+      {right > 0 ? (
+        <Rail count={right} widthPct={railPct} mode={railModes?.right} />
+      ) : null}
     </span>
   );
 }

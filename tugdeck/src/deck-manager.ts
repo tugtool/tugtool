@@ -40,6 +40,7 @@ import {
 } from "./layout-tree";
 import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import {
+  getAllRegistrations,
   getRegistration,
   getSizePolicy,
   getStackSizePolicy,
@@ -91,6 +92,12 @@ import {
   isSidebarPinned,
   sidebarSide,
   isSidebarSide,
+  effectiveRailOrder,
+  railModeOf,
+  withRailMode,
+  withRailOrder,
+  withRailShares,
+  withoutRailShares,
   CONTENT_WIDTH_SLIM_PX,
   DEFAULT_CONTENT_WIDTH,
   DEFAULT_IMPOSITION_KIND,
@@ -101,6 +108,7 @@ import {
   type ContentWidth,
   type DeckImposition,
   type ImpositionKind,
+  type RailMode,
   type RailPolicy,
   type RailWidths,
   type SidebarSide,
@@ -1325,6 +1333,98 @@ export class DeckManager implements IDeckManagerStore {
       return;
     }
     this._reimpose(withSidebarSide(imposition, componentId, side));
+  }
+
+  /**
+   * The sidebar componentIds standing on `side`, top to bottom.
+   *
+   * Sorted into REGISTRATION order before the imposition's stored order is
+   * applied, which is the contract `effectiveRailOrder` states and cannot
+   * enforce: the list every deck reading reaches for — `findSidebarPanes` —
+   * walks `state.panes`, the array `activateCard` reorders. Handing that in
+   * would make a rail with no stored order follow the last raise.
+   */
+  private _railOrder(
+    imposition: DeckImposition,
+    side: SidebarSide,
+  ): readonly string[] {
+    const standing = new Set(
+      findSidebarPanes(this.deckState)
+        .filter(({ componentId }) => isSidebarPinned(imposition, componentId))
+        .map(({ componentId }) => componentId),
+    );
+    const registered = [...getAllRegistrations().keys()].filter((componentId) =>
+      standing.has(componentId),
+    );
+    return effectiveRailOrder(imposition, side, registered);
+  }
+
+  /**
+   * Stack or split `side`'s rail — the one gesture that changes what a shared
+   * rail *is*, reached from the stack badge and the Lens's Layout section.
+   *
+   * Splitting materializes the side's `order` in the same imposition, so a
+   * split rail's vertical order is stored state from the first frame rather
+   * than a fallback a later click could move ([R06]). One commit carrying both
+   * fields, never two: the split arms exactly one settle.
+   *
+   * Re-stacking keeps order and shares. They are harmless to a stack — every
+   * member draws the same rect — and they are what the user arranged, so a
+   * re-split lands where they left it rather than on a default.
+   */
+  setRailMode(side: SidebarSide, mode: RailMode): void {
+    const imposition = this.deckState.imposition;
+    if (railModeOf(imposition, side) === mode) return;
+    const next = withRailMode(imposition, side, mode);
+    this._reimpose(
+      mode === "split"
+        ? withRailOrder(next, side, this._railOrder(imposition, side))
+        : next,
+    );
+  }
+
+  /**
+   * Put `side`'s members in `order`, top to bottom — the corridor drag's
+   * commit. Filtered to sidebar componentIds, so a caller cannot record a
+   * content card's id as a member of a rail.
+   *
+   * Ids the rail does not currently hold are kept: a closed member's place is
+   * part of the arrangement, and dropping it here would lose that place on the
+   * first reorder made while it was closed ([P06]).
+   */
+  setRailOrder(side: SidebarSide, order: readonly string[]): void {
+    const members = order.filter((componentId) => isSidebarCard(componentId));
+    const current = this.deckState.imposition.rails?.[side]?.order;
+    if (current !== undefined && current.length === members.length) {
+      if (current.every((id, i) => id === members[i])) return;
+    }
+    this._reimpose(withRailOrder(this.deckState.imposition, side, members));
+  }
+
+  /**
+   * Set `side`'s height weights — the seam drag's commit. Weights that are not
+   * positive finite numbers are dropped rather than stored: an unnamed member
+   * already weighs 1, so a dropped weight means exactly what a missing one
+   * does, and nothing downstream has to defend against a `NaN` height.
+   */
+  setRailShares(side: SidebarSide, shares: Record<string, number>): void {
+    const weights: Record<string, number> = {};
+    for (const [componentId, weight] of Object.entries(shares)) {
+      if (!isSidebarCard(componentId)) continue;
+      if (typeof weight !== "number") continue;
+      if (!Number.isFinite(weight) || weight <= 0) continue;
+      weights[componentId] = weight;
+    }
+    this._reimpose(withRailShares(this.deckState.imposition, side, weights));
+  }
+
+  /** Divide `side`'s run equally again, keeping its mode and order — what the
+   *  badge's "Equalize Heights" and a double-click on a seam ask for. */
+  equalizeRail(side: SidebarSide): void {
+    const imposition = this.deckState.imposition;
+    const equalized = withoutRailShares(imposition, side);
+    if (equalized === imposition) return;
+    this._reimpose(equalized);
   }
 
   /**

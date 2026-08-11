@@ -204,7 +204,10 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             `document.querySelector('.lens-cards-list [data-slot="tug-slot"]') !== null`,
             { timeoutMs: 3_000 },
           );
-          for (let i = 0; i < 8; i += 1) {
+          // Walked, not counted, exactly as A's walk is — and the budget has
+          // to span the whole Layouts section, whose per-shared-side
+          // Stack|Split rows sit between B's tile and the Cards list.
+          for (let i = 0; i < 24; i += 1) {
             const on = await app.evalJS<boolean>(
               `document.querySelector('.lens-cards-list[data-key-view-kbd]') !== null`,
             );
@@ -212,6 +215,10 @@ describe.skipIf(!SHOULD_RUN)("at0278 — ⌘L lands the keyboard visibly, where 
             await app.nativeKey("Tab");
             await new Promise<void>((r) => setTimeout(r, 200));
           }
+          await app.waitForCondition<boolean>(
+            `document.querySelector('.lens-cards-list[data-key-view-kbd]') !== null`,
+            { timeoutMs: 3_000 },
+          );
           // Regaining the list restores the cursor boundary A left on the
           // header, and a header has no accessories to descend into — so step
           // back down onto the card row this section descends from. Stated as

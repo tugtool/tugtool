@@ -140,10 +140,47 @@ export interface SidebarEntry {
   pinned?: boolean;
 }
 
+/** How a side's sidebar cards stand against one another. */
+export type RailMode = "stack" | "split";
+
+/**
+ * How one side's rail is arranged: stacked front-to-back (the default, and what
+ * a rail has always been) or divided vertically so every member is visible at
+ * once.
+ *
+ * Split is a property of the SIDE, not of a pair of cards: all of a side's
+ * visible members participate, and there are no sub-groups. Two or three cards
+ * do not need a tree, and a tree is where this surface's complexity would go.
+ *
+ * `order` and `shares` outlive the members they name. A card closing is an
+ * internal operation and must not destroy the arrangement the user chose
+ * ([L23]), so nothing here is ever cleaned up: close a split member and the
+ * remaining one takes the full run, reopen it and the split re-applies at the
+ * order and heights it had.
+ */
+export interface RailArrangement {
+  /** Absent reads as `"stack"` — today's behavior, on an unchanged blob. */
+  mode?: RailMode;
+  /**
+   * The members' vertical order, top to bottom, by componentId. Absent means
+   * registration order — see {@link effectiveRailOrder}, which also tolerates
+   * ids named here that are not currently standing.
+   */
+  order?: string[];
+  /**
+   * Each member's height weight, keyed by componentId; an unnamed member weighs
+   * 1, so an absent record is an equal division.
+   *
+   * Weights rather than positions: membership churns, and a positional array
+   * would hand a departing card's height to whoever inherits its index.
+   */
+  shares?: Record<string, number>;
+}
+
 /**
  * The deck's layout imposition: the N-up rule the chain of content cards is
- * packed under, the width those cards open at, and where each sidebar card
- * stands.
+ * packed under, the width those cards open at, where each sidebar card stands,
+ * and how each side's rail is arranged.
  *
  * The axes are independent. `kind` absent means no card is imposed — the deck
  * is free — while the sidebars still hold their sides, because a sidebar has a
@@ -164,6 +201,16 @@ export interface DeckImposition {
    * closed and reopened.
    */
   sidebars: Record<string, SidebarEntry>;
+  /**
+   * How each side's rail is arranged. Absent — for a side or for the record —
+   * reads as a stack, which is what every rail was before splitting existed and
+   * what every rail still is until the user says otherwise.
+   *
+   * Keyed by side rather than folded into {@link SidebarEntry} because the
+   * arrangement belongs to the rail: two cards sharing a side cannot disagree
+   * about whether they are stacked.
+   */
+  rails?: { left?: RailArrangement; right?: RailArrangement };
 }
 
 /** Where a sidebar card stands when nothing has ever said otherwise. */
@@ -222,20 +269,219 @@ export function withSidebarPinned(
 }
 
 /**
- * The sidebar componentIds standing on `side`, in the map's own key order —
- * which is registration order.
+ * The sidebar componentIds standing on `side`, in the vertical order they hold
+ * there: the side's stored `order` filtered to the ids actually standing, then
+ * any standing id the stored order does not name, in the order given.
  *
- * There is no *vertical* order to record: same-side sidebar cards stand
- * front-to-back in one rail, exactly as two panes sharing a slot do, so which
- * one you see is the deck's z-order and raising one is the ordinary act of
- * activating it. Nothing about that is the imposition's to store.
+ * **CALLER CONTRACT: `componentIds` must arrive in REGISTRATION order.** This
+ * module is pure and cannot reach the card registry, so the fallback order is
+ * whatever the caller hands in — and the obvious list to reach for is the wrong
+ * one. `findSidebarPanes` walks `state.panes`, the array `activateCard`
+ * reorders, so handing that in makes a split rail's default vertical order
+ * follow the last raise: click the lower card and the two would trade places.
+ * The caller sorts into registration order first ([R06]).
+ *
+ * Tolerating ids the rail no longer holds is what lets an arrangement survive
+ * membership churn: close a split member and its position is still recorded, so
+ * reopening it puts it back where it was rather than at the end.
+ *
+ * A stack's members have a vertical order too — they simply all draw the same
+ * rect, so it is invisible there. One function serves both modes: the rail's
+ * member enumeration and the badge's picker rows read the same list whether the
+ * side is stacked or split, which is also what makes the settle signature's
+ * rail term blind to z-order.
  */
-export function sidebarStackOrder(
+export function effectiveRailOrder(
   imposition: DeckImposition,
   side: SidebarSide,
   componentIds: readonly string[],
 ): readonly string[] {
-  return componentIds.filter((id) => sidebarSide(imposition, id) === side);
+  const present = componentIds.filter(
+    (id) => sidebarSide(imposition, id) === side,
+  );
+  const stored = imposition.rails?.[side]?.order;
+  if (stored === undefined) return present;
+  const standing = new Set(present);
+  const named = stored.filter((id) => standing.has(id));
+  const claimed = new Set(named);
+  return [...named, ...present.filter((id) => !claimed.has(id))];
+}
+
+/** The arrangement `side` stands under; absent reads as a stack. */
+export function railModeOf(
+  imposition: DeckImposition,
+  side: SidebarSide,
+): RailMode {
+  return imposition.rails?.[side]?.mode === "split" ? "split" : "stack";
+}
+
+/** Narrow an unknown (a parsed blob field, an action payload) to a rail mode. */
+export function isRailMode(value: unknown): value is RailMode {
+  return value === "stack" || value === "split";
+}
+
+/** The side's arrangement with one field replaced, the others untouched. */
+function withRailField(
+  imposition: DeckImposition,
+  side: SidebarSide,
+  patch: Partial<RailArrangement>,
+): DeckImposition {
+  const current = imposition.rails?.[side] ?? {};
+  return {
+    ...imposition,
+    rails: { ...imposition.rails, [side]: { ...current, ...patch } },
+  };
+}
+
+/** The imposition with `side` stacked or split, keeping its order and shares —
+ *  a re-split lands on the arrangement the user last chose, not on a default. */
+export function withRailMode(
+  imposition: DeckImposition,
+  side: SidebarSide,
+  mode: RailMode,
+): DeckImposition {
+  return withRailField(imposition, side, { mode });
+}
+
+/** The imposition with `side`'s members in `order`, top to bottom. */
+export function withRailOrder(
+  imposition: DeckImposition,
+  side: SidebarSide,
+  order: readonly string[],
+): DeckImposition {
+  return withRailField(imposition, side, { order: [...order] });
+}
+
+/** The imposition with `side`'s height weights replaced. */
+export function withRailShares(
+  imposition: DeckImposition,
+  side: SidebarSide,
+  shares: Record<string, number>,
+): DeckImposition {
+  return withRailField(imposition, side, { shares: { ...shares } });
+}
+
+/** The imposition with `side`'s height weights removed — an equal division,
+ *  keeping the side's mode and order. */
+export function withoutRailShares(
+  imposition: DeckImposition,
+  side: SidebarSide,
+): DeckImposition {
+  const current = imposition.rails?.[side];
+  if (current?.shares === undefined) return imposition;
+  const { shares: _dropped, ...rest } = current;
+  return { ...imposition, rails: { ...imposition.rails, [side]: rest } };
+}
+
+/**
+ * How much of the run a member is worth: its stored weight, or 1.
+ *
+ * A weight that is not a positive finite number reads as 1 rather than as an
+ * error. These arrive from a JSON blob and from gesture arithmetic, and a rail
+ * that refuses to lay itself out because one number is `NaN` is worse than a
+ * rail that divides evenly.
+ */
+function railWeightOf(
+  shares: Readonly<Record<string, number>> | undefined,
+  componentId: string,
+): number {
+  const weight = shares?.[componentId];
+  return typeof weight === "number" && Number.isFinite(weight) && weight > 0
+    ? weight
+    : 1;
+}
+
+/** The narrowest a seam segment may be, as a fraction of the run. Keeps the
+ *  fractions strictly increasing and every derived weight positive. */
+const RAIL_SEAM_EPSILON = 1e-6;
+
+/**
+ * Where the seams fall in a rail of `order`, as cumulative fractions of the
+ * vertical run: N members give N−1 strictly increasing values in (0, 1), and
+ * `fractions[j]` is where the gap between member `j` and member `j+1` sits.
+ *
+ * Renormalized over the members actually in `order`, so a rail that lost a
+ * member divides what it has rather than leaving a hole where that member was.
+ * Computed, never stored — the record holds weights ([P02]), and a fraction is
+ * what those weights mean for the members standing right now.
+ */
+export function railSeamFractions(
+  order: readonly string[],
+  shares: Readonly<Record<string, number>> | undefined,
+): readonly number[] {
+  if (order.length < 2) return [];
+  const weights = order.map((id) => railWeightOf(shares, id));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const fractions: number[] = [];
+  let running = 0;
+  for (let i = 0; i < weights.length - 1; i += 1) {
+    running += weights[i];
+    const fraction = running / total;
+    const floor = (i + 1) * RAIL_SEAM_EPSILON;
+    const ceiling = 1 - (weights.length - 1 - i) * RAIL_SEAM_EPSILON;
+    fractions.push(Math.min(Math.max(fraction, floor), ceiling));
+  }
+  return fractions;
+}
+
+/**
+ * The inverse of {@link railSeamFractions}: the weights a set of seam fractions
+ * means.
+ *
+ * Segment lengths *are* the weights, so every member the drag did not touch
+ * keeps its ratio to every other untouched member by construction — which is
+ * the [P02] property, and the reason a seam drag commits through a named pure
+ * function rather than through arithmetic inlined in a pointer handler.
+ *
+ * Scaled to average 1 per member, so an equal division round-trips to the
+ * all-ones record that an absent `shares` already means.
+ */
+export function railSharesFromFractions(
+  order: readonly string[],
+  fractions: readonly number[],
+): Record<string, number> {
+  const shares: Record<string, number> = {};
+  if (order.length === 0) return shares;
+  if (order.length === 1) return { [order[0]]: 1 };
+  // Sanitized on the way in: a non-finite or out-of-order fraction would give a
+  // zero-or-negative segment, and a weight of zero is not a height.
+  const bounded: number[] = [];
+  for (let i = 0; i < order.length - 1; i += 1) {
+    const raw = fractions[i];
+    const floor = (bounded[i - 1] ?? 0) + RAIL_SEAM_EPSILON;
+    const ceiling = 1 - (order.length - 1 - i) * RAIL_SEAM_EPSILON;
+    const value = typeof raw === "number" && Number.isFinite(raw) ? raw : floor;
+    bounded.push(Math.min(Math.max(value, floor), ceiling));
+  }
+  const scale = order.length;
+  let previous = 0;
+  for (let i = 0; i < order.length; i += 1) {
+    const upper = i === order.length - 1 ? 1 : bounded[i];
+    shares[order[i]] = (upper - previous) * scale;
+    previous = upper;
+  }
+  return shares;
+}
+
+/**
+ * The custom property carrying seam `index` on `side`, as a plain number in
+ * (0, 1) — the fraction of the run the seam sits at.
+ *
+ * Deliberately unregistered, the same discipline {@link sidebarWidthProperty}
+ * holds: every expression reading one supplies the equal-division fraction as
+ * its `var()` fallback, so a frame that renders before the properties land
+ * still tiles the rail.
+ */
+export function railSeamProperty(side: SidebarSide, index: number): string {
+  return `--tug-rail-${side}-seam-${index}`;
+}
+
+/** One split member's place in its rail: which side, which position, and how
+ *  many members it divides the run with. */
+export interface RailMemberPlacement {
+  side: SidebarSide;
+  index: number;
+  count: number;
 }
 
 /** Narrow an unknown (a parsed blob field, an action payload) to a side. */
@@ -1061,20 +1307,33 @@ function worstSeamError(input: AllocatorInput, widths: RailWidths): number {
  * feeding both makes that true by construction rather than by the drag
  * remembering to update two numbers.
  *
- * **A shared rail is a stack, not a split.** Two sidebar cards on one side get
- * the *same* geometry — same pin, same width property, same full vertical run —
- * and stand front-to-back, exactly as two panes sharing a slot do. Which one you
- * see is the deck's z-order, and the title bar's stack badge is how you reach
- * the one behind. Dividing the run between them instead was tried first and was
- * a worse Lens: it spends a rail's height to show two half-cards, which is what
- * the Jots section was already doing inside the Lens, only less space-efficient
- * — the whole point of lifting Jots out was to give it a full rail when it is
- * the one you are looking at.
+ * **A shared rail is a stack by default; the user may split it.** Two sidebar
+ * cards on one side get the *same* geometry — same pin, same width property,
+ * same full vertical run — and stand front-to-back, exactly as two panes
+ * sharing a slot do; which one you see is the deck's z-order, and the title
+ * bar's stack badge is how you reach the one behind. That is the resting state,
+ * and it stays the default.
+ *
+ * Both arrangements have now been lived on, and each was found wanting alone.
+ * An automatic vertical split was tried first and was a worse Lens: it spent a
+ * rail's height to show two half-cards, which is what the Jots section was
+ * already doing inside the Lens, only less space-efficient. The stack that
+ * replaced it hides content the user wants visible at once. What both verdicts
+ * point at is that the division is a *choice*, so the user makes it per side —
+ * {@link RailArrangement} records it, and passing `options.member` here is what
+ * a split member's frame asks for. Without `member`, or with a rail of one, the
+ * output is byte-identical to the stacked frame it has always been.
+ *
+ * A split member's vertical pins are the run's fractions in `calc()`, read from
+ * the seam properties ({@link railSeamProperty}) rather than resolved here, for
+ * the same reason the width is: the browser re-resolves fractions of the run on
+ * its own reflow, so a window resize costs no JavaScript ([L06]), and a seam
+ * drag is one `setProperty` call.
  */
 export function imposeSidebarStyle(
   side: SidebarSide,
   paneWidth: number,
-  options: { widthProperty?: string } = {},
+  options: { widthProperty?: string; member?: RailMemberPlacement } = {},
 ): React.CSSProperties {
   const rail = side === "right" ? 1 : 0;
   const widthProperty = options.widthProperty ?? sidebarWidthProperty(side);
@@ -1082,13 +1341,51 @@ export function imposeSidebarStyle(
   const style: Record<string, string | number> = {
     width,
     height: "auto",
-    top: GAP,
-    bottom: GAP_BOTTOM,
+    ...railMemberPins(options.member),
     [LENS_RAIL_PROPERTY]: rail,
     left:
       `calc(var(${LENS_RAIL_PROPERTY}) * (100% - ${width} - ${GAP})` +
       ` + (1 - var(${LENS_RAIL_PROPERTY})) * ${GAP})`,
   };
   return style as React.CSSProperties;
+}
+
+/** The vertical run a rail's members divide: the frames' container less the
+ *  gap it keeps at the top and the deeper one it keeps at the bottom. */
+const RAIL_RUN = `(100% - ${GAP} - ${GAP_BOTTOM})`;
+
+/** Half an imposition gap — each seam takes one, half from each neighbour, so
+ *  the air between two split members reads as the same rhythm as every other
+ *  seam on the deck. */
+const RAIL_SEAM_HALF_GAP = `${IMPOSITION_GAP_PX / 2}px`;
+
+/**
+ * A member's `top` and `bottom` — the rail's own endpoints for the first and
+ * last member, and the seam either side of it for the rest.
+ *
+ * The endpoints are written as the bare gaps rather than as fractions of the
+ * run so the ends of a split rail land on exactly the pins an unsplit one has:
+ * a top member and a stacked card share a top edge to the pixel, and the eye
+ * reads a split as a division of the card it already knew.
+ */
+function railMemberPins(
+  member: RailMemberPlacement | undefined,
+): { top: string; bottom: string } {
+  if (member === undefined || member.count < 2) {
+    return { top: GAP, bottom: GAP_BOTTOM };
+  }
+  const { side, index, count } = member;
+  const seam = (j: number): string =>
+    `var(${railSeamProperty(side, j)}, ${(j + 1) / count})`;
+  return {
+    top:
+      index === 0
+        ? GAP
+        : `calc(${GAP} + ${seam(index - 1)} * ${RAIL_RUN} + ${RAIL_SEAM_HALF_GAP})`,
+    bottom:
+      index === count - 1
+        ? GAP_BOTTOM
+        : `calc(${GAP_BOTTOM} + (1 - ${seam(index)}) * ${RAIL_RUN} + ${RAIL_SEAM_HALF_GAP})`,
+  };
 }
 

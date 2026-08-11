@@ -7,7 +7,16 @@ import {
   clampSlot,
   allocateSidebarWidths,
   solveSidebarWidths,
-  sidebarStackOrder,
+  effectiveRailOrder,
+  railModeOf,
+  isRailMode,
+  railSeamFractions,
+  railSeamProperty,
+  railSharesFromFractions,
+  withRailMode,
+  withRailOrder,
+  withRailShares,
+  withoutRailShares,
   LENS_FLEX_SHRINK_FRACTION,
   imposeRect,
   imposeStyle,
@@ -561,12 +570,11 @@ describe("imposeSidebarStyle", () => {
   });
 });
 
-describe("a shared rail is a stack, not a split", () => {
+describe("a stacked rail's members are geometrically identical", () => {
   test("every member takes the same pins — the whole run, each", () => {
     // The pins are the ones a lone rail has always had, and a second card on
-    // the side does not change them. This is the whole geometry of the change
-    // from the split design: same pin, same width, same run, and z-order
-    // decides which of the two you are looking at.
+    // the side does not change them while the side is stacked: same pin, same
+    // width, same run, and z-order decides which of the two you are looking at.
     for (const side of ["left", "right"] as const) {
       const style = imposeSidebarStyle(side, 420);
       expect(style.top).toBe("5px");
@@ -584,54 +592,375 @@ describe("a shared rail is a stack, not a split", () => {
   });
 
   test("the style carries no vertical term a stack could vary", () => {
-    // A regression guard with a shape rather than a number: if a future change
-    // reintroduces per-member vertical math, these stop being bare lengths.
+    // A stacked member has no per-member vertical math: these stay bare
+    // lengths, and only a `member` placement turns them into fractions.
     const style = imposeSidebarStyle("right", 420);
     expect(style.top).not.toContain("calc");
     expect(style.bottom).not.toContain("calc");
   });
+
+  test("a rail of one is stacked geometry however it is asked for", () => {
+    // Split is a property of the side, so a split side that is down to one
+    // member still renders that member across the whole run ([P06]).
+    const bare = imposeSidebarStyle("right", 420);
+    expect(
+      imposeSidebarStyle("right", 420, {
+        member: { side: "right", index: 0, count: 1 },
+      }),
+    ).toEqual(bare);
+  });
 });
 
-describe("sidebarStackOrder", () => {
+describe("a split rail divides the run between its members", () => {
+  const RUN = "(100% - 5px - 32px)";
+  const seam = (side: "left" | "right", j: number, fallback: number): string =>
+    `var(--tug-rail-${side}-seam-${j}, ${fallback})`;
+  const split = (side: "left" | "right", index: number, count: number) =>
+    imposeSidebarStyle(side, 420, { member: { side, index, count } });
+
+  test("two members meet at one seam, half a gap each side of it", () => {
+    const top = split("right", 0, 2);
+    const bottom = split("right", 1, 2);
+    expect(top.top).toBe("5px");
+    expect(top.bottom).toBe(
+      `calc(32px + (1 - ${seam("right", 0, 0.5)}) * ${RUN} + 2.5px)`,
+    );
+    expect(bottom.top).toBe(
+      `calc(5px + ${seam("right", 0, 0.5)} * ${RUN} + 2.5px)`,
+    );
+    expect(bottom.bottom).toBe("32px");
+  });
+
+  test("a middle member is pinned to the seams either side of it", () => {
+    const middle = split("left", 1, 3);
+    expect(middle.top).toBe(
+      `calc(5px + ${seam("left", 0, 1 / 3)} * ${RUN} + 2.5px)`,
+    );
+    expect(middle.bottom).toBe(
+      `calc(32px + (1 - ${seam("left", 1, 2 / 3)}) * ${RUN} + 2.5px)`,
+    );
+  });
+
+  test("the rail's own endpoints are the pins an unsplit rail has", () => {
+    // A split reads as a division of the card the user already knew, so the
+    // first member's top and the last member's bottom land on the pixel.
+    for (const count of [2, 3, 4]) {
+      expect(split("right", 0, count).top).toBe("5px");
+      expect(split("right", count - 1, count).bottom).toBe("32px");
+    }
+  });
+
+  test("the var fallbacks are the equal division, so a frame rendering before the properties land still tiles", () => {
+    expect(String(split("right", 1, 4).top)).toContain(
+      "var(--tug-rail-right-seam-0, 0.25)",
+    );
+    expect(String(split("right", 1, 4).bottom)).toContain(
+      "var(--tug-rail-right-seam-1, 0.5)",
+    );
+  });
+
+  test("width, left, and the rail number are untouched by the division", () => {
+    // One rail, one width: splitting divides the run and nothing else.
+    const stacked = imposeSidebarStyle("right", 420) as Record<string, unknown>;
+    const member = split("right", 1, 3) as Record<string, unknown>;
+    expect(member.width).toBe(stacked.width);
+    expect(member.left).toBe(stacked.left);
+    expect(member.height).toBe("auto");
+    expect(member["--tugx-lens-rail"]).toBe(1);
+  });
+
+  test("each side reads its own seam properties", () => {
+    expect(String(split("left", 1, 2).top)).toContain("--tug-rail-left-seam-0");
+    expect(String(split("right", 1, 2).top)).toContain(
+      "--tug-rail-right-seam-0",
+    );
+  });
+});
+
+describe("railSeamProperty", () => {
+  test("names one property per side per gap", () => {
+    expect(railSeamProperty("left", 0)).toBe("--tug-rail-left-seam-0");
+    expect(railSeamProperty("right", 2)).toBe("--tug-rail-right-seam-2");
+  });
+});
+
+describe("railSeamFractions", () => {
+  test("no seams below two members", () => {
+    expect(railSeamFractions([], undefined)).toEqual([]);
+    expect(railSeamFractions(["lens"], undefined)).toEqual([]);
+  });
+
+  test("absent shares divide equally", () => {
+    expect(railSeamFractions(["lens", "jots"], undefined)).toEqual([0.5]);
+    const thirds = railSeamFractions(["lens", "jots", "gazette"], undefined);
+    expect(thirds[0]).toBeCloseTo(1 / 3, 10);
+    expect(thirds[1]).toBeCloseTo(2 / 3, 10);
+  });
+
+  test("weights set the division", () => {
+    expect(railSeamFractions(["lens", "jots"], { lens: 3, jots: 1 })).toEqual([
+      0.75,
+    ]);
+  });
+
+  test("an unnamed member weighs 1", () => {
+    expect(railSeamFractions(["lens", "jots"], { lens: 3 })).toEqual([0.75]);
+  });
+
+  test("renormalizes over the members actually standing", () => {
+    // Jots closed: the record still names it, but the rail divides what it has
+    // between the two that are there ([P06]).
+    const shares = { lens: 1, jots: 2, gazette: 1 };
+    expect(railSeamFractions(["lens", "gazette"], shares)).toEqual([0.5]);
+  });
+
+  test("a degenerate weight reads as 1 rather than as an error", () => {
+    for (const bad of [0, -4, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(railSeamFractions(["lens", "jots"], { lens: bad })).toEqual([0.5]);
+    }
+  });
+
+  test("fractions are strictly increasing and inside the run", () => {
+    const order = ["a", "b", "c", "d"];
+    const fractions = railSeamFractions(order, { a: 1, b: 0.001, c: 5, d: 2 });
+    expect(fractions).toHaveLength(3);
+    let previous = 0;
+    for (const fraction of fractions) {
+      expect(fraction).toBeGreaterThan(previous);
+      expect(fraction).toBeLessThan(1);
+      previous = fraction;
+    }
+  });
+});
+
+describe("railSharesFromFractions", () => {
+  test("round-trips against railSeamFractions", () => {
+    for (const order of [
+      ["lens", "jots"],
+      ["lens", "jots", "gazette"],
+    ]) {
+      for (const shares of [
+        undefined,
+        { [order[0]]: 3, [order[1]]: 1 },
+        { [order[0]]: 0.5, [order[1]]: 2.25 },
+      ]) {
+        const fractions = railSeamFractions(order, shares);
+        const recovered = railSharesFromFractions(order, fractions);
+        const again = railSeamFractions(order, recovered);
+        expect(again).toHaveLength(fractions.length);
+        for (let j = 0; j < fractions.length; j += 1) {
+          expect(again[j]).toBeCloseTo(fractions[j], 9);
+        }
+      }
+    }
+  });
+
+  test("an equal division comes back as the all-ones record an absent one means", () => {
+    const order = ["lens", "jots", "gazette"];
+    const recovered = railSharesFromFractions(
+      order,
+      railSeamFractions(order, undefined),
+    );
+    for (const id of order) expect(recovered[id]).toBeCloseTo(1, 9);
+  });
+
+  test("moving one seam leaves every untouched member's ratio exactly as it was", () => {
+    // The [P02] property, and the reason this is a function rather than a line
+    // of gesture code: dragging the top seam of a three-member rail must not
+    // move the bottom member's share of the run.
+    const order = ["lens", "jots", "gazette"];
+    const shares = { lens: 1, jots: 2, gazette: 3 };
+    const before = railSeamFractions(order, shares);
+    const after = [before[0] + 0.1, before[1]];
+    const recovered = railSharesFromFractions(order, after);
+    // The untouched member's segment is unchanged, so its ratio to the run is.
+    const recoveredFractions = railSeamFractions(order, recovered);
+    expect(recoveredFractions[1]).toBeCloseTo(before[1], 9);
+  });
+
+  test("every weight is positive, even from degenerate fractions", () => {
+    const order = ["lens", "jots", "gazette"];
+    for (const fractions of [
+      [0, 0],
+      [1, 1],
+      [0.9, 0.2],
+      [Number.NaN, Number.NaN],
+      [],
+    ]) {
+      const shares = railSharesFromFractions(order, fractions);
+      for (const id of order) {
+        expect(shares[id]).toBeGreaterThan(0);
+        expect(Number.isFinite(shares[id])).toBe(true);
+      }
+    }
+  });
+
+  test("a rail of one is one whole share", () => {
+    expect(railSharesFromFractions(["lens"], [])).toEqual({ lens: 1 });
+    expect(railSharesFromFractions([], [])).toEqual({});
+  });
+});
+
+describe("effectiveRailOrder", () => {
   const imposition = (
     sidebars: DeckImposition["sidebars"],
-  ): DeckImposition => ({ sidebars });
+    rails?: DeckImposition["rails"],
+  ): DeckImposition => ({ sidebars, rails });
 
-  test("returns the side's members in registration order", () => {
-    // There is no vertical order to record any more: the members stand
-    // front-to-back, so the only order this reports is the one the caller
-    // handed it, filtered to the side.
+  test("with no stored order, the caller's order stands, filtered to the side", () => {
     const state = imposition({
       lens: { side: "right" },
       jots: { side: "right" },
     });
-    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual([
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
       "lens",
       "jots",
     ]);
-    expect(sidebarStackOrder(state, "right", ["jots", "lens"])).toEqual([
-      "jots",
-      "lens",
-    ]);
-    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual([]);
+    expect(effectiveRailOrder(state, "left", ["lens", "jots"])).toEqual([]);
   });
 
-  test("a card on the other side is not in this side's stack", () => {
+  test("a card on the other side is not on this rail", () => {
     const state = imposition({
       lens: { side: "left" },
       jots: { side: "right" },
     });
-    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual(["lens"]);
-    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual(["jots"]);
+    expect(effectiveRailOrder(state, "left", ["lens", "jots"])).toEqual(["lens"]);
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
+      "jots",
+    ]);
   });
 
-  test("cards default to the right, so an empty map stacks them there", () => {
+  test("cards default to the right, so an empty map rails them there", () => {
     const state = imposition({});
-    expect(sidebarStackOrder(state, "right", ["lens", "jots"])).toEqual([
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
       "lens",
       "jots",
     ]);
-    expect(sidebarStackOrder(state, "left", ["lens", "jots"])).toEqual([]);
+  });
+
+  test("the stored order wins", () => {
+    const state = imposition(
+      { lens: { side: "right" }, jots: { side: "right" } },
+      { right: { mode: "split", order: ["jots", "lens"] } },
+    );
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
+      "jots",
+      "lens",
+    ]);
+  });
+
+  test("a stored order is not perturbed by the caller's list changing order", () => {
+    // The [R06] twin: the caller's list is z-sensitive at its source, and a
+    // stored order is what makes a split rail's vertical order immune to that.
+    const state = imposition(
+      { lens: { side: "right" }, jots: { side: "right" } },
+      { right: { mode: "split", order: ["jots", "lens"] } },
+    );
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual(
+      effectiveRailOrder(state, "right", ["jots", "lens"]),
+    );
+  });
+
+  test("ids the order names but the rail does not hold are filtered out", () => {
+    // Jots closed, or moved to the other side: the record keeps its place for
+    // when it returns, and the rail lays out the members it has.
+    const state = imposition(
+      { lens: { side: "right" }, jots: { side: "left" } },
+      { right: { mode: "split", order: ["jots", "lens"] } },
+    );
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
+      "lens",
+    ]);
+  });
+
+  test("a member the order does not name is appended, in the order given", () => {
+    const state = imposition(
+      {
+        lens: { side: "right" },
+        jots: { side: "right" },
+        gazette: { side: "right" },
+      },
+      { right: { mode: "split", order: ["jots"] } },
+    );
+    expect(
+      effectiveRailOrder(state, "right", ["lens", "jots", "gazette"]),
+    ).toEqual(["jots", "lens", "gazette"]);
+  });
+
+  test("a returning member lands back where the order says, not at the end", () => {
+    // A closed card has no standing pane, so the caller hands it in no longer;
+    // the record still names it, and reopening puts it back at its place.
+    const state = imposition(
+      { lens: { side: "right" }, jots: { side: "right" } },
+      { right: { mode: "split", order: ["jots", "lens"] } },
+    );
+    expect(effectiveRailOrder(state, "right", ["lens"])).toEqual(["lens"]);
+    expect(effectiveRailOrder(state, "right", ["lens", "jots"])).toEqual([
+      "jots",
+      "lens",
+    ]);
+  });
+});
+
+describe("rail arrangement accessors", () => {
+  const base: DeckImposition = {
+    sidebars: { lens: { side: "right" }, jots: { side: "right" } },
+  };
+
+  test("an absent record reads as a stack on both sides", () => {
+    expect(railModeOf(base, "left")).toBe("stack");
+    expect(railModeOf(base, "right")).toBe("stack");
+    expect(railModeOf({ sidebars: {}, rails: { right: {} } }, "right")).toBe(
+      "stack",
+    );
+  });
+
+  test("withRailMode records the side's mode without touching the other", () => {
+    const split = withRailMode(base, "right", "split");
+    expect(railModeOf(split, "right")).toBe("split");
+    expect(railModeOf(split, "left")).toBe("stack");
+    expect(railModeOf(base, "right")).toBe("stack");
+  });
+
+  test("re-stacking keeps order and shares, so a re-split lands where the user left it", () => {
+    const split = withRailShares(
+      withRailOrder(withRailMode(base, "right", "split"), "right", [
+        "jots",
+        "lens",
+      ]),
+      "right",
+      { jots: 2, lens: 1 },
+    );
+    const stacked = withRailMode(split, "right", "stack");
+    expect(stacked.rails?.right?.order).toEqual(["jots", "lens"]);
+    expect(stacked.rails?.right?.shares).toEqual({ jots: 2, lens: 1 });
+    expect(railModeOf(withRailMode(stacked, "right", "split"), "right")).toBe(
+      "split",
+    );
+  });
+
+  test("withoutRailShares equalizes and keeps mode and order", () => {
+    const split = withRailShares(
+      withRailOrder(withRailMode(base, "right", "split"), "right", [
+        "jots",
+        "lens",
+      ]),
+      "right",
+      { jots: 2, lens: 1 },
+    );
+    const equalized = withoutRailShares(split, "right");
+    expect(equalized.rails?.right?.shares).toBeUndefined();
+    expect(equalized.rails?.right?.order).toEqual(["jots", "lens"]);
+    expect(railModeOf(equalized, "right")).toBe("split");
+    expect(withoutRailShares(base, "right")).toBe(base);
+  });
+
+  test("isRailMode narrows only the two modes", () => {
+    expect(isRailMode("stack")).toBe(true);
+    expect(isRailMode("split")).toBe(true);
+    for (const bad of ["Split", "", 1, null, undefined, {}]) {
+      expect(isRailMode(bad)).toBe(false);
+    }
   });
 });
 
