@@ -857,7 +857,7 @@ Use `./node_modules/.bin/tsc`, not `bunx tsc` — a bare `bunx tsc` from the wro
 
 ### The work list {#addendum-work}
 
-Ordered by value. (0) and (1) are real broken behaviors; (2)–(4) are missing proof of behavior that is believed working; (5)–(6) are the closing checks.
+Ordered by value. (0) and (1) were filed as real broken behaviors — (0) was one, (1) turned out to be a missing precondition in the diagnosis rather than a defect; (2)–(4) are missing proof of behavior that is believed working; (5)–(6) are the closing checks; (7) is what the first two turned up on the way past.
 
 #### 0. A parked text stop paints no ring — the old suppressions were never converted {#addendum-editor-ring}
 
@@ -913,6 +913,53 @@ Note the walk is **mode-bounded**: it services only focusables registered into t
 
 The assertion is already written and commented out in place at the end of `at0396-open-quickly-arrows.test.ts` — restore it when the behavior works. It was deliberately left as an explicit non-assertion rather than a `test.skip`, so it reads as unfinished rather than as a kept promise.
 
+**DONE (2026-08-10), uncommitted on `main` — but the item as filed was about `Tab`, and the gesture that was actually broken here is `⌥⇥`. Both are settled below; read the second half, it is the real defect.**
+
+**The `Tab` half: the behavior was never broken — the switcher was never on screen.**
+
+`open-quickly-overlay.tsx` renders the accessory only when `candidates.length > 1`. The scenario this was diagnosed in had exactly one candidate: no card was bound, so the list was the default project directory and nothing else. With no accessory in the DOM the popup's walk holds a single stop, Tab engages the mode and has nowhere to step, and the ring stays on the field — which is correct, and which is indistinguishable from the reported symptom if you only ever query for the switcher. "The landing never arrives" was true and meant nothing.
+
+Seed a second candidate and every part of the chain works, first try, with no source change:
+
+| after | key view | `activeElement` | popup |
+|---|---|---|---|
+| open | the field | the field (caret) | up |
+| `Tab` | the switcher button | the key sink | **still up** |
+| `⇧Tab` | the field | the key sink | up |
+| `Space` | — | menu | up |
+
+So the two suspects were both innocent, and both for good reasons. `onBlur`'s **key-sink exemption fires exactly as designed** — the sequence really is blur the field → park the sink → ring the switcher, and the popup survives it. And the switcher **is** inside the `FocusModeScope`: the walk is mode-bounded and it finds two stops, so `accessory` reaching the panel as a prop does render it inside the scope after all.
+
+Note the ⇧Tab row: returning to the field **parks** it — ring, no caret — because it is a text stop reached by movement ([P12]). That is the design, and it is worth stating because it looks like a bug from the outside ("Tab back to the field and I can't type"); a printable character grants the caret.
+
+What landed is the test that was missing. `at0396-open-quickly-arrows.test.ts` gains a second test covering the table above, the commented-out non-assertion is gone, and the file docstring records the more-than-one-candidate precondition — because the next person to diagnose this will otherwise repeat the same measurement of an element that is not there.
+
+**The `⌥⇥` half: a real defect, and a much bigger one than this item. `⌥⇥` was a dead key on every surface whose card registers no handler.**
+
+Reported from the app immediately after the `Tab` half was called done: ⌥⇥ in Open Quickly does nothing at all.
+
+⌥⇥'s registry entry carried `routing: "key-card"`. The chord resolves through the **global** keymap path — `keymapRegistry.matchChord` → `dispatchCommand` — which dispatches to the key card, finds no handler, reports unhandled, and stops. The fallback that flips the bit lived in `responder-chain-provider.tsx`, in the branch that handles a **scoped action binding**, which the global chord never reaches. Its comment read "So the fallback lives here, at the dispatch site, where it provably runs." It never ran, and the comment is the reason nobody looked: it names the exact failure and asserts it cannot happen.
+
+So the gesture worked on precisely one surface — the session card, whose responder does register `CYCLE_FOCUS_MODE` — and was dead on every other: the Lens, a diff card, anything Class-B, and any floating surface over a deck with no claiming card. Those are the surfaces the deleted comment listed as the fallback's whole reason for existing.
+
+The fix moves the command to `routing: "registry"` with its handler in `action-dispatch.ts`, beside the `NEXT`/`PREVIOUS_KEYBOARD_FOCUS` pair it belongs with. The handler asks the key card first (a card with a cycle scope wants the toggle at its own responder — the session card pushes its cycle mode and seeds its commit-home there) and falls back to the global toggle when nothing claims it. The misplaced branch in the key pipeline is deleted.
+
+**The generalizable lesson, and the reason this is worth this much prose: a fallback belongs to the COMMAND, not to a door.** ⌥⇥ has three doors — the chord, the View menu item, and the palette — all dispatching one id. A tier implemented at one of them is a gesture that works from that door alone, and the two-tier structure is invisible from the other two. `tuglaws/menus.md`'s generated chord table is regenerated for the routing change (`TUG_WRITE_MENUS_DOC=1`).
+
+**That was not the end of it, and the state below is where this actually stands.**
+
+Routing the command correctly exposed a second, worse defect, found by reading the user's live debug instance rather than the harness (`/api/eval` on its tugcast port; a `window`-capture keydown probe recorded the real press). ⌥⇥ in Open Quickly was not doing nothing — it was **dismissing the popup**. The chord dispatched, the key-card tier answered because the session card behind the popup registers `CYCLE_FOCUS_MODE`, that card entered its own cycle and pulled the key view into itself, DOM focus landed on `cm-content` — neither inside the popup's panel nor on the engine key sink — and the popup's `onBlur` closed it.
+
+The rule that follows: **⌥⇥ acts on whatever owns the keyboard now, which is the focus mode, not on whichever card is frontmost.** At the base mode the key card is asked first; while a floating surface holds a trapped mode, the card is never consulted. That gate is in `action-dispatch`'s handler and is what is committed.
+
+**It is NOT verified, and Open Quickly is being reworked rather than patched further** (user's call, 2026-08-10). The third at0396 test is committed in an unproven state — it passes, but a probe that patched the gate back out **also passed**, which means it does not yet discriminate. The reason is in the fixture: the seeded card renders but is never bound, so it registers no handler and the key-card tier no-ops in both directions. `bindSession("A")` + `awaitEngineReady("A")` were added as the fix for that and the run was never made. Treat the test as unfinished, not as cover.
+
+**The lesson worth more than the fix.** Three consecutive green reports came out of the harness while the gesture was broken in the app, because every one of those tests was built on an **empty deck** — and the empty deck is precisely the fixture in which the failing tier does not exist. A test whose fixture omits the condition under test will pass forever. The live-instance read took ten minutes and settled what three test runs could not; for a defect reported from the app, go to the app first.
+
+**And the process lesson, which is the more expensive one.** The `Tab` half above was declared done, with a passing test, while the gesture the user had actually pressed was untested and broken. The work-list item said `Tab`; the report said ⌥⇥; those are different code paths that meet only at the word "tab". When a report and a plan item disagree about the gesture, the report is the ground truth — test the keystroke that was pressed, not the one that was written down.
+
+**Found while probing, and NOT fixed here:** opening the switcher's menu makes the focus watchdog fight it. The Radix menu is portalled, so it takes real DOM focus while the route is `engine-routed`; the watchdog reasserts the sink once, then logs `correction failed: park (no key sink)` four times and exhausts its reassert budget. `violations` stays **0** and the menu works, so this is log noise and a spent budget rather than broken behavior — but the engine already carries the exemption this wants, in `deliverToEngineLeaf`'s "a trapped surface on top of the stack owns the keyboard, and its menu holds real DOM focus somewhere else in the tree". The watchdog has no equivalent. Same family as item (7) below.
+
 #### 2. `at0395-kbf-mode-division.test.ts` — not written {#addendum-at0395}
 
 The plan's headline division, and the one suite that would catch a regression of the whole phase. What it must assert, per #success-criteria:
@@ -950,6 +997,14 @@ just app-test-changed
 ```
 
 Plus the three manual passes the harness cannot do: the Spec S04 gesture table row by row on a real session card + Lens + one sheet; the IME first-character check with a non-Latin input source (Risk R01's residual); and an accessibility-mode pass confirming every text stop takes a caret and every engine-routed stop still mirrors real focus.
+
+#### 7. Regressions inherited from the landing, and the watchdog's portal blind spot {#addendum-inherited}
+
+Three things found while working items (0) and (1), none of them caused by that work. The first two were confirmed pre-existing by `tugutil file probe` with a reverse patch, which reproduced them identically against unmodified sources.
+
+- **`at0339-session-find-bar` (0/2).** The focus-order census reads `0,1,5,7,8,9,10,11,19` against an expected `0,1,4,5,6,7,8,9,10,11,19`. Orders **4 and 6 are absent from the DOM**, so this is a registration question, not a paint one — start at what stopped rendering, not at the gate. Its second test then times out waiting for the key view to leave the query field.
+- **`at0224-card-active-keyboard` (5/6).** "[P21] broken after cycling to the never-focused text card: key card B, first responder outside card T."
+- **The watchdog does not know about portalled menus.** A Radix menu opened from an engine-routed stop takes real DOM focus while the route is `engine-routed`; the watchdog reasserts the sink once, fails four times with `park (no key sink)`, and exhausts its reassert budget. `violations` stays 0 and behavior is correct, so this is noise plus a spent budget — but it burns the exact resource that exists to catch a real peer fighting the engine, which makes the next genuine one harder to see. The rule it wants already exists in `deliverToEngineLeaf`: a trapped surface on top of the mode stack owns the keyboard, and its menu legitimately holds DOM focus elsewhere in the tree. Give the watchdog the same exemption.
 
 ### at-numbers and the fan-out budget {#addendum-numbering}
 

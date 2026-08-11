@@ -28,7 +28,7 @@ import { BASE_THEME_NAME } from "./theme-constants";
 import { transferFocusForActivation } from "./focus-transfer";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { COMMANDS_BY_ID, isCommandId } from "@/components/tugways/command-registry";
-import { advanceKeyViewFocus, getFocusManager } from "@/components/tugways/focus-manager";
+import { advanceKeyViewFocus, getFocusManager, BASE_FOCUS_MODE } from "@/components/tugways/focus-manager";
 import { dispatchCommand } from "./command-dispatch";
 import { openDiffInCard } from "@/lib/open-diff-in-card";
 import { neighborSlot } from "@/lib/neighbor-slot";
@@ -498,6 +498,43 @@ export function initActionDispatch(
   });
   registerAction(TUG_ACTIONS.PREVIOUS_KEYBOARD_FOCUS, () => {
     advanceKeyViewFocus(getFocusManager(), -1);
+  });
+
+  // cycle-focus-mode: the ⌥⇥ gesture. It acts on whatever owns the keyboard
+  // RIGHT NOW, which is the focus mode — not on whichever card is frontmost.
+  //
+  // At the base mode the key card is asked first, because a card with a cycle
+  // scope wants the toggle at its own responder: the session card pushes its
+  // cycle mode and seeds its commit-home there. A card that registers no
+  // handler (the Lens, a diff card, anything Class-B) reports unhandled, and
+  // the deck-level meaning below stands in — flip the bit, seed a ring.
+  //
+  // While a floating surface holds a trapped mode, the key card is the WRONG
+  // target and asking it is actively destructive. The card behind the surface
+  // answers, enters its own cycle, and moves the key view into itself; DOM
+  // focus lands somewhere that is neither inside the floating panel nor on the
+  // engine key sink, and the surface's own blur-dismiss closes it. The gesture
+  // then reads as "⌥⇥ makes Open Quickly disappear". So a non-base mode never
+  // consults the card: the toggle applies to the mode that is up, and the ring
+  // seeds among ITS stops.
+  //
+  // It lives on the command rather than in the key pipeline because ⌥⇥ is not
+  // the only door. The View menu item and the palette dispatch the same
+  // command id, and a tier sited at one door is a gesture that works from that
+  // door alone.
+  registerAction(TUG_ACTIONS.CYCLE_FOCUS_MODE, () => {
+    const focusManager = getFocusManager();
+    if (focusManager === null) return;
+    if (focusManager.currentFocusMode() === BASE_FOCUS_MODE) {
+      const chain = getResponderChainManager();
+      const result = chain?.sendToKeyCardForContinuation({
+        action: TUG_ACTIONS.CYCLE_FOCUS_MODE,
+        phase: "discrete",
+      });
+      result?.continuation?.();
+      if (result?.handled === true) return;
+    }
+    if (focusManager.toggleKbfManual()) focusManager.seedKbfRing();
   });
 
   // set-imposition: choose the deck's N-up arrangement, or turn it off.

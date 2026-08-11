@@ -734,20 +734,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         continuation?.();
         return;
       }
-      // The general KBF gesture. ⌥⇥ is registered `routing: "key-card"` because
-      // a card WITH a cycle scope wants the toggle at its own responder (the
-      // session card seeds its commit-home there). Every other card — the Lens,
-      // a diff card, anything Class-B — registers no handler, and a key-card
-      // dispatch that finds none reports `handled: false` and stops: it does
-      // not fall through to a deck-level responder, because the walk starts at
-      // the card's content node and there is nothing above it that claims this
-      // action. So the fallback lives here, at the dispatch site, where it
-      // provably runs: flip the bit and seed a ring if the card has none.
-      if (binding.action === TUG_ACTIONS.CYCLE_FOCUS_MODE) {
-        if (focusManager.toggleKbfManual()) focusManager.seedKbfRing();
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
     }
 
     // ---- Act dispatch: Space / Enter / Escape ([P01]) ----

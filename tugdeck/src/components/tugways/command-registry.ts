@@ -1831,7 +1831,12 @@ export const COMMANDS: readonly CommandEntry[] = [
     // same bargain Previous / Next Keyboard Focus take with ⇥.
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,
     title: "Cycle Focus Mode",
-    routing: "key-card",
+    // Registry-routed, not `key-card`, because the gesture has a deck-level
+    // meaning when no card claims it — see the handler in `action-dispatch`,
+    // which asks the key card first and falls back to the global toggle.
+    // Plain `key-card` routing made ⌥⇥ a dead key on every surface whose card
+    // registers no handler.
+    routing: "registry",
     menuItemId: "view.keyboardFocus",
     bindings: [chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true })],
   },
