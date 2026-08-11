@@ -31,8 +31,8 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 - Borrow TugAlert's modality machinery (`tug-alert.tsx`) rather than inventing: Radix `Dialog` (imported as `AlertDialog` from `@radix-ui/react-dialog` there), `useFocusTrap` with `deferDomFocusToTeardown`, prevented Radix auto-focus/Escape, an in-jail `[data-tug-key-sink]`, `isCancelChordEvent` for ⌘.
 - Migrate the field/list/provider internals of `TugCompletionPopup` into the primitive largely intact — that part was never the problem.
 - Move Open Quickly onto the primitive in one step: chooser row in, switcher out, blur-dismiss apparatus deleted.
-- KBF adoption is a verification-plus-hygiene step, not a mechanism build: the `1e86cd245` gate already makes ⌥⇥ act on the top trapped mode; what the dialog owes is stops worth ringing and manual-bit hygiene at close.
-- Tests are rewritten against the new surface (at0213, at0306, at0396 — including resurrecting the parked ⌥⇥ test from `c6ef67aba`), then the old component and its `@covers` references are retired.
+- KBF adoption is a verification-plus-hygiene step, not a mechanism build: the `1e86cd245` gate already makes ⌥⇥ act on the top trapped mode; what the dialog owes is stops worth ringing and manual-bit hygiene at close. It carries its own test (at0396 test 3, the parked `c6ef67aba` todo) rather than deferring its proof to the test step — a step whose only checkpoint is a live walk cannot be closed by anything but a person's memory of it.
+- Tests are rewritten against the new surface (at0213, at0306, at0396), then the old component and its `@covers` references are retired.
 - Proof discipline from `roadmap/kbf-mode-continued-brief.md#brief-proof` applies: a suite counts as cover only after it has been made to fail (`tugutil file probe` with a reverse patch).
 
 #### Success Criteria (Measurable) {#success-criteria}
@@ -40,7 +40,8 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 - ⇧⌘O opens an app-modal Open Quickly: a click on any surface beneath the overlay activates nothing beneath it (at0213 asserts the deck state is unchanged after an outside click, and that the click dismissed the dialog).
 - Typing works from the first keystroke; ↓ on an **empty** query selects the first result (at0396 test 1, unchanged in spirit).
 - The directory-switcher popup (`data-testid="open-quickly-switcher-menu"`) no longer exists anywhere in the tree; a `TugFileChooser` row sits above the input (at0306 rewritten).
-- Settling a directory in the chooser re-scopes the search: results come from the new root (at0306 asserts a file unique to the second directory appears after the switch).
+- Settling a directory in the chooser re-scopes the search: results come from the new root (at0306 asserts a file unique to the second directory appears after the switch). A **mouse** pick in the chooser's dropdown is one of the covered paths — it is the interaction Radix's modal treatment most nearly breaks ([Q01]).
+- A Tab off the chooser that changes nothing changes nothing: the scope stands, no `probeDirs` round trip fires, and the walk lands on the next stop rather than bouncing back to the HUD input ([P09], at0396 test 2).
 - ⌥⇥ inside the dialog engages KBF mode and rings a stop **inside the dialog**, never the card behind it; ⌥⇥ again from a parked stop disengages; dismissing the dialog after a ⌥⇥ pressed inside it leaves no ring on the deck (at0396 test 3, resurrected and made to fail first).
 - `tug-completion-popup.tsx` / `.css` are deleted; `bunx vite build` and `just app-test-covers-check` pass afterward.
 - The onBlur/dismissGuard/backdrop-mousedown dismissal code has no successor in the new component — dismissal is exactly: Escape ladder, ⌘., outside interaction (when opted in), app resign, commit.
@@ -80,7 +81,7 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### Assumptions {#assumptions}
 
-- `TugComboBox` portals its dropdown into the canvas overlay root (`createPortal` + `useCanvasOverlay` in `tug-combo-box.tsx`) — verified by inspection. This is why [Q01] exists: that dropdown is a sibling of the Radix `Dialog.Content` in the overlay root, not a descendant.
+- `TugComboBox` portals its dropdown into the canvas overlay root unconditionally (`createPortal` + `useCanvasOverlay`, `tug-combo-box.tsx:224`, `:620-670`) — verified by inspection. That dropdown is a sibling of the Radix `Dialog.Content` in the overlay root, not a descendant, which is what [Q01] is about. Not an assumption any more: the Radix source says a modal `Content` makes every non-layer node pointer-dead, so [Q01] resolves toward moving the dropdown inside rather than negotiating with the outside.
 - The engine's manual-bit API on `FocusManager` — `kbfManual(): boolean`, `setKbfManual(value: boolean)`, `toggleKbfManual()` — is sufficient for [P04]; no engine change is needed.
 - at0051/at0103/at0176 carry `@covers tugdeck/src/components/tugways/tug-completion-popup.tsx` lines that are stale (those tests drive the composer's completion menu, not this component); they will be removed, not repointed, after verifying each test never mounts Open Quickly.
 
@@ -90,17 +91,20 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### [Q01] Radix modal semantics vs. the chooser's portalled dropdown (OPEN → resolve in step 1) {#q01-radix-portal-dropdown}
 
-**Question:** With `Dialog.Root` modal (TugAlert's configuration), the `TugFileChooser`'s completion dropdown portals into the canvas overlay root **outside** `Dialog.Content`. Does Radix's modal treatment (outside `aria-hidden`/inert, `onInteractOutside`) block or mis-route pointer/focus interaction with that dropdown, and does a click in the dropdown fire `onInteractOutside` (which [P05] wires to dismiss)?
+**Question:** With `Dialog.Root` modal (TugAlert's configuration), the `TugFileChooser`'s completion dropdown portals into the canvas overlay root **outside** `Dialog.Content`. What makes that dropdown clickable, and what keeps a click in it from dismissing the dialog?
 
-**Why it matters:** If unhandled, picking a completion row in the chooser would either be dead (inert) or dismiss the whole dialog (outside-interaction), i.e. the marquee new UI element would not work with the mouse.
+**Why it matters:** If unhandled, picking a completion row in the chooser would either be dead or dismiss the whole dialog, i.e. the marquee new UI element would not work with the mouse.
 
-**Options (if known):**
-- Guard `onInteractOutside`: inspect the event target and prevent dismissal when it is inside the chooser's overlay `<ul>` (identified by the `overlaySlot` data-slot the dialog passes, [P10]). Keep Radix modal.
-- `modal={false}` on `Dialog.Root` plus our own full-block overlay div (the primitive already renders `.tug-modal-input-dialog-overlay`); outside dismissal then rides the overlay's own `onMouseDown`, which never fires for the portalled dropdown because the dropdown stacks above it.
+**What the Radix source says (read, not guessed):** modal `Dialog.Content` carries `disableOutsidePointerEvents`, and `DismissableLayer` implements that by setting `document.body.style.pointerEvents = "none"` and re-enabling `pointer-events: auto` only on **registered layers** (`node_modules/@radix-ui/react-dismissable-layer/dist/index.mjs:72-104`). The chooser's dropdown is a plain `<ul>` portalled into the canvas overlay root by `TugComboBox` (`tug-combo-box.tsx:620-670`) — not a layer, so it is pointer-dead. Because it cannot receive the pointerdown at all, a target-inspecting `onInteractOutside` guard has nothing to inspect: the failure mode is `pointer-events`, not dismissal routing. `hideOthers`/`aria-hidden` compounds it on the a11y side.
 
-**Plan to resolve:** Step 1 builds the gallery card with a `TugFileChooser` in the header slot; probe both interactions (dropdown click-through; outside click) in the real app via the gallery before step 3 builds on it.
+**Options, in the order to try them:**
+1. **Render the dropdown inside `Dialog.Content`.** Add a `portalContainer` pass-through to `TugComboBox` (which today always portals to `useCanvasOverlay()`) and to `TugFileChooser`; the dialog passes its own panel element. Inside the jail the dropdown is not outside anything: pointer-events, inert, and outside-interaction all dissolve at once, and no guard is needed. **Verify the panel's list `overflow` does not clip it** — the panel is the one thing that could.
+2. `modal={false}` on `Dialog.Root` plus our own full-block overlay div (the primitive already renders `.tug-modal-input-dialog-overlay`); outside dismissal then rides the overlay's own `onMouseDown`, which never fires for the portalled dropdown because the dropdown stacks above it.
+3. Keep Radix modal, force `pointer-events: auto` on the dropdown slot, and guard `onInteractOutside` by target (`[data-slot="tug-modal-input-dialog-chooser-overlay"]`, [P10]). Last resort: it fights the layer model rather than living in it, and leaves the `aria-hidden` half unaddressed.
 
-**Resolution:** OPEN — resolved by the step 1 checkpoint; the chosen mechanism is recorded in the step's commit. Start with the guard option; fall back to `modal={false}` if Radix's inert treatment blocks the dropdown at all.
+**Plan to resolve:** Step 1 builds the gallery card with a `TugFileChooser` in the header slot; probe both interactions (dropdown row click; outside click) in the real app via the gallery before step 2 builds on it.
+
+**Resolution:** OPEN — resolved by the step 1 checkpoint; the chosen mechanism is recorded in the step's commit. Start at option 1; fall back down the list only on a probe that fails.
 
 #### [Q02] Seed items for the chooser: candidate shaping (DECIDED — see [P07]) {#q02-seed-shaping}
 
@@ -114,15 +118,15 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Radix modal blocks the portalled chooser dropdown ([Q01]) | high | med | Step 1 gallery probe before Open Quickly builds on it; two fallback mechanisms specified | Dropdown rows unclickable or dialog dismisses on row click |
+| Radix modal blocks the portalled chooser dropdown ([Q01]) | high | high (confirmed in the Radix source) | Step 1 gallery probe before Open Quickly builds on it; three ranked mechanisms specified, the first of which removes the seam rather than guarding it | Dropdown rows unclickable or dialog dismisses on row click |
 | Rewritten at0396 passes without discriminating (the standing `1e86cd245` lesson) | high | med | Every new assertion is probe-verified red first (`tugutil file probe` with a reverse patch); fixture binds a session card so the behind-the-dialog tier exists | A green run on a patched-out gate |
-| Manual bit stranded after ⌥⇥ inside the dialog | med | high without [P04] | [P04] component-level clear at close; asserted in at0396 test 3 | Ring visible on deck after dismissing the dialog |
+| Manual bit stranded after ⌥⇥ inside the dialog | med | high without [P04] | [P04] component-level restore at close; asserted in at0396 test 3 | Ring visible on deck after dismissing the dialog |
 | A typed scope path that does not exist | low | med | [P07]: re-scope only on settle, after `probeDirs` confirms existence and canonicalizes; a failed probe leaves the scope unchanged | Empty results after typing a bogus path |
 
 **Risk R01: Radix inert/outside-interaction vs. portalled dropdown** {#r01-radix-inert}
 
-- **Risk:** The chooser's dropdown, portalled outside `Dialog.Content`, is unreachable or dismissal-triggering under Radix modal semantics.
-- **Mitigation:** [Q01]'s two mechanisms, probed in the gallery in step 1 before adoption.
+- **Risk:** The chooser's dropdown, portalled outside `Dialog.Content`, is pointer-dead under Radix's `disableOutsidePointerEvents` (body `pointer-events: none`, restored only on registered layers) and `aria-hidden` under `hideOthers`.
+- **Mitigation:** [Q01]'s three ranked mechanisms, probed in the gallery in step 1 before adoption; option 1 (portal the dropdown into the panel) removes the outside-ness the risk is made of.
 - **Residual risk:** Future Radix upgrades change inert handling; the gallery card keeps the probe surface alive.
 
 **Risk R02: coverage that does not discriminate** {#r02-nondiscriminating-tests}
@@ -137,14 +141,14 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### [P01] TugModalInputDialog borrows TugAlert's modality machinery (DECIDED) {#p01-borrow-alert-modality}
 
-**Decision:** The primitive composes Radix `Dialog` from `@radix-ui/react-dialog` (not `AlertDialog` — same force-focus reasoning documented at the top of `tug-alert.tsx`), portalled into the canvas overlay root via `useCanvasOverlay()` [L25], with a blocking overlay element, `useFocusTrap({ active, deferDomFocusToTeardown: true, onEscapeDismiss, kbf: false })`, Radix `onOpenAutoFocus`/`onEscapeKeyDown` both prevented, `onCloseAutoFocus` wired to the trap's writer, an in-jail `<div data-tug-key-sink tabIndex={-1} className="tug-key-sink" />` rendered first inside `FocusModeScope`, and ⌘. handled via `isCancelChordEvent` from `keymap-registry.ts`.
+**Decision:** The primitive composes Radix `Dialog` from `@radix-ui/react-dialog` (not `AlertDialog` — same force-focus reasoning documented at the top of `tug-alert.tsx`), portalled into the canvas overlay root via `useCanvasOverlay()` [L25], with a blocking overlay element, `useFocusTrap({ active, deferDomFocusToTeardown: true, onEscapeDismiss, kbf: false })`, Radix `onOpenAutoFocus`/`onEscapeKeyDown` both prevented, `onCloseAutoFocus` wired to the trap's writer, an in-jail `<div data-tug-key-sink tabIndex={-1} className="tug-key-sink" />` rendered first inside `FocusModeScope`, and ⌘. handled via `isCancelChordEvent` from `keymap-registry.ts`. The panel carries a **visually-hidden `Dialog.Title`** (the placeholder text is its name) and `aria-describedby={undefined}` on `Content`: `@radix-ui/react-dialog@1.1.15` fires a `DialogTitleWarning` `console.error` for any `Content` without a `Title` (`dist/index.mjs:280-288`), and an `aria-label` on the panel does not silence it.
 
 **Rationale:**
 - TugAlert is the proven app-modal exemplar; every one of those pieces exists because a failure taught it (the key-sink-inside-the-jail comment in `tug-alert.tsx` is the canonical example).
 - The engine's Escape ladder must own Escape ([P01]/[P02] of focus-language) — the completion popup already worked this way; only the modality shell changes.
 
 **Implications:**
-- Tokens join the `tug-dialog.css` family as `--tugx-modal-input-*`; the component ships `tug-modal-input-dialog.tsx` + `tug-modal-input-dialog.css` in `tugdeck/src/components/tugways/`, exporting `TugModalInputDialog`.
+- Tokens are the component's own family, `--tugx-modal-input-*`, declared in `tug-modal-input-dialog.css` under the seven-slot header block [L19] — the house pattern every sibling follows (`tug-completion-popup.css:26-35`, `tug-alert.css`), not a shared declaration in `tug-dialog.css`; the component ships `tug-modal-input-dialog.tsx` + `tug-modal-input-dialog.css` in `tugdeck/src/components/tugways/`, exporting `TugModalInputDialog`.
 - No Radix `AlertDialog.Action`/`Cancel` — the dialog has no button row; commit is Enter, dismiss is Escape/⌘./outside.
 
 #### [P02] Typing-first at open (DECIDED) {#p02-typing-first}
@@ -173,11 +177,13 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### [P04] Manual-bit hygiene at close (DECIDED) {#p04-manual-bit-hygiene}
 
-**Decision:** The primitive captures `focusManager.kbfManual()` when its trap goes active; at deactivate/unmount, if the bit is set **and was not set at open**, it calls `setKbfManual(false)`.
+**Decision:** The primitive captures `focusManager.kbfManual()` when its trap goes active; at deactivate/unmount it **restores the captured bit** — `setKbfManual(captured)` — unless the pointer cleared it in the meantime (`kbfManualClearedByPointer()`), in which case it stands down and leaves the pointer's answer alone.
 
 **Rationale:**
-- `popFocusMode` clears the manual bit only for engaging traps (`trapped && kbf !== false` — the guard in `focus-manager.ts`, doctrine row "An engaging trap is left" in `tuglaws/focus-language.md#kbf-disengages`); a `kbf: false` trap "manages its own bit". Without this, ⌥⇥ pressed inside the dialog strands a ring on the deck the user returns to.
+- `popFocusMode` clears the manual bit only for engaging traps (`trapped && kbf !== false && modeStack.length === 0` — the guard at `focus-manager.ts:1712`, doctrine row "An engaging trap is left" in `tuglaws/focus-language.md#kbf-disengages`); a `kbf: false` trap "manages its own bit". Without this, ⌥⇥ pressed inside the dialog strands a ring on the deck the user returns to.
 - A bit that was already on before open belongs to the user's deck-level mode and must survive the dialog.
+- Restore, not clear-if-newly-set: the opposite direction is just as real. A user inside a session card's focus cycle — which *is* the manual bit (`use-cycle-mode.tsx:229`) — who presses ⌥⇥ **off** inside the dialog would otherwise leave that cycle silently disengaged after close. Restoring covers both directions for the same amount of code.
+- The pointer exemption is not optional: `clearKbfManualForPointer` (`focus-manager.ts:4064`) is the user reaching for the mouse, and re-asserting a captured `true` over it would repaint a ring they just dismissed.
 
 **Implications:**
 - Implemented inside `TugModalInputDialog` (a `useLayoutEffect` paired with the trap's `active`), so every future consumer inherits the hygiene.
@@ -185,7 +191,7 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### [P05] Outside interaction dismisses, opt-in; the overlay always blocks (DECIDED) {#p05-outside-click}
 
-**Decision:** The primitive takes `dismissOnOutsideClick?: boolean` (default `false`, the alert-like strict posture). When `true`, an outside interaction dismisses (`onInteractOutside` → call `onDismiss`, subject to the [Q01] dropdown guard) — but the overlay still swallows the event, so nothing beneath activates. Open Quickly passes `true`.
+**Decision:** The primitive takes `dismissOnOutsideClick?: boolean` (default `false`, the alert-like strict posture). When `true`, an outside interaction dismisses (`onInteractOutside` → call `onDismiss`) — but the overlay still swallows the event, so nothing beneath activates. Whether the chooser's dropdown counts as "outside" is settled by the [Q01] mechanism, not by this prop: under option 1 the dropdown lives inside `Content` and the question never arises. Open Quickly passes `true`.
 
 **Rationale:**
 - User decision: yes to outside-click dismiss for Open Quickly — it is a launcher, not an alert.
@@ -232,18 +238,27 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 #### [P09] Settling the chooser returns the key view to the HUD input (DECIDED) {#p09-settle-returns-focus}
 
-**Decision:** After a successful re-scope (settle → probe ok → workspace swap), `OpenQuicklyBody` re-seeds the key view onto the HUD input (engine placement via the focus-key, the `useSeedKeyView`/`place` vocabulary — never a raw `.focus()`).
+**Decision:** After a re-scope that actually **changed the scope** (settle → probe ok → the canonical path differs from the current `activePath` → workspace swap), `OpenQuicklyBody` re-seeds the key view onto the HUD input (engine placement via the focus-key, the `useSeedKeyView`/`place` vocabulary — never a raw `.focus()`). A settle whose canonical path equals the live scope re-seeds nothing and probes nothing.
 
 **Rationale:**
 - The user's next act after choosing a scope is typing a filename; leaving the keyboard in the chooser makes every scope change cost a Tab walk back.
 - The Browse… path settles the same way (`TugFileChooser`'s `browse` calls `onSettle` directly), so the native panel round-trip also lands back in the input.
+- **The changed-only guard is load-bearing, not tidiness.** `TugComboBox` settles on **blur**, not only on accept/Enter/browse (`tug-combo-box.tsx:529-538`: `onBlur` closes the list and calls `settle(value)`). An unconditional re-seed therefore fires when the keyboard merely *leaves* the chooser: the Tab walk from the chooser field to Browse… (T01 stop 1 → stop 2) would settle the unchanged path, probe ok, and bounce the key view back to stop 0. The walk would appear to skip Browse entirely. The same guard also stops a `probeDirs` round trip on every focus change.
 
 **Implications:**
 - The seed is a placement, so it grants the caret (focus-language [P12]); if KBF was manually engaged, the paint stands down while the caret is live — correct and already doctrine.
+- at0396 test 2 (the Tab walk) is the assertion that pins the guard: patching the guard out must make it fail (a step-4 probe).
 
 #### [P10] Naming, slots, and focus orders (DECIDED) {#p10-naming-orders}
 
-**Decision:** Component `TugModalInputDialog` in `tug-modal-input-dialog.tsx`/`.css` [L19]. Slots: `tug-modal-input-dialog-overlay`, `tug-modal-input-dialog` (panel, `role="dialog"`), `-header`, `-field`, `-input`, `-list`, `-row`, `-empty`, `-match`. Focus group `MODAL_INPUT_DIALOG_FOCUS_GROUP = "tug-modal-input-dialog"`; orders: HUD input `0`, chooser path field `1`, Browse `2` (Open Quickly passes `focusGroup`/`focusOrder`/`browseFocusOrder` into `TugFileChooser`, which already supports all three). The chooser's `overlaySlot` is set to `tug-modal-input-dialog-chooser-overlay` (also the [Q01] guard's selector). CSS carries the HUD look over from `tug-completion-popup.css` (175 lines) with renamed selectors; overlay/backdrop styling aligns with `tug-alert.css`'s overlay treatment.
+**Decision:** Component `TugModalInputDialog` in `tug-modal-input-dialog.tsx`/`.css` [L19]. Slots: `tug-modal-input-dialog-overlay`, `tug-modal-input-dialog` (panel, `role="dialog"`), `-header`, `-field`, `-input`, `-list`, `-row`, `-empty`, `-match`. Focus group `MODAL_INPUT_DIALOG_FOCUS_GROUP = "tug-modal-input-dialog"`; orders: HUD input `0`, chooser path field `1`, Browse `2` (Open Quickly passes `focusGroup`/`focusOrder`/`browseFocusOrder` into `TugFileChooser`, which already supports all three).
+
+The chooser's dropdown needs two things `TugFileChooser` does not currently expose, both plain pass-throughs to the `TugComboBox` it composes, and both added in step 1 because [Q01] is answered with them:
+
+- `portalContainer?: HTMLElement | null` — new on **both** components. `TugComboBox` today portals unconditionally to `useCanvasOverlay()` (`tug-combo-box.tsx:224`, `:620-670`); the prop lets a host name the container instead, which is [Q01] option 1. Absent ⇒ today's behavior, so every existing caller is untouched.
+- `overlaySlot?: string` — `TugComboBox` already takes it; `TugFileChooser` **hardcodes** `overlaySlot="tug-file-chooser-overlay"` (`tug-file-chooser.tsx:233`) and must forward the caller's value instead, defaulting to the current string. The dialog passes `tug-modal-input-dialog-chooser-overlay`, which is also the [Q01] option-3 guard selector.
+
+CSS carries the HUD look over from `tug-completion-popup.css` (175 lines) with renamed selectors; the `--tugx-modal-input-*` family is declared in `tug-modal-input-dialog.css` itself ([P01]); overlay/backdrop styling aligns with `tug-alert.css`'s overlay treatment.
 
 **Rationale:**
 - Tab from the seeded input goes visually "up" to the chooser and wraps — the walk order matches the read order with the input first because the input is the surface's home.
@@ -269,7 +284,7 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 |------|-----------|------------|
 | Escape | engine ladder via trap `onEscapeDismiss` | unchanged |
 | ⌘. | none | `isCancelChordEvent` → dismiss (new, from TugAlert) |
-| Outside click | backdrop `onMouseDown`, guarded by `dismissGuard` | `onInteractOutside` → dismiss when `dismissOnOutsideClick` ([P05]), guarded per [Q01]; overlay always blocks |
+| Outside click | backdrop `onMouseDown`, guarded by `dismissGuard` | `onInteractOutside` → dismiss when `dismissOnOutsideClick` ([P05]); the chooser dropdown is inside, not guarded-outside, per the [Q01] mechanism; overlay always blocks |
 | Focus leaves | field `onBlur` with three exemptions | **deleted** ([P06]) |
 | App resigns active | popup-level lifecycle observer | consumer-level in `OpenQuicklyBody` ([P06]) |
 | Commit | `onCommit` → caller closes | unchanged |
@@ -285,7 +300,7 @@ export const MODAL_INPUT_DIALOG_FOCUS_GROUP = "tug-modal-input-dialog";
 export const MODAL_INPUT_DIALOG_FIELD_ORDER = 0;
 
 export interface TugModalInputDialogProps {
-  /** Accessible name + empty-field placeholder. */
+  /** Accessible name (the visually-hidden Dialog.Title) + empty-field placeholder. */
   placeholder?: string;
   /** Completion source: (query) => items, optional subscribe. */
   provider: CompletionProvider;
@@ -344,6 +359,8 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 | `MODAL_INPUT_DIALOG_FOCUS_GROUP` / `MODAL_INPUT_DIALOG_FIELD_ORDER` | consts | `tug-modal-input-dialog.tsx` | successors of `COMPLETION_POPUP_*` |
 | `OpenQuicklyBody` | rewrite | `open-quickly-overlay.tsx` | chooser header, settle→probe→re-scope, resign observer, [P09] re-seed |
 | `switcherLabels`, `rootCandidates` (menu shaping), `SWITCHER_MENU` | delete/absorb | `open-quickly-overlay.tsx` | candidate list logic survives into the seed builder ([P07]) |
+| `portalContainer` prop | add | `tug-combo-box.tsx`, `tug-file-chooser.tsx` | [Q01] option 1 — name the dropdown's portal container; absent ⇒ `useCanvasOverlay()`, today's behavior |
+| `overlaySlot` prop | add (forward) | `tug-file-chooser.tsx` | today hardcoded at `:233`; forward the caller's value, default `"tug-file-chooser-overlay"` |
 | `registerGalleryCards` | modify | `cards/gallery-registrations.tsx` | add `gallery-modal-input-dialog` |
 | `TugCompletionPopup` + CSS | delete | `tugways/` | step 6 |
 | `src/__tests__/switcher-labels.test.ts` | delete | tugdeck unit tests | dies with `switcherLabels` |
@@ -376,8 +393,8 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 |---|---|---|---|
 | #step-1 | Build TugModalInputDialog + gallery card; resolve [Q01] | pending | — |
 | #step-2 | Move Open Quickly onto the primitive; chooser in, switcher out | pending | — |
-| #step-3 | KBF adoption: ⌥⇥ over the dialog's stops; manual-bit hygiene | pending | — |
-| #step-4 | Rewrite at0213 / at0306 / at0396 against the new surface | pending | — |
+| #step-3 | KBF adoption: ⌥⇥ over the dialog's stops; manual-bit hygiene; at0396 test 3 | pending | — |
+| #step-4 | Rewrite at0213 / at0306 / at0396 tests 1–2 against the new surface | pending | — |
 | #step-5 | Retire TugCompletionPopup; sweep `@covers`; update doctrine | pending | — |
 | #step-6 | Integration checkpoint | pending | — |
 
@@ -388,14 +405,15 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 **References:** [P01] borrow alert modality, [P02] typing-first, [P05] outside-click prop, [P08] fold-in, [P10] naming/orders, [Q01] Radix portal dropdown, Spec S01, Risk R01, (#current-code-map, #dismissal-inventory)
 
 **Artifacts:**
-- `tug-modal-input-dialog.tsx` / `.css`, gallery card + registration.
+- `tug-modal-input-dialog.tsx` / `.css`, gallery card + registration; the `portalContainer` / `overlaySlot` pass-throughs on `tug-combo-box.tsx` + `tug-file-chooser.tsx` ([P10]).
 
 **Tasks:**
-- [ ] Create the component per Spec S01: Radix Dialog shell copied from `tug-alert.tsx` (portal container, overlay, prevented auto-focus/Escape, `onCloseAutoFocus`, in-jail key sink, ⌘. via `isCancelChordEvent`); field/list/provider internals migrated from `tug-completion-popup.tsx` (pull/subscribe loop, `renderLabel`, selected state + `scrollIntoView`, row `onMouseDown` preventDefault + click commit, `ATTACHED_LIST_ATTRIBUTE` on the field wrapper, `TugInput` with `focusGroup`/`focusOrder`, `useSeedKeyView`); trap `useFocusTrap({ active: true, deferDomFocusToTeardown: true, onEscapeDismiss: onDismiss, kbf: false })`. No `onBlur` dismissal, no backdrop mousedown handler, no `dismissGuard`, no app-lifecycle observer ([P06] puts that in the consumer).
-- [ ] `dismissOnOutsideClick` wiring: `onInteractOutside` prevents by default; when the prop is set, dismiss — unless the event target is inside the chooser overlay slot ([Q01] guard, selector `[data-slot="tug-modal-input-dialog-chooser-overlay"]`).
-- [ ] CSS: HUD panel/field/list/row/empty/match styles carried from `tug-completion-popup.css` under the new class names; overlay styled on the `tug-alert-overlay` pattern; tokens `--tugx-modal-input-*` declared in `tug-dialog.css`.
-- [ ] Gallery card `gallery-modal-input-dialog.tsx` with a static in-memory provider and a `TugFileChooser` (menuMode, seed of a few fake paths, `overlaySlot="tug-modal-input-dialog-chooser-overlay"`, orders per Table T01) in the header; register in `gallery-registrations.tsx`.
-- [ ] **[Q01] probe in the running app** (gallery card): (a) click a row in the chooser's portalled dropdown — the pick must land and the dialog must stay up; (b) click outside the panel — the dialog must dismiss and nothing beneath activates. If Radix's inert treatment blocks (a), switch to `modal={false}` + own-overlay blocking and re-probe; record the outcome in the commit message.
+- [ ] Create the component per Spec S01: Radix Dialog shell copied from `tug-alert.tsx` (portal container, overlay, prevented auto-focus/Escape, `onCloseAutoFocus`, in-jail key sink, ⌘. via `isCancelChordEvent`, visually-hidden `Dialog.Title` + `aria-describedby={undefined}` so `DialogTitleWarning` never fires [P01]); field/list/provider internals migrated from `tug-completion-popup.tsx` (pull/subscribe loop, `renderLabel`, selected state + `scrollIntoView`, row `onMouseDown` preventDefault + click commit, `ATTACHED_LIST_ATTRIBUTE` on the field wrapper, `TugInput` with `focusGroup`/`focusOrder`, `useSeedKeyView`); trap `useFocusTrap({ active: true, deferDomFocusToTeardown: true, onEscapeDismiss: onDismiss, kbf: false })`. No `onBlur` dismissal, no backdrop mousedown handler, no `dismissGuard`, no app-lifecycle observer ([P06] puts that in the consumer).
+- [ ] `dismissOnOutsideClick` wiring: `onInteractOutside` prevents by default; when the prop is set, dismiss.
+- [ ] Chooser plumbing per [P10]: add the `portalContainer` pass-through to `TugComboBox` **and** `TugFileChooser` (absent ⇒ `useCanvasOverlay()`, so no existing caller moves), and make `TugFileChooser` forward `overlaySlot` instead of hardcoding it (`tug-file-chooser.tsx:233`), defaulting to `"tug-file-chooser-overlay"`.
+- [ ] CSS: HUD panel/field/list/row/empty/match styles carried from `tug-completion-popup.css` under the new class names; overlay styled on the `tug-alert-overlay` pattern; the `--tugx-modal-input-*` family declared in `tug-modal-input-dialog.css` under its seven-slot header block ([P01], [L19]).
+- [ ] Gallery card `gallery-modal-input-dialog.tsx` with a static in-memory provider and a `TugFileChooser` (menuMode, seed of a few fake paths, `portalContainer` = the dialog panel, `overlaySlot="tug-modal-input-dialog-chooser-overlay"`, orders per Table T01) in the header; register in `gallery-registrations.tsx`.
+- [ ] **[Q01] probe in the running app** (gallery card): (a) click a row in the chooser's dropdown — the pick must land and the dialog must stay up; (b) click outside the panel — the dialog must dismiss and nothing beneath activates. Start at option 1 (dropdown portalled into the panel) and check the panel's list `overflow` does not clip it; fall back down [Q01]'s ranked list only on a failed probe. Record the chosen mechanism in the commit message.
 
 **Tests:**
 - [ ] Manual gallery pass across themes (component-authoring checklist); behavioral coverage lands with at0213/at0396 in #step-4.
@@ -419,8 +437,8 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 
 **Tasks:**
 - [ ] Replace the `TugCompletionPopup` render with `TugModalInputDialog` (`provider`, `onCommit` = existing `commit`, `onDismiss` = `closeOpenQuickly`, `placeholder` = existing leaf-name form, `emptyLabel` unchanged, `dismissOnOutsideClick`).
-- [ ] Header: `TugFileChooser` with `value` = chooser text state (initialized to `activePath`), `base` = `activePath` (or `/`), `kind="directory"`, `menuMode`, `seed` = candidate seed built per [P07] (candidate list from the existing `rootCandidates` + `probeDirs` effect; full-path labels with match highlighting modeled on `buildRecentsSeed` in `session-card.tsx`, no trash affordance), `overlaySlot="tug-modal-input-dialog-chooser-overlay"`, `focusGroup={MODAL_INPUT_DIALOG_FOCUS_GROUP}`, `focusOrder={1}`, `browseFocusOrder={2}`.
-- [ ] `onSettle`: probe the settled path via `probeDirs`; on exists, set `pickedPath` to the canonical form (workspace re-acquire effect is already keyed on `activePath`) and re-seed the key view onto the HUD input ([P09]); on missing, leave scope unchanged.
+- [ ] Header: `TugFileChooser` with `value` = chooser text state (initialized to `activePath`), `base` = `activePath` (or `/`), `kind="directory"`, `menuMode`, `seed` = candidate seed built per [P07] (candidate list from the existing `rootCandidates` + `probeDirs` effect; full-path labels with match highlighting modeled on `buildRecentsSeed` in `session-card.tsx`, no trash affordance), `portalContainer`/`overlaySlot` per the [Q01] mechanism chosen in #step-1, `focusGroup={MODAL_INPUT_DIALOG_FOCUS_GROUP}`, `focusOrder={1}`, `browseFocusOrder={2}`.
+- [ ] `onSettle`: **first** compare the settled path against the live `activePath` — equal (after normalization) means the settle was a blur, not a choice (`tug-combo-box.tsx:529-538`), so return without probing or re-seeding ([P09]). Otherwise probe via `probeDirs`; on exists, set `pickedPath` to the canonical form (workspace re-acquire effect is already keyed on `activePath`) and re-seed the key view onto the HUD input; on missing, leave scope unchanged.
 - [ ] Add the app-resign dismissal observer to `OpenQuicklyBody` ([P06]) — the code moves verbatim from the old popup.
 - [ ] Delete: the switcher JSX, `useResponderForm`/`ResponderScope` wiring, `switcherLabels`, `SWITCHER_MENU`, `dismissGuard`, the `candidates.length > 1` gate (the chooser always renders).
 - [ ] Verify `⇧⌘O` end-to-end in the running app: open, type, commit, re-scope via chooser typing, via seed menu pick, via Browse.
@@ -430,7 +448,7 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] Live app: all three re-scope paths work and land the caret back in the HUD input
+- [ ] **User-verified gate (not machine-closable):** live app — all three re-scope paths work, a real scope change lands the caret back in the HUD input, and a bare Tab off the chooser does **not**. An autonomous `implement` run reports this step as built-and-building and stops here for the walk; the machine proof arrives with at0306/at0396 in #step-4.
 
 ---
 
@@ -443,19 +461,22 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 **References:** [P03] KBF adoption, [P04] manual-bit hygiene, Table T01, Risk R02, (#p03-kbf-adoption, #p04-manual-bit-hygiene)
 
 **Artifacts:**
-- The [P04] capture/clear effect in `TugModalInputDialog`; any fixes the live walk exposes.
+- The [P04] capture/restore effect in `TugModalInputDialog`; at0396 test 3, resurrected; any fixes the live walk exposes.
 
 **Tasks:**
-- [ ] Implement [P04]: capture `kbfManual()` at trap activation (the `FocusManagerContext` manager is already in scope via the trap's imports); on deactivate, clear the bit iff set-now and not-set-at-open.
+- [ ] Implement [P04]: capture `kbfManual()` at trap activation (the `FocusManagerContext` manager is already in scope via the trap's imports); on deactivate, `setKbfManual(captured)` unless `kbfManualClearedByPointer()` says the pointer already answered.
 - [ ] Walk the whole vocabulary in the live app with a **bound session card behind the dialog** (the `1e86cd245` failure fixture): ⌥⇥ engages and rings inside the dialog (never the card behind); Tab/⇧Tab walk input → chooser → Browse; parked input: ↑/↓ drive the results (attached list), Enter claims the caret; ⌥⇥ from a parked stop disengages; Escape dismisses from any stop; after ⌥⇥-then-Escape, no ring anywhere on the deck.
 - [ ] Fix what the walk exposes; diagnose in the app first (`/api/eval` on the live instance) per the brief's proof discipline.
+- [ ] **Write at0396 test 3 now, in this step** (the `c6ef67aba` `test.todo`, resurrected per [P03]): bound session card behind the dialog, ⌥⇥ rings inside (assert `data-key-view-kbd` within the panel and its absence on the card), ⌥⇥ again disengages, and after ⌥⇥ + Escape no `data-kbf` on `<html>`. The KBF step carries its own falsifiable proof rather than borrowing one from #step-4 — this is the step whose checkpoint would otherwise be a memory of a walk.
+- [ ] Probe it red first: patch out the [P04] restore and watch the no-ring-after-dismiss clause fail (`tugutil file probe`); note the probe in the test header docblock.
 
 **Tests:**
-- [ ] Assertions land in at0396 (#step-4); this step proves the behavior live.
+- [ ] `tests/app-test/at0396-open-quickly-arrows.test.ts` test 3 (tests 1–2 are rewritten in #step-4).
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] The live walk above passes end to end, on a deck with a bound session card
+- [ ] `just app-test tests/app-test/at0396-open-quickly-arrows.test.ts` — test 3 green, and red under the [P04] reverse patch
+- [ ] **User-verified gate (not machine-closable):** the full live walk above, on a deck with a bound session card — the test pins the ring's location and the bit's fate, not the whole vocabulary
 
 ---
 
@@ -474,8 +495,8 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 - [ ] New selectors throughout: panel `[data-slot="tug-modal-input-dialog"]`, input `.tug-modal-input-dialog-input`, rows via `[data-slot="tug-modal-input-dialog-list"]`, chooser via its slot ([P10]).
 - [ ] at0213: open/typing/commit unchanged in spirit; Escape dismisses; outside click dismisses **and** the surface beneath did not activate; add ⌘. dismissal.
 - [ ] at0306: default-dir fallback unchanged; replace the switcher-menu interactions with chooser interactions — seed-menu pick re-scopes (a file unique to the second directory becomes findable), typed-path settle re-scopes, missing-path settle does not.
-- [ ] at0396: test 1 (↓ on empty query selects first result) and test 2 (Tab reaches the chooser) rewritten; test 3 (the `c6ef67aba` test.todo) resurrected per [P03]: bound session card behind the dialog, ⌥⇥ rings inside (assert `data-key-view-kbd` within the panel and its absence on the card), ⌥⇥ again disengages, and after ⌥⇥ + Escape no `data-kbf` on `<html>`.
-- [ ] Probe every new behavioral assertion red first (`tugutil file probe` with a reverse patch — e.g. patch out the [P04] clear and watch the no-ring-after-dismiss clause fail; patch out the [Q01] guard and watch the dropdown-click clause fail). Note each probe in the test header docblock.
+- [ ] at0396: test 1 (↓ on empty query selects first result) and test 2 (Tab from the HUD input reaches the chooser field, then Browse…) rewritten. Test 3 already landed in #step-3.
+- [ ] Probe every new behavioral assertion red first (`tugutil file probe` with a reverse patch — patch out the [P09] changed-only guard and watch at0396 test 2's Browse… landing fail; patch out the [Q01] mechanism and watch at0306's dropdown-pick clause fail). Note each probe in the test header docblock.
 - [ ] Update the three files' `@covers` lines to `tug-modal-input-dialog.tsx` (keeping `open-quickly-overlay.tsx` and friends).
 
 **Tests:**
@@ -558,8 +579,8 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 | Checkpoint | Verification |
 |------------|--------------|
 | Primitive proven standalone | Step 1 gallery probes + `bunx vite build` |
-| Open Quickly on the primitive | Step 2 live walk of all three re-scope paths |
-| KBF adopted | Step 3 live walk on a bound-card deck |
+| Open Quickly on the primitive | Step 2 live walk of all three re-scope paths (user-verified gate) |
+| KBF adopted | Step 3 at0396 test 3, red under the [P04] reverse patch, plus the live walk (user-verified gate) |
 | Pinned | Step 4 three-file run, probes red-first |
 | Retired clean | Step 5 covers-check + zero-reference grep |
 | Whole | Step 6 `just app-test-changed` |
