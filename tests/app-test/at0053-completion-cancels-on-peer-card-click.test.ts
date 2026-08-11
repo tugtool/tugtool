@@ -22,7 +22,6 @@
  * strict-superset guard: every dismissal the old signal triggered
  * is still triggered by the new signal.
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/lib/canvas-overlay-registry.ts
  * @covers tugdeck/src/card-state-orchestrator.ts
  * @covers tugdeck/src/components/chrome/tug-pane.tsx

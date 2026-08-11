@@ -40,7 +40,6 @@
  *     Step 5's service-binding territory and is gated by AT-tag
  *     allocated in Step 5.
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
  * @covers tugdeck/src/components/tugways/tug-popup-list.tsx
  * @covers tugdeck/src/lib/canvas-overlay-registry.ts

@@ -1,0 +1,202 @@
+/* @tug-pairings {
+  --tugx-modal-input-fg           | --tugx-modal-input-bg           | content
+  --tugx-modal-input-border       | --tugx-modal-input-bg           | informational
+  --tugx-modal-input-row-sel-fg   | --tugx-modal-input-row-sel-bg   | control
+  --tugx-modal-input-placeholder  | --tugx-modal-input-bg           | content
+} */
+
+/**
+ * @tug-pairings
+ * | Element                              | Surface                              | Role          | Context                                             |
+ * |--------------------------------------|--------------------------------------|---------------|-----------------------------------------------------|
+ * | --tugx-modal-input-fg                | --tugx-modal-input-bg                | content       | .tug-modal-input-dialog-input / -row (color)        |
+ * | --tugx-modal-input-border            | --tugx-modal-input-bg                | informational | .tug-modal-input-dialog (border-color)              |
+ * | --tugx-modal-input-row-sel-fg        | --tugx-modal-input-row-sel-bg        | control       | .tug-modal-input-dialog-row[data-selected] (bg+fg)  |
+ * | --tugx-modal-input-placeholder       | --tugx-modal-input-bg                | content       | .tug-modal-input-dialog-input::placeholder (color)  |
+ */
+
+/* ---- Component-tier aliases — resolve to base tier in one hop [L17] ----
+ *
+ * The panel shares the overlay surface family with TugCompletionMenu /
+ * TugPopover; the dimming overlay is the alert's, because the modality is the
+ * alert's. The highlighted row uses the accent selection surface, same as the
+ * composer's completion popup.
+ */
+
+body {
+  --tugx-modal-input-overlay-bg:  var(--tug7-surface-overlay-primary-normal-dim-rest);
+  --tugx-modal-input-bg:          var(--tug7-surface-global-primary-normal-overlay-rest);
+  --tugx-modal-input-fg:          var(--tug7-element-global-text-normal-default-rest);
+  --tugx-modal-input-border:      var(--tug7-element-global-border-normal-default-rest);
+  --tugx-modal-input-shadow:      var(--tug7-element-global-shadow-normal-overlay-rest);
+  --tugx-modal-input-row-sel-bg:  var(--tug7-surface-selection-primary-normal-selected-rest);
+  --tugx-modal-input-row-sel-fg:  var(--tug7-element-selection-text-normal-selected-rest);
+  --tugx-modal-input-placeholder: var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-modal-input-icon:        var(--tug7-element-global-icon-normal-muted-rest);
+}
+
+/* ---- Blocking overlay — the modality itself ---- */
+.tug-modal-input-dialog-overlay {
+  /* @tug-renders-on: --tugx-modal-input-overlay-bg */
+  background-color: var(--tugx-modal-input-overlay-bg);
+  position: fixed;
+  inset: 0;
+  /* The alert tier: below the banner at 99999, above everything else. */
+  z-index: 99990;
+}
+
+/* ---- Panel ----
+ *
+ * Centered without a transform, and with no filter / will-change / contain
+ * either. Every one of those would make the panel a containing block for
+ * `position: fixed` descendants — and a header control's dropdown IS one,
+ * portalled in here so a modal Radix content does not leave it pointer-dead.
+ * Under a transform its fixed coordinates would resolve against the panel
+ * instead of the viewport, and `overflow: hidden` below would then clip it.
+ */
+.tug-modal-input-dialog {
+  position: fixed;
+  /* Xcode drops the field ~28% down the window rather than dead-center. */
+  top: 22vh;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  z-index: 99991;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 70vw);
+  max-height: 60vh;
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  background-color: var(--tugx-modal-input-bg);
+  color: var(--tugx-modal-input-fg);
+  border: 1px solid var(--tugx-modal-input-border);
+  border-radius: var(--tug-radius-lg);
+  box-shadow: var(--tugx-modal-input-shadow);
+  overflow: hidden;
+}
+
+/* The accessible name Radix requires on every dialog content. The placeholder
+   already says what the surface is for on screen, so the title carries the same
+   words for assistive technology and takes no space. */
+.tug-modal-input-dialog-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Header slot — a caller's row above the field ---- */
+.tug-modal-input-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-md) var(--tug-space-xl) 0;
+}
+
+/* The header's control takes the full width of the row — it is a peer of the
+   query field below it, not an accessory beside it. */
+.tug-modal-input-dialog-header > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- Query field ---- */
+.tug-modal-input-dialog-field {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-md);
+  padding: var(--tug-space-lg) var(--tug-space-xl);
+}
+
+.tug-modal-input-dialog-field-icon {
+  flex-shrink: 0;
+  width: var(--tug-icon-size-lg);
+  height: var(--tug-icon-size-lg);
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  color: var(--tugx-modal-input-icon);
+}
+
+/* The field is a TugInput — it carries the substrate clipboard responders,
+   without which ⌘V in the dialog routes to whatever surface sits behind it.
+   These rules strip TugInput's boxed chrome (fill, border, size-variant height
+   and padding) down to a bare search line on the dialog's own surface. Every
+   state TugInput paints is repeated in the selector list because each is
+   authored at a specificity this must beat: `.tug-input:focus` (0,2,0),
+   `.tug-input[data-key-view-kbd]` (0,2,0), and the hover rule's `:not()` chain
+   (0,5,0). */
+.tug-modal-input-dialog input.tug-modal-input-dialog-input,
+.tug-modal-input-dialog input.tug-modal-input-dialog-input:focus,
+.tug-modal-input-dialog input.tug-modal-input-dialog-input[data-key-view-kbd],
+.tug-modal-input-dialog
+  input.tug-modal-input-dialog-input:hover:not(:disabled):not(:read-only) {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  outline: none;
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  background-color: transparent;
+  background-image: none;
+  color: var(--tugx-modal-input-fg);
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xl);
+  font-weight: var(--tug-font-weight-regular);
+  letter-spacing: normal;
+  line-height: 1.2;
+}
+
+.tug-modal-input-dialog input.tug-modal-input-dialog-input::placeholder {
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  color: var(--tugx-modal-input-placeholder);
+}
+
+/* ---- Result list ---- */
+.tug-modal-input-dialog-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--tug-space-xs) 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--tugx-modal-input-border);
+}
+
+.tug-modal-input-dialog-row {
+  padding: var(--tug-space-sm) var(--tug-space-xl);
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  color: var(--tugx-modal-input-fg);
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: default;
+}
+
+.tug-modal-input-dialog-row[data-selected="true"] {
+  /* @tug-renders-on: --tugx-modal-input-row-sel-bg */
+  background-color: var(--tugx-modal-input-row-sel-bg);
+  color: var(--tugx-modal-input-row-sel-fg);
+}
+
+/* Stands where the list would: same seam and rhythm as a row, but prose rather
+   than a path, and unselectable — there is nothing to open. */
+.tug-modal-input-dialog-empty {
+  padding: var(--tug-space-md) var(--tug-space-xl);
+  border-top: 1px solid var(--tugx-modal-input-border);
+  /* @tug-renders-on: --tugx-modal-input-bg */
+  color: var(--tugx-modal-input-placeholder);
+  font-size: var(--tug-font-size-sm);
+  cursor: default;
+}
+
+/* Matched characters — weight only, no color change (mirrors the composer's
+   .tug-completion-match). */
+.tug-modal-input-dialog-match {
+  font-weight: 700;
+}

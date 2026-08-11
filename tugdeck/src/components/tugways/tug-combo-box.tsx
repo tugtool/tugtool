@@ -151,6 +151,19 @@ export interface TugComboBoxProps {
   inputClassName?: string;
   /** `data-slot` on the overlay `<ul>` (a per-consumer styling hook). */
   overlaySlot?: string;
+  /**
+   * Where the dropdown portals. Absent ⇒ the canvas overlay root, which is
+   * right for a combo box on a pane or an ordinary sheet.
+   *
+   * A host inside an app-modal Radix surface names its own content element
+   * instead: a modal `Dialog.Content` sets `pointer-events: none` on the body
+   * and restores it only on registered dismissable layers, so a dropdown in
+   * the canvas overlay root would render but be unclickable. The container
+   * must not be a containing block for `position: fixed` (no transform,
+   * filter, or `contain: paint`) — the dropdown positions against the
+   * viewport.
+   */
+  portalContainer?: HTMLElement | null;
   disabled?: boolean;
   spellCheck?: boolean;
   /**
@@ -190,6 +203,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
       className,
       inputClassName,
       overlaySlot,
+      portalContainer,
       disabled,
       spellCheck = false,
       focusGroup,
@@ -221,7 +235,8 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
     // Bumped per fetch so a slow earlier response can't overwrite a newer one.
     const reqSeqRef = useRef(0);
 
-    const overlayRoot = useCanvasOverlay();
+    const canvasOverlay = useCanvasOverlay();
+    const overlayRoot = portalContainer ?? canvasOverlay;
 
     // The seed for the current query (caller renders it), merged with the
     // async results below it, de-duped by value.

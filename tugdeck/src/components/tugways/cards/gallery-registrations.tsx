@@ -66,6 +66,7 @@ import { GalleryTooltip } from "./gallery-tooltip";
 import { GalleryBanner } from "./gallery-banner";
 import { GalleryCardBanner } from "./gallery-card-banner";
 import { GalleryAlert } from "./gallery-alert";
+import { GalleryModalInputDialog } from "./gallery-modal-input-dialog";
 import { GalleryTugInlineDialog } from "./gallery-tug-inline-dialog";
 import { GalleryTugDialogButton } from "./gallery-tug-dialog-button";
 import { GallerySheet } from "./gallery-sheet";
@@ -1373,6 +1374,20 @@ export function registerGalleryCards(): void {
     componentId: "gallery-alert",
     contentFactory: (_cardId) => <GalleryAlert />,
     defaultMeta: { title: "TugAlert", icon: "CircleAlert", closable: true },
+    family: "maker",
+    acceptsFamilies: ["maker"],
+    sizePolicy: GALLERY_COMPONENT_SIZE,
+    category: CATEGORIES.overlays,
+  });
+
+  registerCard({
+    componentId: "gallery-modal-input-dialog",
+    contentFactory: (_cardId) => <GalleryModalInputDialog />,
+    defaultMeta: {
+      title: "TugModalInputDialog",
+      icon: "SearchCode",
+      closable: true,
+    },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

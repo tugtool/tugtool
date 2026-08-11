@@ -98,6 +98,17 @@ export interface TugFileChooserProps {
    * Only honored when {@link focusGroup} is also set.
    */
   browseFocusOrder?: number;
+  /**
+   * `data-slot` on the completion dropdown, for a host that styles or selects
+   * it. Defaults to `"tug-file-chooser-overlay"`.
+   */
+  overlaySlot?: string;
+  /**
+   * Where the dropdown portals; forwarded to {@link TugComboBoxProps.portalContainer}.
+   * Absent ⇒ the canvas overlay root. A host inside an app-modal Radix surface
+   * names its own content element so the dropdown is not left pointer-dead.
+   */
+  portalContainer?: HTMLElement | null;
 }
 
 /** The basename prefix being completed — the text after the last `/`. */
@@ -148,6 +159,8 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
       focusGroup,
       focusOrder = 0,
       browseFocusOrder,
+      overlaySlot = "tug-file-chooser-overlay",
+      portalContainer,
     },
     forwardedRef,
   ) {
@@ -230,7 +243,8 @@ export const TugFileChooser = React.forwardRef<HTMLInputElement, TugFileChooserP
         // Browse button's box is restated per size in the CSS.
         className={`tug-file-chooser tug-file-chooser-size-${size}${className !== undefined ? ` ${className}` : ""}`}
         inputClassName="tug-file-chooser-input"
-        overlaySlot="tug-file-chooser-overlay"
+        overlaySlot={overlaySlot}
+        portalContainer={portalContainer}
         focusGroup={focusGroup}
         focusOrder={focusOrder}
       />

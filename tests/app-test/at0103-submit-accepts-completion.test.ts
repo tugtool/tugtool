@@ -19,7 +19,6 @@
  * registered command — it falls through to `send()`, adding a transcript row
  * and opening no sheet.
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry-submit-button.ts
  * @covers tugdeck/src/components/tugways/cards/completion-providers/

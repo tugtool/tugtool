@@ -104,7 +104,7 @@ The rework: a new app-modal primitive, `TugModalInputDialog`, borrowing TugAlert
 
 **Plan to resolve:** Step 1 builds the gallery card with a `TugFileChooser` in the header slot; probe both interactions (dropdown row click; outside click) in the real app via the gallery before step 2 builds on it.
 
-**Resolution:** OPEN — resolved by the step 1 checkpoint; the chosen mechanism is recorded in the step's commit. Start at option 1; fall back down the list only on a probe that fails.
+**Resolution:** RESOLVED via **option 1** (commit `b58a0d479`). `portalContainer` was added to `TugComboBox` and `TugFileChooser` and the dialog passes its own panel element (published through `useModalInputDialogPanel`), so the chooser's dropdown renders inside `Dialog.Content`. Probed in the running app over the gallery card: the dropdown is a descendant of the panel, its rows compute `pointer-events: auto`, a mouse pick lands and the dialog stays up, and a click outside dismisses without pressing the button beneath it. The panel is centered with `margin-inline: auto` rather than a transform precisely so it does not become a containing block for the `position: fixed` dropdown, which would both mis-position it and expose it to the panel's `overflow: hidden`. Reverse-patching `portalContainer` to `null` sent the containment assertion red, so the probe discriminates.
 
 #### [Q02] Seed items for the chooser: candidate shaping (DECIDED — see [P07]) {#q02-seed-shaping}
 
@@ -391,12 +391,16 @@ Mount-while-open like the popup (the component renders `active: true` traps unco
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Build TugModalInputDialog + gallery card; resolve [Q01] | pending | — |
-| #step-2 | Move Open Quickly onto the primitive; chooser in, switcher out | pending | — |
-| #step-3 | KBF adoption: ⌥⇥ over the dialog's stops; manual-bit hygiene; at0396 test 3 | pending | — |
-| #step-4 | Rewrite at0213 / at0306 / at0396 tests 1–2 against the new surface | pending | — |
-| #step-5 | Retire TugCompletionPopup; sweep `@covers`; update doctrine | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | Build TugModalInputDialog + gallery card; resolve [Q01] | done | `b58a0d479` |
+| #step-2 | Move Open Quickly onto the primitive; chooser in, switcher out | done (live walk pending) | `b74f5989e` |
+| #step-3 | KBF adoption: ⌥⇥ over the dialog's stops; manual-bit hygiene; at0396 test 3 | done (live walk pending) | `e1f0654c5` |
+| #step-4 | Rewrite at0213 / at0306 / at0396 tests 1–2 against the new surface | done | `964b7f8f6` (at0396 landed with #step-3) |
+| #step-5 | Retire TugCompletionPopup; sweep `@covers`; update doctrine | done | `d75e12411` |
+| #step-6 | Integration checkpoint | done (machine gates); live walk pending | N/A |
+
+**#step-6 notes.** The derived selection over the branch diff is 74 files — `focus-manager.ts` alone fans out to 68 — so it was refused as a sweep and the scope was named instead: the ~20-file core tier (19/20 green; `at0201`'s activation-click test failed in the batch and passed alone, batch contention), the 13-file cycle/trap/park/paint regression set after the engine changes (13/13), and the surface's own suites plus the chooser's other consumer — at0213, at0306, at0396, at0304, at0176, at0051 (6/6, 18/18). `bunx vite build`, `bunx tsc --noEmit`, and `just app-test-covers-check` all green.
+
+Two success criteria are **not** machine-closed and are the user's to walk: the ⌥⇥ vocabulary end to end on a deck with a bound session card, and ⌘. dismissal outside the app-test harness (the test covers it, but only on a foreground instance).
 
 #### Step 1: Build TugModalInputDialog + gallery card; resolve [Q01] {#step-1}
 

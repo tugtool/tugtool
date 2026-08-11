@@ -1,20 +1,29 @@
 /**
- * open-quickly-overlay.tsx — the deck-global Open Quickly popup.
+ * open-quickly-overlay.tsx — the deck-global Open Quickly dialog.
  *
  * Mounted once at the deck level. It watches {@link getOpenQuicklyOpen}
  * ([L02] via `useSyncExternalStore`); while open it stands up a live
  * {@link FileTreeStore} against the real connection — the same file-search
  * backend the composer's `@` completion uses — and feeds its provider to a
- * {@link TugCompletionPopup}. Choosing a row opens that file through the
- * one {@link openFileInCard} entry point (so it also lands in Open Recent);
- * dismissing just closes the popup.
+ * {@link TugModalInputDialog}. Choosing a row opens that file through the one
+ * {@link openFileInCard} entry point (so it also lands in Open Recent);
+ * dismissing just closes the dialog.
  *
  * The search root is the frontmost card's project when one is bound. With
  * nothing bound — an empty deck, or a deck of picker-state cards — it is the
  * user's default project directory, acquired as a browse hold through
  * {@link acquireDefaultWorkspace} so tugcast will route FILETREE queries to
- * it. That acquisition is asynchronous: the popup opens immediately with the
+ * it. That acquisition is asynchronous: the dialog opens immediately with the
  * empty provider and fills in when it lands. A bound card never waits.
+ *
+ * The root is re-pointed from a {@link TugFileChooser} row above the input —
+ * the same three-part path field the session picker's *Project path* uses, with
+ * the frontmost binding, the default directory, and recent projects as its
+ * seed. Re-scoping happens only when the field **settles** on something new:
+ * a half-typed path is not a directory, and the combo box also settles on a
+ * plain blur, so the changed-only guard is what keeps a Tab through the row
+ * from costing a probe round trip and a bounced key view ([P09] of the
+ * modal-input-dialog plan).
  *
  * The query passes through {@link parseFileLocationQuery} on its way to the
  * provider: `tug-list-view.tsx:123` searches for the path and opens on line
@@ -23,7 +32,7 @@
  *
  * The FileTreeStore is built and torn down per open session: the inner
  * body mounts only while open, so its `useEffect` owns the store's
- * lifetime and no WebSocket subscription lingers when the popup is closed.
+ * lifetime and no WebSocket subscription lingers when the dialog is closed.
  *
  * @module components/chrome/open-quickly-overlay
  */
@@ -31,7 +40,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
@@ -39,14 +47,16 @@ import {
 } from "react";
 
 import {
-  TugCompletionPopup,
-  COMPLETION_POPUP_FOCUS_GROUP,
-  COMPLETION_POPUP_ACCESSORY_ORDER,
-} from "@/components/tugways/tug-completion-popup";
-import { TugPopupButton } from "@/components/tugways/tug-popup-button";
-import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { useResponderForm } from "@/components/tugways/use-responder-form";
+  TugModalInputDialog,
+  MODAL_INPUT_DIALOG_FOCUS_GROUP,
+  MODAL_INPUT_DIALOG_FIELD_ORDER,
+  useModalInputDialogPanel,
+} from "@/components/tugways/tug-modal-input-dialog";
+import { TugFileChooser } from "@/components/tugways/tug-file-chooser";
+import type { TugComboBoxItem } from "@/components/tugways/tug-combo-box";
+import { useFocusManager } from "@/components/tugways/use-focusable";
 import { probeDirs } from "@/lib/dir-existence";
+import { caseInsensitiveSubstring } from "@/lib/text-match";
 import type { TaggedValue, TugbankClient } from "@/lib/tugbank-client";
 import { FeedStore } from "@/lib/feed-store";
 import { FeedId } from "@/protocol";
@@ -55,6 +65,7 @@ import {
   resolveAgainstRoot,
   workspaceFeedFilter,
 } from "@/lib/filetree-store";
+import { getAppLifecycle } from "@/lib/app-lifecycle";
 import { getConnection } from "@/lib/connection-singleton";
 import { parseFileLocationQuery } from "@/lib/file-location-query";
 import { getDeckStore } from "@/lib/deck-store-registry";
@@ -87,14 +98,16 @@ import {
 const EMPTY_PROVIDER = ((_q: string) => []) as CompletionProvider;
 
 /**
- * How many directories the switcher lists. Enough for the project you are in,
- * your default, and the handful you were in recently — past that the menu
- * stops being a switcher and starts being a history.
+ * How many directories the scope row offers. Enough for the project you are in,
+ * your default, and the handful you were in recently — past that the seed stops
+ * being a shortcut and starts being a history.
  */
 const MAX_ROOT_CANDIDATES = 7;
 
-/** `data-testid` on the switcher's menu content; its presence is "menu open". */
-const SWITCHER_MENU = "open-quickly-switcher-menu";
+/** The chooser's stop in the dialog's Tab walk (the input is order 0). */
+const SCOPE_FIELD_ORDER = 1;
+/** The chooser's Browse… button, the stop after it. */
+const SCOPE_BROWSE_ORDER = 2;
 
 /**
  * The explicit default-project-path setting out of its tugbank entry, or `""`
@@ -107,50 +120,25 @@ function parseExplicitPath(entry: TaggedValue | undefined): string {
     : "";
 }
 
-/** A path's last component — what the bar and the switcher name it by. */
+/** A path's last component — what the input's placeholder names it by. */
 function leafName(path: string): string {
   return path.replace(/\/+$/, "").split("/").pop() ?? "";
 }
 
 /**
- * Menu labels for `paths`, one per path, in order.
- *
- * A leaf name alone is the right label right up until two candidates share
- * one — `~/src/tugtool` beside a worktree's `tugtool` reads as the same place
- * twice. When leaves collide, every colliding entry grows parent segments
- * until it is distinct, so the menu never shows two identical rows that go
- * somewhere different. Entries whose leaf is already unique keep the short
- * label — disambiguation is paid for only where it is needed.
+ * A path in the one spelling two paths can be compared in. Not canonical —
+ * only the server can say that ([L29]) — just free of the trailing slash the
+ * chooser leaves behind while descending.
  */
-export function switcherLabels(paths: readonly string[]): string[] {
-  const trimmed = paths.map((p) => p.replace(/\/+$/, ""));
-  const leaves = trimmed.map(leafName);
-  const collides = leaves.map(
-    (leaf, i) => leaves.some((other, j) => j !== i && other === leaf),
-  );
-  return trimmed.map((path, i) => {
-    if (!collides[i]) return leaves[i];
-    const segments = path.split("/").filter((s) => s !== "");
-    // Grow leftward until this label is unlike every other colliding one.
-    for (let take = 2; take <= segments.length; take += 1) {
-      const label = segments.slice(-take).join("/");
-      const unique = trimmed.every((other, j) => {
-        if (j === i || !collides[j]) return true;
-        const otherSegments = other.split("/").filter((s) => s !== "");
-        return otherSegments.slice(-take).join("/") !== label;
-      });
-      if (unique) return label;
-    }
-    // Identical tails all the way up: the full path is the only honest label.
-    return path;
-  });
+function trimTrailingSlash(path: string): string {
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
 }
 
 /**
- * The directories the switcher offers, in order: the frontmost card's
+ * The directories the scope row offers, in order: the frontmost card's
  * project, the default project directory, then recent projects. Deduped by
- * path and capped, so the menu stays a short list of places rather than a
- * history. Built once per popup open — see Risk R01.
+ * path and capped, so the seed stays a short list of places rather than a
+ * history. Built once per open — see Risk R01.
  */
 function rootCandidates(
   bindingDir: string | null,
@@ -182,9 +170,114 @@ function frontmostProjectRoot(): AcquiredWorkspace | null {
   return binding !== null && binding.projectDir !== "" ? binding : null;
 }
 
+/**
+ * Render `text` with the matched runs emphasized — weight only, the same
+ * emphasis the dialog's own result rows use, so the seed reads as part of the
+ * surface it drops out of rather than as a `<mark>`'s highlighter stripe.
+ */
+function renderSeedHighlight(
+  text: string,
+  matches: ReadonlyArray<readonly [number, number]>,
+): React.ReactNode {
+  if (matches.length === 0) return text;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  for (const [start, end] of matches) {
+    if (start > cursor) parts.push(text.slice(cursor, start));
+    parts.push(
+      <strong key={`m-${start}`} className="tug-modal-input-dialog-match">
+        {text.slice(start, end)}
+      </strong>,
+    );
+    cursor = end;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+interface ScopeRowProps {
+  /** The path text in the field (controlled). */
+  value: string;
+  /** Working directory relative completions resolve under. */
+  base: string;
+  /** The candidate directories, already probe-filtered. */
+  candidates: readonly string[];
+  onChange: (next: string) => void;
+  onSettle: (next: string) => void;
+}
+
+/**
+ * The scope row above the query field. Rendered as the dialog's `header`, so
+ * it sits inside the trap and its dropdown portals into the dialog's own panel
+ * — a modal Radix content leaves anything portalled outside it pointer-dead,
+ * which is what would make a mouse pick in this dropdown do nothing.
+ *
+ * Its two controls are authored into the dialog's focus group, so the engine's
+ * Tab walk reaches them from the query field ([P02] authoring contract): a
+ * control with no `focusGroup` is a native-only stop and reads as "Tab skips
+ * it".
+ */
+function OpenQuicklyScopeRow({
+  value,
+  base,
+  candidates,
+  onChange,
+  onSettle,
+}: ScopeRowProps): React.ReactElement {
+  const panel = useModalInputDialogPanel();
+
+  // Full paths, not leaf names: the session picker's recents show whole paths,
+  // and a leaf alone reads as the same place twice when a checkout and its
+  // worktree share a name — which is the whole reason the retired switcher
+  // needed a label-disambiguation pass at all.
+  const seed = useCallback(
+    (query: string): TugComboBoxItem[] => {
+      const q = query.trim();
+      const items: TugComboBoxItem[] = [];
+      for (const path of candidates) {
+        const match = caseInsensitiveSubstring(q, path);
+        if (q !== "" && match === null) continue;
+        items.push({
+          value: path,
+          label: (
+            <span
+              data-testid="open-quickly-scope-path"
+              title={path}
+              aria-label={path}
+            >
+              {renderSeedHighlight(path, match?.matches ?? [])}
+            </span>
+          ),
+        });
+      }
+      return items;
+    },
+    [candidates],
+  );
+
+  return (
+    <TugFileChooser
+      value={value}
+      onChange={onChange}
+      onSettle={onSettle}
+      base={base}
+      kind="directory"
+      menuMode
+      seed={seed}
+      aria-label="Search directory"
+      placeholder="/path/to/project"
+      focusGroup={MODAL_INPUT_DIALOG_FOCUS_GROUP}
+      focusOrder={SCOPE_FIELD_ORDER}
+      browseFocusOrder={SCOPE_BROWSE_ORDER}
+      portalContainer={panel}
+      overlaySlot="tug-modal-input-dialog-chooser-overlay"
+    />
+  );
+}
+
 /** The open-session body: builds the file-search stack while mounted. */
 function OpenQuicklyBody(): React.ReactElement {
-  // The frontmost card's project, captured once when the popup opens:
+  // The frontmost card's project, captured once when the dialog opens:
   // its `projectDir` is the search root (and the base for absolute paths)
   // and its `workspaceKey` scopes the FILETREE feed. Null → nothing is bound,
   // and the default project directory stands in.
@@ -192,14 +285,14 @@ function OpenQuicklyBody(): React.ReactElement {
 
   // The default project directory, resolved (explicit setting, else
   // `<home>/tug`) because this one has to be a real directory to search, not
-  // a preference tier. Available whether or not a card is bound — the
-  // switcher offers it either way.
+  // a preference tier. Available whether or not a card is bound — the scope
+  // row offers it either way.
   //
   // Read through `useTugbankValue` ([L02]), not a bare `client.get`: the two
   // return the same value, but only the subscribed read re-renders when the
-  // setting changes. Settings ▸ General and this popup are both floating
+  // setting changes. Settings ▸ General and this dialog are both floating
   // surfaces and are routinely on screen together — an unsubscribed read
-  // leaves the popup searching the directory the user just replaced, with no
+  // leaves the dialog searching the directory the user just replaced, with no
   // sign anything happened.
   const hostFacts = useHostFacts();
   const client = getTugbankClient();
@@ -214,12 +307,12 @@ function OpenQuicklyBody(): React.ReactElement {
     hostFacts?.home ?? null,
   );
 
-  // The directory picked in the switcher, or null while the popup is still on
-  // whatever it opened with. Component-local: it is this popup instance's UI
-  // state and means nothing once it closes.
+  // The directory chosen in the scope row, or null while the dialog is still
+  // on whatever it opened with. Component-local: it is this dialog instance's
+  // UI state and means nothing once it closes.
   const [pickedPath, setPickedPath] = useState<string | null>(null);
 
-  // What the popup is searching right now.
+  // What the dialog is searching right now.
   const activePath =
     pickedPath ?? bindingRef.current?.projectDir ?? defaultPath;
   const activeIsBinding =
@@ -228,7 +321,7 @@ function OpenQuicklyBody(): React.ReactElement {
 
   // tugcast has to register a directory before FILETREE will route queries to
   // it. The bound card's project already is; anything else needs a browse
-  // hold. The hold outlives the popup, so a later ⇧⌘O on the same directory
+  // hold. The hold outlives the dialog, so a later ⇧⌘O on the same directory
   // shows results on the first keystroke. Only the default is created if
   // missing — a recent project the user picked is never conjured up.
   useEffect(() => {
@@ -247,7 +340,7 @@ function OpenQuicklyBody(): React.ReactElement {
   );
 
   // Whichever root is live. Until an acquisition lands this is null and the
-  // popup renders with the empty provider — a bound card never waits.
+  // dialog renders with the empty provider — a bound card never waits.
   const root: AcquiredWorkspace | null = activeIsBinding
     ? bindingRef.current
     : acquired;
@@ -299,11 +392,27 @@ function OpenQuicklyBody(): React.ReactElement {
     };
   }, []);
 
+  // The app going inactive dismisses. A launcher is a transient act on the
+  // frontmost window; leaving it up behind a switched-away app strands it over
+  // whatever the user comes back to. That is launcher semantics rather than
+  // modal semantics — an alert must survive an app switch — so it lives here,
+  // at the consumer, and not in the dialog primitive. Read from the app's own
+  // lifecycle channel (`applicationWillResignActive`, forwarded by the real
+  // `AppDelegate`) rather than a `window` blur, which also fires for focus
+  // moving inside the app.
+  useEffect(() => {
+    const lifecycle = getAppLifecycle();
+    if (lifecycle === null) return;
+    return lifecycle.observeApplicationWillResignActive(() =>
+      closeOpenQuickly(),
+    );
+  }, []);
+
   // The line carried by the current query's `file:line` suffix, if any.
   // Written by the provider wrapper below on every keystroke, read at commit.
   const lineRef = useRef<number | undefined>(undefined);
 
-  // The popup owns the raw query; the file index only knows project-relative
+  // The dialog owns the raw query; the file index only knows project-relative
   // paths. This wrapper sits between them: it splits off `:line` (and any
   // `:col`) and relativizes an absolute paste before the search, so the
   // clipboard forms people actually have — `tug-list-view.tsx:123`, a
@@ -342,19 +451,19 @@ function OpenQuicklyBody(): React.ReactElement {
     closeOpenQuickly();
   };
 
-  // ---- The directory switcher ----
+  // ---- The scope row's candidates ----
   //
   // The candidate list is the frontmost binding, the default directory, then
   // recent projects. It is NOT re-derived per keystroke (Risk R01) — that
   // would race deck reordering under the user's hands — but it IS rebuilt
   // when the default project directory changes, because that change is the
-  // user's own explicit act in Settings ▸ General and the menu must not go on
+  // user's own explicit act in Settings ▸ General and the seed must not go on
   // offering the directory they just replaced.
   //
   // The round trip does double duty. It drops directories that no longer
   // exist, and it collapses spellings that name the same directory: the same
   // tree reached through a mount and its symlink is two entries in recents but
-  // one place, and the menu must not offer it twice. Only the server can say
+  // one place, and the seed must not offer it twice. Only the server can say
   // they are the same ([L29]), so the answer comes back with the existence
   // check rather than being guessed here.
   const [candidates, setCandidates] = useState<string[]>(() =>
@@ -394,57 +503,81 @@ function OpenQuicklyBody(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultPath]);
 
-  const candidateLabels = useMemo(
-    () => switcherLabels(candidates),
-    [candidates],
+  // ---- Re-scoping ----
+  //
+  // The chooser's text, once the user has touched it. Null means "show
+  // whatever the dialog is pointed at", so the field tracks an `activePath`
+  // that is still resolving rather than freezing an empty string.
+  const [scopeText, setScopeText] = useState<string | null>(null);
+  const scopeValue = scopeText ?? activePath ?? "";
+
+  const focusManager = useFocusManager();
+  // Read inside the probe's continuation, where a render-time value would be
+  // the one from the keystroke that started it.
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
+
+  // A settle is not necessarily a choice. `TugComboBox` settles on blur as
+  // well as on accept / Enter / the native picker returning, so the Tab walk
+  // from this field to Browse… settles the unchanged path on its way past.
+  // Comparing first is therefore load-bearing, not tidiness: without it that
+  // Tab would fire a probe round trip and then re-seed the key view back onto
+  // the query field, and the walk would appear to skip Browse… entirely
+  // ([P09]).
+  const onScopeSettle = useCallback(
+    (raw: string) => {
+      const settled = trimTrailingSlash(raw.trim());
+      const current = trimTrailingSlash(activePathRef.current ?? "");
+      if (settled === "") return;
+      if (settled === current) return;
+      // Both paths, one round trip. Comparing the typed spelling against the
+      // live scope is not enough to know whether anything changed: only the
+      // server can say two spellings name one directory ([L29]), and a scope
+      // reached through a symlink (every temp directory on macOS, for one)
+      // canonicalizes to something the field never held. Without the
+      // canonical-to-canonical compare the first Tab through the row would
+      // "change" the scope to the same place under another name and bounce the
+      // key view back to the query field.
+      void probeDirs([settled, current]).then(({ exists, canonical }) => {
+        if (!aliveRef.current) return;
+        // A path that is not there is not a scope. The field keeps the text
+        // the user typed — it is their edit, not ours to revert — and the
+        // search stays where it was.
+        if (exists[settled] === false) return;
+        const resolved = trimTrailingSlash(canonical[settled] ?? settled);
+        const live = trimTrailingSlash(canonical[current] ?? current);
+        if (resolved === live) return;
+        setPickedPath(resolved);
+        // The field shows what the search is actually scoped to — the server's
+        // canonical answer, which may not be the spelling that was typed.
+        setScopeText(resolved);
+        // The user's next act after choosing a scope is typing a filename, so
+        // the keyboard goes back to the query field. An engine placement, not
+        // a raw `.focus()`: the field is a text stop, so the placement grants
+        // the caret ([P12]).
+        focusManager?.place(
+          null,
+          {
+            kind: "focus-key",
+            focusKey: `${MODAL_INPUT_DIALOG_FOCUS_GROUP}:${MODAL_INPUT_DIALOG_FIELD_ORDER}`,
+          },
+          { modality: "keyboard" },
+        );
+      });
+    },
+    [focusManager],
   );
-
-  const switcherId = useId();
-  const { ResponderScope, responderRef } = useResponderForm({
-    selectValue: { [switcherId]: (path: string) => setPickedPath(path) },
-  });
-
-  // The popup's easy dismissal has to yield while the switcher's menu is up:
-  // that menu is a Radix dropdown portalled outside the panel, so focus
-  // landing in it reads as focus leaving the popup. The menu's presence in
-  // the document IS its open state — it unmounts on close.
-  const dismissGuard = useCallback(
-    () => document.querySelector(`[data-testid="${SWITCHER_MENU}"]`) !== null,
-    [],
-  );
-
-  const switcher =
-    candidates.length > 1 ? (
-      <ResponderScope>
-        <div ref={responderRef as (el: HTMLDivElement | null) => void}>
-          <TugPopupButton
-            label={
-              candidateLabels[candidates.indexOf(activePath ?? "")] ??
-              leafName(activePath ?? "")
-            }
-            aria-label="Search directory"
-            size="sm"
-            senderId={switcherId}
-            data-testid={SWITCHER_MENU}
-            // Into the popup's own focus group, so the engine's Tab walk moves
-            // the key view here from the field and Space/Return open the menu
-            // through the key-view delegation channel.
-            focusGroup={COMPLETION_POPUP_FOCUS_GROUP}
-            focusOrder={COMPLETION_POPUP_ACCESSORY_ORDER}
-            items={candidates.map((path, i) => ({
-              action: TUG_ACTIONS.SELECT_VALUE,
-              value: path,
-              label: candidateLabels[i],
-            }))}
-          />
-        </div>
-      </ResponderScope>
-    ) : undefined;
 
   // The active root's leaf directory name — "Open Quickly in tugtool" reads
-  // cleaner than the whole absolute path. Taken from the path the popup is
-  // pointed at rather than the acquired root, so the bar names the picked
-  // directory while its acquisition is still in flight.
+  // cleaner than the whole absolute path. Taken from the path the dialog is
+  // pointed at rather than the acquired root, so the placeholder names the
+  // picked directory while its acquisition is still in flight.
   const projectLeaf = leafName(activePath ?? projectDir ?? "");
 
   // What an empty result list means, answered at the moment it is rendered.
@@ -463,21 +596,32 @@ function OpenQuicklyBody(): React.ReactElement {
   }, [projectLeaf]);
 
   return (
-    <TugCompletionPopup
+    <TugModalInputDialog
       placeholder={
         projectLeaf !== "" ? `Open Quickly in ${projectLeaf}` : "Open Quickly"
       }
       provider={provider}
       onCommit={commit}
       onDismiss={closeOpenQuickly}
-      accessory={switcher}
-      dismissGuard={dismissGuard}
       emptyLabel={emptyLabel}
+      // A launcher, not an alert: a click outside is the user saying "never
+      // mind". The overlay swallows it either way, so nothing beneath the
+      // dialog activates.
+      dismissOnOutsideClick
+      header={
+        <OpenQuicklyScopeRow
+          value={scopeValue}
+          base={activePath !== null && activePath !== "" ? activePath : "/"}
+          candidates={candidates}
+          onChange={setScopeText}
+          onSettle={onScopeSettle}
+        />
+      }
     />
   );
 }
 
-/** Deck-global mount: renders the popup only while Open Quickly is open. */
+/** Deck-global mount: renders the dialog only while Open Quickly is open. */
 export function OpenQuicklyOverlay(): React.ReactElement | null {
   const open = useSyncExternalStore(subscribeOpenQuickly, getOpenQuicklyOpen);
   if (!open) return null;

@@ -2923,18 +2923,42 @@ export class FocusManager {
    */
   parkKeySink(): boolean {
     if (typeof document === "undefined") return false;
-    // Innermost sink wins: a focus-jailing surface (a Radix-modal trap)
-    // hosts its own sink inside the jail, and portaled surfaces append —
-    // the last sink in document order is the one whose park never crosses
-    // a jailer's boundary.
     const sinks = document.querySelectorAll<HTMLElement>(
       `[${KEY_SINK_ATTRIBUTE}]`,
     );
     if (sinks.length === 0) return false;
-    const sink = sinks[sinks.length - 1];
+    const sink = this.sinkForKeyView() ?? sinks[sinks.length - 1];
     if (document.activeElement === sink) return true;
     sink.focus({ preventScroll: true });
     return document.activeElement === sink;
+  }
+
+  /**
+   * The sink a park of the CURRENT key view must land on: the one nearest it in
+   * the tree, found by walking up from the key-view element and taking the
+   * first ancestor whose subtree holds a sink. `null` when there is no key view
+   * in the DOM, or no sink above it — the caller then falls back to document
+   * order.
+   *
+   * Innermost has to mean *nearest the key view*, not *last in the document*.
+   * A focus-jailing surface (a Radix-modal trap) hosts its own sink inside the
+   * jail precisely so the park never crosses the jailer's boundary, and
+   * document order does not answer that question: the jail is portalled into
+   * the canvas overlay root, while the deck's own sink is rendered after that
+   * root and therefore sorts last. Parking outside the jail from a key view
+   * inside it left the surface's Tab walk stuck on the stop it had reached —
+   * the keydown was arriving from outside the trapped mode.
+   */
+  private sinkForKeyView(): HTMLElement | null {
+    const keyViewEl = this.activeContext().keyViewElement();
+    if (keyViewEl === null) return null;
+    let node: HTMLElement | null = keyViewEl;
+    while (node !== null) {
+      const inner = node.querySelector<HTMLElement>(`[${KEY_SINK_ATTRIBUTE}]`);
+      if (inner !== null) return inner;
+      node = node.parentElement;
+    }
+    return null;
   }
 
   /**

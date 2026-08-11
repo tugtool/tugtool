@@ -1,12 +1,13 @@
 /**
  * at0306-open-quickly-default-dir.test.ts — Open Quickly with nothing open
- * falls back to the default project directory ([AT0306]).
+ * falls back to the default project directory, and its scope row re-points the
+ * search ([AT0306]).
  *
  * Scenario:
  *
  *   Point `dev.tugtool.app / default-project-path` at a temp directory holding
  *   known files, then — with an empty deck and no session binding anywhere —
- *   send the `open-quickly` control the ⇧⌘O menu item dispatches. The popup
+ *   send the `open-quickly` control the ⇧⌘O menu item dispatches. The dialog
  *   must name that directory in its placeholder, list its files as the query
  *   narrows, and open the committed one in a fresh Text card.
  *
@@ -14,41 +15,44 @@
  *   resolves the setting, `POST /api/workspace/acquire` registers the
  *   directory as a browse hold on tugcast's WorkspaceRegistry, the FILETREE
  *   feed routes queries by that workspace's root, and `openFileInCard` creates
- *   a card on a deck that has none. at0213 covers the same popup with no
+ *   a card on a deck that has none. at0213 covers the same dialog with no
  *   workspace at all; this one covers it with a workspace nothing bound.
  *
- *   A second test drives the in-bar directory switcher: with the default
- *   directory and a recent project both on offer, picking the recent one must
- *   swap the search root — and the popup must survive its own menu opening,
- *   which portals outside the panel and so looks like focus leaving.
+ *   The rest drive the `TugFileChooser` scope row that replaced the directory
+ *   switcher. The switcher was a `TugPopupButton` whose Radix menu portalled
+ *   outside the panel; the chooser's dropdown portals INSIDE it, because a
+ *   modal Radix content makes every node outside itself pointer-dead. So a
+ *   MOUSE pick in that dropdown is the interaction most at risk, and it is the
+ *   one test 2 drives.
  *
- *   A third covers what the bar owes the user about the places it offers: two
- *   spellings of one directory are one entry, two different directories that
- *   share a leaf name are told apart, and an empty directory says so instead
- *   of showing a blank panel.
+ *   Test 3 covers what the row owes the user about the places it offers: two
+ *   spellings of one directory are one entry (only the server can say they are
+ *   the same, [L29]), and an empty directory says so instead of showing a blank
+ *   panel. Leaf-name disambiguation is gone with the switcher — the seed shows
+ *   whole paths, so there is nothing to tell apart.
  *
- *   A fourth drives the switcher with REAL key events, asserting against the
- *   ENGINE's marks rather than `document.activeElement`: Tab moves the ring
- *   from the field to the switcher, Space opens its menu, arrows move the
- *   highlight, Return commits, and Tab returns the ring to the field with the
- *   keyboard really in it. Real keys and engine marks because every failure
- *   here was invisible to synthetic events watching DOM focus — macOS omits
- *   buttons from the native Tab order, and an engine-routed stop parks the
- *   key sink rather than holding focus itself.
+ *   Test 4 drives the row with REAL key events, asserting against the ENGINE's
+ *   marks rather than `document.activeElement`: Tab moves the ring from the
+ *   query field to the chooser, Enter claims the caret, ↓ opens the seed, ↓
+ *   moves the highlight, Return accepts — and the key view comes back to the
+ *   query field, because the user's next act after choosing a scope is typing a
+ *   filename.
  *
- *   A fifth pins the rest of the popup-button key contract and the two exits
- *   that belong to the surface rather than the field: ↓ and a printable
- *   character open the switcher's menu, Escape unwinds menu-then-popup from
- *   wherever the ring rests, and `NSApp.deactivate()` dismisses.
+ *   Test 5 pins the changed-only guard on re-scoping, on the path where it is
+ *   load-bearing. `TugComboBox` settles on blur, so leaving the chooser settles
+ *   the path it holds; without the guard that settle re-scopes to the same
+ *   place under its canonical name and re-seeds the key view, and the Tab walk
+ *   appears to skip Browse…. It has to be driven with the MOUSE, because only a
+ *   pointer grants the field real DOM focus — a keyboard walk parks it, and a
+ *   parked field never blurs (at0396 test 2's docblock records that probe).
  *
- *   A sixth runs the setting and the popup together, through the real write
+ *   Test 6 pins the two exits that belong to the surface rather than the field:
+ *   Escape resolves against the dialog's own focus mode from wherever the ring
+ *   is resting, and the app going inactive takes the dialog with it.
+ *
+ *   Test 7 runs the setting and the dialog together, through the real write
  *   path and a real gesture: type a partial path into Settings ▸ General,
- *   accept the completion with Return, and open the popup in the same breath.
- *   Accepting is where the user stops choosing, so it is where the value has
- *   to reach tugbank — in canonical form ([L29]) — and where the field has to
- *   stop showing anything else. Then the bar must rename and the results must
- *   come from the new directory, which they only can if the local cache was
- *   written ahead of the server's DEFAULTS frame.
+ *   accept the completion with Return, and open the dialog in the same breath.
  *
  * Gating
  * ------
@@ -60,9 +64,7 @@
  * @covers tugdeck/src/lib/default-workspace-store.ts
  * @covers tugdeck/src/lib/host-menu-state.ts
  * @covers tugdeck/src/lib/open-file-in-card.ts
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
- * @covers tugdeck/src/components/tugways/tug-popup-button.tsx
- * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
+ * @covers tugdeck/src/components/tugways/tug-modal-input-dialog.tsx
  * @covers tugdeck/src/components/tugways/cards/settings-general-body.tsx
  * @covers tugdeck/src/components/tugways/tug-combo-box.tsx
  * @covers tugdeck/src/components/tugways/tug-file-chooser.tsx
@@ -80,28 +82,36 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const POPUP = '[data-slot="tug-completion-popup"]';
-const INPUT = ".tug-completion-popup .tug-completion-popup-input";
-const ROWS = '[data-slot="tug-completion-popup-list"] .tug-completion-popup-row';
+const PANEL = '[data-slot="tug-modal-input-dialog"]';
+const INPUT = ".tug-modal-input-dialog .tug-modal-input-dialog-input";
+const ROWS =
+  '[data-slot="tug-modal-input-dialog-list"] .tug-modal-input-dialog-row';
 const OVERLAY_ROOT = '[data-slot="tug-canvas-overlay-root"]';
 
 /** The marker file the query narrows to — distinctive enough to be the only hit. */
 const MARKER = "at0306-marker.txt";
 
-/** The switcher's trigger, its portalled menu, and that menu's items. */
-const SWITCHER = '[data-slot="tug-completion-popup-accessory"] button';
-const SWITCHER_MENU = '[data-testid="open-quickly-switcher-menu"]';
-const SWITCHER_ITEMS = `${SWITCHER_MENU} .tug-menu-item`;
+/** The scope row: its path field, its Browse… button, and its dropdown. */
+const CHOOSER = `${PANEL} input.tug-file-chooser-input`;
+const BROWSE = `${PANEL} [data-slot="tug-file-chooser-browse"]`;
+const DROPDOWN = '[data-slot="tug-modal-input-dialog-chooser-overlay"]';
+const DROPDOWN_ITEMS = `${DROPDOWN} li`;
 
-/** The marker file in the *second* directory, reached through the switcher. */
+/** The marker file in the *second* directory, reached through the scope row. */
 const OTHER_MARKER = "at0306-elsewhere.txt";
 
-/** Set the input's value the way a React controlled input accepts it. */
+/** The `data-slot` of whatever currently wears the keyboard ring. */
+const RING = `(function () {
+  var el = document.querySelector("[data-key-view-kbd]");
+  return el === null ? "(none)" : (el.getAttribute("data-tug-focus-key") || el.getAttribute("data-slot") || el.tagName);
+})()`;
+
+/** Set the query field's value the way a React controlled input accepts it. */
 async function typeIntoField(app: App, text: string): Promise<void> {
   await app.evalJS<null>(
     `(function(){
@@ -158,7 +168,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             { timeoutMs: 8000 },
           );
 
@@ -166,6 +176,11 @@ describe.skipIf(!SHOULD_RUN)(
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(INPUT)})
                .getAttribute("placeholder") === ${JSON.stringify(`Open Quickly in ${leaf}`)}`,
+            { timeoutMs: 8000 },
+          );
+          // …and the scope row opens on the whole path, not a leaf.
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CHOOSER)}).value === ${JSON.stringify(dir)}`,
             { timeoutMs: 8000 },
           );
 
@@ -187,7 +202,7 @@ describe.skipIf(!SHOULD_RUN)(
              })()`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) === null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) === null`,
             { timeoutMs: 8000 },
           );
           await app.waitForCondition<boolean>(
@@ -224,11 +239,17 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "the in-bar switcher retargets the search to another directory",
+      "a mouse pick in the scope row's dropdown retargets the search",
       async () => {
         // Two directories with disjoint contents: the default, and a recent
-        // project. The switcher offers both, so picking the second must swap
+        // project. The scope row offers both, so picking the second must swap
         // the search root — placeholder, result list, and all.
+        //
+        // Driven with the real mouse, because that is the interaction the
+        // modal treatment most nearly breaks: under `disableOutsidePointerEvents`
+        // the body is `pointer-events: none` and only registered layers get it
+        // back, so a dropdown portalled to the canvas overlay root would render
+        // and be unclickable. It portals into the panel instead.
         const dir = mkdtempSync(`${tmpdir()}/at0306-default-`);
         const other = mkdtempSync(`${tmpdir()}/at0306-other-`);
         const otherLeaf = other.split("/").pop() ?? "";
@@ -236,7 +257,7 @@ describe.skipIf(!SHOULD_RUN)(
         writeFileSync(`${other}/${OTHER_MARKER}`, "somewhere else\n");
 
         const app = await launchTugApp({
-          testName: "at0306-open-quickly-switcher",
+          testName: "at0306-open-quickly-chooser",
         });
         try {
           await app.waitForCondition<boolean>(
@@ -253,55 +274,68 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            `document.querySelector(${JSON.stringify(CHOOSER)}) !== null`,
             { timeoutMs: 8000 },
           );
 
-          // The accessory sits inside the panel, after the field — so Tab
-          // reaches it without any hand-rolled focus management, and focus
-          // landing on it is not "focus left the popup".
+          // The row sits inside the panel, ABOVE the query field — the read
+          // order the walk order matches.
           expect(
             await app.evalJS<boolean>(
               `(function(){
-                 var panel = document.querySelector('[data-slot="tug-completion-popup"]');
+                 var panel = document.querySelector(${JSON.stringify(PANEL)});
                  var input = document.querySelector(${JSON.stringify(INPUT)});
-                 var acc = document.querySelector('[data-slot="tug-completion-popup-accessory"]');
-                 return panel !== null && acc !== null && panel.contains(acc) &&
-                   (input.compareDocumentPosition(acc) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+                 var chooser = document.querySelector(${JSON.stringify(CHOOSER)});
+                 return panel !== null && chooser !== null && panel.contains(chooser) &&
+                   (input.compareDocumentPosition(chooser) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
                })()`,
             ),
           ).toBe(true);
 
-          // Open the switcher. The popup must NOT dismiss while its menu is
-          // up, even though focus moves into a menu portalled outside the
-          // panel — that is what the dismiss guard is for.
-          await app.click(SWITCHER);
+          // Open the dropdown with a real click. The dialog must stay up: the
+          // dropdown is inside the panel, so nothing about this is "outside".
+          await app.nativeClickAtElement(CHOOSER);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            `document.querySelector(${JSON.stringify(DROPDOWN)}) !== null`,
             { timeoutMs: 8000 },
           );
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+              `document.querySelector(${JSON.stringify(PANEL)})
+                 .contains(document.querySelector(${JSON.stringify(DROPDOWN)}))`,
             ),
+            "the dropdown portals inside the panel, where the pointer can reach it",
           ).toBe(true);
+          expect(
+            await app.evalJS<string>(
+              `getComputedStyle(document.querySelector(${JSON.stringify(DROPDOWN_ITEMS)})).pointerEvents`,
+            ),
+            "a modal content leaves everything outside it pointer-dead",
+          ).not.toBe("none");
 
-          // Pick the recent project.
-          await app.evalJS<null>(
-            `(function(){
-               var rows = Array.from(document.querySelectorAll(${JSON.stringify(SWITCHER_ITEMS)}));
-               var row = rows.find((el) => (el.textContent || "").trim() === ${JSON.stringify(otherLeaf)});
-               if (!row) throw new Error("switcher item not found: " + rows.map((e) => e.textContent).join(","));
-               row.click();
-               return null;
-             })()`,
+          // Pick the recent project by clicking its row.
+          const index = await app.evalJS<number>(
+            `Array.from(document.querySelectorAll(${JSON.stringify(DROPDOWN_ITEMS)}))
+               .findIndex((el) => (el.textContent || "").indexOf(${JSON.stringify(other)}) !== -1)`,
+          );
+          expect(index).toBeGreaterThanOrEqual(0);
+          await app.nativeClickAtElement(
+            `${DROPDOWN} li:nth-child(${index + 1})`,
           );
 
-          // The bar renames itself to the picked directory…
+          // The dialog survived the pick…
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
+            ),
+            "picking a row does not dismiss the dialog",
+          ).toBe(true);
+
+          // …the placeholder renames itself to the picked directory…
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(INPUT)})
                .getAttribute("placeholder") === ${JSON.stringify(`Open Quickly in ${otherLeaf}`)}`,
-            { timeoutMs: 8000 },
+            { timeoutMs: 10000 },
           );
 
           // …and the results come from it, not from the default directory.
@@ -317,17 +351,10 @@ describe.skipIf(!SHOULD_RUN)(
             { timeoutMs: 15000 },
           );
 
-          // Escape still dismisses — the guard holds the popup open for the
-          // menu, it never takes Escape away from the user.
-          await app.evalJS<null>(
-            `(function(){
-               document.querySelector(${JSON.stringify(INPUT)}).dispatchEvent(
-                 new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-               return null;
-             })()`,
-          );
+          // Escape still dismisses from anywhere in the surface.
+          await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) === null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) === null`,
             { timeoutMs: 8000 },
           );
         } finally {
@@ -340,12 +367,10 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "the switcher names each place once, and an empty directory says so",
+      "the scope row names each place once, and an empty directory says so",
       async () => {
-        // Three recents that exercise the two ways a menu of leaf names lies:
-        // `b/proj` is a symlink to `a/proj` — one directory, two spellings,
-        // and only the server can tell; `c/proj` is a different directory
-        // that happens to share the leaf. The default directory is empty.
+        // `b/proj` is a symlink to `a/proj` — one directory, two spellings, and
+        // only the server can tell ([L29]). The default directory is empty.
         const base = mkdtempSync(`${tmpdir()}/at0306-places-`);
         mkdirSync(`${base}/tug`);
         mkdirSync(`${base}/a/proj`, { recursive: true });
@@ -375,33 +400,41 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            `document.querySelector(${JSON.stringify(CHOOSER)}) !== null`,
             { timeoutMs: 8000 },
           );
 
           // The default directory is empty — say so rather than showing a
           // blank panel that reads as a hang.
           await app.waitForCondition<boolean>(
-            `(document.querySelector('[data-slot="tug-completion-popup-empty"]')
+            `(document.querySelector('[data-slot="tug-modal-input-dialog-empty"]')
                || {}).textContent === "No files in tug"`,
             { timeoutMs: 15000 },
           );
 
-          await app.click(SWITCHER);
+          await app.nativeClickAtElement(CHOOSER);
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            `document.querySelector(${JSON.stringify(DROPDOWN)}) !== null`,
             { timeoutMs: 8000 },
           );
           const items = JSON.parse(
             await app.evalJS<string>(
-              `JSON.stringify(Array.from(document.querySelectorAll(${JSON.stringify(SWITCHER_ITEMS)}))
+              `JSON.stringify(Array.from(document.querySelectorAll(${JSON.stringify(DROPDOWN_ITEMS)}))
                  .map(function (el) { return (el.textContent || "").trim(); }))`,
             ),
           ) as string[];
+          note(`scope seed offered: ${items.join(" | ")}`);
 
-          // The symlink collapsed into its target: three recents, two places.
-          // The two real `proj` directories are told apart by their parents.
-          expect(items).toEqual(["tug", "a/proj", "c/proj"]);
+          // The symlink collapsed into its target: three recents, two places,
+          // plus the default. Whole paths, so the two real `proj` directories
+          // need no disambiguation — the thing the retired switcher's label
+          // machinery existed to do.
+          const seeded = items.filter((t) => t.startsWith(base));
+          expect(seeded).toEqual([
+            `${base}/tug`,
+            `${base}/a/proj`,
+            `${base}/c/proj`,
+          ]);
         } finally {
           await app.close();
           rmSync(base, { recursive: true, force: true });
@@ -411,16 +444,15 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "the switcher is reachable and operable from the keyboard alone",
+      "the scope row is reachable and operable from the keyboard alone",
       async () => {
         // Driven with REAL key events and asserted against the ENGINE's own
         // marks, because every failure this pins was invisible otherwise. The
-        // popup's two stops are authored into one focus group
-        // (`focus-language.md`, Authoring contract): the field is a text
-        // surface the engine grants real DOM focus, the switcher is
-        // engine-routed so the engine parks its key sink while the ring rests
-        // there. Watching `activeElement` alone would call that park "focus
-        // left the popup" — which is exactly the bug that made Tab dismiss it.
+        // dialog's stops are authored into one focus group: the query field is
+        // a text surface the engine grants real DOM focus, and a stop reached
+        // by MOVEMENT parks — ring, no caret — until Return or a printable
+        // asks for the caret. Watching `activeElement` alone would call that
+        // park "focus left the dialog".
         const base = mkdtempSync(`${tmpdir()}/at0306-keys-`);
         mkdirSync(`${base}/tug`);
         writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
@@ -428,11 +460,6 @@ describe.skipIf(!SHOULD_RUN)(
         writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
 
         const app = await launchTugApp({ testName: "at0306-open-quickly-keys" });
-        /** The `data-slot` of whatever currently wears the keyboard ring. */
-        const ring = `(function () {
-          var el = document.querySelector("[data-key-view-kbd]");
-          return el === null ? "(none)" : (el.getAttribute("data-slot") || el.tagName);
-        })()`;
         try {
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
@@ -447,67 +474,73 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            `document.querySelector(${JSON.stringify(CHOOSER)}) !== null`,
             { timeoutMs: 10000 },
           );
 
-          // The popup seeds the key view onto its field, and the field being a
-          // text surface means the engine grants it real DOM focus.
-          await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
-            timeoutMs: 8000,
-          });
-          expect(
-            await app.evalJS<boolean>(
-              `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
-            ),
-          ).toBe(true);
-
-          // Tab advances the engine's walk to the switcher. The popup must
-          // survive the park that comes with an engine-routed stop.
-          await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
-            timeoutMs: 8000,
-          });
-          expect(
-            await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
-            ),
-          ).toBe(true);
-
-          // Space opens the menu, and the menu is LIVE to the keyboard: the
-          // engine must not synthesize the act onto the trigger underneath it,
-          // or Return re-toggles the trigger instead of picking a row.
-          await app.nativeKey(" ");
+          // The dialog seeds the key view onto its query field, and the field
+          // being a text surface means the engine grants it real DOM focus.
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`,
+            `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+            { timeoutMs: 8000 },
+          );
+
+          // Tab advances the walk to the scope row's path field, parked.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `${RING} === "tug-modal-input-dialog:1"`,
+            { timeoutMs: 8000 },
+          );
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
+            ),
+            "stepping off the query field does not dismiss the dialog",
+          ).toBe(true);
+
+          // Enter at a parked text stop claims the caret — the grant.
+          await app.nativeKey("Return");
+          await app.waitForCondition<boolean>(
+            `document.activeElement === document.querySelector(${JSON.stringify(CHOOSER)})`,
+            { timeoutMs: 8000 },
+          );
+
+          // ↓ opens the seed menu, ↓ again moves the highlight off the first
+          // row, Return accepts it — the keyboard equivalent of test 2's click.
+          await app.nativeKey("ArrowDown");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(DROPDOWN)}) !== null`,
             { timeoutMs: 8000 },
           );
           const highlighted = `(function () {
-            var el = document.querySelector(${JSON.stringify(SWITCHER_MENU)} + " .tug-menu-item[data-highlighted]");
+            var el = document.querySelector(${JSON.stringify(DROPDOWN)} + " li[aria-selected='true']");
             return el === null ? "(none)" : (el.textContent || "").trim();
           })()`;
-          await app.waitForCondition<boolean>(`${highlighted} === "tug"`, {
-            timeoutMs: 8000,
-          });
-          await app.nativeKey("ArrowDown");
-          await app.waitForCondition<boolean>(`${highlighted} === "other"`, {
-            timeoutMs: 8000,
-          });
+          // Walk down to the "other" row whatever its index, then commit.
+          for (let i = 0; i < 4; i += 1) {
+            const onOther = await app.evalJS<boolean>(
+              `${highlighted}.indexOf(${JSON.stringify(`${base}/other`)}) !== -1`,
+            );
+            if (onOther) break;
+            await app.nativeKey("ArrowDown");
+          }
+          note(`highlighted before Return: ${await app.evalJS<string>(highlighted)}`);
+          await app.nativeKey("Return");
 
-          // Return commits the highlighted row: the root swaps.
-          await app.nativeKey("Enter");
+          // The root swaps…
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(INPUT)})
                .getAttribute("placeholder") === "Open Quickly in other"`,
             { timeoutMs: 10000 },
           );
 
-          // Tab returns the ring to the field, which gets real DOM focus back
-          // — and it really is the keyboard: typing narrows the new root.
-          await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
-            timeoutMs: 8000,
-          });
+          // …and the keyboard comes back to the query field, because the next
+          // thing the user does is type a filename. An engine placement, so it
+          // grants the caret rather than parking.
+          await app.waitForCondition<boolean>(
+            `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+            { timeoutMs: 8000 },
+          );
           await typeIntoField(app, "at0306-");
           await app.waitForCondition<boolean>(
             `(function () {
@@ -527,18 +560,127 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "the switcher is a popup button, and Escape and an app switch close the popup",
+      "leaving the scope row without changing it re-scopes nothing",
       async () => {
-        // The keys a macOS popup button owes the keyboard beyond Space and
-        // Return — ↓ and any printable character open its menu — plus the two
-        // ways out that are the surface's, not the field's: Escape resolves
-        // against the popup's own focus mode from wherever the ring is
-        // resting, and the app going inactive takes the popup with it.
+        // The changed-only guard, on the path where it bites. `TugComboBox`
+        // settles on BLUR, so merely leaving the field settles the path it
+        // already holds — and a re-scope fired from that settle would swap the
+        // workspace to the same directory under its canonical name (every temp
+        // dir on macOS is reached through a symlink, so the spelling in the
+        // field is never the canonical one) and re-seed the key view onto the
+        // query field. The Tab walk would then appear to skip Browse… entirely.
+        //
+        // The MOUSE is what makes this reachable: only a pointer grants the
+        // chooser real DOM focus. A keyboard walk parks the stop instead, and a
+        // parked field never blurs, so the settle never fires — which is why
+        // at0396's walk cannot pin this.
+        const base = mkdtempSync(`${tmpdir()}/at0306-settle-`);
+        mkdirSync(`${base}/tug`);
+        writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
+
+        const app = await launchTugApp({
+          testName: "at0306-open-quickly-settle",
+        });
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
+            { timeoutMs: 20000 },
+          );
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }), null)`,
+          );
+          await app.evalJS<null>(
+            `(window.__tug.dispatchControlAction("open-quickly"), null)`,
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CHOOSER)}) !== null`,
+            { timeoutMs: 10000 },
+          );
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(INPUT)})
+               .getAttribute("placeholder") === "Open Quickly in tug"`,
+            { timeoutMs: 10000 },
+          );
+
+          // Click into the scope field — real DOM focus, which is what makes a
+          // later blur a real blur — then close the menu the click opened.
+          await app.nativeClickAtElement(CHOOSER);
+          await app.waitForCondition<boolean>(
+            `document.activeElement === document.querySelector(${JSON.stringify(CHOOSER)})`,
+            { timeoutMs: 8000 },
+          );
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(DROPDOWN)}) === null`,
+            { timeoutMs: 8000 },
+          );
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
+            ),
+            "Escape closes the chooser's list, not the dialog under it",
+          ).toBe(true);
+
+          const scopeBefore = await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(CHOOSER)}).value`,
+          );
+
+          // Tab out. The field blurs for real, so the settle fires — and the
+          // guard is the only thing standing between that settle and a
+          // pointless re-scope.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `${RING} === "tug-modal-input-dialog:2"`,
+            { timeoutMs: 8000 },
+          );
+          note(
+            `after Tab off the chooser: ring=${await app.evalJS<string>(RING)}`,
+          );
+
+          // The walk landed on Browse… rather than bouncing back to the query
+          // field, and the scope is exactly what it was.
+          expect(
+            await app.evalJS<boolean>(
+              `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+            ),
+            "the walk did not bounce back to the query field",
+          ).toBe(false);
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(CHOOSER)}).value`,
+            ),
+            "leaving the row unchanged leaves the scope unchanged",
+          ).toBe(scopeBefore);
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(INPUT)}).getAttribute("placeholder")`,
+            ),
+          ).toBe("Open Quickly in tug");
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(BROWSE)}) !== null`,
+            ),
+          ).toBe(true);
+        } finally {
+          await app.close();
+          rmSync(base, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "Escape and an app switch close the dialog from anywhere in it",
+      async () => {
+        // The two ways out that are the surface's, not the field's: Escape
+        // resolves against the dialog's own focus mode from wherever the ring
+        // is resting — including a stop with no DOM focus, where no field
+        // keydown handler could stand in — and the app going inactive takes the
+        // dialog with it, which is launcher semantics rather than modal
+        // semantics (an alert must survive an app switch).
         const base = mkdtempSync(`${tmpdir()}/at0306-esc-`);
         mkdirSync(`${base}/tug`);
         writeFileSync(`${base}/tug/${MARKER}`, "in the default\n");
-        mkdirSync(`${base}/other`);
-        writeFileSync(`${base}/other/${OTHER_MARKER}`, "elsewhere\n");
 
         const app = await launchTugApp({
           testName: "at0306-open-quickly-esc",
@@ -547,81 +689,51 @@ describe.skipIf(!SHOULD_RUN)(
           // never activates).
           foreground: true,
         });
-        const ring = `(function () {
-          var el = document.querySelector("[data-key-view-kbd]");
-          return el === null ? "(none)" : (el.getAttribute("data-slot") || el.tagName);
-        })()`;
-        const menuOpen = `document.querySelector(${JSON.stringify(SWITCHER_MENU)}) !== null`;
-        const popupUp = `document.querySelector(${JSON.stringify(POPUP)}) !== null`;
+        const panelUp = `document.querySelector(${JSON.stringify(PANEL)}) !== null`;
         try {
           await app.waitForCondition<boolean>(
             `document.querySelector(${JSON.stringify(OVERLAY_ROOT)}) !== null`,
             { timeoutMs: 20000 },
           );
           await app.evalJS<null>(
-            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }),
-              window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [${JSON.stringify(`${base}/other`)}] } }),
-              null)`,
+            `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/tug`)} }), null)`,
           );
 
-          const openPopupOnSwitcher = async (): Promise<void> => {
+          const openOnBrowse = async (): Promise<void> => {
             await app.evalJS<null>(
               `(window.__tug.dispatchControlAction("open-quickly"), null)`,
             );
             await app.waitForCondition<boolean>(
-              `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+              `document.querySelector(${JSON.stringify(BROWSE)}) !== null`,
               { timeoutMs: 10000 },
             );
-            await app.waitForCondition<boolean>(`${ring} === "tug-input"`, {
-              timeoutMs: 8000,
-            });
+            await app.waitForCondition<boolean>(
+              `document.activeElement === document.querySelector(${JSON.stringify(INPUT)})`,
+              { timeoutMs: 8000 },
+            );
             await app.nativeKey("Tab");
-            await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
-              timeoutMs: 8000,
-            });
+            await app.nativeKey("Tab");
+            await app.waitForCondition<boolean>(
+              `${RING} === "tug-modal-input-dialog:2"`,
+              { timeoutMs: 8000 },
+            );
           };
 
-          await openPopupOnSwitcher();
-
-          // ↓ opens the menu — the engine hands the arrow to the trigger
-          // because the trigger claims it, instead of walking the ring away.
-          await app.nativeKey("ArrowDown");
-          await app.waitForCondition<boolean>(menuOpen, { timeoutMs: 8000 });
-
-          // Escape with the menu up closes just the menu: the menu's mode is
-          // on top of the popup's, and the ladder unwinds one at a time.
+          // Escape with the ring on the engine-routed Browse… stop closes the
+          // DIALOG. This is the one the query field's own keydown handler could
+          // never answer: it has no focus and sees no key.
+          await openOnBrowse();
           await app.nativeKey("Escape");
-          await app.waitForCondition<boolean>(`!(${menuOpen})`, {
-            timeoutMs: 8000,
-          });
-          expect(await app.evalJS<boolean>(popupUp)).toBe(true);
-
-          // A printable character opens it too — the engine's delegated key
-          // channel, since no earlier stage claims a bare letter.
-          await app.nativeKey("o");
-          await app.waitForCondition<boolean>(menuOpen, { timeoutMs: 8000 });
-          await app.nativeKey("Escape");
-          await app.waitForCondition<boolean>(`!(${menuOpen})`, {
+          await app.waitForCondition<boolean>(`!(${panelUp})`, {
             timeoutMs: 8000,
           });
 
-          // Escape with the menu closed and the ring still on the switcher
-          // closes the POPUP. This is the one the field's own keydown handler
-          // could never answer: it has no focus and sees no key.
-          await app.waitForCondition<boolean>(`${ring} === "tug-button"`, {
-            timeoutMs: 8000,
-          });
-          await app.nativeKey("Escape");
-          await app.waitForCondition<boolean>(`!(${popupUp})`, {
-            timeoutMs: 8000,
-          });
-
-          // The app yielding frontmost takes the popup with it — driven by the
+          // The app yielding frontmost takes the dialog with it — driven by the
           // real `NSApp.deactivate()`, through the real AppDelegate lifecycle
           // frame, not a synthesized blur.
-          await openPopupOnSwitcher();
+          await openOnBrowse();
           await app.simulateAppResign();
-          await app.waitForCondition<boolean>(`!(${popupUp})`, {
+          await app.waitForCondition<boolean>(`!(${panelUp})`, {
             timeoutMs: 8000,
           });
         } finally {
@@ -631,22 +743,23 @@ describe.skipIf(!SHOULD_RUN)(
       },
       TEST_TIMEOUT_MS,
     );
+
     test(
       "choosing a new default directory in Settings re-points Open Quickly",
       async () => {
         // The user's flow, end to end, with nothing synthesized in the middle:
         // type a partial path into Settings ▸ General, accept the completion
-        // with a real Return, and open the popup in the same breath.
+        // with a real Return, and open the dialog in the same breath.
         //
         // Accepting is the gesture that has to write. It is where the user
         // stops choosing, and a field that comes to rest there while tugbank
         // still holds the old path is the whole defect this test exists for —
-        // the popup went on naming a directory the user had visibly replaced.
+        // the dialog went on naming a directory the user had visibly replaced.
         // So this asserts both halves: the store really changed (to the
         // CANONICAL spelling — the path is a persisted key, [L29]), and the
         // field shows exactly what the store holds.
         //
-        // Then the popup, immediately: until the server's DEFAULTS frame comes
+        // Then the dialog, immediately: until the server's DEFAULTS frame comes
         // back around, the only thing that knows the new path is the local
         // cache write `putDefaultProjectPath` makes once the PUT lands.
         const base = mkdtempSync(`${tmpdir()}/at0306-live-`);
@@ -669,7 +782,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(`${base}/before`)} }), null)`,
           );
 
-          // Baseline: the popup opens on the directory that is set now.
+          // Baseline: the dialog opens on the directory that is set now.
           await app.evalJS<null>(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
@@ -679,7 +792,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await app.nativeKey("Escape");
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) === null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) === null`,
             { timeoutMs: 8000 },
           );
 

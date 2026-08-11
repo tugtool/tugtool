@@ -28,7 +28,6 @@
  *
  * @foreground
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/keybinding-map.ts

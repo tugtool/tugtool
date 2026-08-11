@@ -12,7 +12,6 @@
  * pathway (e.g., a stale handler that depended on the removed
  * cardDidDeactivate subscription), this test would fail.
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor/
  * @covers tugdeck/src/components/tugways/keybinding-map.ts
  */

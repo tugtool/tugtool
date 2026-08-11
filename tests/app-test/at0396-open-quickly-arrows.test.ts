@@ -1,36 +1,52 @@
 /**
- * at0396-open-quickly-arrows.test.ts — ↓ selects the first result on an EMPTY
- * query, from the first keystroke.
+ * at0396-open-quickly-arrows.test.ts — Open Quickly's keyboard story on the
+ * app-modal dialog: ↓ selects the first result on an EMPTY query, Tab walks the
+ * dialog's own stops, and ⌥⇥ engages the mode over those stops rather than the
+ * card behind them.
  *
  * ## Why this exists
  *
- * This is the regression KBF mode was written for ([roadmap/kbf-mode.md], the
+ * Test 1 is the regression KBF mode was written for ([roadmap/kbf-mode.md], the
  * plan's Context section names it as the sharpest casualty). On open, the
- * popup's query is empty and its key view is seeded — the exact state the old
+ * query is empty and the key view is seeded — the exact state the old
  * `resolveArrowRelease` policy read as "this field is empty, so it has no caret
  * motion to protect, so the engine may have the arrow." The spatial move then
- * declined and the liveliness net consumed ↓ before the popup's own `onKeyDown`
- * ever ran, so ↓ either rang the directory switcher or did nothing — in exactly
- * the state a fast open-quickly gesture passes through.
+ * declined and the liveliness net consumed ↓ before the surface's own
+ * `onKeyDown` ever ran, so ↓ either rang the directory switcher or did nothing.
  *
  * Two rules fix it and both are asserted here:
  *
- *  - the popup's trap passes `kbf: false` ([P03]), so it does not auto-engage
- *    the mode and the engine never claims its arrows;
- *  - its field declares an **attached list** ([P08]), so ↑/↓ drive the result
- *    cursor and never leave the field, *regardless of whether the query is
- *    empty* — which is the whole point, since emptiness is what the old rule
- *    keyed on.
+ *  - the dialog's trap passes `kbf: false`, so it does not auto-engage the mode
+ *    and the engine never claims its arrows;
+ *  - its field declares an **attached list**, so ↑/↓ drive the result cursor
+ *    and never leave the field, *regardless of whether the query is empty* —
+ *    which is the whole point, since emptiness is what the old rule keyed on.
  *
- * The second test covers [P07] case 2 — `Tab` from this single-line field
- * reaching the directory switcher. The field has no Tab meaning of its own, so
- * the key is a request to leave: it engages the mode and steps. The switcher
- * renders only when there is more than one candidate directory, so this test
- * seeds a recent project to give the walk somewhere to go — with a single
- * candidate the accessory is absent and there is no second stop, which is not
- * the same thing as Tab failing to reach it.
+ * Test 2 walks the dialog's Tab order: query field (0) → the scope chooser's
+ * path field (1) → Browse… (2). What it pins is that the walk reaches the third
+ * stop at all — it did not, until the fix in test 3's note below.
  *
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
+ * It does **not** pin the re-scope guard, and the probe is what settled that.
+ * `TugComboBox` settles on blur, so the plan expected this Tab to settle the
+ * unchanged path on its way past and — without the guard — bounce the key view
+ * back to the query field. Patching both halves of the guard out leaves this
+ * test green, because on a keyboard walk the chooser's input never holds DOM
+ * focus in the first place: the engine parks the stop rather than granting it,
+ * so there is no blur and no settle. The guard is still right, and it is real
+ * on the pointer path (a click into the field grants it for real); at0306 is
+ * where that gets pinned.
+ *
+ * Test 3 is the KBF adoption. It ran green once while proving nothing, because
+ * the seeded card was never bound and so registered no `CYCLE_FOCUS_MODE`
+ * handler — the failing tier did not exist. The card is bound here, which is
+ * what makes the "not the card behind it" clause mean something. Two probes,
+ * both red first: with the dialog's manual-bit restore patched out the
+ * no-ring-after-dismiss clause fails, and with `use-cycle-mode`'s
+ * resting-mode gate patched out the card behind pushes its cycle over the
+ * dialog's trap, the walk order comes back empty (its stops are all behind a
+ * `pointer-events: none` overlay), and the ring never reaches the panel.
+ *
+ * @covers tugdeck/src/components/tugways/tug-modal-input-dialog.tsx
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/chrome/open-quickly-overlay.tsx
@@ -47,14 +63,19 @@ import { launchTugApp, note } from "./_harness";
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
-const POPUP = '[data-slot="tug-completion-popup"]';
-const INPUT = ".tug-completion-popup .tug-completion-popup-input";
-const ROWS = '[data-slot="tug-completion-popup-list"] .tug-completion-popup-row';
+const PANEL = '[data-slot="tug-modal-input-dialog"]';
+const INPUT = ".tug-modal-input-dialog .tug-modal-input-dialog-input";
+const ROWS =
+  '[data-slot="tug-modal-input-dialog-list"] .tug-modal-input-dialog-row';
 const OVERLAY_ROOT = '[data-slot="tug-canvas-overlay-root"]';
-const SWITCHER = '[data-slot="tug-completion-popup-accessory"] button';
+const SCOPE_FIELD = `${PANEL} input.tug-file-chooser-input`;
+const BROWSE = `${PANEL} [data-slot="tug-file-chooser-browse"]`;
 
-/** The ring is on the switcher — the landing [P07] case 2 is about. */
-const SWITCHER_RINGED = `document.querySelector(${JSON.stringify(SWITCHER)})?.hasAttribute("data-key-view-kbd") === true`;
+/** The ring is on the scope chooser's path field. */
+const SCOPE_RINGED = `document.querySelector(${JSON.stringify(SCOPE_FIELD)})?.hasAttribute("data-key-view-kbd") === true`;
+
+/** The ring is on the Browse… button. */
+const BROWSE_RINGED = `document.querySelector(${JSON.stringify(BROWSE)})?.hasAttribute("data-key-view-kbd") === true`;
 
 /** The ring is on the query field. */
 const FIELD_RINGED = `document.querySelector(${JSON.stringify(INPUT)})?.hasAttribute("data-key-view-kbd") === true`;
@@ -77,7 +98,7 @@ const CARET_IN_FIELD = `(function(){
 })()`;
 
 describe.skipIf(!SHOULD_RUN)(
-  "at0396: Open Quickly's arrows drive its results on an empty query",
+  "at0396: Open Quickly's keyboard story on the modal dialog",
   () => {
     test(
       "↓ / ↑ move the result cursor with an empty query and the caret never leaves",
@@ -104,7 +125,7 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             { timeoutMs: 8000 },
           );
           // Results with NO query typed — the state the regression lived in.
@@ -113,7 +134,7 @@ describe.skipIf(!SHOULD_RUN)(
           });
           await app.waitForCondition<boolean>(CARET_IN_FIELD, { timeoutMs: 8000 });
 
-          // The popup does not engage the mode: it is typing-first ([P03]).
+          // The dialog does not engage the mode: it is typing-first.
           expect(
             await app.evalJS<boolean>(
               `document.documentElement.hasAttribute("data-kbf")`,
@@ -146,7 +167,7 @@ describe.skipIf(!SHOULD_RUN)(
             await app.evalJS<number>(
               `document.querySelectorAll("[data-key-view-kbd]").length`,
             ),
-            "no ring paints — the popup is mode OFF and the arrow was the field's",
+            "no ring paints — the dialog is mode OFF and the arrow was the field's",
           ).toBe(0);
 
           // ↑ comes back, so the contract carries both directions.
@@ -177,7 +198,6 @@ describe.skipIf(!SHOULD_RUN)(
             await app.evalJS<boolean>(CARET_IN_FIELD),
             "typing then deleting back to empty does not change arrow behavior",
           ).toBe(true);
-
         } finally {
           await app.close();
         }
@@ -186,15 +206,12 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "Tab reaches the directory switcher and ⇧Tab comes back ([P07] case 2)",
+      "Tab walks query field → scope chooser → Browse…, and a bare Tab re-scopes nothing",
       async () => {
         const dir = mkdtempSync(`${tmpdir()}/at0396-projects-`);
         for (const name of ["alpha.txt", "bravo.txt"]) {
           writeFileSync(`${dir}/${name}`, `${name}\n`);
         }
-        // A second candidate directory, so the switcher renders at all.
-        const other = mkdtempSync(`${tmpdir()}/at0396-other-`);
-        writeFileSync(`${other}/echo.txt`, "echo\n");
 
         const app = await launchTugApp({ testName: "at0396-open-quickly-tab" });
         try {
@@ -206,67 +223,64 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.setTugbankValue("dev.tugtool.app", "default-project-path", { kind: "string", value: ${JSON.stringify(dir)} }), null)`,
           );
           await app.evalJS<null>(
-            `(window.__tug.setTugbankValue("dev.tugtool.dev", "recent-projects", { kind: "json", value: { paths: [${JSON.stringify(other)}] } }), null)`,
-          );
-          await app.evalJS<null>(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             { timeoutMs: 8000 },
           );
           await app.waitForCondition<boolean>(CARET_IN_FIELD, { timeoutMs: 8000 });
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(SWITCHER)}) !== null`,
+            `document.querySelector(${JSON.stringify(SCOPE_FIELD)}) !== null`,
             { timeoutMs: 8000 },
           );
+          const scopeBefore = await app.evalJS<string>(
+            `document.querySelector(${JSON.stringify(SCOPE_FIELD)}).value`,
+          );
 
-          // Tab engages the mode and steps to the accessory. The popup must
-          // survive it: the field blurs and the engine parks the sink, and
-          // `onBlur`'s sink exemption is what keeps that from reading as the
-          // keyboard leaving the popup.
+          // Tab engages the mode and steps to the chooser's path field. It is a
+          // text stop reached by MOVEMENT, so it parks: ringed, no caret.
           await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(SWITCHER_RINGED, {
-            timeoutMs: 6000,
-          });
+          await app.waitForCondition<boolean>(SCOPE_RINGED, { timeoutMs: 6000 });
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             ),
-            "stepping off the field does not dismiss the popup",
+            "stepping off the query field does not dismiss the dialog",
           ).toBe(true);
           expect(
             await app.evalJS<boolean>(CARET_IN_FIELD),
-            "the caret left the field — the switcher is engine-routed",
+            "the caret left the query field",
           ).toBe(false);
+
+          // Tab again lands on Browse…. This is the assertion the changed-only
+          // re-scope guard exists for: the chooser settles on blur, and a
+          // re-scope fired from that settle would re-seed the key view onto the
+          // query field, so the walk would appear to skip Browse… entirely.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(BROWSE_RINGED, { timeoutMs: 6000 });
           note(
-            "after Tab",
+            "after two Tabs",
             await app.evalJS<string>(
-              `JSON.stringify({ ringed: document.querySelectorAll("[data-key-view-kbd]").length, kbf: document.documentElement.hasAttribute("data-kbf") })`,
+              `JSON.stringify({ ringed: Array.from(document.querySelectorAll("[data-key-view-kbd]")).map(function(e){ return e.getAttribute("data-slot") || e.className || e.tagName; }) })`,
             ),
           );
-
-          // ⇧Tab returns to the field. It is a text stop reached by MOVEMENT,
-          // so it parks: ringed, no caret, until a printable asks for one
-          // ([P12]).
-          await app.nativeKey("Tab", ["shift"]);
-          await app.waitForCondition<boolean>(FIELD_RINGED, { timeoutMs: 6000 });
           expect(
-            await app.evalJS<boolean>(CARET_IN_FIELD),
-            "a text stop arrived at by movement is parked — ring, no caret",
+            await app.evalJS<boolean>(FIELD_RINGED),
+            "the walk did not bounce back to the query field",
           ).toBe(false);
+          // …and the scope itself never moved.
+          expect(
+            await app.evalJS<string>(
+              `document.querySelector(${JSON.stringify(SCOPE_FIELD)}).value`,
+            ),
+            "a Tab through the chooser leaves the scope exactly as it was",
+          ).toBe(scopeBefore);
 
-          // And the stop is operable, not merely reachable: Space on the
-          // engine-routed switcher opens its menu.
-          await app.nativeKey("Tab");
-          await app.waitForCondition<boolean>(SWITCHER_RINGED, {
-            timeoutMs: 6000,
-          });
-          await app.nativeKey(" ");
-          await app.waitForCondition<boolean>(
-            `document.querySelector('[role="menu"]') !== null`,
-            { timeoutMs: 6000 },
-          );
+          // ⇧Tab comes back to the chooser field, so the walk carries both
+          // directions.
+          await app.nativeKey("Tab", ["shift"]);
+          await app.waitForCondition<boolean>(SCOPE_RINGED, { timeoutMs: 6000 });
         } finally {
           await app.close();
         }
@@ -274,40 +288,16 @@ describe.skipIf(!SHOULD_RUN)(
       TEST_TIMEOUT_MS,
     );
 
-    // PARKED, pending the Open Quickly rework — not a flake and not stale.
-    //
-    // The behaviour it asks for is right and the defect it catches is real:
-    // measured on 2026-08-11, ⌥⇥ with the popup up puts the ring on the session
-    // card BEHIND it (`tug-choice-group` inside that card's prompt entry), not
-    // among the popup's own stops. The popup itself survives — the dismissal
-    // half of the original bug stays fixed — but the gesture still reaches past
-    // the floating surface.
-    //
-    // It ran green when it was committed only because the seeded card was never
-    // bound, so it registered no `CYCLE_FOCUS_MODE` handler and the failing tier
-    // did not exist; the commit said as much. Binding the card made it honest,
-    // and honest means red. Two things were wrong with the fixture besides, both
-    // fixed here so the body is ready to run: `isEngineReady` reads the
-    // deck-trace ring, which was never enabled, so the wait could not have
-    // succeeded on any code; and the ⌥⇥ state was only reported after a
-    // `waitForCondition` that fails first, so a failure carried a bare timeout
-    // instead of the state explaining it.
-    //
-    // Left as `todo` rather than deleted: the assertion is the specification for
-    // the rework, and rewriting it later from memory would cost more than
-    // keeping it. Same disposition as the cross-pane case in at0157.
-    test.todo(
-      "⌥⇥ in the popup engages the popup's mode, not the session card behind it",
+    test(
+      "⌥⇥ engages the dialog's own mode, not the session card behind it, and leaves no ring",
       async () => {
-        // A REAL SESSION CARD behind the popup. That is the whole test.
+        // A REAL SESSION CARD behind the dialog. That is the whole test.
         //
         // ⌥⇥'s first tier dispatches to the key card, and the session card is
         // the one card that registers a `CYCLE_FOCUS_MODE` handler. With the
-        // popup up, letting the card answer is destructive: it enters its own
-        // cycle, moves the key view into itself, and DOM focus lands somewhere
-        // that is neither inside the popup's panel nor on the engine key sink
-        // — so the popup's blur-dismiss closes it. ⌥⇥ reads as "Open Quickly
-        // disappears".
+        // dialog up, letting the card answer is destructive: it enters its own
+        // cycle and moves the key view into itself, so the ring lands behind
+        // the surface the user is looking at.
         //
         // An empty deck cannot see any of that: no card, no key-card tier, no
         // failure. This test was originally written that way and passed while
@@ -345,8 +335,7 @@ describe.skipIf(!SHOULD_RUN)(
           );
           // Bind and wait for the engine. Without this the card renders but
           // registers no `CYCLE_FOCUS_MODE` handler, the key-card tier no-ops,
-          // and the test cannot tell a gated dispatch from an ungated one —
-          // verified by patching the gate out and watching it still pass.
+          // and the test cannot tell a gated dispatch from an ungated one.
           // `isEngineReady` reads the deck-trace ring, so the trace has to be on
           // BEFORE the engine mounts or the event this waits for is never
           // recorded — the wait then times out on a card whose engine is ready.
@@ -357,15 +346,15 @@ describe.skipIf(!SHOULD_RUN)(
             `(window.__tug.dispatchControlAction("open-quickly"), null)`,
           );
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+            `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             { timeoutMs: 8000 },
           );
           await app.waitForCondition<boolean>(CARET_IN_FIELD, { timeoutMs: 8000 });
           // NOT asserted here: that the mode is off on open. A session card at
-          // rest engages it through `keyCard.kbfAtRest`, so the deck this popup
+          // rest engages it through `keyCard.kbfAtRest`, so the deck this dialog
           // floats over is already engaged — the trap's own `kbf: false` opts
-          // out of auto-engaging, which is a different claim. The first test
-          // makes the mode-off claim, over a deck with no card to derive it.
+          // out of auto-engaging, which is a different claim. Test 1 makes the
+          // mode-off claim, over a deck with no card to derive it.
           note(
             "before ⌥⇥",
             await app.evalJS<string>(
@@ -373,41 +362,92 @@ describe.skipIf(!SHOULD_RUN)(
             ),
           );
 
+          // ⌥⇥ engages the mode. No ring paints yet, and that is doctrine, not
+          // a gap: the caret is live (the dialog seeded it), and a caret and a
+          // ring are mutually exclusive — `kbfPainting()` stands the marks down
+          // while the route is `dom-granted` and brings them back at the next
+          // park. What must be true here is the engagement and the target.
           await app.nativeKey("Tab", ["alt"]);
           await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(POPUP)} + " [data-key-view-kbd]").length > 0`,
+            `window.__tug.kbfEngaged() === true && window.__tug.kbfManual() === true`,
             { timeoutMs: 6000 },
           );
           note(
             "after ⌥⇥",
             await app.evalJS<string>(
               `JSON.stringify({
-                popup: document.querySelector(${JSON.stringify(POPUP)}) !== null,
-                ringed: Array.from(document.querySelectorAll("[data-key-view-kbd]")).map(function(e){ return e.getAttribute("data-slot") || e.tagName; }),
-                active: document.activeElement && (document.activeElement.className || document.activeElement.tagName),
+                dialog: document.querySelector(${JSON.stringify(PANEL)}) !== null,
+                ringed: Array.from(document.querySelectorAll("[data-key-view-kbd]")).map(function(e){ return e.getAttribute("data-slot") || e.className || e.tagName; }),
+                manual: window.__tug.kbfManual(),
               })`,
             ),
           );
 
-          // The assertion the app-reported bug turns on: the surface survives.
+          // The surface survives the gesture.
           expect(
             await app.evalJS<boolean>(
-              `document.querySelector(${JSON.stringify(POPUP)}) !== null`,
+              `document.querySelector(${JSON.stringify(PANEL)}) !== null`,
             ),
-            "⌥⇥ must not dismiss the popup — the card behind it never gets the gesture",
+            "⌥⇥ must not dismiss the dialog — the card behind it never gets the gesture",
           ).toBe(true);
-          // And the ring is INSIDE the popup, not on the card behind it.
-          expect(
-            await app.evalJS<number>(
-              `document.querySelectorAll(${JSON.stringify(POPUP)} + " [data-key-view-kbd]").length`,
-            ),
-            "the ring lands among the popup's own stops",
-          ).toBeGreaterThan(0);
+
+          // The next Tab parks, so the ring comes up — and this is where the
+          // target is proved. The engagement is deck-global, so the card behind
+          // is free to answer it by pushing its own focus cycle ON TOP of the
+          // dialog's trap; when it did, the walk serviced a mode whose stops
+          // all sit behind the modal overlay (`pointer-events: none`), the walk
+          // order came back empty, and Tab moved nothing at all. So: the ring
+          // lands inside the dialog, and nothing rings on the card.
+          await app.nativeKey("Tab");
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(PANEL)} + " [data-key-view-kbd]").length > 0`,
+            { timeoutMs: 6000 },
+          );
           expect(
             await app.evalJS<boolean>(
               `document.querySelector('[data-card-id="A"] [data-key-view-kbd]') !== null`,
             ),
-            "the session card behind the popup did not enter its own cycle",
+            "the session card behind the dialog did not enter its own cycle",
+          ).toBe(false);
+
+          // ⌥⇥ from the parked stop disengages the mode.
+          await app.nativeKey("Tab", ["alt"]);
+          await app.waitForCondition<boolean>(
+            `window.__tug.kbfManual() === false`,
+            { timeoutMs: 6000 },
+          );
+
+          // Engage once more, then dismiss. The manual bit is STORED, not
+          // derived, and `popFocusMode` clears it only for engaging traps — a
+          // `kbf: false` trap manages its own. Without the dialog's
+          // capture-and-restore, the ⌥⇥ pressed in here would strand a ring on
+          // the deck the user comes back to.
+          await app.nativeKey("Tab", ["alt"]);
+          await app.waitForCondition<boolean>(
+            `window.__tug.kbfManual() === true`,
+            { timeoutMs: 6000 },
+          );
+          await app.nativeKey("Escape");
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(PANEL)}) === null`,
+            { timeoutMs: 8000 },
+          );
+          await app.waitForCondition<boolean>(
+            `window.__tug.kbfManual() === false`,
+            { timeoutMs: 6000 },
+          );
+          note(
+            "after dismiss",
+            await app.evalJS<string>(
+              `JSON.stringify({
+                manual: window.__tug.kbfManual(),
+                ringed: Array.from(document.querySelectorAll("[data-key-view-kbd]")).map(function(e){ return e.getAttribute("data-slot") || e.className || e.tagName; }),
+              })`,
+            ),
+          );
+          expect(
+            await app.evalJS<boolean>(`window.__tug.kbfManual()`),
+            "the ⌥⇥ pressed inside the dialog does not outlive it",
           ).toBe(false);
         } finally {
           await app.close();

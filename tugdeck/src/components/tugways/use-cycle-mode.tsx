@@ -45,7 +45,11 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { FocusManagerContext, FocusModeContext } from "./focus-manager";
+import {
+  BASE_FOCUS_MODE,
+  FocusManagerContext,
+  FocusModeContext,
+} from "./focus-manager";
 import type { CycleDisposition, FocusCommit } from "./focus-manager";
 import type { SpatialDirection } from "./spatial-order";
 import { CardIdContext } from "@/lib/card-id-context";
@@ -297,10 +301,20 @@ export function useCycleMode({
   // listener is now one provider-level listener clearing the bit — see
   // {@link FocusManager.clearKbfManualForPointer}, which also pops the cycle
   // synchronously inside the pointerdown so the ring never outlives the click.
+  // The bit goes up for reasons that have nothing to do with this card. While a
+  // floating surface holds a mode above it — Open Quickly, a sheet, a menu —
+  // entering here would push the card's cycle ON TOP of that surface's trap,
+  // and the walk would then service a mode whose stops are all behind a modal
+  // overlay (`pointer-events: none`, so the walk order comes back empty and Tab
+  // moves nothing). It is the same wrong target the ⌥⇥ action already refuses
+  // to hand the gesture to while a non-base mode is up (`action-dispatch.ts`);
+  // this is the other door into the same room, since ANY engagement — a Tab
+  // spent on movement inside the surface, not just ⌥⇥ — sets the bit.
   useLayoutEffect(() => {
     if (ctx === null || manager === null) return;
     const manual = manager.kbfManual();
-    if (manual && !cycling && enabled && isKeyCard) enter();
+    const atRestingMode = ctx.currentFocusMode() === BASE_FOCUS_MODE;
+    if (manual && !cycling && enabled && isKeyCard && atRestingMode) enter();
     else if (!manual && cycling) exit();
   }, [ctx, manager, kbfManual, cycling, enabled, isKeyCard, enter, exit]);
 

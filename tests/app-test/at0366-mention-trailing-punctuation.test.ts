@@ -28,7 +28,6 @@
  *
  * @covers tugdeck/src/components/tugways/tug-text-editor/completion-extension.ts
  * @covers tugdeck/src/lib/filetree-store.ts
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  */
 
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";

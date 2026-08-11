@@ -34,7 +34,6 @@
  * @covers tugdeck/src/lib/canvas-overlay-registry.ts
  * @covers tugdeck/src/lib/use-canvas-overlay.ts
  * @covers tugdeck/src/components/chrome/canvas-overlay-root.tsx
- * @covers tugdeck/src/components/tugways/tug-completion-popup.tsx
  */
 
 import { describe, expect, test } from "bun:test";
