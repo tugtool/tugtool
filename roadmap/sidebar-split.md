@@ -32,16 +32,18 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 - Extend the model additively: a per-side `RailArrangement { mode, order, shares }` on `DeckImposition.rails`, keyed by side, with shares as per-componentId weights so membership churn can never misalign heights.
 - Keep the load-bearing invariant: live window resize runs no JavaScript. Split-member vertical geometry is `calc()` over per-side seam custom properties, written by the same `deck-canvas.tsx` layout effect that writes the rail width properties.
 - Reuse the gesture precedents verbatim: the seam drag follows `handleSidebarResizeStart`'s live-property-write pattern; the corridor reorder builds on the three-phase drag machine and `pane-flip.ts`.
-- Land in dependency order: pure geometry → wire format → manager/actions → canvas threading + frame rendering → controls (badge menu, Layout section) → seam gesture → corridor drag → doctrine → app-test.
-- Every mode/order change animates through the existing `arrangementSignature` FLIP settle by adding rail-arrangement terms to the signature — no new animation system.
+- Land in dependency order: pure geometry → wire format → manager/actions → FLIP vertical scale → canvas threading + frame rendering → controls (badge menu, Layout section) → seam gesture → corridor drag → doctrine → app-test.
+- Every mode/order change animates through the existing `arrangementSignature` FLIP settle by adding rail-arrangement terms to the signature — no new animation system, but the existing one gains a vertical scale term ([P12]), because a mode flip is the first arrangement gesture that changes a frame's height and the settle cannot carry today what it was never asked to.
 - Verify at the real-geometry layer: unit tests for the pure math and serialization, one app-test asserting live member rects in the running app, `bunx vite build` before any step is declared done.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
 - With Lens + Jots pinned right and the right rail split, live `getBoundingClientRect()` in the running app shows two non-overlapping frames that tile the rail run: top member's top ≈ canvas top + 5px, bottom member's bottom ≈ canvas bottom − 32px, and the vertical gap between them ≈ `IMPOSITION_GAP_PX` (±1px). Both frames share the rail's one width. (App-test assertion.)
 - In stack mode nothing changes: same-side members render byte-identical frames exactly as today. (Existing unit tests, re-scoped to stack mode, still pass; app-test asserts identical rects after re-stacking.)
-- A seam drag changes only the two adjacent members' heights, persists `shares` in the layout blob, and survives relaunch. (App-test assertion via `TUG_APPTEST_JSON` + blob read.)
+- A seam drag changes only the two adjacent members' heights, persists `shares` in the layout blob, and survives relaunch. (App-test assertion; the blob is read off disk through the harness's tugbank helper, exactly as `at0276-lens-side-persists` reads `dev.tugtool.deck.layout`/`layout`.)
 - Reordering members (via `setRailOrder`) flips the members' vertical positions and persists. (App-test assertion.)
+- A split rail's vertical order does not move when a member is activated: clicking either member leaves both frames' rects unchanged. (App-test assertion — this is [R06]'s falsifiable form.)
+- A mode flip crosses rather than cuts: during the settle both members carry a transform (`scaleY` among its terms) and neither jumps to its final height in one frame. (Manual smoke in #step-5/#step-6; the arithmetic is unit-pinned in #step-4.)
 - Mode survives membership churn: split right rail → close Jots → Lens takes the full run → reopen Jots → the split (mode, order, shares) re-applies. (App-test assertion.)
 - `imposition.rails` round-trips through serialize → deserialize; pre-split v4 blobs (including first-split-era blobs carrying `order` inside `SidebarEntry`) parse to stacks with no error. (Unit tests.)
 - No `ResizeObserver` or resize listener is added to the geometry path; the only geometry JS during a window resize remains the existing settled-resize retune. (Checkpoint grep.)
@@ -52,12 +54,13 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 1. `RailArrangement` model + pure geometry (seam fractions, split member styles) in `layout-imposer.ts`, unit-tested.
 2. Wire format: `imposition.rails` serialization + defensive parse.
 3. DeckManager API: `setRailMode`, `setRailOrder`, `setRailShares`, `equalizeRail`; actions `set-rail-mode`, `equalize-rail`.
-4. DeckCanvas: seam custom properties, per-member placement threading, arrangement-signature terms.
-5. TugPane: split-member frame styles, split-aware stack badge (glyph + menu verbs).
-6. Lens Layout section: per-shared-side Stack | Split control with miniature + preview layers.
-7. Seam splitter element with drag + double-click equalize.
-8. Corridor drag: title-bar drag reorders within the rail, converts one-way to free drag on corridor exit.
-9. tuglaws amendments and the app-test.
+4. `lib/pane-flip.ts`: a vertical scale term in the FLIP delta and keyframes, so a mode flip crosses in height instead of cutting.
+5. DeckCanvas: seam custom properties, per-member placement threading, registration-ordered rail enumeration, arrangement-signature terms.
+6. TugPane: split-member frame styles, split-aware stack badge (glyph + menu verbs + rail-ordered rows).
+7. Lens Layout section: per-shared-side Stack | Split control with miniature + preview layers.
+8. Seam splitter element with drag + double-click equalize.
+9. Corridor drag: title-bar drag reorders within the rail, converts one-way to free drag on corridor exit.
+10. tuglaws amendments and the app-test.
 
 #### Non-goals (Explicitly out of scope) {#non-goals}
 
@@ -70,12 +73,12 @@ This is the second lived verdict on this surface. An automatic vertical split wa
 #### Dependencies / Prerequisites {#dependencies}
 
 - The sidebar generalization as shipped: `DeckImposition.sidebars`, `sidebarRailsOf`/`slotStackByPaneId` in `deck-canvas.tsx`, `_sidebarRails`/`_commitImposition` in `deck-manager.ts`.
-- `lib/pane-flip.ts` (FLIP tween math) and the `arrangementSignature` settle machinery in `deck-canvas.tsx`.
+- `lib/pane-flip.ts` (FLIP tween math) and the `arrangementSignature` settle machinery in `deck-canvas.tsx`. `pane-flip.ts` is the one dependency this phase also *modifies* — see [P12] and #step-4.
 - `TugPopupMenu`, `TugChoiceGroup`, `LayoutMiniature`, and the Layouts section's preview-layer system.
 
 #### Constraints {#constraints}
 
-- Tuglaws: [L02] external state via `useSyncExternalStore`; [L03] registrations in layout effects; [L06] appearance/geometry via CSS+DOM, never React state; [L09] panes own geometry; [L13] motion through TugAnimator. Commits name the laws touched.
+- Tuglaws: [L02] external state via `useSyncExternalStore`; [L03] registrations in layout effects; [L06] appearance/geometry via CSS+DOM, never React state; [L09] panes own geometry; [L13] motion through TugAnimator; [L23] an internal operation — a card closing — must not destroy the arrangement the user chose ([P06]). Commits name the laws touched.
 - Live resize must stay JS-free: split geometry is fractions of the run in `calc()`, re-resolved by the browser's reflow.
 - bun, never npm; `bunx vite build` from `tugdeck/` before declaring any tugdeck step done (the debug app loads the prod rollup bundle).
 - App-tests are selective (`@covers` + `just app-test <file>` / `just app-test-changed`); never the full corpus.
@@ -104,7 +107,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Why it matters:** Too tight and a slightly diagonal reorder gesture unpins the card the user meant to shuffle; too loose and a deliberate drag-out feels sticky.
 
-**Resolution:** DECIDED — `RAIL_CORRIDOR_SLOP_PX = 80` as a named exported constant in `layout-imposer.ts` beside the other tuning constants, applied on each side of the rail's live rect. Tuned by feel during #step-7's manual smoke; the constant is the one-line change.
+**Resolution:** DECIDED — `RAIL_CORRIDOR_SLOP_PX = 80` as a named exported constant in `layout-imposer.ts` beside the other tuning constants, applied on each side of the rail's live rect. Tuned by feel during #step-8's manual smoke; the constant is the one-line change.
 
 #### [Q02] Keyboard nudge on the seam (DEFERRED) {#q02-seam-keyboard}
 
@@ -125,6 +128,7 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 | Seam properties go stale as membership shrinks ([R03]) | med | low | the inset effect writes/removes all seam properties for both sides every pass | a member pinned to a phantom seam after closing a card |
 | Legacy first-split blobs mis-parse ([R04]) | low | low | `parseSidebars` already drops the old per-entry `order`; new `rails` parse is defensive and separate | any parse error on an old blob |
 | Squeeze below member minimums on short windows ([R05]) | low | med | proportional squeeze is the designed behavior; seam drag clamps to minimums in JS | a member unusably short on a normal display |
+| Default vertical order follows z-order ([R06]) | high | high (unmitigated) | `effectiveRailOrder`'s fallback is registration order, sorted by the caller; `setRailMode(…, "split")` materializes an explicit `order` | two split members trading places when one is clicked |
 
 **Risk R01: Corridor drag vs the three-phase drag machine** {#r01-corridor-vs-drag-machine}
 
@@ -143,6 +147,12 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 - **Risk:** seam properties are per-gap (`--tug-rail-right-seam-0`, `-1`, …); a rail going 3 members → 2 leaves `-1` behind, and any expression still reading it pins a frame to a phantom seam.
 - **Mitigation:** the inset layout effect in `deck-canvas.tsx` writes both sides' seam properties on every pass and explicitly `removeProperty`s indices beyond the current gap count (sweep up to `SIDEBAR_PANE_ZINDEX_MAX_RANK`, far past any real rail). Frames read only the seams their own placement names, and placements are re-derived on the same commit.
 - **Residual risk:** none meaningful — the sweep is cheap and the effect already runs on exactly the right commits.
+
+**Risk R06: The rail's member enumeration is z-order, not registration order** {#r06-order-is-z-order}
+
+- **Risk:** `sidebarStackOrder`'s docstring says the ids arrive in "the map's own key order — which is registration order". They do not. It filters the list its caller passes, and `sidebarRailsOf` passes `findSidebarPanes(state)`'s order, which walks `state.panes` — the array `activateCard` reorders. Today that is invisible (every member draws the same rect). In split mode, with no stored `order` — the state one keystroke after "Split Vertically" — the vertical order would be z-derived: clicking the lower card raises it, the effective order changes, `arrangementSignature` changes, and the two cards visibly trade places on a click. The same defect already makes the signature's rail term z-sensitive, arming an empty settle window (and a session-notification hold) on every rail activation.
+- **Mitigation:** two, and both are cheap. `sidebarRailsOf` sorts componentIds into `getAllRegistrations()` order before calling `effectiveRailOrder`, so the fallback means what [P03] says it means; and `setRailMode(side, "split")` writes an explicit `order`, so the fallback is only ever reached before the first split. The signature's rail term then reads the effective order, which is what finally makes it z-blind — the property its own comment already claims.
+- **Residual risk:** registration order is fixed at boot and the registry is a `Map`, so insertion order is stable; a card registered later (there is no such path today) would append rather than reshuffle.
 
 ---
 
@@ -171,13 +181,15 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 #### [P03] Effective order = stored order filtered to present members, absentees appended in registration order (DECIDED) {#p03-effective-order}
 
-**Decision:** `sidebarStackOrder()` is superseded by `effectiveRailOrder(imposition, side, componentIds)`: the side's stored `order` filtered to the ids actually standing there, then any present ids the stored order doesn't name, in registration order.
+**Decision:** `sidebarStackOrder()` is superseded by `effectiveRailOrder(imposition, side, componentIds)`: the side's stored `order` filtered to the ids actually standing there, then any present ids the stored order doesn't name, in the order the caller hands them — and **the caller must hand them in registration order**. Additionally, `setRailMode(side, "split")` materializes an explicit `order` at the moment of the split, so a split rail's vertical order is never derived from anything that moves.
 
 **Rationale:**
 - Order becomes real, user-owned state on a split rail — the current docstring's "there is deliberately no vertical order to record" becomes false and is rewritten.
 - Tolerating absentees is what lets mode/order/shares survive membership churn ([P06]).
+- **The "registration order" the current docstring claims is not what the code does.** `sidebarStackOrder` filters whatever list it is given, and `sidebarRailsOf` gives it `findSidebarPanes(state)`'s order — which walks `state.panes`, the array `activateCard` reorders. That is z-order. Harmless while every member draws the same rect; in split mode it would make the default vertical order follow z, so clicking the lower card would raise it, change the effective order, change the signature, and **visibly swap the two cards on a click** ([R06]).
+- Materializing `order` on the split is the belt to that suspenders: the instant vertical order becomes visible it becomes stored state, and nothing downstream has to re-derive it.
 
-**Implications:** stack mode also reads this order (it changes nothing visible there — z-order still decides front/back — but rail member enumeration in `sidebarRailsOf` and the badge picker use one function, not two).
+**Implications:** the imposer stays pure (no registry import), so the sort is the caller's: `sidebarRailsOf` orders componentIds by `getAllRegistrations()`'s insertion order — registration is a boot step, so that order is fixed and stable — before calling `effectiveRailOrder`. Stack mode also reads this order (it changes nothing visible there — z-order still decides front/back — but rail member enumeration in `sidebarRailsOf` and the badge picker use one function, not two), and reading it there is what makes the rail term in `arrangementSignature` z-blind at last ([P10]).
 
 #### [P04] Split geometry is CSS-derived seam fractions; live resize stays JS-free (DECIDED) {#p04-css-derived-seams}
 
@@ -213,13 +225,18 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Rationale:** the badge is already the one place a shared rail announces itself; zero new chrome. In split mode nothing is occluded, so member rows become focus verbs rather than reveal verbs — `onRevealPane` → `transferFocusForActivation` + `store.activateCard` already does the right thing unchanged.
 
-**Implications:** menu items need ids distinct from paneIds (prefix `rail:`); the badge's open-state guard (`stackMenuOpen`, force-closed when depth drops to 1) carries over. Cmd-click and ⌘R (`revealStack()`) open the same menu in both modes.
+**The rows themselves change in split mode.** `slotStackByPaneId` builds entries as `[...members].reverse()` — topmost first — and stamps `selected: entry.topmost`. Neither fact survives a split: there is no topmost when every member is visible, so the check column would land on whichever card was raised last, which is a claim about z-order dressed up as a claim about what you are looking at. In split mode the rows list in **effective rail order** (top to bottom, the order the eye reads them in) and `selected` marks the **focused** member — the pane the deck would act on — or nothing when focus is elsewhere. This is `slotStackByPaneId`'s job, not the title bar's: entries already arrive display-resolved, and the title bar renders from props alone.
+
+**Implications:** menu items need ids distinct from paneIds (prefix `rail:`); the badge's open-state guard (`stackMenuOpen`, force-closed when depth drops to 1) carries over. Cmd-click and ⌘R (`revealStack()`) open the same menu in both modes. The verbs dispatch rather than thread: `TugPane` already reaches the registry directly for `handleSetWidth` (`dispatchCommand(TUG_ACTIONS.SET_CARD_WIDTH, …)`), so Split/Stack/Equalize follow that path instead of adding two more props through `deck-canvas` — one hop, and the title bar keeps rendering from props with `TugPane` owning dispatch.
 
 #### [P08] The Layout section gains one row per shared side (DECIDED) {#p08-layout-section-row}
 
-**Decision:** Below the existing per-sidebar Left/Right rows, one `TugChoiceGroup` row per side with 2+ visible pinned members: caption "LEFT RAIL"/"RIGHT RAIL", options Stack | Split, dispatching `set-rail-mode`. `LayoutMiniature` learns to draw a horizontally-divided rail; the preview-layer system gains `railmode:<side>:<mode>` layers.
+**Decision:** Below the existing per-sidebar Left/Right rows, one `TugChoiceGroup` row per side that **`railsOf` counts 2+ sidebar cards on** — the section's existing, registration-derived count, not a live visibility read: caption "LEFT RAIL"/"RIGHT RAIL", options Stack | Split, dispatching `set-rail-mode`. `LayoutMiniature` learns to draw a horizontally-divided rail; the preview-layer system gains `railmode:<side>:<mode>` layers.
 
-**Rationale:** same idiom as everything in the panel (sender-routed `selectValue`, hover/keyboard preview before commit); membership-derived rendering means a fourth sidebar card needs no edit.
+**Rationale:**
+- Same idiom as everything in the panel (sender-routed `selectValue`, hover/keyboard preview before commit); membership-derived rendering means a fourth sidebar card needs no edit.
+- **Gating on visible pinned members would contradict the panel's own model.** `layouts-section.tsx` reads no panes at all — `useImposition` reads the imposition record and `railsOf` counts every *registered* sidebar card per side, which is exactly what the miniature draws: three rails whether or not any of the three cards are open. A visibility-gated row would need a new pane subscription and would sit under a miniature that disagrees with it.
+- It also strands the user: split the right rail, close Jots, and a visibility-gated control disappears — taking the only Lens-side way to un-split with it. Splitting a side that currently shows one card is a harmless pre-arm, which is precisely what [P06] already says the record does.
 
 **Implications:** new sender prefix `RAIL_SENDER_PREFIX = "lens-layouts-rail:"`; rail rows take focus orders after the sidebar groups; `MiniatureRails` grows a per-side mode (or a sibling prop — implementer's choice, keep `LayoutMiniature` purely presentational).
 
@@ -235,9 +252,9 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Decision:** `arrangementSignature` gains the per-side mode, effective order, and seam fractions (rounded to 3 decimals). All rail-arrangement mutations commit through `_commitImposition` (via `_reimpose`), inheriting notify + `scheduleSave()` + the lifecycle ledger.
 
-**Rationale:** mode flips and menu/section-driven reorders then animate through the existing FLIP settle with no new animation code. A seam-drag commit arms a settle whose First and Last rects are identical (the DOM already sits at final geometry from the live property writes) — a zero-delta no-op, the same coexistence rail-width edge drags already have (the signature's own comment documents that pattern).
+**Rationale:** mode flips and menu/section-driven reorders then animate through the existing FLIP settle — the same machinery, extended once by [P12] rather than duplicated. A seam-drag commit arms a settle whose First and Last rects are identical (the DOM already sits at final geometry from the live property writes) — a zero-delta no-op, the same coexistence rail-width edge drags already have (the signature's own comment documents that pattern).
 
-**Implications:** the signature's z-blindness is preserved (order terms come from the imposition record, not the panes array); seam fractions are rounded so sub-pixel share arithmetic can't arm spurious settles.
+**Implications:** the signature's rail terms must be made z-blind, which today they are **not** — `sidebarRailsOf` enumerates members through `findSidebarPanes`, which walks `state.panes` (z-order), so the rail term already changes when a rail member is activated and already arms an empty settle window on a click. [P03]'s registration-order fix repairs the existing defect and is a precondition for the order term ([R06]). Seam fractions are rounded so sub-pixel share arithmetic can't arm spurious settles.
 
 #### [P11] New actions are `set-rail-mode` and `equalize-rail`; reorder and shares commit through manager methods (DECIDED) {#p11-actions}
 
@@ -247,6 +264,17 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 **Implications:** three registration sites per action, following `set-sidebar-side` exactly: `action-vocabulary.ts` (`SET_RAIL_MODE`, `EQUALIZE_RAIL`), `action-dispatch.ts` handler, `command-registry.ts` entry.
 
+#### [P12] The settle FLIP gains a vertical scale; a mode flip is the first arrangement gesture that changes height (DECIDED) {#p12-flip-sy}
+
+**Decision:** `flipDelta` gains `sy` and `springKeyframes` a `scaleY` term (#step-4). Rail mode flips, and the churn re-flows that follow from [P06], then cross rather than cut.
+
+**Rationale:**
+- Without it [P10] does not deliver what it claims. `flipDelta` returns `{ dx, dy, sx }` and the Last pass skips any frame with `dx === 0 && dy === 0 && sx === 1` — so on a stack→split flip the **top** member, whose left/top/width are all unchanged, gets no tween at all and simply cuts to half the run, while the bottom member slides down at full height for the whole 300ms. Split→stack cuts the same way, and so does every membership churn (close Jots and the Lens regrows the run with no other term moving).
+- `flipDelta`'s own docstring says height is not read because "the gestures that resize a frame move its vertical edges not at all". This feature is the counterexample; the doctrine follows the code rather than the code being bent around a stale sentence.
+- The vertical distortion this introduces mid-tween is the trade `scaleX` already makes horizontally, at the same duration, on the same frames — it is not a new kind of compromise, and it stays transform-only so the motion stays off the main thread.
+
+**Implications:** `pane-flip.ts` is pure and unit-pinned, so this is its own step with its own tests, landing before the canvas work; `FlipDelta`'s shape is a contract three existing assertions pin, and changing it is a deliberate, visible edit. Everyday arrangement gestures keep byte-identical keyframes: the scale terms are emitted only when they are not 1.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -255,9 +283,11 @@ This plan follows `tuglaws/devise-skeleton.md` v4: explicit `{#anchor}` headings
 
 All paths relative to `tugdeck/src/` unless noted. Line numbers below are approximate anchors verified 2026-08-11, not contracts.
 
-**The imposer module.** `lib/layout-imposer.ts` (~1094 lines) is pure (no DOM/store/React runtime imports). Relevant symbols: `DeckImposition` (~:152), `SidebarEntry { side, pinned? }` (~:126), `sidebarSide()` (~:183), `isSidebarPinned()` (~:192), `withSidebarSide()` (~:200), `withSidebarPinned()` (~:212), `sidebarStackOrder()` (~:233 — registration order; its docstring "there is no vertical order to record" is rewritten by this plan), `IMPOSITION_GAP_PX = 5` (~:277), `IMPOSITION_GAP_BOTTOM_PX = 32` (~:291), `IMPOSITION_SETTLE_MS = 300`, `RESIZE_RETUNE_QUIET_MS = 200`, `sidebarWidthProperty(side)` (~:403 — `--tug-sidebar-width-left/right`, deliberately unregistered so `var()` fallbacks work), `LENS_RAIL_PROPERTY = "--tugx-lens-rail"` (registered `<number>`, 0 = left, 1 = right), and `imposeSidebarStyle(side, paneWidth, options?)` (~:1074) which emits `{ width: var(widthProperty, paneWidthpx), height: "auto", top: 5px, bottom: 32px, [LENS_RAIL_PROPERTY]: 0|1, left: calc(mix of both anchors by the rail number) }`. The long doc comment above it ("A shared rail is a stack, not a split…") is the text this plan supersedes. The allocator (`allocateSidebarWidths` ~:872, `solveSidebarWidths` ~:925) is **untouched** — one width per side is preserved.
+**The imposer module.** `lib/layout-imposer.ts` (~1094 lines) is pure (no DOM/store/React runtime imports). Relevant symbols: `DeckImposition` (~:152), `SidebarEntry { side, pinned? }` (~:126), `sidebarSide()` (~:183), `isSidebarPinned()` (~:192), `withSidebarSide()` (~:200), `withSidebarPinned()` (~:212), `sidebarStackOrder()` (~:233 — it filters whatever id list the caller passes, and its docstring claims that list is registration order; the one caller passes z-order, see below. Both the docstring and the caller are rewritten by this plan — [P03], [R06]), `IMPOSITION_GAP_PX = 5` (~:277), `IMPOSITION_GAP_BOTTOM_PX = 32` (~:291), `IMPOSITION_SETTLE_MS = 300`, `RESIZE_RETUNE_QUIET_MS = 200`, `sidebarWidthProperty(side)` (~:403 — `--tug-sidebar-width-left/right`, deliberately unregistered so `var()` fallbacks work), `LENS_RAIL_PROPERTY = "--tugx-lens-rail"` (registered `<number>`, 0 = left, 1 = right), and `imposeSidebarStyle(side, paneWidth, options?)` (~:1074) which emits `{ width: var(widthProperty, paneWidthpx), height: "auto", top: 5px, bottom: 32px, [LENS_RAIL_PROPERTY]: 0|1, left: calc(mix of both anchors by the rail number) }`. The long doc comment above it ("A shared rail is a stack, not a split…") is the text this plan supersedes. The allocator (`allocateSidebarWidths` ~:872, `solveSidebarWidths` ~:925) is **untouched** — one width per side is preserved.
 
-**DeckCanvas** (`components/chrome/deck-canvas.tsx`). `SIDEBAR_PANE_ZINDEX_BASE = 8990` / `SIDEBAR_PANE_ZINDEX_MAX_RANK = 9` (~:117); `sidebarRailsOf(state)` (~:163) builds per-side `{ side, width, members }` from `findSidebarPanes` + `isSidebarPinned` + `sidebarStackOrder`, width = widest member's render width (`paneRenderWidthOf` raises stored width to the stack size floor). `arrangementSignature(state)` (~:237) = kind | bullseye | rails (side:width:memberIds) | sorted pane `id:slot:width` terms — deliberately blind to z-order; its comment documents why rail-width terms arm zero-delta settles after live drags. `stackByPaneId` (~:356) maps sidebar paneId → `{ side, count }` and is handed to `TugPane` as `sidebarStack`; `slotStackByPaneId` (~:410) keys stacks by `place` = `rail:${side}` or `slot:${n}` and builds display-resolved `SlotStackEntry[]` (topmost first) for the badge picker; `handleRevealPane` (~:1524) routes selection through `transferFocusForActivation` + `store.activateCard`. The **inset layout effect** (~:1132) writes `sidebarWidthProperty(side)` and `--tug-imposer-inset-left/right` on the frames' containing block (`containerRef`), keyed on a `railWidths` summary string. The **settled-resize observer** (~:1172) debounces `store.retuneSidebarAllocation()` by `RESIZE_RETUNE_QUIET_MS`. The **settle** (~:1237–1457): a store subscriber measures First rects for every `.tug-pane[data-pane-id]` frame *not* carrying `data-gesture`, holds session notifications, stamps `data-imposer-settling`; a layout effect (declared **after** the inset effect — declaration order is load-bearing, its comment says why) measures Last and runs `animate(frame, springKeyframes(dx, dy, sx), { duration, easing: "linear", fill: "none", composite: "replace", key: "imposer-flip", slotCancelMode: "snap-to-end" })`; `clearFlip` removes the inline `transform`/`transform-origin` residue.
+**DeckCanvas** (`components/chrome/deck-canvas.tsx`). `SIDEBAR_PANE_ZINDEX_BASE = 8990` / `SIDEBAR_PANE_ZINDEX_MAX_RANK = 9` (~:117), with the canvas-overlay base at 9000 — the band between them is fully allocated, which is why the seam needs a stated z (Spec S01). `sidebarRailsOf(state)` (~:163) builds per-side `{ side, width, members }` from `findSidebarPanes` + `isSidebarPinned` + `sidebarStackOrder`, width = widest member's render width (`paneRenderWidthOf` raises stored width to the stack size floor). **Its member order is z-order, not registration order**: `findSidebarPanes` (`deck-store-selectors.ts:91`) walks `state.panes`, the array `activateCard` reorders, and `sidebarStackOrder` only filters it. This is [R06], and it is a live defect before this plan touches anything — the signature's rail term inherits the z-sensitivity. `arrangementSignature(state)` (~:237) = kind | bullseye | rails (side:width:memberIds) | sorted pane `id:slot:width` terms — deliberately blind to z-order; its comment documents why rail-width terms arm zero-delta settles after live drags. `stackByPaneId` (~:356) maps sidebar paneId → `{ side, count }` and is handed to `TugPane` as `sidebarStack`; `slotStackByPaneId` (~:410) keys stacks by `place` = `rail:${side}` or `slot:${n}` and builds display-resolved `SlotStackEntry[]` (topmost first) for the badge picker; `handleRevealPane` (~:1524) routes selection through `transferFocusForActivation` + `store.activateCard`. The **inset layout effect** (~:1132) writes `sidebarWidthProperty(side)` and `--tug-imposer-inset-left/right` on the frames' containing block (`containerRef`), keyed on a `railWidths` summary string. The **settled-resize observer** (~:1172) debounces `store.retuneSidebarAllocation()` by `RESIZE_RETUNE_QUIET_MS`. The **settle** (~:1237–1457): a store subscriber measures First rects for every `.tug-pane[data-pane-id]` frame *not* carrying `data-gesture`, holds session notifications, stamps `data-imposer-settling`; a layout effect (declared **after** the inset effect — declaration order is load-bearing, its comment says why) measures Last and runs `animate(frame, springKeyframes(dx, dy, sx), { duration, easing: "linear", fill: "none", composite: "replace", key: "imposer-flip", slotCancelMode: "snap-to-end" })`; `clearFlip` removes the inline `transform`/`transform-origin` residue. The Last pass **skips any frame with `dx === 0 && dy === 0 && sx === 1`** — which on a stack→split flip is the top member exactly, since only its height changed.
+
+**pane-flip** (`lib/pane-flip.ts`, pure, unit-pinned). `FlipDelta` is `{ dx, dy, sx }` — `sx = first.width / last.width` — and `springKeyframes(dx, dy, sx = 1, samples = 32)` emits `translate(...)` plus a `scaleX(...)` term only when `sx !== 1`. **There is no vertical scale**, and `flipDelta`'s docstring says why: "the gestures that resize a frame move its vertical edges not at all… A height change that happens to land in the same window snaps, which is honest." A rail mode flip is exactly the gesture that sentence says does not exist, which is why [P12]/#step-4 exist. Three assertions in `lib/__tests__/pane-flip.test.ts` pin `FlipDelta`'s exact object shape via `toEqual`, and two call `springKeyframes(10, 0, 1, 4)` with `samples` positional — both move when the signature grows.
 
 **TugPane** (`components/chrome/tug-pane.tsx`). `sidebarStack` prop → `sidebarSide` (~:1316), `pinned` (~:1335), `derivedRef` (~:1345, pinned || imposed || bullseye). The frame's `modeStyle` (~:2746) picks bullseye → sidebar (`imposeSidebarStyle(sidebarSide, renderWidth)`) → imposed → free; the frame carries `data-lens={side}` for sidebar panes (~:2826) and `data-pane-id`. The **stack badge** (~:683): rendered when `slotStack.length > 1`, a `TugPopupMenu` whose trigger is a ghost `TugButton subtype="icon-text"` with `<Layers />` + the count, `className="tug-pane-title-bar-stack-badge"`, testids `tug-pane-title-bar-stack-badge` / `tug-pane-title-bar-stack-menu`; rows are member miniatures with `selected: entry.topmost`; selection calls `onRevealPane(entry)`; open state `stackMenuOpen` is local `useState`, force-closed when depth drops to 1 (~:424); `CardTitleBarHandle.revealStack()` (~:586) opens it (⌘R and the no-travel Cmd-click path both call it, ~:2176). The **drag machine** (~:1956–2254): three phases; `DRAG_MOVE_THRESHOLD_PX = 3`; the move latch (~:2049–2067) is where `paneOcclusionGesture.begin()` and — for derived panes — `releaseImposedFrame(frame, bounds)` + `dragStartPosition` re-seed happen; per-frame writes are `frame.style.left/top`; drop commits `onCardMoved(id, pos, size, derivedRef.current ? { evictSlot: true } : undefined)`; `data-gesture` is set at start and removed at the top of `onPointerUp` (before the commit). The **sidebar width drag** (`handleSidebarResizeStart`, ~:2505–2649) is the seam drag's template: snapshot, rAF apply writing ONE custom property (`container.style.setProperty(widthProperty, px)`), move-threshold latch, occlusion bracket, commit on pointer-up with the property left as the gesture set it so no frame reads a stale value.
 
@@ -265,7 +295,7 @@ All paths relative to `tugdeck/src/` unless noted. Line numbers below are approx
 
 **Serialization** (`serialization.ts`). `serialize()` (~:142) emits `imposition` verbatim (so `rails` rides along once the type carries it — but the read side must still be defensive). `parseV4` (~:311) parses three historical imposition shapes; `parseSidebars` (~:280) builds entries **field by field, never by spread**, with a comment recording that "the split build wrote an `order` here (a member's position in a rail that divided vertically)" — the first split attempt's per-entry `order` is dropped on read and must stay dropped. The new `rails` record is a sibling of `sidebars`, parsed by a new defensive `parseRails`.
 
-**Layouts section** (`components/lens/sections/layouts-section.tsx`, ~589 lines). Sender-routed: one `useResponder` (`id: "lens-layouts-section"`) handles `SELECT_VALUE` and routes by `event.sender` (`KIND_SENDER_ID`, `WIDTH_SENDER_ID`, `SIDE_SENDER_PREFIX + componentId`) to `dispatchCommand(...)`. `sidebarEntries()` (~:153) walks `getAllRegistrations()` for `layoutRole === "sidebar"`. Preview: `PlanLayer[]` (~:387) with `previewId` families `kind:`, `width:`, `side:componentId:side`; visibility is DOM attributes toggled by `setPreview` (~:344) from pointer (`previewIdOf`, ~:269) and a `MutationObserver` on `data-key-cursor`/`data-key-view-kbd` (~:362). Focus orders: kind 0, width 1, sidebars from 2 (`LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER`); rail rows take the orders after the sidebar groups. `LayoutMiniature` (`components/lens/layout-miniature.tsx`) is purely presentational: `{ kind, rails: MiniatureRails, cards?, width?, selected? }`, `Rail` member draws stacked "paper" offsets (`RAIL_DEPTH_PCT = 3`), `RAIL_NOMINAL_PX = 420`.
+**Layouts section** (`components/lens/sections/layouts-section.tsx`, ~589 lines). Sender-routed: one `useResponder` (`id: "lens-layouts-section"`) handles `SELECT_VALUE` and routes by `event.sender` (`KIND_SENDER_ID`, `WIDTH_SENDER_ID`, `SIDE_SENDER_PREFIX + componentId`) to `dispatchCommand(...)`. `sidebarEntries()` (~:153) walks `getAllRegistrations()` for `layoutRole === "sidebar"`, and `railsOf()` (~:167) counts those **registered** cards per side into `MiniatureRails`. The section reads no panes at all — `useImposition` reads the imposition record and nothing else — so its whole model of "what stands on a side" is registration-derived, open or closed. That is what [P08]'s gating follows. Preview: `PlanLayer[]` (~:387) with `previewId` families `kind:`, `width:`, `side:componentId:side`; visibility is DOM attributes toggled by `setPreview` (~:344) from pointer (`previewIdOf`, ~:269) and a `MutationObserver` on `data-key-cursor`/`data-key-view-kbd` (~:362). Focus orders: kind 0, width 1, sidebars from 2 (`LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER`); rail rows take the orders after the sidebar groups. `LayoutMiniature` (`components/lens/layout-miniature.tsx`) is purely presentational: `{ kind, rails: MiniatureRails, cards?, width?, selected? }`, `Rail` member draws stacked "paper" offsets (`RAIL_DEPTH_PCT = 3`), `RAIL_NOMINAL_PX = 420`.
 
 **Actions plumbing.** `TUG_ACTIONS.SET_SIDEBAR_SIDE` in `components/tugways/action-vocabulary.ts` (~:817) + handler in `action-dispatch.ts` (~:580, payload-validated, `console.warn` on bad input) + entry in `components/tugways/command-registry.ts` (~:1319) is the three-site pattern the new actions copy.
 
@@ -274,10 +304,10 @@ All paths relative to `tugdeck/src/` unless noted. Line numbers below are approx
 #### End-to-end flow: user splits the right rail from the badge {#flow-split}
 
 1. Lens + Jots pinned right (a `rail:right` stack of 2). The Jots title bar's badge menu shows two member rows + "Split Vertically".
-2. Selecting it dispatches `set-rail-mode { side: "right", mode: "split" }` → `action-dispatch.ts` handler → `deckManager.setRailMode("right", "split")` → `_reimpose(withRailMode(imposition, "right", "split"))`.
-3. `_commitImposition` commits; `notify()` re-renders. `deck-canvas` derives the right rail's member placements (effective order: [lens, jots] registration order; shares absent → seam fraction 0.5), writes `--tug-rail-right-seam-0: 0.5` in the inset effect.
+2. Selecting it dispatches `set-rail-mode { side: "right", mode: "split" }` → `action-dispatch.ts` handler → `deckManager.setRailMode("right", "split")` → `_reimpose` over `withRailMode` **and** `withRailOrder`: the split materializes `order: ["lens", "jots"]` in the same imposition ([P03]), so the vertical order is stored state from the first frame rather than a fallback that a later click could move ([R06]).
+3. `_commitImposition` commits; `notify()` re-renders. `deck-canvas` derives the right rail's member placements (effective order: the stored [lens, jots]; shares absent → seam fraction 0.5), writes `--tug-rail-right-seam-0: 0.5` in the inset effect.
 4. Each member's `TugPane` renders the split style: Lens `top: calc(5px + 0 * run)`, `bottom: calc(32px + (1 − 0.5) * run + 2.5px)`; Jots `top: calc(5px + 0.5 * run + 2.5px)`, `bottom: 32px` — where `run = (100% − 5px − 32px)`.
-5. `arrangementSignature` changed (mode + seam terms), so the settle FLIP carries both frames from full-run overlap to their halves. The seam element appears in the gap.
+5. `arrangementSignature` changed (mode + order + seam terms), so the settle FLIP carries both frames from full-run overlap to their halves — the Lens by `scaleY` alone (its left, top and width are all unchanged, which is precisely why [P12]'s term is load-bearing: without it this frame gets no tween at all), Jots by a translate and a `scaleY` together. The seam element appears in the gap at its final position.
 6. Window resize: fractions re-resolve in reflow; no JS runs.
 
 ---
@@ -310,8 +340,16 @@ export function isRailMode(value: unknown): value is RailMode;
 export function withRailMode(imposition: DeckImposition, side: SidebarSide, mode: RailMode): DeckImposition;
 export function withRailOrder(imposition: DeckImposition, side: SidebarSide, order: readonly string[]): DeckImposition;
 export function withRailShares(imposition: DeckImposition, side: SidebarSide, shares: Record<string, number>): DeckImposition;
-/** Stored order filtered to present ids, absent present ids appended in the
- *  given (registration) order. Supersedes sidebarStackOrder — see [P03]. */
+/**
+ * Stored order filtered to present ids, then any present ids the stored order
+ * does not name, in the order given. Supersedes sidebarStackOrder — see [P03].
+ *
+ * CALLER CONTRACT: `componentIds` must arrive in REGISTRATION order. This
+ * module is pure and cannot reach the registry, and the list the current
+ * caller happens to have — `findSidebarPanes`, which walks `state.panes` — is
+ * Z-ORDER. Handing that in makes a split rail's default vertical order follow
+ * the last raise ([R06]).
+ */
 export function effectiveRailOrder(
   imposition: DeckImposition, side: SidebarSide, componentIds: readonly string[],
 ): readonly string[];
@@ -329,6 +367,8 @@ export interface RailMemberPlacement { side: SidebarSide; index: number; count: 
 export const RAIL_CORRIDOR_SLOP_PX = 80;
 ```
 
+The seam element's z-index is a third constant, and it belongs in `deck-canvas.tsx` beside the band it has to thread rather than in the pure module: the rails occupy `SIDEBAR_PANE_ZINDEX_BASE`..`+ SIDEBAR_PANE_ZINDEX_MAX_RANK` (8990–8999) and the canvas-overlay base is 9000, so that band is fully spoken for by design. `RAIL_SEAM_ZINDEX = SIDEBAR_PANE_ZINDEX_BASE + SIDEBAR_PANE_ZINDEX_MAX_RANK` puts the seam level with the frontmost rail rank a deck can reach and still strictly below every popup — which is what it needs, because the hit strip is wider than the 5px gap and therefore overlaps each neighbour by ~2.5px. Declared with the reasoning the base's own comment models.
+
 `imposeSidebarStyle` gains an optional third-ish parameter (folded into `options`): `member?: RailMemberPlacement`. With `member` absent or `count === 1`, output is byte-identical to today. With a member of N > 1:
 
 **Spec S02: Split member geometry** {#s02-split-geometry}
@@ -339,7 +379,7 @@ Let `run = (100% − ${IMPOSITION_GAP_PX}px − ${IMPOSITION_GAP_BOTTOM_PX}px)` 
 - `bottom`: `i === count−1` → `${IMPOSITION_GAP_BOTTOM_PX}px`; else → `calc(${IMPOSITION_GAP_BOTTOM_PX}px + (1 − ${seam(i)}) * ${run} + ${half}px)`
 - `width`, `left`, `height: "auto"`, and the `LENS_RAIL_PROPERTY` term: unchanged from today's sidebar style.
 
-The seam **element**'s vertical center for gap `j` sits at `calc(${IMPOSITION_GAP_PX}px + ${seam(j)} * ${run})` in the same coordinate space — positioned from the same properties as the frames, so it cannot drift from them.
+The seam **element**'s vertical center for gap `j` sits at `calc(${IMPOSITION_GAP_PX}px + ${seam(j)} * ${run})` in the same coordinate space — positioned from the same properties as the frames, so it cannot drift from them. It carries `RAIL_SEAM_ZINDEX` (Spec S01) and it does **not** participate in the settle: the settle walks `.tug-pane[data-pane-id]` and the seam is not one, so on a mode flip or a reorder it appears at its final position while the frames tween to meet it. That is the accepted read — a seam is a boundary, not a card, and a boundary that slides is a fourth moving thing to track. Fade it in with a CSS opacity transition on the split attribute if the cut reads badly in #step-7's smoke.
 
 **Spec S03: Seam custom properties (DeckCanvas)** {#s03-seam-properties}
 
@@ -354,7 +394,7 @@ Written in the existing inset layout effect (`deck-canvas.tsx` ~:1132), which al
 
 DeckManager additions (all funneling through `_reimpose`, inheriting notify + save + ledger):
 
-- `setRailMode(side, mode): void` — no-op when unchanged; `_reimpose(withRailMode(...))`.
+- `setRailMode(side, mode): void` — no-op when unchanged; `_reimpose(withRailMode(...))`. Switching **to** `"split"` also materializes the side's `order` in the same imposition, from `effectiveRailOrder` over the registration-ordered present members ([P03], [R06]): the vertical order becomes stored state at the instant it becomes visible.
 - `setRailOrder(side, order): void` — filters `order` to sidebar componentIds; `_reimpose(withRailOrder(...))`. Gesture commit only ([P11]).
 - `setRailShares(side, shares): void` — validates positive finite weights; `_reimpose(withRailShares(...))`. Gesture commit only.
 - `equalizeRail(side): void` — `_reimpose` with the side's `shares` removed (order and mode kept).
@@ -372,7 +412,7 @@ DeckManager additions (all funneling through `_reimpose`, inheriting notify + sa
 }
 ```
 
-Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parseSidebars` — never by spread): unknown `mode` → drop the side's arrangement; `order` filtered to string entries (unknown componentIds are *kept* — the registry isn't loaded at parse time and `effectiveRailOrder` filters at use); `shares` entries dropped per-key unless positive finite numbers; an empty surviving record → the side is absent. The legacy per-`SidebarEntry` `order` field from the first split build stays dropped by `parseSidebars` exactly as today ([R04]). `serialize()` needs no change (it emits `deckState.imposition` whole).
+Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parseSidebars` — never by spread): unknown `mode` → drop the side's arrangement; `order` filtered to string entries (unknown componentIds are *kept* — the registry isn't loaded at parse time and `effectiveRailOrder` filters at use); `shares` entries dropped per-key unless positive finite numbers; an empty surviving record → the side is absent. `order` entries and `shares` keys run through `migrateComponentId` on the way in, the same rewrite the card table gets — these are componentIds and the kind-rename history is a real path (`"dev"` → `"session"`); free insurance against the next rename. The legacy per-`SidebarEntry` `order` field from the first split build stays dropped by `parseSidebars` exactly as today ([R04]). `serialize()` needs no change (it emits `deckState.imposition` whole).
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -407,16 +447,20 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 | `DeckImposition.rails?` | field | `lib/layout-imposer.ts` | [P01] |
 | `imposeSidebarStyle` | fn (modify) | `lib/layout-imposer.ts` | `options.member?: RailMemberPlacement`, Spec S02; rewrite the "stack, not a split" doc comment |
 | `sidebarStackOrder` | fn (retire/absorb) | `lib/layout-imposer.ts` | superseded by `effectiveRailOrder` ([P03]); rewrite docstring |
-| `parseRails` | fn | `serialization.ts` | Spec S05 |
-| `setRailMode`, `setRailOrder`, `setRailShares`, `equalizeRail` | methods | `deck-manager.ts` | Spec S04 |
+| `parseRails` | fn | `serialization.ts` | Spec S05; `order`/`shares` keys through `migrateComponentId` |
+| `setRailMode`, `setRailOrder`, `setRailShares`, `equalizeRail` | methods | `deck-manager.ts` | Spec S04; `setRailMode(…, "split")` materializes `order` ([P03]) |
+| `FlipDelta.sy`, `flipDelta`, `springKeyframes` | field/fns (modify) | `lib/pane-flip.ts` | [P12]: `sy` before `samples`; `scaleY` term emitted only when ≠ 1 |
+| `RAIL_SEAM_ZINDEX` | const | `components/chrome/deck-canvas.tsx` | Spec S01: beside `SIDEBAR_PANE_ZINDEX_BASE`, below the 9000 overlay base |
+| `sidebarRailsOf` | fn (modify) | `components/chrome/deck-canvas.tsx` | [P03]/[R06]: sort componentIds into `getAllRegistrations()` order before `effectiveRailOrder`; `SidebarRail` grows `mode` |
+| `slotStackByPaneId` | memo (modify) | `components/chrome/deck-canvas.tsx` | [P07]: split-mode rows in rail order, `selected` = focused member, plus the rail's mode |
 | `SET_RAIL_MODE`, `EQUALIZE_RAIL` | consts | `components/tugways/action-vocabulary.ts` | [P11] |
 | `set-rail-mode`, `equalize-rail` | actions | `action-dispatch.ts`, `components/tugways/command-registry.ts` | copy the `set-sidebar-side` pattern |
 | seam property writes + sweep | effect (modify) | `components/chrome/deck-canvas.tsx` | Spec S03, [R03] |
-| `arrangementSignature` | fn (modify) | `components/chrome/deck-canvas.tsx` | [P10]: per-side mode/order/rounded fractions |
+| `arrangementSignature` | fn (modify) | `components/chrome/deck-canvas.tsx` | [P10]: per-side mode/order/rounded fractions; rail terms become z-blind ([R06]) |
 | `sidebarStack` prop shape | type (modify) | `components/chrome/deck-canvas.tsx` → `tug-pane.tsx` | grows `mode`, `memberIndex` (count already present) |
 | seam elements + drag + dblclick | element/handlers | `components/chrome/deck-canvas.tsx` (+ CSS) | Spec S02 position, `handleSidebarResizeStart` gesture pattern, [P05] |
 | split style branch, `data-rail-split` attr | logic | `components/chrome/tug-pane.tsx` | modeStyle branch passes `member` to `imposeSidebarStyle` |
-| stack badge split mode | JSX (modify) | `components/chrome/tug-pane.tsx` | [P07]: Rows2/Rows3 glyph, `rail:`-prefixed menu verbs, new props `onSetRailMode`/`onEqualizeRail` threaded from deck-canvas (or dispatched — match the width popup's prop pattern) |
+| stack badge split mode | JSX (modify) | `components/chrome/tug-pane.tsx` | [P07]: Rows2/Rows3 glyph, `rail:`-prefixed menu verbs dispatched through `dispatchCommand` as `handleSetWidth` already does — no new props |
 | corridor drag branch | logic | `components/chrome/tug-pane.tsx` | [P09], Risks R01/R02; new `onSetRailOrder` commit prop |
 | rail rows + `RAIL_SENDER_PREFIX` + `railmode:` preview layers | JSX (modify) | `components/lens/sections/layouts-section.tsx` | [P08] |
 | divided-rail drawing | props/JSX (modify) | `components/lens/layout-miniature.tsx` | keep purely presentational |
@@ -426,8 +470,8 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 ### Documentation Plan {#documentation-plan}
 
 - [ ] `tuglaws/pane-model.md`: the pinned-mode row amended — a shared rail is a stack **by default; the user may split it**; split geometry (seam properties, run division) joins the geometry-modes table; badge/picker spec ([D123]/[D129] text) gains the split-mode behavior; Files table entries for the seam.
-- [ ] `tuglaws/design-decisions.md`: amend [D121] (rail arrangement state) and add a new [D##] recording the two lived verdicts and the chosen-never-imposed synthesis.
-- [ ] Rewrite the `imposeSidebarStyle` doc comment and the `sidebarStackOrder`/`effectiveRailOrder` docstring to the new truth (done inside #step-1, recorded here for the reviewer).
+- [ ] `tuglaws/design-decisions.md`: amend [D121] (rail arrangement state) and add a new [D##] recording the two lived verdicts and the chosen-never-imposed synthesis. [P06]'s "no cleanup pass ever deletes a `RailArrangement`" is an [L23] statement — a card closing is an internal operation, and it must not destroy the arrangement the user chose — and the amendment says so in those terms.
+- [ ] Rewrite the `imposeSidebarStyle` doc comment and the `sidebarStackOrder`/`effectiveRailOrder` docstring to the new truth (done inside #step-1, recorded here for the reviewer), and `flipDelta`'s "height is not read" paragraph (inside #step-4). Three doc comments in this plan assert something the code will no longer do; each is rewritten in the step that falsifies it, not later.
 
 ---
 
@@ -437,7 +481,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 | Category | Purpose | When to use |
 |----------|---------|-------------|
-| **Unit** | `railSeamFractions` math, `effectiveRailOrder` churn tolerance, `imposeSidebarStyle` split branch string-snapshots, `parseRails` defensive reads, round-trips | every pure edge, via `cd tugdeck && bun test` |
+| **Unit** | `railSeamFractions` math, `effectiveRailOrder` churn tolerance, `imposeSidebarStyle` split branch string-snapshots, `flipDelta`/`springKeyframes` vertical scale, `parseRails` defensive reads, round-trips | every pure edge, via `cd tugdeck && bun test` |
 | **Integration (app-test)** | real Tug.app: split via real badge-menu click, live rect tiling, seam persistence, churn survival, re-stack | `at0401`, run by name / `just app-test-changed` |
 | **Golden / Contract** | v4 blob with/without `rails` (and a first-split-era blob with per-entry `order`) parses per Spec S05 | serialization unit tests |
 
@@ -445,7 +489,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 - jsdom render tests of `TugPane`/seam/badge — banned pattern; the app-test drives the real DOM.
 - Mock-store assertions of DeckManager mutations — the mutations are asserted against real geometry in `at0401` (the imposition-plan precedent: DeckManager's constructor needs a live DOM, and tugdeck has no test DOM substrate by design).
-- Mid-drag corridor-exit pointer choreography — the harness's background pointer path cannot honestly express a mid-gesture trajectory exit today. The conversion branch is exercised manually in #step-7's smoke; the *commit surfaces* it lands on (`setRailOrder`, `onCardMoved` + `evictSlot`) are both app-test-asserted through their other callers. Do not fake it with synthetic PointerEvents.
+- Mid-drag corridor-exit pointer choreography — the harness's background pointer path cannot honestly express a mid-gesture trajectory exit today. The conversion branch is exercised manually in #step-8's smoke; the *commit surfaces* it lands on (`setRailOrder`, `onCardMoved` + `evictSlot`) are both app-test-asserted through their other callers. Do not fake it with synthetic PointerEvents.
 - Asserting computed `flex`/property values that restate the stylesheet — assertions are on resulting rects.
 
 ---
@@ -461,30 +505,31 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 | #step-1 | Model + pure geometry in layout-imposer | pending | — |
 | #step-2 | Wire format: rails serialization | pending | — |
 | #step-3 | DeckManager rail API + actions | pending | — |
-| #step-4 | DeckCanvas seam properties, threading, signature | pending | — |
-| #step-5 | TugPane split rendering + split-aware badge | pending | — |
-| #step-6 | Seam element: drag + equalize | pending | — |
-| #step-7 | Corridor drag reorder | pending | — |
-| #step-8 | Layout section rail rows + miniature | pending | — |
-| #step-9 | tuglaws amendments | pending | — |
-| #step-10 | App-test + integration checkpoint | pending | — |
+| #step-4 | FLIP vertical scale in pane-flip | pending | — |
+| #step-5 | DeckCanvas seam properties, threading, signature | pending | — |
+| #step-6 | TugPane split rendering + split-aware badge | pending | — |
+| #step-7 | Seam element: drag + equalize | pending | — |
+| #step-8 | Corridor drag reorder | pending | — |
+| #step-9 | Layout section rail rows + miniature | pending | — |
+| #step-10 | tuglaws amendments | pending | — |
+| #step-11 | App-test + integration checkpoint | pending | — |
 
 #### Step 1: Model + pure geometry in layout-imposer {#step-1}
 
 **Commit:** `tugways(sidebar-split-model): RailArrangement, seam fractions, split member geometry [L06][L09]`
 
-**References:** [P01] per-side arrangement, [P02] shares weights, [P03] effective order, [P04] CSS-derived seams, Spec S01, Spec S02, (#investigation-findings)
+**References:** [P01] per-side arrangement, [P02] shares weights, [P03] effective order, [P04] CSS-derived seams, Risk R06, Spec S01, Spec S02, (#investigation-findings)
 
 **Artifacts:**
 - Every Spec S01 symbol in `tugdeck/src/lib/layout-imposer.ts`; `DeckImposition.rails?`; `imposeSidebarStyle` split branch per Spec S02.
-- `effectiveRailOrder` replacing `sidebarStackOrder` at both call sites (`deck-canvas.tsx` `sidebarRailsOf`, and any other `sidebarStackOrder` importer — grep before deleting; keep the old name as a thin alias only if a third caller makes the rename noisy, otherwise delete it).
+- `effectiveRailOrder` replacing `sidebarStackOrder` at both call sites (`deck-canvas.tsx` `sidebarRailsOf`, and any other `sidebarStackOrder` importer — grep before deleting; keep the old name as a thin alias only if a third caller makes the rename noisy, otherwise delete it). Its docstring carries the caller contract from Spec S01 in full: **the ids must arrive in registration order**, and the reason (the module is pure, and the obvious list to reach for is z-order).
 - The "A shared rail is a stack, not a split" doc comment rewritten: stack by default, user may split, citing the two lived verdicts in one sentence each.
-- Unit tests in `tugdeck/src/lib/__tests__/layout-imposer.test.ts`: the existing "two members on one side are geometrically identical / no vertical term" describes re-scoped to stack mode; new describes for `railSeamFractions` (equal default, weights, renormalization over absentees, degenerate weights → 1, strict monotonicity), `effectiveRailOrder` (stored order wins, absentees appended in registration order, unknown ids filtered), `railSeamProperty` naming, and `imposeSidebarStyle` split string-snapshots (first/middle/last member of 2 and of 3, var fallbacks = equal division, gap split 2.5/2.5, endpoints at 5px/32px).
+- Unit tests in `tugdeck/src/lib/__tests__/layout-imposer.test.ts`: the existing "two members on one side are geometrically identical / no vertical term" describes re-scoped to stack mode; new describes for `railSeamFractions` (equal default, weights, renormalization over absentees, degenerate weights → 1, strict monotonicity), `effectiveRailOrder` (stored order wins, absentees appended in the given order, unknown ids filtered, and — the [R06] twin — a stored order is *not* perturbed by the caller's list changing order), `railSeamProperty` naming, and `imposeSidebarStyle` split string-snapshots (first/middle/last member of 2 and of 3, var fallbacks = equal division, gap split 2.5/2.5, endpoints at 5px/32px).
 
 **Tasks:**
 - [ ] Implement Spec S01 exactly; keep the module pure (no DOM/store/React runtime imports).
 - [ ] Split style emits Spec S02's expressions; `member` absent or `count === 1` → byte-identical output to today (assert with a snapshot equality test against the un-membered call).
-- [ ] Rewrite the two doc comments named above.
+- [ ] Rewrite the two doc comments named above. The `sidebarStackOrder` rewrite must correct the false claim, not just extend it: today's "the map's own key order — which is registration order" describes something the code does not do.
 
 **Tests:**
 - [ ] `cd tugdeck && bun test src/lib/__tests__/layout-imposer.test.ts`
@@ -509,6 +554,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 **Tasks:**
 - [ ] Implement `parseRails` per Spec S05; confirm `serialize()` needs no change (it emits the record whole) and pin the emitted key set in the existing serialize key-set test.
+- [ ] Run `order` entries and `shares` keys through `migrateComponentId`, and cover it: a blob naming a renamed componentId in either place comes back naming the current one.
 
 **Tests:**
 - [ ] The cases above in `serialization`'s test file.
@@ -533,6 +579,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 **Tasks:**
 - [ ] `setRailOrder` filters to registered sidebar componentIds via the registry; `setRailShares` validates positive finite; `equalizeRail` removes the side's `shares` only.
+- [ ] `setRailMode(side, "split")` materializes the side's `order` in the same imposition ([P03], [R06]) — one `_reimpose` carrying both fields, never two commits, so the split arms exactly one settle.
 - [ ] Payload-validation unit tests beside the existing action-dispatch test patterns.
 
 **Tests:**
@@ -544,9 +591,37 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 4: DeckCanvas seam properties, threading, signature {#step-4}
+#### Step 4: FLIP vertical scale in pane-flip {#step-4}
 
-**Depends on:** #step-3
+**Depends on:** #step-1
+
+**Commit:** `tugways(pane-flip-sy): the settle FLIP carries a vertical scale [L06][L13]`
+
+**References:** [P12] the settle must interpolate height, Risk R06, (#investigation-findings)
+
+**Artifacts:**
+- `FlipDelta` in `tugdeck/src/lib/pane-flip.ts` gains `sy` (`last.height > 0 ? first.height / last.height : 1`), read exactly as `sx` reads width; `flipDelta`'s docstring loses the "Height is not read" paragraph and states the new truth — a rail mode flip is an arrangement gesture that moves a frame's vertical edges, which is what the old paragraph said no gesture did.
+- `springKeyframes(dx, dy, sx = 1, sy = 1, samples = SPRING_KEYFRAME_SAMPLES)` — `sy` inserted **before** `samples`, so the existing positional `springKeyframes(10, 0, 1, 4)` calls in `pane-flip.test.ts` move to `(10, 0, 1, 1, 4)`. The transform composes as `translate(...) scaleX(...) scaleY(...)`, each scale term emitted only when it is not 1, so a frame that only moves is tweened by byte-identical keyframes to today's.
+- `deck-canvas.tsx`'s Last pass destructures `sy` and passes it through; its skip test becomes `dx === 0 && dy === 0 && sx === 1 && sy === 1`.
+- `transform-origin` stays `0 0`, which is already correct for both axes: `dx` is measured between left edges and `dy` between tops, so the anchor `sx` already needed is the anchor `sy` needs.
+
+**Tasks:**
+- [ ] Update the three `flipDelta(...)` `toEqual({ dx, dy, sx })` assertions in `pane-flip.test.ts` — they pin the exact object shape and will fail on the new key. That failure is the point: the shape is a contract and this step changes it.
+- [ ] Add the twins: `sy` from a pure height change, `sy === 1` on a zero or absent final height, and keyframe strings for scale-Y-only, scale-both, and move-only (the last asserting today's exact string).
+
+**Tests:**
+- [ ] `cd tugdeck && bun test src/lib/__tests__/pane-flip.test.ts`
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test`
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] Manual: with no rail split anywhere, an N-up swap and a Lens side flip look exactly as they do today (the `sy === 1` path is the everyday path and must be untouched).
+
+---
+
+#### Step 5: DeckCanvas seam properties, threading, signature {#step-5}
+
+**Depends on:** #step-3, #step-4
 
 **Commit:** `tugways(sidebar-split-canvas): seam custom properties, member threading, settle terms [L02][L03][L06]`
 
@@ -554,27 +629,28 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 **Artifacts:**
 - Seam property writes + stale-index sweep in the **existing** inset layout effect (`deck-canvas.tsx` ~the `railWidths` effect) — not a new effect, preserving the declaration-order constraint against the settle's Last-measure effect. The effect's dependency summary string grows per-side `mode` + fraction terms.
-- `sidebarRailsOf` uses `effectiveRailOrder` (done mechanically in #step-1) and its `SidebarRail` gains the side's `mode` and per-member index, so `stackByPaneId` (the `sidebarStack` prop source) grows `{ side, count, mode, memberIndex }`.
-- `arrangementSignature` gains per-side `mode:order:fractions(3dp)` terms sourced from the imposition record (never the panes array — z-blindness preserved).
-- `slotStackByPaneId` threads the rail's mode into the entries (or a parallel prop) so the badge can render mode-appropriately in #step-5.
+- `sidebarRailsOf` uses `effectiveRailOrder` (done mechanically in #step-1) and — the [R06] fix — sorts the componentIds it passes into `getAllRegistrations()` order first, so the fallback order is registration order in fact and not only in the docstring. `SidebarRail` gains the side's `mode` and per-member index, so `stackByPaneId` (the `sidebarStack` prop source) grows `{ side, count, mode, memberIndex }`.
+- `arrangementSignature` gains per-side `mode:order:fractions(3dp)` terms, and its **existing** rail term switches to the effective order for the same reason: sourced from the imposition record and a fixed registration order, never the panes array. This makes the function's documented z-blindness true of the rail term for the first time — today a rail activation changes it and arms an empty settle window. Extend the function's comment to say so.
+- `slotStackByPaneId` threads the rail's mode into the entries (or a parallel prop) so the badge can render mode-appropriately in #step-6, and — [P07] — in split mode builds its rows in **effective rail order** rather than `[...members].reverse()`, with `selected` marking the focused member instead of `topmost`. Stack mode keeps today's topmost-first rows and check exactly.
 
 **Tasks:**
 - [ ] Implement Spec S03 including the removeProperty sweep ([R03]).
-- [ ] Verify by hand in the debug app (HMR): with two sidebars right and `mode: "split"` set via console dispatch of `set-rail-mode`, the container carries `--tug-rail-right-seam-0: 0.5` and both member frames tile the run (frames still render full-run until #step-5 — assert the *properties* here, the frames next step).
+- [ ] Confirm the [R06] fix at the signature: with a split right rail, clicking each member in turn must leave `arrangementSignature` unchanged. Read it in the debug app before and after the click.
+- [ ] Verify by hand in the debug app (HMR): with two sidebars right and `mode: "split"` set via console dispatch of `set-rail-mode`, the container carries `--tug-rail-right-seam-0: 0.5` and both member frames tile the run (frames still render full-run until #step-6 — assert the *properties* here, the frames next step).
 
 **Tests:**
-- [ ] (Geometry asserted in #step-10's app-test; signature growth is exercised by every later manual smoke — a mode flip must visibly settle, not cut.)
+- [ ] (Geometry asserted in #step-11's app-test; signature growth is exercised by every later manual smoke — a mode flip must visibly settle, not cut.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
 - [ ] `cd tugdeck && bunx vite build`
-- [ ] `grep -rn "ResizeObserver" tugdeck/src/lib/layout-imposer.ts` → no matches (the pure module stays pure; the only observer remains the existing settled-resize one)
+- [ ] `grep -c "ResizeObserver" tugdeck/src/components/chrome/deck-canvas.tsx` → the same count as before the step (the settled-resize observer and nothing else). Grepping the pure imposer instead would prove nothing — it never had one.
 
 ---
 
-#### Step 5: TugPane split rendering + split-aware badge {#step-5}
+#### Step 6: TugPane split rendering + split-aware badge {#step-6}
 
-**Depends on:** #step-4
+**Depends on:** #step-5
 
 **Commit:** `tugways(sidebar-split-pane): split member frames, Rows badge, Split/Stack/Equalize verbs [L06][L09]`
 
@@ -582,15 +658,15 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 **Artifacts:**
 - `modeStyle`'s sidebar branch passes `{ member: { side, index, count } }` to `imposeSidebarStyle` when the rail's mode is split and count > 1; the frame gains `data-rail-split` (sibling of `data-lens`) for tests and CSS.
-- Stack badge: glyph `Layers` (stack) vs `Rows2`/`Rows3` (split, by count); menu items appended after the member rows — stack mode: `rail:split` → "Split Vertically"; split mode: `rail:stack` → "Stack", `rail:equalize` → "Equalize Heights". Selection routes `rail:`-prefixed ids to new props (`onSetRailMode(side, mode)`, `onEqualizeRail(side)`) threaded from `deck-canvas.tsx` beside `onRevealPane`, whose handlers dispatch the registered actions; member-row selection stays `onRevealPane` unchanged.
+- Stack badge: glyph `Layers` (stack) vs `Rows2`/`Rows3` (split, by count); menu items appended after the member rows — stack mode: `rail:split` → "Split Vertically"; split mode: `rail:stack` → "Stack", `rail:equalize` → "Equalize Heights". Selection routes `rail:`-prefixed ids straight to `dispatchCommand(TUG_ACTIONS.SET_RAIL_MODE | EQUALIZE_RAIL, …)`, the path `handleSetWidth` already takes for `SET_CARD_WIDTH` — no new props through `deck-canvas`, and the title bar keeps rendering from props alone with `TugPane` owning dispatch. Member-row selection stays `onRevealPane` unchanged.
 - The badge's aria-label reflects the mode ("Stack of N cards" / "Split of N cards").
 
 **Tasks:**
 - [ ] Keep the `slotStack.length > 1` render condition and the open-state force-close guard exactly as they are.
-- [ ] Manual smoke in the debug app: split via the badge, both members visible and tiling; member row click focuses (no reveal needed); Stack returns to today's overlap with a settle, not a cut; Equalize resets a hand-set ratio (ratio-setting arrives in #step-6 — for now assert it no-ops cleanly on default shares).
+- [ ] Manual smoke in the debug app: split via the badge, both members visible and tiling; the rows read top-to-bottom in rail order with the check on the focused member, not on whichever was raised last ([P07]); member row click focuses (no reveal needed); clicking a member does **not** move either frame ([R06]); Stack returns to today's overlap with a settle, not a cut, and both frames change height *under a tween* rather than in one frame ([P12]); Equalize resets a hand-set ratio (ratio-setting arrives in #step-7 — for now assert it no-ops cleanly on default shares).
 
 **Tests:**
-- [ ] (Real-geometry assertions land in #step-10; no jsdom render tests per #test-non-goals.)
+- [ ] (Real-geometry assertions land in #step-11; no jsdom render tests per #test-non-goals.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -598,17 +674,17 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 6: Seam element: drag + equalize {#step-6}
+#### Step 7: Seam element: drag + equalize {#step-7}
 
-**Depends on:** #step-5
+**Depends on:** #step-6
 
 **Commit:** `tugways(sidebar-split-seam): draggable seam between split members [L06][L13]`
 
 **References:** [P05] seam clamp, Spec S02 (seam position), Spec S04, (#investigation-findings — the `handleSidebarResizeStart` template)
 
 **Artifacts:**
-- One seam element per gap per split rail, rendered by `DeckCanvas` into the frames' container: absolutely positioned, horizontal span = the rail's width expression, vertical center = the Spec S02 seam expression; `cursor: row-resize`; visual hairline within a ~10px hit area (CSS in `deck-canvas.css` or beside the pane chrome — implementer's file call, named in the commit).
-- Drag handler following `handleSidebarResizeStart` member-for-member: pointer capture, `DRAG_MOVE_THRESHOLD_PX` latch, rAF apply writing ONE property (`railSeamProperty(side, j)`), zoom-corrected deltas, **no occlusion bracket** (the rail's footprint doesn't change — note this divergence from the template in a comment), JS clamp so both adjacent members hold ≥ their `sizePolicy.min.height` (from `getSizePolicy(componentId)`), commit on pointer-up: convert the final fractions back to weights (untouched members keep their ratios) → `store.setRailShares(side, shares)`; the property stays as the gesture left it so no frame reads a stale value.
+- One seam element per gap per split rail, rendered by `DeckCanvas` into the frames' container: absolutely positioned, horizontal span = the rail's width expression, vertical center = the Spec S02 seam expression, `z-index: RAIL_SEAM_ZINDEX` (Spec S01 — the hit strip overlaps each neighbour, so this is not optional); `cursor: row-resize`; visual hairline within a ~10px hit area (CSS in `deck-canvas.css` or beside the pane chrome — implementer's file call, named in the commit).
+- Drag handler following `handleSidebarResizeStart` member-for-member: pointer capture, `DRAG_MOVE_THRESHOLD_PX` latch, rAF apply writing ONE property (`railSeamProperty(side, j)`), zoom-corrected deltas, **no occlusion bracket** (the rail's footprint doesn't change — note this divergence from the template in a comment), JS clamp so both adjacent members hold ≥ their minimum height — read through `getStackSizePolicy` over the pane's cardIds, the same source `paneRenderWidthOf` and `TugPane`'s own `sizePolicy` use, never a per-componentId lookup that a multi-card rail pane could disagree with — commit on pointer-up: convert the final fractions back to weights (untouched members keep their ratios) → `store.setRailShares(side, shares)`; the property stays as the gesture left it so no frame reads a stale value.
 - Double-click on a seam → `equalizeRail(side)` (dispatch the registered action).
 
 **Tasks:**
@@ -616,7 +692,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 - [ ] Manual smoke: drag clamps at member minimums; window-shrink squeeze is proportional and recovers; relaunch restores the ratio.
 
 **Tests:**
-- [ ] Weight-conversion arithmetic (fractions → weights preserving untouched ratios) as a pure helper unit test in the imposer suite if extracted there (preferred), else covered by #step-10's persistence assertion.
+- [ ] Weight-conversion arithmetic (fractions → weights preserving untouched ratios) as a pure helper unit test in the imposer suite if extracted there (preferred), else covered by #step-11's persistence assertion.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -624,9 +700,9 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 7: Corridor drag reorder {#step-7}
+#### Step 8: Corridor drag reorder {#step-8}
 
-**Depends on:** #step-5
+**Depends on:** #step-6
 
 **Commit:** `tugways(sidebar-split-corridor): title-bar drag reorders within a split rail, converts to free drag outside it [L06][L13]`
 
@@ -634,16 +710,17 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 **Artifacts:**
 - The move-latch branch in `handleDragStart` (`tug-pane.tsx`): when the pane is a split-rail member, latch into **reorder mode** instead of the release path — no `releaseImposedFrame`, no occlusion bracket. Snapshot at latch: the rail's live horizontal band (own frame's rect ± `RAIL_CORRIDOR_SLOP_PX`), each sibling member's rect and paneId (query `[data-rail-split]` frames sharing the side), and the member order.
-- Reorder frame path (rAF, appearance-zone): dragged frame follows the pointer's vertical delta via inline `transform: translateY(...)`; crossing a sibling's midpoint shuffles the preview — siblings take short TugAnimator translate tweens to their would-be positions (`key` distinct from `imposer-flip`), the working order updates.
-- Corridor exit check per frame: pointer x outside the band → run the existing latch body (occlusion begin, `releaseImposedFrame`, `dragStartPosition` re-seed, clear all reorder transforms/tweens) and set the gesture's mode to free — one-way; the remainder of the gesture is byte-for-byte today's free drag, including the `{ evictSlot: true }` drop.
-- Drop in reorder mode: per Risk R02 — keep `data-gesture` through the commit, measure the dragged frame's transformed rect (First), clear sibling preview transforms, call `onSetRailOrder(side, order)` (new prop → `store.setRailOrder`), then FLIP the dragged frame from First to its committed rect via `animate(..., { key: "imposer-flip", slotCancelMode: "snap-to-end", easing: "linear", fill: "none" })` with `springKeyframes` from `lib/pane-flip.ts`, clearing transform + `data-gesture` on finish (both promise arms). No-travel release: unchanged (click / Cmd-click picker).
+- Reorder frame path (rAF, appearance-zone): dragged frame follows the pointer's vertical delta via inline `transform: translateY(...)`; crossing a sibling's midpoint shuffles the preview — siblings take short TugAnimator translate tweens to their would-be positions (`key` distinct from `imposer-flip`), the working order updates. **The translate is the raw pointer delta, unclamped** — see the conversion below for why a clamp here would cost a jump there.
+- Corridor exit check per frame: pointer x outside the band → run the existing latch body (occlusion begin, `releaseImposedFrame`, `dragStartPosition` re-seed) and set the gesture's mode to free — one-way; the remainder of the gesture is byte-for-byte today's free drag, including the `{ evictSlot: true }` drop. **Order is load-bearing and the sequence is: clear the reorder transform and sibling tweens FIRST, then `releaseImposedFrame`, then re-seed.** `releaseImposedFrame` measures `getBoundingClientRect()` — transform-inclusive — and does not clear `transform` itself, so releasing with the translate still on the frame banks the drag offset into `left`/`top` *and* leaves the transform on top of it: the frame doubles its own travel at the conversion. Cleared first, the released rect is the frame's true pin, `clampedPosition` re-adds the full pointer delta from `dragStartPointer`, and the frame lands exactly where the eye last saw it — which holds only while the reorder translate was the unclamped delta. Clamp the translate to the rail run and the conversion jumps by the clamp.
+- Drop in reorder mode: per Risk R02 — `data-gesture` must survive the commit, which means **moving its removal out of the top of `onPointerUp`** for this branch (today it comes off before anything else runs); the free-drag branch keeps today's placement exactly. Then: measure the dragged frame's transformed rect (First), clear sibling preview transforms, call `onSetRailOrder(side, order)` (new prop → `store.setRailOrder`), then FLIP the dragged frame from First to its committed rect via `animate(..., { key: "imposer-flip", slotCancelMode: "snap-to-end", easing: "linear", fill: "none" })` with `springKeyframes` from `lib/pane-flip.ts`, clearing transform + `data-gesture` on finish (both promise arms). No-travel release: unchanged (click / Cmd-click picker).
 - Cmd-drag in a split rail: keeps its move-without-raising meaning in free mode; in reorder mode Cmd changes nothing (reorder never raises).
 
 **Tasks:**
-- [ ] Manual smoke, thorough — this is the feature's soul: reorder 2- and 3-member rails; diagonal drags stay reorders inside the corridor; deliberate drag-out unpins exactly as today; drop mid-shuffle lands the previewed order; a second arrangement change mid-settle doesn't stack tweens; tune `RAIL_CORRIDOR_SLOP_PX` by feel and record the final value in [Q01] if it moves.
+- [ ] Manual smoke, thorough — this is the feature's soul: reorder 2- and 3-member rails; diagonal drags stay reorders inside the corridor; deliberate drag-out unpins exactly as today, **with no jump at the moment of conversion** (that jump is the transform-ordering bug above, and it is the one defect this gesture will actually ship with if nobody watches for it); drop mid-shuffle lands the previewed order; a second arrangement change mid-settle doesn't stack tweens; tune `RAIL_CORRIDOR_SLOP_PX` by feel and record the final value in [Q01] if it moves.
+- [ ] Reorder members whose `shares` differ and confirm the heights stay with their cards: weights are keyed by componentId ([P02]), so a reorder is a pure translate and the `sy` term stays 1. A height change here would mean the shares moved with the position, which is the positional-fractions bug [P02] exists to prevent.
 
 **Tests:**
-- [ ] (Gesture choreography is manual + #step-10's `setRailOrder` geometry assertion per #test-non-goals; keyframe math is already unit-tested in `pane-flip`.)
+- [ ] (Gesture choreography is manual + #step-11's `setRailOrder` geometry assertion per #test-non-goals; keyframe math is already unit-tested in `pane-flip`.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -651,7 +728,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 8: Layout section rail rows + miniature {#step-8}
+#### Step 9: Layout section rail rows + miniature {#step-9}
 
 **Depends on:** #step-3
 
@@ -660,16 +737,16 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 **References:** [P08] layout-section row, Spec S04, (#investigation-findings — the section's sender/preview anatomy)
 
 **Artifacts:**
-- In `layouts-section.tsx`: `RAIL_SENDER_PREFIX = "lens-layouts-rail:"` + caption-id prefix; one row per side with 2+ *visible pinned* members (derive from the deck snapshot the section already subscribes to — `useImposition` grows a sibling read, or the body reads `findSidebarPanes` through the store selector; keep it [L02]); caption `LEFT RAIL` / `RIGHT RAIL`; `TugChoiceGroup` Stack | Split routed in the section's one `SELECT_VALUE` handler to `dispatchCommand(TUG_ACTIONS.SET_RAIL_MODE, { side, mode })`; focus orders after the sidebar groups (extend the `LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER` arithmetic).
+- In `layouts-section.tsx`: `RAIL_SENDER_PREFIX = "lens-layouts-rail:"` + caption-id prefix; one row per side the section's existing `railsOf(imposition, sidebars)` counts 2+ cards on ([P08]) — **no new store read**: the section reads the imposition and the registry and nothing else, and the row must agree with the miniature drawn directly above it, which counts the same way; caption `LEFT RAIL` / `RIGHT RAIL`; `TugChoiceGroup` Stack | Split routed in the section's one `SELECT_VALUE` handler to `dispatchCommand(TUG_ACTIONS.SET_RAIL_MODE, { side, mode })`; focus orders after the sidebar groups (extend the `LAYOUTS_FIRST_SIDEBAR_FOCUS_ORDER` arithmetic).
 - Preview layers `railmode:<side>:<mode>` added to the `layers` array with `data-preview-axis` stamped on the new rows, so hover/keyboard preview works through the existing `setPreview`/`previewIdOf`/MutationObserver machinery unchanged.
 - `LayoutMiniature`: a per-side mode input (extend `MiniatureRails` values or add a `railModes` prop — keep the component presentational, no store reads); a split rail draws its box divided into `count` stacked segments with hairline seams instead of the stacked-paper offset.
 
 **Tasks:**
 - [ ] Verify the collapsed summary stays kind-only (the band has room for one fact — unchanged).
-- [ ] Manual smoke: rows appear only when a side is shared; hover previews the divided rail before committing; keyboard cursor previews the same way; committing settles the real deck.
+- [ ] Manual smoke: a rail row appears for each side two or more sidebar cards are assigned to, open or not — the same population the miniature draws; hover previews the divided rail before committing; keyboard cursor previews the same way; committing settles the real deck. Split a side, close a member, and confirm the row is still there to un-split with.
 
 **Tests:**
-- [ ] (Covered by #step-10's real-click flow; action validation already tested in #step-3.)
+- [ ] (Covered by #step-11's real-click flow; action validation already tested in #step-3.)
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test`
@@ -677,9 +754,9 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 9: tuglaws amendments {#step-9}
+#### Step 10: tuglaws amendments {#step-10}
 
-**Depends on:** #step-5, #step-7
+**Depends on:** #step-6, #step-8
 
 **Commit:** `tuglaws(pane-model): a shared rail is a stack by default; the user may split it`
 
@@ -689,7 +766,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 - `tuglaws/pane-model.md` and `tuglaws/design-decisions.md` amendments per the Documentation Plan, written in the documents' existing voice; the geometry-modes table's pinned row states both rail arrangements and where each lives ([P01]'s record, Spec S02's properties).
 
 **Tasks:**
-- [ ] Read the amended sections against the shipped code from #step-5/#step-7 before committing (review pass; the Files-table sync is part of pane-model.md's own contract).
+- [ ] Read the amended sections against the shipped code from #step-6/#step-8 before committing (review pass; the Files-table sync is part of pane-model.md's own contract).
 
 **Tests:**
 - [ ] N/A (documentation).
@@ -699,21 +776,22 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 ---
 
-#### Step 10: App-test + integration checkpoint {#step-10}
+#### Step 11: App-test + integration checkpoint {#step-11}
 
-**Depends on:** #step-6, #step-7, #step-8, #step-9
+**Depends on:** #step-7, #step-8, #step-9, #step-10
 
 **Commit:** `tests(sidebar-split): app-test for split geometry, seam persistence, churn survival`
 
 **References:** [P04]–[P07], [P10], Spec S02, Spec S05, (#success-criteria, #test-non-goals)
 
 **Artifacts:**
-- `tests/app-test/at0401-sidebar-split.test.ts` with `@covers` for `tugdeck/src/lib/layout-imposer.ts`, `tugdeck/src/deck-manager.ts`, `tugdeck/src/components/chrome/deck-canvas.tsx`, `tugdeck/src/components/chrome/tug-pane.tsx`, `tugdeck/src/components/lens/sections/layouts-section.tsx`. Model fixture/settle discipline on the existing rail suite (`at0230-pinned-lens-geometry`, `at0276-lens-side-persists`).
+- `tests/app-test/at0401-sidebar-split.test.ts` with `@covers` for `tugdeck/src/lib/layout-imposer.ts`, `tugdeck/src/deck-manager.ts`, `tugdeck/src/components/chrome/deck-canvas.tsx`, `tugdeck/src/components/chrome/tug-pane.tsx`, `tugdeck/src/components/lens/sections/layouts-section.tsx`. Not `lib/pane-flip.ts` — #step-4's change is pure math, unit-pinned there, and its visible effect is a tween this test deliberately settles past. Model fixture/settle discipline on the existing rail suite (`at0230-pinned-lens-geometry`, `at0276-lens-side-persists`).
 
 **Tasks:**
 - [ ] Flow: seed Lens + Jots pinned right; open the Jots badge menu (real click on `tug-pane-title-bar-stack-badge`) and select Split Vertically; settle; assert the Success Criteria tiling invariants from live `getBoundingClientRect()` (tops/bottoms/gap/shared width, ±1px); assert `data-rail-split` on both frames.
-- [ ] Seam: drive `setRailShares` via a dispatched gesture-equivalent (or the seam's pointer path if the harness's background pointer can express a short vertical drag — try it first; fall back to the store method through `evalJS` action dispatch, which still exercises `_reimpose` → properties → frames in the real app); assert the two members' heights changed and the third-party member (3-member variant) held its ratio; read the persisted blob (`TUG_APPTEST_JSON`-independent — `GET /api/defaults/dev.tugtool.deck.layout/layout` via the harness's tugbank helper) and assert `rails.right.shares`.
+- [ ] Seam: drive `setRailShares` via a dispatched gesture-equivalent (or the seam's pointer path if the harness's background pointer can express a short vertical drag — try it first; fall back to the store method through `evalJS` action dispatch, which still exercises `_reimpose` → properties → frames in the real app); assert the two members' heights changed and the third-party member (3-member variant) held its ratio; read the persisted blob off disk with the harness's tugbank default reader — `dev.tugtool.deck.layout` / `layout`, exactly as `at0276-lens-side-persists` does at its Phase A disk assertion — and assert `rails.right.shares`.
 - [ ] Reorder: `setRailOrder(["jots","lens"] → flipped)` and assert the members' vertical positions swapped.
+- [ ] Order stability ([R06]): with the rail split, click each member's title bar in turn and assert both frames' rects are unchanged after the settle window. This is the regression that would otherwise ship silently — it looks like a feature until you notice the cards moved.
 - [ ] Churn: close Jots → Lens holds the full run (top ≈ 5px, bottom ≈ canvas − 32px); reopen Jots → split re-applies with prior order/shares.
 - [ ] Re-stack: badge menu → Stack; assert both members' rects are identical again (today's behavior restored).
 - [ ] Seam-clamp: drag/set shares past a member minimum and assert the member holds ≥ its `sizePolicy.min.height`.
@@ -738,7 +816,7 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
 - [ ] Every (#success-criteria) item verified by its named mechanism.
-- [ ] All ten steps' checkpoints green; ledger fully `done` with commit hashes.
+- [ ] All eleven steps' checkpoints green; ledger fully `done` with commit hashes.
 - [ ] tuglaws amendments landed ([D121] + pane-model.md + the new decision).
 - [ ] Live window resize still runs zero geometry JS (structural: split pins are `calc()` over properties; the only observer remains the settled-resize retune).
 
@@ -755,7 +833,8 @@ Read rules (`parseRails` in `serialization.ts`, built field-by-field like `parse
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Pure math correct | `bun test src/lib/__tests__/layout-imposer.test.ts` |
+| Pure math correct | `bun test src/lib/__tests__/layout-imposer.test.ts src/lib/__tests__/pane-flip.test.ts` |
+| Settle carries height | a mode flip tweens both members' heights; everyday gestures keep byte-identical keyframes ([P12]) |
 | Wire contract stable | serialization round-trip + defensive-read + legacy-blob unit tests |
 | Real-app behavior | `just app-test tests/app-test/at0401-sidebar-split.test.ts` |
 | Nothing regressed on the rails | `at0230`, `at0276`, `at0299`, `at0231` green |
