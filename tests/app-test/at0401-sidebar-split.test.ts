@@ -171,6 +171,50 @@ function railZIndexes(app: App): Promise<Record<string, number>> {
   );
 }
 
+/**
+ * What a mode-flip settle is doing to each rail frame: the properties it is
+ * animating, and — when a transform tween runs — whether that tween travels or
+ * merely HOLDS one pose.
+ *
+ * The held case is what a faded frame wears, a static inverse pinning it to the
+ * tile it is leaving, and by property name alone it is indistinguishable from
+ * real motion. So the endpoints have to be compared, or "it does not move"
+ * cannot be asserted at all ([D135]).
+ */
+interface SettleRole {
+  properties: string[];
+  /** `null` when no transform tween is running on the frame. */
+  transformHeld: boolean | null;
+}
+
+async function settleRoles(app: App): Promise<Record<string, SettleRole>> {
+  const raw = await app.evalJS<Record<string, SettleRole>>(
+    `document.getAnimations().reduce(function (out, a) {
+      var t = a.effect && a.effect.target;
+      if (!t || !t.classList || !t.classList.contains("tug-pane")) return out;
+      if (t.getAttribute("data-lens") !== "right") return out;
+      var id = t.getAttribute("data-pane-id") || "";
+      var entry = out[id] || { properties: [], transformHeld: null };
+      var kfs = a.effect.getKeyframes() || [];
+      kfs.forEach(function (kf) {
+        Object.keys(kf).forEach(function (k) {
+          if (k === "offset" || k === "computedOffset") return;
+          if (k === "easing" || k === "composite") return;
+          if (entry.properties.indexOf(k) === -1) entry.properties.push(k);
+        });
+      });
+      if (kfs.length > 1 && kfs[0].transform !== undefined) {
+        entry.transformHeld =
+          String(kfs[0].transform) === String(kfs[kfs.length - 1].transform);
+      }
+      out[id] = entry;
+      return out;
+    }, {})`,
+  );
+  for (const role of Object.values(raw)) role.properties.sort();
+  return raw;
+}
+
 /** The rail members' componentIds in vertical order, top to bottom — the
  *  order the record holds, read off the frames that render it. */
 function railOrderOnScreen(app: App): Promise<string[]> {
@@ -470,10 +514,42 @@ describe.skipIf(!SHOULD_RUN)(
                   ? LENS_PANE
                   : JOTS_PANE;
               const lower = before[upperPane === LENS_PANE ? JOTS_PANE : LENS_PANE];
+              const column = Math.round(
+                before[upperPane].left + before[upperPane].width / 2,
+              );
+
+              // A nudge is not a reorder. The crossing is the middle of the card
+              // being dragged OVER, which no member can reach in 30px — its own
+              // floor is 240 tall. Measured against the run the members would
+              // take with the dragged one lifted out instead, the crossing sits
+              // above the dragged card's own resting middle and the order flips
+              // on the first pixel of travel.
+              await app.nativeDragElement(
+                `${frame(upperPane)} .tug-pane-title-bar`,
+                { x: column, y: Math.round(before[upperPane].top + 44) },
+              );
+              await settled(app);
+              expect(
+                await railOrderOnScreen(app),
+                "a 30px nudge does not trade places with the card below",
+              ).toEqual(orderBefore);
+              {
+                // …and it leaves no residue either: a preview transform the
+                // drop failed to take back off would show up here as a frame
+                // standing somewhere the imposer never put it.
+                const afterNudge = await railRects(app);
+                for (const paneId of [LENS_PANE, JOTS_PANE]) {
+                  expect(
+                    Math.abs(afterNudge[paneId].top - before[paneId].top),
+                    `${paneId} came back to where the nudge found it`,
+                  ).toBeLessThanOrEqual(EPSILON);
+                }
+              }
+
               // Straight down the rail's own column, past the lower member's
               // midpoint — a vertical trajectory never leaves the corridor.
               await app.nativeDragElement(`${frame(upperPane)} .tug-pane-title-bar`, {
-                x: Math.round(before[upperPane].left + before[upperPane].width / 2),
+                x: column,
                 y: Math.round(lower.top + lower.height * 0.75),
               });
               await app.waitForCondition<boolean>(
@@ -574,20 +650,77 @@ describe.skipIf(!SHOULD_RUN)(
               "and the heights the seam drag set",
             ).toBeDefined();
 
-            // ── 6. Stack again: today's behavior, restored exactly. ──
+            // ── 6. Stack again: today's behavior, restored exactly — and the
+            //    collapse grows the card the stack will SHOW. ──
             //
-            // Addressed by rail membership rather than by the seeded pane id:
+            // A stack shows whichever member stands in front, so the frame the
+            // settle grows into the whole run has to be that one. Here the
+            // bottom tile is raised first, which is the single arrangement that
+            // tells the two candidate choreographies apart: pick by rail order
+            // and the top tile grows while the card the user is left looking at
+            // arrives by a cut.
+            //
+            // Addressed by measured position and by rail membership rather than
+            // by the seeded pane id: §4 traded the two members' places, and
             // Jots was closed and reopened above, so it stands in a NEW pane.
             {
-              await app.nativeClickAtElement(
-                `.tug-pane[data-rail-member="jots"] ${BADGE}`,
+              const stacking = Object.entries(await railRects(app)).sort(
+                (a, b) => a[1].top - b[1].top,
               );
+              const upperPane = stacking[0][0];
+              const lowerPane = stacking[1][0];
+              await app.nativeClickAtElement(
+                `${frame(lowerPane)} .tug-pane-title-bar`,
+              );
+              await app.waitForCondition<boolean>(
+                `(function () {
+                  function z(id) {
+                    return parseInt(getComputedStyle(
+                      document.querySelector('.tug-pane[data-pane-id="' + id + '"]')
+                    ).zIndex, 10);
+                  }
+                  return z(${JSON.stringify(lowerPane)}) > z(${JSON.stringify(
+                    upperPane,
+                  )});
+                })()`,
+                { timeoutMs: 5_000 },
+              );
+              await settled(app);
+
+              await app.nativeClickAtElement(`${frame(lowerPane)} ${BADGE}`);
               await waitForMenu(app, true);
               expect(
                 await rowLabels(app),
                 "a split rail offers the other two verbs",
               ).toContain("Equalize Heights");
               await clickMenuRow(app, "Stack");
+
+              // Mid-window, before anything has landed: exactly one frame moves,
+              // and it is the front one. The other fades where it stands.
+              await app.waitForCondition<boolean>(
+                `document.querySelector("[data-imposer-settling]") !== null`,
+                { timeoutMs: 2_000 },
+              );
+              {
+                const roles = await settleRoles(app);
+                expect(
+                  roles[lowerPane]?.properties,
+                  "the front member crosses by real geometry — and does not fade, because it never leaves",
+                ).toEqual(["height", "transform"]);
+                expect(
+                  roles[lowerPane]?.transformHeld,
+                  "and it really travels: the bottom tile has a top edge to carry up the rail",
+                ).toBe(false);
+                expect(
+                  roles[upperPane]?.properties,
+                  "the retiring member only fades",
+                ).toEqual(["opacity", "transform"]);
+                expect(
+                  roles[upperPane]?.transformHeld,
+                  "its transform is a hold, not a slide — a fading card that also moves is the distraction this pins out",
+                ).toBe(true);
+              }
+
               await waitForSplitFrames(app, 0);
               const restacked = Object.values(await railRects(app));
               expect(restacked.length, "both members still stand").toBe(2);
@@ -605,6 +738,15 @@ describe.skipIf(!SHOULD_RUN)(
                 Math.abs(a.bottom - (vp.h - GAP_BOTTOM)),
                 "across the whole run, exactly as an unsplit rail",
               ).toBeLessThanOrEqual(EPSILON);
+
+              // Two frames the browser cannot tell apart is exactly why this
+              // matters: z-order is the only thing left deciding which card the
+              // user sees, and collapsing may not quietly change the answer.
+              const zStacked = await railZIndexes(app);
+              expect(
+                zStacked[lowerPane] > zStacked[upperPane],
+                "the stack shows the card the split showed in front",
+              ).toBe(true);
             }
           } finally {
             await app.close().catch(() => undefined);

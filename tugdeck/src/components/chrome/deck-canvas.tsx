@@ -359,6 +359,26 @@ function inlineRestorer(
  */
 const RAIL_SEAM_HIT_PX = 10;
 
+/**
+ * Which of `rail`'s members stands in front of the others — the one a STACK
+ * shows, and the one a split's own picker checkmarks.
+ *
+ * Read off `state.panes` because that array's order IS the deck's z-order (the
+ * thing `activateCard` moves), and the rail band's z-indices are packed from
+ * it. Reading the rendered `z-index` back instead would answer the same
+ * question one commit later; this way an arming settle sees the order the
+ * commit it is crossing already wrote.
+ */
+function railFrontmostPaneId(
+  state: DeckState,
+  rail: SidebarRail,
+): string | undefined {
+  const ids = new Set(rail.members.map((member) => member.paneId));
+  let frontmost: string | undefined;
+  for (const pane of state.panes) if (ids.has(pane.id)) frontmost = pane.id;
+  return frontmost;
+}
+
 /** The shortest each member of `rail` may be, in order — read through the same
  *  stack policy the pane's own chrome uses, so a multi-card rail pane cannot
  *  disagree with itself about its floor. */
@@ -1623,19 +1643,25 @@ export function DeckCanvas(_props: DeckCanvasProps) {
    * Which frames a rail mode flip fades rather than moves, computed when the
    * settle arms and consumed by the Last pass.
    *
-   * A faded frame is **never** also a moved one. The rail's TOP member is the
-   * only frame a mode flip moves: its top-left corner and its width are the
-   * same on both sides of the gesture, so only its bottom edge travels, and it
-   * crosses by its real height. Every other member is arriving somewhere it
-   * has never been (split) or leaving for somewhere it will not be seen
-   * (stack) — there is no path between those two places worth watching, and
-   * animating one is a card sliding across the rail for no reason. So they
-   * fade, and hold still while they do.
+   * A faded frame is **never** also a moved one. Exactly one member survives a
+   * mode flip on screen, and it is the only frame that moves; every other one
+   * is arriving somewhere it has never been (split) or leaving for somewhere it
+   * will not be seen (stack). There is no path between those two places worth
+   * watching, and animating one is a card sliding across the rail for no
+   * reason. So they fade, and hold still while they do.
    *
-   * The basis is rail ORDER, not z-order. Both members of a stack draw the
-   * same rect, so which of them is in front is invisible until the flip; if it
-   * decided which frame moved, the same gesture would animate a different card
-   * depending on what the user last clicked.
+   * The survivor is the rail's **z-frontmost** member, because that is the one
+   * a stack actually shows: stacked members all draw the same rect and z-order
+   * alone decides which of them you see. Picking by rail order instead would
+   * animate the top tile into the full run while the card the stack goes on to
+   * display is a different one entirely — the growth would belong to a frame
+   * that ends up hidden, and the visible card would arrive by a cut.
+   *
+   * The survivor is therefore not always the top tile, and on the way out of a
+   * split it may have to travel: a frontmost BOTTOM member crosses up to the
+   * run's top as it grows. That is a real translate plus a real height tween —
+   * no smear either way ([D135]) — so the correct card being the moving one
+   * costs nothing but the motion the eye was already expecting.
    */
   const settleFadePlanRef = useRef<Map<string, "in" | "out">>(new Map());
   /** Each rail's mode as of the last settle, so a mode flip is detectable
@@ -1753,12 +1779,12 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         }
       }
 
-      // A rail whose mode flipped moves its TOP member and fades every other
-      // one — `settleFadePlanRef` says why the basis is rail order rather
-      // than z-order. `rail.members` is already in effective rail order, so
-      // the top member is simply the first. Skipped under reduced motion with
-      // the rest of the choreography, but the mode record always advances —
-      // a stale record would read the next flip against the wrong shore.
+      // A rail whose mode flipped moves the one member the stack shows and
+      // fades every other one — `settleFadePlanRef` says why the survivor is
+      // the z-frontmost rather than the top tile. Skipped under reduced motion
+      // with the rest of the choreography, but the mode record always
+      // advances — a stale record would read the next flip against the wrong
+      // shore.
       const fadePlan = settleFadePlanRef.current;
       fadePlan.clear();
       const rails = sidebarRailsOf(state);
@@ -1768,7 +1794,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           const prevMode = prevModes.get(rail.side);
           if (prevMode === undefined || prevMode === rail.mode) continue;
           if (rail.members.length < 2) continue;
-          for (const member of rail.members.slice(1)) {
+          const survivor = railFrontmostPaneId(state, rail);
+          for (const member of rail.members) {
+            if (member.paneId === survivor) continue;
             fadePlan.set(member.paneId, rail.mode === "split" ? "in" : "out");
           }
         }

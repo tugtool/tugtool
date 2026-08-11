@@ -2266,21 +2266,47 @@ export function TugPane({
     const delta = (pointer.y - dragStartPointer.current.y) / zoom;
     frame.style.transform = `translateY(${delta}px)`;
 
-    // Where the dragged member's middle now is, against where its siblings
-    // would sit if it were lifted out of the rail entirely. That comparison is
-    // stable frame to frame — the siblings' own preview positions depend on the
-    // order being computed, and reading them here would chase its own tail.
-    const centre = dragged.top + delta + dragged.height / 2;
-    const others = state.order.filter(
-      (componentId) => componentId !== state.dragging,
-    );
-    let top = state.runTop;
+    // A member changes places when the dragged frame covers HALF of it: the
+    // threshold is the crossed member's own middle, and what crosses it is the
+    // dragged frame's leading edge — its bottom going down, its top going up.
+    //
+    // Both terms are resting geometry, the tiles the members held when the drag
+    // latched. Those are the edges the eye is reading, and reading them keeps
+    // the predicate stable frame to frame and monotone in the pointer delta;
+    // the siblings' LIVE preview positions are the answer being computed, so
+    // consulting them would chase its own tail.
+    //
+    // Two things it must not be. Not the run the siblings would take with the
+    // dragged member lifted OUT — that pulls every sibling up by the dragged
+    // member's whole height, which on a two-member rail puts the crossing above
+    // the dragged card's own resting middle and flips the order before the hand
+    // has moved. And not middle against middle: with members of different
+    // heights that fires only once the dragged card has travelled PAST the
+    // place the swap will put it, so the shuffle snaps backwards under the
+    // hand. Half-overlap always fires short of the destination, by the same
+    // fraction in both directions, whatever the two heights are.
+    //
+    // Which edge leads is decided by resting position rather than by the sign
+    // of the delta — a sibling the dragged member started above is passed by
+    // travelling down over it, and that stays true no matter which way the hand
+    // is moving at this instant. Direction read off the delta would let a
+    // wobble at the crossing swap the leading edge and toggle the order.
+    const top = dragged.top + delta;
+    const bottom = top + dragged.height;
+    const others: string[] = [];
     let index = 0;
-    for (const componentId of others) {
-      const member = state.members.find((m) => m.componentId === componentId);
-      const height = member?.height ?? 0;
-      if (centre > top + height / 2) index += 1;
-      top += height + IMPOSITION_GAP_PX;
+    for (const member of state.members) {
+      if (member.componentId === state.dragging) continue;
+      others.push(member.componentId);
+      const middle = member.top + member.height / 2;
+      // Counting the siblings that end up ABOVE the dragged member: a resting
+      // neighbour stays above until the dragged frame's top edge has cleared
+      // its middle, and one resting below moves above once the dragged frame's
+      // bottom edge has covered its middle. `state.members` is in resting top
+      // order, so that count IS the insertion index.
+      if (member.top < dragged.top ? top >= middle : bottom > middle) {
+        index += 1;
+      }
     }
     const next = [...others];
     next.splice(index, 0, state.dragging);
