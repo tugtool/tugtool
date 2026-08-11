@@ -895,7 +895,22 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
               event.preventDefault();
               event.stopImmediatePropagation();
             } else if (focusManager.currentFocusModeEscapeExits()) {
-              focusManager.escapeCurrentMode();
+              // Escape while the cycle's ring PARKS a text stop grants the
+              // caret right there ([P12]) — the ring says "you are here" and
+              // Escape says "stop steering": together, type here, mode off.
+              // The same clear-then-grant sequence the printable branch runs:
+              // clearing the bit first makes the settle's re-landing a GRANT
+              // (mode off ⇒ nothing parks), so caret and ring never coexist.
+              // Without this rung the Escape fell through to the cycle pop,
+              // which landed the caret at the card's RESTING editor — the
+              // composer / the file body — instead of the ringed find field.
+              // Non-text stops keep the pop: they have no caret to grant.
+              if (focusManager.hasParkedTextStop()) {
+                focusManager.setKbfManual(false);
+                focusManager.grantParkedTextStop();
+              } else {
+                focusManager.escapeCurrentMode();
+              }
               event.preventDefault();
               event.stopImmediatePropagation();
             } else {
@@ -917,7 +932,15 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
             //      branch precisely so it can never pre-empt a dismissable
             //      surface: while any surface is open its mode is current, and
             //      Escape belongs to it (R02).
+            //
+            //      Clear-then-grant, the printable branch's sequence: with the
+            //      bit cleared the settle re-lands the key view, and a text
+            //      stop's landing is a caret grant (mode off ⇒ nothing parks),
+            //      so Escape with the ring on a text stop leaves the caret
+            //      blinking right there. The grant self-guards, so a non-text
+            //      stop simply leaves the mode.
             focusManager.setKbfManual(false);
+            focusManager.grantParkedTextStop();
             event.preventDefault();
             event.stopImmediatePropagation();
           }

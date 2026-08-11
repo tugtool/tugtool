@@ -100,10 +100,12 @@ export interface UseCycleModeResult {
   /**
    * Exit cycling if active (caret returns to the editor). Reached programmatically
    * via the editor text-stop's Return-descend. A bare Escape while a cycle stop
-   * holds the ring also exits cycling, but through the engine directly (the
-   * `escapeExits` mode disposition pops the cycle), not this function — the resting
-   * caret lands the same way (off the `cycling` flip → `restingFocus`). The other
-   * exits are the ⌥⇥ `toggle` and the mouse-exit rule below.
+   * holds the ring also exits cycling, through the engine rather than this
+   * function — at a NON-text stop the `escapeExits` disposition pops the cycle
+   * and the resting caret lands off the `cycling` flip (`restingFocus`); at a
+   * PARKED TEXT stop the Escape is a caret GRANT at that stop ([P12]), and
+   * every landing here yields to it. The other exits are the ⌥⇥ `toggle` and
+   * the mouse-exit rule below.
    */
   exit: () => void;
   /** Wrap the card's cycle-able zones so they register into this mode. */
@@ -201,7 +203,14 @@ export function useCycleMode({
     if (prevCyclingRef.current && !cycling) {
       const byPointer = manager?.kbfClearedByPointer() ?? false;
       manager?.setKbfManual(false);
-      if (!byPointer) restingFocusRef.current?.();
+      // A dom-granted route at this point means the exit already landed a
+      // caret — a grant at a parked text stop (Escape / a printable at the
+      // find bar's query field), or `exit()`'s own realization of the restored
+      // editor. Either way the keyboard is home; `restingFocus` would move a
+      // caret somebody just placed.
+      if (!byPointer && manager?.keyboardRoute() !== "dom-granted") {
+        restingFocusRef.current?.();
+      }
     }
     prevCyclingRef.current = cycling;
   }, [cycling, manager]);
@@ -244,11 +253,29 @@ export function useCycleMode({
   const exit = useCallback(() => {
     if (ctx === null) return;
     if (ctx.currentFocusMode() !== scopeId) return;
-    // Pop restores the captured prior key view (the editor); land DOM focus on
-    // it so the caret returns.
+    // A caret GRANTED at a cycle stop survives the exit ([P12]) — Escape or a
+    // printable at a parked text stop (the find bar's query field) grants the
+    // caret there, and that grant IS the exit's landing. The pop restores the
+    // pre-cycle key view (the editor), so re-assert the granted stop after it
+    // rather than focusing the restored one — otherwise the exit machinery
+    // yanks the caret the user just asked for back to the resting editor.
+    const grantedKeyView =
+      manager !== null && manager.keyboardRoute() === "dom-granted"
+        ? manager.keyView()
+        : null;
     ctx.popFocusMode(scopeId);
-    ctx.focusKeyView();
-  }, [ctx, scopeId]);
+    if (grantedKeyView !== null && manager !== null) {
+      manager.place(
+        cardId,
+        { kind: "focusable", id: grantedKeyView },
+        { modality: "keyboard" },
+      );
+    } else {
+      // Pop restored the captured prior key view (the editor); land DOM focus
+      // on it so the caret returns.
+      ctx.focusKeyView();
+    }
+  }, [ctx, scopeId, manager, cardId]);
 
   // ⌥⇥ no longer flips a card-local notion of cycling: it sets the deck-global
   // manual bit, and the mirror effect below turns that into this card's

@@ -338,6 +338,11 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
             /* The host owns its card-state-preservation slot; a transient
                find field must not stash editor state into the card bag. */
             preserveState={false}
+            /* And it must not churn the card's engine-hooks set either:
+               registering hooks on mount re-fires the card's `applyBagFocus`
+               restore, which replays the SAVED focus target — yanking the
+               caret ⌘F just placed here back to the card's editor. */
+            suppressCardEngineHooks
             focusGroup={focusGroup}
             focusOrder={focusOrderBase + FIND_STOP_QUERY}
             extensions={findBarExtensions}

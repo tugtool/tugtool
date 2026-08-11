@@ -1474,6 +1474,32 @@ export class FocusContext {
         if (store === null || !store.hasEngineHooks(this.cardId)) {
           return "unrealized";
         }
+        // The D11 yield, engine edition: when the card ALREADY holds live DOM
+        // focus — a caret in its find bar's query field, not the parked key
+        // sink — the claim's word is already true, and invoking the hook
+        // would yank that caret to the card's PRIMARY editor. The framework
+        // branch has carried this yield since the dispatcher unified; the
+        // engine branch went without only because a transient in-card editor
+        // used to shadow the primary hook by accident.
+        if (typeof document !== "undefined") {
+          const root = document.querySelector(
+            `[data-card-id="${cssEscapeId(this.cardId)}"]`,
+          );
+          const active = document.activeElement;
+          if (
+            root !== null &&
+            active !== null &&
+            active !== document.body &&
+            root.contains(active) &&
+            !(
+              active instanceof HTMLElement &&
+              active.closest(`[${KEY_SINK_ATTRIBUTE}]`) !== null
+            )
+          ) {
+            this.route = this.classifyRoute(target);
+            return "placed";
+          }
+        }
         this.route = this.classifyRoute(target);
         store.invokeEnginePaintMirrorAsActive(this.cardId);
         return "placed";

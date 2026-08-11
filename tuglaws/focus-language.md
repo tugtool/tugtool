@@ -96,7 +96,7 @@ Four derivation inputs are not four gestures, and the difference is where this g
 | ⌥⇥ again, from a parked stop | the toggle's other half |
 | `Escape` at the base mode with the manual bit set | rung (6) of the ladder — the Lens / diff-card case, where there is no cycle mode for rung (5) to pop |
 | Any `pointerdown` in the deck | *using the mouse leaves keyboard mode.* One document listener, so it covers cards with no cycle scope too |
-| A printable character at a parked text stop | the grant ([P12]) — the character asks for the caret, and a caret is mode OFF |
+| A printable character — or `Escape` — at a parked text stop | the grant ([P12]) — the keystroke asks for the caret, and a caret is mode OFF. **The caret lands where the ring stands**, never at the card's resting editor: Escape with the ring parked on the find bar's query field leaves the caret blinking in the query field. This holds at rung (5) (the grant pre-empts the cycle pop) and at rung (6) alike, and the exit machinery yields to it — a cycle pop re-asserts a granted stop rather than focusing the restored pre-cycle key view, and `restingFocus` declines when the route is already `dom-granted` |
 | The trapped surface closes | **derived, so nothing has to fire.** The input simply stops holding |
 | The key card changes away from a `kbfAtRest` card | same — the input stops holding |
 | A cycle mode is popped (`useCycleMode`'s exit) | the cycle clears the bit it set |

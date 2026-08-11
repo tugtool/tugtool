@@ -210,6 +210,7 @@ const activeRowExpr = `(() => {
 // bar is not a walk of its own: its controls sit between the Z4 toolbar
 // (0…7) and the Z2 status cells (12…), which is where the bar sits on screen.
 const CYCLE_GROUP = "session-prompt-cycle";
+const FIND_ORDER_QUERY = 8;
 const FIND_ORDER_OPTIONS = 9;
 const FIND_ORDER_PREVIOUS = 10;
 const FIND_ORDER_NEXT = 11;
@@ -504,10 +505,11 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
 
         // --- 7. The bar's controls are stops in the CARD's one cycle, in the
         //        card's own reading order — between the Z4 toolbar and the Z2
-        //        status cells, which is where the bar physically sits. Tab out
-        //        of an EMPTY field enters that cycle at the field's own seat
-        //        and steps, so this is the same walk ⌥⇥ opens, not a second
-        //        one. ---
+        //        status cells, which is where the bar physically sits. The
+        //        door into that walk from a caret is ⌥⇥ ([P07]/[P09]): a Tab
+        //        in a CM6 caret belongs to the editor, empty or not — the
+        //        emptiness-conditioned handoff is one of the three ambient
+        //        mechanisms the mode division deleted. ---
         await app.waitForCondition<boolean>(queryFieldHasCaret, {
           timeoutMs: 8000,
         });
@@ -543,7 +545,22 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
                .sort((a, b) => a - b).join(",")`,
           ),
           "the find bar's four stops occupy 8…11 in the card's cycle group",
-        ).toBe(`0,1,4,5,6,7,8,9,10,11,${EDITOR_ORDER}`);
+          // 4 and 6 are gaps by design: slot 4 is the off-code-route chip
+          // (Cwd / Changes, never mounted on the code route this fixture
+          // seeds) and slot 6's Effort chip merged into the AI chip in the
+          // Z4B diet. The constants keep their places — the grid describes
+          // the SHAPE of the toolbar row — and the walk skips what is not
+          // mounted.
+        ).toBe(`0,1,5,7,8,9,10,11,${EDITOR_ORDER}`);
+
+        // ⌥⇥ engages the cycle AT the query field's own seat — entering keeps
+        // the key view where the keyboard already is, and the landing is a
+        // MOVEMENT, so the field's stop parks: ring, no caret ([P12]).
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_QUERY}`)}`,
+          { timeoutMs: 6000 },
+        );
 
         for (const order of [
           FIND_ORDER_OPTIONS,
@@ -574,17 +591,23 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           { timeoutMs: 6000 },
         );
 
-        // --- 7b. A field the walk ARRIVED at spends Tab exactly like a field
-        //         that was clicked into. Walking back to the query field leaves
-        //         the caret there with the cycle already up — and the next Tab
-        //         must still move rather than fall through to `indentWithTab`
-        //         and type a tab character into the query. ---
+        // --- 7b. A text stop the walk ARRIVES at is PARKED — ring, no caret
+        //         ([P12]). Walking back to the query field must NOT hand the
+        //         field the caret (that is the grant's job: Return, Escape, or
+        //         a printable), so the next Tab still belongs to the walk and
+        //         moves on rather than falling through to `indentWithTab` and
+        //         typing a tab character into the query. ---
         await app.nativeKey("Tab", ["shift"]);
         await app.nativeKey("Tab", ["shift"]);
         await app.nativeKey("Tab", ["shift"]);
-        await app.waitForCondition<boolean>(queryFieldHasCaret, {
-          timeoutMs: 6000,
-        });
+        await app.waitForCondition<boolean>(
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_QUERY}`)}`,
+          { timeoutMs: 6000 },
+        );
+        expect(
+          await app.evalJS<boolean>(queryFieldHasCaret),
+          "a walked-to text stop parks — the ring, not the caret",
+        ).toBe(false);
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(
           `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${FIND_ORDER_OPTIONS}`)}`,
@@ -625,17 +648,32 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           { timeoutMs: 8000 },
         );
 
-        // --- 9. The same rule with the bar CLOSED: Tab in an empty composer
-        //        is a movement key into the card's cycle, and ⇧Tab goes the
-        //        other way. This is the half that has to work in the ordinary
-        //        card, not just when find is up. ---
+        // --- 9. The same doors with the bar CLOSED, in the ordinary card. A
+        //        Tab in the composer's caret belongs to the composer, empty or
+        //        not — the emptiness-conditioned handoff is deleted. ⌥⇥ is the
+        //        door: it engages the cycle AT the editor's own stop, which
+        //        parks ([P12] movement), and Escape at that parked text stop
+        //        grants the caret straight back rather than leaving the
+        //        keyboard nowhere. ---
         await clearComposer(app);
         await app.nativeKey("Tab");
+        await new Promise((r) => setTimeout(r, 400));
+        expect(
+          await app.evalJS<boolean>(
+            `(() => {
+              const el = document.querySelector(${JSON.stringify(EDITOR)});
+              return el !== null && el.contains(document.activeElement);
+            })()`,
+          ),
+          "Tab in an empty composer caret stays with the composer",
+        ).toBe(true);
+        await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(
-          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:0`)}`,
+          `${FOCUS_KEY_EXPR} === ${JSON.stringify(`${CYCLE_GROUP}:${EDITOR_ORDER}`)}`,
           { timeoutMs: 6000 },
         );
-        // Escape ascends back out of the cycle and the caret returns.
+        // Escape at the parked editor stop grants the caret back where the
+        // ring stands — no detour through a resting-focus default.
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
           `(() => {
@@ -644,28 +682,12 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           })()`,
           { timeoutMs: 8000 },
         );
-        // ⇧Tab enters the same order from the other side — the stop BEFORE the
-        // editor, which here is the PULSE label or the last live Z2 cell.
-        // Asserted by ELEMENT, not by focus key: only stops authored with a
-        // group stamp `data-tug-focus-key`, and the Z2 cells do not, so a key
-        // comparison would read `""` off a perfectly good landing. The claim
-        // is that a ring exists and it is not the editor the caret came from.
-        await app.nativeKey("Tab", ["shift"]);
-        await app.waitForCondition<boolean>(
-          `(() => {
-            const kv = document.querySelector('[data-key-view]');
-            const caret = document.querySelector(${JSON.stringify(EDITOR)});
-            return kv !== null && caret !== null && !kv.contains(caret);
-          })()`,
-          { timeoutMs: 6000 },
-        );
 
         // A NON-empty composer keeps Tab for itself — the field takes the key
         // back the moment there is something to indent. If Tab had moved the
         // keyboard the entry would have stood down and DOM focus would sit on
         // a stop or the key sink, so "the caret is still here" is the whole
         // assertion.
-        await app.nativeKey("Escape");
         await app.nativeClickAtElement(EDITOR);
         await app.nativeType("x");
         await new Promise((r) => setTimeout(r, 200));
@@ -688,7 +710,7 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
   );
 
   test(
-    "arrows leave the query field, one default button is lit, and the query is an editor like the composer",
+    "arrows stay in the query field's caret, one default button is lit, and the query is an editor like the composer",
     async () => {
       const app = await launchTugApp({ testName: "at0339-find-bar-language" });
       try {
@@ -781,23 +803,19 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           "the keyboard left the query field, so Find Next gives up the ring",
         ).toBe(false);
 
-        // --- 10. Arrows leave the query field in both directions. The bar's
-        //         stops are in the card's trapped cycle; a released arrow walks
-        //         the document pipeline's mode-bounded order, which holds none
-        //         of them — so the host's arrow handoff is the only thing that
-        //         makes this move at all. An empty field pays no latch press.
-        const ringOutsideBar = `(() => {
-          const kv = document.querySelector('[data-key-view]');
-          const bar = document.querySelector(${JSON.stringify(FIND_BAR)});
-          return kv !== null && bar !== null && !bar.contains(kv);
-        })()`;
-
+        // --- 10. Arrows STAY in the query field, empty or not ([KBF] mode
+        //         division). The old arrow-release policy — an empty field's
+        //         first discrete arrow press walked the keyboard out — was one
+        //         of the three ambient mechanisms the mode division deleted:
+        //         mode OFF, a caret owns all four arrows unconditionally, and
+        //         the way out of the field is ⌥⇥ (park) or Tab (the walk),
+        //         never a bare arrow.
         for (const direction of ["Down", "Up"] as const) {
           await app.nativeClickAtElement(FIND_INPUT);
           await app.waitForCondition<boolean>(queryFieldHasCaret, {
             timeoutMs: 8000,
           });
-          // Empty, so the arrow is an exit on the first discrete press.
+          // Empty — the exact state the deleted policy keyed on.
           await app.nativeKey("a", ["cmd"]);
           await app.nativeKey("Backspace");
           await app.waitForCondition<boolean>(
@@ -806,12 +824,17 @@ describe.skipIf(!SHOULD_RUN)("AT0339: the ⌘F transcript find bar", () => {
           );
 
           await app.nativeKey(`Arrow${direction}`);
-          await app.waitForCondition<boolean>(ringOutsideBar, {
-            timeoutMs: 6000,
-          });
+          // Give a would-be walk a beat to move, then assert nothing did.
+          await new Promise((r) => setTimeout(r, 400));
           expect(
             await app.evalJS<boolean>(queryFieldHasCaret),
-            `${direction} out of an empty query field leaves the field`,
+            `${direction} in an empty query field keeps the caret — a caret owns its arrows`,
+          ).toBe(true);
+          expect(
+            await app.evalJS<boolean>(
+              `document.documentElement.hasAttribute("data-kbf")`,
+            ),
+            "a bare arrow in a caret never engages keyboard-focus mode",
           ).toBe(false);
         }
       } finally {

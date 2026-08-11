@@ -266,6 +266,11 @@ export function captureDomSelection(
  */
 const COMPONENT_OWNED_SELECTORS: readonly string[] = [
   '[data-slot="tug-text-editor"]',
+  // The Text card's editor is its own substrate (not a `TugTextEditor`), and
+  // its host carries a `data-tug-focus-key` (it is a cycle stop) — without
+  // this entry a caret there captures as `{ kind: "dom" }`, and any restore
+  // replay places that focus-key as a hard grant into the editor.
+  '[data-slot="tug-text-card-editor"]',
   // Legacy marker kept so existing focus-classifier tests built around
   // synthetic DOM continue to exercise the lookup logic; nothing in the
   // production tree writes this attribute now that the legacy substrate

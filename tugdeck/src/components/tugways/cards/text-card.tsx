@@ -119,22 +119,21 @@ import { TUG_ACTIONS } from "../action-vocabulary";
  */
 const TEXT_CARD_CYCLE_GROUP = "text-card-cycle";
 
-/** The status strip's line-ending popup; the file-type popup takes the next slot. */
-const TEXT_CARD_CYCLE_ORDER_LINE_ENDING = 0;
 /**
  * The find bar's four consecutive stops — query field, the two navigation
- * arrows, the options control.
+ * arrows, the options control ([D122]) — walked before the status strip
+ * because the bar sits above it: the walk reads the card downward from the
+ * editor, the same order the Session card teaches (find 8…11, status 12…16).
  */
 const TEXT_CARD_CYCLE_ORDER_FIND_BASE = 4;
+/** The status strip's line-ending popup; the file-type popup takes the next slot. */
+const TEXT_CARD_CYCLE_ORDER_LINE_ENDING = 8;
 /**
- * **The editor is LAST, and the order is load-bearing rather than taste.**
- * The lowest order in a group is what the engine seeds when the group's
- * membership changes, and this editor is a responder with a focus CONTRACT —
- * so seeding it does not merely ring it, it GRANTS it real DOM focus. With the
- * editor at 0, opening the find bar re-seeded the group and the grant pulled
- * the caret straight back out of the query field ([P06] `grantTextSurface`).
- * A control-first order puts a ring-only stop in the seat instead, which is
- * why the Session card's editor sits last too.
+ * The editor is LAST, matching the Session card. The lowest order in a group
+ * is the engine's seed seat when the group's membership changes, and this
+ * editor is a responder with a focus CONTRACT — a seed landing on it GRANTS
+ * real DOM focus rather than merely ringing ([P06] `grantTextSurface`), so a
+ * ring-only stop holds that seat instead.
  *
  * ⌥⇥ still rings the editor when the caret is in it: entering a mode keeps the
  * key view where the keyboard already is rather than seeding
@@ -1105,7 +1104,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
          * opening a walk of their own ([P10]) — the Session card wires its bar
          * the same way. */}
         {findOpen ? (
-          <>
+          <cycle.CycleScope>
             <TextCardFindBar
               ref={findBarRef}
               getDelegate={() => editorRef.current}
@@ -1114,7 +1113,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
               focusGroup={TEXT_CARD_CYCLE_GROUP}
               focusOrderBase={TEXT_CARD_CYCLE_ORDER_FIND_BASE}
             />
-          </>
+          </cycle.CycleScope>
         ) : null}
         <cycle.CycleScope>
           <TextCardStatusBar

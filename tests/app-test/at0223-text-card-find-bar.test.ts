@@ -262,6 +262,38 @@ describe.skipIf(!SHOULD_RUN)("AT0223: text card bottom find bar", () => {
         );
         await waitForChip(app, "1 of 2");
 
+        // ⌥⇥ from the query caret engages KBF at the field's own stop — the
+        // stop PARKS (ring, no caret) — and Escape at that parked text stop
+        // grants the caret straight back into the query field ([P12]): the
+        // ring says "you are here", Escape says "stop steering". The bar
+        // stays open — the grant consumed the Escape before the field's own
+        // Escape-closes keymap could see it.
+        await app.nativeKey("Tab", ["alt"]);
+        await app.waitForCondition<boolean>(
+          `(() => {
+            const input = document.querySelector(${JSON.stringify(INPUT_SELECTOR)});
+            return input !== null && !input.contains(document.activeElement) &&
+              document.documentElement.hasAttribute("data-kbf");
+          })()`,
+          { timeoutMs: 6000 },
+        );
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `(() => {
+            const input = document.querySelector(${JSON.stringify(INPUT_SELECTOR)});
+            return input !== null && document.activeElement !== null &&
+              input.contains(document.activeElement) &&
+              !document.documentElement.hasAttribute("data-kbf");
+          })()`,
+          { timeoutMs: 6000 },
+        );
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(BAR_SELECTOR)}) !== null`,
+          ),
+          "the grant consumed the Escape — the bar survives it",
+        ).toBe(true);
+
         // Escape closes the bar and clears the decorations.
         await app.nativeClickAtElement(INPUT_SELECTOR);
         await app.nativeKey("Escape");

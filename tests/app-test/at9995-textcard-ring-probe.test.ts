@@ -118,6 +118,24 @@ describe.skipIf(!SHOULD_RUN)("AT9995: text card KBF walk", () => {
         await app.nativeKey("Tab", ["alt"]);
         note("A. after ⌥⇥ again: " + (await app.evalJS<string>(STATE)));
 
+        // ---- Focus-call tracing across ⌘F ----
+        await app.evalJS(`(() => {
+          window.__at9995 = [];
+          const log = [];
+          window.__at9995FocusLog = log;
+          const orig = HTMLElement.prototype.focus;
+          HTMLElement.prototype.focus = function (...args) {
+            const stack = (new Error().stack || "").split("\\n").slice(1, 10).join(" | ");
+            log.push({
+              t: Math.round(performance.now()),
+              el: ((this.getAttribute && (this.getAttribute("data-testid") || this.getAttribute("data-slot"))) ||
+                this.className || this.tagName).toString().slice(0, 44),
+              stack,
+            });
+            return orig.apply(this, args);
+          };
+        })()`);
+
         // ---- Bar OPEN ----
         await app.nativeKey("f", ["cmd"]);
         await app.waitForCondition<boolean>(
@@ -125,9 +143,77 @@ describe.skipIf(!SHOULD_RUN)("AT9995: text card KBF walk", () => {
           { timeoutMs: 8000 },
         );
         note("B. after ⌘F: " + (await app.evalJS<string>(STATE)));
+        const focusLog = await app.evalJS<string>(
+          `JSON.stringify(window.__at9995FocusLog || [])`,
+        );
+        for (const entry of JSON.parse(focusLog) as Array<{
+          t: number;
+          el: string;
+          stack: string;
+        }>) {
+          note(`B. focus@${entry.t} → ${entry.el}`);
+          note(`   ${entry.stack}`);
+        }
+        const placeLog = await app.evalJS<string>(
+          `JSON.stringify(window.__at9995 || [])`,
+        );
+        for (const entry of JSON.parse(placeLog) as Array<{
+          t: number;
+          target: unknown;
+          cardId: unknown;
+          opts: unknown;
+          stack: string[];
+        }>) {
+          note(
+            `B. place@${entry.t} target=${JSON.stringify(entry.target)} card=${String(entry.cardId)} opts=${JSON.stringify(entry.opts)}`,
+          );
+          note(`   ${entry.stack.join(" | ")}`);
+        }
+        // ---- Pointer click on a cluster control while the caret is in the
+        // query field: does the caret survive? (at0223's Case-toggle step.)
+        await app.nativeType("alpha");
+        await app.nativeClickAtElement(
+          `${CARD} [data-slot="text-card-find-bar"] button[aria-label="Match case"]`,
+        );
+        note("C. after Case click: " + (await app.evalJS<string>(STATE)));
+        const clickFocusLog = await app.evalJS<string>(
+          `JSON.stringify((window.__at9995FocusLog || []).slice(-4))`,
+        );
+        for (const entry of JSON.parse(clickFocusLog) as Array<{
+          t: number;
+          el: string;
+          stack: string;
+        }>) {
+          note(`C. focus@${entry.t} → ${entry.el}`);
+          note(`   ${entry.stack}`);
+        }
+        await app.nativeKey("Return");
+        note(
+          "C. chip after Return: " +
+            (await app.evalJS<string>(
+              `(document.querySelector('${CARD} [data-slot="find-count"] [data-slot="find-count-value"]') || {textContent: "(none)"}).textContent`,
+            )) +
+            " " +
+            (await app.evalJS<string>(STATE)),
+        );
+
         await app.nativeKey("Tab", ["alt"]);
         note("B. after ⌥⇥: " + (await app.evalJS<string>(STATE)));
         await walk(app, "B.", 8);
+
+        // ---- D: Escape at a parked TEXT stop grants the caret there ----
+        // The walk above left the ring on the query field (Tab 8). Escape must
+        // land the caret in the QUERY FIELD, not the card's editor.
+        await app.nativeKey("Escape");
+        note("D. Escape at parked query stop: " + (await app.evalJS<string>(STATE)));
+
+        // Control: ring on a NON-text stop still pops to the resting editor.
+        await app.nativeKey("Tab", ["alt"]);
+        note("D. after ⌥⇥ (from query caret): " + (await app.evalJS<string>(STATE)));
+        // Walk until the ring sits on the line-ending button (non-text stop).
+        await walk(app, "D.", 4);
+        await app.nativeKey("Escape");
+        note("D. Escape at button stop: " + (await app.evalJS<string>(STATE)));
 
         expect(true).toBe(true);
       } finally {
