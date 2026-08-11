@@ -32,8 +32,11 @@
  *
  * The pane's whole controls cluster renders over this tier — the slot-stack
  * badge, the `…` section menu, the width control, and the close X — and the
- * summary widget below stands on that same row rather than replacing any of
- * them. The width control was suppressed here for a while on the argument that
+ * summary widget stands IN that row rather than replacing any of them: it is
+ * portaled into a host the pane renders directly after the badge, so the pane
+ * decides where it sits and this component decides what it says. Beside the
+ * cluster rather than in it, it sat ahead of the badge, which leads that row.
+ * The width control was suppressed here for a while on the argument that
  * the title row was already identity plus a widget; the Session card is the
  * pane whose width is retuned most often, so that left the control missing from
  * the one surface that most wanted it.
@@ -66,6 +69,7 @@ import "./masthead-frame.css";
 import "./session-masthead.css";
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { Summary } from "lucide-react";
 
 import {
@@ -131,6 +135,17 @@ export interface SessionMastheadProps {
    * workspace facts — a pane fact the pane already holds, not session state.
    */
   cardId?: string;
+  /**
+   * Where the telemetry widget mounts: a host element the pane renders inside
+   * its control cluster, after the stack badge. The widget is the masthead's —
+   * its trigger, its popover, its session facts — but its PLACE is the pane's,
+   * and the pane is the only thing that knows what else stands in that row.
+   *
+   * Absent or null (the frame before the host mounts) → no widget. It is not
+   * rendered in place instead: in place means absolutely positioned against the
+   * cluster, which is exactly the arrangement that put it ahead of the badge.
+   */
+  accessoryHost?: HTMLElement | null;
 }
 
 /** How many recent pulses the activity line's popover lists. */
@@ -415,6 +430,7 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
 export function SessionMasthead({
   sessionId,
   cardId,
+  accessoryHost = null,
 }: SessionMastheadProps): React.ReactElement {
   // The project dir behind this chrome. Read from the card binding — a pane
   // fact — rather than carried on the identity record, which deliberately
@@ -598,6 +614,18 @@ export function SessionMasthead({
       {/*
         The telemetry widget: everything identity deliberately does not say.
 
+        PORTALED into the pane's control cluster, where it stands as an ordinary
+        member of that row rather than as a box positioned against it. What it
+        SAYS is the masthead's — the session's state, turns, branch, citation —
+        and what it stands beside is the pane's, so the pane hands over a host
+        and the content comes from here. Before that it was absolute, pinned to
+        the cluster's measured width, which meant it always sat one place ahead
+        of the stack badge and the masthead's title line had to reserve a 28px
+        box by hand.
+
+        The React tree is unchanged by the portal — this subtree still reads the
+        masthead's stores and still bubbles into it ([D132]).
+
         A POPOVER, not a placard. `TugPlacard` renders in place and asks its
         caller to own the vertical axis inside a positioned ancestor — a
         contract a 72px chrome tier with `overflow: hidden` cannot honour, so
@@ -606,6 +634,7 @@ export function SessionMasthead({
         and positions itself against this button, which is what every other
         chrome affordance in the masthead already does.
       */}
+      {accessoryHost !== null && createPortal(
       <TugPopover dismissOnChainActivity={false}>
         <TugPopoverTrigger>
           <button
@@ -709,7 +738,9 @@ export function SessionMasthead({
             </div>
           </TugPopupListFrame>
         </TugPopoverContent>
-      </TugPopover>
+      </TugPopover>,
+      accessoryHost,
+      )}
     </div>
   );
 }

@@ -64,6 +64,15 @@
  *      Session card: it describes the slot rather than the card, and it is the
  *      only way into the panes behind it.
  *
+ *   G. **The badge leads that cluster, and the masthead's own control follows
+ *      it.** The telemetry widget is the one thing a card contributes to the
+ *      row of controls, and it was absolutely positioned against the cluster's
+ *      measured width — correct arithmetic, wrong place: it landed ahead of the
+ *      badge, so the control that says WHERE YOU ARE came second on the one card
+ *      that has both. It is portaled into the cluster now, and this asserts both
+ *      halves of that: containment (a member of the row, not a box beside it)
+ *      and the left edges (the badge first).
+ *
  * Nothing here hangs off an animation: background app-test windows run no
  * rAF, so every assertion reads settled geometry.
  *
@@ -759,6 +768,43 @@ describe.skipIf(!SHOULD_RUN)("at0375 — the Session card's masthead", () => {
              ' [data-testid="tug-pane-title-bar-stack-badge"]')).visibility`,
         );
         expect(visible).toBe("visible");
+
+        // And the badge LEADS the cluster — including here, where the masthead
+        // contributes a control of its own. The telemetry widget used to be
+        // positioned against the cluster rather than inside it, which put it
+        // ahead of the badge on the one card that has both.
+        //
+        // Read as geometry AND as containment: the left edges answer what the
+        // eye sees, and `contains` answers whether the widget is a member of
+        // the row or a box parked beside it, which is the thing that regressed.
+        const order = await app.evalJS<{
+          inCluster: boolean;
+          badgeLeft: number;
+          widgetLeft: number;
+          badgeIsFirst: boolean;
+        }>(
+          `(function(){
+            var pane = document.querySelector(${JSON.stringify(PANE)});
+            var cluster = pane.querySelector('.tug-pane-title-bar-controls');
+            var badge = pane.querySelector(
+              '[data-testid="tug-pane-title-bar-stack-badge"]');
+            var widget = pane.querySelector(
+              '[data-slot="session-masthead-widget"]');
+            var boxes = Array.prototype.filter.call(
+              cluster.querySelectorAll('button'),
+              function(el){ return el.getBoundingClientRect().width > 0; });
+            return {
+              inCluster: cluster.contains(widget),
+              badgeLeft: Math.round(badge.getBoundingClientRect().left),
+              widgetLeft: Math.round(widget.getBoundingClientRect().left),
+              badgeIsFirst: boxes.length > 0 && badge.contains(boxes[0]),
+            };
+          })()`,
+        );
+        note("cluster order", JSON.stringify(order));
+        expect(order.inCluster, "the widget stands IN the control row").toBe(true);
+        expect(order.badgeIsFirst, "the badge leads the row").toBe(true);
+        expect(order.widgetLeft).toBeGreaterThan(order.badgeLeft);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

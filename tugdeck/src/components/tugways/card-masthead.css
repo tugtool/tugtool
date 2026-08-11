@@ -54,11 +54,12 @@
    and the description. The third runs the full width, which is the whole point
    of the frame's pull.
 
-   The session's terms do not carry over. There is no trailing-inset
-   compensation — a document masthead sets no trailing inset, having no tape to
-   seat under the controls' ink — and no 28px widget term, having no telemetry
-   widget beside the name. What is left is the cluster the pane measures, plus
-   one gap of air. */
+   The session's one extra term does not carry over: there is no trailing-inset
+   compensation, a document masthead setting no trailing inset, having no tape
+   to seat under the controls' ink. What is left — the cluster the pane
+   measures, plus one gap of air — is exactly what the session tier reserves
+   too, now that its telemetry widget stands inside the measured cluster
+   instead of beside it. */
 .card-masthead-row .tug-session-row-name-line,
 .card-masthead-row .tug-session-row-description {
   padding-inline-end: calc(

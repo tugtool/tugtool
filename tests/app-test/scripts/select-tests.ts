@@ -147,7 +147,12 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // a paint rule. A change to that predicate is exactly what would break this
     // test, so leaving it undeclared would mean the one edit most likely to
     // break it could not select it.
-    "tugdeck/src/components/tugways/focus-manager.ts": 65,
+    //
+    // 65 → 66 with at0396 (Open Quickly's arrow keys). The overlay is a text
+    // field with a list under it, and which of the two an arrow reaches is a
+    // route decision — the same predicate at0345 points at, arrived at from the
+    // other side. An edit to the navigator is the edit that would break it.
+    "tugdeck/src/components/tugways/focus-manager.ts": 66,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the

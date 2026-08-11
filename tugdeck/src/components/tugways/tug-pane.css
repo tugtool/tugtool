@@ -677,8 +677,27 @@ body {
 }
 
 /*
+ * Where a masthead's own chrome affordance mounts — today the Session card's
+ * telemetry widget, portaled in by the masthead that owns it.
+ *
+ * `display: contents`, so the host is a MOUNT POINT and not a box: whatever is
+ * portaled in becomes a member of the cluster's own row, laid out and centered
+ * exactly like the pane's controls beside it, and an empty host on a pane with
+ * no accessory generates nothing at all.
+ *
+ * Its POSITION in the cluster is the point of it. The widget used to be
+ * absolutely positioned against the cluster's outer edge, which put it ahead of
+ * the stack badge; here it falls after the badge and before the rest, which is
+ * the order the cluster wants — where you are, then what you can do.
+ */
+.tug-pane-title-bar-accessory {
+  display: contents;
+}
+
+/*
  * Slot-stack badge — the depth of the stack this pane stands in, and the
- * trigger for the picker that switches between them.
+ * trigger for the picker that switches between them. It LEADS the cluster; see
+ * the mount order in `tug-pane.tsx`.
  *
  * It is the one control in this cluster that is not square: its icon-only
  * neighbours sit their 14px glyph in a 28px box (7px a side, `padding: 0`),

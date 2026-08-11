@@ -406,6 +406,13 @@ function CardTitleBar({
   // transient UI the title bar owns, and the deck never hears about it.
   const [stackMenuOpen, setStackMenuOpen] = useState(false);
 
+  // Where a masthead's own chrome affordance mounts: an empty host inside the
+  // control cluster, directly AFTER the stack badge. Held as state rather than
+  // in a ref because the masthead portals into it and must re-render once the
+  // node exists.
+  const [controlsAccessoryEl, setControlsAccessoryEl] =
+    useState<HTMLElement | null>(null);
+
   // The open state must not outlive the badge. `slotStack.length` can drop to
   // 1 while the picker is up — a peer in the slot closes, a drag evicts one, a
   // kind change clamps a slot — and the trigger would then unmount open: the
@@ -650,12 +657,23 @@ function CardTitleBar({
           key={masthead.sessionId}
           sessionId={masthead.sessionId}
           cardId={activeCardId}
+          // Its telemetry widget stands in the pane's control cluster, not
+          // beside it — see the host below.
+          accessoryHost={controlsAccessoryEl}
         />
       )}
 
       <div ref={controlsElRef} className="tug-pane-title-bar-controls" data-testid="tug-pane-title-bar-controls">
-        {/* The slot's depth at rest, and the way into the panes behind this
-            one. The condition is `slotStack.length > 1` and nothing else — no
+        {/* FIRST, on every pane that has one. The badge is the one control here
+            that is about the pane's PLACE rather than about the pane, and a
+            control that reports where you are belongs at the head of the row it
+            leads — read left to right, the cluster then says "one of two, and
+            here is what you can do to it". Leading is also the only position
+            that holds still: the badge comes and goes as cards stack, and each
+            of the controls behind it can be absent on a given card, so a badge
+            anywhere else in the row would sit at a different offset per card.
+
+            The condition is `slotStack.length > 1` and nothing else — no
             "am I on top?" test, which would need a second cross-pane fact the
             title bar does not have. Every pane in the stack renders it,
             because the badge describes the SLOT and a pane the user can see is
@@ -707,6 +725,22 @@ function CardTitleBar({
             data-testid="tug-pane-title-bar-stack-menu"
           />
         )}
+        {/* The masthead's own chrome affordance — the Session card's telemetry
+            widget — mounts HERE, portaled in by the masthead that owns it. It
+            used to be absolutely positioned against this cluster's measured
+            width, which put it left of the stack badge: the one control the
+            cluster wants to lead with sat second whenever a Session card stood
+            in a stack. Inside the flow it lands after the badge and before the
+            rest, and the cluster's measured width accounts for it, so the
+            masthead's lines no longer reserve its box by hand.
+
+            `display: contents` — an empty host contributes no box, so a pane
+            with no masthead accessory is laid out exactly as before. */}
+        <span
+          ref={setControlsAccessoryEl}
+          className="tug-pane-title-bar-accessory"
+          data-slot="tug-pane-title-bar-accessory"
+        />
         {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
           <TugPopupMenu
             trigger={

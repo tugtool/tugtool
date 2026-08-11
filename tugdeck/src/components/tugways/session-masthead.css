@@ -47,18 +47,23 @@
   );
 }
 
-/* The title line shares its band with the pane's controls and the telemetry
-   widget, so it alone stops short of both: the cluster, its start margin, the
-   widget's 28px box, and one gap of air.
+/* The title line shares its band with the pane's control cluster, so it alone
+   stops short of it: the cluster and its start margin.
+
+   The telemetry widget used to be a third term — a hand-typed 28px box and a
+   gap, for a control absolutely positioned beside the cluster. The widget now
+   stands INSIDE the cluster, so the pane's own measurement of it covers the
+   widget too and the literal is gone. A measured width beats a typed one for
+   the usual reason: it cannot be left behind when the box it describes moves.
 
    Less the trailing inset, which the column above already charges every line:
    the inset exists to seat the TAPE under the controls' ink, and the title's
-   stop is measured from the widget it must clear. Left uncompensated the two
+   stop is measured from the cluster it must clear. Left uncompensated the two
    would compound and the name would truncate a whole inset early. */
 .session-masthead-row .tug-session-row-name-line {
   padding-inline-end: calc(
-    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) + 28px +
-      var(--tug-space-xs) - var(--tugx-session-row-trailing-inset)
+    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) -
+      var(--tugx-session-row-trailing-inset)
   );
 }
 
@@ -289,17 +294,15 @@
 
 /* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
 .session-masthead-widget {
-  position: absolute;
-  /* Squared to the pane controls standing immediately beside it: the same
-     14px glyph in the same 28px box, centered in the same first chrome band.
-     At 22px in a box pinned to the tier's top it read 7px high of the chevron
-     and the close box — one row of controls that did not line up. */
-  inset-block-start: calc((var(--tug-chrome-height) - 28px) / 2);
-  /* The masthead's box now ends at the card's padding edge; the widget's
-     place is unchanged — immediately left of the pane's control cluster. */
-  inset-inline-end: calc(
-    var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs)
-  );
+  /* IN the pane's control cluster, portaled there by the masthead — so its
+     seat is that row's and not this file's. It was absolutely positioned
+     against the cluster's measured width, which read correctly and stood in the
+     wrong place: ahead of the stack badge, the one control that leads the row.
+     The cluster centers its members in the first chrome band, which is the
+     alignment the old `inset-block-start` was computing by hand.
+
+     Squared to the controls it now stands among: the same 14px glyph in the
+     same 28px box. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
