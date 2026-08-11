@@ -250,11 +250,31 @@ const REACH_MAX = 1.75;
  * mark: it cannot afford to half-disappear on every cycle.
  *
  * So the swing narrows as the glyph shrinks, to this at {@link SMALL_SIZE} and
- * under — a modulation rather than a full breath. The motion is still legible
- * down there because the shed ring is carrying most of it; the dot's job at
- * these sizes is to stay a dot.
+ * under. The amplitude it gives up at the bottom it takes back at the top, where
+ * there are pixels to spend — see {@link SMALL_PEAK}.
  */
 const SMALL_TROUGH = 0.7;
+
+/**
+ * The small treatment's peak — the dot grows PAST its own diameter at the top of
+ * the breath, and the ring is shed off that swollen edge.
+ *
+ * The big glyph tops out at 1: at 32px the dot is already 19px and the box's
+ * remaining 40% is the ring's runway, so growing the dot would only eat the
+ * distance the pulse has to travel. Small, both of those facts invert. A 6px dot
+ * held to its own diameter at the top of a shallow trough barely moves at all —
+ * the swing is under three pixels of diameter, which the eye reads as a static
+ * mark that a ring happens to leave. And the runway is not in the box anyway;
+ * {@link REACH_MAX} already sends the ring outside it.
+ *
+ * So the small dot swells instead. At 1.5 a 6px dot runs 4.2px → 9px, a swing
+ * you cannot miss, and the ignition catches it near the top — so the ring
+ * springs from a dot that is visibly at its largest, which is the gesture.
+ */
+const SMALL_PEAK = 1.5;
+
+/** The big treatment's peak — the dot's own diameter, unchanged. */
+const DOT_SCALE_MAX = 1;
 
 /**
  * Everything about the glyph that cannot be one number across a 10px–40px
@@ -271,24 +291,29 @@ const SMALL_TROUGH = 0.7;
  *     and out past it at the small end, where the box is not far enough away to
  *     be worth traveling to.
  *   - **scaleMin** — the trough of the breath. A deep swing at the big end, a
- *     shallow modulation at the small one, where the dot cannot spare the
- *     pixels and the ring is carrying the motion anyway.
+ *     shallow one at the small end, where the dot cannot spare the pixels at the
+ *     bottom.
+ *   - **scaleMax** — the top of the breath. The dot's own diameter at the big
+ *     end, and past it at the small end, where the amplitude has to come from
+ *     somewhere and the top is where the pixels are.
  *   - **birth** — where the dot's edge is when the spark fires. Falls out of
- *     the other two; it is here so it cannot drift from them.
+ *     the other three; it is here so it cannot drift from them.
  *
- * All four are published as `-auto` variables so an override from above still
- * wins (see the stylesheet's note on the knobs), and all four resolve to the
+ * All five are published as `-auto` variables so an override from above still
+ * wins (see the stylesheet's note on the knobs), and all five resolve to the
  * stylesheet's own defaults at {@link BIG_SIZE} and up.
  */
 export function sizeGeometry(size: number): {
   ratio: number;
   reach: number;
   scaleMin: number;
+  scaleMax: number;
   birth: number;
 } {
   const t = smallness(size);
   const ratio = DOT_RATIO + (SMALL_DOT_RATIO - DOT_RATIO) * t;
   const scaleMin = DOT_SCALE_MIN + (SMALL_TROUGH - DOT_SCALE_MIN) * t;
+  const scaleMax = DOT_SCALE_MAX + (SMALL_PEAK - DOT_SCALE_MAX) * t;
   const atIgnition = breathAt(
     DEFAULT_BREATH_TURN,
     DEFAULT_BREATH_TURN - EMIT_ADVANCE,
@@ -297,11 +322,12 @@ export function sizeGeometry(size: number): {
     ratio,
     reach: 1 + (REACH_MAX - 1) * t,
     scaleMin,
+    scaleMax,
     // Where the dot's edge actually is when the spark fires. It moves with the
-    // ratio and the trough, so it is derived here rather than left to the
-    // stylesheet's big-size default — otherwise a small ring is born beside the
-    // dot instead of on it.
-    birth: ratio * (scaleMin + (1 - scaleMin) * atIgnition),
+    // ratio and both ends of the swing, so it is derived here rather than left
+    // to the stylesheet's big-size default — otherwise a small ring is born
+    // inside the dot it is supposed to be peeling off.
+    birth: ratio * (scaleMin + (scaleMax - scaleMin) * atIgnition),
   };
 }
 
@@ -398,6 +424,7 @@ export function breathKeyframes(turn: number, prefix: string): string {
   const EXPAND_STOPS = 12;
   const ignition = turn - EMIT_ADVANCE;
   const TROUGH = "var(--tugx-progress-pulsing-dot-trough-resolved)";
+  const PEAK = "var(--tugx-progress-pulsing-dot-peak-resolved)";
   const BIRTH = "var(--tugx-progress-pulsing-dot-birth-resolved)";
   const REACH = "var(--tugx-progress-pulsing-dot-reach-resolved)";
   const pose = (scale: string): string =>
@@ -407,7 +434,11 @@ export function breathKeyframes(turn: number, prefix: string): string {
   const at = (p: number): void => {
     const v = breathAt(turn, p);
     const scale =
-      v <= 0 ? TROUGH : v >= 1 ? "1" : `calc(${TROUGH} + (1 - ${TROUGH}) * ${stop(v)})`;
+      v <= 0
+        ? TROUGH
+        : v >= 1
+          ? PEAK
+          : `calc(${TROUGH} + (${PEAK} - ${TROUGH}) * ${stop(v)})`;
     breathe.push(`  ${stop(p * 100)}% {\n${pose(scale)}\n  }`);
   };
   for (let i = 0; i <= RISE_STOPS; i++) at((turn * i) / RISE_STOPS);
@@ -591,8 +622,12 @@ function breathClock(dot: HTMLElement): { phase: number; period: number } | null
  * from nowhere at near-full opacity, which is the pop this function exists to
  * avoid, arriving by another door.
  */
-function breathPhaseFor(scale: number, scaleMin: number): number {
-  const span = 1 - scaleMin;
+function breathPhaseFor(
+  scale: number,
+  scaleMin: number,
+  scaleMax: number,
+): number {
+  const span = scaleMax - scaleMin;
   const value =
     span <= 0 ? 0 : Math.min(1, Math.max(0, (scale - scaleMin) / span));
   const phase = (DEFAULT_BREATH_TURN * Math.acos(1 - 2 * value)) / Math.PI;
@@ -765,9 +800,10 @@ export const TugProgressPulsingDot = React.forwardRef<
   forwardedRef,
 ) {
   // The two treatments and everything derived from the size ([sizeGeometry]).
-  const { ratio, reach, scaleMin, birth } = sizeGeometry(size);
-  // The dot's box is its full-scale diameter; the breath scales it down
-  // from there, so the running glyph never grows past the box.
+  const { ratio, reach, scaleMin, scaleMax, birth } = sizeGeometry(size);
+  // The dot's box is its settled diameter; the breath scales it from there —
+  // down at every size, and up past it at the small treatment ([SMALL_PEAK]),
+  // where the swell paints outside the box the way the ring already does.
   const dotSizePx = size * ratio;
   // The state's share of the box ([SETTLED_PRESENCE]). Published as a variable
   // so the static ring can size itself from it in CSS without a second source
@@ -792,6 +828,7 @@ export const TugProgressPulsingDot = React.forwardRef<
     ["--tugx-progress-pulsing-dot-static-scale" as string]: `${staticScale}`,
     ["--tugx-progress-pulsing-dot-emit-reach-auto" as string]: `${reach.toFixed(4)}`,
     ["--tugx-progress-pulsing-dot-dot-scale-min-auto" as string]: `${scaleMin.toFixed(4)}`,
+    ["--tugx-progress-pulsing-dot-dot-scale-max-auto" as string]: `${scaleMax.toFixed(4)}`,
     ["--tugx-progress-pulsing-dot-emit-birth-auto" as string]: `${birth.toFixed(4)}`,
   };
 
@@ -1129,7 +1166,8 @@ export const TugProgressPulsingDot = React.forwardRef<
 
     if (previous !== "running" && isRunning) {
       const live = liveScale(dot);
-      const phase = live === null ? 0 : breathPhaseFor(live, scaleMin);
+      const phase =
+        live === null ? 0 : breathPhaseFor(live, scaleMin, scaleMax);
       // Work resuming while the last settle's pulse is still in the air — the
       // ordinary way work resumes, since a pulse travels most of a cycle. Two
       // of the glyph's rules apply here and they point opposite ways: a lit
@@ -1152,7 +1190,7 @@ export const TugProgressPulsingDot = React.forwardRef<
     dot.style.transform = dotPose(isRunning ? 1 : staticScale);
     if (isRunning) ensureEmitter();
     else armDemotion();
-  }, [state, staticScale, scaleMin, mode, size]);
+  }, [state, staticScale, scaleMin, scaleMax, mode, size]);
 
   React.useEffect(
     () => () => {

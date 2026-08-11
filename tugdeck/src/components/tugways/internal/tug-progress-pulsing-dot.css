@@ -46,7 +46,16 @@
  * glyph, and a 0.35 trough there is a 2.5px dot — a pulse that twitches and a
  * breath that reads as blinking out. So the component ramps `--…-emit-reach`
  * past the box (to 1.75× at 16px and under) and narrows `--…-dot-scale-min` to
- * 0.7. See `sizeGeometry` and `presenceScale` in the component.
+ * 0.7.
+ *
+ * A narrow trough alone leaves the small dot barely moving, so the amplitude it
+ * gives up at the bottom it takes back at the top: `--…-dot-scale-max` ramps to
+ * 1.5 at 16px and under, and the small dot SWELLS past its own diameter rather
+ * than only shrinking below it. The ring is lit 3% before that peak, so it
+ * springs off a dot at its largest. Big is unchanged — the peak there is 1, the
+ * dot's own diameter, because at 32px the box's remaining 40% is the ring's
+ * runway and a swollen dot would only eat it. See `sizeGeometry` and
+ * `presenceScale` in the component.
  *
  * Presence: `--tugx-progress-pulsing-dot-presence` is the state's share of the
  * box, set by the component from its ladder. `running` is 1 — the breath and
@@ -90,8 +99,8 @@
  * from one turn value.
  *
  *  - `tugx-progress-pulsing-dot-breathe` — the dot, `--…-dot-scale-min`
- *    → `1` → back. The stops run 0 → 1 → 0 across the cycle, a cosine leg
- *    up and a cosine leg down.
+ *    → `--…-dot-scale-max` → back. The stops run 0 → 1 → 0 across the cycle, a
+ *    cosine leg up and a cosine leg down.
  *
  *  - `tugx-progress-pulsing-dot-emit-expand` — the ring's radius,
  *    `--…-emit-birth` → the reach. Parked flat at the birth radius through
@@ -172,7 +181,8 @@
 
   /* --- The knobs are NOT declared here. -------------------------------------
 
-     `--…-dot-scale-min`, `--…-emit-birth`, `--…-emit-opacity`,
+     `--…-dot-scale-min`, `--…-dot-scale-max`, `--…-emit-birth`,
+     `--…-emit-opacity`,
      `--…-pulse-weight` and the three `--…-ease` curves carry their defaults as
      `var()` FALLBACKS at the point each is consumed, not as declarations in
      this rule. That is deliberate and it is load-bearing.
@@ -479,6 +489,10 @@
     --tugx-progress-pulsing-dot-dot-scale-min,
     var(--tugx-progress-pulsing-dot-dot-scale-min-auto, 0.35)
   );
+  --tugx-progress-pulsing-dot-peak-resolved: var(
+    --tugx-progress-pulsing-dot-dot-scale-max,
+    var(--tugx-progress-pulsing-dot-dot-scale-max-auto, 1)
+  );
   --tugx-progress-pulsing-dot-birth-resolved: var(
     --tugx-progress-pulsing-dot-emit-birth,
     var(--tugx-progress-pulsing-dot-emit-birth-auto, 0.5905)
@@ -516,61 +530,61 @@
     transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-trough-resolved));
   }
   3.75% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.0381));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.0381));
   }
   7.5% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
   }
   11.25% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3087));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3087));
   }
   15% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
   }
   18.75% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6913));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6913));
   }
   22.5% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
   }
   26.25% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.9619));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.9619));
   }
   30% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-peak-resolved));
   }
   35.8333% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.983));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.983));
   }
   41.6667% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.933));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.933));
   }
   47.5% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.8536));
   }
   53.3333% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.75));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.75));
   }
   59.1667% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6294));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.6294));
   }
   65% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.5));
   }
   70.8333% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3706));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.3706));
   }
   76.6667% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.25));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.25));
   }
   82.5% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.1464));
   }
   88.3333% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.067));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.067));
   }
   94.1667% {
-    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (1 - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.017));
+    transform: translate(-50%, -50%) scale(calc(var(--tugx-progress-pulsing-dot-trough-resolved) + (var(--tugx-progress-pulsing-dot-peak-resolved) - var(--tugx-progress-pulsing-dot-trough-resolved)) * 0.017));
   }
   100% {
     transform: translate(-50%, -50%) scale(var(--tugx-progress-pulsing-dot-trough-resolved));

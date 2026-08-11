@@ -49,6 +49,10 @@ const SMALL_DOT_RATIO = 0.5;
 const TROUGH_RATIO = 0.35;
 /** The small treatment's trough — a shallow modulation, not a full breath. */
 const SMALL_TROUGH = 0.7;
+/** The big treatment's peak — the dot's own diameter. */
+const PEAK_RATIO = 1;
+/** The small treatment's peak — the dot swells past its own diameter. */
+const SMALL_PEAK = 1.5;
 
 /** A size in the big treatment — every size derivation inert here. */
 const BIG_SIZE = 32;
@@ -77,6 +81,25 @@ const scaleAt = (fraction: number) => `(function(){
   anims.forEach(function (a) { a.pause(); a.currentTime = duration * ${fraction}; });
   var m = new DOMMatrixReadOnly(getComputedStyle(dot).transform);
   return m.a;
+})()`;
+
+/**
+ * The top of the breath for the glyph {@link scaleAt} reads — the scale the dot
+ * reaches at the turn.
+ *
+ * It is not 1 at every size: the small treatment swells the dot past its own
+ * diameter, and this bench's first glyph is somewhere on the ramp between the
+ * two. So the peak is read rather than assumed, and the envelope assertions are
+ * stated against it.
+ */
+const glyphPeak = `(function(){
+  var glyph = document.querySelector(${JSON.stringify(GLYPH)});
+  if (!glyph) return -1;
+  return parseFloat(
+    getComputedStyle(glyph)
+      .getPropertyValue("--tugx-progress-pulsing-dot-dot-scale-max-auto")
+      .trim(),
+  );
 })()`;
 
 /**
@@ -135,6 +158,10 @@ const ringStrokeAt = (fraction: number) => `(function(){
  * merely as declared. A hair short of the end, though: these loops are
  * infinite, and `currentTime = duration` is the first frame of the NEXT
  * iteration, which reads back the ring's birth radius instead.
+ *
+ * Then it seeks back to the turn, where the dot is at the top of its breath, so
+ * `dotPeakScale` is the swell as PAINTED — the small treatment grows past its
+ * own diameter there and the big one does not.
  */
 const geometryAtSize = (px: number) => `(function(){
   var glyphs = Array.from(document.querySelectorAll(${JSON.stringify(GLYPH)}));
@@ -149,11 +176,15 @@ const geometryAtSize = (px: number) => `(function(){
   anims.forEach(function (a) { a.pause(); a.currentTime = duration * 0.999; });
   var cs = getComputedStyle(g);
   var dot = g.querySelector(".tug-progress-pulsing-dot-dot");
+  var ringEndScale = new DOMMatrixReadOnly(getComputedStyle(ring).transform).a;
+  anims.forEach(function (a) { a.currentTime = duration * ${TURN}; });
   return {
     reach: cs.getPropertyValue("--tugx-progress-pulsing-dot-emit-reach-auto").trim(),
     trough: cs.getPropertyValue("--tugx-progress-pulsing-dot-dot-scale-min-auto").trim(),
+    peak: cs.getPropertyValue("--tugx-progress-pulsing-dot-dot-scale-max-auto").trim(),
     dotBox: parseFloat(getComputedStyle(dot).width),
-    ringEndScale: new DOMMatrixReadOnly(getComputedStyle(ring).transform).a,
+    ringEndScale: ringEndScale,
+    dotPeakScale: new DOMMatrixReadOnly(getComputedStyle(dot).transform).a,
   };
 })()`;
 
@@ -232,12 +263,15 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         ]);
         expect(census.durations).toHaveLength(1);
 
-        // At the turn the dot is at full size. Loose tolerance: the easing is a
-        // sampled `linear()`, so the peak stop is exact but the read is off a
-        // resolved matrix.
+        // At the turn the dot is at the top of its breath — its own peak, which
+        // is 1 in the big treatment and more than that in the small one. Loose
+        // tolerance: the envelope is sampled into stops, so the peak stop is
+        // exact but the read is off a resolved matrix.
+        const peak = await app.evalJS<number>(glyphPeak);
+        expect(peak).toBeGreaterThanOrEqual(1);
         const atTurn = await app.evalJS<number>(scaleAt(TURN));
-        expect(atTurn).toBeGreaterThan(0.99);
-        expect(atTurn).toBeLessThanOrEqual(1.001);
+        expect(atTurn).toBeGreaterThan(peak * 0.99);
+        expect(atTurn).toBeLessThanOrEqual(peak * 1.001);
 
         // At the midpoint it is already sinking, and it is still sinking at
         // 70%. This is the assertion that fails if the envelope silently
@@ -288,8 +322,10 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         type Geometry = {
           reach: string;
           trough: string;
+          peak: string;
           dotBox: number;
           ringEndScale: number;
+          dotPeakScale: number;
         };
 
         // In the big treatment every derivation is inert: the dot takes 0.6 of
@@ -300,6 +336,10 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         expect(Number(big.reach)).toBe(1);
         expect(big.ringEndScale).toBeCloseTo(1, 2);
         expect(Number(big.trough)).toBeCloseTo(TROUGH_RATIO, 3);
+        // And the big dot tops out at its own diameter — the box's remaining
+        // 40% is the ring's runway, so the dot never eats into it.
+        expect(Number(big.peak)).toBeCloseTo(PEAK_RATIO, 3);
+        expect(big.dotPeakScale).toBeCloseTo(PEAK_RATIO, 2);
 
         // In the small treatment the dot drops to the previous glyph's ratio,
         // the ring is let out past the box — asserted on the resolved matrix,
@@ -310,6 +350,13 @@ describe.skipIf(!SHOULD_RUN)("AT0274: pulsing-dot breath envelope", () => {
         expect(small.dotBox).toBeCloseTo(SMALL_SIZE * SMALL_DOT_RATIO, 1);
         expect(small.ringEndScale).toBeCloseTo(SMALL_REACH, 2);
         expect(Number(small.trough)).toBeCloseTo(SMALL_TROUGH, 3);
+        // The amplitude the trough gives up at the bottom comes back at the
+        // top: the small dot SWELLS past its own diameter, and the ring is lit
+        // just under that peak, so it springs off a dot at its largest. This is
+        // the assertion that fails if the small glyph goes back to a dot that
+        // barely scales at all.
+        expect(Number(small.peak)).toBeCloseTo(SMALL_PEAK, 3);
+        expect(small.dotPeakScale).toBeCloseTo(SMALL_PEAK, 2);
       } finally {
         await app.close();
       }
