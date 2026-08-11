@@ -1,26 +1,33 @@
 /**
  * at0140-cycle-session-card.test.ts — the session card joins the keyboard-focus-cycling
- * mode: ⌥⇥ seeds the submit (the commit-home), ⌥⇥ again restores the editor
- * caret ([P09]/[P10]/[P12], [#step-cycle-session-card]).
+ * mode: ⌥⇥ rings the stop the caret was in, Tab tours the card's chrome, ⌥⇥
+ * again restores the editor caret ([P09]/[P10]/[P12], [#step-cycle-session-card]).
  *
  * ## Why this exists
  *
  * The cycle mechanism is proven generically on `gallery-cycle-demo` (at0139).
- * This test gates the *real consumer*: a connected session card. The submit button
- * (Z5), authored into the card's cycle scope via `TugPromptEntry`'s
- * `submitFocusGroup`, is the commit-home — the lowest-order stop the mode seeds
- * on entry. The card root carries `data-cycling`, the engine signal the
- * fill-suppression CSS keys on.
+ * This test gates the *real consumer*: a connected session card. The card root
+ * carries `data-cycling`, the engine signal the fill-suppression CSS keys on.
+ *
+ * **Mode entry does not advance.** ⌥⇥ engages and the ring lands on the stop
+ * that already held the keyboard — from the composer that is the editor's own
+ * stop, which parks (ring, no caret). Entering a mode is not a movement through
+ * it; the ring's job is to mark where the keyboard IS. This test asserted the
+ * opposite until the composer's ring was found to be painting nothing at all:
+ * ⌥⇥ seeded the commit-home ([P10]'s lowest-order stop), so engaging silently
+ * moved the user's place, and the only reason that looked survivable was that
+ * the editor's ring was suppressed by CSS left over from the pre-KBF axiom.
  *
  * The walk:
  *   1. **rest:** clicking the editor puts the caret there (base mode); the card
  *      reads `data-cycling="false"` and the submit holds no key view.
- *   2. **empty editor → submit is skipped:** ⌥⇥ seeds the route; touring the
- *      live stops (route → Claude Code → AI → STATE → TIME
+ *   2. **empty editor → submit is skipped:** ⌥⇥ rings the editor's stop and one
+ *      Tab wraps to the route (the editor is the LAST stop); touring the live
+ *      stops (route → Claude Code → AI → STATE → TIME
  *      → TOKENS → CONTEXT → WORK → editor → wrap) never lands on the
  *      submit, because its empty-input gate disables it. ⌥⇥ off restores caret.
- *   3. **typed editor → route seeds:** with content, ⌥⇥ seeds the route (the
- *      first stop in the revised order).
+ *   3. **typed editor:** with content, the same entry — ring on the editor's
+ *      stop, Tab to the route — and now the submit is live.
  *   4. **Tab tours the stops:** route → Claude Code → AI →
  *      submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap
  *      (trapped). The Session and Project chips are not on this route (the Z4B
@@ -68,7 +75,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, type App } from "./_harness";
 import { ROUTE_CHOICE } from "./_harness/selectors";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
@@ -166,6 +173,31 @@ const EDITOR_STOP_RINGED = `(function(){
   )}) !== null;
 })()`;
 
+/**
+ * ⌥⇥ with the caret in the editor, then one Tab to the route — the opening move
+ * of every walk below.
+ *
+ * Engaging the mode does NOT advance: the ring lands on the stop the keyboard
+ * was already in, which is the editor's own, and the landing parks it (ring, no
+ * caret). Entering a mode is not a movement through it. This used to seed the
+ * commit-home unconditionally, which meant ⌥⇥ moved the user's place before
+ * they had asked to go anywhere.
+ *
+ * The editor is the LAST stop in the card's order, so the first Tab out of it
+ * wraps to the route — which is where the tours below all begin, unchanged.
+ */
+async function engageAndTabToRoute(app: App): Promise<void> {
+  await app.nativeKey("Tab", ["alt"]);
+  await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
+  await app.waitForCondition<boolean>(EDITOR_STOP_RINGED, { timeoutMs: 6000 });
+  expect(
+    await app.evalJS<boolean>(EDITOR_FOCUSED),
+    "engaging the mode parks the editor stop — ring, no caret",
+  ).toBe(false);
+  await app.nativeKey("Tab");
+  await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+}
+
 // Whether a status-cell detail surface is currently open. The Z2 status
 // cells open the shared TugPlacard (`data-slot="tug-placard"`); a plain
 // TugPopover (`data-slot="tug-popover"`) counts too.
@@ -200,7 +232,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, and the editor stop parks",
+    "⌥⇥ rings the stop the caret was in, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, and the editor stop parks",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card" });
       try {
@@ -236,13 +268,12 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         expect(await app.evalJS<string | null>(CYCLING)).toBe("false");
         expect(await app.evalJS<boolean>(SUBMIT_HAS_KEY_VIEW)).toBe(false);
 
-        // (2) Empty editor → ⌥⇥ seeds the route; the submit is disabled (its
+        // (2) Empty editor → ⌥⇥ rings the editor's stop, Tab wraps to the route.
+        // The submit is disabled (its
         // empty-input gate), so it is NOT a Tab target — touring the live stops
         // (route → Claude Code → AI → STATE → … → WORK → editor → wrap)
         // skips it: Tab steps from AI straight to STATE, never the submit.
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
         await app.nativeKey("Tab");
         // route → Claude Code: the Session and Project chips left the code route
         // with the Z4B diet (their names read in the pane title bar instead).
@@ -293,11 +324,9 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
           { timeoutMs: 6000 },
         );
 
-        // (3) Non-empty editor → ⌥⇥ seeds the route (the first stop, [P10]
-        // revised order — the cycle now seeds at the route, not the submit).
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        // (3) Non-empty editor → the same entry, and now the submit is a live
+        // stop on the tour ([P10] revised order).
+        await engageAndTabToRoute(app);
 
         // (4) Tab tours the stops left→right, up to the editor: route → Claude
         // Code → AI → submit → STATE … WORK → editor. The editor is the
@@ -352,9 +381,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // on the stack), so closing the popover returns the ring to the SAME
         // cell — focus is NOT yanked to the editor and the cycle position is not
         // lost.
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
         // route→Claude Code→AI→submit→STATE→TIME (5 Tabs). Two fewer than
         // before the Z4B diet (which took Session and Project off this route),
         // and two fewer again since Mode / Model / Effort became one chip.
@@ -444,13 +471,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         // ---- Phase 1: a disabled stop is skipped --------------------------------
-        // Empty editor → the submit is disabled. ⌥⇥ seeds the route; Tab to the
+        // Empty editor → the submit is disabled. Engage and reach the route; Tab to the
         // AI chip, then ArrowRight resolves toward the (disabled) submit — the
         // navigator must NOT strand the ring on it: it skips to the next live stop
         // (the STATE cell), never beeping.
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
         // route→Claude Code→AI (2 Tabs).
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(CLAUDE_CHIP), { timeoutMs: 6000 });
@@ -477,9 +502,7 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         );
 
         // ---- Phase 2: the toolbar ring + the cross-row seam ---------------------
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
 
         // Tab to the AI chip (a leaf), then Left/Right ring the toolbar.
         // route→Claude Code→AI (2 Tabs).
@@ -538,12 +561,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
           { timeoutMs: 8000 },
         );
 
-        // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
+        // Caret in the editor, then ⌥⇥ + Tab to the route: engaging rings the
+        // editor's own stop, and the first Tab out of it wraps to the route.
         await app.nativeClickAtElement(EDITOR);
         await new Promise((resolve) => setTimeout(resolve, 150));
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
 
         // Tab to the AI chip and open its sheet by keyboard (so the engine owns
         // close-focus and the cycle is preserved underneath).
@@ -610,12 +632,11 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
           { timeoutMs: 8000 },
         );
 
-        // Caret in the editor, then ⌥⇥ to start cycling (route seeded).
+        // Caret in the editor, then ⌥⇥ + Tab to the route: engaging rings the
+        // editor's own stop, and the first Tab out of it wraps to the route.
         await app.nativeClickAtElement(EDITOR);
         await new Promise((resolve) => setTimeout(resolve, 150));
-        await app.nativeKey("Tab", ["alt"]);
-        await app.waitForCondition<boolean>(`${CYCLING} === "true"`, { timeoutMs: 6000 });
-        await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
+        await engageAndTabToRoute(app);
 
         // Tab off the route popup onto the Claude Code chip, then the AI chip —
         // toolbar leaves — then ArrowDown seams from the toolbar straight to the

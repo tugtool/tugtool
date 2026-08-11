@@ -89,19 +89,28 @@ body {
   outline: none;
 }
 
-/* A caret-bearing text editor is its own focus affordance — the native
- * caret marks where the keyboard is, so the app-owned key-view ring
- * (`[data-key-view-kbd]`, focus-ring.css) must not also outline the whole
- * editing surface. The engine stamps that attribute on the host (the
- * responder element it resolves the key view to), so unlike the inner
- * `.cm-editor` above the host itself matches the global ring rule: a fresh
- * untitled buffer auto-focuses through the engine while the last input was
- * the ⌥⌘N accelerator, so the host inherits keyboard modality and rings.
- * The Session card's prompt editor is spared the same ring by its
- * `[data-cycling]` context; the Text card has none, so it opts out here —
- * focus-ring.css names the caret editor as a surface that keeps
- * `outline: none`. */
+/* The key-view ring, inset onto the substrate — same two corrections the entry
+ * shell makes, for the same two reasons (see `tug-entry-shell.css`). The Text
+ * card's editor fills the card body edge to edge, so the default +2px ring
+ * would paint outside the card; and the substrate is an opaque in-flow child
+ * covering the host, so an inset ring drawn on the host would be hidden under
+ * it.
+ *
+ * This block used to drop the ring outright, on the rule that a caret-bearing
+ * editor is its own focus affordance. That still describes a caret-holding
+ * editor, but it is mode OFF that arranges it now: no KBF, no
+ * `data-key-view-kbd`, no ring ([P04]). The state left over is the parked
+ * stop — blurred, caret-less — and it needs the ring, because there is no
+ * caret to carry anything ([P12]). The old note here reasoned from the Session
+ * card's `[data-cycling]` context, which KBF mode replaced. */
 .tug-text-card-editor[data-key-view-kbd] {
+  outline: none;
+}
+.tug-text-card-editor[data-key-view-kbd] > .cm-editor {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+}
+html[data-app-active="false"] .tug-text-card-editor[data-key-view-kbd] > .cm-editor {
   outline: none;
 }
 

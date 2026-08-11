@@ -1696,6 +1696,41 @@ export class FocusContext {
     return id;
   }
 
+  /**
+   * Land the keyboard for a mode just entered, WITHOUT advancing through it:
+   * keep the ring on the current key view when that stop is also a stop in the
+   * entered mode, and seed the mode's first stop only when it is not.
+   *
+   * Entering a mode is not a movement through it. ⌥⇥ with the caret in the
+   * composer used to seed the commit-home ([P10]) unconditionally, so engaging
+   * the mode moved the user's place before they had asked to go anywhere — and
+   * the ring, whose whole job is to mark where the keyboard IS, appeared
+   * somewhere the keyboard had not been. Whether the ring then had to travel
+   * the entire cycle to get back is a matter of stop ordering, which is not
+   * something mode entry should depend on.
+   *
+   * The landing is nonetheless a MOVEMENT arrival ([P12]), so a text stop
+   * entered this way PARKS — ringed, caret gone. That is the point rather than
+   * a side effect: it is what makes the ring visible on an editor at all (a
+   * live caret is mode OFF and paints nothing), and it is what keeps ⌥⇥ a
+   * toggle, since [P09] has the gesture re-engage rather than disengage while
+   * the route is still `dom-granted`. Parking the stop moves the route to
+   * `engine-routed`, so the second ⌥⇥ turns the mode off and the caret comes
+   * back where it was.
+   *
+   * Returns the landed stop's id, or `null` when the mode has no stops.
+   */
+  enterModeAtKeyView(): string | null {
+    const current = this.keyViewId;
+    const retained =
+      current !== null && this.walkOrder().some((f) => f.id === current);
+    const id = retained ? current : this.focusFirstInMode();
+    if (id === null) return null;
+    if (retained) this.setKeyView(id, true);
+    this.landAfterMovement();
+    return id;
+  }
+
   /** The current (top) focus mode id, or `BASE_FOCUS_MODE` when none pushed. */
   currentFocusMode(): string {
     const top = this.modeStack[this.modeStack.length - 1];
@@ -4025,6 +4060,10 @@ export class FocusManager {
   }
   focusFirstInMode(): string | null {
     return this.activeContext().focusFirstInMode();
+  }
+  /** Land a just-entered mode without advancing through it ([P12], [P09]). */
+  enterModeAtKeyView(): string | null {
+    return this.activeContext().enterModeAtKeyView();
   }
   currentFocusMode(): string {
     return this.activeContext().currentFocusMode();

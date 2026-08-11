@@ -235,10 +235,10 @@ export function useCycleMode({
   const enter = useCallback(() => {
     if (ctx === null || !enabled) return;
     pushMode();
-    // Seed the commit-home — the lowest-order cycle stop ([P10]) — and paint the
-    // keyboard ring on it.
-    ctx.focusFirstInMode();
-    ctx.focusKeyView();
+    // Ring where the keyboard already is. Only a card entered from nowhere —
+    // no key view to keep — seeds the commit-home ([P10]); with the caret in
+    // the composer the editor's own stop takes the ring and parks.
+    ctx.enterModeAtKeyView();
   }, [ctx, enabled, pushMode]);
 
   const exit = useCallback(() => {

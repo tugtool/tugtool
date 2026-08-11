@@ -152,27 +152,28 @@ body {
   background-color: var(--tug7-surface-field-primary-normal-plain-rest);
 }
 
-/* ---- Keyboard key view: a text editor NEVER wears a ring ----
+/* ---- Keyboard key view: an editor rings iff it is PARKED ----
  *
- * The blinking caret is a full carrier of keyboard focus, not a hint that wants
- * a ring's help. An editor holding the keyboard blinks, and that is the whole
- * signal; a ring drawn beside a live caret is an **illegal state** by design,
- * not a redundancy. (When the keyboard is on an editor's *stop* with the editor
- * stood down and blurred there is no caret to carry anything — that is what the
- * stop's own ring is for, and it lives on the stop, never here.)
+ * An editor host takes the global `[data-key-view-kbd]` ring (focus-ring.css)
+ * like any other stop, and needs no rule here to get it.
  *
- * So the global `[data-key-view-kbd]` ring (focus-ring.css) is suppressed on
- * every editor host, in every key state. This used to be the opposite rule —
- * an editor authored into a focus group recolored its border and drew an inset
- * outline — which put a ring around the find bar's query field the moment ⌘F
- * landed the caret in it. Specificity (0,3,0) beats the global rule's (0,1,0).
+ * This block used to suppress that ring outright, on the axiom that a text
+ * editor never wears one: the blinking caret is a full carrier of keyboard
+ * focus, so a ring beside a live caret is an illegal state rather than a
+ * redundancy. The first half of that is still true and is still how a
+ * caret-holding editor looks — but it is enforced somewhere else now. Rings
+ * exist iff KBF mode is engaged ([P04]), and a caret in an editor is mode OFF,
+ * which withholds `data-key-view-kbd` at projection. The find-bar query field
+ * this block was written to stop ringing on ⌘F is a caret grant, so it never
+ * gets the attribute and there is nothing left to suppress.
  *
- * Pinned by at0345: no `.tug-text-editor` anywhere in the deck may compute a
- * visible outline. */
-.tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
-  outline: none;
-  background-image: none;
-}
+ * What the axiom could not see is the state KBF restores: a stop the engine
+ * MOVED to is parked — blurred, caret-less, ringed ([P12]). Suppressing the
+ * ring here left that state with no visual at all, which is what the walk
+ * through the composer looked like: the attribute landed and nothing painted.
+ *
+ * Editors that sit flush inside a host (the entry shell, the Text card) inset
+ * the ring rather than dropping it — see `tug-entry-shell.css`. */
 
 /* ---- Borderless ---- */
 

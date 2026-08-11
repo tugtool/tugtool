@@ -134,31 +134,61 @@ body {
   border-width: 0;
 }
 
-/* The input-area stop never draws the global accent `outline` (focus-ring.css)
-   — the full-bleed CodeMirror substrate clips it down to a meaningless
-   top/bottom-only accent bar, and more to the point this box gets no ring at
-   all (see below). Kill the global ring + behind-tint on the stop in every key
-   state. (The editor host inside it is suppressed by `tug-text-editor.css`,
-   which forbids it a ring outright.) */
+/* The input-area wrapper never draws a mark of its own. It is the editor
+   host's parent, so it takes `data-key-within` whenever the editor is the key
+   view — and since the two boxes are the same rectangle to the pixel, that
+   within-mark would be a second ring drawn exactly on top of the first. One
+   rectangle around the text, always: the editor carries it, the wrapper stands
+   down. */
 .tug-entry-shell-input-area:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) {
   outline: none;
   background-image: none;
 }
 
 /* ----------------------------------------------------------------------------
-   No ring anywhere in an entry shell — the wash is the carrier
+   The parked stop's ring is INSET, and it is drawn on the substrate
    ----------------------------------------------------------------------------
-   A text editor never wears a focus ring, and neither does the box it fills:
-   the distinction between the editor and its input-area wrapper is a DOM
-   detail, and a user sees one rectangle around their text either way. So there
-   is no ring in a shell at all, in any state ([L06] / focus-language.md).
+   A caret-holding editor still wears no ring — that is mode OFF, and the mode
+   withholds `data-key-view-kbd` at projection ([P04]), so nothing here is
+   needed to arrange it. The WASH remains the container answer while a caret is
+   live: *this composite control is the live one*, with the caret answering
+   *where in it* ([D122]).
 
-   There is no caret-less keyboard state left to carry: the editor's cycle stop
-   registers the substrate itself, so every keyboard landing grants the caret
-   (focus-language.md). The WASH answers the container question beside it —
-   *this composite control is the live one* — while the caret answers *where in
-   it*, the [D122] container/element split doing exactly its job.
+   What this block is for is the other state. A stop the engine MOVED to is
+   parked — blurred, caret-less, ringed ([P12]) — and in an entry shell the ring
+   needs two corrections before it lands where a user can see it:
+
+   1. **Inset, not outset.** The shell has no padding and the editor is
+      full-bleed, so its box already reaches the host's edges: measured on a
+      session card, the editor spans the pane's full width and the default
+      +2px ring paints OUTSIDE the card on both sides and over the transcript
+      above. Pulling the ring inside by its own width keeps it on the editor.
+
+   2. **On `.cm-editor`, not on the host.** The substrate is an in-flow child
+      filling the host to the pixel and painting an opaque background over it
+      (`--tugx-entry-shell-editor-rest` / `-focus` above), so a descendant
+      background covers an inset outline drawn on the host. `.cm-scroller`
+      inside it sets no background, so the ring drawn at this level shows.
+
+   The host's own ring is dropped rather than left to fight: the two would be
+   the same rectangle 1.5px apart. Same reasoning as the drop ring, which insets
+   on this same box for the same geometry (`tug-text-editor.css`).
    ----------------------------------------------------------------------------- */
+.tug-entry-shell .tug-text-editor[data-key-view-kbd] {
+  outline: none;
+}
+.tug-entry-shell .tug-text-editor[data-key-view-kbd] > .cm-editor {
+  outline: var(--tugx-focus-ring-width) solid var(--tugx-focus-ring);
+  outline-offset: calc(-1 * var(--tugx-focus-ring-width));
+}
+/* Quiet in a background window, like every other ring in the language
+   (focus-ring.css). */
+html[data-app-active="false"]
+  .tug-entry-shell
+  .tug-text-editor[data-key-view-kbd]
+  > .cm-editor {
+  outline: none;
+}
 
 /* Keyed on the engine mark, not on DOM focus alone: `:focus-within` covers the
    caret in a key window, `[data-entry-keyboard]` keeps the wash honest where

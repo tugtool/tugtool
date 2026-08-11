@@ -857,7 +857,44 @@ Use `./node_modules/.bin/tsc`, not `bunx tsc` — a bare `bunx tsc` from the wro
 
 ### The work list {#addendum-work}
 
-Ordered by value. (1) is a real broken behavior; (2)–(4) are missing proof of behavior that is believed working; (5)–(6) are the closing checks.
+Ordered by value. (0) and (1) are real broken behaviors; (2)–(4) are missing proof of behavior that is believed working; (5)–(6) are the closing checks.
+
+#### 0. A parked text stop paints no ring — the old suppressions were never converted {#addendum-editor-ring}
+
+**Reported from the app, 2026-08-10:** ⌥⇥ then Tab through the prompt entry, and no ring ever lands on the composer's editor. The engine is right and the paint is wrong.
+
+The engine half works and is already pinned: the composer's editor registers a real stop (`tug-text-editor.tsx`'s `useFocusable` under the responder id, opted in by `TugPromptEntry`'s `editorFocusGroup`/`editorFocusOrder`), the walk lands on it, and `computeProjection` stamps `data-key-view-kbd` on the editor host. at0345 case 4 walks Tab to that stop and finds the attribute.
+
+Nothing paints, because two blanket suppressions written under the pre-KBF axiom survived the phase:
+
+- `tug-text-editor.css` — `.tug-text-editor:is([data-key-view-kbd], [data-key-cursor], [data-key-within]) { outline: none; background-image: none; }` at (0,3,0), beating the global ring rule in every key state. Its comment states the old axiom outright ("a text editor NEVER wears a ring") and closes with "Pinned by at0345: no `.tug-text-editor` anywhere in the deck may compute a visible outline."
+- `tug-entry-shell.css` — the same kill on `.tug-entry-shell-input-area`, under a banner reading "There is no caret-less keyboard state left to carry."
+
+That banner names exactly the state [P12] reinstated. The suppressions are now simply false, and they no longer earn their keep even for the case that motivated them: the ⌘F find-bar ring they were written to remove was a **caret grant**, which is mode OFF, which withholds the attribute at projection. The gate does that job now.
+
+**Why the suite stayed green:** at0345 case 4 asserts the *attribute* and the *absence of a caret*. The computed-style probe (`RINGED_EDITORS`) runs only in the mode-OFF cases, where it asserts absence. The comment says "RINGS it"; no pixel is ever read. Attribute-green, pixel-dark — and it is worth noticing that this is the failure mode the whole projection-gating design makes easy, since the attribute is the contract everywhere else.
+
+**DONE (2026-08-10), uncommitted on `main`.** What landed, and what the measurements settled:
+
+- Both suppression blocks are gone, plus a **third** found by the same search: `.tug-text-card-editor[data-key-view-kbd] { outline: none }`, whose comment reasoned from the `[data-cycling]` context this phase deleted. All three banners are rewritten to teach the current rule. `focus-ring.css`'s own doctrine paragraph no longer lists "a caret-bearing text editor" among the surfaces exempt from the ring.
+- **The ring is INSET and drawn on `.cm-editor`, not on the stop element.** Two corrections, both forced by measurement rather than argued:
+  1. The composer's editor spans the pane edge to edge (measured `[41, 505, 898, 162]` in a 900px pane at x=40), so the default `+2px` ring paints outside the card on both sides and over the transcript above.
+  2. `.cm-editor` is an in-flow child filling the host **to the pixel** with an opaque background, so an inset outline on the host is painted and then covered. `.cm-scroller` inside it sets no background, so the ring drawn one level down shows. The `.tug-entry-shell-input-area` suppression stays, now for the reason that actually applies: it is the editor's parent, so it takes `data-key-within`, and the two boxes are the same rectangle.
+- at0345 case 4 now reads the computed outline and requires `style !== "none"`, `width > 0`, and **`offset < 0`**. The mode-OFF absence probe (`RINGED_EDITORS`) was extended to `.tug-text-editor > .cm-editor` — without that every absence assertion in the file would have passed without ever looking at the box that paints.
+- The input-area comment's claim that the substrate clips the outline to a top/bottom bar was **not** what the measurement showed (`overflow: visible` the whole way up); the real problem is the overhang. The comment is corrected.
+
+**And a second bug the fix exposed** (found by the user immediately after, and fixed in the same pass): **⌥⇥ advanced.** `useCycleMode`'s `enter()` called `focusFirstInMode()` unconditionally, so engaging the mode from a caret in the composer seeded the **commit-home** — the ring appeared somewhere the keyboard had never been. That is now `FocusContext.enterModeAtKeyView()`: keep the ring on the current key view when it is a stop in the entered mode, seed the first stop only when it is not, and land as a **movement** arrival so a text stop parks. Parking matters for more than looks — it moves the route to `engine-routed`, which is what lets the *second* ⌥⇥ disengage, since [P09] makes the gesture re-engage while the route is `dom-granted`. The doctrine is in `tuglaws/focus-language.md` ("Engaging the mode is not a movement through it") along with the flush-editor ring geometry.
+
+Note the interaction, because it is the reason this went unnoticed for a whole phase: the advance was invisible *because* the ring was invisible. With the composer's ring suppressed, the only visible effect of ⌥⇥ was a ring appearing on the submit button, which reads as a seed rather than as a jump.
+
+at0140 was reworked accordingly — seven `⌥⇥ → route` sites became one `engageAndTabToRoute` helper (⌥⇥ rings the editor's stop, one Tab wraps to the route, since the editor is the cycle's LAST stop), and the file docstring no longer teaches the seed.
+
+Verified: `tsc --noEmit` clean, `bun test` 6367 pass / 427 files, `vite build` clean, `app-test-covers-check` green (359 files), and green app-test runs of at0345, at0140, at0139, at0343, at0396, at0341, at0342, at0126, at0248, at0209, at0223, at0048, at0339-focus-marks-background-window — **plus at0277 and at0282-lens-row-arrow-escape, which closes item (5) below.**
+
+**Two PRE-EXISTING failures were found and are NOT from this work** — both confirmed by `tugutil file probe` with a reverse patch of the change, which reproduced them identically against unmodified sources. They belong to the original KBF landing (`5d6991087`) and are new work:
+
+- `at0339-session-find-bar` (0/2). The focus-order census reads `0,1,5,7,8,9,10,11,19` where it expects `0,1,4,5,6,7,8,9,10,11,19` — orders **4 and 6 are missing from the DOM**, so this is a registration question, not a paint one. Its second test times out waiting for the key view to leave the query field.
+- `at0224-card-active-keyboard` (5/6). "[P21] broken after cycling to the never-focused text card: key card B, first responder outside card T."
 
 #### 1. `Tab` from Open Quickly's field does not reach the directory switcher — [P07] case 2 {#addendum-tab-switcher}
 
@@ -902,11 +939,7 @@ One Escape closes a sheet while the caret is in a field inside it — no double-
 
 #### 5. Drift runs: at0277 / at0282 {#addendum-drift}
 
-`at0248-lens-list-cursor-keys` was run at #step-5 and passes **unmodified**, which is the drift check the plan wanted. Its two siblings — `at0277-lens-row-accessories-keyboard` and `at0282-lens-row-arrow-escape` — have **not been run** since the gate landed. They should pass unmodified; a failure means the mode division leaked into the descend machinery, and per the plan that is a bug in the implementation, not in the tests.
-
-```bash
-just app-test tests/app-test/at0277-*.test.ts tests/app-test/at0282-lens-row-arrow-escape.test.ts
-```
+**DONE (2026-08-10).** `at0277-lens-row-accessories-keyboard` and `at0282-lens-row-arrow-escape` both pass **unmodified**, alongside `at0248-lens-list-cursor-keys` (run at #step-5). That is the drift check the plan wanted, and it says the mode division did not leak into the descend machinery.
 
 #### 6. #step-11 in full {#addendum-step-11}
 
@@ -936,12 +969,18 @@ These are load-bearing and every one of them is a place where a plausible-lookin
 - **`useCycleMode`'s scope stays `kbf: false`.** `trapped: true` there buys Escape semantics, not a surface. Letting it count as Class A makes the mode its own cause: clearing the manual bit leaves it engaged by the very cycle the clear was meant to end, and nothing can ever leave the mode from inside a cycle.
 - **`advanceKeyViewFocus` engages before it steps.** This is what keeps ~20 component focus suites (at0109, at0113–at0127, …) green: they Tab into a control and assert a ring, and the ring only exists because Tab turned the mode on. Move the engage out of the shared performer and they all go red at once.
 - **Never gate a ring by prefixing a paint rule with `html[data-kbf]`.** That takes the leaf rule from (0,1,0) to (0,2,1), above every item-group `outline: none` suppression at (0,2,0), and repaints the double ring `focus-ring.css` records three failed attempts at removing ([R04]). The gate is the withheld flavor; the only CSS is `html:not([data-kbf])` **suppressions**.
+- **Mode entry must not advance.** `useCycleMode.enter()` calls `enterModeAtKeyView()`, which keeps the ring on the current key view and seeds the first stop only when there is none. Restoring the unconditional `focusFirstInMode()` puts the ring somewhere the keyboard has never been — and, worse, does it invisibly if any editor's ring is ever suppressed again.
+- **The mode-entry landing must be a MOVEMENT arrival.** Landing it as a placement would grant the caret instead of parking, which paints no ring (a caret is mode OFF) and leaves the route `dom-granted` — and [P09] re-engages rather than disengaging on a `dom-granted` route, so ⌥⇥ would stop being a toggle from the one place it is most used.
+- **A flush editor's ring is drawn on `.cm-editor`, inset.** Moving it back onto the stop element makes it invisible (an opaque in-flow child covers an inset outline) or makes it overhang the card (outset). Both failure modes look like "the ring is broken" and neither is a specificity problem, so neither responds to the usual fix.
 - **`data-attached-cursor` and `data-default-ring` are exempt from the mode gate, by design.** Neither is a focus position. If a future suppression list grows, do not sweep them in.
 
 ### Harness knowledge paid for in app-test runs {#addendum-harness}
 
 Each of these cost at least one full run to learn. They are not in `tests/app-test/README.md`.
 
+- **`tugutil file probe` with a `git diff -R` reverse patch answers "was this already broken?" definitively**, and it is cheap. Write `git diff -R -- <src paths> > /tmp/revert.diff`, then `tugutil file probe --patch /tmp/revert.diff -- bash -c 'cd tugdeck && bunx --bun vite build >/dev/null 2>&1 && cd .. && just app-test <file>'`. The rebuild inside the probe is not optional — app-tests serve the prod bundle, so without it you re-run the same bytes and conclude the opposite. Rebuild again afterwards, since the probe restores sources but not `dist`. This settled two failures as pre-existing in about a minute each; reasoning about whether a CSS change could plausibly move a first responder would have taken longer and convinced nobody.
+- **Assert pixels, not just attributes, whenever CSS is the deliverable.** at0345 asserted `data-key-view-kbd` and the absence of a caret, and shipped a ring that painted nothing for a whole phase. The trap is specific to projection gating: the attribute is the contract everywhere else, so reading it feels like reading the truth. When a suppression rule may exist, read `getComputedStyle`. And when the paint moves to a different element than the attribute, **extend the absence probes to the new element too** — otherwise every "no ring here" assertion in the file keeps passing while looking at the wrong box.
+- **A one-off `note()` dumping the computed-style + `getBoundingClientRect` chain from the stop up through four ancestors is worth the run it costs.** It answered "outset or inset?", "who clips?", and "does a child cover it?" in a single 4-second run, and two of those three answers contradicted what the existing comments claimed. Delete it once it has paid out — the assertion it produced is what stays.
 - **A cycle stop's key-view element IS the editor**, not an ancestor of it. The composer's text stop registers on the substrate under the editor's responder id, so the ring attribute rides that element: match `[data-key-view-kbd][data-slot="tug-text-editor"]`, not `[data-key-view-kbd] [data-slot="tug-text-editor"]`. That single space cost a diagnostic round in at0345 and again in at0140. Scope it to the surface too (`[data-slot="tug-prompt-entry"] …`) — with the find bar open there are two text stops on the card.
 - **The dev log is reachable from a test and is the fastest way to see engine internals**, but three details bite: the entries are at `window.tugDevLog.getSnapshot().entries` (not the snapshot itself), the subsystem field is **`source`**, not `channel`, and **`debug`-level entries do not show up** — use `tugDevLogStore.warn` for a temporary probe. Getting any of the three wrong returns `[]`, which reads exactly like "the code never ran" and sends you chasing the wrong thing.
 - **When a wait times out, check which of several identical waits it was.** The harness reports the failing *script*, and a script like `EDITOR_FOCUSED` may appear three times in one test. at0140's first failure looked like the exit path and was actually the landing two steps earlier. A `note()` between them costs one run and settles it.
@@ -952,9 +991,11 @@ Each of these cost at least one full run to learn. They are not in `tests/app-te
 
 ### What the implementation decided that the plan did not {#addendum-decisions}
 
-All four are folded into the plan body above at their decisions, but collected here so a reader knows the plan was amended rather than merely followed:
+All of these are folded into the plan body above at their decisions, but collected here so a reader knows the plan was amended rather than merely followed. (5) and (6) were decided in the follow-up pass, after the phase landed.
 
 1. **The attached-list highlight is its own gate-exempt mark** (`data-attached-cursor`), because the movement cursor paints only while the keyboard is *in* its list — which an attached list never is — and because [P04] suppresses `data-key-cursor` in mode OFF, which is exactly where an attached list matters most. Owner chose this over reusing `data-key-cursor` with a carve-out. See [P08].
 2. **Pulse has no card and About registers no focus stops**, so neither takes `kbfAtRest`. See [P10].
 3. **Session history is not an attached-list site** — it renders `TugHistoryList`, which has no cursor model and no per-row stops — so `filterFieldDidRequestAdvance` survives for that one consumer instead of being deleted. See [P08] and #deletion-inventory.
 4. **at0140 joined the rewrite list** the plan did not have it on, and **at0341 / at0342 needed no behavioral rewrite at all** (only `@covers` repointing) — they drive surfaces where the mode is already engaged. See #probe-survey.
+5. **Engaging the mode does not advance.** The plan said what the mode IS and what the arrows and `Tab` do inside it, and never said where the ring lands at the moment of engagement — so the pre-mode "seed the commit-home" behavior survived by default. It is wrong: the ring says where the keyboard is, and a gesture that engages *and* relocates answers a question nobody asked. Now `enterModeAtKeyView()`. See #addendum-editor-ring.
+6. **A flush editor insets its ring onto the substrate.** [P04] settled that the gate is the withheld attribute and never a CSS prefix, which is still right — but it left the *geometry* of a full-bleed stop's ring unstated, and the two editors that fill their host edge to edge (the composer, the Text card) cannot use the standard outset ring at all. Both corrections are recorded in `tuglaws/focus-language.md`.

@@ -75,8 +75,18 @@
  * higher-specificity rule (e.g. `.foo:focus-visible`).
  *
  * Surfaces that are their own focus affordance (a portalled popover container,
- * a cropped in-sheet tab bar, a caret-bearing text editor) keep their existing
- * higher-specificity `outline: none` and are unaffected.
+ * a cropped in-sheet tab bar) keep their existing higher-specificity
+ * `outline: none` and are unaffected.
+ *
+ * A text editor is NOT one of them, though it was listed here until KBF mode.
+ * The caret does carry keyboard focus completely — but only while there IS a
+ * caret, and the mode restores the state where there is not: a stop the engine
+ * moved to is parked, blurred and caret-less, and the ring is the only thing
+ * marking it ([P12]). The "no ring beside a live caret" half is now arranged by
+ * the gate below rather than by per-editor suppressions: a caret is mode OFF,
+ * and mode OFF withholds the attribute. Editors that sit flush inside a host
+ * inset the ring onto their substrate instead of dropping it — see
+ * `tug-entry-shell.css` for why both corrections are needed.
  */
 
 /* Ring geometry — the single source for the ring's thickness, gap, and corner

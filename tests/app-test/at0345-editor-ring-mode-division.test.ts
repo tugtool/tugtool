@@ -63,6 +63,11 @@ const RINGED_EDITORS = `(() => {
   const hosts = [
     ...document.querySelectorAll('${CARD} .tug-text-editor'),
     ...document.querySelectorAll('${CARD} .tug-entry-shell-input-area'),
+    // The substrate too: a flush editor's ring is drawn HERE, inset, because an
+    // opaque in-flow child covers an inset outline on the host
+    // (tug-entry-shell.css). Reading only the hosts would let every mode-OFF
+    // absence assertion below pass without ever looking at the box that paints.
+    ...document.querySelectorAll('${CARD} .tug-text-editor > .cm-editor'),
   ];
   for (const el of hosts) {
     const s = getComputedStyle(el);
@@ -196,12 +201,13 @@ describe.skipIf(!SHOULD_RUN)("AT0345: an editor rings iff it is parked", () => {
           "the caret returning to the composer rings neither editor",
         ).toBe("");
 
-        // --- 4. The PARKED stop. ⌥⇥ engages the mode and opens the card's
-        //        cycle (the caret leaves the composer), then Tab walks round to
-        //        the composer's text stop. Arriving by MOVEMENT parks it: the
-        //        ring lands on the input area and the editor does NOT take the
-        //        caret. This is the case that inverted — it used to assert the
-        //        walk granted the caret and nothing rang. ---
+        // --- 4. The PARKED stop, WHERE THE CARET WAS. ⌥⇥ engages the mode and
+        //        opens the card's cycle, and the ring lands on the stop that
+        //        already held the keyboard — the composer's own — rather than
+        //        seeding the commit-home. Entering a mode is not a movement
+        //        through it; the ring marks where the keyboard IS. The landing
+        //        is a MOVEMENT arrival, so the text stop parks: it rings, and
+        //        the editor does NOT take the caret. ---
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`!(${focused(EDITOR)})`, {
           timeoutMs: 8000,
@@ -210,31 +216,63 @@ describe.skipIf(!SHOULD_RUN)("AT0345: an editor rings iff it is parked", () => {
           `document.documentElement.hasAttribute("data-kbf")`,
           { timeoutMs: 8000 },
         );
-        // The stop we want is the EDITOR's own — the one registered under the
-        // editor's responder id — not merely the first ringed thing inside the
-        // prompt entry (the entry holds several stops). Detect it as the ringed
-        // key view that CONTAINS the editor; the old test could use "the editor
-        // has the caret" for this, which is exactly what parking removes.
         // The composer's own text stop: the key-view element IS the editor (the
         // stop registers on it), so the ring attribute rides that same element.
         // Scoped to the prompt entry because the find bar is still open from
-        // case 2 and its query field is a text stop on this walk too.
+        // case 2 and its query field is a text stop on this walk too — and
+        // scoped to the editor's slot because the entry holds several stops.
         const COMPOSER_STOP = `${CARD} [data-slot="tug-prompt-entry"] [data-key-view-kbd][data-slot="tug-text-editor"]`;
-        let parked = false;
-        for (let i = 0; i < CYCLE_STOP_LIMIT && !parked; i++) {
-          await app.nativeKey("Tab");
-          parked = await app.evalJS<boolean>(
-            `document.querySelector('${COMPOSER_STOP}') !== null`,
-          );
-        }
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${COMPOSER_STOP}') !== null`,
+          { timeoutMs: 8000 },
+        );
         expect(
-          parked,
-          "the walk reaches the composer's text stop and RINGS it",
+          await app.evalJS<boolean>(
+            `document.querySelector('${COMPOSER_STOP}') !== null`,
+          ),
+          "⌥⇥ rings the stop the caret was in — no initial advance",
         ).toBe(true);
         expect(
           await app.evalJS<boolean>(focused(EDITOR)),
           "a stop arrived at by movement is parked — the editor holds no caret",
         ).toBe(false);
+
+        // The ring must be PIXELS, not just the attribute. This is the assertion
+        // whose absence let the whole thing ship dark: the walk stamped
+        // `data-key-view-kbd` on the editor and two suppressions left over from
+        // the pre-KBF axiom ("a text editor never wears a ring") painted nothing,
+        // and every existing case here read the attribute or asserted absence.
+        // Read the box that actually draws — the substrate, inset — and require a
+        // visible outline whose offset is negative, since an outset ring on this
+        // full-bleed editor paints outside the card entirely.
+        const parkedRing = await app.evalJS<string>(
+          `(() => {
+            const cm = document.querySelector('${COMPOSER_STOP} > .cm-editor');
+            if (cm === null) return "no substrate";
+            const s = getComputedStyle(cm);
+            return JSON.stringify({
+              style: s.outlineStyle,
+              width: parseFloat(s.outlineWidth),
+              offset: parseFloat(s.outlineOffset),
+              color: s.outlineColor,
+            });
+          })()`,
+        );
+        note("parked ring", parkedRing);
+        const ring = JSON.parse(parkedRing) as {
+          style: string;
+          width: number;
+          offset: number;
+        };
+        expect(ring.style, "the parked stop draws a real outline").not.toBe("none");
+        expect(
+          ring.width > 0,
+          "the parked stop's outline has width",
+        ).toBe(true);
+        expect(
+          ring.offset < 0,
+          "a full-bleed editor's ring is inset — an outset one paints outside the card",
+        ).toBe(true);
         note(
           "parked state",
           await app.evalJS<string>(
