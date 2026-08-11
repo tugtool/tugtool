@@ -260,10 +260,31 @@ body {
      always equals its content, so nothing is ever clipped vertically). */
   overflow-x: auto;
   overflow-y: hidden;
+  /* The transcript is a vertical scroller wrapping this horizontal-only one.
+     Without containment WebKit latches a trackpad gesture to the vertical
+     ancestor and the horizontal deltas are dropped — the pane scrolls and the
+     terminal never moves. `contain` keeps the horizontal axis here. */
+  overscroll-behavior-x: contain;
+}
+
+/* The renderer measured a run that overflows: take the scrollbar unconditionally
+   rather than leaving it to the engine's `auto` decision, which is made once at
+   first layout and is not revisited when lines are appended imperatively into an
+   already-sized transcript entry. */
+.tugx-term-pre[data-hscroll="true"] {
+  overflow-x: scroll;
 }
 
 .tugx-term-line {
+  /* `max-content`, not the default `auto`: a block child of a scroll container
+     is sized to the container's content box, so its own box stops at the right
+     edge even though its inline text runs past it — line backgrounds (the
+     stderr stripe, a Find highlight) get severed at the fold. Sizing the line
+     to its content makes each line as wide as its text, so the whole run
+     scrolls as one column. */
   display: block;
+  width: max-content;
+  min-width: 100%;
   min-height: var(--tugx-term-line-height-px);
   white-space: pre;
 }

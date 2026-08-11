@@ -467,6 +467,20 @@ function appendLineBody(container: HTMLElement, lines: ParsedLine[]): void {
     pre.appendChild(buildLineElement(line));
   }
   container.appendChild(pre);
+  // Stamp whether this run actually overflows, and switch the pre to
+  // `overflow-x: scroll` when it does (see `[data-hscroll]` in the CSS pair).
+  // `overflow-x: auto` alone is not enough here: the engine decides whether to
+  // give an `auto` box a scrollbar during the layout that first sizes it, and
+  // these lines are appended imperatively into a `contain: layout style`
+  // transcript entry — content the engine has already sized. The clipped run
+  // paints with no scrollbar until something else forces the entry to lay out
+  // again (resizing the card, which is exactly when it appeared).
+  //
+  // The `scrollWidth` read below is a deliberate synchronous layout flush: it
+  // is the measurement AND the invalidation, so the decision is made from the
+  // real geometry in the same turn the lines land, not one frame later. rAF is
+  // not an option — a background window never runs one.
+  pre.dataset.hscroll = pre.scrollWidth > pre.clientWidth ? "true" : "false";
 }
 
 /**
