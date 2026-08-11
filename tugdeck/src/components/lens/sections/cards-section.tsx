@@ -66,7 +66,10 @@ import {
   subscribeFilterQuery,
 } from "@/components/lens/lens-filter-store";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
-import { setSectionContent } from "@/components/lens/lens-section-content";
+import {
+  setSectionAttachedList,
+  setSectionContent,
+} from "@/components/lens/lens-section-content";
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { SlotPicker } from "@/components/lens/slot-picker";
@@ -714,6 +717,16 @@ function CardsSectionBody({
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<TugListViewHandle>(null);
+
+  // Publish this list as the section's ATTACHED LIST ([P08]), so the band's
+  // filter field — a sibling that cannot see this body — can drive its cursor
+  // from its own caret. Withdrawn on unmount (a collapsed section), which is
+  // what makes the band's lookup answer `null` rather than cursoring a list
+  // that is not on screen.
+  useLayoutEffect(() => {
+    setSectionAttachedList(host.focusGroup, listRef.current);
+    return () => setSectionAttachedList(host.focusGroup, null);
+  }, [host.focusGroup]);
   const dragGroupRef = useRef<LensCardsGroup | null>(null);
 
   // Hand the keyboard back to the row (or group) that was just set down. The

@@ -124,7 +124,11 @@ import {
   type TugListViewStripeParity,
 } from "./internal/list-view-striping";
 import { useFocusable, useFocusManager } from "./use-focusable";
-import { FocusModeContext, KEY_WITHIN_ATTRIBUTE } from "./focus-manager";
+import {
+  ATTACHED_CURSOR_ATTRIBUTE,
+  FocusModeContext,
+  KEY_WITHIN_ATTRIBUTE,
+} from "./focus-manager";
 import type {
   FocusPolicy,
   KeyViewBehavior,
@@ -572,6 +576,35 @@ export interface TugListViewHandle {
    * No-op when the list is not engine-authored or the list is empty.
    */
   moveCursorTo(index: number): void;
+
+  /**
+   * Step the **attached-list cursor** one row, for a text field that has
+   * declared this list as its attached list ([P08], Spec S02). The caret stays
+   * in the field; only this list's highlight moves.
+   *
+   * Distinct from the movement cursor in both gating and mark: it paints
+   * `data-attached-cursor` (see {@link ATTACHED_CURSOR_ATTRIBUTE}) regardless
+   * of whether the keyboard is in this list — it never is — and regardless of
+   * KBF mode. Skips non-cursorable rows and does not wrap: an arrow at the end
+   * of a list is a no-op, so the key can fall back to the caret.
+   *
+   * The first call seeds onto the first cursorable row rather than moving, so
+   * ↓ into a fresh list selects the first item instead of the second. Returns
+   * whether the highlight moved.
+   */
+  attachedCursorMove(direction: "up" | "down"): boolean;
+
+  /**
+   * The row index the attached-list cursor is on, or `-1` when it has none.
+   * A field's commit gesture reads it to know what its Return means ([Q01]).
+   */
+  attachedCursorIndex(): number;
+
+  /**
+   * Drop the attached-list cursor and its mark — the field's caret has left,
+   * or the list has taken the keyboard itself. Idempotent.
+   */
+  attachedCursorRelease(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -4346,6 +4379,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // time without pulling later-declared consts into its dependency array.
     const descendIntoRowRef = React.useRef<(index: number) => void>(() => {});
     const moveCursorToRef = React.useRef<(index: number) => void>(() => {});
+    // The attached-list cursor's three verbs, late-bound like their neighbors:
+    // the handle is built above the callbacks that implement them.
+    const attachedCursorMoveRef = React.useRef<
+      (direction: "up" | "down") => boolean
+    >(() => false);
+    const attachedCursorIndexReadRef = React.useRef<() => number>(() => -1);
+    const attachedCursorReleaseRef = React.useRef<() => void>(() => {});
     React.useImperativeHandle(
       ref,
       () => ({
@@ -4451,6 +4491,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         },
         moveCursorTo(index: number): void {
           moveCursorToRef.current(index);
+        },
+        attachedCursorMove(direction: "up" | "down"): boolean {
+          return attachedCursorMoveRef.current(direction);
+        },
+        attachedCursorIndex(): number {
+          return attachedCursorIndexReadRef.current();
+        },
+        attachedCursorRelease(): void {
+          attachedCursorReleaseRef.current();
         },
       }),
       [
@@ -4691,6 +4740,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       }
     }, []);
 
+    // ---- The attached-list cursor ([P08]) ----
+    // A second, independent highlight for the case where a text field drives
+    // this list from its own caret. It has its own index (the movement cursor's
+    // belongs to the keyboard, which is elsewhere), its own mark, and none of
+    // the movement cursor's gating: `-1` means "no attached cursor", which is
+    // the resting state and what a release returns to.
+    const attachedCursorIndexRef = React.useRef(-1);
+    const projectAttachedCursor = React.useCallback((): void => {
+      const target = attachedCursorIndexRef.current;
+      for (const [i, el] of cellElementMapRef.current) {
+        if (i === target) el.setAttribute(ATTACHED_CURSOR_ATTRIBUTE, "");
+        else el.removeAttribute(ATTACHED_CURSOR_ATTRIBUTE);
+      }
+    }, []);
+    const attachedCursorRelease = React.useCallback((): void => {
+      if (attachedCursorIndexRef.current === -1) return;
+      attachedCursorIndexRef.current = -1;
+      projectAttachedCursor();
+    }, [projectAttachedCursor]);
+
     // Bring row `index` into view, reusing the imperative handle's
     // rendered-vs-estimated two-pass logic ([D03]). `nearest` for cursor moves
     // so an already-visible row doesn't jump to the viewport top.
@@ -4734,6 +4803,33 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         if (scroll) scrollIndexIntoView(index, "nearest");
       },
       [projectCursor, scrollIndexIntoView],
+    );
+
+    const attachedCursorMove = React.useCallback(
+      (direction: "up" | "down"): boolean => {
+        const dir = direction === "down" ? 1 : -1;
+        const from = attachedCursorIndexRef.current;
+        // A fresh attached cursor SEEDS rather than steps: ↓ into a list that
+        // has no highlight yet must land on the first row, not the second.
+        const next =
+          from === -1
+            ? cursorableNear(
+                dir === 1 ? 0 : dataSourceRef.current.numberOfItems() - 1,
+                dir,
+              )
+            : stepCursorableRow(from, dir);
+        if (next < 0 || next === from) return false;
+        attachedCursorIndexRef.current = next;
+        projectAttachedCursor();
+        scrollIndexIntoView(next, "nearest");
+        return true;
+      },
+      [
+        cursorableNear,
+        stepCursorableRow,
+        projectAttachedCursor,
+        scrollIndexIntoView,
+      ],
     );
 
     // The engine focusable id carried by the cursor row's first inner focusable,
@@ -4849,6 +4945,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       const landing = cursorableNear(index, -1);
       if (landing >= 0) moveCursorTo(landing, true);
     };
+    attachedCursorMoveRef.current = attachedCursorMove;
+    attachedCursorIndexReadRef.current = (): number =>
+      attachedCursorIndexRef.current;
+    attachedCursorReleaseRef.current = attachedCursorRelease;
 
     // ---- Descended-row deletion landing ----
     //
@@ -5303,6 +5403,11 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       } else {
         clearCursorVisual();
       }
+      // The attached-list cursor rides the same per-commit re-projection, so a
+      // row that windows in (or shifts index as the filter narrows) keeps its
+      // highlight. Its own gate is only "is there one" — the keyboard is in the
+      // field, never in this list ([P08]).
+      if (attachedCursorIndexRef.current >= 0) projectAttachedCursor();
     });
 
     // Movement keys — delivered through the engine's key-view delegation

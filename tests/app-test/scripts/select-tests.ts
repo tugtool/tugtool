@@ -139,7 +139,15 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // 63 → 64 with the Lens cross-section traversal (at0341): the liveliness
     // net that carries an arrow off one surface and onto the next is the
     // navigator's, so a traversal test has nowhere smaller to point.
-    "tugdeck/src/components/tugways/focus-manager.ts": 64,
+    //
+    // 64 → 65 with at0345 under KBF mode. It used to assert a pure CSS fact —
+    // "no editor computes an outline" — and pointed only at the stylesheets.
+    // It now asserts the mode DIVISION: an editor rings iff its stop is parked,
+    // and parking is a route decision in `focus-manager` (`parksTextStop`), not
+    // a paint rule. A change to that predicate is exactly what would break this
+    // test, so leaving it undeclared would mean the one edit most likely to
+    // break it could not select it.
+    "tugdeck/src/components/tugways/focus-manager.ts": 65,
     "tugdeck/src/focus-transfer.ts": 30,
     "tugdeck/src/components/tugways/tug-text-editor/": 29,
     // The editor modules named individually by a test on top of the 29 that name the

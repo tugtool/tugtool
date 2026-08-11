@@ -26,6 +26,8 @@
  * @module components/lens/lens-section-content
  */
 
+import type { TugListViewHandle } from "@/components/tugways/tug-list-view";
+
 /** What a section currently holds. See the module docstring. */
 export interface LensSectionContent {
   /** At least one cursorable row after the filter. */
@@ -63,6 +65,38 @@ export function sectionHasContent(focusGroup: string): boolean {
  *  filter or no filter. */
 export function sectionIsPopulated(focusGroup: string): boolean {
   return (contentByGroup.get(focusGroup) ?? EMPTY).populated;
+}
+
+// ---- The attached list ([P08]) ----
+//
+// A section's filter field lives in its BAND and its list lives in its BODY —
+// siblings that cannot see each other, the same separation the filter query
+// itself crosses through a module store. The attached-list contract needs the
+// band to drive the body's list cursor, so the body publishes its list handle
+// here under the same focus-group key.
+//
+// Deliberately outside the version/notify channel above: a handle is not a
+// rendered fact, it is a capability read imperatively at keystroke time. Bumping
+// the version on registration would re-render every section for a ref that no
+// snapshot depends on.
+
+const attachedListByGroup = new Map<string, TugListViewHandle>();
+
+/** Publish (or, with `null`, withdraw) the list a section's filter field drives. */
+export function setSectionAttachedList(
+  focusGroup: string,
+  handle: TugListViewHandle | null,
+): void {
+  if (handle === null) attachedListByGroup.delete(focusGroup);
+  else attachedListByGroup.set(focusGroup, handle);
+}
+
+/** The list a section's filter field drives, or `null` when its body is away
+ *  (a collapsed section) and there is nothing to cursor. */
+export function sectionAttachedList(
+  focusGroup: string,
+): TugListViewHandle | null {
+  return attachedListByGroup.get(focusGroup) ?? null;
 }
 
 /** Publish what the section authored into `focusGroup` holds. */

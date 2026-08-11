@@ -75,7 +75,6 @@ import type { PromptHistoryStore } from "@/lib/prompt-history-store";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
-  type EditorArrowExitDirection,
 } from "./tug-text-editor";
 import type {
   ArgumentHintRefreshSource,
@@ -943,32 +942,6 @@ export interface TugPromptEntryProps {
   /** Order of the editor text-stop within {@link editorFocusGroup}. */
   editorFocusOrder?: number;
   /**
-   * A bare `Tab` / `Shift-Tab` in an EMPTY composer. An empty field has
-   * nothing to indent, so the key is better spent on movement — but the entry
-   * does not own the card's Tab order, so it hands the gesture to the host,
-   * which enters its focus cycle at the editor's seat in it ([P10]). `step` is
-   * `1` forward, `-1` back. Return `true` to consume; a host that returns
-   * `false` (or is absent) leaves Tab to the editor, which indents as usual.
-   */
-  onTabWhenEmpty?: (step: 1 | -1) => boolean;
-  /**
-   * The arrow sibling of {@link onTabWhenEmpty}, and the same contract: the
-   * gesture goes to the host, which enters its focus cycle at the editor's own
-   * seat and moves ([P10]). The callback receives the arrow's DIRECTION, so a
-   * host can resolve the exit spatially rather than as an ordinal step; return
-   * `true` to consume.
-   *
-   * A non-empty composer offers it only on the second discrete press at a
-   * document edge — the first arms the editor's boundary latch — so walking or
-   * holding the caret to the top of a draft never leaves the editor. An empty
-   * composer offers it on the first press, having no document to protect.
-   *
-   * This is how the composer exits at all: the session card keeps its stops in
-   * a trapped focus cycle, so there is no base-mode walk for a released arrow
-   * to move along. Supplying the callback is what makes the exit land somewhere.
-   */
-  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
-  /**
    * Authors the `Z4C` compose-phase attachment tiles into a focus group
    * ([P02]) — forwarded to `TugAttachmentPreview` so each image-attachment
    * tile registers as a leaf cycle stop (Return / Space opens its preview
@@ -1093,8 +1066,6 @@ export const TugPromptEntry = React.forwardRef<
     routeFocusOrder,
     editorFocusGroup,
     editorFocusOrder,
-    onTabWhenEmpty,
-    onArrowExit,
     attachmentFocusGroup,
     attachmentFocusOrderBase,
     onAttachmentCountChange,
@@ -1914,11 +1885,6 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     onDoubleEscapeWhenEmptyRef.current = onDoubleEscapeWhenEmpty;
   }, [onDoubleEscapeWhenEmpty]);
-  // Same seam for the empty-Tab gesture.
-  const onTabWhenEmptyRef = useRef(onTabWhenEmpty);
-  useLayoutEffect(() => {
-    onTabWhenEmptyRef.current = onTabWhenEmpty;
-  }, [onTabWhenEmpty]);
   // Timestamp (performance.now) of the previous Escape keydown, used by
   // the editor keymap to recognise a double-Escape and reject auto-repeat.
   const lastEscapePressAtRef = useRef(0);
@@ -2269,22 +2235,6 @@ export const TugPromptEntry = React.forwardRef<
       // inline ghost, which claim Tab while they are showing. Neither can be
       // open on an empty doc, which is why the empty gate is sufficient here
       // for the same reason it is for Escape.
-      Prec.high(
-        keymap.of([
-          {
-            key: "Tab",
-            run: (view) =>
-              view.state.doc.length === 0 &&
-              (onTabWhenEmptyRef.current?.(1) ?? false),
-          },
-          {
-            key: "Shift-Tab",
-            run: (view) =>
-              view.state.doc.length === 0 &&
-              (onTabWhenEmptyRef.current?.(-1) ?? false),
-          },
-        ]),
-      ),
       // Lowest-precedence Escape catch-all. The handlers above return
       // `false` on the paths that should fall through (a single non-empty
       // Escape lets the completion layer dismiss; an auto-repeat tick is
@@ -3704,7 +3654,6 @@ export const TugPromptEntry = React.forwardRef<
               historyProvider={currentHistoryProvider}
               focusGroup={editorFocusGroup}
               focusOrder={editorFocusOrder}
-              onArrowExit={onArrowExit}
               // Code Return semantics: Return inserts a newline; Shift+Return
               // (or the Z5 button) submits. A host override wins when supplied.
               returnAction={returnActionOverride ?? "newline"}

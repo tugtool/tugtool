@@ -17,7 +17,7 @@
  *
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/spatial-order.ts
- * @covers tugdeck/src/components/tugways/arrow-release.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */

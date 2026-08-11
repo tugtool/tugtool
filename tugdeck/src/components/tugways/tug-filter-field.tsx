@@ -80,9 +80,11 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import { ATTACHED_LIST_ATTRIBUTE } from "./focus-manager";
 import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
 import { TugIconButton } from "./tug-icon-button";
 import { TugInput, type TugInputSize } from "./tug-input";
+import type { TugListViewHandle } from "./tug-list-view";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 
@@ -102,8 +104,42 @@ export interface TugFilterFieldDelegate {
    * must not swallow the Return its surface's ringed default promises.
    */
   filterFieldDidSubmit?(query: string): void;
-  /** ArrowDown — the host moves the key view onto its list. */
+  /**
+   * ArrowDown — the host moves the key view onto its list, leaving the field.
+   *
+   * Superseded by {@link attachedListMoveCursor} for any list with a row cursor
+   * to drive, and consulted only when that is absent. One consumer remains:
+   * the session-history view renders a `TugHistoryList`, a plain mapped list
+   * with no cursor model and no per-row focus stops, so there is nothing to
+   * cursor and handing the key view to the list container is the right and only
+   * behavior there. Reach for the attached-list contract first; this is the
+   * fallback for a list that cannot answer it.
+   */
   filterFieldDidRequestAdvance?(): void;
+  /**
+   * Move the cursor of the list this field is attached to ([P08], Spec S02).
+   *
+   * Implementing it declares the **attached-list contract**: while the caret is
+   * in this field, ↑/↓ drive that list's cursor and never leave the field — in
+   * both KBF modes, and regardless of whether the query is empty. The field
+   * stamps `data-tug-attached-list` on its wrapper so the document's arrow
+   * stages yield, and calls this instead.
+   *
+   * Return `false` when there is nothing to move to (an empty list, an edge the
+   * list does not wrap): the key then falls through to the caret, which is what
+   * an arrow means in a text field with no list to drive.
+   *
+   * Commit stays the field's own ([Q01]) — this contract carries cursor
+   * movement only, and what Return does at the cursored row is per-site.
+   */
+  attachedListMoveCursor?(direction: "up" | "down"): boolean;
+  /**
+   * The caret has left the field, so the attached list's highlight is no longer
+   * anybody's statement about anything — drop it. Paired with
+   * {@link attachedListMoveCursor}; a site using {@link attachedListDelegate}
+   * gets both.
+   */
+  attachedListDidRelease?(): void;
   /** Escape while already empty — the host may yield focus up its ladder. */
   filterFieldDidRequestDismiss?(): void;
 }
@@ -153,6 +189,30 @@ export interface TugFilterFieldProps {
   "data-testid"?: string;
   /** Additional class names on the wrapper. */
   className?: string;
+}
+
+/**
+ * Build the attached-list half of a delegate from a `TugListViewHandle` ref
+ * ([P08], Spec S02) — the shape every `TugFilterField` site with a `TugListView`
+ * beside it needs, so none of them hand-rolls it.
+ *
+ * `resolve` is a function rather than the handle itself because the list may
+ * mount after the field (a collapsed Lens section, a sheet's list behind a
+ * loading state): the handle is read at keystroke time, never captured.
+ */
+export function attachedListDelegate(
+  resolve: () => TugListViewHandle | null,
+): Pick<
+  TugFilterFieldDelegate,
+  "attachedListMoveCursor" | "attachedListDidRelease"
+> {
+  return {
+    attachedListMoveCursor: (direction) =>
+      resolve()?.attachedCursorMove(direction) ?? false,
+    attachedListDidRelease: () => {
+      resolve()?.attachedCursorRelease();
+    },
+  };
 }
 
 /**
@@ -247,6 +307,13 @@ export function TugFilterField({
     inputRef.current?.select();
   }, []);
 
+  // The attached list's highlight belongs to this caret ([P08]); when the caret
+  // goes, so does the highlight — otherwise a list left behind keeps marking a
+  // row nothing is about to act on.
+  const onBlur = React.useCallback((): void => {
+    delegateRef.current.attachedListDidRelease?.();
+  }, []);
+
   const onMouseDown = React.useCallback((): void => {
     pendingFocusClickRef.current =
       document.activeElement !== inputRef.current;
@@ -302,6 +369,22 @@ export function TugFilterField({
         peekDefaultButton()?.click();
         return;
       }
+      // The attached list ([P08]): ↑/↓ drive its cursor and stay in the field.
+      // Unconditional on emptiness — that is the whole point of the contract,
+      // and the reason the field can stop leaning on an ambient release rule.
+      // A `false` return means the list had nowhere to go, so the key falls
+      // through to the caret.
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const move = delegateRef.current.attachedListMoveCursor;
+        if (move !== undefined) {
+          const moved = move(event.key === "ArrowDown" ? "down" : "up");
+          if (moved) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+          return;
+        }
+      }
       if (event.key === "ArrowDown") {
         if (delegateRef.current.filterFieldDidRequestAdvance === undefined) return;
         event.preventDefault();
@@ -326,6 +409,11 @@ export function TugFilterField({
       data-slot="tug-filter-field"
       data-empty={defaultValue === undefined || defaultValue === "" ? "true" : "false"}
       data-fill={fill ? "true" : undefined}
+      // Declares the attached-list contract to the document arrow stages, which
+      // test containment from the focused input ([P08], Spec S02).
+      {...(delegate.attachedListMoveCursor !== undefined
+        ? { [ATTACHED_LIST_ATTRIBUTE]: "" }
+        : {})}
       data-testid={dataTestid}
       className={cn("tug-filter-field", className)}
     >
@@ -347,6 +435,7 @@ export function TugFilterField({
           focusBehavior={focusBehavior}
           onChange={onChange}
           onFocus={onFocus}
+          onBlur={onBlur}
           onMouseDown={onMouseDown}
           onMouseUp={onMouseUp}
           onKeyDown={onKeyDown}

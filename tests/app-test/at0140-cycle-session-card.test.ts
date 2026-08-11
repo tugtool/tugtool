@@ -32,8 +32,10 @@
  *      stop). The editor is the last stop — a text
  *      stop: the input area takes the border while the editor stays blurred (no
  *      caret).
- *   5. **Return on the editor stop resumes typing ([P11]):** it descends into
- *      the editor, exiting cycling and returning the caret. (⌥⇥ also exits.)
+ *   5. **The editor stop is PARKED ([P12]):** arriving there by engine movement
+ *      rings it and leaves the editor caret-less. Return or a printable
+ *      character grants the caret; ⌥⇥ exits the cycle and the resting landing
+ *      returns it.
  *   6. **Z2 popover keeps the cycle:** Return on a cell opens its popover;
  *      Escape returns the ring to the same cell — still cycling, editor
  *      untouched (the focus engine owns close-focus; the service-popup binding
@@ -156,6 +158,14 @@ const EDITOR_FOCUSED = `(function(){
   return el !== null && document.activeElement === el;
 })()`;
 
+// The composer's text stop wearing the ring — the PARKED state ([P12]). The
+// stop registers on the editor element itself, so the ring attribute rides it.
+const EDITOR_STOP_RINGED = `(function(){
+  return document.querySelector(${JSON.stringify(
+    `${CARD} [data-slot="tug-prompt-entry"] [data-key-view-kbd][data-slot="tug-text-editor"]`,
+  )}) !== null;
+})()`;
+
 // Whether a status-cell detail surface is currently open. The Z2 status
 // cells open the shared TugPlacard (`data-slot="tug-placard"`); a plain
 // TugPopover (`data-slot="tug-popover"`) counts too.
@@ -190,7 +200,7 @@ function effortModelCapabilities() {
 
 describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", () => {
   test(
-    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, landing on the editor stop grants the caret",
+    "⌥⇥ seeds the route, Tab tours route → Claude Code → AI → submit → STATE → TIME → TOKENS → CONTEXT → WORK → editor → wrap (each Z4B chip + Z2 cell a leaf stop), skips the disabled submit when empty, and the editor stop parks",
     async () => {
       const app = await launchTugApp({ testName: "at0140-cycle-session-card" });
       try {
@@ -258,11 +268,12 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         // with the Z2 diet, and `/btw` reaches its placard by being asked rather
         // than by a stop. The PULSE stop went with the strip — the voice moved
         // to the masthead, which is pane chrome and takes no card-cycle stop.
-        // The editor's stop carries its focus contract, so landing on it
-        // GRANTS the caret — no parked blurred state.
-        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
-        // Tab from the (empty) editor hands off at the editor's seat and wraps
-        // to the route.
+        // Arriving by engine movement PARKS the stop ([P12]): the ring lands on
+        // the editor's stop and the caret does not.
+        await app.waitForCondition<boolean>(EDITOR_STOP_RINGED, { timeoutMs: 6000 });
+        expect(await app.evalJS<boolean>(EDITOR_FOCUSED)).toBe(false);
+        // Tab from the parked stop keeps walking the cycle and wraps to the
+        // route — the stop has no caret to indent for.
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(ROUTE_HAS_KEY_VIEW, { timeoutMs: 6000 });
         // ⌥⇥ off → back to the editor caret.
@@ -317,12 +328,19 @@ describe.skipIf(!SHOULD_RUN)("AT0140: the session card joins the focus cycle", (
         await app.nativeKey("Tab");
         await app.waitForCondition<boolean>(hasKeyView(Z2_WORK), { timeoutMs: 6000 });
         await app.nativeKey("Tab");
-        // WORK → editor: WORK is now the last leaf before it.
-        // The landing grants the caret — resuming typing IS the landing, no
-        // Return required. The draft is intact under the caret.
-        await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });
+        // WORK → editor: WORK is now the last leaf before it. Under KBF mode
+        // the landing PARKS the stop rather than granting it ([P12]) — the ring
+        // lands on the editor's stop and the caret does not, because arriving by
+        // engine movement is a request to move the ring, not to type. Return or
+        // any printable character grants the caret from here.
+        await app.waitForCondition<boolean>(EDITOR_STOP_RINGED, { timeoutMs: 6000 });
+        expect(
+          await app.evalJS<boolean>(EDITOR_FOCUSED),
+          "a stop arrived at by movement is parked — no caret",
+        ).toBe(false);
 
-        // (5) ⌥⇥ exits cycling from the granted editor; the caret stays put.
+        // (5) ⌥⇥ from the parked stop exits cycling and the resting landing
+        // puts the caret back in the editor, draft intact.
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`${CYCLING} === "false"`, { timeoutMs: 6000 });
         await app.waitForCondition<boolean>(EDITOR_FOCUSED, { timeoutMs: 6000 });

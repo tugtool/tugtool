@@ -173,12 +173,7 @@ import { tugLineNumbersGutter } from "./tug-text-editor/line-numbers-gutter";
 import { pressCollapsesSelection } from "./press-collapses-selection";
 import { tugSelectionLayer } from "./tug-text-editor/selection-layer";
 import { captureEditState, tugTextEditorKeymap } from "./tug-text-editor/keymap";
-import type {
-  EditorArrowExitDirection,
-  TugTextEditorKeymapConfig,
-} from "./tug-text-editor/keymap";
-
-export type { EditorArrowExitDirection };
+import type { TugTextEditorKeymapConfig } from "./tug-text-editor/keymap";
 import {
   acceptCompletionAt,
   cancelCompletion,
@@ -833,24 +828,6 @@ export interface TugTextEditorProps
    */
   focusPolicy?: FocusPolicy;
   /**
-   * Take the arrow that would leave this editor — the arrow sibling of
-   * {@link onTabWhenEmpty}, and the same contract: `-1` for Up / Left, `+1`
-   * for Down / Right, return `true` to consume the press.
-   *
-   * A non-empty editor offers it only on the second discrete press at a
-   * document edge (the boundary latch: the first press arms, so slamming or
-   * holding the key parks the caret and never overshoots out). An empty
-   * editor offers it on the first press in any direction — there is no
-   * document to protect.
-   *
-   * Supply it from a host whose stops live in a mode the document keyboard
-   * pipeline cannot walk — a card that keeps its stops in a trapped focus
-   * cycle — so the host enters that cycle at this editor's own seat. Omit it
-   * on a surface the pipeline CAN walk (a dialog's answer field) and the
-   * editor releases the arrow to the spatial plane instead.
-   */
-  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
-  /**
    * Soft-wrap long lines at the editor's width. When true, adds
    * `EditorView.lineWrapping` (sets `white-space: break-spaces` on
    * `.cm-content`); when false, long lines scroll horizontally.
@@ -1304,7 +1281,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       focusGroup,
       focusOrder = 0,
       focusPolicy,
-      onArrowExit,
       lineWrap = false,
       lineNumbers: lineNumbersProp = false,
       highlightActiveLineGutter: highlightActiveLineGutterProp = false,
@@ -1858,7 +1834,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         onSubmit: onSubmit ?? noopSubmit,
         historyProvider: historyProvider ?? null,
         peekDefaultButton,
-        onArrowExit,
       };
     }, [
       returnAction,
@@ -1866,7 +1841,6 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       onSubmit,
       historyProvider,
       peekDefaultButton,
-      onArrowExit,
     ]);
 
     // Expose the imperative delegate. The closure reads `viewRef.current`

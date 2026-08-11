@@ -61,7 +61,10 @@ import React from "react";
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
-import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import {
+  attachedListDelegate,
+  TugFilterField,
+} from "@/components/tugways/tug-filter-field";
 import {
   useFocusable,
   useFocusManager,
@@ -69,6 +72,7 @@ import {
 import { getFilterQuery, setFilterQuery } from "./lens-filter-store";
 import {
   getSectionContentVersion,
+  sectionAttachedList,
   sectionIsPopulated,
   subscribeSectionContent,
 } from "./lens-section-content";
@@ -194,15 +198,12 @@ export function LensSection({
       filterFieldDidChangeQuery: (query: string) => {
         setFilterQuery(def.kind, query);
       },
-      filterFieldDidRequestAdvance: () => {
-        focusManager?.place(
-          host.lensCardId,
-          { kind: "focus-key", focusKey: `${sectionFocusGroup(def.kind)}:0` },
-          { modality: "keyboard" },
-        );
-      },
+      // ↑/↓ drive the body's list cursor with the caret staying here ([P08]).
+      // The body publishes its handle under this section's focus group; the
+      // lookup is per-keystroke because a collapsed section has no body.
+      ...attachedListDelegate(() => sectionAttachedList(host.focusGroup)),
     }),
-    [def.kind, focusManager, host.lensCardId],
+    [def.kind, focusManager, host.lensCardId, host.focusGroup],
   );
 
   return (

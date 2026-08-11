@@ -131,29 +131,7 @@ export interface TugTextEditorKeymapConfig {
    * omit to keep the original "Enter always submits" behavior.
    */
   peekDefaultButton?: () => HTMLButtonElement | null;
-  /**
-   * The host's offer to take an arrow that would leave the editor ([P09]).
-   * Return `true` to consume the press. The arrow sibling of `onTabWhenEmpty` —
-   * a host enters its focus-cycling mode at this editor's own seat in the order
-   * and moves one step, rather than the editor releasing the key to the document
-   * pipeline and hoping the surface has stops the pipeline can walk.
-   *
-   * The callback receives the DIRECTION, not a `±1` step: a host resolving the
-   * exit against a spatial plane needs to tell Down from Right, which they
-   * collapse into the same step.
-   *
-   * A host that supplies this owns EVERY exit from the editor: the release
-   * attribute is then never projected, because a document-capture listener
-   * necessarily runs before CM6's handlers and would take the crossing press
-   * before the handoff could fire. An editor with no callback (a dialog's
-   * answer field, whose surface the pipeline CAN walk) keeps the attribute
-   * path instead.
-   */
-  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
 }
-
-/** The four directions an arrow can carry an editor's keyboard out on. */
-export type EditorArrowExitDirection = "up" | "down" | "left" | "right";
 
 // ---------------------------------------------------------------------------
 // State capture / restore
@@ -397,49 +375,6 @@ export function resolveArrowHistory(input: {
   return "caret";
 }
 
-/** Which way an arrow leaves the editor, as a direction on the spatial plane. */
-const EXIT_DIRECTION: Record<string, EditorArrowExitDirection> = {
-  ArrowUp: "up",
-  ArrowLeft: "left",
-  ArrowDown: "down",
-  ArrowRight: "right",
-};
-
-/** Which document edge an arrow can arm the latch at, if any. */
-const LATCH_EDGE: Record<string, "start" | "end" | undefined> = {
-  ArrowUp: "start",
-  ArrowDown: "end",
-};
-
-/**
- * The arrow-release attribute this editor should be wearing right now, or
- * `null` for none ([P05] / Spec S03).
- *
- * Exported for its truth table rather than its plumbing — it is the whole
- * policy of when a text editor is transparent to the spatial plane, and the
- * order of the clauses is load-bearing.
- */
-export function resolveEditorRelease(input: {
-  /** Whether the host supplied an `onArrowExit` callback. */
-  hasHostExit: boolean;
-  docEmpty: boolean;
-  armedEdge: "start" | "end" | null;
-  /** Whether the caret still sits collapsed on the armed edge. */
-  atArmedEdge: boolean;
-}): string | null {
-  // A host that takes the exit owns every one of them: projecting the attribute
-  // would let the document pipeline take the crossing press first, and the
-  // handoff would never fire ([P09]).
-  if (input.hasHostExit) return null;
-  // An empty document has no caret motion to protect, so it is transparent in
-  // every direction and costs no latch press ([Q01]).
-  if (input.docEmpty) return "up down left right";
-  if (!input.atArmedEdge) return null;
-  if (input.armedEdge === "start") return "up";
-  if (input.armedEdge === "end") return "down";
-  return null;
-}
-
 /** Handle an Enter or numpad-Enter keystroke. */
 function handleEnter(
   view: EditorView,
@@ -526,59 +461,7 @@ function handleEnter(
 export function tugTextEditorKeymap(
   getConfig: () => TugTextEditorKeymapConfig,
 ): Extension {
-  // The boundary latch's whole state, per editor instance: which document edge
-  // the caret is currently parked against with an exit armed. The factory is
-  // called once per editor, so this closure is that editor's — never React
-  // state, never copied into CM6's state ([L02] / [L22]).
-  let armedEdge: "start" | "end" | null = null;
-
-  const atArmedEdge = (view: EditorView): boolean =>
-    armedEdge === "start"
-      ? atBackBoundary(view)
-      : armedEdge === "end"
-        ? atForwardBoundary(view)
-        : false;
-
-  /** Write (or clear) the release attribute on the element that holds focus. */
-  const projectRelease = (view: EditorView): void => {
-    const release = resolveEditorRelease({
-      hasHostExit: getConfig().onArrowExit !== undefined,
-      docEmpty: view.state.doc.length === 0,
-      armedEdge,
-      atArmedEdge: atArmedEdge(view),
-    });
-    // The chain's arrow listener reads the attribute off
-    // `document.activeElement`, which for a focused editor is CM6's
-    // `contentDOM` — so the marker goes there, not on the host wrapper. A
-    // behavior-zone DOM write, never React state ([L06]).
-    if (release === null) {
-      view.contentDOM.removeAttribute("data-tug-arrow-release");
-    } else {
-      view.contentDOM.setAttribute("data-tug-arrow-release", release);
-    }
-  };
-
   return Prec.high([
-    // Keeps the projected attribute honest, and disarms the latch the moment
-    // the caret leaves the edge it was armed against, the document changes
-    // under it, or the editor loses focus. Projecting at construction covers
-    // the editor that mounts already empty.
-    ViewPlugin.define((view) => {
-      projectRelease(view);
-      return {
-        update(update) {
-          if (!update.docChanged && !update.selectionSet && !update.focusChanged) {
-            return;
-          }
-          if (update.docChanged || (update.focusChanged && !update.view.hasFocus)) {
-            armedEdge = null;
-          } else if (update.selectionSet && !atArmedEdge(update.view)) {
-            armedEdge = null;
-          }
-          projectRelease(update.view);
-        },
-      };
-    }),
     EditorView.domEventHandlers({
       keydown(event, view) {
         const config = getConfig();
@@ -608,71 +491,12 @@ export function tugTextEditorKeymap(
           // history still jumps to the start.)
           return false;
         }
-        // ---- The boundary latch ([P05] / Spec S03) ----
-        // Plain arrows only: no modifier, not composing.
-        if (
-          event.shiftKey || event.ctrlKey || event.metaKey || event.altKey
-          || event.isComposing
-        ) {
-          return false;
-        }
-        const exitDirection = EXIT_DIRECTION[event.key];
-        if (exitDirection === undefined) return false;
-        const hostExit = config.onArrowExit;
-
-        if (view.state.doc.length === 0) {
-          // An empty document has nothing to protect, so every arrow is an
-          // exit — no latch press to pay ([Q01]). A repeat still never crosses:
-          // leaving a text surface is always discrete ([P03]).
-          if (hostExit === undefined) return false; // released via the attribute
-          if (event.repeat) {
-            event.preventDefault();
-            return true;
-          }
-          hostExit(exitDirection);
-          // Consumed either way. A host that declines has nowhere to send the
-          // ring, and letting the key run on from an empty document would end
-          // with nothing handling it — a beep, against [P08].
-          event.preventDefault();
-          return true;
-        }
-
-        // A non-empty document keeps its horizontal arrows unconditionally:
-        // Left and Right are high-frequency caret keys, and an exit at column
-        // zero would fire during ordinary editing.
-        const edge = LATCH_EDGE[event.key];
-        if (edge === undefined) return false;
-        const atEdge = edge === "start" ? atBackBoundary(view) : atForwardBoundary(view);
-        if (!atEdge) {
-          // Moving within the document — the caret's key, and any arming is
-          // stale (the update listener disarms; this keeps the two in step).
-          return false;
-        }
-        if (event.repeat) {
-          // A held key parks the caret at the edge and stops there. Consumed,
-          // so the press that slams into the boundary never overshoots out.
-          event.preventDefault();
-          return true;
-        }
-        if (armedEdge !== edge) {
-          // Arming: the first press at the edge changes nothing visible, which
-          // is the honest signal that the caret is already as far as it goes.
-          // The next discrete press is the one that leaves ([Q05]: no mark).
-          armedEdge = edge;
-          projectRelease(view);
-          event.preventDefault();
-          return true;
-        }
-        // Crossing. With no host callback this is unreachable — the attribute
-        // projected at arming means the document pipeline took this press
-        // before CM6 saw it.
-        if (hostExit !== undefined) {
-          // A host that declines leaves the latch armed and keeps the key: the
-          // editor never hands an arrow to nobody ([P08]).
-          hostExit(exitDirection);
-          event.preventDefault();
-          return true;
-        }
+        // Plain arrows are the caret's, unconditionally and in every
+        // direction. The boundary latch that used to arm here — two presses at
+        // a document edge to cross out of the editor — is gone with the mode
+        // division: in KBF mode OFF a text surface owns all four arrows
+        // whatever its content, and in mode ON the keyboard is on a ring rather
+        // than in this editor, so there is no edge to cross from.
         return false;
       },
     }),

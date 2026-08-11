@@ -311,6 +311,7 @@ Every menu item, the command behind it, and where each answer comes from. Genera
 | `session.toggleHistory` | `toggle-history-view` | key card | registry gate |
 | `session.usage` | `run-slash-command:usage` | key card | registry gate |
 | `view.actualSize` | `zoom-actual` | first responder | host tier |
+| `view.keyboardFocus` | `cycle-focus-mode` | key card | host tier |
 | `view.nextKeyboardFocus` | `next-keyboard-focus` | registered handler | host tier |
 | `view.nextTheme` | `next-theme` | registered handler | host tier |
 | `view.previousKeyboardFocus` | `previous-keyboard-focus` | registered handler | host tier |

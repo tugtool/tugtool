@@ -172,6 +172,10 @@ export function registerSettingsCard(): void {
     contentFactory: () => <SettingsCardContent />,
     defaultMeta: { title: "Settings", icon: "Settings", closable: true },
     hidden: true,
+    // A configurator: sidebar, tabs, and controls, all engine stops ([P10]).
+    // The panel bodies are tabs of this one card rather than registrations of
+    // their own, so this single declaration covers them.
+    kbfAtRest: true,
     sizePolicy: {
       // Master/detail wants width more than height: room for the sidebar plus
       // a comfortable panel measure. A long panel scrolls in the detail area.

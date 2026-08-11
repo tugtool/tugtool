@@ -51,6 +51,8 @@ export function registerKeyboardCard(): void {
     contentFactory: () => <KeyboardCardContent />,
     defaultMeta: { title: "Keyboard Shortcuts", icon: "Keyboard", closable: true },
     hidden: true,
+    // A list of bindings, read by keyboard ([P10]).
+    kbfAtRest: true,
     sizePolicy: {
       // The floor is the slim preset, so every content width is reachable here.
       min: { width: CONTENT_WIDTH_SLIM_PX, height: 600 },

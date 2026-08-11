@@ -1,22 +1,18 @@
 /**
- * at0343-prompt-arrow-latch-history.test.ts — the composer's two arrow
+ * at0343-prompt-arrow-history.test.ts — the composer's two arrow
  * ergonomics: a plain arrow can neither overshoot into a history recall nor
  * overshoot out of the editor.
  *
  * Two overshoots used to live on the same key. Walking the caret up through a
  * draft handed off to the history provider the moment it reached line one, so
  * the press meant to reach the top replaced the draft instead. This pins the
- * new split end to end on the real Session card:
+ * split end to end on the real Session card:
  *
- *  - plain Up walks the caret and, at the document start, ARMS rather than
- *    leaves — the first press changes nothing and the editor keeps the caret;
- *  - the second discrete Up hands off to the card's focus cycle at the
- *    editor's own seat, so the ring lands on the adjacent cycle stop;
- *  - holding Up (auto-repeat) parks at the edge and never crosses;
- *  - an empty composer needs no latch press — one Up leaves;
- *  - arrowing back onto the editor's stop GRANTS the caret: the stop carries
- *    the editor's focus contract, so landing on it is landing in the editor,
- *    and the blinking caret — never a ring — is the focus indication;
+ *  - in KBF mode OFF a plain arrow NEVER leaves the composer — empty or not,
+ *    at the document edge or not, held or discrete. The boundary latch this
+ *    file used to pin (two discrete presses at an edge to cross out) and the
+ *    empty-field release beside it were both compensation for a missing mode,
+ *    and both are gone: content is not a factor in who owns an arrow;
  *  - Cmd-Up away from the start is still `cursorDocStart` and leaves the draft
  *    alone; at the start it recalls the previous entry.
  *
@@ -28,7 +24,7 @@
  * @covers tugdeck/src/components/tugways/tug-text-editor/keymap.ts
  * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
- * @covers tugdeck/src/components/tugways/arrow-release.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  */
@@ -135,92 +131,60 @@ async function seedCardWithCaret(
   return app;
 }
 
-describe.skipIf(!SHOULD_RUN)("at0343 — the composer's arrow latch and Cmd-history", () => {
+describe.skipIf(!SHOULD_RUN)("at0343 — the composer's plain arrows and Cmd-history", () => {
   test(
-    "a plain Up arms before it leaves, a repeat never leaves, and arrowing back grants the caret — never a ring",
+    "in mode OFF a plain arrow never leaves the composer, empty or not, held or not",
     async () => {
-      const app = await seedCardWithCaret("at0343-prompt-arrow-latch");
+      const app = await seedCardWithCaret("at0343-prompt-arrow-mode-off");
       try {
-        // An empty composer has no document to protect, so it pays no latch
-        // press: the very first Up leaves.
-        await pressKey(app, "ArrowUp");
-        await app.waitForCondition<boolean>(`!(${CARET_IN_EDITOR})`, {
-          timeoutMs: 3000,
-        });
+        // An EMPTY composer keeps its arrows. This is the case the old rule
+        // inverted: emptiness used to make the field transparent to all four
+        // directions, which is one of the three ambient mechanisms KBF mode
+        // deleted. Content is not a factor in who owns an arrow.
+        for (let i = 0; i < 3; i += 1) {
+          await pressKey(app, "ArrowUp");
+        }
+        expect(
+          await app.evalJS<boolean>(CARET_IN_EDITOR),
+          "an empty composer keeps the caret through repeated Up",
+        ).toBe(true);
 
-        // Back into the editor, and give it a document to protect.
-        await app.nativeClickAtElement(EDITOR_CONTENT);
-        await app.waitForCondition<boolean>(CARET_IN_EDITOR, { timeoutMs: 5000 });
+        // …and so does a composer with a document, at the document edge, held.
         await app.nativeType("alpha");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(EDITOR_CONTENT)}).textContent.indexOf("alpha") !== -1`,
           { timeoutMs: 5000 },
         );
-
-        // Up from the end of a one-line document is a caret key: it lands the
-        // caret on the document start and goes no further.
         await pressKey(app, "ArrowUp");
-        expect(await app.evalJS<boolean>(CARET_IN_EDITOR)).toBe(true);
-
-        // The first press AT the start arms. It changes nothing visible, which
-        // is the honest signal the caret is as far as it goes.
-        await pressKey(app, "ArrowUp");
-        expect(await app.evalJS<boolean>(CARET_IN_EDITOR)).toBe(true);
-
-        // Holding the key from the armed edge never crosses — the whole point
-        // of the discrete-press rule.
         for (let i = 0; i < 4; i += 1) {
           await pressKey(app, "ArrowUp", { repeat: true });
         }
-        expect(await app.evalJS<boolean>(CARET_IN_EDITOR)).toBe(true);
-
-        // The next DISCRETE press leaves: the card enters its focus cycle at
-        // the editor's own seat and steps off it. The editor blurs — the ring
-        // and the caret are never both on the composer.
         await pressKey(app, "ArrowUp");
-        await app.waitForCondition<boolean>(`!(${CARET_IN_EDITOR})`, {
-          timeoutMs: 3000,
-        });
-        // The ring is on a stop of the card's cycle — the one adjacent to the
-        // editor's seat — and it is not the composer.
-        const landed = await ringAddress(app);
-        expect(landed).not.toBeNull();
-        expect(landed).not.toContain("tug-text-editor");
-        expect(landed).not.toContain("tug-prompt-entry-input-area");
-        // The draft is untouched: the arrows that armed and crossed spent
-        // themselves on movement, never on the document.
-        expect(await docText(app)).toBe("alpha");
-
-        // Down comes back onto the editor's stop — the row this phase added to
-        // the cycle's grid. The stop carries the editor's focus CONTRACT, so
-        // landing on it grants the caret: the editor blinks, no Return needed,
-        // and neither the editor nor its input-area wrapper paints a ring.
-        await pressKey(app, "ArrowDown");
-        await app.waitForCondition<boolean>(CARET_IN_EDITOR, { timeoutMs: 3000 });
+        await pressKey(app, "ArrowUp");
         expect(
-          await app.evalJS<string>(
-            `(function(){
-              var out = [];
-              for (var sel of [${JSON.stringify(EDITOR_HOST)}, ${JSON.stringify(INPUT_AREA)}]) {
-                var el = document.querySelector(sel);
-                if (el === null) continue;
-                var s = getComputedStyle(el);
-                if (s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0) {
-                  out.push(sel + " outline=" + s.outline);
-                }
-                var after = getComputedStyle(el, "::after");
-                if (after.content !== "none" && parseFloat(after.borderTopWidth) > 0) {
-                  out.push(sel + " ::after border");
-                }
-              }
-              return out.join(" | ");
-            })()`,
+          await app.evalJS<boolean>(CARET_IN_EDITOR),
+          "no number of Ups at the document start crosses out of the editor",
+        ).toBe(true);
+
+        // No ring painted anywhere on the deck: mode OFF, so there is nothing
+        // for an arrow to move even if one had escaped.
+        expect(
+          await app.evalJS<boolean>(
+            `document.documentElement.hasAttribute("data-kbf")`,
           ),
-        ).toBe("");
-        // The draft survived the round trip untouched.
+          "plain arrows never engage the mode",
+        ).toBe(false);
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll("[data-key-view-kbd]").length`,
+          ),
+          "no ring is painted in mode OFF",
+        ).toBe(0);
+
+        // The draft is untouched: every arrow spent itself on the caret.
         expect(await docText(app)).toBe("alpha");
 
-        // No arrow in the tour ended with a raw focus write behind the engine.
+        // And nothing wrote focus behind the engine's back.
         const report = await app.evalJS<{
           violations: number;
           steals: Record<string, number>;

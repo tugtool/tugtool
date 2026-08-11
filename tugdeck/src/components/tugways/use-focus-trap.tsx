@@ -86,6 +86,19 @@ export interface UseFocusTrapOptions {
    * modal confirms).
    */
   spaceDismisses?: boolean;
+  /**
+   * Whether this surface auto-engages **KBF mode** while it is open — Class A
+   * of the mode derivation ([P03], Spec S01). Defaults to `true`: a surface
+   * that traps the keyboard is a surface whose contents are engine stops, so
+   * its rings paint and its arrows move the ring without the user asking.
+   *
+   * Pass `false` for a **typing-first** trap — one whose caret is the point and
+   * whose list is driven from a field ({@link TugCompletionPopup}). Without the
+   * opt-out such a surface opens engaged, the engine claims its arrows, and the
+   * field's own key handling never runs. The flag exists from day one precisely
+   * so the next typing-first HUD does not have to rediscover that.
+   */
+  kbf?: boolean;
 }
 
 export interface UseFocusTrapResult {
@@ -112,6 +125,7 @@ export function useFocusTrap({
   deferDomFocusToTeardown,
   onEscapeDismiss,
   spaceDismisses,
+  kbf,
 }: UseFocusTrapOptions): UseFocusTrapResult {
   const manager = useContext(FocusManagerContext);
   // The chain — for the mouse-opened close-focus fallback in `onCloseAutoFocus`
@@ -154,6 +168,7 @@ export function useFocusTrap({
       trapped,
       onEscapeDismiss: hasOnEscapeDismiss ? stableOnEscapeDismiss : undefined,
       spaceDismisses,
+      kbf,
     });
     return () => {
       // The disposition is read at pop time (it is set on commit, just before the
@@ -181,6 +196,7 @@ export function useFocusTrap({
     hasOnEscapeDismiss,
     stableOnEscapeDismiss,
     spaceDismisses,
+    kbf,
   ]);
 
   // The surface's single close-focus DOM writer (see UseFocusTrapResult). Stable

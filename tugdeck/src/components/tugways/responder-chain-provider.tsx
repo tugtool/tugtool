@@ -23,10 +23,9 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
-import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
+import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, ATTACHED_LIST_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
-import { arrowDirection } from "./spatial-order";
-import { arrowReleaseSubject, resolveArrowRelease } from "./arrow-release";
+import { arrowDirection, type SpatialDirection } from "./spatial-order";
 import { keyboardAccessStore } from "../../keyboard-access-store";
 import { focusRingModalityStore } from "../../focus-ring-modality-store";
 import { keymapRegistry, type ScopedBinding } from "./keymap-registry";
@@ -434,21 +433,52 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (event.key !== "Tab" || event.metaKey || event.ctrlKey || event.altKey) {
         return;
       }
-      // (1) A text surface consuming Tab keeps it.
+      // (1) A surface that owns Tab keeps it — resolved by the KIND of surface,
+      // never by its content ([P07]).
+      //
+      // A MULTI-LINE text surface (contentEditable / TEXTAREA) has a real Tab
+      // meaning of its own: indent. So does anything advertising
+      // `data-tug-tab-consume` right now — an editor with an open completion,
+      // which accepts on Tab.
+      //
+      // A single-line `INPUT` does NOT. A plain field has no indent and no Tab
+      // behavior to belong to it, so a Tab there is a request to LEAVE, and it
+      // engages KBF and takes one step exactly like the nowhere case below.
+      // Without that split, "a caret owns Tab" plus never-falling-through makes
+      // Tab a dead key in every mode-OFF field — and takes Open Quickly's own
+      // directory switcher and the find bar's controls out of keyboard reach.
+      // The single-line/multi-line test is structural (tag kind), not a content
+      // test, so it is not the emptiness rule this mode exists to delete.
       const active = document.activeElement;
       const surfaceConsumes =
         (active instanceof Element &&
           active.closest(`[${TAB_CONSUME_ATTRIBUTE}="true"]`) !== null) ||
+        (active instanceof HTMLElement &&
+          (active.isContentEditable || active.tagName === "TEXTAREA")) ||
         focusManager.keyViewConsumesTab();
       if (surfaceConsumes) return;
-      // (2) Advance the walk — the shared performer the View menu's Next /
-      // Previous Keyboard Focus commands also run. True = the key view moved
-      // and was placed; swallow the key. False = nothing to move to; yield to
-      // native Tab.
+      // (2) Everything else walks — a single-line field, the nowhere state (an
+      // active card with no caret), an engine-routed stop. In mode OFF the walk
+      // ENGAGES first, so the step the user just asked for is visible: Tab is
+      // the most-tried key in any interface and it must always produce a
+      // landing you can see ([P07]).
       if (advanceKeyViewFocus(focusManager, event.shiftKey ? -1 : 1)) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        return;
       }
+      // (3) Nothing to move to. The engine consumes the Tab anyway rather than
+      // yielding to WebKit ([P07] never-fall-through): a native Tab would land
+      // DOM focus somewhere the engine does not know about, which is the state
+      // the whole model exists to prevent. An empty walk is a tripwire, not a
+      // user-facing event — some subtree was never authored as engine stops.
+      tugDevLogStore.warn(
+        "responder-chain-provider",
+        "Tab consumed with an empty focus walk; a subtree here registers no engine stops",
+        { mode: focusManager.currentFocusMode() },
+      );
+      event.preventDefault();
+      event.stopImmediatePropagation();
     }
 
     // ---- Spatial arrow navigation ([P22]/[P23]) ----
@@ -530,31 +560,39 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       return true;
     }
 
+    /**
+     * The attached-list yield ([P08], Spec S02): a field that declares
+     * `data-tug-attached-list` owns ↑/↓ while its caret is live, in both KBF
+     * modes and whatever its query says. Horizontal arrows are untouched —
+     * they are caret keys, and a list has no left or right.
+     *
+     * Tested from `document.activeElement` by containment because the focused
+     * element is the inner `<input>` while the marker rides its wrapper.
+     */
+    function insideAttachedList(direction: SpatialDirection): boolean {
+      if (direction !== "up" && direction !== "down") return false;
+      const active = document.activeElement;
+      return (
+        active instanceof Element &&
+        active.closest(`[${ATTACHED_LIST_ATTRIBUTE}]`) !== null
+      );
+    }
+
     function arrowNavListener(event: KeyboardEvent): void {
       const direction = arrowDirection(event.key);
       if (direction === null) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
-      // A focused text-editing host always owns its arrows for the caret ([P25]
-      // single-line / multi-line editor) — yield regardless of declared captures,
-      // so no editor has its caret stolen by the spatial plane. In cycling mode DOM
-      // focus follows the ring onto the zone (not the editor), so this never blocks
-      // zone navigation.
-      //
-      // Narrow opt-out ([P03], `arrow-release.ts`): a text surface releases an arrow
-      // back to the spatial plane either explicitly, via `data-tug-arrow-release`
-      // (the substrate channel — the editor projects its emptiness and its boundary
-      // latch into it), or automatically, when it is an empty single-line field
-      // inside the key view and so has no caret motion to protect. A field with text
-      // still owns every arrow.
-      //
-      // A release never fires on auto-repeat: leaving a text surface is always a
-      // discrete press, so slamming an arrow parks the caret at the edge instead of
-      // shooting the ring out of the field.
-      const release = resolveArrowRelease(
-        arrowReleaseSubject(document.activeElement),
-        direction,
-      );
-      if (release === "held" || (release === "released" && event.repeat)) return;
+      // The mode gate ([P04]/[P07]). In mode OFF the ring does not exist, so
+      // nothing moves it: arrows are caret keys, unconditionally, and a text
+      // surface owns all four of them whatever its content. This lands in the
+      // same commit as the paint gate deliberately — gating the rings while the
+      // movement stages still walked would ship an app where focus moves
+      // invisibly, which is worse than either endpoint.
+      if (!focusManager.kbfEngaged()) return;
+      if (insideAttachedList(direction)) return;
+      // Past the gate above, the mode is ON — the keyboard is on a ring rather
+      // than in a caret — so the plane is simply the plane. A text surface owns
+      // its arrows in mode OFF, which the gate already answered.
       const focusKey = {
         key: event.key,
         altKey: event.altKey,
@@ -694,6 +732,21 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         event.preventDefault();
         event.stopImmediatePropagation();
         continuation?.();
+        return;
+      }
+      // The general KBF gesture. ⌥⇥ is registered `routing: "key-card"` because
+      // a card WITH a cycle scope wants the toggle at its own responder (the
+      // session card seeds its commit-home there). Every other card — the Lens,
+      // a diff card, anything Class-B — registers no handler, and a key-card
+      // dispatch that finds none reports `handled: false` and stops: it does
+      // not fall through to a deck-level responder, because the walk starts at
+      // the card's content node and there is nothing above it that claims this
+      // action. So the fallback lives here, at the dispatch site, where it
+      // provably runs: flip the bit and seed a ring if the card has none.
+      if (binding.action === TUG_ACTIONS.CYCLE_FOCUS_MODE) {
+        if (focusManager.toggleKbfManual()) focusManager.seedKbfRing();
+        event.preventDefault();
+        event.stopImmediatePropagation();
       }
     }
 
@@ -757,6 +810,17 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         }
       }
 
+      // Return at a PARKED text stop grants the caret without typing ([P12]) —
+      // the "you are here, now type" half of the parked state, opposite the
+      // printable branch's "type and I'll assume you meant to". Sited ahead of
+      // the act resolution because a parked stop has no act to resolve: it is a
+      // text surface the engine is holding the keyboard away from.
+      if (key === "Enter" && focusManager.hasParkedTextStop()) {
+        focusManager.grantParkedTextStop();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const behavior = focusManager.keyViewBehavior();
       const act = resolveFocusAct(focusKey, behavior ?? { container: "none" });
       switch (act) {
@@ -858,6 +922,18 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
                 { mode: focusManager.currentFocusMode() },
               );
             }
+          } else if (focusManager.kbfManual()) {
+            //  (6) the last rung, structurally below every one above: at the
+            //      BASE mode with KBF manually engaged, Escape leaves the mode.
+            //      This is the Lens / diff-card case — a card engaged by ⌥⇥
+            //      with no cycle scope of its own, so there is no `escapeExits`
+            //      mode for rung (5) to pop. Sited under the "not base mode"
+            //      branch precisely so it can never pre-empt a dismissable
+            //      surface: while any surface is open its mode is current, and
+            //      Escape belongs to it (R02).
+            focusManager.setKbfManual(false);
+            event.preventDefault();
+            event.stopImmediatePropagation();
           }
           break;
         default:
@@ -879,6 +955,33 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     // derivation (it becomes redundant once the route is enforced).
     function keyViewDelegateListener(event: KeyboardEvent): void {
       if (event.defaultPrevented) return;
+      // ---- The printable grant on a parked text stop ([P12], #printable-grant) ----
+      //
+      // Typing at a parked stop is a request for the caret: clear the manual
+      // bit, grant DOM focus, and let the browser type the character into the
+      // just-focused editor. The grant is SYNCHRONOUS inside this capture
+      // keydown and the event is deliberately NOT prevented — that is what
+      // makes the browser's own beforeinput → input pipeline land the character
+      // in the newly focused surface, with no synthetic re-dispatch and no
+      // clipboard trick.
+      //
+      // Gates: a single character (`length === 1`, so it excludes every named
+      // key), no ⌘/⌃ (those are bindings), and not mid-composition — an IME
+      // sequence must never be interrupted by a focus move ([R01]). Space is a
+      // printable here, which is what makes it type a space rather than commit;
+      // Space keeps its commit meaning on every NON-text stop, which this
+      // branch does not touch.
+      if (
+        event.key.length === 1 &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.isComposing &&
+        focusManager.hasParkedTextStop()
+      ) {
+        focusManager.setKbfManual(false);
+        focusManager.grantParkedTextStop();
+        return;
+      }
       const active = document.activeElement;
       if (
         active instanceof HTMLElement &&
@@ -902,29 +1005,29 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     //
     // It runs AFTER the key-view delegate on purpose: a descended row scope's
     // in-row arrow walks and any `KeyViewBehavior.onKey` consumer own their keys,
-    // and the net catches only what is genuinely unclaimed. Text surfaces are
-    // gated rather than raced — the active-element check admits a focused text
-    // surface only when the release policy has already handed this arrow back.
+    // and the net catches only what is genuinely unclaimed. Any element really
+    // holding DOM focus owns its own arrows; the net never walks focus out from
+    // under one.
     function arrowFallbackListener(event: KeyboardEvent): void {
       if (event.defaultPrevented) return;
       const direction = arrowDirection(event.key);
       if (direction === null) return;
       if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+      // The mode gate, as in `arrowNavListener` — the net catches nothing when
+      // there is no ring to catch it for ([P04]/[P07]).
+      if (!focusManager.kbfEngaged()) return;
+      if (insideAttachedList(direction)) return;
       const active = document.activeElement;
-      const release = resolveArrowRelease(arrowReleaseSubject(active), direction);
-      if (release === "held") return;
-      if (release === "released") {
-        // Crossing out of a text surface is a discrete press ([P03]); a held key
-        // parks the caret at the edge. Non-text engine stops keep their repeat, so
-        // a held arrow still roves a list cursor via the earlier stage.
-        if (event.repeat) return;
-      } else if (
+      if (
         active !== null &&
         active !== document.body &&
         !(active instanceof HTMLElement && active.closest(`[${KEY_SINK_ATTRIBUTE}]`) !== null)
       ) {
-        // Some other element holds real DOM focus — a Radix menu item, a native
-        // control. It owns its arrows; the net never walks focus out from under it.
+        // Some element holds real DOM focus — a Radix menu item, a native
+        // control, a granted editor. It owns its arrows; the net never walks
+        // focus out from under it. With the release policy gone this is the
+        // whole text-surface rule here: a caret keeps its arrows because it
+        // holds focus, not because a policy handed them back.
         return;
       }
       const focusKey = {
@@ -939,7 +1042,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (focusManager.keyViewCaptures(focusKey)) return;
       const moved = focusManager.moveKeyViewLinear(direction);
       // Nothing registered to move to — decline rather than swallow the key. A
-      // released text surface can never reach this state (its host owns the exit),
       // so this branch is defensive, not a beep path.
       if (moved === null) return;
       focusManager.place(null, { kind: "focusable", id: moved }, { modality: "keyboard" });
@@ -1401,6 +1503,14 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
     };
     const notePointerInput = (): void => {
       focusManager.noteInputSource("pointer");
+      // **Using the mouse leaves KBF mode** ([P05]). Keyboard focus is a
+      // keyboard mode; the moment the user reaches for the pointer they have
+      // left keyboard navigation, so the manual bit drops and the click's own
+      // placement proceeds. One listener for the whole deck — this rule used to
+      // be per-cycle-consumer, which meant a card without a cycle scope never
+      // got it. The engine pops a live cycle synchronously in here, ahead of
+      // the click's focus placement, so no ring outlives the click.
+      focusManager.clearKbfManualForPointer();
     };
     document.addEventListener("keydown", noteKeyboardInput, { capture: true });
     document.addEventListener("pointerdown", notePointerInput, { capture: true });

@@ -1821,14 +1821,18 @@ export const COMMANDS: readonly CommandEntry[] = [
     ],
   },
   {
-    // Chord-only, and deliberately so. Focus-mode cycling is a text-first
-    // card's own affordance, reached by ⌥⇥ and by the card's chrome; a menu
-    // item for it would put ⌥⇥ into AppKit's key-equivalent scan, above every
-    // surface that wants a modified Tab, to advertise a gesture that only makes
-    // sense once you are already inside such a card.
+    // A menu item with a DECORATIVE chord ([P11]). KBF mode is now a deck-wide
+    // mode rather than one card's affordance, so it earns a place in the View
+    // menu — but its chord stays out of AppKit's key-equivalent scan, which is
+    // why the binding below still carries no `menuEligible`. A real key
+    // equivalent is scanned above every surface that wants a modified Tab, the
+    // Settings ▸ Keyboard chord capture among them, and ⌥⇥ has to keep
+    // resolving in JS. The item renders the glyph as title text instead — the
+    // same bargain Previous / Next Keyboard Focus take with ⇥.
     id: TUG_ACTIONS.CYCLE_FOCUS_MODE,
     title: "Cycle Focus Mode",
     routing: "key-card",
+    menuItemId: "view.keyboardFocus",
     bindings: [chord({ key: "Tab", alt: true, label: "Tab" }, { preventDefault: true })],
   },
   {

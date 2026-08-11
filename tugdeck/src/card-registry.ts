@@ -231,6 +231,21 @@ export interface CardRegistration {
    * declare nothing and keep it.
    */
   takesContentWidth?: boolean;
+  /**
+   * Whether this card type auto-engages **KBF mode** (keyboard-focus mode)
+   * while it is the key card — Class B of the mode derivation ([P10]).
+   *
+   * `true` for the cards whose whole content is engine focus stops the
+   * keyboard walks: the Lens, Jots, Settings and its bodies, Keyboard, About,
+   * Gazette, Pulse, DevTools. Their rings and arrow movement are the interface,
+   * so the mode is on the moment the card is key and no ⌥⇥ is needed.
+   *
+   * Omit (the default) for a card whose resting state is a caret in a text
+   * surface — Session, Text, File view, Hello — and for a card that registers
+   * no focus stops at all: engaging a surface with nothing to ring is a mode
+   * pointing at no ring.
+   */
+  kbfAtRest?: boolean;
 }
 
 /** Module-level registry map. Keyed by componentId. */

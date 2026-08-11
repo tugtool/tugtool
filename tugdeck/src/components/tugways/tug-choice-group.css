@@ -408,8 +408,12 @@
    hides the divider exactly as the selection does ([P02]). */
 .tug-choice-group-segment[data-state="active"] + .tug-choice-group-segment::before,
 .tug-choice-group-segment + .tug-choice-group-segment[data-state="active"]::before,
-.tug-choice-group-segment[data-key-cursor] + .tug-choice-group-segment::before,
-.tug-choice-group-segment + .tug-choice-group-segment[data-key-cursor]::before {
+/* The cursor half is gated on KBF mode: `data-key-cursor` still marks POSITION
+   in mode OFF, but it paints nothing there ([P04]), and a seam hidden beside an
+   invisible cursor is just a missing divider. The active-state half above needs
+   no gate — a selection fill is not a keyboard mark. */
+html[data-kbf] .tug-choice-group-segment[data-key-cursor] + .tug-choice-group-segment::before,
+html[data-kbf] .tug-choice-group-segment + .tug-choice-group-segment[data-key-cursor]::before {
   background-color: transparent;
 }
 

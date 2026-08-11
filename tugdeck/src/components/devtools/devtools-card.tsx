@@ -100,6 +100,9 @@ export function registerDevtoolsCard(): void {
     contentFactory: () => <DevToolsCardContent />,
     defaultMeta: { title: "DevTools", closable: true },
     hidden: true,
+    // An inspector: tabs and buttons, walked by keyboard ([P10]). The Telemetry
+    // and Log bodies are tabs of this card, not registrations of their own.
+    kbfAtRest: true,
     sizePolicy: {
       // Opens at the deck's content width, the one the Session, Text, and File
       // cards open at — inspector rows are wide. The width floor stays below

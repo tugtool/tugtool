@@ -318,8 +318,11 @@
    exactly as the on-state does ([P02]). */
 .tug-option-group-item[data-state="on"] + .tug-option-group-item::before,
 .tug-option-group-item + .tug-option-group-item[data-state="on"]::before,
-.tug-option-group-item[data-key-cursor] + .tug-option-group-item::before,
-.tug-option-group-item + .tug-option-group-item[data-key-cursor]::before {
+/* The cursor half is gated on KBF mode, as its `tug-choice-group.css` twin is:
+   in mode OFF `data-key-cursor` marks position without painting ([P04]), and a
+   seam hidden beside an invisible cursor is just a missing divider. */
+html[data-kbf] .tug-option-group-item[data-key-cursor] + .tug-option-group-item::before,
+html[data-kbf] .tug-option-group-item + .tug-option-group-item[data-key-cursor]::before {
   background-color: transparent;
 }
 

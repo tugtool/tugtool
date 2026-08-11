@@ -42,6 +42,11 @@ export function registerJotsCard(): void {
     contentFactory: (cardId: string) => <JotsContent cardId={cardId} />,
     defaultMeta: { title: "Jots", icon: "NotebookPen", closable: true },
     hidden: true,
+    // The jot LIST is the card's resting surface — rows, arrows, rings ([P10]).
+    // An open jot is a typing descend inside that list, not a different mode:
+    // the editor lives in a non-trapped descend scope, so it keeps its caret
+    // and Escape ascends back to the jot's row.
+    kbfAtRest: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it.
     layoutRole: "sidebar",

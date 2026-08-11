@@ -45,7 +45,6 @@ import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import {
   TugTextEditor,
   type TugTextEditorDelegate,
-  type EditorArrowExitDirection,
 } from "@/components/tugways/tug-text-editor";
 import { useOptionalResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -95,29 +94,6 @@ export interface TugFindBarProps {
   focusGroup?: string;
   /** First of the four consecutive orders in {@link focusGroup}. Defaults to 0. */
   focusOrderBase?: number;
-  /**
-   * A bare `Tab` / `Shift-Tab` in an EMPTY query field. An empty field has
-   * nothing to indent, so the key is better spent on movement — but the bar
-   * does not own a walk to move within, so it hands the gesture to the host,
-   * which enters its own focus cycle at this bar's seat in it. `step` is `1`
-   * forward, `-1` back. Return `true` to consume; a host that returns `false`
-   * (or is absent) leaves Tab to the field, which indents as usual.
-   */
-  onTabWhenEmpty?: (step: 1 | -1) => boolean;
-  /**
-   * An arrow that would leave the query field — the arrow sibling of
-   * {@link onTabWhenEmpty}, forwarded to the substrate. Return `true` to
-   * consume.
-   *
-   * A host whose find stops live in a trapped focus cycle MUST supply this:
-   * a released arrow walks the *document* pipeline's linear order, which is
-   * bounded by the current focus mode and so contains none of a cycle's stops.
-   * Without the callback the caret has nowhere to go and the field holds every
-   * arrow — the query field becomes a dead end for the keyboard. A host whose
-   * bar sits in the ordinary base-mode walk (the Text card) leaves it off and
-   * keeps the release path.
-   */
-  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
 }
 
 /** Imperative surface the host drives: ⌘F on an already-open bar must put
@@ -150,8 +126,6 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
       initialQuery,
       focusGroup,
       focusOrderBase = 0,
-      onTabWhenEmpty,
-      onArrowExit,
     }: TugFindBarProps,
     ref,
   ): React.ReactElement {
@@ -161,8 +135,6 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
 
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
-    const onTabWhenEmptyRef = useRef(onTabWhenEmpty);
-    onTabWhenEmptyRef.current = onTabWhenEmpty;
 
     // The seed is a mount-time value, not a live prop: once the bar is open
     // the CM6 doc is the query's only home.
@@ -195,25 +167,6 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                 onCloseRef.current();
                 return true;
               },
-            },
-            // An EMPTY query field spends Tab on movement rather than on an
-            // indent that would change nothing. The field keeps owning the key
-            // (the `data-tug-tab-consume` marker stands), it just hands the
-            // gesture to the host, which walks its own focus cycle from the
-            // bar's seat in it — so the bar moves along the CARD's Tab order
-            // rather than a private one. Non-empty, or no host: fall through
-            // and indent.
-            {
-              key: "Tab",
-              run: (view) =>
-                view.state.doc.length === 0 &&
-                (onTabWhenEmptyRef.current?.(1) ?? false),
-            },
-            {
-              key: "Shift-Tab",
-              run: (view) =>
-                view.state.doc.length === 0 &&
-                (onTabWhenEmptyRef.current?.(-1) ?? false),
             },
           ]),
         ),
@@ -387,7 +340,6 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
             preserveState={false}
             focusGroup={focusGroup}
             focusOrder={focusOrderBase + FIND_STOP_QUERY}
-            onArrowExit={onArrowExit}
             extensions={findBarExtensions}
           />
         </TugEntryShell>

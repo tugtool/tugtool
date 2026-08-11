@@ -1,17 +1,24 @@
 /**
- * at0126-keyboard-ring-cold-boot.test.ts — the keyboard focus ring survives a
- * full reload / relaunch, carried on the focus axis (`bag.focus`).
+ * at0126-keyboard-ring-cold-boot.test.ts — the keyboard focus POSITION survives
+ * a full reload / relaunch, carried on the focus axis (`bag.focus`).
  *
  * Two-phase cold-boot round-trip, modeled on at0014-cold-boot-scroll:
  *
  * | Phase | Action                                        | Assertion                                                  |
  * |-------|-----------------------------------------------|------------------------------------------------------------|
- * | A     | seed radio card → Tab (ring on group) → quit  | tugbank disk holds `bag.focus = {kind:"dom", keyboard:true}`|
- * | B     | relaunch, re-inject bag → wait for ready      | the group wears the ring (`data-key-view-kbd`) after restore|
+ * | A     | seed radio card → Tab (rings the group) → quit| tugbank disk holds `bag.focus = {kind:"dom", keyboard:true}`|
+ * | B     | relaunch, re-inject bag → wait for ready      | the group wears `data-key-view` after restore — and NOT the ring |
  *
- * Phase A failure ⇒ the ring was not captured onto the focus axis (focus left
- * the group before save, or the focus-key isn't emitted). Phase B failure ⇒
- * `applyBagFocus` didn't re-light the ring on restore.
+ * Phase A failure ⇒ the position was not captured onto the focus axis (focus
+ * left the group before save, or the focus-key isn't emitted). Phase B failure
+ * ⇒ `applyBagFocus` didn't re-place the key view on restore.
+ *
+ * **Why phase B asserts the key view and not the ring.** Under KBF mode
+ * ([roadmap/kbf-mode.md]) `data-key-view-kbd` means "a ring is painted here",
+ * and the mode bit is session-transient by design — a relaunched deck is in
+ * mode OFF until the user asks for the mode again. So the restored key view is
+ * correctly *unpainted*, and phase B asserts that too: what persists across a
+ * cold boot is where the keyboard was, not what mode the user was in.
  *
  * @foreground
  * @covers tugdeck/src/components/tugways/focus-manager.ts
@@ -86,9 +93,14 @@ interface FocusBag {
 
 describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
   for (const v of VARIANTS) {
-    const ringOf = (sel: string) => `(function(){
+    // The KEY VIEW, not the ring. Under KBF mode ([roadmap/kbf-mode.md]) the
+    // `-kbd` flavor means "a ring is painted here", and the mode bit is
+    // session-transient by design — a cold boot lands in mode OFF, so the
+    // restored key view is correctly unpainted. What this test is about is the
+    // focus AXIS surviving the round trip, which is the unflavored attribute.
+    const keyViewOf = (sel: string) => `(function(){
       var el = document.querySelector(${JSON.stringify(sel)});
-      return el ? el.hasAttribute("data-key-view-kbd") : false;
+      return el ? el.hasAttribute("data-key-view") : false;
     })()`;
 
     test(
@@ -123,9 +135,11 @@ describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
             await app.waitForCondition<boolean>(`document.hasFocus()`, { timeoutMs: 10000 });
             await new Promise((r) => setTimeout(r, 150));
 
+            // Tab ENGAGES KBF and steps ([P07]), so this half still sees a
+            // painted ring — the mode is on because the user just asked for it.
             await app.nativeKey("Tab");
-            await app.waitForCondition<boolean>(ringOf(v.group), { timeoutMs: 6000 });
-            expect(await app.evalJS<boolean>(ringOf(v.group))).toBe(true);
+            await app.waitForCondition<boolean>(keyViewOf(v.group), { timeoutMs: 6000 });
+            expect(await app.evalJS<boolean>(keyViewOf(v.group))).toBe(true);
 
             await app.quitGracefully();
           }
@@ -170,11 +184,20 @@ describe.skipIf(!SHOULD_RUN)("AT0126: keyboard ring survives cold boot", () => {
                 { timeoutMs: 8000 },
               );
 
-              // The ring should re-light on the group with no Tab.
-              const restored = await app.waitForCondition<boolean>(ringOf(v.group), {
+              // The key view should land back on the group with no Tab. The
+              // RING does not come back with it, and should not: the KBF bit is
+              // session-transient, so a relaunched deck is in mode OFF until the
+              // user asks for the mode again. The focus axis is what persists.
+              const restored = await app.waitForCondition<boolean>(keyViewOf(v.group), {
                 timeoutMs: 6000,
               });
               expect(restored).toBe(true);
+              expect(
+                await app.evalJS<boolean>(
+                  `document.documentElement.hasAttribute("data-kbf")`,
+                ),
+                "a cold boot restores the key view, not the mode",
+              ).toBe(false);
             } finally {
               await app.quitGracefully();
             }

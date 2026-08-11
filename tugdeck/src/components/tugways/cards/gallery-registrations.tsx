@@ -946,6 +946,9 @@ export function registerGalleryCards(): void {
     componentId: "gallery-focus-language",
     contentFactory: (_cardId) => <GalleryFocusLanguage />,
     defaultMeta: { title: "Focus Language", icon: "List", closable: true },
+    // A gallery card follows its subject ([P10]), and this card's subject IS
+    // the engine's focus stops — it must be readable with rings on, at rest.
+    kbfAtRest: true,
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,
@@ -968,6 +971,9 @@ export function registerGalleryCards(): void {
     hidden: true,
     contentFactory: (cardId) => <GalleryCycleDemo cardId={cardId} />,
     defaultMeta: { title: "Cycle Mode", icon: "List", closable: true },
+    // Follows its subject ([P10]): this card exists to exercise engaged-mode
+    // mechanics, so it is engaged at rest.
+    kbfAtRest: true,
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

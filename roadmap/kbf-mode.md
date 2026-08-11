@@ -238,7 +238,11 @@ The native-Tab fallback in `focusWalkListener` (`responder-chain-provider.tsx` �
 
 **Rationale:** Brief D7 — one rule fixes Open Quickly, covers every `TugFilterField`, and retires `filterFieldDidRequestAdvance` plus the automatic empty-input release.
 
-**Implications:** `TugFilterFieldDelegate.filterFieldDidRequestAdvance` (declared in `tug-filter-field.tsx`) is replaced by cursor-driving methods at its five call sites ([P06] lists them). Open Quickly needs nothing beyond the attribute + `kbf: false` — it opens in mode OFF with the caret in the field, and its existing `onKeyDown` finally runs.
+**Implications:** `TugFilterFieldDelegate.filterFieldDidRequestAdvance` (declared in `tug-filter-field.tsx`) is replaced by cursor-driving methods at its call sites ([P06] lists them). Open Quickly needs nothing beyond the attribute + `kbf: false` — it opens in mode OFF with the caret in the field, and its existing `onKeyDown` finally runs.
+
+**The highlight mark (DECIDED at implementation, #step-4).** An attached list cannot wear `data-key-cursor`: the movement cursor paints only while the keyboard is *in* that list — it never is, the caret is in the field — and [P04] suppresses it outright in mode OFF, which is exactly where an attached list is most load-bearing. So the attached cursor rides `data-attached-cursor`, **exempt** from the mode gate the way `data-default-ring` is, on the same grounds: it is not a focus position, it is a field's statement about which row its next Return means. `TugListView` gains `attachedCursorMove` / `attachedCursorIndex` / `attachedCursorRelease` over an index independent of the movement cursor's.
+
+**Four sites, not five.** `session-history-view.tsx` renders `TugHistoryList` — a plain mapped list with no cursor model and no per-row focus stops — so it has no cursor to attach to. Its `filterFieldDidRequestAdvance` (hand the key view to the list container) remains correct and is the one consumer [P06]'s deletion of that delegate method must spare.
 
 #### [P09] ⌥⇥ inside a forced (auto-engaged) mode returns the keyboard from a typing descend to the ring; it never disengages a forced mode (DECIDED) {#p09-alt-tab-forced}
 
@@ -250,7 +254,14 @@ The native-Tab fallback in `focusWalkListener` (`responder-chain-provider.tsx` �
 
 #### [P10] Class-B card dispositions (DECIDED) {#p10-class-b}
 
-**Decision:** `CardRegistration` (`tugdeck/src/card-registry.ts`) gains `kbfAtRest?: boolean`. Auto-engage (true): Lens, Jots (list level; an open jot is a typing descend, Escape ascends to the jot's row — today's behavior, the editor already lives in a non-trapped descend scope with blur-commit in `jots-card.tsx`), Settings (+ its bodies), Keyboard, About, Gazette, Pulse, Devtools. OFF at rest (false/absent): Session, Text, File view, Diff (registers no focus stops today; the empty-group rule forbids engaging a surface with nothing to ring), Hello. Gallery cards follow their subject; `gallery-cycle-demo.tsx` becomes the KBF demo.
+**Decision:** `CardRegistration` (`tugdeck/src/card-registry.ts`) gains `kbfAtRest?: boolean`. Auto-engage (true): Lens, Jots (list level; an open jot is a typing descend, Escape ascends to the jot's row — today's behavior, the editor already lives in a non-trapped descend scope with blur-commit in `jots-card.tsx`), Settings (+ its bodies), Keyboard, Gazette, Devtools. OFF at rest (false/absent): Session, Text, File view, Diff (registers no focus stops today; the empty-group rule forbids engaging a surface with nothing to ring), Hello. Gallery cards follow their subject; `gallery-cycle-demo.tsx` becomes the KBF demo.
+
+**Two entries resolved at implementation (#step-2), both by this decision's own empty-group check:**
+
+- **Pulse has no card.** Pulse is the Z2 strip plus `lib/pulse-store` and the DevTools Telemetry tab; there is no `registerCard` for it and therefore no `componentId` to declare. The brief's inability to name it was the correct signal.
+- **About is OFF.** `about-card.tsx` renders static text — no `useFocusable`, no Tug control, zero focus stops. Engaging it would be a mode pointing at no ring, which is exactly what put the diff card at OFF.
+
+Settings' panel bodies and DevTools' Log/Telemetry bodies are **tabs of their parent card** (tab `CardState`s carrying sentinel componentIds), not registrations of their own, so one declaration each covers them.
 
 **Rationale:** Brief Class B table + Q5/Q6 resolutions.
 
@@ -456,6 +467,23 @@ This phase touches the three most widely-covered files in the deck. As of 2026-0
 - The selection `just app-test-changed` derives at #step-11 will be corpus-scale (~70 serialized app launches). That is the correct run and it is expensive; schedule it as the phase's closing act, not as an inner-loop check.
 - `data-key-view-kbd` changes meaning ([P04]): it marks a *painted ring*, not a focus position. Any suite using it as a position probe in a surface that is mode-OFF must move to `[data-key-view]`. #step-5 runs this sweep as a survey **immediately after the gate lands**, over the 60 referencing files, so the migration is one bounded pass rather than 70 red results at the end.
 
+#### Survey results (#step-5, measured not predicted) {#probe-survey}
+
+60 app-test files reference `data-key-view-kbd`, 209 occurrences. Rather than classify all 209 by reading, the gate was landed and a representative slice **run**, which converts guesses into facts:
+
+| Suite | Result | Disposition |
+|---|---|---|
+| at0109-focus-ring | PASS | Tab engages ([P07]), so a gallery ring assertion still sees its ring. This is the load-bearing reason the Tab-engages rule matters: it keeps ~20 component focus suites green. |
+| at0127-list-view-cursor | PASS | same |
+| at0248-lens-list-cursor-keys | PASS | Class-B card, engaged at rest — and it passes **unmodified**, which is the drift check the plan wanted (no leak into the descend machinery) |
+| at0139-cycle-mode-scope | PASS *(after a fix)* | see below |
+| at0126-keyboard-ring-cold-boot | **FAIL — position probe** | Both cases assert `data-key-view-kbd` on a restored ring after relaunch, in a gallery card that is not `kbfAtRest`. The mode bit is session-transient by design, so a cold boot lands in mode OFF: the key view is restored, the ring is not painted. Migrate both probes to `[data-key-view]` (#step-10). |
+| at0140-cycle-session-card | **FAIL — behavior rewrite** | Its last assertion presses ⌥⇥ from the editor stop (caret granted) and expects `data-cycling="false"`. Under [P09] a live caret makes ⌥⇥ a request to RETURN to the ring, not to exit — so exiting is now a press from a ring position. **at0140 joins at0341/at0342/at0343 on #step-10's rewrite list**; the plan did not list it. |
+
+**A real bug the run caught.** `settleKbfEngagement` gated its *notify* on the derived answer changing, so ⌥⇥ on a card already engaged by its own `kbfAtRest` (the gallery cycle demo) changed the manual bit and told nobody — the card's cycle scope never went up. The manual bit is observable state in its own right; the notify is now unconditional and only the repaint/re-land half is gated on a flip.
+
+The two failures above are the whole predicted blast radius made concrete, and both are the designed consequence rather than a defect. They are left red across #step-6–#step-9 and fixed in #step-10, which is where test rework belongs.
+
 #### What stays out of tests {#test-non-goals}
 
 - jsdom render tests and mock-store assertions — banned pattern (drive real code paths on real content).
@@ -472,17 +500,34 @@ This phase touches the three most widely-covered files in the deck. As of 2026-0
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Engine bit, derivation, projection | pending | — |
-| #step-2 | Trap flag + card declarations | pending | — |
-| #step-3 | Manual engagement gestures | pending | — |
-| #step-4 | Attached-list contract | pending | — |
-| #step-5 | The mode gate: rings and the ladder | pending | — |
-| #step-6 | Parked text stop | pending | — |
-| #step-7 | The deletions | pending | — |
-| #step-8 | Menu item | pending | — |
-| #step-9 | Doctrine surgery | pending | — |
-| #step-10 | Test rework + new suites | pending | — |
+| #step-1 | Engine bit, derivation, projection | done | `754273ec2` |
+| #step-2 | Trap flag + card declarations | done | `14ede3379` |
+| #step-3 | Manual engagement gestures | done | `923966c9c` |
+| #step-4 | Attached-list contract | done | `b82993a4a` |
+| #step-5 | The mode gate: rings and the ladder | done | `a849d166b` |
+| #step-6 | Parked text stop | done | `5aec187ad` |
+| #step-7 | The deletions | done | `c1aa0c408` |
+| #step-8 | Menu item | done | `a0d1d357e` |
+| #step-9 | Doctrine surgery | done | `007e57f4f` |
+| #step-10 | Test rework + new suites | **partial** | `43ba9c2eb`, `02c6437cb`, `1e0e5a2` (see below) |
 | #step-11 | Integration checkpoint | pending | — |
+
+**#step-10 is partial. What is done, and what is not:**
+
+| Item | State |
+|---|---|
+| at0126 probe migration (position probe → `[data-key-view]`) | done, green |
+| at0140 rewrite (both editor-stop landings park) | done, green 4/4 |
+| at0343 latch half replaced by the mode-OFF arrow rule; renamed `at0343-prompt-arrow-history` | done, green 2/2 |
+| at0341 / at0342 | pass **unmodified**; only their `@covers` needed repointing off the deleted module |
+| at0345 inverted (`at0345-editor-ring-mode-division`) | done in #step-6, green |
+| at0396 open-quickly arrows | done, green — the plan's headline regression is proven fixed |
+| `just app-test-covers-check` | green across 356 files |
+| at0248 / at0277 / at0282 drift check | at0248 verified green unmodified (#step-5); at0277 / at0282 **not yet run** |
+| **at0395 mode-division suite** | **not written** |
+| **at0397 parked-stop suite** (the [P12] seed half, on a real sheet) | **not written** — the movement half is covered by at0345 |
+| **at0398 escape-ladder suite** | **not written** |
+| **[P07] case 2: Tab from Open Quickly's field reaches the directory switcher** | **not working.** The switcher IS authored into the popup's focus group at the accessory order and the Tab split routes the key to the walk, but the landing does not arrive. First suspect is the popup's own `onBlur` dismiss guard. Recorded in at0396 as an explicit non-assertion rather than a skipped test. |
 
 **Why this order.** The paint gate and the ladder's mode gate are **one commit** (#step-5), and the attached-list contract lands before them. The alternative — gating the rings first and the movement stages several commits later — ships an app where mode OFF still walks the key view with nothing painted: focus moves invisibly for the length of the phase, which is a worse state than either endpoint and contradicts "every intermediate commit leaves the app working". And the arrow gate cannot precede the attached-list contract, because in mode OFF the session picker's filter reaches its rows today *through* the empty-input release; gating arrows before its replacement exists would break it for a commit.
 
@@ -724,7 +769,8 @@ This phase touches the three most widely-covered files in the deck. As of 2026-0
 
 **Tasks:**
 - [ ] Work the probe-migration list produced by #step-5's survey: every *position* probe on `data-key-view-kbd` in a mode-OFF surface moves to `[data-key-view]`; every *ring* assertion stays and now doubles as a mode assertion.
-- [ ] Rewrite `at0341-lens-cross-section-arrows`, `at0342-picker-arrow-traversal` (KBF engaged at start where they exercise ring motion), and `at0343-prompt-arrow-latch-history` (latch half deleted; Cmd-history half kept).
+- [ ] Rewrite `at0341-lens-cross-section-arrows`, `at0342-picker-arrow-traversal` (KBF engaged at start where they exercise ring motion), `at0343-prompt-arrow-latch-history` (latch half deleted; Cmd-history half kept), and — added by #step-5's survey — `at0140-cycle-session-card`, whose ⌥⇥-from-the-editor-stop exit becomes a return-to-the-ring under [P09].
+- [ ] Migrate `at0126-keyboard-ring-cold-boot`'s two probes from `data-key-view-kbd` to `[data-key-view]`: a cold boot restores the key view but not the mode, so the ring is correctly unpainted (#step-5 survey).
 - [ ] Run `at0248-lens-list-cursor-keys`, `at0277-lens-row-accessories-keyboard`, `at0282-lens-row-arrow-escape` with KBF force-engaged at test start; they must pass unmodified — a failure is an implementation leak into the descend machinery, fix the code not the test.
 - [ ] Author the four new suites from #new-files (at0393–at0396, confirming the highest at-number first; `@covers` headers pointing at `focus-manager.ts`, `responder-chain-provider.tsx`, `tug-completion-popup.tsx`, `tug-filter-field.tsx` as appropriate).
 - [ ] `just app-test-covers-check`.

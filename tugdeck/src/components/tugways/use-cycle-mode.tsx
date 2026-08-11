@@ -106,41 +106,6 @@ export interface UseCycleModeResult {
    * exits are the ⌥⇥ `toggle` and the mouse-exit rule below.
    */
   exit: () => void;
-  /**
-   * Enter cycling **as if the ring were already on `fromFocusKey`**, then take
-   * one step (`1` forward, `-1` back). The second door into the cycle, for a
-   * text stop that wants to spend a bare `Tab` on movement: a field with
-   * nothing to indent has no use for the key, and the card's cycle is the card's
-   * Tab order — so the field enters it at its own seat and advances, exactly as
-   * if it had been cycling all along.
-   *
-   * Works the same whether or not the cycle is already up: a text stop can be
-   * *reached* by the walk (⇥ into the field) as readily as clicked into, and
-   * both carets must spend the next `Tab` the same way. Entering is therefore
-   * conditional — the step is not.
-   *
-   * Distinct from `toggle`, which seeds the commit-home ([P10]) because ⌥⇥ is
-   * a request for the walk itself rather than for the next stop from here.
-   * Returns `false` only when there was nowhere to go (disabled, or an empty
-   * walk), so the caller can leave the key unconsumed.
-   */
-  enterAt: (fromFocusKey: string, step: 1 | -1) => boolean;
-  /**
-   * Enter cycling as if the ring were already on `fromFocusKey`, then move one
-   * step in `direction` along the cycle's **spatial** plane — the arrow door,
-   * beside {@link enterAt}'s Tab door.
-   *
-   * An arrow is a direction, not an ordinal: Down out of a field that shares a
-   * row with three sibling controls means the row *below*, not the control to
-   * its right, which is what a linear step would give. So this resolves through
-   * the declared spatial order and only falls back to the linear walk when the
-   * plane declines (no order declared, or the seat is off it) — the same
-   * liveliness net the navigator applies everywhere ([P01]).
-   *
-   * Returns `false` only when there was nowhere to go, so a caller can leave the
-   * key unconsumed.
-   */
-  enterToward: (fromFocusKey: string, direction: SpatialDirection) => boolean;
   /** Wrap the card's cycle-able zones so they register into this mode. */
   CycleScope: React.FC<{ children: React.ReactNode }>;
   /** This card's stable cycle-scope id (for diagnostics / advanced wiring). */
@@ -166,10 +131,6 @@ export function useCycleMode({
   // Stable per-card scope id. The cycle stops (rendered under `CycleScope`) and
   // the push/pop here agree on this one id.
   const scopeId = useId();
-  // Set true by the mouse-exit listener so the resting-focus reclaim skips a
-  // pointer-driven exit (the click places focus itself); read-and-cleared by the
-  // relinquish effect above. Structure-zone ref, no React state ([L24]).
-  const exitViaPointerRef = useRef(false);
 
   // Latest commit-disposition override, read at commit time via a stable wrapper
   // so an inline `dispositionAfterCommit` never re-installs the pushed mode or
@@ -205,6 +166,22 @@ export function useCycleMode({
     [ctx, scopeId],
   );
   const cycling = useSyncExternalStore(subscribe, getSnapshot);
+  // The deck-global manual KBF bit ([P05]) — the source of truth for "the user
+  // asked for keyboard focus". This card's trapped cycle scope is its per-card
+  // realization, mirrored from the bit rather than held as a second boolean, so
+  // the two cannot desync.
+  const kbfManual = useSyncExternalStore(
+    subscribe,
+    useCallback(() => manager?.kbfManual() ?? false, [manager]),
+  );
+  // Whether this card is the key card — only the key card's cycle may be
+  // entered. A background card's already-entered cycle is left standing: its
+  // focus universe is preserved by construction, which is what makes returning
+  // to a mid-cycle card land where it left off.
+  const isKeyCard = useSyncExternalStore(
+    subscribe,
+    useCallback(() => (manager?.keyCard() ?? null) === cardId, [manager, cardId]),
+  );
 
   // Land the resting caret when the cycle is relinquished. This fires off the
   // engine-owned `cycling` transition (true → false) by ANY non-pointer path —
@@ -214,14 +191,20 @@ export function useCycleMode({
   // race); running in a layout effect, it fires after the cycle's zones (the
   // prompt editor) reactivate, so the caret lands ([L03]/[L04]). Skipped on a
   // mouse exit — the click that ended the cycle places focus itself.
+  //
+  // The same edge drops the deck-global bit: every path out of the cycle
+  // (Escape's `escapeExits` pop, a relinquishing commit, the pointer) is a
+  // request to leave keyboard focus, and without this the mirror below would
+  // read a stale `true` and re-enter the cycle the engine just popped.
   const prevCyclingRef = useRef(false);
   useLayoutEffect(() => {
     if (prevCyclingRef.current && !cycling) {
-      if (!exitViaPointerRef.current) restingFocusRef.current?.();
-      exitViaPointerRef.current = false;
+      const byPointer = manager?.kbfClearedByPointer() ?? false;
+      manager?.setKbfManual(false);
+      if (!byPointer) restingFocusRef.current?.();
     }
     prevCyclingRef.current = cycling;
-  }, [cycling]);
+  }, [cycling, manager]);
 
   // Push captures the current key view (the editor caret) for restore on pop.
   // The mode carries the toggleable commit disposition ([P15]) — a stable
@@ -230,12 +213,24 @@ export function useCycleMode({
   // cycle back to rest (the engine's `escapeExits`), since a focus-cycle, unlike
   // a modal surface, has no surface that owns Escape.
   const pushMode = useCallback(() => {
+    // Entering the cycle IS engaging keyboard focus, whichever door was used —
+    // ⌥⇥, or a text stop spending its Tab on movement. The bit and the scope
+    // go up together, or the mirror below would read an un-engaged deck and pop
+    // the cycle the caller just entered.
+    manager?.setKbfManual(true);
     ctx?.pushFocusMode(scopeId, {
       trapped: true,
       commitDisposition: (commit) => commitDispositionRef.current(commit),
       escapeExits: true,
+      // NOT a KBF auto-engager ([P03]). `trapped` here buys Escape semantics,
+      // not a surface: this scope is the manual mode's own realization on this
+      // card, created BY engagement. Letting it count as Class A would make the
+      // mode its own cause — clearing the manual bit would leave it engaged by
+      // the very cycle the clear is supposed to end, so nothing could ever
+      // leave the mode from inside a cycle.
+      kbf: false,
     });
-  }, [ctx, scopeId]);
+  }, [ctx, scopeId, manager]);
 
   const enter = useCallback(() => {
     if (ctx === null || !enabled) return;
@@ -246,57 +241,6 @@ export function useCycleMode({
     ctx.focusKeyView();
   }, [ctx, enabled, pushMode]);
 
-  const enterAt = useCallback(
-    (fromFocusKey: string, step: 1 | -1): boolean => {
-      if (ctx === null || !enabled) return false;
-      // The walk may already be up — this stop can be *arrived at* by ⇥ as well
-      // as clicked into, and a caret is a caret either way. Push only if we are
-      // not already inside; the step below is unconditional, which is the whole
-      // point (a field reached by Tab must still spend the next Tab on Tab).
-      const wasCycling = ctx.currentFocusMode() === scopeId;
-      if (!wasCycling) pushMode();
-      // Seed the ring on the CALLER's own stop, then step off it. Both writes
-      // are synchronous, so the seat is never painted — it exists only to give
-      // `advance` a position to move from. Without it the walk would treat the
-      // key view as absent from the mode and jump to the first / last stop,
-      // which is the ⌥⇥ gesture, not this one. Already cycling, the seed is a
-      // no-op re-place on the stop the ring is on.
-      ctx.realizeTarget({ kind: "focus-key", focusKey: fromFocusKey }, "keyboard");
-      const moved = step === 1 ? ctx.focusNext() : ctx.focusPrevious();
-      if (moved === null) {
-        if (!wasCycling) ctx.popFocusMode(scopeId, { moveDomFocus: false });
-        return false;
-      }
-      ctx.focusKeyView();
-      return true;
-    },
-    [ctx, enabled, scopeId, pushMode],
-  );
-
-  const enterToward = useCallback(
-    (fromFocusKey: string, direction: SpatialDirection): boolean => {
-      if (ctx === null || !enabled) return false;
-      const wasCycling = ctx.currentFocusMode() === scopeId;
-      if (!wasCycling) pushMode();
-      // Same synchronous seat-then-move as `enterAt`: the seed exists only to
-      // give the navigator a position to resolve from, and is never painted.
-      ctx.realizeTarget({ kind: "focus-key", focusKey: fromFocusKey }, "keyboard");
-      // `moveKeyViewSpatial` lands the keyboard itself on every branch it owns.
-      if (ctx.moveKeyViewSpatial(direction)) return true;
-      // Off the declared plane (or no plane in this scope) — walk the linear
-      // order, so an arrow still moves rather than dying at the seat.
-      const step = direction === "down" || direction === "right" ? 1 : -1;
-      const moved = step === 1 ? ctx.focusNext() : ctx.focusPrevious();
-      if (moved === null) {
-        if (!wasCycling) ctx.popFocusMode(scopeId, { moveDomFocus: false });
-        return false;
-      }
-      ctx.focusKeyView();
-      return true;
-    },
-    [ctx, enabled, scopeId, pushMode],
-  );
-
   const exit = useCallback(() => {
     if (ctx === null) return;
     if (ctx.currentFocusMode() !== scopeId) return;
@@ -306,43 +250,32 @@ export function useCycleMode({
     ctx.focusKeyView();
   }, [ctx, scopeId]);
 
+  // ⌥⇥ no longer flips a card-local notion of cycling: it sets the deck-global
+  // manual bit, and the mirror effect below turns that into this card's
+  // push/pop. One bit, one realization — they cannot disagree. The engine owns
+  // the gesture's semantics (a live caret returns to the ring rather than
+  // toggling off, [P09]); the card owns only where the ring lands.
   const toggle = useCallback(() => {
-    if (ctx === null) return;
-    if (ctx.currentFocusMode() === scopeId) exit();
-    else enter();
-  }, [ctx, scopeId, enter, exit]);
+    manager?.toggleKbfManual();
+  }, [manager]);
 
-  // Comprehensive rule for toggleable focus-cycling: **using the mouse exits
-  // cycling.** Cycling is a keyboard mode; the moment the user reaches for the
-  // pointer they have left keyboard navigation, so the cycle ends and the
-  // resting key view (the editor caret) returns. Implemented as a capture-phase
-  // `pointerdown` while cycling — but only when this card's cycle scope is the
-  // CURRENT (top) mode: a pointerdown inside a nested surface (a sheet / popover
-  // opened from a cycle stop) leaves cycling intact, so that surface's close can
-  // return focus to the originating stop ([engine-owns close-focus]). Exiting on
-  // the pointerdown (before the click's default) means a mouse-opened sheet then
-  // opens un-cycled and restores the editor caret on close, while a
-  // keyboard-opened one (cycle still current at open) returns to its stop. [L03]
+  // Mirror the deck-global bit onto this card's cycle scope ([P05]).
+  //
+  // The manager is read LIVE here rather than from the `kbfManual` snapshot:
+  // the clear-on-exit effect above runs earlier in the same commit, and a
+  // snapshot captured before it would re-enter the cycle that just ended. The
+  // snapshot is in the deps to schedule this effect, not to answer it.
+  //
+  // The mouse-exit rule that used to live here as a capture `pointerdown`
+  // listener is now one provider-level listener clearing the bit — see
+  // {@link FocusManager.clearKbfManualForPointer}, which also pops the cycle
+  // synchronously inside the pointerdown so the ring never outlives the click.
   useLayoutEffect(() => {
-    if (ctx === null || !cycling) return;
-    const onPointerDown = (): void => {
-      if (ctx.currentFocusMode() === scopeId) {
-        exitViaPointerRef.current = true;
-        // Pop WITHOUT restoring focus: the click that triggered this exit owns
-        // the next focus (it opens a Z2/Z4B surface, or lands the caret where
-        // clicked). Restoring focus to the resting editor here would flash its
-        // caret for a frame before the click's own focus lands. The
-        // `restingFocus` reclaim is likewise skipped on this pointer exit (via
-        // `exitViaPointerRef`).
-        ctx.popFocusMode(scopeId, { moveDomFocus: false, restoreFirstResponder: false });
-      }
-    };
-    document.addEventListener("pointerdown", onPointerDown, { capture: true });
-    return () =>
-      document.removeEventListener("pointerdown", onPointerDown, {
-        capture: true,
-      });
-  }, [ctx, cycling, scopeId]);
+    if (ctx === null || manager === null) return;
+    const manual = manager.kbfManual();
+    if (manual && !cycling && enabled && isKeyCard) enter();
+    else if (!manual && cycling) exit();
+  }, [ctx, manager, kbfManual, cycling, enabled, isKeyCard, enter, exit]);
 
   // Safety: a card unmounting (or its eligibility dropping) while cycling must
   // not leave its scope stranded on its context's mode stack. Pop on unmount
@@ -378,11 +311,9 @@ export function useCycleMode({
       cycling,
       toggle,
       exit,
-      enterAt,
-      enterToward,
       CycleScope: scopeRef.current!,
       scopeId,
     }),
-    [cycling, toggle, exit, enterAt, enterToward, scopeId],
+    [cycling, toggle, exit, scopeId],
   );
 }

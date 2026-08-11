@@ -70,6 +70,7 @@ import { Search } from "lucide-react";
 import "./tug-completion-popup.css";
 
 import { TugInput } from "./tug-input";
+import { ATTACHED_LIST_ATTRIBUTE } from "./focus-manager";
 import { useFocusTrap } from "./use-focus-trap";
 import { useSeedKeyView } from "./use-focusable";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
@@ -221,9 +222,15 @@ export function TugCompletionPopup({
   // is what puts this surface on the engine's Escape ladder — the single
   // arbiter — so Escape closes the popup from anywhere inside it, including
   // from the accessory, where no field keydown handler can reach.
+  // Typing-first, so the trap opts out of KBF auto-engagement ([P03]): the
+  // caret belongs in the query field from the first keystroke, and ↑/↓ drive
+  // the result list from there through this component's own `onKeyDown`.
+  // Engaging would hand the arrows to the engine's ring instead — the exact
+  // failure this popup was the sharpest casualty of.
   const { FocusModeScope } = useFocusTrap({
     active: true,
     onEscapeDismiss: onDismiss,
+    kbf: false,
   });
 
   // The app going inactive dismisses. A search popup is a transient act on the
@@ -343,7 +350,18 @@ export function TugCompletionPopup({
           role="dialog"
           aria-label={placeholder}
         >
-          <div className="tug-completion-popup-field">
+          {/*
+            The attached-list contract ([P08], Spec S02): the result list below
+            is this field's list, so ↑/↓ drive its cursor and never leave the
+            field — empty query or not. The marker rides this wrapper because
+            the caret lives in the `TugInput` inside it. With the ladder
+            yielding, `onKeyDown` below finally runs on the first keystroke,
+            which is the whole Open Quickly regression.
+          */}
+          <div
+            className="tug-completion-popup-field"
+            {...{ [ATTACHED_LIST_ATTRIBUTE]: "" }}
+          >
             <Search className="tug-completion-popup-field-icon" aria-hidden />
             <TugInput
               ref={inputRef}

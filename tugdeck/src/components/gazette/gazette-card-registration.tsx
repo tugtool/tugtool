@@ -42,6 +42,9 @@ export function registerGazetteCard(): void {
     contentFactory: (cardId: string) => <GazetteContent cardId={cardId} />,
     defaultMeta: { title: "Gazette", icon: "Newspaper", closable: true },
     hidden: true,
+    // A rail of buttons, walked by keyboard — engine stops all the way down
+    // ([P10]).
+    kbfAtRest: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it.
     layoutRole: "sidebar",

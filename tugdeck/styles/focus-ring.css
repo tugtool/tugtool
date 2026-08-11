@@ -273,21 +273,48 @@ body {
   outline: none;
 }
 
-/* A toggleable-cycling context shows the focus language ONLY while it is
-   cycling ([P13]). When cycling is off (`data-cycling="false"` on the context
-   root, e.g. the session card resting on its editor caret), the keyboard lives in
-   the editor — the cycle stops must show no ring, behind-tint, or cursor, even
-   though the engine may still mark a *resting* key view among them (the route
-   group seeds the key view on its selected segment). Suppress the ring
-   (`outline`) and the behind-tint (`background-image`) on any key-view / cursor
-   inside such a context. Persistent contexts (gallery, sheets) have no
-   `data-cycling` ancestor, so they are unaffected and always show the language
-   when keyboard-focused. (The editor's own key-view treatment is a `::after`
-   border, not an `outline`, so it is untouched.) */
-[data-cycling="false"] [data-key-view-kbd],
-[data-cycling="false"] [data-key-cursor] {
+/* KBF MODE — the ring gate ([P04]).
+   Rings exist iff keyboard-focus mode is engaged. That is one sentence and it
+   is the whole rule; what remains here is only the part the projection cannot
+   express.
+
+   The ring itself needs no rule at all: `data-key-view-kbd` is simply not
+   stamped in mode OFF (`computeProjection`), so every selector keyed on it —
+   the leaf ring, the ~40 component treatments, and the item-group suppressions
+   that defeat it — stands down together with their relative specificities
+   exactly as they are. Writing the gate as an `html[data-kbf]` PREFIX on the
+   paint rules instead would take the leaf rule from (0,1,0) to (0,2,1), above
+   `.tug-list-view[data-key-view-kbd] { outline: none }` and its siblings at
+   (0,2,0), and repaint the double ring this file records three failed attempts
+   at removing ([R04]).
+
+   `data-key-cursor` and `data-key-within` are different: they carry POSITION
+   and CONTAINMENT truth that app-tests and components read as structure in both
+   modes, so their paint is suppressed rather than their attribute withheld.
+   Anchored on `html` for the same documented reason the `data-app-active` rule
+   below is — at (0,2,0) it would tie the item-group rules and fall through to
+   Vite's emission order.
+
+   `[data-default-ring]` is deliberately NOT here: it is a promise about Return,
+   not a focus position, and it rides its own attribute so neither the withheld
+   flavor nor this suppression reaches it (brief Q3). Nor is
+   `[data-attached-cursor]`, for the same class of reason — it is a text field's
+   statement about which row its Return means, and mode OFF is exactly where it
+   does its work ([P08]).
+
+   (This replaced the `[data-cycling="false"]` suppression, which said the same
+   thing in the one place that had a mode: a resting cycle context showed no
+   ring because it was not cycling. Now nothing shows a ring unless the deck is
+   engaged, and the card-local spelling is subsumed.) */
+html:not([data-kbf]) :is([data-key-cursor], [data-key-within]) {
   outline: none;
   background-image: none;
+}
+/* The movement cursor's bar is a generated pseudo-element (`tug-list-view.css`,
+   `tug-accordion.css`, `jots-card.css`), which no `outline` suppression
+   reaches. */
+html:not([data-kbf]) [data-key-cursor]::before {
+  content: none;
 }
 
 /* The keyboard focus language goes quiet while the OS window is not foreground,

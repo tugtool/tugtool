@@ -109,6 +109,7 @@ import {
 import {
   TugListView,
   type TugListViewDelegate,
+  type TugListViewHandle,
 } from "../tug-list-view";
 import { TugSheet, TugSheetContent, useTugSheet, type TugSheetHandle } from "../tug-sheet";
 import { presentAlertSheet } from "../tug-alert-sheet";
@@ -227,7 +228,10 @@ import {
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./session-picker-cells";
-import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import {
+  attachedListDelegate,
+  TugFilterField,
+} from "@/components/tugways/tug-filter-field";
 import { caseInsensitiveSubstring } from "@/lib/text-match";
 import "./session-card.css";
 
@@ -1944,16 +1948,13 @@ function SessionProjectPickerForm({
   // clears in place while non-empty); an empty field's Escape falls through to
   // the sheet's dismiss, so no `filterFieldDidRequestDismiss` here. Enter stays
   // with the picker's default action (Open), so no submit either.
+  const pickerListRef = useRef<TugListViewHandle>(null);
   const filterDelegate = useMemo(
     () => ({
       filterFieldDidChangeQuery: setFilterQuery,
-      filterFieldDidRequestAdvance: () => {
-        focusManager?.place(
-          null,
-          { kind: "focus-key", focusKey: pickerFocusKey(PICKER_ORDER_SESSIONS) },
-          { modality: "keyboard" },
-        );
-      },
+      // ↑/↓ cursor the Sessions list from the caret ([P08]) instead of handing
+      // the key view down to it, so narrowing and choosing stay one gesture.
+      ...attachedListDelegate(() => pickerListRef.current),
     }),
     [focusManager],
   );
@@ -2129,6 +2130,7 @@ function SessionProjectPickerForm({
           <div className="session-card-picker-sessions-host">
             {sessionsReady ? (
               <TugListView
+                ref={pickerListRef}
                 dataSource={sessionsDataSource}
                 delegate={sessionsDelegate}
                 cellRenderers={SESSIONS_CELL_RENDERERS}
@@ -4419,24 +4421,6 @@ export function SessionCardBody({
                   initialQuery={lastFindQueryRef.current}
                   focusGroup={SESSION_CYCLE_GROUP}
                   focusOrderBase={SESSION_CYCLE_ORDER_FIND_BASE}
-                  onTabWhenEmpty={(step) =>
-                    cycle.enterAt(
-                      `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_FIND_BASE}`,
-                      step,
-                    )
-                  }
-                  // The query field needs the arrow handoff for the same reason
-                  // the composer does — its stops are in the trapped cycle, so a
-                  // released arrow would walk a base-mode order that holds none
-                  // of them and the caret would be stuck in the field. Spatial,
-                  // so Down reaches the status row rather than the option group
-                  // sharing this row.
-                  onArrowExit={(direction) =>
-                    cycle.enterToward(
-                      `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_FIND_BASE}`,
-                      direction,
-                    )
-                  }
                 />
               </cycle.CycleScope>
             ) : null}
@@ -4576,26 +4560,6 @@ export function SessionCardBody({
               routeFocusOrder={SESSION_CYCLE_ORDER_ROUTE}
               editorFocusGroup={SESSION_CYCLE_GROUP}
               editorFocusOrder={SESSION_CYCLE_ORDER_EDITOR}
-              // Tab in an EMPTY composer enters the card's cycle at the
-              // editor's own seat and steps — so the key moves the keyboard
-              // along the card's one Tab order instead of indenting nothing.
-              onTabWhenEmpty={(step) =>
-                cycle.enterAt(
-                  `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
-                  step,
-                )
-              }
-              // An arrow leaving the composer enters the cycle at the same seat
-              // Tab does, but moves along the cycle's SPATIAL plane — Up is the
-              // row above, not the previous ordinal. The card's stops all live
-              // in its trapped cycle, so this handoff is the only way out that
-              // goes anywhere.
-              onArrowExit={(direction) =>
-                cycle.enterToward(
-                  `${SESSION_CYCLE_GROUP}:${SESSION_CYCLE_ORDER_EDITOR}`,
-                  direction,
-                )
-              }
               attachmentFocusGroup={SESSION_CYCLE_GROUP}
               attachmentFocusOrderBase={SESSION_CYCLE_ORDER_ATTACHMENT_BASE}
               onAttachmentCountChange={setAttachmentCount}

@@ -38,6 +38,7 @@ import "./resume-sheet.css";
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import {
+  attachedListDelegate,
   TugFilterField,
   type TugFilterFieldDelegate,
 } from "@/components/tugways/tug-filter-field";
@@ -50,6 +51,7 @@ import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import {
   TugListView,
   type TugListViewDelegate,
+  type TugListViewHandle,
 } from "@/components/tugways/tug-list-view";
 import {
   useSessionsDataSource,
@@ -188,22 +190,19 @@ function ResumeSheetBody({
   const focusGroup = React.useId();
   useSeedKeyView(`${focusGroup}:0`);
   const focusManager = useFocusManager();
+  const listRef = React.useRef<TugListViewHandle>(null);
   // The filter field's contract: report each keystroke into local state, hand
   // the key view to the list on ArrowDown, and close the sheet on an Escape
   // the field itself declined (an already-empty query).
   const filterDelegate = useMemo<TugFilterFieldDelegate>(
     () => ({
       filterFieldDidChangeQuery: setFilterQuery,
-      filterFieldDidRequestAdvance: () => {
-        focusManager?.place(
-          cardId,
-          { kind: "focus-key", focusKey: `${focusGroup}:1` },
-          { modality: "keyboard" },
-        );
-      },
       filterFieldDidRequestDismiss: () => {
         onClose();
       },
+      // The sheet opens with the caret in this field ([P12] seed rule), so
+      // ↑/↓ must reach the sessions list from there ([P08]).
+      ...attachedListDelegate(() => listRef.current),
     }),
     [cardId, focusGroup, focusManager, onClose],
   );
@@ -272,6 +271,7 @@ function ResumeSheetBody({
       >
         <div className="resume-sheet-list">
           <TugListView<SessionsDataSource>
+            ref={listRef}
             dataSource={dataSource}
             delegate={delegate}
             cellRenderers={SESSIONS_CELL_RENDERERS}

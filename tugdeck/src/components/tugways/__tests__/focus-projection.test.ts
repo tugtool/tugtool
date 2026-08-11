@@ -135,6 +135,9 @@ describe("projection record", () => {
 
   test("the ring-follows-pointer policy is a deck global, applied at derivation", () => {
     const m = managerWithKeyViewOnA();
+    // KBF mode is the outer gate on the paint flavor ([P04]): rings exist iff
+    // the mode is engaged, so a ring-modality test has to engage to see one.
+    m.setKbfManual(true);
     m.place("A", { kind: "focusable", id: "row1" }, { modality: "pointer" });
     expect(m.computeProjection().keyViewKbd).toBe(false);
 
@@ -143,6 +146,21 @@ describe("projection record", () => {
     // The context's own modality is untouched — the policy widens the ring, it
     // does not rewrite how the key view was reached.
     expect(m.computeProjection().keyViewKeyboard).toBe(false);
+  });
+
+  test("mode OFF withholds the ring flavor but not the key view itself", () => {
+    const m = managerWithKeyViewOnA();
+    m.place("A", { kind: "focusable", id: "row1" }, { modality: "keyboard" });
+    // Reached by keyboard, so the ring WOULD paint — except the mode is off.
+    expect(m.computeProjection().keyViewKeyboard).toBe(true);
+    expect(m.computeProjection().keyViewKbd).toBe(false);
+    // The unflavored key view is untouched in both modes: it is a position
+    // record every behavioral reader depends on, not a paint signal.
+    expect(m.computeProjection().keyViewId).toBe("row1");
+
+    m.setKbfManual(true);
+    expect(m.computeProjection().keyViewKbd).toBe(true);
+    expect(m.computeProjection().keyViewId).toBe("row1");
   });
 
   test("element resolution is null with no document, ids are not", () => {

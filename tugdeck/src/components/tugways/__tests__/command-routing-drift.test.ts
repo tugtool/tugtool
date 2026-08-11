@@ -240,6 +240,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "open-command-picker": "command",
   "next-keyboard-focus": "command",
   "previous-keyboard-focus": "command",
+  "cycle-focus-mode": "command",
   "show-devtools": "command",
   // The parameter picks the command.
   "run-card-command": { bridgeFor: TUG_ACTIONS.RUN_SLASH_COMMAND },

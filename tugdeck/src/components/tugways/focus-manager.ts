@@ -52,6 +52,7 @@ import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spat
 import { revealFocusTarget } from "./focus-reveal";
 import { resolveDefaultFocusTarget } from "@/default-focus";
 import { getDeckStore } from "@/lib/deck-store-registry";
+import { getRegistration } from "@/card-registry";
 import { isFocusDestination } from "@/deck-store-selectors";
 import type { DeckState } from "@/layout-tree";
 
@@ -188,7 +189,35 @@ export type KeyboardRoute = "engine-routed" | "dom-granted";
 export const KEY_SINK_ATTRIBUTE = "data-tug-key-sink";
 
 /** Options for {@link FocusManager.place}. */
+/**
+ * How the keyboard ARRIVED at a target — a property of the placement, not of
+ * engine state, and the input that decides whether a text stop parks ([P12],
+ * Spec S05).
+ *
+ * - `"movement"` — the engine walked here: a spatial step, a linear step, the
+ *   Tab walk. The user asked to *move the ring*, not to type, so a text stop
+ *   reached this way is **parked**: ringed, with no caret, until Return or a
+ *   printable character grants one.
+ * - `"placement"` (the default) — everything else: a surface seeding its own
+ *   key view (`useSeedKeyView`), an explicit `realizeTarget` from a surface, a
+ *   commit-home seed, a pointer placement, a restore. These are declarations of
+ *   a text-first entry point and they **grant** the caret. Without the
+ *   distinction every text-first sheet in the app — rename, resume, the session
+ *   question dialog — would open ringed and caret-less.
+ *
+ * Carried explicitly rather than inferred. An inference over "did the key view
+ * change by one step" is exactly the ambient-predicate class this mode exists
+ * to delete.
+ */
+export type FocusArrival = "movement" | "placement";
+
 export interface PlaceOptions {
+  /**
+   * How the keyboard arrived ({@link FocusArrival}). Defaults to
+   * `"placement"`, so only the movement performers that opt in can park a
+   * text stop.
+   */
+  arrival?: FocusArrival;
   /**
    * The modality this placement asserts. Defaults to the engine's input
    * latch (the last real user input source). A programmatic restore that
@@ -286,6 +315,23 @@ function cssEscapeId(id: string): string {
 export const FOCUS_MODE_ATTRIBUTE = "data-focus-mode";
 
 /**
+ * DOM projection of **KBF mode** — keyboard-focus mode — on the document root:
+ * present (empty value) while the mode is engaged, absent otherwise. The mode's
+ * one public mark ([P02]).
+ *
+ * Engaged means the engine owns the movement keys and rings paint; disengaged
+ * means text surfaces own their keys unconditionally and no ring paints
+ * anywhere. The bit is derived, never latched — see
+ * {@link FocusManager.kbfEngaged}.
+ *
+ * CSS selects on it as `html:not([data-kbf])` suppressions only, anchored the
+ * way the `data-app-active` rule in `focus-ring.css` is; the ring's own trigger
+ * (`data-key-view-kbd`) is withheld at the projection instead, so no painting
+ * rule's specificity changes.
+ */
+export const KBF_ATTRIBUTE = "data-kbf";
+
+/**
  * DOM marker for the **immediate container** of the key view (depth 1 only):
  * the element one level up the key path that *contains* the active component.
  * The engine's visible `:focus-within` — a quiet "contains active" mark, distinct
@@ -313,6 +359,43 @@ export const KEY_VIEW_ATTRIBUTE = "data-key-view";
  * to the surface's own keymap; otherwise the focus walk advances.
  */
 export const TAB_CONSUME_ATTRIBUTE = "data-tug-tab-consume";
+
+/**
+ * DOM marker a text field sets on the wrapper **containing** its `<input>` to
+ * declare an **attached list** ([P08], Spec S02): while the caret is inside,
+ * ↑/↓ drive that list's cursor and never leave the field.
+ *
+ * The same class of declaration as {@link TAB_CONSUME_ATTRIBUTE} — a component
+ * contract projected into the DOM for the document ladder to read ([L24]),
+ * not appearance. The marker rides the wrapper rather than the input because
+ * the active element IS the inner input; the ladder tests containment
+ * (`closest`), the way every other in-key-view test does.
+ *
+ * It holds in **both** KBF modes and regardless of whether the field is empty.
+ * That unconditionality is the point: it is the replacement for the ambient
+ * empty-input arrow release, which decided the same question from the field's
+ * content on every keystroke.
+ */
+export const ATTACHED_LIST_ATTRIBUTE = "data-tug-attached-list";
+
+/**
+ * The highlight an **attached list** wears on the row its field's ↑/↓ have
+ * cursored to ([P08]).
+ *
+ * Deliberately NOT `data-key-cursor`, for two reasons that both come down to
+ * this being a different mark rather than the same one somewhere else:
+ *
+ *  - The engine's movement cursor paints only while the keyboard is *in* that
+ *    list (it holds the key view, or a row of it is descended into). An
+ *    attached list never holds the key view — the caret is in the field — so
+ *    the movement cursor's own gating would suppress it.
+ *  - `data-key-cursor` is suppressed outright in mode OFF ([P04]), and an
+ *    attached list is at its most load-bearing exactly there: a caret in a
+ *    filter, driving rows, with the mode off. Like `data-default-ring`, this
+ *    mark is **exempt** from the mode gate, because it is not a focus position
+ *    — it is a text field's statement about which row its next Return means.
+ */
+export const ATTACHED_CURSOR_ATTRIBUTE = "data-attached-cursor";
 
 /**
  * The part of the projection derived from a single context's state — no deck
@@ -343,6 +426,12 @@ export interface FocusProjection extends FocusProjectionState {
   keyViewEl: HTMLElement | null;
   /** Whether that element should also carry `data-key-view-kbd`. */
   keyViewKbd: boolean;
+  /**
+   * Whether KBF mode is engaged — the deck-global bit projected as
+   * {@link KBF_ATTRIBUTE} on the document root. Derived, never stored; see
+   * {@link FocusManager.kbfEngaged}.
+   */
+  kbf: boolean;
   /** The element that should carry `data-key-within`. */
   keyWithinEl: HTMLElement | null;
   /** The element that should carry `data-default-ring`. */
@@ -448,6 +537,16 @@ interface FocusModeEntry extends FocusMode {
    * via `escapeExits`, a non-trapped descend scope via `ascend`).
    */
   onEscapeDismiss?: () => void;
+  /**
+   * Whether this mode entry auto-engages KBF mode while it is on the stack —
+   * Class A of the derivation (Spec S01). Defaults to engaging; a typing-first
+   * surface that traps the keyboard but wants text ownership (Open Quickly's
+   * completion popup) passes `false`.
+   *
+   * Only consulted for `trapped` entries: a non-trapped descend scope is
+   * navigation inside a surface, not a surface appearing, and never engages.
+   */
+  kbf?: boolean;
 }
 
 // ---- Focusables ----
@@ -887,12 +986,23 @@ export class FocusContext {
    */
   focusKeyView(): boolean {
     if (!this.isActive()) return false;
-    if (typeof document === "undefined") return false;
     if (this.keyViewId !== null) {
-      this.route = this.coord.responderHasFocusContract(this.keyViewId)
-        ? "dom-granted"
-        : "engine-routed";
+      // The same predicate `classifyRoute` applies, and it must give the same
+      // answer: these two derivations diverging is how a stop ends up ringed by
+      // one and granted by the other ([P12], Spec S05).
+      //
+      // Derived ABOVE the document guard below, deliberately: the route is
+      // engine state — it is what `dispatchKeyToKeyView` gates on — not a DOM
+      // effect, so it must settle whether or not there is a document to land
+      // the keyboard in. Deriving it after the guard left the route frozen at
+      // the old mode's answer in every DOM-free context.
+      this.route =
+        this.coord.responderHasFocusContract(this.keyViewId) &&
+        !this.parksTextStop()
+          ? "dom-granted"
+          : "engine-routed";
     }
+    if (typeof document === "undefined") return false;
     if (this.route === "dom-granted") return this.grantTextSurface();
     // A key view that resolves to a bare native text control (an
     // <input>/<textarea>/<select> with no contract-bound responder) is a
@@ -906,8 +1016,19 @@ export class FocusContext {
     // authority) split across two elements. grantTextSurface's generic
     // branch focuses the intrinsically-focusable element and is
     // idempotent when it already holds focus.
+    //
+    // …unless the mode says this stop is parked ([P12]). This branch is exactly
+    // the filter-field and HUD class, and it is deliberately symmetric with the
+    // watchdog's legality predicate (`isBareNativeControl` behind
+    // `legalKeyboardElement`), so the two move as a pair: grant and legality
+    // diverging would let the watchdog bless a caret the mode forbids — or
+    // report the park as a violation and heal it away.
     const kvEl = this.keyViewElement();
-    if (kvEl !== null && this.coord.isBareNativeControl(kvEl)) {
+    if (
+      kvEl !== null &&
+      this.coord.isBareNativeControl(kvEl) &&
+      !this.parksTextStop()
+    ) {
       const granted = this.grantTextSurface();
       this.coord.settleResponderForKeyView();
       return granted;
@@ -1017,7 +1138,11 @@ export class FocusContext {
     return this.realizeTarget(
       this.currentTarget,
       this.keyViewKeyboard ? "keyboard" : "pointer",
-      { preventScroll: true },
+      // Preserve the arrival: a watchdog re-grant is a repair of the placement
+      // that already happened, not a new one. Letting it fall back to the
+      // `"placement"` default would silently un-park a stop the engine moved
+      // to ([P12]).
+      { preventScroll: true, arrival: this.currentArrival },
     );
   }
 
@@ -1065,24 +1190,132 @@ export class FocusContext {
   }
 
   /**
-   * Classify a target's keyboard route (Spec S02) — pure derivation from the
-   * target kind plus the responder registry's focus-contract declaration.
-   * Never a per-call flag: there is no way to author a contradiction.
+   * How the keyboard arrived at the current target ([P12], Spec S05). Recorded
+   * with the placement; `"placement"` until a movement performer says
+   * otherwise. A grant (Return-descend, a printable character, a click) flips
+   * it back, which is what retires the parked state without a second flag.
+   */
+  private currentArrival: FocusArrival = "placement";
+
+  /** See {@link currentArrival}. */
+  arrival(): FocusArrival {
+    return this.currentArrival;
+  }
+
+  /**
+   * Land the keyboard after the engine MOVED the key view — the one door the
+   * movement performers use instead of a bare `focusKeyView()`, so the arrival
+   * kind is recorded rather than inferred ([P12], Spec S05). A text stop
+   * reached this way parks.
+   */
+  private landAfterMovement(): boolean {
+    this.currentArrival = "movement";
+    return this.focusKeyView();
+  }
+
+  /**
+   * Grant the caret at a parked text stop and re-land the keyboard — the
+   * transition Return-descend and the printable-character branch both run
+   * ([P12], #printable-grant).
+   *
+   * Flipping the arrival to `"placement"` IS the un-parking: the park predicate
+   * reads the arrival, so there is no second "descended" flag to keep in step.
+   * Re-realizing (rather than reprojecting) is what re-derives the route and
+   * moves DOM focus onto the surface; `grantTextSurface`'s idempotency guard
+   * puts the caret back where it was ([L23], [R01]).
+   */
+  grantParkedTextStop(): boolean {
+    if (!this.hasParkedTextStop()) return false;
+    this.currentArrival = "placement";
+    return this.focusKeyView();
+  }
+
+  /**
+   * Whether the key view is a text stop currently PARKED — ringed, no caret.
+   * The gate on both grant transitions (Return, and a printable character).
+   *
+   * Reads the STATE, not its history. `parksTextStop` answers "should arriving
+   * here park?" and is a question about the placement; this answers "is the
+   * keyboard parked at a text stop right now?", which is what a keystroke is
+   * responding to. Asking the arrival question here made the grant depend on a
+   * value any later re-realization could reset, so a parked stop stayed parked
+   * and typing did nothing — the ring said one thing and the predicate another.
+   */
+  hasParkedTextStop(): boolean {
+    if (this.keyViewId === null) return false;
+    // Engine-routed at a text stop, with the mode on, IS the parked state.
+    if (this.route !== "engine-routed") return false;
+    if (!this.coord.kbfEngaged()) return false;
+    if (this.coord.responderHasFocusContract(this.keyViewId)) return true;
+    const el = this.keyViewElement();
+    return el !== null && this.coord.isBareNativeControl(el);
+  }
+
+  /**
+   * Whether a text stop reached this way is **parked** — ringed, no caret —
+   * rather than granted (Spec S05, [P12]).
+   *
+   * ```
+   * parksTextStop =
+   *      kbfEngaged()                      // rings exist at all
+   *   && accessMode !== "accessibility"    // Class C carve-out
+   *   && arrival === "movement"            // seeds and placements grant
+   * ```
+   *
+   * The two carve-outs preserve the two properties the old
+   * "a text surface never wears a ring" axiom was protecting that are still
+   * true. **Accessibility mode never parks**: an engine-routed key view there
+   * mirrors real DOM focus onto the key-view element, so parking a text stop
+   * would put focus on the field's *wrapper* and strand an assistive-tech user
+   * with no caret in any field until they typed. **A seeded or explicitly
+   * placed stop never parks**: `rename-session-sheet` says so in its own
+   * comment ("the engine seeds the key view onto the FIELD (caret on open)"),
+   * and so do the gallery sheet, the resume sheet, the attachment preview, and
+   * the session question / permission dialogs — every one a Class-A
+   * auto-engaging surface, so an unqualified rule would open every text-first
+   * sheet in the app ringed and unable to type.
+   *
+   * The caller supplies whether the target is a text contract, because the
+   * three route sites each know that differently (a contract-bearing responder,
+   * or a bare native control).
+   */
+  parksTextStop(): boolean {
+    return (
+      this.coord.kbfEngaged() &&
+      this.coord.keyboardAccessMode() !== "accessibility" &&
+      this.currentArrival === "movement"
+    );
+  }
+
+  /**
+   * Classify a target's keyboard route (Spec S02) — derived from the target
+   * kind, the responder registry's focus-contract declaration, and (since KBF)
+   * whether a text stop reached by MOVEMENT should park ([P12]).
+   *
+   * Still never a per-call flag: the mode is a derivation over engine state and
+   * the arrival kind is recorded with the placement. Both are state, not caller
+   * opinion, so there is still no way to author a contradiction.
    */
   private classifyRoute(target: FocusTarget): KeyboardRoute {
-    switch (target.kind) {
-      case "engine":
-      case "state-key":
-        return "dom-granted";
-      case "responder":
-        return this.coord.responderHasFocusContract(target.responderId)
-          ? "dom-granted"
-          : "engine-routed";
-      case "focusable":
-      case "focus-key":
-      case "none":
-        return "engine-routed";
-    }
+    const base = ((): KeyboardRoute => {
+      switch (target.kind) {
+        case "engine":
+        case "state-key":
+          return "dom-granted";
+        case "responder":
+          return this.coord.responderHasFocusContract(target.responderId)
+            ? "dom-granted"
+            : "engine-routed";
+        case "focusable":
+        case "focus-key":
+        case "none":
+          return "engine-routed";
+      }
+    })();
+    // A text stop the engine MOVED to is parked: the ring lands, the caret does
+    // not ([P12]). Everything else keeps the classification it always had.
+    if (base === "dom-granted" && this.parksTextStop()) return "engine-routed";
+    return base;
   }
 
   /** Record the card's focus target (bookkeeping half of a placement). */
@@ -1121,8 +1354,12 @@ export class FocusContext {
   realizeTarget(
     target: FocusTarget,
     modality: FocusModality,
-    opts?: { preventScroll?: boolean },
+    opts?: { preventScroll?: boolean; arrival?: FocusArrival },
   ): PlaceResult {
+    // Record how we got here BEFORE any route is classified: `classifyRoute`
+    // and `focusKeyView` both read it ([P12], Spec S05). An explicit placement
+    // is the default, so only a movement performer can park a text stop.
+    this.currentArrival = opts?.arrival ?? "placement";
     if (opts?.preventScroll === true) {
       this.revealSuppressed = true;
       try {
@@ -1142,7 +1379,7 @@ export class FocusContext {
   private realizeResolvedTarget(
     target: FocusTarget,
     modality: FocusModality,
-    opts?: { preventScroll?: boolean },
+    opts?: { preventScroll?: boolean; arrival?: FocusArrival },
   ): PlaceResult {
     switch (target.kind) {
       case "none":
@@ -1260,6 +1497,8 @@ export class FocusContext {
       escapeExits?: boolean;
       onEscapeDismiss?: () => void;
       spaceDismisses?: boolean;
+      /** Opt a trapped mode out of KBF auto-engagement ([P03]); default engage. */
+      kbf?: boolean;
     },
   ): void {
     const existing = this.modeStack.findIndex((m) => m.scopeId === scopeId);
@@ -1279,9 +1518,13 @@ export class FocusContext {
       // a surface about to claim first responder on open (a modal confirm popover)
       // captures here, BEFORE its claim, so the pop restores the prior responder.
       restoreFirstResponder: this.coord.firstResponder(),
+      kbf: opts.kbf,
     });
     this.reproject();
     this.notify();
+    // A trapped push is Class-A auto-engagement (Spec S01): the mode may have
+    // just turned on, which changes both the marks and the keyboard route.
+    this.coord.settleKbfEngagement();
   }
 
   /**
@@ -1371,6 +1614,9 @@ export class FocusContext {
     // `currentFocusMode`, which subscribers observe (e.g. a card's `cycling`
     // flag) independently of the key view.
     this.notify();
+    // Popping the last engaging trap disengages the mode (Spec S01) — derived,
+    // so the surface closing IS the disengagement, with nothing to unlatch.
+    this.coord.settleKbfEngagement();
   }
 
   /**
@@ -1433,6 +1679,7 @@ export class FocusContext {
       this.focusKeyView();
     }
     this.notify();
+    this.coord.settleKbfEngagement();
   }
 
   /**
@@ -1463,6 +1710,43 @@ export class FocusContext {
    */
   isFocusModePushed(scopeId: string): boolean {
     return this.modeStack.some((m) => m.scopeId === scopeId);
+  }
+
+  /**
+   * Class A of the KBF derivation (Spec S01): whether any **trapped** mode entry
+   * on this context's stack auto-engages keyboard-focus mode.
+   *
+   * `trapped` is load-bearing. `pushFocusMode` also carries non-trapped descend
+   * scopes — a list-row scope, an accordion-section scope — which are pushed
+   * *while already navigating* rather than because a surface appeared. Engaging
+   * on those would make a descend an engagement event and let a mode-OFF card
+   * enter KBF by descending into one of its own lists.
+   *
+   * An entry opts out with `kbf: false` ([P03]) — the escape hatch for a
+   * typing-first surface that traps the keyboard but must keep text ownership.
+   */
+  hasEngagingTrap(): boolean {
+    return this.modeStack.some((m) => m.trapped && m.kbf !== false);
+  }
+
+  /**
+   * Pop the current mode when it is a **focus cycle** — the pointer-exit half
+   * of [P05]. A cycle is the trapped mode that opts into `escapeExits`: it has
+   * no surface of its own, so unlike a sheet or a menu it is the engine's to
+   * close. A sheet opened FROM a cycle stop is its own top mode and is left
+   * alone, so its close can still return focus to the stop that opened it.
+   *
+   * Pops without moving DOM focus or restoring the first responder: the click
+   * that triggered this owns the next focus. Returns whether a cycle popped.
+   */
+  popCycleModeForPointerExit(): boolean {
+    const top = this.modeStack[this.modeStack.length - 1];
+    if (!top || !top.trapped || top.escapeExits !== true) return false;
+    this.popFocusMode(top.scopeId, {
+      moveDomFocus: false,
+      restoreFirstResponder: false,
+    });
+    return true;
   }
 
   /**
@@ -1801,7 +2085,7 @@ export class FocusContext {
         this.isRecordInteractive(targetRecord)
       ) {
         this.setKeyView(targetId, true);
-        this.focusKeyView();
+        this.landAfterMovement();
         return true;
       }
       // The declared target is absent or non-interactive (a disabled stop — e.g. a
@@ -1837,7 +2121,7 @@ export class FocusContext {
       // surface's own handler rather than dragging it into the linear net.
       const moved = this.moveKeyViewLinear(direction);
       if (moved !== null) {
-        this.focusKeyView();
+        this.landAfterMovement();
         return true;
       }
     }
@@ -1848,7 +2132,7 @@ export class FocusContext {
       // is authored after it (the Lens's next section) rather than dead-ending. When
       // the walk finds nowhere to go the group simply holds — either way the arrow is
       // consumed, so the page never scrolls and the key never beeps ([P08]).
-      if (this.moveKeyViewLinear(direction) !== null) this.focusKeyView();
+      if (this.moveKeyViewLinear(direction) !== null) this.landAfterMovement();
       return true;
     }
     return false;
@@ -2175,7 +2459,16 @@ export class FocusManager {
     // chain (structure) state, not a DOM focus claim, so it belongs here
     // beside naming the key card; the DOM focus claim stays in `adoptKeyCard`.
     if (cardId !== null) this.settleFirstResponderForActivation();
-    if (changed) this.touch();
+    if (changed) {
+      this.touch();
+      // The key card is a KBF derivation input (Class B, Spec S01): switching
+      // to a `kbfAtRest` card engages the mode and away from one disengages it.
+      this.settleKbfEngagement();
+      // The manual bit is deck-global and survives a keyboard-driven card
+      // switch ([P05]), so a ⌘L into a card that has never been focused would
+      // otherwise arrive engaged with nothing ringed. Seed the new key card.
+      if (this.kbfEngaged()) this.seedKbfRing();
+    }
   }
 
   /**
@@ -2635,7 +2928,9 @@ export class FocusManager {
         target.kind === "focus-key" ||
         target.kind === "responder"
       ) {
-        ctx.realizeTarget(target, opts?.modality ?? this.lastInputSource);
+        ctx.realizeTarget(target, opts?.modality ?? this.lastInputSource, {
+          arrival: opts?.arrival,
+        });
       }
       tugDevLogStore.debug(
         "focus-place",
@@ -2648,6 +2943,7 @@ export class FocusManager {
     this.lastInputSource = modality;
     const result = ctx.realizeTarget(target, modality, {
       preventScroll: opts?.preventScroll,
+      arrival: opts?.arrival,
     });
     // A fresh placement is a new claim — it starts a new enforcement
     // episode with a full reassert budget.
@@ -2780,7 +3076,18 @@ export class FocusManager {
       // signal, since `:focus-visible` is unreliable for programmatic focus) —
       // and, when the ring-follows-pointer policy is on, on any pointer-driven
       // key-view change too.
-      keyViewKbd: state.keyViewKeyboard || this.ringFollowsPointer,
+      // …and only while KBF mode is engaged ([P04] mechanism 1). This is the
+      // whole ring gate: `focus-ring.css` calls this attribute "One trigger",
+      // and it is exactly that — a pure paint signal, not a position record.
+      // Withholding it here stands ~40 selectors across ~20 component
+      // stylesheets down at once with NO cascade change, where prefixing the
+      // paint rules with `html[data-kbf]` would raise them above every
+      // item-group suppression and repaint the double ring ([R04]). The
+      // unflavored `data-key-view` is untouched, so every behavioral reader —
+      // the engine-leaf delivery, the watchdog — sees no change.
+      keyViewKbd:
+        (state.keyViewKeyboard || this.ringFollowsPointer) && this.kbfEngaged(),
+      kbf: this.kbfEngaged(),
       keyWithinEl,
       defaultRingEl: ringTop !== null && !ctx.keyViewIsButton() ? ringTop : null,
       legalActive: this.legalKeyboardElement().legal,
@@ -2869,6 +3176,14 @@ export class FocusManager {
     }
 
     const root = document.documentElement;
+    const hasKbf = root.hasAttribute(KBF_ATTRIBUTE);
+    if (p.kbf && !hasKbf) {
+      root.setAttribute(KBF_ATTRIBUTE, "");
+      writes += 1;
+    } else if (!p.kbf && hasKbf) {
+      root.removeAttribute(KBF_ATTRIBUTE);
+      writes += 1;
+    }
     if (p.focusMode === null) {
       if (root.hasAttribute(FOCUS_MODE_ATTRIBUTE)) {
         root.removeAttribute(FOCUS_MODE_ATTRIBUTE);
@@ -3140,6 +3455,13 @@ export class FocusManager {
     //    nature even when it carries no engine identity the target union can
     //    name, and the engine grants focus to exactly this class, so grant and
     //    legality stay symmetric (see `isBareNativeControl`).
+    //
+    //    That symmetry is why the class stands down while the mode PARKS text
+    //    stops ([P12]): `focusKeyView` declines to grant a bare control the
+    //    engine moved to, so calling a caret there legal would let a second
+    //    focus authority (a Radix mount-autofocus, the browser's own default)
+    //    fill the vacuum and have the watchdog bless it — parking would fail
+    //    silently, which is exactly the pair Spec S05 says must move together.
     const sinkIsLegalPark =
       active !== null &&
       active.hasAttribute(KEY_SINK_ATTRIBUTE) &&
@@ -3147,7 +3469,9 @@ export class FocusManager {
     if (
       isLegal ||
       sinkIsLegalPark ||
-      (active !== null && this.isBareNativeControl(active))
+      (active !== null &&
+        this.isBareNativeControl(active) &&
+        !ctx.parksTextStop())
     ) {
       this.lastInvariantSignature = null;
       this.resetReassertEpisode();
@@ -3392,11 +3716,193 @@ export class FocusManager {
     if (mode === "standard") this.clearMirrorArtifacts();
     this.touch();
     this.activeContext().focusKeyView();
+    // Accessibility mode is Class C of the KBF derivation — permanently
+    // engaged — so a flip is a mode change and must repaint `data-kbf`.
+    this.settleKbfEngagement();
   }
 
   /** The current keyboard-access mode. */
   keyboardAccessMode(): KeyboardAccessMode {
     return this.accessMode;
+  }
+
+  // ---- KBF mode (deck-global, derived) ----
+
+  /**
+   * The manual half of the KBF derivation: set by ⌥⇥ and the Keyboard Focus
+   * menu item, cleared by a pointerdown anywhere and by the Escape ladder's
+   * last rung. Deck-global and survives keyboard-driven card switches ([P05]).
+   *
+   * Never read directly for "is the mode on?" — that is {@link kbfEngaged}.
+   */
+  private kbfManuallyEngaged = false;
+
+  /**
+   * The last engagement answer, kept purely as a **change detector** for
+   * {@link settleKbfEngagement}. Not a cache of the mode: every read of
+   * {@link kbfEngaged} recomputes, so a surface closing can never strand the
+   * mode on ([P01]).
+   */
+  private lastKbfEngaged = false;
+
+  /**
+   * Whether keyboard-focus mode is engaged (Spec S01) — the one question the
+   * ring gate, the movement stages, and the projection all ask.
+   *
+   * Derived from four inputs, in this order:
+   *  1. **Class C** — accessibility keyboard-access mode is permanently
+   *     engaged. Non-negotiable: assistive tech needs every affordance
+   *     reachable and every engine stop marked.
+   *  2. **Manual** — ⌥⇥ / the menu item ({@link kbfManuallyEngaged}).
+   *  3. **Class A** — a trapped mode entry that has not opted out
+   *     ({@link FocusContext.hasEngagingTrap}), on the **active** context only:
+   *     a trap pushed on a background card is not a surface the user is in.
+   *  4. **Class B** — the key card's registration declares `kbfAtRest`.
+   *
+   * Derived rather than latched is the whole point: a sheet closing pops its
+   * mode entry and the answer changes with it, so no path can leave the deck
+   * ringed with nothing to ring.
+   */
+  kbfEngaged(): boolean {
+    if (this.accessMode === "accessibility") return true;
+    if (this.kbfManuallyEngaged) return true;
+    if (this.activeContext().hasEngagingTrap()) return true;
+    const componentId = this.keyCardComponentId();
+    if (componentId === null) return false;
+    return getRegistration(componentId)?.kbfAtRest === true;
+  }
+
+  /**
+   * Whether the last clear of the manual bit came from a pointerdown. The
+   * cycle consumer reads it to skip its resting-focus reclaim: the click that
+   * ended the mode places focus itself, and reclaiming would flash the resting
+   * caret for a frame before the click's own focus lands.
+   */
+  private kbfManualClearedByPointer = false;
+
+  /** Whether the manual bit specifically is set (the toggle's own state). */
+  kbfManual(): boolean {
+    return this.kbfManuallyEngaged;
+  }
+
+  /** See {@link kbfManualClearedByPointer}. */
+  kbfClearedByPointer(): boolean {
+    return this.kbfManualClearedByPointer;
+  }
+
+  /** Set the manual engagement bit and settle the mode ([P05]). */
+  setKbfManual(value: boolean): void {
+    this.kbfManualClearedByPointer = false;
+    if (this.kbfManuallyEngaged === value) return;
+    this.kbfManuallyEngaged = value;
+    this.settleKbfEngagement();
+  }
+
+  /**
+   * The ⌥⇥ gesture (Spec S04). Returns the resulting manual bit so the caller
+   * can seed a ring when it turned on.
+   *
+   * Not a blind flip. A **live caret** — the keyboard really granted to a text
+   * surface, which is what `dom-granted` means — makes ⌥⇥ a request to return
+   * to the ring, never to turn the mode off ([P09]). That is the same gesture
+   * whether the mode is off (a session card at rest, where it enters the cycle)
+   * or already forced on by a surface (a typing descend inside a sheet, where
+   * the mode cannot go off anyway and a flip would only clear a bit with no
+   * visible effect). With the ring already live, the flip is the ordinary one.
+   */
+  toggleKbfManual(): boolean {
+    const next =
+      this.keyboardRoute() === "dom-granted" ? true : !this.kbfManuallyEngaged;
+    this.setKbfManual(next);
+    return next;
+  }
+
+  /**
+   * The pointer half of [P05]: any click clears the manual bit. Cycling is a
+   * keyboard mode — the moment the user reaches for the pointer they have left
+   * keyboard navigation.
+   *
+   * Runs synchronously inside the capture-phase pointerdown, ahead of the
+   * click's own focus placement, and pops a live focus-cycle itself rather than
+   * leaving that to a subscriber's effect: a React round trip would land the
+   * pop after the click's focus, leaving the ring painted for a frame over a
+   * surface the user has already clicked out of.
+   */
+  clearKbfManualForPointer(): void {
+    if (!this.kbfManuallyEngaged) return;
+    this.kbfManuallyEngaged = false;
+    this.activeContext().popCycleModeForPointerExit();
+    this.settleKbfEngagement();
+    // Set AFTER the settle so the consumer's resting-focus reclaim, which runs
+    // off the notify, sees it.
+    this.kbfManualClearedByPointer = true;
+  }
+
+  /**
+   * Put the ring somewhere when the mode engages onto a card that has none —
+   * the "the mode never points at nothing" half of [P05]. Seeds the current
+   * mode's first stop (a scope's commit-home) and lands the keyboard on it.
+   *
+   * No-op when a key view already exists: an engaged card returning to the
+   * foreground keeps the stop it was on, which is the whole point of per-card
+   * focus universes. Returns whether a ring was seeded.
+   */
+  seedKbfRing(): boolean {
+    const ctx = this.activeContext();
+    if (ctx.keyView() !== null) return false;
+    if (ctx.focusFirstInMode() === null) return false;
+    ctx.focusKeyView();
+    return true;
+  }
+
+  /**
+   * Settle the deck after any derivation input mutates: notify subscribers,
+   * repaint the marks, and — because the keyboard ROUTE is a cache recomputed
+   * only inside `realizeTarget`/`focusKeyView` — re-land the keyboard for the
+   * current key view (Spec S05). A bare `reproject()` would repaint the marks
+   * while leaving the keyboard routed by the old mode's answer, which is
+   * exactly how a text stop ends up ringed with a live caret it should not
+   * have (or parked with one it should).
+   *
+   * Gated on the answer actually changing, so the common case — a push that
+   * engages nothing new — writes nothing. `focusKeyView` is idempotent on
+   * every branch (the grant's already-holds-focus guard, the sink park's
+   * already-active guard), so the settle never disturbs a placement that is
+   * already true.
+   *
+   * The shape mirrors {@link setKeyboardAccessMode}, which has settled its own
+   * (permanently-engaging) input this way since accessibility mode landed.
+   */
+  settleKbfEngagement(): void {
+    const engaged = this.kbfEngaged();
+    const flipped = engaged !== this.lastKbfEngaged;
+    this.lastKbfEngaged = engaged;
+    // Repaint and re-land the keyboard only on a real flip — the expensive
+    // half, and a no-op when the derived answer did not move.
+    if (flipped) {
+      this.reproject();
+      this.activeContext().focusKeyView();
+    }
+    // But ALWAYS notify. The manual bit is observable state in its own right
+    // (`kbfManual()`), and consumers subscribe to it: a card already engaged by
+    // its own `kbfAtRest` still has to hear ⌥⇥, or its cycle scope never goes
+    // up. Gating the notify on the DERIVED answer is why it didn't.
+    this.touch();
+  }
+
+  /**
+   * The key card's registered `componentId`, resolved through the deck store —
+   * the Class-B lookup key. `null` with no key card, no store (the pure-logic
+   * tests, a standalone preview), or a card the store does not know.
+   */
+  private keyCardComponentId(): string | null {
+    if (this.keyCardId === null) return null;
+    const store = getDeckStore();
+    if (store === null) return null;
+    const cardId = this.keyCardId;
+    return (
+      store.getSnapshot().cards.find((c) => c.id === cardId)?.componentId ?? null
+    );
   }
 
   // ---- Ring modality (deck-global) ----
@@ -3487,6 +3993,14 @@ export class FocusManager {
   focusKeyView(): boolean {
     return this.activeContext().focusKeyView();
   }
+  /** Whether the key view is a parked text stop — ringed, no caret ([P12]). */
+  hasParkedTextStop(): boolean {
+    return this.activeContext().hasParkedTextStop();
+  }
+  /** Grant the caret at a parked text stop and re-land the keyboard ([P12]). */
+  grantParkedTextStop(): boolean {
+    return this.activeContext().grantParkedTextStop();
+  }
   pushFocusMode(
     scopeId: string,
     opts: {
@@ -3495,6 +4009,7 @@ export class FocusManager {
       escapeExits?: boolean;
       onEscapeDismiss?: () => void;
       spaceDismisses?: boolean;
+      kbf?: boolean;
     },
   ): void {
     this.activeContext().pushFocusMode(scopeId, opts);
@@ -3673,9 +4188,20 @@ export function advanceKeyViewFocus(
   direction: 1 | -1,
 ): boolean {
   if (manager === null) return false;
+  // Engage first ([P07]). Moving the ring is meaningless while the mode that
+  // paints it is off, so the shared performer engages rather than each of its
+  // doors doing so — the Tab pipeline and the View menu's Next / Previous
+  // Keyboard Focus items behave identically, in either mode, by construction.
+  if (!manager.kbfEngaged()) manager.setKbfManual(true);
   const moved = direction === 1 ? manager.focusNext() : manager.focusPrevious();
   if (moved === null) return false;
-  manager.place(null, { kind: "focusable", id: moved }, { modality: "keyboard" });
+  // The walk is MOVEMENT ([P12]): a text stop Tab lands on is parked — ringed,
+  // no caret — until Return or a printable character asks for one.
+  manager.place(
+    null,
+    { kind: "focusable", id: moved },
+    { modality: "keyboard", arrival: "movement" },
+  );
   return true;
 }
 

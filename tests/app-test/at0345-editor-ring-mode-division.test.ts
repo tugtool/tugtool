@@ -1,46 +1,44 @@
 /**
- * at0345-editor-never-rings.test.ts — a text editor never wears a focus ring.
+ * at0345-editor-ring-mode-division.test.ts — an editor rings iff it is a
+ * **parked** stop; a caret-holding editor never does.
  *
- * ## Why this exists
+ * ## Why this exists, and why it inverted
  *
- * The blinking caret is a full carrier of keyboard focus, not a hint that wants
- * a ring's help. An editor holding the keyboard blinks, and that is the whole
- * signal — a ring drawn on or around an editor is an **illegal state by
- * design**, not a harmless redundancy. There is no keyboard state of an editor
- * without the caret: an editor's cycle stop carries the editor's own focus
- * contract, so every traversal that lands on it grants the caret.
+ * This file used to assert the flat rule "a text editor never wears a focus
+ * ring", on the reasoning that the blinking caret is a complete carrier of
+ * keyboard focus and a ring beside it is an illegal redundancy. That rule was
+ * right about the state it could see and wrong as an axiom, and KBF mode
+ * ([roadmap/kbf-mode.md]) traces it as the root of the whole compensation
+ * network the mode deletes: with no parked state available, "an editor always
+ * has the caret" forced every arrow that reached an editor to either grant it
+ * or be pushed back out, which is what the boundary latch, the empty-input
+ * release, and the Tab-when-empty handoff all existed to arrange.
  *
- * This kept being re-broken from opposite directions — first a rule that ringed
- * any editor authored into a focus group (which lit the ⌘F query field the
- * instant the caret landed in it), then a well-meant "embedded editors get no
- * ring at all, let's give them one" fix. A convention that two changes in a row
- * violated is not a convention, so this is the invariant as a test: sweep the
- * deck, in every state that lands the keyboard in an editor, and assert that no
- * `.tug-text-editor` anywhere computes a visible outline.
+ * The mode restores the parked stop, so the rule is now a division rather than
+ * an absolute:
  *
- * ## Test matrix
+ *   - **Mode OFF** — an editor holding the caret wears no ring, exactly as
+ *     before. Cases 1–3 below are the original assertions, unchanged, and they
+ *     are the half of the old rule that was always true.
+ *   - **Mode ON, arrived at by MOVEMENT** — the stop is PARKED: it rings, and
+ *     the editor does *not* hold the caret. Case 4 is the old case 4 inverted;
+ *     it asserted precisely the state the mode reintroduces.
+ *   - **Typing grants.** A printable character at a parked stop clears the mode,
+ *     grants the caret, and lands the character — case 5, the transition that
+ *     makes the parked state usable rather than a dead end.
  *
- *   1. Caret clicked into the composer.
- *   2. Caret in the ⌘F query field — two editors mounted, one of them live.
- *   3. Caret in the composer with the find bar still open — the other way round.
- *   4. The **cycling stop**: ⌥⇥ walked round the card's cycle to the composer's
- *      text stop. The stop registers under the editor's own responder id, so it
- *      carries the editor's focus contract and landing on it GRANTS the caret —
- *      there is no blurred parked state left for a ring (or an invisible wash)
- *      to mark. This is the state the ring survived longest in — a click never
- *      reaches it, so the first three cases all passed while the input-area
- *      wrapper still drew an orange rectangle around the composer.
- *
- * In each: nothing on the card draws a ring around editor text, and the editor
- * holding the keyboard really is holding it, so the assertion is "no ring" and
- * not merely "nothing has focus".
+ * The seed rule's half (a text-first sheet opens ringed AND with a caret) lives
+ * in the parked-stop suite, which can open a sheet; this file stays on the
+ * session card.
  *
  * @covers tugdeck/src/components/tugways/tug-text-editor.css
  * @covers tugdeck/src/components/tugways/tug-entry-shell.css
+ * @covers tugdeck/src/components/tugways/focus-manager.ts
+ * @covers tugdeck/styles/focus-ring.css
  */
 
 import { describe, expect, test } from "bun:test";
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -126,9 +124,9 @@ async function chord(app: App, code: string, key: string): Promise<void> {
   );
 }
 
-describe.skipIf(!SHOULD_RUN)("AT0345: a text editor never wears a ring", () => {
+describe.skipIf(!SHOULD_RUN)("AT0345: an editor rings iff it is parked", () => {
   test(
-    "no editor host computes an outline, with the caret in the composer or in the find field",
+    "mode OFF a caret-holding editor never rings; mode ON a moved-to stop rings with no caret, and typing grants",
     async () => {
       const app = await launchTugApp({ testName: "at0345-editor-never-rings" });
       try {
@@ -198,38 +196,95 @@ describe.skipIf(!SHOULD_RUN)("AT0345: a text editor never wears a ring", () => {
           "the caret returning to the composer rings neither editor",
         ).toBe("");
 
-        // --- 4. The cycling stop. ⌥⇥ opens the card's cycle (the caret leaves
-        //        the composer), then Tab walks round to the composer's text
-        //        stop. The stop carries the editor's focus contract, so
-        //        arriving GRANTS the caret — the blinking caret is the whole
-        //        focus indication, and nothing rings. No click reaches this
-        //        state, which is how a ring lived here through three green
-        //        assertions above. ---
+        // --- 4. The PARKED stop. ⌥⇥ engages the mode and opens the card's
+        //        cycle (the caret leaves the composer), then Tab walks round to
+        //        the composer's text stop. Arriving by MOVEMENT parks it: the
+        //        ring lands on the input area and the editor does NOT take the
+        //        caret. This is the case that inverted — it used to assert the
+        //        walk granted the caret and nothing rang. ---
         await app.nativeKey("Tab", ["alt"]);
         await app.waitForCondition<boolean>(`!(${focused(EDITOR)})`, {
           timeoutMs: 8000,
         });
-        let reached = false;
-        for (let i = 0; i < CYCLE_STOP_LIMIT && !reached; i++) {
+        await app.waitForCondition<boolean>(
+          `document.documentElement.hasAttribute("data-kbf")`,
+          { timeoutMs: 8000 },
+        );
+        // The stop we want is the EDITOR's own — the one registered under the
+        // editor's responder id — not merely the first ringed thing inside the
+        // prompt entry (the entry holds several stops). Detect it as the ringed
+        // key view that CONTAINS the editor; the old test could use "the editor
+        // has the caret" for this, which is exactly what parking removes.
+        // The composer's own text stop: the key-view element IS the editor (the
+        // stop registers on it), so the ring attribute rides that same element.
+        // Scoped to the prompt entry because the find bar is still open from
+        // case 2 and its query field is a text stop on this walk too.
+        const COMPOSER_STOP = `${CARD} [data-slot="tug-prompt-entry"] [data-key-view-kbd][data-slot="tug-text-editor"]`;
+        let parked = false;
+        for (let i = 0; i < CYCLE_STOP_LIMIT && !parked; i++) {
           await app.nativeKey("Tab");
-          reached = await app.evalJS<boolean>(focused(EDITOR));
+          parked = await app.evalJS<boolean>(
+            `document.querySelector('${COMPOSER_STOP}') !== null`,
+          );
         }
         expect(
-          reached,
-          "the cycle walk reaches the composer's text stop, which grants the caret",
+          parked,
+          "the walk reaches the composer's text stop and RINGS it",
         ).toBe(true);
         expect(
-          await app.evalJS<string>(RINGED_EDITORS),
-          "the granted caret is the focus indication — never a ring",
-        ).toBe("");
-        // …and the shell knows the keyboard is here (this is what lights the
-        // entry's default button), so the state is not simply unmarked.
+          await app.evalJS<boolean>(focused(EDITOR)),
+          "a stop arrived at by movement is parked — the editor holds no caret",
+        ).toBe(false);
+        note(
+          "parked state",
+          await app.evalJS<string>(
+            `(() => {
+              const kv = document.querySelector('${CARD} [data-key-view]');
+              const active = document.activeElement;
+              return JSON.stringify({
+                kbf: document.documentElement.hasAttribute("data-kbf"),
+                keyView: kv ? kv.getAttribute("data-key-view") : null,
+                keyViewRinged: kv ? kv.hasAttribute("data-key-view-kbd") : null,
+                active: active ? (active.getAttribute("data-slot") || active.tagName) : null,
+              });
+            })()`,
+          ),
+        );
+
+        // --- 5. Typing grants. A printable character at a parked stop clears
+        //        the mode, hands the editor real focus, and the browser's own
+        //        insertion lands the character there — no synthetic dispatch. ---
+        await app.nativeKey("x");
+        note(
+          "after typing x",
+          await app.evalJS<string>(
+            `(() => {
+              const active = document.activeElement;
+              return JSON.stringify({
+                kbf: document.documentElement.hasAttribute("data-kbf"),
+                active: active ? (active.getAttribute("data-slot") || active.tagName) : null,
+                editorText: document.querySelector('${EDITOR}')?.textContent ?? null,
+              });
+            })()`,
+          ),
+        );
+        await app.waitForCondition<boolean>(focused(EDITOR), { timeoutMs: 8000 });
         expect(
           await app.evalJS<boolean>(
-            `document.querySelector('${CARD} [data-slot="tug-prompt-entry"]')?.hasAttribute("data-entry-keyboard") === true`,
+            `document.documentElement.hasAttribute("data-kbf")`,
           ),
-          "the shell registers the keyboard's presence",
-        ).toBe(true);
+          "typing at a parked stop leaves the mode",
+        ).toBe(false);
+        expect(
+          await app.evalJS<string>(RINGED_EDITORS),
+          "with the caret granted, the editor is back to wearing no ring",
+        ).toBe("");
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector('${EDITOR}')?.textContent ?? ""`,
+          ),
+          "the character that asked for the caret is the one that got typed",
+        ).toContain("x");
       } finally {
         await app.close();
       }

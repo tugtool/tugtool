@@ -45,6 +45,9 @@ export function registerLensCard(): void {
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
     defaultMeta: { title: "Lens", icon: "Telescope", closable: true },
     hidden: true,
+    // Every row here is an engine focus stop and the arrows are how the Lens
+    // is read, so it engages KBF mode the moment it is the key card ([P10]).
+    kbfAtRest: true,
     // Pins to a deck edge and insets the imposition band rather than taking a
     // slot inside it — the machinery the anchored rail has always used, now
     // declared rather than matched on `componentId`.

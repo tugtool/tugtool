@@ -381,10 +381,16 @@ body {
    independent cursor) the bar is the sole row mark. The bar color is the
    role-resolved focus axis, referenced directly as the container ring does. */
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.tug-list-view-cell[data-key-cursor] {
+/* `data-attached-cursor` wears the same bar ([P08]): a text field driving this
+   list from its own caret marks the row its Return means, and it must read as
+   the same affordance. It rides a DIFFERENT attribute because it must survive
+   two gates the movement cursor answers to — the keyboard is not in this list,
+   and KBF mode may be off — and being its own attribute is what keeps it out of
+   the `html:not([data-kbf])` suppression, the way `data-default-ring` is. */
+.tug-list-view-cell:is([data-key-cursor], [data-attached-cursor]) {
   outline: none;
 }
-.tug-list-view-cell[data-key-cursor]::before {
+.tug-list-view-cell:is([data-key-cursor], [data-attached-cursor])::before {
   content: "";
   position: absolute;
   inset-block: 0;

@@ -26,7 +26,7 @@
  *
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
- * @covers tugdeck/src/components/tugways/arrow-release.ts
+ * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  * @covers tugdeck/src/components/lens/lens-spatial-order.ts

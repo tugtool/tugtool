@@ -77,7 +77,10 @@ import {
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
-import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import {
+  attachedListDelegate,
+  TugFilterField,
+} from "@/components/tugways/tug-filter-field";
 // The Lens's one-line lists and this one are the same kind of surface — a dense
 // index of one-line handles read by scanning — so they keep sharing one
 // presentation. The constant is the Lens's to tune; a second copy here would be
@@ -177,19 +180,23 @@ function JotsToolbar({
   onQueryChange,
   populated,
   onAdvance,
+  listRef,
 }: {
   query: string;
   onQueryChange: (next: string) => void;
   populated: boolean;
   onAdvance: () => void;
+  /** The jot list this filter is attached to ([P08]) — its cursor is what
+   *  ↑/↓ drive while the caret stays in the field. */
+  listRef: React.RefObject<TugListViewHandle | null>;
 }): React.ReactElement {
   const store = getJotsStore();
   const delegate = useMemo(
     () => ({
       filterFieldDidChangeQuery: onQueryChange,
-      filterFieldDidRequestAdvance: onAdvance,
+      ...attachedListDelegate(() => listRef.current),
     }),
-    [onQueryChange, onAdvance],
+    [onQueryChange, onAdvance, listRef],
   );
   return (
     <div className="jots-toolbar" data-testid="jots-toolbar">
@@ -1037,6 +1044,7 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
           onQueryChange={setFilterQuery}
           populated={hasItems}
           onAdvance={advanceToList}
+          listRef={listRef}
         />
         {snapshot.error !== null ? (
           <div className="jots-error" role="status">

@@ -49,7 +49,6 @@ import {
   TugTextEditor,
   type TugTextEditorDelegate,
   type TugTextEditorFocusStyle,
-  type EditorArrowExitDirection,
 } from "@/components/tugways/tug-text-editor";
 import type { FocusPolicy } from "@/components/tugways/focus-manager";
 
@@ -158,13 +157,6 @@ export interface TugMessageEditorProps {
   /** Walk policy when registered. */
   focusPolicy?: FocusPolicy;
   /**
-   * Take the arrow that would leave the editor, forwarded to the substrate —
-   * the arrow sibling of Tab-out-of-an-empty-field. See
-   * `TugTextEditorProps.onArrowExit` for when a host wants it and when
-   * leaving it off is the right call.
-   */
-  onArrowExit?: (direction: EditorArrowExitDirection) => boolean;
-  /**
    * Forwarded to the substrate: a transient, in-list editor (the Jots
    * editor) that is not its card's primary text surface should NOT register
    * card engine hooks, whose mount/unmount churn re-fires the card's focus
@@ -201,7 +193,6 @@ export const TugMessageEditor = React.forwardRef<
     focusGroup,
     focusOrder,
     focusPolicy,
-    onArrowExit,
     className,
     "data-testid": dataTestid,
     "aria-label": ariaLabel,
@@ -303,7 +294,6 @@ export const TugMessageEditor = React.forwardRef<
       focusGroup={focusGroup}
       focusOrder={focusOrder}
       focusPolicy={focusPolicy}
-      onArrowExit={onArrowExit}
       onSubmit={onSubmit}
       extensions={messageEditorExtensions}
     />

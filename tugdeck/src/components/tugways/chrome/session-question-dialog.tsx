@@ -1044,11 +1044,6 @@ const QuestionFreeText: React.FC<QuestionFreeTextProps> = ({
         focusGroup={focusGroup}
         focusOrder={focusOrder}
         aria-label="Type your own answer"
-        // No `onArrowExit`: this dialog's stops are ones the document keyboard
-        // pipeline can walk, so the editor's own release is the right exit
-        // here. It supersedes the field's former hand-wired release — an empty
-        // editor now releases all four directions, and a non-empty one leaves
-        // through the boundary latch.
       />
     </div>
   );

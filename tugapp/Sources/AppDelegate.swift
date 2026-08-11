@@ -1624,6 +1624,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         sendControl("open-command-picker")
     }
 
+    @objc private func keyboardFocus(_ sender: Any?) {
+        sendControl("cycle-focus-mode")
+    }
+
     @objc private func nextKeyboardFocus(_ sender: Any?) {
         sendControl("next-keyboard-focus")
     }
@@ -2440,6 +2444,13 @@ extension AppDelegate: NSMenuDelegate {
         // face of a chord that has to keep resolving in JS, the same bargain
         // Session ▸ Stop takes with Escape.
         menu.addItem(NSMenuItem.separator())
+        // Keyboard Focus mode — the same bargain one step further. ⌥⇥ toggles
+        // it, and the glyph rides the TITLE rather than `keyEquivalent`: a real
+        // key equivalent would confiscate ⌥⇥ app-wide, above the frontend's
+        // ladder and above the Settings ▸ Keyboard chord capture, which has to
+        // be able to record ⌥⇥ itself. So the item is discoverable and the
+        // chord keeps resolving in JS ([P11]).
+        menu.addItem(NSMenuItem(title: "Keyboard Focus\t⌥⇥", action: #selector(keyboardFocus(_:)), keyEquivalent: "").identified("view.keyboardFocus"))
         menu.addItem(NSMenuItem(title: "Previous Keyboard Focus", action: #selector(previousKeyboardFocus(_:)), keyEquivalent: "").identified("view.previousKeyboardFocus"))
         menu.addItem(NSMenuItem(title: "Next Keyboard Focus", action: #selector(nextKeyboardFocus(_:)), keyEquivalent: "").identified("view.nextKeyboardFocus"))
 
