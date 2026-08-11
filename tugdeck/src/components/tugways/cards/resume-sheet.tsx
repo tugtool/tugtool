@@ -120,6 +120,8 @@ export function useResumeSheet({
       icon: "RotateCcw",
       iconRole: "agent",
       description: "Pick a session to resume in this card.",
+      // The same row shape as the Choose Session picker, so the same width.
+      displayWidth: "lg",
       content: (close) => (
         <ResumeSheetBody cardId={cardId} projectDir={projectDir} onClose={close} />
       ),

@@ -32,6 +32,18 @@ body {
   /* Spacing grid: A=tight (gap, close padding), B=generous (outer padding, gutters) */
   --tugx-sheet-space-a: 0.75rem;
   --tugx-sheet-space-b: 1.5rem;
+  /* The gutter between the panel and the host card's edges — the space that
+     says "nested". Proportional, because nesting is: a fixed px gutter that
+     reads as a margin on a slim (675) card reads as a hairline on a wide
+     (1230) one. `--tugx-sheet-space-b` is the floor, and it only binds on a
+     card narrower than ~343px (the About card is 320). */
+  --tugx-sheet-gutter: 7%;
+  /* The one width cap, written once and used by the default width and every
+     `data-display-width` tier. Substituted as a token stream, so the `100%`
+     resolves against the clip at each point of use. */
+  --tugx-sheet-max-width: calc(
+    100% - 2 * max(var(--tugx-sheet-space-b), var(--tugx-sheet-gutter))
+  );
 }
 
 /* ---- Clip container — portaled into the pane frame [D19] ----
@@ -132,11 +144,20 @@ body {
   box-shadow: var(--tugx-sheet-shadow);
   /* All four corners rounded — sheet is a standalone panel below the title bar */
   border-radius: 0.5rem;
+  /* A tier's number is the width the panel PAINTS. Under the default
+     `content-box` the padding and border rode on top, so `sm: 460px` painted
+     510 and every cap was off by the same 50 — including the drag-resize
+     handlers, which read `getBoundingClientRect().width` (a border-box
+     measurement) and write it back into `style.width`, so the panel jumped
+     the moment a drag began. */
+  box-sizing: border-box;
   /* Positioning — centered, dropped A below clip top (title bar bottom edge) */
   position: relative;
   margin: var(--tugx-sheet-space-a) auto 0;
-  width: calc(100% - 2 * var(--tugx-sheet-space-b));
-  max-width: 460px;
+  /* Mirrors the `sm` tier below, which is the default `data-display-width`
+     TugSheetContent always writes; this is the no-attribute fallback. */
+  width: 510px;
+  max-width: var(--tugx-sheet-max-width);
   pointer-events: auto;
   /* Uniform padding like alert: B on all sides — except the bottom, which is
      a spacer element instead (see `::after`). WebKit does not include a scroll
@@ -202,27 +223,34 @@ body {
 /* ---- Display width ([data-display-width]) ----
  *
  * A fixed `sm`/`md`/`lg`/`xl` scale (mirroring TugPushButton / TugBadge).
- * `sm` (460) is the reading-cap default; `md` (640) and `lg` (800) widen for
- * information-rich panels; `xl` (950) is the document column for diffs. Each
- * width is fixed (predictable regardless of how wide the user dragged the
- * pane) but guarded by a trailing `max-width` so it shrinks rather than
- * overflows on a pane narrower than the chosen width. `margin: … auto` (above)
- * keeps it centered. [L06] */
+ * `sm` (510) is the decision width — confirmations and short forms — and is
+ * the default. The other three are pegged to the content-width presets a card
+ * can wear (`CONTENT_WIDTH_*_PX`, lib/layout-imposer.ts): `md` (580) is the
+ * widest panel that nests on a slim (675) card, `lg` (680) on a comfy (800)
+ * one, `xl` (1040) on a wide (1230) one. Pegging them that way is what keeps a
+ * tier honest — a number above its card's cap is a width the sheet never
+ * actually gets.
+ *
+ * Each width is fixed (predictable regardless of how wide the user dragged the
+ * pane) but guarded by `--tugx-sheet-max-width` so it shrinks rather than
+ * pressing against the card's edges on a pane narrower than the chosen width.
+ * The guard is proportional, so a clamped sheet still reads as nested.
+ * `margin: … auto` (above) keeps it centered. [L06] */
 .tug-sheet-content[data-display-width="sm"] {
-  width: 460px;
-  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+  width: 510px;
+  max-width: var(--tugx-sheet-max-width);
 }
 .tug-sheet-content[data-display-width="md"] {
-  width: 640px;
-  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+  width: 580px;
+  max-width: var(--tugx-sheet-max-width);
 }
 .tug-sheet-content[data-display-width="lg"] {
-  width: 800px;
-  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+  width: 680px;
+  max-width: var(--tugx-sheet-max-width);
 }
 .tug-sheet-content[data-display-width="xl"] {
-  width: 950px;
-  max-width: calc(100% - 2 * var(--tugx-sheet-space-b));
+  width: 1040px;
+  max-width: var(--tugx-sheet-max-width);
 }
 
 /* ---- Resizable ([data-resizable]) ----

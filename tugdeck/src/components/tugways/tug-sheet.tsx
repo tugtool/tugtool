@@ -166,26 +166,29 @@ export type TugSheetPresentation =
   | "shade";
 
 /**
- * How wide the sheet panel sits within its host pane.
- *
- *   - `"standard"` The default — a centered panel capped at a comfortable
- *                  reading width (≈460px). Right for confirmations, option
- *                  pickers, and short forms.
- *   - `"wide"`     The panel spans 90% of the host pane's width, for
- *                  information-rich surfaces — tabbed editors, multi-column
- *                  layouts, long lists — that the standard width would cramp.
- *
- * Both share the identical vertical placement and entrance motion; only the
- * resting width differs [L06]. Declared in `tug-sheet.css` keyed on
- * `data-display-width`.
- */
-/**
  * Resting width of the sheet panel, on the same `sm`/`md`/`lg`/`xl` scale as
- * `TugPushButton` / `TugBadge`. `sm` (≈460px) is the reading-cap default;
- * `md` (640) and `lg` (800) widen for information-rich panels; `xl` (950) is
- * the document column for diffs and other content that needs real room.
- * Each is fixed but guarded by a `max-width` so it never overflows a narrow
- * pane.
+ * `TugPushButton` / `TugBadge`.
+ *
+ * Three of the four tiers are pegged to the content-width presets a card can
+ * wear (`CONTENT_WIDTH_*_PX` in `lib/layout-imposer.ts`): each is the widest
+ * panel that still nests, with a proportional gutter, on the card it is named
+ * for. So a tier is a width the sheet actually gets rather than one that
+ * always clamps.
+ *
+ *   - `sm` (510)  The decision width — confirmations, alerts, short forms.
+ *                 Nests on every preset, including slim.
+ *   - `md` (580)  Fits a slim (675) card. Single-column forms, short lists.
+ *   - `lg` (680)  Fits a comfy (800) card. Lists whose rows carry trailing
+ *                 controls, two-column panels.
+ *   - `xl` (1040) Fits a wide (1230) card. Tabbed reference panels and the
+ *                 document column for diffs.
+ *
+ * The numbers are PAINTED widths — the panel is `border-box`, so a tier is the
+ * panel's outer edge-to-edge measure, not its content column.
+ *
+ * Each is fixed but guarded by a proportional `max-width` so a card narrower
+ * than the chosen tier shrinks the panel rather than pressing it against the
+ * card's edges. Declared in `tug-sheet.css` keyed on `data-display-width`.
  */
 export type TugSheetDisplayWidth = "sm" | "md" | "lg" | "xl";
 
@@ -633,8 +636,13 @@ export interface TugSheetContentProps {
    * so it stays visibly nested inside the card rather than bleeding to
    * its edges. Applied as inline `max-width`/`max-height` (re-measured
    * on resize), overriding the {@link displayWidth} cap and the
-   * viewport-relative height clamp. Omit for the default behavior (full
-   * pane width less the edge gap; height clamped to the canvas bottom).
+   * viewport-relative height clamp.
+   *
+   * Width nesting is NOT a reason to reach for this: the CSS
+   * `--tugx-sheet-gutter` already holds every tier a proportional distance
+   * off the card's edges. What this adds is the HEIGHT axis and a cap
+   * tighter than the tier — which is why the aspect-locked lightbox needs
+   * it. Omit otherwise (height clamped to the canvas bottom).
    * See {@link ShowSheetOptions.maxHostFraction}.
    */
   maxHostFraction?: number;
@@ -1853,10 +1861,12 @@ export interface ShowSheetOptions {
   resizable?: boolean;
   /**
    * Cap the panel to this fraction (0–1) of the host card's box on both
-   * axes, so it stays nested inside the card instead of bleeding to its
-   * edges (e.g. `0.8` for the image preview). Re-measured on resize and
+   * axes (e.g. `0.9` for the image preview). Re-measured on resize and
    * overrides the {@link displayWidth} width cap and the viewport height
-   * clamp. See {@link TugSheetContentProps.maxHostFraction}.
+   * clamp. Width nesting comes free from `--tugx-sheet-gutter`; reach for
+   * this only when the HEIGHT needs capping too, or when a sheet needs a
+   * tighter width than its tier. See
+   * {@link TugSheetContentProps.maxHostFraction}.
    */
   maxHostFraction?: number;
   /**

@@ -193,6 +193,7 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
     (fileName: string): Promise<ConflictSheetChoice> =>
       showSheet({
         title: "Document Changed",
+        // Four buttons in one row — `sm`'s content box cannot hold them.
         displayWidth: "md",
         hideHeader: true,
         content: (close) => (
@@ -216,7 +217,8 @@ export function useFileSaveSheets(showSheet: ShowSheet): FileSaveSheets {
     (fileName: string): Promise<MissingSheetChoice> =>
       showSheet({
         title: "File Deleted",
-        displayWidth: "lg",
+        // Four buttons, same as the conflict sheet — the same width holds them.
+        displayWidth: "md",
         hideHeader: true,
         content: (close) => (
           <FileSaveSheetView

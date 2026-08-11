@@ -18,7 +18,10 @@ import {
   useTugSheet,
   useTugSheetClose,
 } from "@/components/tugways/tug-sheet";
-import type { TugSheetHandle } from "@/components/tugways/tug-sheet";
+import type {
+  TugSheetDisplayWidth,
+  TugSheetHandle,
+} from "@/components/tugways/tug-sheet";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugInput } from "@/components/tugways/tug-input";
 import { TugCheckbox } from "@/components/tugways/tug-checkbox";
@@ -309,14 +312,45 @@ function CardSettingsSheetBody() {
 /**
  * GallerySheet -- TugSheet demo tab.
  *
- * Six sections:
+ * Sections:
  * 1. useTugSheet() hook — imperative Promise-based API (primary).
  * 2. Presentation styles — top / bottom / scale-fade via the `presentation` prop.
  * 3. Basic compound API (TugSheet / TugSheetTrigger / TugSheetContent) with a form.
  * 4. Sheet with optional `description` prop (aria-describedby).
  * 5. Imperative ref API (useRef<TugSheetHandle> + open() / close()).
  * 6. Rich scrollable content (checklist).
+ * 7. Spatial arrow order.
+ * 8. Display widths — the `sm`/`md`/`lg`/`xl` ladder and its proportional gutter.
+ *    Last, because the sections above are clicked at their painted positions by
+ *    at0057 / at0100 / at0163 — a section inserted among them moves those
+ *    triggers below the fold.
  */
+/**
+ * The width ladder, in order, with what each tier is for. Driven from a list so
+ * the demo cannot fall out of step with `TugSheetDisplayWidth`.
+ */
+const SHEET_DISPLAY_WIDTHS: ReadonlyArray<{
+  tier: TugSheetDisplayWidth;
+  note: string;
+}> = [
+  {
+    tier: "sm",
+    note: "510 — the decision width. Confirmations, alerts, short forms. Nests on every card preset, including slim.",
+  },
+  {
+    tier: "md",
+    note: "580 — the widest panel that nests on a slim (675) card. Single-column forms and short lists.",
+  },
+  {
+    tier: "lg",
+    note: "680 — the widest panel that nests on a comfy (800) card. Lists whose rows carry trailing controls; two-column panels.",
+  },
+  {
+    tier: "xl",
+    note: "1040 — the widest panel that nests on a wide (1230) card. Tabbed reference panels and the document column.",
+  },
+];
+
 /**
  * PresentationSheetBody -- shared body for the Presentation Styles demo.
  * Rendered inside a `useTugSheet()` sheet; the `close` callback comes
@@ -708,6 +742,49 @@ export function GallerySheet() {
               <SpatialSheetBody />
             </TugSheetContent>
           </TugSheet>
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      {/* ---- 8. Display Widths ---- */}
+      <div className="cg-section">
+        <TugLabel className="cg-section-title">Display Widths</TugLabel>
+        <div style={labelStyle}>
+          Four tiers via the <code>displayWidth</code> prop. <code>sm</code> is the
+          decision width; the other three are pegged to the content-width presets a
+          card can wear — <code>md</code> (580) fits a slim card, <code>lg</code>{" "}
+          (680) a comfy one, <code>xl</code> (1040) a wide one. Every tier keeps a
+          proportional gutter off the card&apos;s edges, so a tier wider than its
+          host shrinks rather than pressing flush. Retune this card&apos;s width
+          (⌃⌘1/2/3) and reopen to compare.
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {SHEET_DISPLAY_WIDTHS.map(({ tier, note }) => (
+            <TugPushButton
+              key={tier}
+              emphasis="outlined"
+              size="sm"
+              data-testid={`gallery-sheet-width-${tier}`}
+              onClick={() =>
+                void showSheet({
+                  title: `Display width — ${tier}`,
+                  icon: "MoveHorizontal",
+                  displayWidth: tier,
+                  content: (close) => (
+                    <ButtonsSheetBody
+                      close={close}
+                      showCancel={false}
+                      commitLabel="Done"
+                      message={note}
+                    />
+                  ),
+                })
+              }
+            >
+              {tier}
+            </TugPushButton>
+          ))}
         </div>
       </div>
 

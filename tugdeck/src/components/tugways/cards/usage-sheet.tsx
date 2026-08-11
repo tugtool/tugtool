@@ -104,12 +104,9 @@ export function useUsageSheet({
     void showSheet({
       title: "Usage",
       icon: "Gauge",
-      displayWidth: "md",
-      // A slim card (675px) is narrower than the `md` panel, so the width alone
-      // would leave the sheet flush against both edges. The fractional cap is
-      // what actually keeps it nested: at every preset the panel is a panel,
-      // with card showing on both sides of it.
-      maxHostFraction: 0.82,
+      // Two fixed columns (a 200px meter column and a 170px-min label column)
+      // plus their values, so the table needs more than a single-column form.
+      displayWidth: "lg",
       content: (close) => (
         <UsageSheetBody
           usageStore={usageStore}

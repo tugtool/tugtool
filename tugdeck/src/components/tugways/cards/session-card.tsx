@@ -936,7 +936,10 @@ function SessionProjectPicker({ cardId }: SessionProjectPickerProps) {
     void showSheet({
       title: "Choose Session",
       icon: "FolderOpen",
-      displayWidth: "sm",
+      // A path combo box, a filter field, and session rows that carry a
+      // three-line summary plus two trailing controls — the decision width
+      // truncates all three.
+      displayWidth: "lg",
       // The picker seeds its own focus via the engine (`SessionProjectPickerForm`'s
       // smart-latch places the key view on the Sessions list, or the path field
       // when Open is disabled). Suppress Radix's mount-autofocus so it can't ALSO
