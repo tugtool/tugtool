@@ -509,8 +509,10 @@ The two failures above are the whole predicted blast radius made concrete, and b
 | #step-7 | The deletions | done | `c1aa0c408` |
 | #step-8 | Menu item | done | `a0d1d357e` |
 | #step-9 | Doctrine surgery | done | `007e57f4f` |
-| #step-10 | Test rework + new suites | **partial** | `43ba9c2eb`, `02c6437cb`, `1e0e5a2` (see below) |
+| #step-10 | Test rework + new suites | **partial** | `43ba9c2eb`, `02c6437cb`, `705041e07` (see below) |
 | #step-11 | Integration checkpoint | pending | — |
+
+> **The per-step hashes above are dead references.** They were commits on the `tugdash/kbf-mode` worktree, which `/join` squashed into a single commit on `main` — **`5d6991087`** — and then removed. They are kept because the round-by-round summaries in the dash log (`tug log`) are still readable by them, and because the ordering tells you what landed with what. To read the shipped state, read `main`.
 
 **#step-10 is partial. What is done, and what is not:**
 
@@ -821,8 +823,138 @@ The two failures above are the whole predicted blast radius made concrete, and b
 
 | Checkpoint | Verification |
 |------------|--------------|
-| Open Quickly regression dead | new open-quickly app-test (at0394) |
-| Mode division holds | mode-division app-test (at0393) |
-| Text-first surfaces still open with a caret | parked-stop app-test (at0395), seed half |
-| No double-Escape | escape-ladder app-test (at0396) |
-| Full phase | `just app-test-changed` VERDICT |
+| Open Quickly regression dead | open-quickly app-test — **shipped as at0396**, green |
+| Mode division holds | mode-division app-test — **at0395, not written** |
+| Text-first surfaces still open with a caret | parked-stop app-test — **at0397, not written**; the *movement* half is covered by at0345 |
+| No double-Escape | escape-ladder app-test — **at0398, not written** |
+| Full phase | `just app-test-changed` VERDICT — **not run** |
+
+---
+
+## Addendum — implementation handoff (2026-08-10) {#addendum}
+
+*Written at the end of the implementation run, for the session that picks this up. Everything below is either state you need or something that cost real app-test runs to learn. The plan body above is unchanged except where it says DECIDED-at-implementation; this section is the delta between "the plan" and "what is actually true on disk."*
+
+### Where the work is {#addendum-state}
+
+**Steps 1–9 are shipped on `main` as `5d6991087`** (squash-landed from `tugdash/kbf-mode`, which is gone). The tree is clean. There is no dash to resume — start follow-up work from `main`, on a new dash if you want one.
+
+Step 10 is **partial** and step 11 is **not started**. The per-item state is in the ledger note under #step-status-ledger; the work list below is the same information ordered for doing rather than for auditing.
+
+Verification commands that were green at hand-off (run from the repo root unless noted):
+
+```bash
+cd tugdeck && ./node_modules/.bin/tsc --noEmit     # clean
+cd tugdeck && bun test                             # 6349 pass, 424 files
+cd tugdeck && bunx --bun vite build                # clean
+just app-test-covers-check                         # green, 356 files
+just app-test tests/app-test/at0345-*.test.ts tests/app-test/at0396-*.test.ts \
+              tests/app-test/at0140-*.test.ts tests/app-test/at0343-*.test.ts \
+              tests/app-test/at0126-*.test.ts      # all green at hand-off
+```
+
+Use `./node_modules/.bin/tsc`, not `bunx tsc` — a bare `bunx tsc` from the wrong directory installs TypeScript 7 into a cache and type-checks nothing you care about.
+
+### The work list {#addendum-work}
+
+Ordered by value. (1) is a real broken behavior; (2)–(4) are missing proof of behavior that is believed working; (5)–(6) are the closing checks.
+
+#### 1. `Tab` from Open Quickly's field does not reach the directory switcher — [P07] case 2 {#addendum-tab-switcher}
+
+**This is the one thing in the phase that is known not to work.** Everything else here is unwritten tests.
+
+What is true:
+- `TugCompletionPopup`'s query field is a single-line `INPUT`, so `focusWalkListener` correctly declines to treat it as Tab-owning and routes the key to the walk (`advanceKeyViewFocus`), which engages KBF and steps.
+- The switcher **is** authored as a focus stop: `open-quickly-overlay.tsx` renders its `TugPopupButton` with `focusGroup={COMPLETION_POPUP_FOCUS_GROUP}` and `focusOrder={COMPLETION_POPUP_ACCESSORY_ORDER}`, which is exactly what `tug-completion-popup.tsx`'s own docstring demands.
+- The landing never arrives: the switcher gets neither `data-key-view-kbd` nor DOM focus, within 6s.
+
+First suspect, and the reason it is first: **the popup's own `onBlur` dismiss guard**. `tug-completion-popup.tsx`'s `onBlur` dismisses when focus leaves the query field, with three exemptions (focus moved inside the panel, focus moved to the engine key sink, or the caller's `dismissGuard` holds). A Tab that engages KBF parks the sink and moves the ring — so the sequence is *blur the field → park the sink → ring the switcher*, and if the popup dismisses on the blur before the ring lands, the switcher query is asking about an unmounted element. The sink exemption exists precisely for this shape, so the question is whether it is firing (is the sink inside the popup's jail, or the document-level one?) and whether the dismiss beats the projection.
+
+How to find out cheaply: reinstate the temporary probe pattern from #addendum-harness below — a `tugDevLogStore.warn` in `focusWalkListener` reporting `focusManager.keyView()` and `focusManager.currentFocusMode()` after the step, plus an assertion on whether `[data-slot="tug-completion-popup"]` is still mounted one tick after the Tab. That distinguishes "the walk found nothing" from "the walk landed and the surface went away."
+
+Note the walk is **mode-bounded**: it services only focusables registered into the current mode. If the switcher's `useFocusable` registers into the base mode rather than the popup's pushed mode (i.e. it renders *outside* the `FocusModeScope`), the walk set is a single element and there is nowhere to step. Check that before blaming the blur — `accessory={switcher}` is passed as a prop into the popup and rendered inside its panel, so it *should* be inside the scope, but "should" is what this class of bug lives on.
+
+The assertion is already written and commented out in place at the end of `at0396-open-quickly-arrows.test.ts` — restore it when the behavior works. It was deliberately left as an explicit non-assertion rather than a `test.skip`, so it reads as unfinished rather than as a kept promise.
+
+#### 2. `at0395-kbf-mode-division.test.ts` — not written {#addendum-at0395}
+
+The plan's headline division, and the one suite that would catch a regression of the whole phase. What it must assert, per #success-criteria:
+
+- **Mode OFF:** on a session card at rest, **no element in the deck carries `data-key-view-kbd` at all** (`document.querySelectorAll("[data-key-view-kbd]").length === 0`), no `[data-key-cursor]` bar paints, and `<html>` has no `data-kbf`. A caret-holding editor keeps all four plain arrows; two presses of ↑ at a document edge move nothing out of it. (That last one overlaps at0343 — keep it anyway, it is cheap and it is the division's whole point.)
+- **Mode ON:** ⌥⇥ engages, `data-kbf` appears, rings paint, Tab/⇧Tab and the arrows move the ring, `Space` commits.
+- **The derived half:** opening a sheet engages the mode with no ⌥⇥, and closing it disengages — the property that makes the bit derived rather than latched.
+- **Class B:** ⌘L to the Lens shows a cursor bar at rest with no gesture at all.
+
+The `[data-key-view-kbd]`-count assertion is the strongest single line in the phase; write it first.
+
+#### 3. `at0397-kbf-parked-stop.test.ts` — not written {#addendum-at0397}
+
+The **movement half is already covered** by `at0345-editor-ring-mode-division` (parked stop rings with no caret; a printable grants the caret, clears the mode, and types the character). What is *not* covered anywhere is the **seed half**, which is the carve-out that keeps every text-first sheet usable:
+
+- Open the rename sheet: its field has the caret **on open**, ring and all, and typing lands immediately with no Return. Same for the resume-sheet filter and a session question dialog with a text field.
+- The accessibility carve-out: with keyboard-access mode set to `accessibility`, every text stop takes a caret even when reached by movement.
+
+This is the highest-risk uncovered behavior in the phase — [P12]'s seed rule is what stands between this design and "every sheet in the app opens unable to type," and right now nothing proves it in the real app.
+
+#### 4. `at0398-kbf-escape-ladder.test.ts` — not written {#addendum-at0398}
+
+One Escape closes a sheet while the caret is in a field inside it — no double-Escape regression (Risk R02). Also worth pinning in the same file: at the **base** mode with KBF manually engaged and no cycle scope (the Lens is the case), Escape clears the mode — rung (6) — and does not reach anything else.
+
+#### 5. Drift runs: at0277 / at0282 {#addendum-drift}
+
+`at0248-lens-list-cursor-keys` was run at #step-5 and passes **unmodified**, which is the drift check the plan wanted. Its two siblings — `at0277-lens-row-accessories-keyboard` and `at0282-lens-row-arrow-escape` — have **not been run** since the gate landed. They should pass unmodified; a failure means the mode division leaked into the descend machinery, and per the plan that is a bug in the implementation, not in the tests.
+
+```bash
+just app-test tests/app-test/at0277-*.test.ts tests/app-test/at0282-lens-row-arrow-escape.test.ts
+```
+
+#### 6. #step-11 in full {#addendum-step-11}
+
+Nothing here has been done. Budget the app-test run as a closing act — the selection will be corpus-scale (~70 serialized launches; see #blast-radius):
+
+```bash
+just app-test-changed
+```
+
+Plus the three manual passes the harness cannot do: the Spec S04 gesture table row by row on a real session card + Lens + one sheet; the IME first-character check with a non-Latin input source (Risk R01's residual); and an accessibility-mode pass confirming every text stop takes a caret and every engine-routed stop still mirrors real focus.
+
+### at-numbers and the fan-out budget {#addendum-numbering}
+
+`at0396` is taken (by this phase). `at0393` / `at0394` belong to other work that has since landed. **Free: `at0395`, `at0397`, `at0398`** — which happen to be exactly the three suites above, so the names in the work list are the names to use. Confirm with `ls tests/app-test/ | grep -oE '^at[0-9]{4}' | sort -u | tail` before authoring; the corpus moves.
+
+`ACCEPTED_FANOUT` in `tests/app-test/scripts/select-tests.ts` was raised **64 → 65** for `focus-manager.ts` when at0345 gained a `@covers` on it (the argument is recorded in place). **Each of the three new suites will need a `@covers` on `focus-manager.ts` and will push it further.** Raise it once, deliberately, with the count and the reason — the file's own comment asks for that and it is a good rule.
+
+### Invariants a follow-up must not break {#addendum-invariants}
+
+These are load-bearing and every one of them is a place where a plausible-looking simplification reintroduces a bug that was already paid for:
+
+- **`settleKbfEngagement` must ALWAYS notify.** Only the repaint + re-land half is gated on the derived answer flipping. Gating the notify on the derived value is why ⌥⇥ on a card already engaged by its own `kbfAtRest` changed the manual bit and told nobody, so the gallery cycle demo's scope never went up.
+- **`parksTextStop()` reads the ARRIVAL; `hasParkedTextStop()` reads the STATE.** The first answers "should arriving here park?" and is a question about the placement. The second answers "is the keyboard parked at a text stop right now?" and is what a keystroke responds to. Making the second ask the arrival question is why typing at a parked stop did nothing — any later re-realization resets the arrival, and then the ring says one thing and the predicate another.
+- **The three route sites move together**, and the watchdog's `isBareNativeControl` legality read is the fourth. `classifyRoute`, `focusKeyView`'s re-derivation, `focusKeyView`'s bare-native-control grant branch, and `checkFocusInvariant`'s legality class must agree. If grant and legality diverge, a second focus authority (Radix mount-autofocus, the browser default) fills the vacuum and the watchdog *blesses* it — parking fails silently, which is the worst failure mode available here.
+- **`regrantCurrentTarget` must preserve the arrival.** A watchdog re-grant repairs the placement that already happened; letting it fall back to the `"placement"` default silently un-parks a stop the engine moved to.
+- **The route must be derived above the `typeof document` guard in `focusKeyView`.** It is engine state (`dispatchKeyToKeyView` gates on it), not a DOM effect, so it has to settle whether or not there is a document.
+- **`useCycleMode`'s scope stays `kbf: false`.** `trapped: true` there buys Escape semantics, not a surface. Letting it count as Class A makes the mode its own cause: clearing the manual bit leaves it engaged by the very cycle the clear was meant to end, and nothing can ever leave the mode from inside a cycle.
+- **`advanceKeyViewFocus` engages before it steps.** This is what keeps ~20 component focus suites (at0109, at0113–at0127, …) green: they Tab into a control and assert a ring, and the ring only exists because Tab turned the mode on. Move the engage out of the shared performer and they all go red at once.
+- **Never gate a ring by prefixing a paint rule with `html[data-kbf]`.** That takes the leaf rule from (0,1,0) to (0,2,1), above every item-group `outline: none` suppression at (0,2,0), and repaints the double ring `focus-ring.css` records three failed attempts at removing ([R04]). The gate is the withheld flavor; the only CSS is `html:not([data-kbf])` **suppressions**.
+- **`data-attached-cursor` and `data-default-ring` are exempt from the mode gate, by design.** Neither is a focus position. If a future suppression list grows, do not sweep them in.
+
+### Harness knowledge paid for in app-test runs {#addendum-harness}
+
+Each of these cost at least one full run to learn. They are not in `tests/app-test/README.md`.
+
+- **A cycle stop's key-view element IS the editor**, not an ancestor of it. The composer's text stop registers on the substrate under the editor's responder id, so the ring attribute rides that element: match `[data-key-view-kbd][data-slot="tug-text-editor"]`, not `[data-key-view-kbd] [data-slot="tug-text-editor"]`. That single space cost a diagnostic round in at0345 and again in at0140. Scope it to the surface too (`[data-slot="tug-prompt-entry"] …`) — with the find bar open there are two text stops on the card.
+- **The dev log is reachable from a test and is the fastest way to see engine internals**, but three details bite: the entries are at `window.tugDevLog.getSnapshot().entries` (not the snapshot itself), the subsystem field is **`source`**, not `channel`, and **`debug`-level entries do not show up** — use `tugDevLogStore.warn` for a temporary probe. Getting any of the three wrong returns `[]`, which reads exactly like "the code never ran" and sends you chasing the wrong thing.
+- **When a wait times out, check which of several identical waits it was.** The harness reports the failing *script*, and a script like `EDITOR_FOCUSED` may appear three times in one test. at0140's first failure looked like the exit path and was actually the landing two steps earlier. A `note()` between them costs one run and settles it.
+- **`note()` is the right instrument** — the `Diagnostics:` section of the report is designed for this, it survives a passing run, and it is how the parked-stop round trip was confirmed end to end (`{kbf:true, ringed, sink active}` → type `x` → `{kbf:false, editorText:"x"}`).
+- **Never pipe `just app-test`.** The gate rewrites it, and on a passing run a `| grep` prints nothing and exits 1 — a green run reported as a silent failure.
+- **The Bash cwd reverts between calls in a worktree.** Every command needs its own explicit `cd`. This bit twice, once running the whole repo's test corpus by accident and once type-checking nothing.
+- **`just app-test` builds `Tug-apptest.app` on first use in a fresh worktree** and that first invocation is slow enough to blow past the tool's output cap. Run it once bare to warm it, then run tests.
+
+### What the implementation decided that the plan did not {#addendum-decisions}
+
+All four are folded into the plan body above at their decisions, but collected here so a reader knows the plan was amended rather than merely followed:
+
+1. **The attached-list highlight is its own gate-exempt mark** (`data-attached-cursor`), because the movement cursor paints only while the keyboard is *in* its list — which an attached list never is — and because [P04] suppresses `data-key-cursor` in mode OFF, which is exactly where an attached list matters most. Owner chose this over reusing `data-key-cursor` with a carve-out. See [P08].
+2. **Pulse has no card and About registers no focus stops**, so neither takes `kbfAtRest`. See [P10].
+3. **Session history is not an attached-list site** — it renders `TugHistoryList`, which has no cursor model and no per-row stops — so `filterFieldDidRequestAdvance` survives for that one consumer instead of being deleted. See [P08] and #deletion-inventory.
+4. **at0140 joined the rewrite list** the plan did not have it on, and **at0341 / at0342 needed no behavioral rewrite at all** (only `@covers` repointing) — they drive surfaces where the mode is already engaged. See #probe-survey.
