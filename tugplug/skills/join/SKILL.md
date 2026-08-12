@@ -1,0 +1,111 @@
+---
+name: join
+description: Land a dash into its base branch — preview the squash, land it with the dash's join draft as the message, clear the draft, and report the receipt. The user's landing gesture; never releases.
+argument-hint: "[name] [message…]"
+disable-model-invocation: true
+allowed-tools: Bash, Read, AskUserQuestion
+disallowed-tools: Task
+---
+
+## What this is
+
+`join` is the **dash lane's landing gesture** — the twin of `/commit` on the main lane. A dash has been worked (by `/tugplug:implement` or `/tugplug:dash`), the user has vetted the build, and this run lands it: preview the merge in memory, land the squash onto the base branch with the dash's join draft as the message, tear down the worktree + branch, clear the draft, and report.
+
+**You do not decide whether to land.** The user invoked this skill; that invocation is the byline. Your job is to land it correctly, or to stop with a clear reading of why it cannot land yet.
+
+Every git operation goes through **`tugutil dash join`**. Never `git merge`, never `git cherry-pick`, never a hand-rolled squash — the CLI owns the preflight, the in-memory preview, the journal, the trailers, and the teardown.
+
+## Input grammar
+
+`/tugplug:join [name] [message…]`
+
+- `/tugplug:join <name>` — land the dash `<name>` with its maintained join draft.
+- `/tugplug:join` — bare. Resolve the dash (see below), then land it.
+- `/tugplug:join <name> <message…>` — land with `<message>` instead of the draft. Use only when the user typed a message; never invent one to pass here.
+
+## Resolving the dash
+
+```bash
+tugutil dash list --json
+```
+
+- **Exactly one active dash** and no name given → that's the one.
+- **Several** and no name given → `AskUserQuestion` with the candidates (name + description + rounds). Do not guess.
+- **None** → report that there is nothing to join and stop.
+- **A name that isn't in the list** → report it and show the list; do not fuzzy-match it onto a neighbor.
+
+## Where you run from
+
+`tugutil dash join` must run from the **base checkout's repo root** — it refuses from inside the dash worktree, and it refuses when the repo root is not on the dash's base branch. If the working directory is inside a dash worktree, run the join with an explicit `cd <repo-root> && tugutil dash join …` (absolute path). Never `cd` into the worktree for a join.
+
+## The message it will land
+
+The squash message is, in order: an explicit `--message`, else the dash's maintained **join draft**, else the dash description.
+
+```bash
+tugutil draft show --owner dash:<name>
+```
+
+- **A draft exists** → that is the message. Show it in your report before landing.
+- **No draft** → do not let the join fall through to the bare description. Read the dash's rounds (`tugutil dash show <name> --json`), compose a real message from them — a subject line naming the deliverable, then a terse digest of what the rounds landed, in the repo's existing commit-subject style — and write it:
+  ```bash
+  tugutil draft set --owner dash:<name> --message "<subject + rounds digest>"
+  ```
+  Then land with the draft (no `--message`). Message rules match `/tugplug:draft`: imperative subject under 50 chars, terse factual bullets, every line unbroken to its end (**no hard wrapping**), no AI/agent attribution, ever.
+
+## Beat 1 — preview
+
+```bash
+tugutil dash join <name> --preview --json
+```
+
+The preview runs the merge in memory (`git merge-tree`) and touches nothing. Read the result:
+
+- **Clean** → go to beat 2.
+- **Conflicts** → report every conflicted path plus the message that would have landed, and **stop**. Do not land, and do not run the resolution ladder on your own initiative. Offer the two real next steps: `--resolve` (the conflict-resolution ladder — replay probe, rerere, re-merge, structured-merge driver — which then lands the result), or resolving by hand on the dash worktree and re-running the join. Run `tugutil dash join <name> --resolve` only when the user says to.
+
+Preflight refusals come back as errors from this same command — surface them verbatim and stop:
+
+- *"Cannot join from inside the dash worktree"* → re-run from the repo root.
+- *"repo root worktree is on branch 'X' but dash targets 'Y'"* → the user checks out the base branch; do not switch branches for them.
+- *"the base worktree has uncommitted changes to files this dash also changed (…)"* → the preflight is intersection-aware, so only the named files block. Report them and let the user commit or stash. Never stash, reset, or check out on their behalf.
+- *"Nothing to join: dash '<name>' has no commits past '<base>'. Release it to discard."* → the dash is empty. Report it and offer release as the user's call. **Never run `tugutil dash release` yourself** — release is the one irreversible act in the workflow, and it belongs to the user's own gesture.
+
+## Beat 2 — land
+
+```bash
+tugutil dash join <name>
+```
+
+Squash-merges `tugdash/<name>` into its base and tears down the worktree + branch. Never pass `--strategy merge` or `--strategy rebase` — squash is the lane's one strategy; the others are expert CLI paths the user drives themselves.
+
+- A join interrupted mid-teardown (the command reports the journal) resumes with `tugutil dash join <name> --continue`. Run that; it is the resume, not a retry.
+- A non-preview join that hits conflicts exits non-zero with the working tree already restored. Report the paths; the options are the same two as beat 1.
+
+## After a successful land
+
+1. **Clear the join draft** — join drafts are keyed by reusable dash names, so an uncleaned draft haunts the *next* dash of the same name as a clobber-protected message describing work that already landed:
+   ```bash
+   tugutil draft clear --owner dash:<name>
+   ```
+2. **Read the receipt back** — `tugutil log --limit 1` on the base branch shows the squash commit that landed. Report its hash and subject.
+
+## Report
+
+- The dash, its base branch, and the number of rounds it carried.
+- The message that landed, as landed.
+- The squash commit hash + subject.
+- Teardown: worktree and branch removed; draft cleared.
+- Any warnings the CLI emitted (a worktree it could not remove, a branch it could not delete) — verbatim, not paraphrased.
+
+On a stop instead of a land, report what blocked it, the exact CLI message, and the one next step that unblocks it.
+
+## Guardrails
+
+- **`tugutil dash join` does the git.** No `git merge`, `git rebase`, `git cherry-pick`, `git checkout`, `git stash`, or `git reset` — not to prepare the join, not to recover from one.
+- **Never release.** `tugutil dash release` discards work; it is the user's gesture and never yours, including on the "nothing to join" path.
+- **Preview before landing, always** — even when the user names the dash and the message. Beat 1 shows exactly what beat 2 does.
+- **Never resolve conflicts unasked.** `--resolve` rewrites the merge result; it runs on the user's word.
+- **Squash only.**
+- **Don't edit the tree.** This skill lands what exists; it does not fix a build, a test, or a lint on the way through. A dash that isn't ready goes back to `/tugplug:dash` or `/tugplug:implement`.
+- **No AI attribution in the landed message. Ever.**

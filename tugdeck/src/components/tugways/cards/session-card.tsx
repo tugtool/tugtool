@@ -3902,15 +3902,27 @@ export function SessionCardBody({
       const message = args.trim();
       commitModeController.enter(message.length > 0 ? message : undefined);
     },
-    // `/join` — degraded to a caution bulletin for the interim ([P10]): the
-    // dash join/resolve/release UI left with the read-only shade, and
-    // `TugJoinDialog` (modeled on `TugCommitDialog`) is the named follow-on.
-    // Shell joins suffice meanwhile; the verb-store and tugcast join/release
-    // machinery stay intact but unreferenced by UI.
-    join: () => {
-      paneBulletinRef.current?.caution(
-        "Joins land via the shell for now — TugJoinDialog is coming",
-      );
+    // `/join` — the dash lane's landing gesture, backed by the `tugplug:join`
+    // skill (the same shape as the other dash verbs: the skill rides
+    // `tugutil dash join`, which owns the preflight, the in-memory preview,
+    // the journal, and the teardown). Forwarded as a leading `command` atom so
+    // the wire carries a clean `/tugplug:join …` and claude expands it as a
+    // USER invocation — the path that clears the skill's
+    // `disable-model-invocation` guard (see `commandWireText`). Landing is a
+    // turn, so it takes the same idle gate every mutating verb does ([P08]):
+    // mid-flight it refuses with a caution rather than queueing behind the
+    // running turn.
+    join: (args) => {
+      const notify = paneBulletinRef.current;
+      if (!codeSessionStore.getSnapshot().canSubmit) {
+        notify?.caution("Can't join a dash while a turn is in flight");
+        return;
+      }
+      // The typed args are a dash name (plus an optional message) — plain
+      // text — so the composer's substrate carries nothing worth threading
+      // through; the row reads `/tugplug:join <name>`.
+      const submission = buildCommandSubmission("tugplug:join", args);
+      codeSessionStore.send(submission.text, submission.atoms);
     },
     // `/shell <command>` — the deliberate override under the shell
     // auto-router: the classifier decides by default, and a user who knows

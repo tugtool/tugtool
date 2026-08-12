@@ -195,7 +195,7 @@ export const LOCAL_SLASH_COMMANDS = [
   },
   {
     name: "join",
-    description: "Join a dash into its base (shell for now — dialog coming)",
+    description: "Land a dash into its base branch — preview, then squash with its join draft",
     takesArgs: true,
   },
   {

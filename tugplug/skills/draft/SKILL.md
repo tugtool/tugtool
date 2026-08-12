@@ -58,8 +58,7 @@ The buckets — **decide a disposition for every one of them:**
 
 2. **Analyze** — identify what actually changed and why; connect changes to plan elements when applicable.
 
-3. **Compose the Message**
-   Format:
+3. **Compose the Message** Format:
    ```
    <brief summary line, max 50 chars>
 
