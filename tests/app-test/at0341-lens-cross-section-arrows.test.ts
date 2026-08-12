@@ -15,7 +15,10 @@
  *
  * It also pins the empty-input release: an empty `TugFilterField` spends its
  * arrows on movement (a field is not a wall), while a field holding a query
- * keeps them for its caret.
+ * keeps them for its caret. That second half is asserted on the KEY VIEW
+ * rather than the ring, because typing the query is itself the caret grant and
+ * a caret is mode OFF for paint — the field keeps the arrows and wears no ring
+ * while it does.
  *
  * The second test is the DRIFT GATE, and it names no section at all: it asks
  * the running Lens which sections it is rendering and holds each of them to the
@@ -80,8 +83,8 @@ function priorCardDeck() {
  * controls because it is the band's last stop, and several assertions here are
  * about reaching exactly it.
  */
-const RING_ADDRESS = `(function(){
-  var el = document.querySelector('[data-key-view-kbd]');
+const addressOf = (selector: string): string => `(function(){
+  var el = document.querySelector('${selector}');
   if (el === null) return null;
   var section = el.closest('.lens-section');
   var kind = section === null ? "?" : (section.getAttribute("data-lens-section") || "?");
@@ -98,6 +101,17 @@ const RING_ADDRESS = `(function(){
             : "other";
   return kind + ":" + part;
 })()`;
+
+/** Where the painted ring rests — present only while the mode is painting. */
+const RING_ADDRESS = addressOf("[data-key-view-kbd]");
+
+/**
+ * Where the KEY VIEW rests, painted or not. The same address, read off the
+ * mark that carries position rather than the one that carries paint: a text
+ * stop that has been granted the caret is still the key view, but it wears no
+ * ring, because a caret is mode OFF for paint ([P04]).
+ */
+const KEY_VIEW_ADDRESS = addressOf("[data-key-view]");
 
 async function ringAddress(app: App): Promise<string | null> {
   return app.evalJS<string | null>(RING_ADDRESS);
@@ -253,10 +267,45 @@ describe.skipIf(!SHOULD_RUN)("at0341 — Lens arrows point where they say", () =
             { timeoutMs: 3_000 },
           );
 
-          // Up is the field's now — the ring does not leave.
+          // Up is the field's now — the keyboard does not leave.
+          //
+          // Read as the KEY VIEW, not as the ring, and that distinction is the
+          // point rather than a workaround. Typing into a parked text stop IS
+          // the grant ([P12] #printable-grant): the caret lands, and a caret is
+          // mode OFF for paint, so the ring stands down the instant the query
+          // exists. This assertion asked for the ring and so asserted the
+          // opposite of the rule the keystroke before it invokes — it could
+          // only have passed in a build where typing left the field parked.
+          // What it MEANS to claim is that the arrow moved nothing, and the
+          // key view is the mark that carries position in both modes.
           await app.nativeKey("ArrowUp");
           await new Promise<void>((r) => setTimeout(r, 250));
-          expect(await ringAddress(app)).toBe("cards:filter");
+          const settled = await app.evalJS<{
+            keyView: string | null;
+            ring: string | null;
+            caretInField: boolean;
+          }>(`(function () {
+            return {
+              keyView: ${KEY_VIEW_ADDRESS},
+              ring: ${RING_ADDRESS},
+              caretInField: document.activeElement === document.querySelector(
+                '.lens-section[data-lens-section="cards"] .tug-filter-field-input'
+              ),
+            };
+          })()`);
+          note(`after typing + ArrowUp: ${JSON.stringify(settled)}`);
+          expect(
+            settled.keyView,
+            "a field holding a query keeps Up for its caret — the key view does not move",
+          ).toBe("cards:filter");
+          expect(
+            settled.caretInField,
+            "…and the caret is really in that field, not merely addressed at it",
+          ).toBe(true);
+          expect(
+            settled.ring,
+            "no ring beside a live caret — typing granted it, and a caret is mode OFF",
+          ).toBeNull();
 
           // The whole tour is keyboard-only: every landing came through the
           // engine, with no raw focus write behind its back.
