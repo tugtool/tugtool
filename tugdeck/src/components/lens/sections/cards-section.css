@@ -97,7 +97,7 @@
      deliberately: giving all of it back would seat the reading where it was,
      hanging a visible indent inside the margin the section header sets. TUNE
      HERE — the whole entry, dot and three lines, moves with it. */
-  --tugx-session-row-leading-inset: 2px;
+  --tugx-session-row-leading-inset: 4px;
 }
 
 /* ── The one-line row ─────────────────────────────────────────────────────── */
