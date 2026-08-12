@@ -17,7 +17,9 @@
 | Target branch | main |
 | Last updated | 2026-08-12 |
 
-> **Vet pass, 2026-08-12.** Assessed against the real tree; eight findings folded in. Three were defects that would have bitten mid-build: the Claude-route shell capture cannot reuse the attribution maps, because `pending_cmds` only admits commands `declared_ops_for_command` parses as file operations and `open_bash` only opens for live in-repo calls — so builds and test runs, the entire `test_run` source, are absent from both ([P06] now mandates a new unfiltered map, with a `cargo nextest` regression test in #step-4); `record_fact` called from inside `record_spawn` would deadlock on the non-reentrant ledger mutex ([P11] adds the `_tx` form, and notes `record_spawn` already computes the spawned-vs-resumed disposition); and `feeds/shell.rs` has no `SessionLedger` handle at all, so #step-4 threads one through `shell_dispatcher_task`. Also folded in: the privacy exclusion must be `NOT EXISTS` rather than a join, since `changes.db` is machine-global and other-instance rows have no local `sessions` row; privacy gained a resting display (the flag rides `build_session_updated_frame` to a chip marker) because a transient ack alone leaves the mode invisible after reload; [Q01] now states the [L30] posture explicitly (no `SLASH_BRIDGES` row — `btw`/`join` are the precedent); `validate_refs` takes a slice of corpora rather than a concatenation; and [P07] states that a `test_run` verdict comes from the parsed summary, never from `is_error` or `exit_code`.
+> **Second vet pass, 2026-08-12.** Re-verified the first pass's eight findings against the tree — all eight hold at the lines they imply ([P11]'s held mutex at `record_spawn`'s `conn.transaction_with_behavior(Immediate)`, [P06]'s `declared_ops_for_command`-gated `pending_cmds` plus the `cargo build → None` pin, `shell_dispatcher_task`'s ledger-less signature, the `changes.`-attached `file_events` that makes `NOT EXISTS` necessary, and the deck's exhaustive `Record<LocalCommandName, …>`). Three new fixups folded in. **The `ENABLED_KEY` checkpoint was self-falsifying:** `feeds/pulse.rs`'s `PULSE_ENABLED_KEY` contains the string, so a bare grep failed a correct deletion — both greps are now `-w`. **The harness could not have synthesized `session.compacted`:** `translate_transcript` gates on `kind != "assistant" && kind != "user"` and so drops the `system`/`subtype: "compact_boundary"` record entirely, so #step-8 now carries the translator arm and its pin, and `post_tokens` is documented as optional at both the payload and the rendering. **The spawned-vs-resumed reading for scan-adopted sessions is now decided** in [P11] rather than left for #step-3 to guess: an adoption records `spawned` (first appearance in *this* ledger) and is not reclassified from the `external_scan_cache` seed.
+>
+> **First vet pass, 2026-08-12.** Assessed against the real tree; eight findings folded in. Three were defects that would have bitten mid-build: the Claude-route shell capture cannot reuse the attribution maps, because `pending_cmds` only admits commands `declared_ops_for_command` parses as file operations and `open_bash` only opens for live in-repo calls — so builds and test runs, the entire `test_run` source, are absent from both ([P06] now mandates a new unfiltered map, with a `cargo nextest` regression test in #step-4); `record_fact` called from inside `record_spawn` would deadlock on the non-reentrant ledger mutex ([P11] adds the `_tx` form, and notes `record_spawn` already computes the spawned-vs-resumed disposition); and `feeds/shell.rs` has no `SessionLedger` handle at all, so #step-4 threads one through `shell_dispatcher_task`. Also folded in: the privacy exclusion must be `NOT EXISTS` rather than a join, since `changes.db` is machine-global and other-instance rows have no local `sessions` row; privacy gained a resting display (the flag rides `build_session_updated_frame` to a chip marker) because a transient ack alone leaves the mode invisible after reload; [Q01] now states the [L30] posture explicitly (no `SLASH_BRIDGES` row — `btw`/`join` are the precedent); `validate_refs` takes a slice of corpora rather than a concatenation; and [P07] states that a `test_run` verdict comes from the parsed summary, never from `is_error` or `exit_code`.
 
 ---
 
@@ -44,7 +46,7 @@ The only permanent records today are `gazette_posts` (lossy prose), `minted_tags
 - The Operator answers "what did I ask in that session earlier" from `facts.search kind=prompt` (full text, not a 256-char snippet), "what tests failed today" from `test_run` facts, and "what shell commands ran" from `shell.history` — each verified live with the built app.
 - A session marked `/private` produces no new facts, no Reporter posts, and disappears from `sessions.list` / `session.prompts` / `changes.for_session` / `facts.search` results (unit tests + live check); marking it public again resumes recording from that moment. **Its chip shows the private marker, and still shows it after a reload** — the state is legible without retyping the command.
 - A Claude-run `cargo nextest run` (a command no attribution map admits) produces both a `shell` and a `test_run` fact — the [P06] regression check that the new unfiltered map is really being used.
-- The `enabled` knob is gone: `grep -r ENABLED_KEY tugrust/crates/tugcast/src` returns nothing, and the Reporter narrates with no tugbank row present.
+- The `enabled` knob is gone: `grep -rnw ENABLED_KEY tugrust/crates/tugcast/src` returns nothing, and the Reporter narrates with no tugbank row present. **The `-w` is required, not cosmetic:** `feeds/pulse.rs` declares `PULSE_ENABLED_KEY`, which contains `ENABLED_KEY` as a substring, so a bare `grep` reports failure after a perfectly correct deletion.
 - `just gazette-replay <session.jsonl>` composes wake inputs carrying a `SETTLED FACTS SINCE YOUR LAST POST` section synthesized through the same `facts_library` classifiers, and the re-read at the shipped cadence is done by a human before #step-9 closes.
 - A ref whose target appears only in the facts section (not the frame buffer) validates and renders as a live chip; a target in neither is still dropped (unit test).
 - `cd tugrust && cargo nextest run -p tugcast` green; `cd tugdeck && bun test && bun run check && bunx vite build` green; `just app-test-changed` green.
@@ -236,7 +238,11 @@ Hooking either map would mean `test_run` facts essentially never fire from the C
 
 **Rationale:** The gazette plan's [R01] lesson, verbatim: the harness once drifted from the bridge on the wake rule and reported three wakes against the bridge's one. The re-calibration read ([Q02]) is only meaningful if the harness's facts are the production facts.
 
-**Implications:** Harness synthesis covers what transcripts carry — `prompt` (from `user_message` records where present), `shell`/`test_run` (from Bash `tool_use`/`tool_result` pairs), `compact` (from `compact_boundary`) — and states in its output which kinds were synthesized; `commit` and lifecycle facts are absent from replay and that asymmetry is printed, not hidden.
+**Implications:** Harness synthesis covers what transcripts carry — `prompt` (from `user_message` records where present), `shell`/`test_run` (from Bash `tool_use`/`tool_result` pairs), `session.compacted` (from `compact_boundary`) — and states in its output which kinds were synthesized; `commit` and lifecycle facts are absent from replay and that asymmetry is printed, not hidden.
+
+**`session.compacted` is the one kind the translator cannot yet feed, and #step-8 must extend it.** `translate_transcript` (`feeds/gazette_replay.rs`) maps **only** `user` and `assistant` records — its `if kind != "assistant" && kind != "user" { continue; }` gate drops everything else before any block walk. The JSONL's compaction marker is a **`system`** record with `subtype: "compact_boundary"` (the shape `tugcode/src/session.ts` reads when it scans a transcript on resume), so it is discarded today and no amount of work inside `synthesize_facts_from_frames` can recover it. The existing `is_compact_summary` handling is not this: it skips the compaction *summary* record, not the boundary. #step-8 therefore adds a `compact_boundary` arm to the translator that emits a `ReplayFrame` carrying `trigger` / `pre_tokens` / `post_tokens` off the record's `compact_metadata`, matching the live wire's payload. Without that arm, `session.compacted` belongs in the live-only column of the printed asymmetry — pick the arm; do not quietly claim the kind.
+
+**`post_tokens` is optional everywhere it comes from.** tugcode emits the field only when claude supplied it (`...(postTokens !== undefined ? …)`), so both the live recorder and the harness will see boundaries with a pre count and no post count. `render_text` for the compact kind renders the pair when both are present and degrades to the pre count alone otherwise — never a `0` standing in for an absent number.
 
 #### [P10] The Reporter's wake input gains a SETTLED FACTS section; refs validate against two corpora (DECIDED) {#p10-reporter-diet}
 
@@ -266,6 +272,8 @@ SETTLED FACTS SINCE YOUR LAST POST:
 **Implications:** #step-3's `session.spawned`/`session.resumed` facts are written with `record_fact_tx` inside `record_spawn`'s existing transaction, which also makes the fact and the session row atomic. Recorders that call from *outside* the ledger (the relay, the shell settle, the supervisor arms) use the public form. The write-time privacy check ([P05]) lives in the `_tx` form so both paths enforce it within one connection acquisition.
 
 **A convenience already in hand:** `record_spawn` needs no pre-existence probe — it already reads `SELECT created_at, tag FROM sessions WHERE session_id = ?1` into `existing` before its UPSERT, so `existing_created_at.is_some()` **is** the spawned-vs-resumed disposition and the step spends no extra query.
+
+**What that disposition means for an adopted session, decided here so #step-3 does not have to guess.** `record_spawn` also seeds from `external_scan_cache`, so a session Tug discovered by the scan and is adopting has **no `sessions` row** yet carries real prior history (a seeded `turn_count`, `last_user_prompt`, `created_at`, and often a minted tag). `existing_created_at.is_some()` therefore calls that adoption `session.spawned`, not `session.resumed`. **That is the intended reading:** the fact records the session's first appearance *in this ledger*, which is the first moment this instance can say anything true about it, and the `{workspace_key, project_dir, name}` payload describes exactly that moment. Do not reach for `seed_created_at`/`scanned_tag` to reclassify adoptions as resumes — an adopted session's pre-Tug history is the transcript's to tell, not the fact base's, and a `resumed` fact with no prior `spawned` fact in the same ledger would be the more confusing record.
 
 ---
 
@@ -330,7 +338,7 @@ Rust surface in `session_ledger.rs`: `FactRow`, `record_fact(&NewFact) -> Result
 | `session.closed` / `.errored` | tag or session id | `{detail}` | `session closed` / `session errored (<detail>)` |
 | `session.reset` | tag or session id | `{}` | `session cleared` |
 | `session.renamed` | new name | `{old, new}` | `session renamed "<old>" → "<new>"` |
-| `session.compacted` | trigger | `{trigger, pre_tokens, post_tokens}` | `context compacted (<trigger>): <pre> → <post> tokens` |
+| `session.compacted` | trigger | `{trigger, pre_tokens?, post_tokens?}` | `context compacted (<trigger>): <pre> → <post> tokens`; both counts are optional (claude often sends no `post_tokens`) — render what is present, never a `0` for an absent count |
 | `commit` | sha | `{sha, message, files, numstat}` | `commit <sha12> "<subject line>" — <n> file(s)` |
 | `shell` | command incipit (80) | `{command, route, ok, exit_code?, cwd?}` | `$ <command ≤200> → ok` / `→ err` |
 | `test_run` | runner | `{runner, verdict, passed?, failed?, skipped?}` | `tests: <runner> — <verdict> (<p> passed, <f> failed)` |
@@ -480,12 +488,12 @@ No new deck store and no new persistent preference; nothing touches Web storage.
 **Artifacts:** `feeds/facts_library.rs`: `FactKind`, payload structs, `render_text`, `classify_test_run`, `synthesize_facts_from_frames`, the [P03] key builders, the prompt/text caps.
 
 **Tasks:**
-- [ ] `render_text` per Table T01; caps (subject 80, text ~240, prompt payload 16 KB with elision marker) as module consts.
+- [ ] `render_text` per Table T01; caps (subject 80, text ~240, prompt payload 16 KB with elision marker) as module consts. The compact rendering degrades on a missing `post_tokens` (and on a missing `pre_tokens`) rather than printing a stand-in zero ([P09]).
 - [ ] `classify_test_run` for the three runners ([P07]): parse `cargo nextest`'s summary line, `bun test`'s pass/fail line, the app-test report's `VERDICT:` + totals; recognized-but-unparseable → `verdict: "unknown"`; everything else `None`.
-- [ ] `synthesize_facts_from_frames`: derive `prompt`/`shell`/`test_run`/`session.compacted` facts from transcript-shaped frames (the shapes `gazette_replay.rs` already maps), returning which kinds it could synthesize.
+- [ ] `synthesize_facts_from_frames`: derive `prompt`/`shell`/`test_run`/`session.compacted` facts from transcript-shaped frames, returning which kinds it could synthesize. `prompt`/`shell`/`test_run` come from shapes `translate_transcript` already emits (`user_message`, `tool_use`/`tool_result`); **`session.compacted` does not — the translator drops `system` records today and #step-8 adds the arm that emits it ([P09])**. Write the compact branch against the live wire's payload (`trigger`/`pre_tokens`/`post_tokens`) so it needs no change when that arm lands.
 
 **Tests:**
-- [ ] Rendering table test (every kind); classifier table test with real captured summary tails per runner, plus truncated-tail → unknown and `cargo build` → `None`.
+- [ ] Rendering table test (every kind), including a compact fact with no `post_tokens` (renders the pre count alone, no zero); classifier table test with real captured summary tails per runner, plus truncated-tail → unknown and `cargo build` → `None`.
 - [ ] Synthesis over a fixture frame list produces the same facts the live recorders would (assert against hand-built expectations using the same key builders).
 
 **Checkpoint:**
@@ -505,13 +513,13 @@ No new deck store and no new persistent preference; nothing touches Web storage.
 
 **Tasks:**
 - [ ] Prompt: beside the `parse_user_message_text` capture in `agent_bridge.rs`'s relay input branch — full text through the module's cap, keyed by `tug_session_id`, best-effort.
-- [ ] `record_spawn` records `session.spawned`/`session.resumed` **via `record_fact_tx` inside its existing transaction** ([P11]) — calling the public `record_fact` there deadlocks. No new probe is needed: `existing_created_at.is_some()` (already read before the UPSERT) is the disposition.
+- [ ] `record_spawn` records `session.spawned`/`session.resumed` **via `record_fact_tx` inside its existing transaction** ([P11]) — calling the public `record_fact` there deadlocks. No new probe is needed: `existing_created_at.is_some()` (already read before the UPSERT) is the disposition. A scan-adopted session (no `sessions` row, but an `external_scan_cache` seed) records `session.spawned` — first appearance in *this* ledger, per [P11]; do not reclassify it from the seed.
 - [ ] Closed/errored/reset/renamed at the supervisor `do_*` sites; `demote_live_to_closed` records with `detail: "startup-demote"`; reset records once (no double `closed`).
 - [ ] Compact: the outbound relay scan matches `"type":"compact_boundary"`, parses trigger/pre/post, records with the frame-timestamp [P03] key.
 
 **Tests:**
 - [ ] `drive_relay`-pattern integration: a `user_message` yields a `prompt` fact with full text; a replayed `compact_boundary` batch driven twice yields one fact.
-- [ ] Ledger-level: spawn→resume sequence yields one `spawned` + one `resumed`; reset yields exactly one `session.reset`.
+- [ ] Ledger-level: spawn→resume sequence yields one `spawned` + one `resumed`; a `record_spawn` over an `external_scan_cache`-seeded id with no `sessions` row yields `spawned` (the adoption reading in [P11]); reset yields exactly one `session.reset`.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast agent_bridge session_ledger`
@@ -558,13 +566,13 @@ No new deck store and no new persistent preference; nothing touches Web storage.
 
 **Tasks:**
 - [ ] Remove the field and every check; reword the mute-set doc comments in `reporter_wake.rs`/`reporter.rs` (mute tracks the wire; the toggle clause goes).
-- [ ] Remove the disabled-knob bridge test; confirm no other consumer of `ENABLED_KEY` (grep the workspace).
+- [ ] Remove the disabled-knob bridge test; confirm no other consumer of `ENABLED_KEY` (grep the workspace **whole-word** — `feeds/pulse.rs`'s unrelated `PULSE_ENABLED_KEY` matches a substring grep and would read as a survivor).
 
 **Tests:**
 - [ ] Existing bridge suite green without the knob; a compile-time absence check is the deletion itself under `-D warnings`.
 
 **Checkpoint:**
-- [ ] `cd tugrust && cargo nextest run -p tugcast reporter && ! grep -rn "ENABLED_KEY" crates/tugcast/src`
+- [ ] `cd tugrust && cargo nextest run -p tugcast reporter && ! grep -rnw "ENABLED_KEY" crates/tugcast/src` (`-w` mandatory — `PULSE_ENABLED_KEY` is a substring match)
 
 ---
 
@@ -628,19 +636,21 @@ No new deck store and no new persistent preference; nothing touches Web storage.
 
 **References:** [P10], [P09], Spec S04, Risk R01, (#s04-facts-section, #q02-diet-recalibration)
 
-**Artifacts:** `compose_reporter_input` facts param + `FactLine` + section rendering with caps; `validate_refs` two-corpus signature; the bridge's `list_facts_for_session_since` fetch in `wake()`; `REPORTER_POST_INSTRUCTIONS` facts paragraph + contract-test pins; `gazette_replay.rs` synthesis (via `synthesize_facts_from_frames`) + `SETTLED FACTS` in `--show-input` + a synthesized-kinds note in the report header.
+**Artifacts:** `compose_reporter_input` facts param + `FactLine` + section rendering with caps; `validate_refs` two-corpus signature; the bridge's `list_facts_for_session_since` fetch in `wake()`; `REPORTER_POST_INSTRUCTIONS` facts paragraph + contract-test pins; `gazette_replay.rs` synthesis (via `synthesize_facts_from_frames`) + **the `compact_boundary` arm on `translate_transcript`** + `SETTLED FACTS` in `--show-input` + a synthesized-kinds note in the report header.
 
 **Tasks:**
 - [ ] Section per Spec S04 (20 facts / 4 KB, `[earlier facts elided]`, `(none)`).
 - [ ] `validate_refs(refs, corpora: &[&str])` — a slice, **not** a concatenated string ([P10]); the bridge passes the rendered buffer and the rendered facts section as two entries.
 - [ ] Bridge: fetch facts newer than the newest prior post's `at_ms` (all facts when no priors), map to `FactLine`, pass through; fetch failure warns and composes `(none)` — a facts read must never cost a wake.
 - [ ] Instructions paragraph ([P10]) with pins in the contract test (section header string; "a fact you already posted about is not news twice").
+- [ ] **Translator arm ([P09]):** `translate_transcript`'s `kind != "assistant" && kind != "user"` gate drops the `system`/`subtype: "compact_boundary"` record that carries compaction, so add a branch above it emitting a `compact_boundary` `ReplayFrame` with `trigger`/`pre_tokens`/`post_tokens` read from `compact_metadata` (all optional). Without this the harness can never synthesize a `session.compacted` fact and the kind must move to the live-only column.
 - [ ] Harness: synthesize per [P09]; print which kinds were synthesized and which are live-only so the reader knows the asymmetry.
 
 **Tests:**
 - [ ] Compose: section renders/caps/elides; empty → `(none)`.
 - [ ] Refs: a sha present only in the facts section validates; present in neither corpus drops.
 - [ ] Bridge integration (scripted pool): a wake's composed input carries facts recorded since the last post; `--no-model` replay of a fixture JSONL shows the section deterministically.
+- [ ] Translator: a fixture JSONL carrying a `system`/`compact_boundary` record yields a `compact_boundary` frame and, through synthesis, a `session.compacted` fact — the pin on the arm above, since every other synthesized kind would pass without it.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast reporter_wake reporter gazette_replay gazette_agent`
