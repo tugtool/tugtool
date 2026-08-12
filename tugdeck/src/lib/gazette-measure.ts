@@ -3,7 +3,7 @@
  *
  * The Gazette's widths are DERIVED FROM ITS TYPE, not chosen as pixel counts.
  * A post is prose, and prose wants a measure: 64 characters by default,
- * fungible down to 56 before the column stops reading as prose. Those two
+ * fungible down to 52 before the column stops reading as prose. Those two
  * numbers are two of the widths the space allocator takes for a rail — its
  * preference and its comfort floor ({@link lib/layout-imposer!RailPolicy}) —
  * so the typography defines the policy directly, with no new mechanism
@@ -28,16 +28,16 @@
  */
 
 /** Must equal `.gazette-post-body`'s `font-size` — pinned by at0365. */
-export const GAZETTE_BODY_FONT_PX = 14;
+export const GAZETTE_BODY_FONT_PX = 13;
 
 /**
  * The advance of "0" in the real rendered body face at
  * {@link GAZETTE_BODY_FONT_PX} — one `ch`, measured in-app and authored here.
  */
-export const GAZETTE_BODY_CH_PX = 8.4;
+export const GAZETTE_BODY_CH_PX = 7.8;
 
 /** The narrowest measure a post still reads as prose at. */
-export const GAZETTE_MIN_MEASURE_CH = 56;
+export const GAZETTE_MIN_MEASURE_CH = 52;
 
 /** The measure a post is written for; `.gazette-post-body` caps its column
  *  at the same number of characters, so a rail widened by hand keeps a
@@ -63,11 +63,12 @@ export const DEFAULT_GAZETTE_WIDTH_PX =
   Math.round(GAZETTE_MEASURE_CH * GAZETTE_BODY_CH_PX) + GAZETTE_ROW_CHROME_PX;
 
 /**
- * The narrowest the rail is COMFORTABLE at: the 56-character measure, plus
+ * The narrowest the rail is COMFORTABLE at: the 52-character measure, plus
  * chrome. A preference about reading quality, not a fact about rendering — the
- * space allocator holds the rail here and gives it up only when doing so
- * removes overlap from the deck's chain, and the user's own drag may go below
- * it down to {@link MIN_GAZETTE_WIDTH_PX}.
+ * space allocator holds the rail here and gives it up only when doing so buys
+ * the chain a better picture than it can have otherwise (occlusion cleared, or
+ * seams brought back to the imposition gap), and the user's own drag may go
+ * below it down to {@link MIN_GAZETTE_WIDTH_PX}.
  */
 export const COMFORT_GAZETTE_WIDTH_PX =
   Math.round(GAZETTE_MIN_MEASURE_CH * GAZETTE_BODY_CH_PX) +
@@ -79,9 +80,9 @@ export const COMFORT_GAZETTE_WIDTH_PX =
  * resize drag clamps to.
  *
  * At the authored {@link GAZETTE_BODY_CH_PX} and {@link GAZETTE_ROW_CHROME_PX}
- * this is a measure of roughly 42 characters: narrow, still readable, and
+ * this is a measure of roughly 46 characters: narrow, still readable, and
  * enough for a byline and a ref chip. It is a judgement, not a derivation —
- * raising it trades the deck's room to relieve overlap for a wider guaranteed
- * measure, and needs no other change.
+ * raising it trades the deck's room to fix a crowded picture for a wider
+ * guaranteed measure, and needs no other change.
  */
 export const MIN_GAZETTE_WIDTH_PX = 400;

@@ -51,7 +51,7 @@
  *     its measure.
  *  7. A crowded deck spends comfort to un-occlude the cards. When the chain
  *     overlaps at the rails' comfort floors but tiles below them, the Gazette
- *     gives up its 56-character measure and the chain stands clear — showing
+ *     gives up its comfortable measure and the chain stands clear — showing
  *     the user's cards outranks a rail's preferred measure. Asserted on real
  *     pane rects: no two chain panes overlap, and the Gazette is narrower than
  *     its comfort width while never under its hard floor.
@@ -610,8 +610,8 @@ describe.skipIf(!SHOULD_RUN)(
           ).toBeCloseTo(MIN_LENS_WIDTH_PX, 0);
           expect(holdingGazette).toBeCloseTo(deficitTotal - MIN_LENS_WIDTH_PX, 0);
           expect(holdingGazette).toBeGreaterThan(drainedLens);
-          // And never under the Gazette's own floor, which is the width its
-          // 56-character measure needs.
+          // And never under the Gazette's own hard floor, the width below which
+          // a post stops painting at all.
           expect(holdingGazette).toBeGreaterThanOrEqual(MIN_GAZETTE_WIDTH_PX);
           for (const seam of await seams(app)) {
             expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
@@ -639,14 +639,25 @@ describe.skipIf(!SHOULD_RUN)(
           const canvas = await canvasWidth(app);
 
           // The shape the whole addendum is about. Size the cards so the chain
-          // tiles at a rail total BELOW what the two comfort floors add up to
-          // (320 for the Lens, which has no comfort band, plus the Gazette's
-          // 512 = 832): at the comfort floors these cards occlude one another,
-          // and 60px lower they stand clear. The deck's duty to show the user's
-          // cards outranks the Gazette's preferred measure, so comfort is spent
-          // — and spent by the greediest rail last, only after the Lens has
-          // given everything it has.
-          const tiling = MIN_LENS_WIDTH_PX + COMFORT_GAZETTE_WIDTH_PX - 60;
+          // tiles at a rail total inside the Gazette's COMFORT BAND — under
+          // what the two comfort floors add up to, but still above what the two
+          // hard floors do. At the comfort floors these cards occlude one
+          // another; a little lower they stand clear. The deck's duty to show
+          // the user's cards outranks the Gazette's comfortable measure, so
+          // comfort is spent — and spent by the greediest rail last, only after
+          // the Lens has given everything it has.
+          //
+          // Aimed at the MIDDLE of that band rather than a fixed number of
+          // pixels below comfort: the band is exactly the distance between the
+          // Gazette's two floors, and retuning its type moves both. A hardcoded
+          // descent asks for a total the rails may no longer be able to reach.
+          const comfortTotal = MIN_LENS_WIDTH_PX + COMFORT_GAZETTE_WIDTH_PX;
+          const comfortBand = COMFORT_GAZETTE_WIDTH_PX - MIN_GAZETTE_WIDTH_PX;
+          expect(
+            comfortBand,
+            "the Gazette needs a comfort band for this case to mean anything",
+          ).toBeGreaterThanOrEqual(16);
+          const tiling = comfortTotal - Math.floor(comfortBand / 2);
           const crowdedPane = twoRailPaneWidth(canvas, tiling);
           expect(crowdedPane).toBeGreaterThan(200);
           await seedTwoRails(app, crowdedPane, "five-up");
@@ -657,8 +668,8 @@ describe.skipIf(!SHOULD_RUN)(
           const lens = await frameWidth(app, "pLens");
 
           // The cards stand clear. This is the assertion the landed Phase 1
-          // solver failed: it held the Gazette at 512 and let the chain occlude
-          // by whatever the arithmetic left over.
+          // solver failed: it pinned the Gazette at its comfort measure and let
+          // the chain occlude by whatever the arithmetic left over.
           for (const seam of await seams(app)) {
             expect(seam, "no two chain panes overlap").toBeGreaterThan(0);
             expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);

@@ -68,11 +68,11 @@
 
 .gazette-post-body {
   margin: 0;
-  /* TUNE HERE — the reading size. `gazette-card-registration.tsx` derives the
-     rail's floor and preferred width from it (56ch and 64ch of this face), and
-     an app-test measures the real render against those constants, so a change
-     here fails loudly rather than leaving a stale width behind. */
-  font-size: 14px;
+  /* TUNE HERE — the reading size. `lib/gazette-measure.ts` derives the rail's
+     comfort floor and preferred width from it (52ch and 64ch of this face),
+     and an app-test measures the real render against those constants, so a
+     change here fails loudly rather than leaving a stale width behind. */
+  font-size: 13px;
   line-height: 1.45;
   /* The measure the widths are derived from. A rail widened by hand past its
      preference keeps a comfortable line rather than stretching it to the
@@ -105,7 +105,7 @@
 .gazette-empty {
   padding: var(--tug-space-sm);
   /* The empty state is read at the same size as a post. */
-  font-size: 14px;
+  font-size: 13px;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
