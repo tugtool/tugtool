@@ -912,10 +912,9 @@ function CardTitleBar({
         />
         {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
           // Same span anchor as the stack badge, for the same reason. The
-          // phrase names the act rather than the glyph: "…" is the one control
-          // here whose contents are card-specific, so what it promises is a
-          // list of things to DO, not a named command.
-          <TugTooltip content="Show what this card can do">
+          // phrase names what the menu HOLDS — the commands for the card the
+          // title bar belongs to — rather than describing the press.
+          <TugTooltip content="Assorted commands">
             <span className="tug-pane-title-bar-tooltip-anchor">
               <TugPopupMenu
                 trigger={

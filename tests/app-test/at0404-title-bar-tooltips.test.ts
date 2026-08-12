@@ -332,8 +332,8 @@ describe.skipIf(!SHOULD_RUN)(
           // --- The `…` menu: a promise of a list. -------------------------
           expect(
             await hoverPhrase(app, MENU_BUTTON),
-            "the overflow names the act, since its rows are card-specific",
-          ).toBe("Show what this card can do");
+            "the overflow names what it holds, not the press",
+          ).toBe("Session commands");
           expect(
             await chipText(app, MENU_BUTTON),
             "no single command stands behind it, so no chip",
