@@ -28,7 +28,10 @@
  * | --tug7-element-global-text-normal-muted-rest      | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-title etc. (color)        |
  * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-row-value etc. (color)    |
  * | --tug7-element-global-border-normal-default-rest  | --tug7-surface-popover-primary-normal-default-rest  | content | .tug-popup-list-rule (border-top)         |
- * | --tug7-element-global-text-normal-{tone}-rest     | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone] (background) |
+ * | --tug7-element-global-text-normal-default-rest    | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone="default"] (background) |
+ * | --tug7-element-global-text-normal-success-rest    | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone="success"] (background) |
+ * | --tug7-element-global-text-normal-caution-rest    | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone="caution"] (background) |
+ * | --tug7-element-global-text-normal-danger-rest     | --tug7-surface-popover-primary-normal-default-rest  | control | .tug-popup-list-tone-dot[data-tone="danger"] (background)  |
  */
 
 /* ============================================================================

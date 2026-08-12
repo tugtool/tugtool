@@ -2646,5 +2646,183 @@ export const ELEMENT_SURFACE_PAIRING_MAP: ElementSurfacePairing[] = [
     parentSurface: "--tug7-surface-global-primary-normal-default-rest",
   },
 
+  // =========================================================================
+  // Pairings recovered when verify-pairings.ts learned to read every
+  // @tug-pairings block in a file (not just the first) and to scan
+  // tugways/internal/. Each was already DECLARED in its component's CSS and
+  // simply never reached the contrast engine; they are grouped by the file
+  // that declares them.
+  // =========================================================================
+  // ---- card-masthead.css ----
+  { element: "--tugx-pane-title-bar-icon-active", surface: "--tugx-pane-title-bar-bg-active", role: "control" },
+
+  // ---- session-card-telemetry-popovers.css ----
+  { element: "--tug7-element-global-text-normal-muted-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "content" },
+  { element: "--tug7-element-global-text-normal-default-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "content" },
+  { element: "--tug7-element-global-border-normal-default-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "content" },
+
+  // ---- sheet-option-list.css ----
+  { element: "--tug7-element-global-border-normal-muted-rest", surface: "--tugx-sheet-bg", role: "informational" },
+
+  // ---- tug-button.css ----
+  { element: "--tug7-element-control-border-filled-agent-hover", surface: "--tug7-surface-control-primary-filled-agent-hover", role: "control" },
+  { element: "--tug7-element-control-border-filled-agent-active", surface: "--tug7-surface-control-primary-filled-agent-active", role: "control" },
+  { element: "--tug7-element-control-text-ghost-agent-rest", surface: "--tug7-surface-control-primary-ghost-agent-rest", role: "control" },
+  { element: "--tug7-element-control-border-ghost-agent-rest", surface: "--tug7-surface-control-primary-ghost-agent-rest", role: "control" },
+  { element: "--tug7-element-control-text-ghost-agent-hover", surface: "--tug7-surface-control-primary-ghost-agent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-ghost-agent-hover", surface: "--tug7-surface-control-primary-ghost-agent-hover", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-text-ghost-agent-active", surface: "--tug7-surface-control-primary-ghost-agent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-control-border-ghost-agent-active", surface: "--tug7-surface-control-primary-ghost-agent-active", role: "control", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+
+  // ---- tug-progress-bar.css ----
+  { element: "--tugx-progress-indicator-fill", surface: "--tug7-surface-progress-primary-normal-default-rest", role: "control" },
+
+  // ---- tug-progress-spinner.css ----
+  { element: "--tugx-progress-indicator-fill", surface: "--tug7-surface-global-primary-normal-default-rest", role: "control" },
+
+  // ---- masthead-frame.css ----
+  { element: "--tugx-pane-title-fg-active", surface: "--tugx-pane-title-bar-bg-active", role: "informational" },
+
+  // ---- session-masthead.css ----
+  { element: "--tug7-element-global-text-normal-muted-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "informational" },
+
+  // ---- tug-accordion.css ----
+  { element: "--tug7-element-field-text-normal-label-hover", surface: "--tug7-surface-field-primary-normal-plain-hover", role: "content" },
+  { element: "--tug7-element-field-text-normal-placeholder-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "content" },
+
+  // ---- tug-alert.css ----
+  { element: "--tugx-alert-border", surface: "--tugx-alert-bg", role: "informational" },
+
+  // ---- tug-banner.css ----
+  { element: "--tugx-banner-strip-fg", surface: "--tugx-banner-strip-bg", role: "content" },
+  { element: "--tugx-banner-strip-border", surface: "--tugx-banner-strip-bg", role: "informational" },
+  { element: "--tugx-banner-detail-fg", surface: "--tugx-banner-detail-bg", role: "content" },
+
+  // ---- tug-box.css ----
+  { element: "--tug7-element-global-divider-normal-separator-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+
+  // ---- tug-bulletin.css ----
+  { element: "--tugx-bulletin-fg", surface: "--tugx-bulletin-bg", role: "content" },
+  { element: "--tugx-bulletin-border", surface: "--tugx-bulletin-bg", role: "informational" },
+
+  // ---- tug-chart-glyph.css ----
+  { element: "--tug7-element-global-text-normal-muted-rest", surface: "--tugx-pane-bg", role: "content" },
+
+  // ---- tug-choice-group.css ----
+  { element: "--tug7-element-segment-text-normal-plain-rest", surface: "--tug7-surface-segment-primary-normal-plain-rest", role: "control" },
+  { element: "--tug7-element-segment-text-normal-plain-hover", surface: "--tug7-surface-segment-primary-normal-plain-rest", role: "control" },
+  { element: "--tug7-element-segment-text-normal-active-rest", surface: "--tugx-segment-on-color", role: "control" },
+  { element: "--tug7-element-segment-text-normal-plain-disabled", surface: "--tug7-surface-segment-primary-normal-plain-rest", role: "informational" },
+  { element: "--tug7-element-segment-border-normal-plain-rest", surface: "--tug7-surface-segment-primary-normal-plain-rest", role: "informational" },
+
+  // ---- tug-completion-menu.css ----
+  { element: "--tugx-completion-fg", surface: "--tugx-completion-bg", role: "content" },
+  { element: "--tugx-completion-border", surface: "--tugx-completion-bg", role: "informational" },
+  { element: "--tugx-completion-item-hover-fg", surface: "--tugx-completion-item-hover-bg", role: "control" },
+
+  // ---- tug-cue.css ----
+  { element: "--tugx-cue-fg", surface: "--tugx-cue-bg", role: "content" },
+  { element: "--tugx-cue-border", surface: "--tugx-cue-bg", role: "informational" },
+  { element: "--tugx-cue-icon-fg", surface: "--tugx-cue-bg", role: "informational" },
+
+  // ---- tug-inline-alert.css ----
+  { element: "--tugx-inline-alert-fg", surface: "--tugx-inline-alert-bg", role: "content" },
+  { element: "--tugx-inline-alert-border", surface: "--tugx-inline-alert-bg", role: "informational" },
+
+  // ---- tug-list-view.css ----
+  { element: "--tugx-list-view-cursor-bar-color", surface: "--tug7-surface-global-primary-normal-default-rest", role: "control" },
+
+  // ---- tug-modal-input-dialog.css ----
+  { element: "--tugx-modal-input-fg", surface: "--tugx-modal-input-bg", role: "content" },
+  { element: "--tugx-modal-input-border", surface: "--tugx-modal-input-bg", role: "informational" },
+  { element: "--tugx-modal-input-border", surface: "--tugx-modal-input-header-bg", role: "informational" },
+  { element: "--tugx-modal-input-row-sel-fg", surface: "--tugx-modal-input-row-sel-bg", role: "control" },
+  { element: "--tugx-modal-input-placeholder", surface: "--tugx-modal-input-bg", role: "content" },
+
+  // ---- tug-option-group.css ----
+  { element: "--tug7-element-segment-text-normal-active-rest", surface: "--tugx-option-on-color", role: "control" },
+
+  // ---- tug-pane-banner.css ----
+  { element: "--tugx-pane-banner-strip-fg", surface: "--tugx-pane-banner-strip-bg", role: "content" },
+  { element: "--tugx-pane-banner-strip-border", surface: "--tugx-pane-banner-strip-bg", role: "informational" },
+  { element: "--tugx-pane-banner-detail-fg", surface: "--tugx-pane-banner-detail-bg", role: "content" },
+
+  // ---- tug-pane.css ----
+  { element: "--tug7-element-card-text-normal-title-active", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "content" },
+  { element: "--tug7-element-card-text-normal-title-inactive", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "content" },
+  { element: "--tug7-element-card-icon-normal-title-active", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "control" },
+  { element: "--tug7-element-card-icon-normal-title-inactive", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "control" },
+  { element: "--tug7-element-card-control-normal-plain-rest", surface: "--tug7-surface-card-primary-normal-titlebar-active", role: "control" },
+  { element: "--tug7-element-card-control-normal-plain-hover", surface: "--tug7-surface-card-control-normal-plain-hover", role: "control", parentSurface: "--tug7-surface-card-primary-normal-titlebar-active" },
+  { element: "--tug7-element-card-control-normal-muted-rest", surface: "--tug7-surface-card-primary-normal-titlebar-inactive", role: "control" },
+  { element: "--tug7-element-card-control-normal-muted-hover", surface: "--tug7-surface-card-control-normal-muted-hover", role: "control", parentSurface: "--tug7-surface-card-primary-normal-titlebar-inactive" },
+
+  // ---- tug-popover.css ----
+  { element: "--tugx-popover-fg", surface: "--tugx-popover-bg", role: "content" },
+  { element: "--tugx-popover-border", surface: "--tugx-popover-bg", role: "informational" },
+
+  // ---- tug-popup-list.css ----
+  { element: "--tug7-element-global-text-normal-success-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "control" },
+  { element: "--tug7-element-global-text-normal-caution-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "control" },
+  { element: "--tug7-element-global-text-normal-danger-rest", surface: "--tug7-surface-popover-primary-normal-default-rest", role: "control" },
+
+  // ---- tug-progress-indicator.css ----
+  { element: "--tugx-progress-indicator-label-color", surface: "--tugx-progress-indicator-surface", role: "content" },
+
+  // ---- tug-prompt-entry.css ----
+  { element: "--tug7-element-field-border-normal-danger-rest", surface: "--tugx-entry-shell-rest", role: "informational" },
+  { element: "--tug7-element-global-text-normal-muted-rest", surface: "--tugx-entry-shell-rest", role: "content" },
+
+  // ---- tug-pulse.css ----
+  { element: "--tug7-element-global-text-normal-default-rest", surface: "--tugx-pane-bg", role: "content" },
+  { element: "--tug7-element-global-text-normal-muted-disabled-rest", surface: "--tugx-pane-bg", role: "content" },
+
+  // ---- tug-quiet-line.css ----
+  { element: "--tug7-element-global-text-normal-muted-rest", surface: "--tug7-surface-global-primary-normal-content-rest", role: "content" },
+  { element: "--tug7-element-global-text-normal-subtle-rest", surface: "--tug7-surface-global-primary-normal-content-rest", role: "informational" },
+  { element: "--tug7-element-global-text-normal-danger-rest", surface: "--tug7-surface-global-primary-normal-content-rest", role: "content" },
+
+  // ---- tug-radio-group.css ----
+  { element: "--tug7-element-radio-dot-normal-plain-rest", surface: "--tugx-radio-on-color", role: "control" },
+  { element: "--tug7-element-radio-border-normal-off-rest", surface: "--tug7-surface-control-primary-ghost-action-rest", role: "control" },
+  { element: "--tug7-element-radio-border-normal-off-hover", surface: "--tug7-surface-control-primary-ghost-action-rest", role: "control" },
+  { element: "--tug7-element-radio-border-normal-off-disabled", surface: "--tug7-surface-control-primary-ghost-action-rest", role: "informational" },
+  { element: "--tug7-element-global-text-normal-default-rest", surface: "--tug7-surface-control-primary-tinted-action-rest", role: "content", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+
+  // ---- tug-sheet.css ----
+  { element: "--tugx-sheet-fg", surface: "--tugx-sheet-bg", role: "content" },
+  { element: "--tugx-sheet-border", surface: "--tugx-sheet-bg", role: "informational" },
+  { element: "--tugx-sheet-header-fg", surface: "--tugx-sheet-bg", role: "content" },
+
+  // ---- tug-slider.css ----
+  { element: "--tug7-surface-slider-primary-normal-track-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tug7-element-slider-fill-normal-range-rest", surface: "--tug7-surface-slider-primary-normal-track-rest", role: "control" },
+  { element: "--tug7-element-toggle-thumb-normal-on-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "control" },
+  { element: "--tug7-element-global-border-normal-default-rest", surface: "--tug7-element-toggle-thumb-normal-on-rest", role: "informational" },
+  { element: "--tug7-element-slider-fill-normal-range-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+
+  // ---- tug-split-pane.css ----
+  { element: "--tug7-surface-split-primary-normal-sash-rest", surface: "--tug7-surface-global-primary-normal-default-rest", role: "informational" },
+  { element: "--tug7-element-split-icon-normal-grip-rest", surface: "--tug7-surface-split-primary-normal-sash-focus", role: "control" },
+
+  // ---- tug-switch.css ----
+  { element: "--tug7-element-toggle-thumb-normal-plain-rest", surface: "--tugx-toggle-on-color", role: "control" },
+
+  // ---- tug-tab-view.css ----
+  { element: "--tug7-element-global-text-normal-default-rest", surface: "--tug7-surface-selection-primary-normal-quiet-rest", role: "content", parentSurface: "--tug7-surface-global-primary-normal-default-rest" },
+  { element: "--tug7-element-global-text-normal-default-rest", surface: "--tug7-surface-tab-primary-normal-plain-hover", role: "content", parentSurface: "--tug7-surface-tab-primary-normal-plain-inactive" },
+
+  // ---- tug-textarea.css ----
+  { element: "--tug7-element-field-text-normal-label-rest", surface: "--tug7-surface-field-primary-normal-plain-rest", role: "informational" },
+
+  // ---- tug-tooltip.css ----
+  { element: "--tugx-tooltip-fg", surface: "--tugx-tooltip-bg", role: "content" },
+  { element: "--tugx-tooltip-border", surface: "--tugx-tooltip-bg", role: "informational" },
+  { element: "--tugx-tooltip-kbd-fg", surface: "--tugx-tooltip-kbd-bg", role: "informational" },
+  { element: "--tugx-tooltip-kbd-border", surface: "--tugx-tooltip-kbd-bg", role: "informational" },
+
+  // ---- tug-value-input.css ----
+  { element: "--tug7-element-global-text-normal-inverse-rest", surface: "--tug7-element-global-fill-normal-accentCool-rest", role: "content" },
+
 ];
 

@@ -42,6 +42,9 @@ const TUGDECK_ROOT = resolve(import.meta.dir, "..");
 const CSS_DIRS = [
   join(TUGDECK_ROOT, "src/components/tugways"),
   join(TUGDECK_ROOT, "src/components/tugways/cards"),
+  // The primitives' own stylesheets declare pairings too — tug-button.css
+  // alone carries the whole control vocabulary.
+  join(TUGDECK_ROOT, "src/components/tugways/internal"),
 ];
 const PAIRING_MAP_PATH = join(
   TUGDECK_ROOT,
@@ -170,38 +173,48 @@ function resolveToken(raw: string): string | null {
 }
 
 /**
- * Parse all @tug-pairings table rows from a CSS file.
+ * Parse all @tug-pairings rows from a CSS file.
  * Returns an array of resolved (element, surface) pairs.
  * Skips decorative pairs and pairs with non-token surfaces (ambient, parent, hardcoded).
  * Skips header rows and separator rows.
+ *
+ * A file may carry MORE THAN ONE @tug-pairings block, and the two authored
+ * forms differ: the brace form writes bare `element | surface | role` lines,
+ * the table form pipes each row. Both are declarations and both are read here.
+ * Scanning only the first block — and only piped rows — silently hid 46 files'
+ * tables from the gate, which is the opposite of what a gate is for.
  */
 function parsePairingsFromFile(filePath: string): CssPairing[] {
   const content = readFileSync(filePath, "utf-8");
   const pairings: CssPairing[] = [];
 
-  // Find the @tug-pairings block
-  const blockStart = content.indexOf("@tug-pairings");
-  if (blockStart === -1) return pairings;
+  // Every block in the file, each read to the end of its own comment.
+  const blocks: string[] = [];
+  for (let at = content.indexOf("@tug-pairings"); at !== -1; ) {
+    const end = content.indexOf("*/", at);
+    if (end === -1) break;
+    blocks.push(content.slice(at, end));
+    at = content.indexOf("@tug-pairings", end);
+  }
+  if (blocks.length === 0) return pairings;
 
-  // Extract lines from blockStart to the closing "*/"
-  const blockEnd = content.indexOf("*/", blockStart);
-  if (blockEnd === -1) return pairings;
-
-  const block = content.slice(blockStart, blockEnd);
-  const lines = block.split("\n");
+  const lines = blocks.join("\n").split("\n");
 
   for (const line of lines) {
     // Strip leading " * " comment prefix
     const stripped = line.replace(/^\s*\*\s?/, "").trim();
 
-    // Only process table data rows (start and end with |)
-    if (!stripped.startsWith("|") || !stripped.endsWith("|")) continue;
+    // A row in either form: piped table row, or a bare brace-form triple.
+    const isTableRow = stripped.startsWith("|") && stripped.endsWith("|");
+    const isBraceRow = stripped.startsWith("--tug") && stripped.includes("|");
+    if (!isTableRow && !isBraceRow) continue;
 
-    // Split by | and extract cells
-    const cells = stripped
-      .split("|")
-      .map((c) => c.trim())
-      .filter((_, i, arr) => i > 0 && i < arr.length - 1); // drop empty first/last
+    // Split by | and extract cells. A table row's outer pipes leave an empty
+    // cell at each end; a brace-form row has no outer pipes and no empty edge
+    // to drop, so trim by emptiness rather than by position.
+    const cells = stripped.split("|").map((c) => c.trim());
+    while (cells.length > 0 && cells[0] === "") cells.shift();
+    while (cells.length > 0 && cells[cells.length - 1] === "") cells.pop();
 
     if (cells.length < 3) continue;
 

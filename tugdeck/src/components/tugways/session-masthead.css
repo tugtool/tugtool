@@ -1,6 +1,6 @@
 /* @tug-pairings {
  * --tugx-pane-title-fg-active | --tugx-pane-title-bar-bg-active | display
- * --tug7-element-global-text-normal-muted-rest | --tugx-pane-title-bar-bg-active | informational
+ * --tug7-element-global-text-normal-muted-rest | --tug7-surface-popover-primary-normal-default-rest | informational
  * } */
 
 /**
@@ -8,7 +8,7 @@
  * | Element                                       | Surface                          | Role          | Context                                                      |
  * |-----------------------------------------------|----------------------------------|---------------|--------------------------------------------------------------|
  * | --tugx-pane-title-fg-active                   | --tugx-pane-title-bar-bg-active  | display       | .session-masthead-title; the description, activity, and tape |
- * | --tug7-element-global-text-normal-muted-rest  | --tugx-pane-title-bar-bg-active  | informational | the widget                                                   |
+ * | --tug7-element-global-text-normal-muted-rest  | --tug7-surface-popover-primary-normal-default-rest | informational | .session-pulse-history-intent, inside the pulse popover      |
  */
 
 /**

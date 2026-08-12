@@ -1,5 +1,5 @@
 /* @tug-pairings {
-  --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest | control
+  --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest | decorative
   --tugx-list-view-cursor-bar-color | --tug7-surface-global-primary-normal-default-rest | control
 } */
 
@@ -9,7 +9,7 @@
  * @tug-pairings
  * | Element                        | Surface                                            | Role    | Context                                                                     |
  * |--------------------------------|----------------------------------------------------|---------|-----------------------------------------------------------------------------|
- * | --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view[data-row-layout="flush"] .tug-list-view-cell (border-bottom)  |
+ * | --tugx-list-view-divider-color | --tug7-surface-global-primary-normal-default-rest  | decorative | .tug-list-view[data-row-layout="flush"] .tug-list-view-cell (border-bottom) — a structural divider, no minimum |
  * | --tugx-list-view-cursor-bar-color | --tug7-surface-global-primary-normal-default-rest  | control | .tug-list-view-cell[data-key-cursor]::before (keyboard-cursor edge bar)      |
  *
  * The `rowLayout="flush"` row divider and the keyboard-cursor edge bar

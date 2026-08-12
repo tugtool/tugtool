@@ -301,10 +301,10 @@ body {
 
   /* Slider — Track */
   --tug7-surface-slider-primary-normal-track-rest: --tug-color(cyan, l: 840, c: 40);
-  --tug7-element-slider-fill-normal-range-rest: --tug-color(seafoam, l: 710, c: 360);
+  --tug7-element-slider-fill-normal-range-rest: --tug-color(seafoam, l: 590, c: 360);
 
   /* Split — Sash */
-  --tug7-surface-split-primary-normal-sash-rest: --tug-color(cyan, l: 870, c: 40);
+  --tug7-surface-split-primary-normal-sash-rest: --tug-color(cyan, l: 625, c: 40);
   --tug7-surface-split-primary-normal-sash-focus: --tug-color(cyan, l: 820, c: 40);
   --tug7-surface-split-primary-normal-sash-hover: --tug-color(cyan, l: 730, c: 40);
   --tug7-surface-split-primary-normal-sash-active: --tug-color(cyan, l: 610, c: 40);

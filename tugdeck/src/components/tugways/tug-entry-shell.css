@@ -295,7 +295,7 @@ html[data-app-active="false"]
 }
 /* Reads the same two ring knobs the engine path reads, so a chord default
    (the composer's Z5: `returnKeyAction` ships as `newline`, so plain Return
-   inserts a line and SHIFT+Return submits) paints dashed here for the same
+   inserts a line and SHIFT+Return submits) paints dotted here for the same
    reason and from the same tokens — see the chord block in
    `internal/tug-button.css` ([#chord-ring]). Unset on a plain wearer, where
    the fallbacks give exactly the ring this rule always painted. */

@@ -470,7 +470,7 @@
    itself a green. Scoped to the action role; other roles keep their tone. */
 .tug-progress-indicator[data-role="action"]
   .tug-progress-pulsing-dot[data-state="running"] {
-  --tugx-progress-indicator-fill: --tug-color(cobalt, l: 700, c: 320);
+  --tugx-progress-indicator-fill: --tug-color(cobalt, l: 635, c: 320);
 }
 
 .tug-progress-pulsing-dot-disabled {
