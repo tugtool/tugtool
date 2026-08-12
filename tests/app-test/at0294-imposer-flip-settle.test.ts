@@ -514,20 +514,20 @@ describe.skipIf(!SHOULD_RUN)(
           );
           {
             // 420 → 675 is over the smear cap ([D135]:
-            // `MAX_FLIP_SCALE_DISTORTION`), so each content frame carries
-            // exactly two effects: a translate-only transform tween, which
-            // stays compositor-clean, and a real `width` tween — its own
-            // effect, never merged, because one non-transform property in the
-            // transform effect's keyframes would put the whole effect on the
-            // main thread.
-            // Slot 0 anchors the band's start, so p1's left never moves under
-            // a deck width change and its whole crossing IS the width tween;
-            // p2's left shifts with the width, so it carries the translate
-            // tween beside it.
+            // `MAX_FLIP_SCALE_DISTORTION`), so the width crosses as real
+            // geometry — and each content frame carries exactly ONE effect,
+            // holding every term it is crossing. A frame with a real size term
+            // has already forfeited acceleration (its subtree lays out on every
+            // frame either way), so splitting the move into a second effect
+            // would buy nothing and cost the two terms their shared clock —
+            // which is the only thing pinning an edge that must not move.
+            // Slot 0 anchors the band's start, so p1's left never moves under a
+            // deck width change and its whole crossing IS the width; p2's left
+            // shifts with the width, so its one effect carries both terms.
             const census = await frameAnimations(app);
             const effectsByPane: Record<string, string[]> = {
               p1: ["width"],
-              p2: ["transform", "width"],
+              p2: ["transform,width"],
             };
             for (const [paneId, effects] of Object.entries(effectsByPane)) {
               const perEffect = census

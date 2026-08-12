@@ -5,8 +5,7 @@ import {
   SPRING_KEYFRAME_SAMPLES,
   flipDelta,
   scaleDistortion,
-  springKeyframes,
-  springSizeKeyframes,
+  springSettleKeyframes,
 } from "@/lib/pane-flip";
 import { dampedSpring } from "@/lib/unit-functions";
 
@@ -109,8 +108,8 @@ describe("scaleDistortion", () => {
   });
 });
 
-describe("springKeyframes", () => {
-  const FRAMES = springKeyframes(-300, -160);
+describe("springSettleKeyframes", () => {
+  const FRAMES = springSettleKeyframes({ dx: -300, dy: -160 });
 
   test("starts at the full inverse delta and ends at no transform", () => {
     expect(translation(FRAMES[0])).toEqual({ x: -300, y: -160 });
@@ -161,22 +160,36 @@ describe("springKeyframes", () => {
   });
 
   test("honors an explicit sample count, floored at two intervals", () => {
-    expect(springKeyframes(10, 0, 1, 4)).toHaveLength(5);
-    expect(springKeyframes(10, 0, 1, 1)).toHaveLength(3);
+    expect(springSettleKeyframes({ dx: 10, dy: 0 }, 4)).toHaveLength(5);
+    expect(springSettleKeyframes({ dx: 10, dy: 0 }, 1)).toHaveLength(3);
   });
 
   test("a frame that only moves is tweened by the transform it always was", () => {
-    // The everyday arrangement gestures take no scale term, so their
-    // keyframes are byte-identical to what the deck has always animated.
-    for (const frame of springKeyframes(-300, -160)) {
+    // The everyday arrangement gestures take no scale and no size term, so
+    // their keyframes are byte-identical to what the deck has always animated
+    // — and, carrying nothing but transform, stay accelerable.
+    for (const frame of springSettleKeyframes({ dx: -300, dy: -160 })) {
       expect(String(frame.transform)).toMatch(
         /^translate\(-?[\d.]+px, -?[\d.]+px\)$/,
       );
     }
   });
 
+  test("a frame that neither moves nor scales carries no transform at all", () => {
+    // A rail member growing in place: its top-left corner is where it always
+    // was, so there is nothing to invert and an identity transform would be a
+    // term claiming motion that is not happening.
+    for (const frame of springSettleKeyframes({
+      dx: 0,
+      dy: 0,
+      height: [300, 640],
+    })) {
+      expect(Object.keys(frame).sort()).toEqual(["height", "offset"]);
+    }
+  });
+
   describe("with a width change", () => {
-    const SCALED = springKeyframes(-40, 0, 675 / 800);
+    const SCALED = springSettleKeyframes({ dx: -40, dy: 0, sx: 675 / 800 });
 
     test("starts at the old width's scale and ends at none", () => {
       expect(scaleX(SCALED[0])).toBeCloseTo(675 / 800, 5);
@@ -205,21 +218,15 @@ describe("springKeyframes", () => {
   });
 });
 
-describe("springSizeKeyframes", () => {
-  const GROWN = springSizeKeyframes("height", 300, 640);
+describe("springSettleKeyframes, with a real size term", () => {
+  const GROWN = springSettleKeyframes({ dx: 0, dy: 0, height: [300, 640] });
 
   test("starts at the old size and ends exactly at the new one", () => {
     expect(GROWN[0]).toEqual({ height: "300px", offset: 0 });
     expect(GROWN[GROWN.length - 1]).toEqual({ height: "640px", offset: 1 });
   });
 
-  test("carries only the named property and its offset", () => {
-    for (const frame of GROWN) {
-      expect(Object.keys(frame).sort()).toEqual(["height", "offset"]);
-    }
-  });
-
-  test("walks the size on the same spring the transform tween rides", () => {
+  test("walks the size on the same spring the move rides", () => {
     const spring = dampedSpring();
     for (let i = 1; i < SPRING_KEYFRAME_SAMPLES; i += 1) {
       const progress = spring(i / SPRING_KEYFRAME_SAMPLES);
@@ -229,13 +236,60 @@ describe("springSizeKeyframes", () => {
   });
 
   test("animates width by the same construction", () => {
-    const frames = springSizeKeyframes("width", 800, 1230, 4);
+    const frames = springSettleKeyframes(
+      { dx: 0, dy: 0, width: [800, 1230] },
+      4,
+    );
     expect(frames).toHaveLength(5);
     expect(frames[0]).toEqual({ width: "800px", offset: 0 });
     expect(frames[frames.length - 1]).toEqual({ width: "1230px", offset: 1 });
   });
 
   test("honors an explicit sample count, floored at two intervals", () => {
-    expect(springSizeKeyframes("height", 0, 100, 1)).toHaveLength(3);
+    expect(
+      springSettleKeyframes({ dx: 0, dy: 0, height: [0, 100] }, 1),
+    ).toHaveLength(3);
+  });
+
+  /**
+   * The reason move and size share one keyframe list.
+   *
+   * A rail member growing into the whole run from the BOTTOM tile ends up
+   * translated by exactly the height it gains: its top edge travels the whole
+   * way and its bottom edge must not move by a pixel. Nothing enforces that
+   * except the two terms being sampled at the same offsets off the same spring
+   * — which is a property of the keyframe list, and is therefore checkable
+   * here rather than only in the eye.
+   *
+   * (The two terms living in separate effects is what let this drift in the
+   * running app: the transform ran on the compositor, the height on the main
+   * thread, and the "pinned" edge slid by however far they came apart.)
+   */
+  test("a bottom-anchored grow pins the bottom edge at every keyframe", () => {
+    const TOP = 620; // the tile's top, in the run
+    const HEIGHT = 300; // the tile's height
+    const RUN_TOP = 5; // where the whole run starts
+    const dy = TOP - RUN_TOP; // the inverse the FLIP starts at
+    const grown = HEIGHT + dy; // the run's full height — same bottom edge
+    for (const frame of springSettleKeyframes({ dx: 0, dy, height: [HEIGHT, grown] })) {
+      const { y } = translation(frame);
+      const height = Number(String(frame.height).replace("px", ""));
+      expect(RUN_TOP + y + height).toBeCloseTo(TOP + HEIGHT, 3);
+    }
+  });
+
+  test("a top-anchored shrink pins the top edge at every keyframe", () => {
+    // The mirror case: the frontmost member is the TOP tile and the rail is
+    // being split, so it keeps its top and gives up its bottom.
+    for (const frame of springSettleKeyframes({
+      dx: 0,
+      dy: 0,
+      height: [1220, 607],
+    })) {
+      expect(frame.transform).toBeUndefined();
+      expect(Number(String(frame.height).replace("px", ""))).toBeLessThanOrEqual(
+        1220,
+      );
+    }
   });
 });

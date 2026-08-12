@@ -76,8 +76,7 @@ import {
   MAX_FLIP_SCALE_DISTORTION,
   flipDelta,
   scaleDistortion,
-  springKeyframes,
-  springSizeKeyframes,
+  springSettleKeyframes,
 } from "@/lib/pane-flip";
 import { dispatchCommand } from "@/command-dispatch";
 import {
@@ -1632,9 +1631,9 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const settleFirstRectsRef = useRef<Map<string, DOMRect>>(new Map());
   /**
    * The tweens running on each frame, by pane id — DOM zone, never React
-   * state. One frame can carry several in one settle: the transform tween,
-   * a real-geometry size tween per axis over the cap ([D135]), and a fade
-   * when a rail mode flip reveals or retires the frame's tile.
+   * state. At most two per settle: the one effect carrying every geometry term
+   * the frame crosses ([D135] — move and size share a clock or a pinned edge
+   * is not pinned), and a fade when a rail mode flip reveals or retires it.
    */
   const settleTweensRef = useRef<
     Map<string, { el: HTMLElement; anims: TugAnimation[] }>
@@ -1888,10 +1887,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const fade = fadePlan.get(paneId);
       const anims: TugAnimation[] = [];
       const restores: Array<() => void> = [];
-      // Shared by every tween in this settle. Each rides its own effect
-      // under its own key — a size or fade property merged into the
-      // transform tween's keyframes would revoke that effect's compositor
-      // acceleration whole.
+      // Shared by both of the effects a frame can carry: the one that holds
+      // every geometry term it is crossing, and — on a mode flip — a fade.
+      // Those two stay apart because a faded frame never moves, so there is no
+      // sum between them to keep honest; opacity is accelerable on its own, and
+      // merging it would cost that for nothing.
       const settleOpts = {
         // Raw ms: TugAnimator scales by getTugTiming() itself.
         duration,
@@ -1949,56 +1949,65 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       } else {
         const { dx, dy, sx } = flipDelta(firstRect, lastRect);
         // Whether the width change is small enough to ride the transform
-        // tween as a raster smear, or crosses by real geometry ([D135]).
+        // as a raster smear, or crosses by real geometry ([D135]).
         // Height never smears: the gestures that change it halve or double
-        // it, which no cap admits, so any height delta is a real tween.
-        // The half-pixel floor keeps sub-pixel measurement jitter from
-        // arming a layout-driving animation nobody can see.
-        const widthSmears =
-          sx !== 1 && scaleDistortion(sx) <= MAX_FLIP_SCALE_DISTORTION;
-        const widthTweens = sx !== 1 && !widthSmears;
+        // it, which no cap admits, so any height delta is a real term.
+        //
+        // Both axes are floored at half a pixel, so a measurement that came
+        // back a hair different is not a size change. Without the floor a rail
+        // mode flip — which does not touch width at all — can still read
+        // `sx !== 1` off sub-pixel rounding and pick up a `scaleX` term for a
+        // deformation of about one ten-millionth: invisible, but it is a frame
+        // being told to do something it does not have to.
+        const widthChanges = Math.abs(firstRect.width - lastRect.width) >= 0.5;
         const heightTweens = Math.abs(firstRect.height - lastRect.height) >= 0.5;
+        const widthSmears =
+          widthChanges && scaleDistortion(sx) <= MAX_FLIP_SCALE_DISTORTION;
+        const widthTweens = widthChanges && !widthSmears;
         // A frame that did not move and did not change size gets no animation
         // at all.
-        if (dx === 0 && dy === 0 && sx === 1 && !heightTweens) continue;
+        if (dx === 0 && dy === 0 && !widthChanges && !heightTweens) continue;
+        if (widthTweens) restores.push(inlineRestorer(frame, "width"));
+        if (heightTweens) restores.push(inlineRestorer(frame, "height"));
+        // The scale anchors the frame's top-left corner, which is the corner
+        // `dx` and `dy` were measured from. Set for every settle that carries a
+        // transform, scaling or not, so the property has one value and one
+        // owner rather than depending on which kind of gesture wrote it last;
+        // `clearFlip` takes it off with the transform.
         if (dx !== 0 || dy !== 0 || widthSmears) {
-          // The scale anchors the frame's top-left corner, which is the
-          // corner `dx` and `dy` were measured from. Set for every transform
-          // tween, scaling or not, so the property has one value and one
-          // owner rather than depending on which kind of gesture wrote it
-          // last; `clearFlip` takes it off with the transform.
           frame.style.transformOrigin = "0 0";
-          anims.push(
-            animate(frame, springKeyframes(dx, dy, widthSmears ? sx : 1), {
+        }
+        // ONE effect, carrying every term this frame needs. An edge that has to
+        // stay put is pinned by the sum of the move and the size — a member
+        // growing into a rail's whole run from the bottom tile translates up by
+        // exactly the height it gains — and a sum is only trustworthy while its
+        // terms share a clock. Two effects would put the transform on the
+        // compositor and the size on the main thread, and the pinned edge would
+        // slide by whatever they drifted apart ([D135]).
+        anims.push(
+          animate(
+            frame,
+            springSettleKeyframes({
+              dx,
+              dy,
+              sx: widthSmears ? sx : 1,
+              width: widthTweens
+                ? [firstRect.width, lastRect.width]
+                : undefined,
+              height: heightTweens
+                ? [firstRect.height, lastRect.height]
+                : undefined,
+            }),
+            {
               ...settleOpts,
               // A keyword easing, because the curve rides in the keyframe
               // offsets — `lib/pane-flip.ts` says why a sampled `linear()`
               // cannot be used here.
               easing: "linear",
               key: "imposer-flip",
-            }),
-          );
-        }
-        if (widthTweens) {
-          restores.push(inlineRestorer(frame, "width"));
-          anims.push(
-            animate(
-              frame,
-              springSizeKeyframes("width", firstRect.width, lastRect.width),
-              { ...settleOpts, easing: "linear", key: "imposer-size-w" },
-            ),
-          );
-        }
-        if (heightTweens) {
-          restores.push(inlineRestorer(frame, "height"));
-          anims.push(
-            animate(
-              frame,
-              springSizeKeyframes("height", firstRect.height, lastRect.height),
-              { ...settleOpts, easing: "linear", key: "imposer-size-h" },
-            ),
-          );
-        }
+            },
+          ),
+        );
       }
       if (anims.length === 0) continue;
       settleTweensRef.current.set(paneId, { el: frame, anims });

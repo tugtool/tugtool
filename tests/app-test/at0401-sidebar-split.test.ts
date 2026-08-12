@@ -183,6 +183,9 @@ function railZIndexes(app: App): Promise<Record<string, number>> {
  */
 interface SettleRole {
   properties: string[];
+  /** How many effects the frame carries. Every geometry term rides ONE, so a
+   *  moving frame counts 1 and a fading one counts 2 (its hold, and the fade). */
+  effects: number;
   /** `null` when no transform tween is running on the frame. */
   transformHeld: boolean | null;
 }
@@ -194,7 +197,8 @@ async function settleRoles(app: App): Promise<Record<string, SettleRole>> {
       if (!t || !t.classList || !t.classList.contains("tug-pane")) return out;
       if (t.getAttribute("data-lens") !== "right") return out;
       var id = t.getAttribute("data-pane-id") || "";
-      var entry = out[id] || { properties: [], transformHeld: null };
+      var entry = out[id] || { properties: [], effects: 0, transformHeld: null };
+      entry.effects += 1;
       var kfs = a.effect.getKeyframes() || [];
       kfs.forEach(function (kf) {
         Object.keys(kf).forEach(function (k) {
@@ -711,6 +715,18 @@ describe.skipIf(!SHOULD_RUN)(
                   roles[lowerPane]?.transformHeld,
                   "and it really travels: the bottom tile has a top edge to carry up the rail",
                 ).toBe(false);
+                // The whole crossing in ONE effect. Its bottom edge is pinned
+                // by the move and the height cancelling — the frame translates
+                // up by exactly the height it gains — and a cancellation is
+                // only exact while both terms advance on the same clock. Two
+                // effects put the transform on the compositor and the height on
+                // the main thread, and the edge slides by whatever they drift.
+                // (`lib/__tests__/pane-flip.test.ts` checks the cancellation
+                // itself; what can be seen from here is that it is one effect.)
+                expect(
+                  roles[lowerPane]?.effects,
+                  "move and height ride one clock, or the pinned edge is not pinned",
+                ).toBe(1);
                 expect(
                   roles[upperPane]?.properties,
                   "the retiring member only fades",
