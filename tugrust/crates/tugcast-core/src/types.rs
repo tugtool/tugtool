@@ -721,6 +721,14 @@ pub struct GazettePost {
     pub body: String,
     #[serde(default)]
     pub refs: Vec<GazetteRef>,
+    /// How long the agent turn that wrote this post took, in milliseconds.
+    ///
+    /// The post's own cost, the way a session turn's elapsed is that turn's:
+    /// clocked around the agent run by whoever ran it, not derived afterwards
+    /// from two timestamps. `None` on a post no agent wrote (a user's
+    /// question) and on rows written before the column existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<i64>,
     /// Correlation id, on an Operator post answering a question.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,

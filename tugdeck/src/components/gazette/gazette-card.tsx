@@ -276,21 +276,21 @@ function GazettePostBody({
  * one, and the text+icon COPY.
  *
  * A post is `complete` by construction — it exists because it was written, so
- * there is no interrupted or errored post to report. Elapsed is the answer's
- * own: the time from the question to the answer, which only an Operator reply
- * to a question has ({@link answerElapsedMs}); every other row runs
- * `[OK] • [COPY]`, exactly as the Session transcript's user half does.
+ * there is no interrupted or errored post to report. Elapsed is the post's
+ * own `elapsedMs`, clocked by tugcast around the agent turn that wrote it, the
+ * way a session turn's time is that turn's. A user's question was typed rather
+ * than run, so it carries none and its row reads `[OK] • [COPY]` — exactly as
+ * the Session transcript's user half does.
  */
 function GazettePostZ1B({
   post,
-  elapsedMs,
   children,
 }: {
   post: GazettePostEntry;
-  elapsedMs: number | null;
   children?: React.ReactNode;
 }): React.ReactElement {
   const badge = endStateBadgeFor("complete");
+  const elapsedMs = post.elapsedMs;
   return (
     <div className="gazette-post-z1b" data-slot="gazette-post-z1b">
       <TugBadge
@@ -310,48 +310,35 @@ function GazettePostZ1B({
           <TugLabel size="xs">{formatDurationMs(elapsedMs)}</TugLabel>
         </>
       ) : null}
-      <TugLabel size="xs" emphasis="calm" aria-hidden>
+      <TugLabel
+        size="xs"
+        emphasis="calm"
+        aria-hidden
+        className="gazette-post-z1b-separator"
+      >
         •
       </TugLabel>
-      <BlockCopyButton
-        size="xs"
-        getText={() => post.body}
-        aria-label="Copy post"
-        data-slot="gazette-post-copy"
-      />
+      {/* The wrapper is the Session Z1B's: it cancels the button's intrinsic
+          padding so COPY sits at the row's own gap from the `•` rather than
+          a gap plus a button's worth of air. */}
+      <span className="gazette-post-z1b-copy">
+        <BlockCopyButton
+          size="xs"
+          getText={() => post.body}
+          aria-label="Copy post"
+          data-slot="gazette-post-copy"
+        />
+      </span>
       {children}
     </div>
   );
 }
 
-/**
- * How long an answer took: the interval between the question that asked for it
- * and the answer itself, both of which carry the same `requestId`. `null` for
- * a post that answers nothing — a Reporter's notice, or the question itself.
- *
- * Read off the channel rather than clocked in the card, so a reload shows the
- * same number the live arrival did.
- */
-function answerElapsedMs(
-  post: GazettePostEntry,
-  posts: readonly GazettePostEntry[],
-): number | null {
-  if (post.author !== "operator" || post.requestId === null) return null;
-  const question = posts.find(
-    (p) => p.author === "user" && p.requestId === post.requestId,
-  );
-  if (question === undefined) return null;
-  const elapsed = post.atMs - question.atMs;
-  return elapsed >= 0 ? elapsed : null;
-}
-
 function GazettePostRow({
   post,
-  elapsedMs,
   formats,
 }: {
   post: GazettePostEntry;
-  elapsedMs: number | null;
   formats: ReturnType<typeof useTimeFormats>;
 }): React.ReactElement {
   const at = new Date(post.atMs);
@@ -399,7 +386,7 @@ function GazettePostRow({
           }
           body={<GazettePostBody post={post} bodyRef={bodyRef} />}
           controls={
-            <GazettePostZ1B post={post} elapsedMs={elapsedMs}>
+            <GazettePostZ1B post={post}>
               {chipRefs.length > 0 ? (
                 <div className="gazette-post-refs">
                   {chipRefs.map((r) => (
@@ -508,12 +495,7 @@ export function GazetteContent({
           </div>
         ) : (
           posts.map((post) => (
-            <GazettePostRow
-              key={post.key}
-              post={post}
-              elapsedMs={answerElapsedMs(post, posts)}
-              formats={formats}
-            />
+            <GazettePostRow key={post.key} post={post} formats={formats} />
           ))
         )}
         {pendingRequestId !== null ? (
@@ -694,7 +676,10 @@ function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement 
       toolbarTrailing={
         <TugPushButton
           subtype="icon"
-          size="lg"
+          // `sm` — the Find bar's size, not the Session composer's `lg`. Both
+          // are one line of entry in a narrow rail, and a 36px button beside a
+          // single-line field reads as a button rail with a field above it.
+          size="sm"
           emphasis="filled"
           role="action"
           className="gazette-composer-send"

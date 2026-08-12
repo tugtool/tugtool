@@ -28,6 +28,16 @@
   flex-direction: column;
   gap: var(--tugx-gazette-post-gap);
   padding: var(--tug-space-md);
+  /* START SIDE ZEROED — this is what plugs the sticky header's leak. A
+     `position: sticky` header resolves `top: 0` against the scrollport, which
+     is the scroller's PADDING box: with padding here, the pinned attribution
+     rests that far down and the strip above it is a window onto the body
+     scrolling behind. The Session card's list view zeroes its own
+     `--tugx-list-view-padding-block-start` for the same reason. The top
+     breathing room comes back below as the first row's margin, where it
+     scrolls away with the content instead of standing open. */
+  padding-block-start: 0;
+  scroll-padding-block-start: 0;
   /* The em anchor. The Session transcript's attribution is sized in `em`
      against a nominal 14px root (`.session-card-transcript`), so matching it
      means adopting that root as well as the ratios below — the primitive's
@@ -52,6 +62,13 @@
 .gazette-transcript .tug-transcript-entry {
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
   --tugx-transcript-icon-column-width: 2.5em;
+}
+
+/* The breathing room the scroller's zeroed start-side padding gave up. On the
+   first row, so it scrolls away with the content rather than standing open
+   above a pinned header. */
+.gazette-transcript > :first-child {
+  margin-block-start: var(--tug-space-md);
 }
 
 .gazette-transcript .tug-transcript-entry__identifier {
@@ -113,6 +130,42 @@
   margin-top: 2px;
 }
 
+/* COPY's spacing, the Session Z1B's exactly (`session-card-z1b.css`): the
+   button's intrinsic `padding-inline` is cancelled so its content box starts
+   flush at its box edge, plus a snug that takes up the slack its transparent
+   border and the icon's internal whitespace leave. Without these two, COPY
+   reads a full button's worth of air away from the `•` — the gap the row
+   otherwise has nowhere. The vertical nudge lands COPY's text-middle on the
+   badge's, which is 2px taller. */
+.gazette-post-z1b-copy {
+  display: inline-flex;
+  --tugx-gazette-z1b-copy-baseline-nudge: 0.5px;
+  --tugx-gazette-z1b-copy-pad-cancel: -0.75rem;
+  --tugx-gazette-z1b-copy-snug: -9px;
+  transform: translateY(var(--tugx-gazette-z1b-copy-baseline-nudge));
+  margin-left: calc(
+    var(--tugx-gazette-z1b-copy-pad-cancel) + var(--tugx-gazette-z1b-copy-snug)
+  );
+}
+
+/* Fade the trailing `•` while COPY shows chrome. At rest the ghost button
+   paints nothing and the two can sit close; on hover / focus / confirm its
+   border and background appear and would otherwise smash into the `•`. Every
+   button state is already in the DOM, so an ancestor `:has()` reads it with
+   no JS ([L06]) — and it is an ancestor-scoped read of a DESCENDANT'S
+   PSEUDO-CLASS, which WebKit does invalidate, unlike the attribute case.
+   Opacity, not `display`, so the `•` keeps its box and COPY never reflows. */
+.gazette-post-z1b:has(
+    .gazette-post-z1b-copy .tug-button:is(
+      :hover,
+      :focus-visible,
+      [data-tug-confirming="true"]
+    )
+  )
+  .gazette-post-z1b-separator {
+  opacity: 0;
+}
+
 /* The atom row itself — atoms sit closer to each other than to the copy
    button, the same way the Z1B's end-state segments group. */
 .gazette-post-refs {
@@ -158,6 +211,15 @@
   --tug-font-size-editor: calc(
     var(--tugx-gazette-editor-base) - var(--tugx-gazette-composer-font-delta)
   );
+}
+
+/* The send button's glyph. `sm` pins its icons at 14px, which loses an arrow
+   inside its own box — 16px is the largest mark that still reads as a button,
+   and it is the size the Find bar's controls settled on (`tug-find-bar.css`),
+   so the two entry surfaces carry one glyph size. */
+.gazette-composer .tug-button-icon-sm svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Empty-input gate [L06][L22]: the substrate's update listener mirrors
