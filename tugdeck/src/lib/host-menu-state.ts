@@ -683,12 +683,14 @@ export function projectDeckState(state: DeckState): MenuStateDeckProjection {
       ? null
       : { preset: focusedStack.widthPreset ?? null };
 
-  // Bullseye rides the same two gates, and for the same reason: both answer
-  // "is there a content pane the selection is in". `on` reads the DERIVED
+  // Bullseye rides ONE of the width row's gates — "is there a pane the
+  // selection is in" — and not the rail gate. A rail has no width preset to
+  // set, which is why `cardWidth` refuses it; it does have a posture, and it
+  // keeps its place on the edge while it holds one. `on` reads the DERIVED
   // id, so the menu's check mark can never disagree with the geometry — one
   // rule answers both.
   const bullseye =
-    state.activePaneId === undefined || focusedStack === null || focusedIsRail
+    state.activePaneId === undefined || focusedStack === null
       ? null
       : { on: bullseyePaneIdOf(state) === focusedStack.id };
 

@@ -958,6 +958,29 @@ export const COMMANDS: readonly CommandEntry[] = [
     bindings: [chord({ key: "KeyG", meta: true, shift: true, label: "g" })],
     mirrored: true,
   },
+  {
+    // ⌘E out of the plain-⌘ free pool, which reserved the slot for exactly
+    // this ("claimable with honest use: Find-adjacent", chord-tiers.md): the
+    // slot's convention IS Use Selection for Find, and R1 offers no composed
+    // alternative — a ⇧/⌥ twist of ⌘F would have to read as a variant of
+    // opening the find bar, which this is not.
+    //
+    // No predicate, like its siblings: the chain walk asks the focused
+    // surface, and a surface that registered the handler is one that can
+    // search for a selection. It deliberately does NOT gate on there BEING a
+    // selection — a gate is computed when the menuState is pushed and a drag
+    // pushes nothing, so a selection-granular answer would go stale exactly
+    // when it mattered and AppKit would eat ⌘E at the menu bar. An empty
+    // selection is a no-op at the responder instead.
+    id: TUG_ACTIONS.FIND_SELECTION,
+    title: "Use Selection for Find",
+    routing: "first-responder",
+    menuItemId: "edit.useSelectionForFind",
+    bindings: [
+      chord({ key: "KeyE", meta: true, label: "e" }, { preventDefault: true }),
+    ],
+    mirrored: true,
+  },
 
   // ---- Session ----
   {
@@ -1341,6 +1364,14 @@ export const COMMANDS: readonly CommandEntry[] = [
     // Its door is the pane title bar's width popup.
     id: TUG_ACTIONS.SET_CARD_WIDTH,
     title: "Set Card Width",
+    routing: "registry",
+    internal: true,
+  },
+  {
+    // Its doors are the pane title bar's target button and `toggle-bullseye`,
+    // which resolves "the pane I am in" and hands off here.
+    id: TUG_ACTIONS.SET_BULLSEYE,
+    title: "Set Bullseye",
     routing: "registry",
     internal: true,
   },

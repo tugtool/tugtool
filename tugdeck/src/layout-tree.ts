@@ -424,8 +424,9 @@ export function clampPanesToDeck(state: DeckState): DeckState {
  *   6. at most one pane hosts the Lens card, and it carries no `slot`.
  *   7. no pane's `position.y` is above the deck's top edge — a title bar
  *      the user cannot reach is a trap, not a layout ({@link DECK_TOP_Y}).
- *   8. when `state.bullseyePaneId` is set, it references a real pane, and
- *      that pane hosts no sidebar card — a rail cannot stand in bullseye.
+ *   8. when `state.bullseyePaneId` is set, it references a real pane. A
+ *      sidebar pane is allowed: a rail bullseyes like any other pane, and
+ *      its place on the edge is reserved while it does ([D131]).
  *      Deliberately NOT asserted: that the pane still holds the first
  *      responder. The raw id is allowed to go stale when focus moves; the
  *      accessor derives it away, and asserting it here would throw on the
@@ -546,11 +547,6 @@ export function validateDeckState(state: DeckState): void {
     if (bullseyePane === undefined) {
       throw new DeckStateInvariantError(
         `bullseyePaneId "${state.bullseyePaneId}" does not reference a real pane`,
-      );
-    }
-    if (bullseyePane.cardIds.some((cid) => sidebarComponentByCardId.has(cid))) {
-      throw new DeckStateInvariantError(
-        `bullseyePaneId "${state.bullseyePaneId}" names a sidebar pane; a rail cannot stand in bullseye`,
       );
     }
   }

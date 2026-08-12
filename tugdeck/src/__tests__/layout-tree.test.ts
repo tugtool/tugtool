@@ -1239,7 +1239,11 @@ describe("validateDeckState", () => {
     );
   });
 
-  test("rejects a bullseyePaneId naming a sidebar pane (invariant 8)", () => {
+  test("accepts a bullseyePaneId naming a sidebar pane (invariant 8)", () => {
+    // A rail bullseyes like any other pane. Nothing about its record changes
+    // while it does — it keeps the side and the width the band is inset by —
+    // so the state that says "the Lens is in bullseye" is a legal one, and
+    // the rail returns to the place that stayed reserved for it.
     const state: DeckState = {
       cards: [makeCard("lens-card", "lens")],
       panes: [makeStack("s-lens", ["lens-card"], "lens-card")],
@@ -1248,9 +1252,7 @@ describe("validateDeckState", () => {
       imposition: { sidebars: { lens: { side: "right" } } },
       hasFocus: true,
     };
-    expect(() => validateDeckState(state)).toThrow(
-      /names a sidebar pane; a rail cannot stand in bullseye/,
-    );
+    expect(() => validateDeckState(state)).not.toThrow();
   });
 
   test("accepts a stale-but-real bullseyePaneId whose pane no longer holds focus", () => {

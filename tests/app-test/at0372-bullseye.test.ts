@@ -37,10 +37,14 @@
  *  4. **An imposed pane returns to its slot.** Bullseye takes precedence
  *     over the imposition while it holds and hands the pane back to it on
  *     exit, which is the branch-ordering claim in `tug-pane.tsx`.
- *  5. **A rail is inert, and the menu says so.** The Lens cannot be
- *     bullseyed: the chord moves nothing, and `window.bullseye` reports
- *     disabled — the gate and the geometry answering the same way, from the
- *     same derived value.
+ *  5. **A rail bullseyes, and its place stays reserved.** The Lens takes the
+ *     posture like any other pane, and the assertion that separates that from
+ *     a HIDE is the band's centre: read before entry, it is the same number
+ *     the bullseyed Lens is centred on and the same number the band still
+ *     reports while it holds. A rail treated as gone would hand its inset
+ *     back, the chain would re-impose wider, and both would move. The menu
+ *     gate is read in the same breath, enabled and then checked, so the gate
+ *     and the geometry answer from the same derived value.
  *  6. **The other content panes leave, and the rails do not.** A card that
  *     is merely dimmed is still a card you can read, so every other content
  *     pane slides off the horizontal edge it was nearest — asserted as no
@@ -90,6 +94,9 @@ const LAYOUT_KEY = "layout";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
+
+/** The title bar's bullseye control — the pane-addressed door. */
+const TARGET_BUTTON = '[data-testid="tug-pane-title-bar-bullseye-button"]';
 
 /** Comfy, as `lib/layout-imposer.ts` fixes it — bullseye's one width. */
 const COMFY = 800;
@@ -482,7 +489,7 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "a rail cannot be bullseyed, and an imposed pane returns to its slot",
+      "a rail bullseyes with its place reserved, and an imposed pane returns to its slot",
       async () => {
         const app = await launchTugApp({ testName: "at0372-bullseye-imposed" });
         try {
@@ -493,10 +500,36 @@ describe.skipIf(!SHOULD_RUN)(
           );
           await wait(AFTER_LAND_MS);
 
-          // --- A rail is inert. ---------------------------------------------
+          // --- A rail takes the posture, and its edge stays reserved. -------
+          // The claim that separates this from a hide: while the Lens stands
+          // in the middle of the band, the band is still inset by the rail's
+          // width on the right. A rail that had been treated as gone would
+          // hand that inset back, the chain would re-impose wider, and the
+          // Lens would land somewhere else on exit. So the band centre is
+          // read BEFORE entry and asserted to be the same one the bullseyed
+          // Lens is centred on — one number that can only agree if the place
+          // was held open.
           const lensRect = await paneRect(app, "pLens");
+          const lensRecord = await paneRecord(app, "pLens");
+          const bandBefore = await bandCentreX(app);
           await focusCard(app, "L");
-          expect((await menuItem(app, "window.bullseye")).enabled).toBe(false);
+          expect((await menuItem(app, "window.bullseye")).enabled).toBe(true);
+
+          await bullseyeChord(app);
+          expect(await isBullseyed(app, "pLens")).toBe(true);
+          const lensIn = await paneRect(app, "pLens");
+          expect(lensIn.width).toBe(COMFY);
+          expect(
+            Math.abs(Math.round(lensIn.left + lensIn.width / 2) - bandBefore),
+          ).toBeLessThanOrEqual(1);
+          expect(await bandCentreX(app)).toBe(bandBefore);
+          // And nothing about the rail's record moved — the side and the
+          // width the band is inset by are exactly what they were.
+          expect(await paneRecord(app, "pLens")).toEqual(lensRecord);
+          expect((await menuItem(app, "window.bullseye")).checked).toBe(true);
+
+          // Out again, to the pixel: the rail drops back onto the edge it
+          // never stopped holding.
           await bullseyeChord(app);
           expect(await paneRect(app, "pLens")).toEqual(lensRect);
           expect(await isBullseyed(app, "pLens")).toBe(false);
@@ -524,6 +557,93 @@ describe.skipIf(!SHOULD_RUN)(
           await bullseyeChord(app);
           expect(await paneRect(app, "p1")).toEqual(slotRect);
           expect(await isBullseyed(app, "p1")).toBe(false);
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the title bar's target button is a door of its own, on a card and on a rail",
+      async () => {
+        // The button is PANE-ADDRESSED where the chord is selection-relative:
+        // it names the pane it stands on. Pressing one on a background pane
+        // therefore has to do two things in one gesture — activate that pane
+        // and put it in the posture — and the assertion that it landed on the
+        // pane whose button was pressed is what a chord-shaped implementation
+        // (dispatch `toggle-bullseye` and hope) would fail here.
+        const app = await launchTugApp({ testName: "at0372-bullseye-button" });
+        try {
+          // The IMPOSED seed, not the free one, for a pointer test: the free
+          // deck's two panes are seeded 20px apart and overlap by most of
+          // their width, so the background pane's control cluster sits under
+          // the raised pane and the click lands on the wrong frame. Slots 0
+          // and 2 put a whole slot of air between them.
+          await app.seedDeckState({ state: imposedDeck(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll('.tug-pane[data-pane-id]').length === 3`,
+            { timeoutMs: 8_000 },
+          );
+          await wait(AFTER_LAND_MS);
+
+          const button = (paneId: string): string =>
+            `.tug-pane[data-pane-id="${paneId}"] ${TARGET_BUTTON}`;
+
+          // Every pane has one, rails included.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(TARGET_BUTTON)}).length`,
+            ),
+          ).toBe(3);
+
+          // --- On a BACKGROUND content pane. --------------------------------
+          const restRect = await paneRect(app, "p2");
+          const restRecord = await paneRecord(app, "p2");
+          await app.nativeClickAtElement(button("p2"));
+          await wait(AFTER_LAND_MS);
+          // The press did both halves in one gesture: it raised the pane it
+          // stands on, and put THAT pane in the posture.
+          expect(
+            await app.evalJS<string | null>(
+              `(function(){var e=document.querySelector('.tug-pane[data-focused="true"]');return e?e.getAttribute('data-pane-id'):null;})()`,
+            ),
+          ).toBe("p2");
+          expect(await isBullseyed(app, "p2")).toBe(true);
+          expect(await isBullseyed(app, "p1")).toBe(false);
+          expect((await paneRect(app, "p2")).width).toBe(COMFY);
+          // Still a presentation, whichever door opened it.
+          expect(await paneRecord(app, "p2")).toEqual(restRecord);
+          // The button says so, which is what makes a second press read as
+          // an exit rather than a no-op.
+          expect(
+            await app.getElementAttribute(button("p2"), "aria-pressed"),
+          ).toBe("true");
+
+          // --- And the same button takes it back out. -----------------------
+          await app.nativeClickAtElement(button("p2"));
+          await wait(AFTER_LAND_MS);
+          expect(await isBullseyed(app, "p2")).toBe(false);
+          expect(await paneRect(app, "p2")).toEqual(restRect);
+
+          // --- On the RAIL, where the button is the only pointer door. ------
+          const lensRect = await paneRect(app, "pLens");
+          await app.nativeClickAtElement(button("pLens"));
+          await wait(AFTER_LAND_MS);
+          expect(await isBullseyed(app, "pLens")).toBe(true);
+          expect((await paneRect(app, "pLens")).width).toBe(COMFY);
+          // A bullseyed rail exposes no edge: its one handle drags the RAIL's
+          // width from the deck edge, and the frame is not standing there.
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll('.tug-pane[data-pane-id="pLens"] .tug-pane-resize').length`,
+            ),
+          ).toBe(0);
+
+          await app.nativeClickAtElement(button("pLens"));
+          await wait(AFTER_LAND_MS);
+          expect(await isBullseyed(app, "pLens")).toBe(false);
+          expect(await paneRect(app, "pLens")).toEqual(lensRect);
         } finally {
           await app.close();
         }

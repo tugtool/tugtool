@@ -325,10 +325,11 @@ export const TUG_ACTIONS = {
   //                 when it is already there. Used by ⌃⌘B (Window ▸
   //                 Bullseye), handled by the deck canvas, which owns the
   //                 layout tree and is the one responder that can name
-  //                 which pane the selection is in. One action, not two:
-  //                 unlike SET_PANE_WIDTH / SET_CARD_WIDTH, bullseye's two
-  //                 doors (the chord and the menu item) share one idea of
-  //                 "which pane" — the pane I am in. A rail is refused.
+  //                 which pane the selection is in. Selection-relative: it
+  //                 resolves the pane and hands off to the pane-addressed
+  //                 `SET_BULLSEYE`, which the title bar's target button
+  //                 dispatches directly. A RAIL takes the posture too — its
+  //                 place on the edge is reserved while it holds it.
   // REVEAL_STACK:   payload — none. Open the focused pane's slot-stack
   //                 picker — the title-bar menu listing every pane sharing
   //                 its slot. Used by ⌘R (Window ▸ Reveal Stack), answered
@@ -659,6 +660,16 @@ export const TUG_ACTIONS = {
   //                         current selection. Dispatched by ⌘G.
   // FIND_PREVIOUS:          payload — none. Symmetric with FIND_NEXT.
   //                         Dispatched by ⇧⌘G.
+  // FIND_SELECTION:         payload — none. Make the surface's current
+  //                         selection the find query and run it: show the
+  //                         find UI if it is hidden, seed the query field
+  //                         with the selected text, and land on the first
+  //                         match. Handled by the surface that owns the
+  //                         selection model (the Session card reads the DOM
+  //                         selection inside the card; the Text card editor
+  //                         reads its CM6 range), which is also what makes
+  //                         it inapplicable with nothing selected.
+  //                         Dispatched by ⌘E.
   // SAVE:                   payload — none. Flush the first responder's
   //                         pending edits to disk now. Under the live
   //                         autosave model there is no dirty state —
@@ -804,6 +815,14 @@ export const TUG_ACTIONS = {
   //                 which one it is at. Its door is the pane title bar's width
   //                 popup.
   SET_CARD_WIDTH:         "set-card-width",
+  // SET_BULLSEYE:   payload — `{ paneId }`. Put ONE named pane in bullseye, or
+  //                 take it out when it is already there. The pane-addressed
+  //                 sibling of `TOGGLE_BULLSEYE`, in the shape SET_PANE_WIDTH →
+  //                 SET_CARD_WIDTH already has: the title bar's target button
+  //                 names the pane it stands on, and the chord means "the pane
+  //                 I am in" and dispatches here once it has resolved which
+  //                 that is. Both doors therefore land on one store call.
+  SET_BULLSEYE:           "set-bullseye",
   // SET_CONTENT_WIDTH: payload — `{ preset }`. Set the deck's default content
   //                    width and put every content pane on it, overwriting the
   //                    per-pane widths the title-bar popup had set. Its door is
@@ -832,6 +851,7 @@ export const TUG_ACTIONS = {
   FIND:                   "find",
   FIND_NEXT:              "find-next",
   FIND_PREVIOUS:          "find-previous",
+  FIND_SELECTION:         "find-selection",
   SAVE:                   "save",
   SAVE_AS:                "save-as",
   SAVE_A_COPY:            "save-a-copy",

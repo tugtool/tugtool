@@ -232,7 +232,7 @@ describe("projectDeckState", () => {
     expect(projectDeckState({ ...rail, activePaneId: "p1" }).cardWidth).toBeNull();
   });
 
-  test("bullseye rides the same two gates as cardWidth, and reads the derived id", () => {
+  test("bullseye gates on selection alone — a rail included — and reads the derived id", () => {
     const base = deck([card("a")], [pane("p1", ["a"])]);
 
     // Selected content pane, not bullseyed.
@@ -252,12 +252,25 @@ describe("projectDeckState", () => {
     // Deselected: no pane to put in bullseye.
     expect(projectDeckState(base).bullseye).toBeNull();
 
-    // A rail cannot stand in bullseye, so the command does not apply.
+    // A rail DOES stand in bullseye — this is where the two facts part
+    // company. `cardWidth` refuses it (a rail has no preset to set); the
+    // posture applies, because a rail's place on the edge is reserved while
+    // it holds one.
     const rail = deck(
       [card("s", { componentId: "menu-state-rail" })],
       [pane("p1", ["s"])],
     );
-    expect(projectDeckState({ ...rail, activePaneId: "p1" }).bullseye).toBeNull();
+    expect(projectDeckState({ ...rail, activePaneId: "p1" }).cardWidth).toBeNull();
+    expect(projectDeckState({ ...rail, activePaneId: "p1" }).bullseye).toEqual({
+      on: false,
+    });
+    expect(
+      projectDeckState({
+        ...rail,
+        activePaneId: "p1",
+        bullseyePaneId: "p1",
+      }).bullseye,
+    ).toEqual({ on: true });
   });
 
   test("bullseye reads off, not on, for a stale id whose pane lost focus", () => {

@@ -642,11 +642,16 @@ export class DeckManager implements IDeckManagerStore {
   /**
    * Put `paneId` in bullseye, or take it out when it is already there.
    *
-   * Refuses a pane that does not exist and a pane hosting a sidebar card: a
-   * rail is the imposition's fixed end, not a reading surface. The "already
-   * there" comparison is against the DERIVED value, so a raw id left behind
-   * by a focus move reads as "not bullseyed" and the press turns bullseye on
-   * rather than off.
+   * Refuses a pane that does not exist, and nothing else. A RAIL takes the
+   * posture like any other pane: bullseye writes no geometry, so the rail's
+   * width and side stay in the store, the band keeps the inset it was already
+   * taking, and the rail drops back onto its edge on exit. Reserving the place
+   * rather than reclaiming it is what keeps a bullseyed rail from reading as a
+   * hidden one ([D131]).
+   *
+   * The "already there" comparison is against the DERIVED value, so a raw id
+   * left behind by a focus move reads as "not bullseyed" and the press turns
+   * bullseye on rather than off.
    *
    * Notifies but does not `scheduleSave()`: bullseye is a presentation, and
    * nothing persistable changed.
@@ -654,10 +659,6 @@ export class DeckManager implements IDeckManagerStore {
   public toggleBullseye = (paneId: string): void => {
     const pane = this.deckState.panes.find((p) => p.id === paneId);
     if (!pane) return;
-    const hostsSidebar = this.deckState.cards.some(
-      (c) => pane.cardIds.includes(c.id) && isSidebarCard(c.componentId),
-    );
-    if (hostsSidebar) return;
     const next = this.getBullseyePaneId() === paneId ? undefined : paneId;
     this.deckState = { ...this.deckState, bullseyePaneId: next };
     this.notify();

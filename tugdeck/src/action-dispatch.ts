@@ -566,6 +566,21 @@ export function initActionDispatch(
     deckManager.setPaneWidth(paneId, preset);
   });
 
+  // set-bullseye: put one named pane in bullseye, or take it out when it is
+  // already there. Dispatched by the pane title bar's target button, which
+  // addresses the pane by id — the button you pressed is the pane you meant —
+  // and by `toggle-bullseye` once the canvas has resolved which pane the
+  // selection is in. Rails included: a rail's place on the edge is reserved
+  // while it holds the posture, so it returns to it on exit.
+  registerAction(TUG_ACTIONS.SET_BULLSEYE, (payload) => {
+    const paneId = payload.paneId;
+    if (typeof paneId !== "string") {
+      console.warn("set-bullseye: missing or invalid paneId", payload);
+      return;
+    }
+    deckManager.toggleBullseye(paneId);
+  });
+
   // set-content-width: choose the width content cards read at across the whole
   // deck. Dispatched by the Lens Layouts section's width picker. It lands on
   // every content pane at once, which is what makes it the deck's width rather

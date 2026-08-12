@@ -632,6 +632,27 @@ body {
   margin-left: var(--tug-space-xs);
 }
 
+/*
+ * The box a title-bar control's tooltip hangs from.
+ *
+ * A tooltip needs an element it can measure and attach listeners to, and the
+ * controls it names cannot BE that element: three of them are popup-menu
+ * triggers already claimed by Radix's `asChild` slot, and the close box runs
+ * its own pointer-capture protocol that a second pointer primitive breaks. So
+ * the bubble anchors this span and the control sits inside it.
+ *
+ * `display: contents` would be the usual way to keep a wrapper out of the
+ * layout, and it is exactly wrong here — a contents box has no rect, which is
+ * the one thing a tooltip anchor must have. `inline-flex` gives it a rect that
+ * is the control's own: as a flex item of the cluster it shrink-wraps the
+ * single button inside it, so the row measures the same with the span as
+ * without.
+ */
+.tug-pane-title-bar-tooltip-anchor {
+  display: inline-flex;
+  align-items: center;
+}
+
 /* Pane title bar control buttons — focused pane (plain role) */
 /* @tug-renders-on: --tug7-surface-card-primary-normal-titlebar-active */
 .tug-pane[data-focused="true"] .tug-pane-title-bar-controls .tug-button {
@@ -747,6 +768,30 @@ body {
 .tug-pane:not([data-focused="true"])
   .tug-pane-title-bar-controls
   .tug-button.tug-pane-title-bar-stack-badge[data-state="open"] {
+  color: var(--tugx-pane-control-off-fg-active);
+  background-color: var(--tugx-pane-control-off-bg-active);
+  border-color: var(--tugx-pane-control-off-border-active);
+}
+
+/*
+ * The target button, lit while its pane holds the bullseye — the same pressed
+ * pose the stack badge wears while its menu is down, and for the same reason:
+ * a control that put the deck in a posture keeps saying so, so the second
+ * press reads as the exit it is. `data-on` is stamped by the title bar from
+ * the derived posture, never from a local toggle, so the button and the
+ * geometry cannot disagree.
+ */
+.tug-pane[data-focused="true"]
+  .tug-pane-title-bar-controls
+  .tug-button.tug-pane-title-bar-bullseye-button[data-on] {
+  color: var(--tugx-pane-control-on-fg-active);
+  background-color: var(--tugx-pane-control-on-bg-active);
+  border-color: var(--tugx-pane-control-on-border-active);
+}
+
+.tug-pane:not([data-focused="true"])
+  .tug-pane-title-bar-controls
+  .tug-button.tug-pane-title-bar-bullseye-button[data-on] {
   color: var(--tugx-pane-control-off-fg-active);
   background-color: var(--tugx-pane-control-off-bg-active);
   border-color: var(--tugx-pane-control-off-border-active);

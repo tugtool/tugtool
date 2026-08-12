@@ -38,6 +38,7 @@ import {
   MoveHorizontal,
   Rows2,
   Rows3,
+  Target,
   X,
   icons,
 } from "lucide-react";
@@ -73,6 +74,8 @@ import {
   type ContentWidth,
 } from "@/lib/layout-imposer";
 import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import {
   cardTitleStore,
@@ -248,6 +251,21 @@ export interface CardTitleBarProps {
   /** Raise the pane a picker row names. Wired in `DeckCanvas`. */
   onRevealPane?: (entry: SlotStackEntry) => void;
   /**
+   * Whether this pane currently stands in bullseye. Drives the target
+   * button's on-state and its label, and nothing else — the posture itself is
+   * deck state, read by `TugPane` from the prop `DeckCanvas` derives.
+   * @selector [data-on]
+   */
+  bullseye?: boolean;
+  /**
+   * Put this pane in bullseye, or take it out. Wired by `TugPane` to the
+   * pane-addressed `set-bullseye` command, never to a store method ([L30]) —
+   * the same path {@link onSetWidth} takes. Present on every pane, rails
+   * included: a rail's place on the edge is reserved while it holds the
+   * posture, so the button is not a hide.
+   */
+  onToggleBullseye?: () => void;
+  /**
    * Set only when {@link slotStack} is a RAIL rather than a numbered slot: how
    * that rail is arranged. Present → the stack badge is also the gateway to
    * arranging the rail, which is the one place a shared rail already announces
@@ -321,6 +339,8 @@ function CardTitleBar({
   activeCardId,
   slotStack = EMPTY_SLOT_STACK,
   onRevealPane,
+  bullseye = false,
+  onToggleBullseye,
   railArrangement,
   onArrangeRail,
   onSetWidth,
@@ -735,74 +755,144 @@ function CardTitleBar({
             and its menu carries the verbs that change it. A slot stack has no
             such verbs and takes none of this. */}
         {slotStack.length > 1 && (
-          <TugPopupMenu
-            trigger={
-              <TugButton
-                subtype="icon-text"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={
-                  railSplit ? (
-                    slotStack.length > 2 ? (
-                      <Rows3 />
-                    ) : (
-                      <Rows2 />
-                    )
-                  ) : (
-                    <Layers />
-                  )
-                }
-                className="tug-pane-title-bar-stack-badge"
-                aria-label={`${railSplit ? "Split" : "Stack"} of ${slotStack.length} cards`}
-                data-testid="tug-pane-title-bar-stack-badge"
-              >
-                {slotStack.length}
-              </TugButton>
+          // The tooltip anchors a SPAN around the menu rather than the trigger
+          // button itself. Both `TugTooltip` and `TugPopupMenu` hand their
+          // child to a Radix `asChild` slot, and neither wrapper forwards the
+          // props or the ref that slot injects — so they cannot be nested
+          // directly. A span is a DOM element both can address: the menu takes
+          // the button inside it, the tooltip takes the span. Hover and the
+          // inner button's focus both reach the span (React's `onFocus` is
+          // `focusin`, which bubbles), and the pointerdown that opens the menu
+          // is the same one Radix closes the bubble on.
+          //
+          // The tooltip names what the MENU does, not what the badge shows —
+          // the glyph and the count already say "two cards, split". What is
+          // not visible is that the badge is a door, so that is the sentence.
+          <TugTooltip
+            content={
+              onArrangeRail !== undefined && railArrangement !== undefined
+                ? railSplit
+                  ? "Show a card, or stack this rail"
+                  : "Show a card, or split this rail"
+                : "Show another card in this stack"
             }
-            align="end"
-            open={stackMenuOpen}
-            onOpenChange={setStackMenuOpen}
-            items={[
-              ...slotStack.map((entry) => {
-                // Each row is a miniature of the title bar it stands for: the
-                // pane's own icon, then the pane's own title, in that order and
-                // from the same `CardMeta.icon` the real title bar draws.
-                const RowIcon =
-                  entry.icon !== undefined && entry.icon in icons
-                    ? icons[entry.icon as keyof typeof icons]
-                    : null;
-                return {
-                  id: entry.paneId,
-                  label: entry.title,
-                  ...(RowIcon === null
-                    ? {}
-                    : { icon: React.createElement(RowIcon) }),
-                  // Set on every row, not just the checked one, so the check
-                  // column aligns across the menu.
-                  selected: entry.selected,
-                };
-              }),
-              // The rail's own verbs, below its members. Their ids are
-              // prefixed so they cannot collide with a paneId.
-              ...(onArrangeRail === undefined || railArrangement === undefined
-                ? []
-                : railSplit
-                  ? [
-                      { id: RAIL_VERB_STACK, label: "Stack" },
-                      { id: RAIL_VERB_EQUALIZE, label: "Equalize Heights" },
-                    ]
-                  : [{ id: RAIL_VERB_SPLIT, label: "Split Vertically" }]),
-            ]}
-            onSelect={(id) => {
-              if (id === RAIL_VERB_SPLIT) return onArrangeRail?.("split");
-              if (id === RAIL_VERB_STACK) return onArrangeRail?.("stack");
-              if (id === RAIL_VERB_EQUALIZE) return onArrangeRail?.("equalize");
-              const entry = slotStack.find((e) => e.paneId === id);
-              if (entry) onRevealPane?.(entry);
-            }}
-            data-testid="tug-pane-title-bar-stack-menu"
-          />
+          >
+            <span className="tug-pane-title-bar-tooltip-anchor">
+              <TugPopupMenu
+                trigger={
+                  <TugButton
+                    subtype="icon-text"
+                    emphasis="ghost"
+                    role="action"
+                    size="sm"
+                    icon={
+                      railSplit ? (
+                        slotStack.length > 2 ? (
+                          <Rows3 />
+                        ) : (
+                          <Rows2 />
+                        )
+                      ) : (
+                        <Layers />
+                      )
+                    }
+                    className="tug-pane-title-bar-stack-badge"
+                    aria-label={`${railSplit ? "Split" : "Stack"} of ${slotStack.length} cards`}
+                    data-testid="tug-pane-title-bar-stack-badge"
+                  >
+                    {slotStack.length}
+                  </TugButton>
+                }
+                align="end"
+                open={stackMenuOpen}
+                onOpenChange={setStackMenuOpen}
+                items={[
+                  ...slotStack.map((entry) => {
+                    // Each row is a miniature of the title bar it stands for: the
+                    // pane's own icon, then the pane's own title, in that order and
+                    // from the same `CardMeta.icon` the real title bar draws.
+                    const RowIcon =
+                      entry.icon !== undefined && entry.icon in icons
+                        ? icons[entry.icon as keyof typeof icons]
+                        : null;
+                    return {
+                      id: entry.paneId,
+                      label: entry.title,
+                      ...(RowIcon === null
+                        ? {}
+                        : { icon: React.createElement(RowIcon) }),
+                      // Set on every row, not just the checked one, so the check
+                      // column aligns across the menu.
+                      selected: entry.selected,
+                    };
+                  }),
+                  // The rail's own verbs, below its members. Their ids are
+                  // prefixed so they cannot collide with a paneId.
+                  ...(onArrangeRail === undefined || railArrangement === undefined
+                    ? []
+                    : railSplit
+                      ? [
+                          { id: RAIL_VERB_STACK, label: "Stack" },
+                          { id: RAIL_VERB_EQUALIZE, label: "Equalize Heights" },
+                        ]
+                      : [{ id: RAIL_VERB_SPLIT, label: "Split Vertically" }]),
+                ]}
+                onSelect={(id) => {
+                  if (id === RAIL_VERB_SPLIT) return onArrangeRail?.("split");
+                  if (id === RAIL_VERB_STACK) return onArrangeRail?.("stack");
+                  if (id === RAIL_VERB_EQUALIZE) return onArrangeRail?.("equalize");
+                  const entry = slotStack.find((e) => e.paneId === id);
+                  if (entry) onRevealPane?.(entry);
+                }}
+                data-testid="tug-pane-title-bar-stack-menu"
+              />
+            </span>
+          </TugTooltip>
+        )}
+        {/* SECOND, immediately behind the stack badge, on every pane — rails
+            included. The badge says where this pane stands; the target says
+            "put it in front of me for a while", which is the other half of the
+            same sentence, so the two read as one pair and the target holds a
+            fixed offset whether or not the badge is there.
+
+            A rail gets it for the same reason it gets the badge: bullseye
+            writes no geometry, so a bullseyed rail keeps its width and its
+            side in the store and the band keeps the inset it was already
+            taking. The rail is standing somewhere else for a moment, not
+            hidden, and it drops back onto its edge on exit.
+
+            The button reports its own state rather than only acting: `data-on`
+            while the pane holds the posture, which is what makes a second
+            press read as an exit instead of a no-op. */}
+        {onToggleBullseye !== undefined && (
+          // `TugActionTooltip`, not a plain bubble: ⌃⌘B does exactly what this
+          // button does, and the chip is read from the keymap registry so a
+          // rebind reaches the tooltip rather than leaving an authored chord
+          // behind to go stale. The phrase turns with the posture for the same
+          // reason the `aria-label` does — a control that acts one way and
+          // reads the other is the resting lie the label already avoids.
+          <TugActionTooltip
+            action={TUG_ACTIONS.TOGGLE_BULLSEYE}
+            content={
+              bullseye
+                ? "Take this card out of bullseye"
+                : "Center this card in bullseye"
+            }
+          >
+            <TugButton
+              subtype="icon"
+              emphasis="ghost"
+              role="action"
+              size="sm"
+              icon={<Target />}
+              className="tug-pane-title-bar-bullseye-button"
+              {...(bullseye ? { "data-on": "" } : {})}
+              aria-pressed={bullseye}
+              aria-label={bullseye ? "Leave bullseye" : "Bullseye"}
+              data-testid="tug-pane-title-bar-bullseye-button"
+              onClick={onToggleBullseye}
+            />
+          </TugActionTooltip>
         )}
         {/* The masthead's own chrome affordance — the Session card's telemetry
             widget — mounts HERE, portaled in by the masthead that owns it. It
@@ -821,24 +911,32 @@ function CardTitleBar({
           data-slot="tug-pane-title-bar-accessory"
         />
         {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
-          <TugPopupMenu
-            trigger={
-              <TugButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<MoreHorizontal />}
-                aria-label="Card menu"
-                data-testid="tug-pane-title-bar-menu-button"
+          // Same span anchor as the stack badge, for the same reason. The
+          // phrase names the act rather than the glyph: "…" is the one control
+          // here whose contents are card-specific, so what it promises is a
+          // list of things to DO, not a named command.
+          <TugTooltip content="Show what this card can do">
+            <span className="tug-pane-title-bar-tooltip-anchor">
+              <TugPopupMenu
+                trigger={
+                  <TugButton
+                    subtype="icon"
+                    emphasis="ghost"
+                    role="action"
+                    size="sm"
+                    icon={<MoreHorizontal />}
+                    aria-label="Card menu"
+                    data-testid="tug-pane-title-bar-menu-button"
+                  />
+                }
+                align="end"
+                open={titleBarMenuOpen}
+                onOpenChange={setTitleBarMenuOpen}
+                items={titleBarMenuRows}
+                onSelect={setPendingCommandId}
               />
-            }
-            align="end"
-            open={titleBarMenuOpen}
-            onOpenChange={setTitleBarMenuOpen}
-            items={titleBarMenuRows}
-            onSelect={setPendingCommandId}
-          />
+            </span>
+          </TugTooltip>
         )}
         {/* Card width. A dedicated, persistent trigger rather than a row in
             the `…` overflow above: width is reached often and carries state,
@@ -857,29 +955,47 @@ function CardTitleBar({
             cannot learn. It sits immediately before the close box, which is
             where it lands on every other pane. */}
         {onSetWidth !== undefined && (
-          <TugPopupMenu
-            trigger={
-              <TugButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<MoveHorizontal />}
-                aria-label="Card width"
-                data-testid="tug-pane-title-bar-width-button"
-              />
+          // A plain bubble, not a `TugActionTooltip`: the width row is
+          // ⌃⌘1/2/3, one chord per preset, and this trigger is none of them —
+          // naming the current preset's chord would advertise the keystroke
+          // that changes nothing. The menu's rows are where those chords
+          // belong. The phrase carries the current width instead, which is the
+          // fact the closed control cannot show; at a custom width `widthPreset`
+          // is null and the phrase says nothing rather than claiming the
+          // nearest preset, the same rule the menu's check column follows.
+          <TugTooltip
+            content={
+              widthPreset === null || widthPreset === undefined
+                ? "Set this card's width"
+                : `Set this card's width — now ${CONTENT_WIDTH_LABELS[widthPreset]}`
             }
-            align="end"
-            items={CONTENT_WIDTH_PRESETS.map((preset) => ({
-              id: preset,
-              label: CONTENT_WIDTH_LABELS[preset],
-              // No check at a custom width: `widthPreset` is null then, and
-              // claiming the nearest preset would be a resting lie.
-              selected: widthPreset === preset,
-            }))}
-            onSelect={(id) => onSetWidth(id as ContentWidth)}
-            data-testid="tug-pane-title-bar-width-menu"
-          />
+          >
+            <span className="tug-pane-title-bar-tooltip-anchor">
+              <TugPopupMenu
+                trigger={
+                  <TugButton
+                    subtype="icon"
+                    emphasis="ghost"
+                    role="action"
+                    size="sm"
+                    icon={<MoveHorizontal />}
+                    aria-label="Card width"
+                    data-testid="tug-pane-title-bar-width-button"
+                  />
+                }
+                align="end"
+                items={CONTENT_WIDTH_PRESETS.map((preset) => ({
+                  id: preset,
+                  label: CONTENT_WIDTH_LABELS[preset],
+                  // No check at a custom width: `widthPreset` is null then, and
+                  // claiming the nearest preset would be a resting lie.
+                  selected: widthPreset === preset,
+                }))}
+                onSelect={(id) => onSetWidth(id as ContentWidth)}
+                data-testid="tug-pane-title-bar-width-menu"
+              />
+            </span>
+          </TugTooltip>
         )}
 
         {closable && (
@@ -900,31 +1016,47 @@ function CardTitleBar({
           // Escape / Cmd-. cancel (it claims first responder on focus so the
           // keyboard cancel keys land on it, not the card behind it).
           <>
-            {/* Deliberately NOT wrapped in a `TugActionTooltip`, though ⌘W is
-                exactly the sort of chord one would name. This X does not run
-                the ordinary click protocol: it captures the pointer on
+            {/* The tooltip anchors the SPAN, never the button — the one
+                composition this control cannot take. The X does not run the
+                ordinary click protocol: it captures the pointer on
                 `pointerdown` (preventing the default), decides on `pointerup`
                 by hit-testing its own rect, and is itself the anchor the
-                confirm popover hangs from. Wrapping it in a second
-                pointer-handling primitive made Option-click stop closing the
-                pane — reproducibly, and with the bubble's open delay pushed
-                past the test, so it is the trigger's handler composition and
-                not the bubble. at0040 is what catches it. */}
-            <TugButton
-              ref={setCloseAnchorEl}
-              subtype="icon"
-              emphasis="ghost"
-              role="action"
-              size="sm"
-              icon={<X />}
-              onPointerDown={handleClosePointerDown}
-              onPointerUp={handleClosePointerUp}
-              onClick={handleCloseClick}
-              aria-label={
-                isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
-              }
-              data-testid="tug-pane-close-button"
-            />
+                confirm popover hangs from. Making it a Radix trigger directly
+                puts a second pointer-handling primitive into its own handler
+                chain, and Option-click stopped closing the pane —
+                reproducibly, and with the bubble's open delay pushed past the
+                test, so it was the composition and not the bubble. Around the
+                span, Radix's listeners sit on an element the button's
+                handlers never consult, and the button keeps its own props
+                untouched. at0040 is what holds this. */}
+            {/* The chord named is the one that does what THIS press does, so
+                it turns with the pane: on a single-card pane the X closes the
+                card and ⌘W is its keyboard twin, while on a multi-tab pane it
+                takes the whole stack and the twin is ⌥⌘W (Close All Tabs).
+                `CLOSE_PANE` is neither — it is the internal target action the
+                X dispatches, and it holds no binding to advertise. */}
+            <TugActionTooltip
+              action={isMultiTab ? TUG_ACTIONS.CLOSE_ALL : TUG_ACTIONS.CLOSE}
+              content={isMultiTab ? `Close all ${cardCount} tabs` : "Close this card"}
+            >
+              <span className="tug-pane-title-bar-tooltip-anchor">
+                <TugButton
+                  ref={setCloseAnchorEl}
+                  subtype="icon"
+                  emphasis="ghost"
+                  role="action"
+                  size="sm"
+                  icon={<X />}
+                  onPointerDown={handleClosePointerDown}
+                  onPointerUp={handleClosePointerUp}
+                  onClick={handleCloseClick}
+                  aria-label={
+                    isMultiTab ? `Close pane (${cardCount} tabs)` : "Close card"
+                  }
+                  data-testid="tug-pane-close-button"
+                />
+              </span>
+            </TugActionTooltip>
             <TugConfirmPopover
               open={closeOpen}
               anchorEl={closeAnchorEl}
@@ -3182,6 +3314,15 @@ export function TugPane({
     [id],
   );
 
+  // The target button's act, on the same path the width control takes: the
+  // pane-addressed command, naming this pane rather than "the pane I am in"
+  // ([L30]). The press lands after the title bar's own activation, so by the
+  // time the command runs this pane is the selection and the derived accessor
+  // can read the posture back.
+  const handleToggleBullseye = useCallback(() => {
+    dispatchCommand(TUG_ACTIONS.SET_BULLSEYE, { paneId: id });
+  }, [id]);
+
   // The rail verbs the stack badge offers, on the same path the width control
   // takes: dispatched as registered commands rather than threaded back through
   // `DeckCanvas` as two more props ([L30]). The title bar keeps rendering from
@@ -3353,12 +3494,17 @@ export function TugPane({
           pane releases it from its slot, so there is no edge it needs to be
           protected from. */}
       {sidebarSide !== undefined ? (
-        <>
+        // A rail standing in bullseye exposes no edge at all. Its one handle
+        // drags the RAIL's width — measured from the deck edge the rail is
+        // pinned to — and the frame is not standing there for the moment, so
+        // the drag would resize the place the rail is holding open from a
+        // grip nowhere near it. The handle comes back with the rail.
+        bullseye ? null : (
           <div
             className={`tug-pane-resize tug-pane-resize-${sidebarSide === "left" ? "e" : "w"}`}
             onPointerDown={handleSidebarResizeStart}
           />
-        </>
+        )
       ) : (
         RESIZE_EDGES.map((edge) => (
           <div
@@ -3394,6 +3540,8 @@ export function TugPane({
             activeCardId={activeCardId}
             slotStack={slotStack}
             onRevealPane={onRevealPane}
+            bullseye={bullseye}
+            onToggleBullseye={handleToggleBullseye}
             {...(sidebarStack === undefined
               ? {}
               : {

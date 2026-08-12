@@ -1036,27 +1036,22 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       // ⌃⌘B — put the selected card's pane in bullseye, or take it out. The
       // canvas owns it for the same reason it owns the width row: it is the
       // one responder that can name which pane the selection is in, and the
-      // chord walks past the focused card and its pane to get here. One
-      // action rather than the width row's selection-relative /
-      // pane-addressed pair, because bullseye's two doors — this chord and
-      // Window ▸ Bullseye — share one idea of which pane they mean.
+      // chord walks past the focused card and its pane to get here. Having
+      // named it, it hands off to the pane-addressed `set-bullseye` rather
+      // than reaching the store itself — the shape SET_PANE_WIDTH →
+      // SET_CARD_WIDTH already has, and what lets the title bar's target
+      // button, this chord, and Window ▸ Bullseye land on one path.
       // Silent returns throughout, matching the width handler: a chord on a
-      // deselected deck or a rail should do nothing, not warn and not beep.
+      // deselected deck should do nothing, not warn and not beep. A rail is
+      // no longer among the returns — it takes the posture like any other
+      // pane, with its place on the edge reserved while it holds it.
       [TUG_ACTIONS.TOGGLE_BULLSEYE]: (_event: ActionEvent) => {
         const deck = store.getSnapshot();
         const cardId = store.getFirstResponderCardId();
         if (cardId === null) return;
         const pane = deck.panes.find((p) => p.cardIds.includes(cardId));
         if (!pane) return;
-        if (
-          pane.cardIds.some((cid) => {
-            const card = deck.cards.find((c) => c.id === cid);
-            return card !== undefined && isSidebarCard(card.componentId);
-          })
-        ) {
-          return;
-        }
-        store.toggleBullseye(pane.id);
+        dispatchCommand(TUG_ACTIONS.SET_BULLSEYE, { paneId: pane.id });
       },
       // open-file / reveal-in-finder — deck-level file-reference
       // actions dispatched by context menus on transcript file refs.
@@ -2072,10 +2067,31 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   // stored position, and `placementFor` still answers with the placement it
   // will return to — which is exactly the reference the user's eye used
   // before the gesture started.
+  //
+  // A bullseyed RAIL is anchored at its pin on the deck's edge, not at its
+  // stored `position.x` — which for a pinned pane is the same superseded
+  // last-known value an imposed pane's is, and would put the line the other
+  // panes sort around wherever the rail last happened to be dragged. Its
+  // width is the RAIL's (the widest member's), because that is the box the
+  // band is already inset by and the box the rail returns to.
   const bullseyeAnchorCentre = ((): string | undefined => {
     if (bullseyePaneId === null) return undefined;
     const pane = deckState.panes.find((p) => p.id === bullseyePaneId);
     if (pane === undefined) return undefined;
+    const railStanding = stackByPaneId.get(pane.id);
+    if (railStanding !== undefined) {
+      // Written out rather than taken from `imposeSidebarStyle`, whose `left`
+      // is a calc over `--tugx-lens-rail` — a property that rail's own frame
+      // declares on itself. Read from any other pane it would resolve to
+      // nothing. The width term is the live rail property with the
+      // React-known width as its fallback, the same pairing every rail
+      // expression uses, so a drag moves this line in the same reflow.
+      const railWidth = railWidthOf(railStanding.side);
+      const half = `var(${sidebarWidthProperty(railStanding.side)}, ${railWidth}px) / 2`;
+      return railStanding.side === "left"
+        ? `calc(${IMPOSITION_GAP_PX}px + ${half})`
+        : `calc(100% - ${IMPOSITION_GAP_PX}px - ${half})`;
+    }
     const placement = placementFor(pane);
     const left =
       placement === undefined
