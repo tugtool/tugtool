@@ -106,7 +106,6 @@ bash "$SCRIPT_DIR/build-release-inputs.sh"
 # inside-out in Step 8, so xcodebuild's signature is throwaway. Left on the
 # project's CODE_SIGN_STYLE = Automatic, a machine with no provisioning profiles
 # (any CI runner) can fail the build resolving a team it doesn't need.
-echo "==> Building Mac app via xcodebuild"
 cd "$TUGAPP_DIR"
 XCODE_ARGS=(
     -project Tug.xcodeproj
@@ -121,7 +120,7 @@ XCODE_ARGS=(
 if [ "$NIGHTLY" = true ]; then
     XCODE_ARGS+=(ASSETCATALOG_COMPILER_APPICON_NAME="$ICON_NAME")
 fi
-xcodebuild "${XCODE_ARGS[@]}" build
+bash "$SCRIPT_DIR/xcodebuild-quiet.sh" "Tug.app (Release)" "${XCODE_ARGS[@]}" build
 
 # Step 4: Copy xcodebuild output to staging
 echo "==> Assembling .app bundle"

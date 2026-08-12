@@ -801,7 +801,33 @@ function discoverThemeCssInputs(): Record<string, string> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export default (defineConfig as any)(() => {
+// The default build reporter prints one row per emitted asset — 144 of
+// them here, the bulk being KaTeX font faces that never change. That is a
+// table nobody reads, and it buries the warnings that matter. We drop to
+// `logLevel: "warn"` for builds (dev keeps its startup banner) and report
+// the one fact worth knowing: how much shipped.
+function buildSummaryPlugin() {
+  return {
+    name: "tug:build-summary",
+    apply: "build" as const,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    writeBundle(_options: any, bundle: Record<string, any>) {
+      const entries = Object.values(bundle);
+      let bytes = 0;
+      for (const entry of entries) {
+        const payload = entry.type === "chunk" ? entry.code : entry.source;
+        if (typeof payload === "string") bytes += Buffer.byteLength(payload);
+        else if (payload) bytes += payload.length;
+      }
+      const mb = (bytes / (1024 * 1024)).toFixed(1);
+      // eslint-disable-next-line no-console
+      console.log(`    tugdeck dist: ${entries.length} files, ${mb} MB`);
+    },
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default (defineConfig as any)((env: any = {}) => {
   const tugcastPort = process.env.TUGCAST_PORT || "55255";
   const proxyConfig = {
     "/auth": { target: `http://localhost:${tugcastPort}` },
@@ -812,7 +838,11 @@ export default (defineConfig as any)(() => {
   const themeInputs = discoverThemeCssInputs();
 
   return {
+    // Builds report through buildSummaryPlugin; the dev server keeps its
+    // normal banner (the local URL is signal, not noise).
+    logLevel: env.command === "build" && !process.env.TUG_BUILD_STREAM ? "warn" : "info",
     plugins: [
+      buildSummaryPlugin(),
       noConditionalRequestsPlugin(),
       react(),
       activeThemeVirtualPlugin(),

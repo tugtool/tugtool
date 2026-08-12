@@ -78,8 +78,41 @@ for f in "$TUGCODE_ENTITLEMENTS" "$TUG_ENTITLEMENTS"; do
     fi
 done
 
-echo "==> Signing $APP_PATH"
-echo "    Identity: $IDENTITY"
+# Per-item progress is detail, not signal: a bundle signs ~14 items and
+# every one of them makes codesign write "replacing existing signature"
+# to stderr on top of our own echo. Default to a single summary line and
+# restore the full stream verbatim under TUG_BUILD_STREAM=1, matching the
+# app-test harness convention (TUG_APPTEST_STREAM).
+STREAM="${TUG_BUILD_STREAM:-}"
+SIGNED_COUNT=0
+
+note() {
+    [ -n "$STREAM" ] && echo "$@"
+    return 0
+}
+
+# sign <label> <path> [extra codesign args...]
+sign() {
+    local label="$1" path="$2"
+    shift 2
+    note "    signing $label"
+    local log
+    if ! log="$(codesign --force --options runtime --timestamp \
+            "$@" --sign "$IDENTITY" "$path" 2>&1)"; then
+        echo "error: codesign failed for $path" >&2
+        printf '%s\n' "$log" >&2
+        exit 1
+    fi
+    # "replacing existing signature" is the expected steady state on every
+    # rebuild; anything else codesign says is worth seeing.
+    local rest
+    rest="$(printf '%s\n' "$log" | grep -v 'replacing existing signature' || true)"
+    [ -n "$rest" ] && printf '%s\n' "$rest" >&2
+    SIGNED_COUNT=$((SIGNED_COUNT + 1))
+}
+
+note "==> Signing $APP_PATH"
+note "    Identity: $IDENTITY"
 
 # (1) Rust helper binaries. No custom entitlements — hardened runtime
 # gives them sensible defaults for native code with no JIT. We iterate
@@ -91,9 +124,7 @@ RUST_BINS=(tugcast tugutil tugexec tugrelaunch tugbank)
 for bin in "${RUST_BINS[@]}"; do
     bin_path="$APP_PATH/Contents/MacOS/$bin"
     if [ -x "$bin_path" ]; then
-        echo "    signing helper:        $bin"
-        codesign --force --options runtime --timestamp \
-            --sign "$IDENTITY" "$bin_path"
+        sign "helper:        $bin" "$bin_path"
     fi
 done
 
@@ -110,9 +141,7 @@ done
 # no-op there.
 shopt -s nullglob
 for dylib in "$APP_PATH/Contents/MacOS"/*.dylib; do
-    echo "    signing debug dylib:   $(basename "$dylib")"
-    codesign --force --options runtime --timestamp \
-        --sign "$IDENTITY" "$dylib"
+    sign "debug dylib:   $(basename "$dylib")" "$dylib"
 done
 shopt -u nullglob
 
@@ -123,20 +152,16 @@ if [ ! -x "$TUGCODE_BIN" ]; then
     echo "       sign-bundle.sh requires tugcode in the bundle" >&2
     exit 1
 fi
-echo "    signing tugcode (bun): permissive entitlements"
-codesign --force --options runtime --timestamp \
-    --entitlements "$TUGCODE_ENTITLEMENTS" \
-    --sign "$IDENTITY" "$TUGCODE_BIN"
+sign "tugcode (bun): permissive entitlements" "$TUGCODE_BIN" \
+    --entitlements "$TUGCODE_ENTITLEMENTS"
 
 # (3b) tugpulse — also bun-compiled (the PULSE commentator daemon);
 # same permissive entitlements as tugcode. Present-if-shipped: older
 # bundle configurations without it sign fine.
 TUGPULSE_BIN="$APP_PATH/Contents/MacOS/tugpulse"
 if [ -x "$TUGPULSE_BIN" ]; then
-    echo "    signing tugpulse (bun): permissive entitlements"
-    codesign --force --options runtime --timestamp \
-        --entitlements "$TUGCODE_ENTITLEMENTS" \
-        --sign "$IDENTITY" "$TUGPULSE_BIN"
+    sign "tugpulse (bun): permissive entitlements" "$TUGPULSE_BIN" \
+        --entitlements "$TUGCODE_ENTITLEMENTS"
 fi
 
 # (3c) Bundled tmux (built from source, statically linked). Native code
@@ -145,9 +170,7 @@ fi
 # here ensures the outer seal in (5) covers it and notarization passes.
 TMUX_BIN="$APP_PATH/Contents/Resources/bin/tmux"
 if [ -x "$TMUX_BIN" ]; then
-    echo "    signing bundled tmux:  hardened runtime"
-    codesign --force --options runtime --timestamp \
-        --sign "$IDENTITY" "$TMUX_BIN"
+    sign "bundled tmux:  hardened runtime" "$TMUX_BIN"
 fi
 
 # (4) Nested frameworks. Sign them HERE, before the outer seal in (5).
@@ -171,37 +194,36 @@ SPARKLE_FW="$APP_PATH/Contents/Frameworks/Sparkle.framework"
 if [ -d "$SPARKLE_FW" ]; then
     for xpc in "$SPARKLE_FW/Versions/B/XPCServices"/*.xpc; do
         if [ -d "$xpc" ]; then
-            echo "    signing Sparkle XPC:   $(basename "$xpc")"
-            codesign --force --options runtime --timestamp \
-                --preserve-metadata=entitlements \
-                --sign "$IDENTITY" "$xpc"
+            sign "Sparkle XPC:   $(basename "$xpc")" "$xpc" \
+                --preserve-metadata=entitlements
         fi
     done
     for nested in \
         "$SPARKLE_FW/Versions/B/Autoupdate" \
         "$SPARKLE_FW/Versions/B/Updater.app"; do
         if [ -e "$nested" ]; then
-            echo "    signing Sparkle helper: $(basename "$nested")"
-            codesign --force --options runtime --timestamp \
-                --sign "$IDENTITY" "$nested"
+            sign "Sparkle helper: $(basename "$nested")" "$nested"
         fi
     done
-    echo "    sealing Sparkle.framework"
-    codesign --force --options runtime --timestamp \
-        --sign "$IDENTITY" "$SPARKLE_FW"
+    sign "Sparkle.framework (seal)" "$SPARKLE_FW"
 fi
 
 # (5) Outer Tug binary + bundle wrapper. Minimal entitlements; this
 # seal records every signed item beneath.
-echo "    sealing outer bundle:  Tug.entitlements"
-codesign --force --options runtime --timestamp \
-    --entitlements "$TUG_ENTITLEMENTS" \
-    --sign "$IDENTITY" "$APP_PATH"
+sign "outer bundle (seal): Tug.entitlements" "$APP_PATH" \
+    --entitlements "$TUG_ENTITLEMENTS"
 
 # Verification uses --deep (allowed for verify, banned for sign) to
 # walk the entire bundle and confirm every nested signature checks
-# out against the outer seal.
-echo "==> Verifying signature"
-codesign --verify --deep --strict --verbose=1 "$APP_PATH" 2>&1
+# out against the outer seal. A pass says only "valid on disk" +
+# "satisfies its Designated Requirement" — folded into the summary
+# line below. A failure prints in full.
+note "==> Verifying signature"
+if ! verify_log="$(codesign --verify --deep --strict --verbose=1 "$APP_PATH" 2>&1)"; then
+    echo "error: signature verification failed for $APP_PATH" >&2
+    printf '%s\n' "$verify_log" >&2
+    exit 1
+fi
+note "$verify_log"
 
-echo "==> sign-bundle: done"
+echo "    codesign: ${SIGNED_COUNT} items signed + verified (${IDENTITY%% (*})"

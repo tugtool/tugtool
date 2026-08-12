@@ -13,6 +13,16 @@
  * resolved extension into its language Compartment when the load
  * settles; plain text renders in the meantime.
  *
+ * Four grammars are the exception and import statically: markdown, HTML,
+ * CSS and JavaScript. `lib/markdown-text-style-grammar.ts` needs
+ * `markdown()` and `html()` synchronously to build the one parser
+ * configuration every markdown-styled editing surface shares, and
+ * `lang-html` in turn pulls `lang-css` and `lang-javascript`. All four
+ * are therefore in the base chunk unconditionally, and a dynamic
+ * `import()` of them would split nothing — Rollup says so, loudly, at
+ * build time. Loading them statically states the truth; the lazy table
+ * below keeps the grammars that genuinely do split.
+ *
  * The highlight style maps Lezer's standard tags to the EXISTING
  * theme-aware syntax palette (`--tug-syntax-*` + `--tugx-syntax-comment`,
  * declared in `tug-code.css` with dark/light variants) — the same
@@ -32,7 +42,15 @@ import {
   HighlightStyle,
   ensureSyntaxTree,
   syntaxTree,
+  StreamLanguage,
+  type StreamParser,
 } from "@codemirror/language";
+// Aliased: the loader table below keys entries by extension, so bare
+// `css` / `html` / `markdown` would read as the table's own keys.
+import { javascript as javascriptLang } from "@codemirror/lang-javascript";
+import { css as cssLang } from "@codemirror/lang-css";
+import { html as htmlLang } from "@codemirror/lang-html";
+import { markdown as markdownLang } from "@codemirror/lang-markdown";
 import { highlightTree, tags, Tag } from "@lezer/highlight";
 import type { Tree } from "@lezer/common";
 import { StyleModule } from "style-mod";
@@ -143,13 +161,10 @@ type LanguageLoader = () => Promise<Extension>;
 
 /** Wrap a legacy (CM5) stream parser mode as a CM6 extension. */
 function legacy(
-  load: () => Promise<{ mode: import("@codemirror/language").StreamParser<unknown> }>,
+  load: () => Promise<{ mode: StreamParser<unknown> }>,
 ): LanguageLoader {
   return async () => {
-    const [{ StreamLanguage }, { mode }] = await Promise.all([
-      import("@codemirror/language"),
-      load(),
-    ]);
+    const { mode } = await load();
     return StreamLanguage.define(mode);
   };
 }
@@ -159,26 +174,26 @@ function legacy(
  * data so adding a language is one line.
  */
 const LOADERS: Record<string, LanguageLoader> = {
-  // Lezer grammars.
-  js: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
-  jsx: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ jsx: true })),
-  ts: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true })),
-  tsx: () => import("@codemirror/lang-javascript").then((m) => m.javascript({ typescript: true, jsx: true })),
-  mjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
-  cjs: () => import("@codemirror/lang-javascript").then((m) => m.javascript()),
+  // Lezer grammars. The four base-chunk grammars (see the module header)
+  // resolve from their static imports; the rest split into own chunks.
+  js: async () => javascriptLang(),
+  jsx: async () => javascriptLang({ jsx: true }),
+  ts: async () => javascriptLang({ typescript: true }),
+  tsx: async () => javascriptLang({ typescript: true, jsx: true }),
+  mjs: async () => javascriptLang(),
+  cjs: async () => javascriptLang(),
   rs: () => import("@codemirror/lang-rust").then((m) => m.rust()),
   py: () => import("@codemirror/lang-python").then((m) => m.python()),
   json: () => import("@codemirror/lang-json").then((m) => m.json()),
-  css: () => import("@codemirror/lang-css").then((m) => m.css()),
-  html: () => import("@codemirror/lang-html").then((m) => m.html()),
-  htm: () => import("@codemirror/lang-html").then((m) => m.html()),
+  css: async () => cssLang(),
+  html: async () => htmlLang(),
+  htm: async () => htmlLang(),
   // `addKeymap: false` on the same grounds as `markdownTextStyleSupport`: the
   // markdown keymap binds Enter to `insertNewlineContinueMarkup`, which writes
   // a bullet the writer did not type, and Backspace to `deleteMarkupBackward`.
   // Both are editing behaviors; a grammar loaded here only tokenizes.
-  md: () => import("@codemirror/lang-markdown").then((m) => m.markdown({ addKeymap: false })),
-  markdown: () =>
-    import("@codemirror/lang-markdown").then((m) => m.markdown({ addKeymap: false })),
+  md: async () => markdownLang({ addKeymap: false }),
+  markdown: async () => markdownLang({ addKeymap: false }),
   go: () => import("@codemirror/lang-go").then((m) => m.go()),
   java: () => import("@codemirror/lang-java").then((m) => m.java()),
   sql: () => import("@codemirror/lang-sql").then((m) => m.sql()),

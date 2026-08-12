@@ -152,6 +152,7 @@ import {
   type CardAssembler,
 } from "./card-state-orchestrator";
 import { deckTrace, type SaveCallbackSource } from "./deck-trace";
+import { cardServicesStore } from "./lib/card-services-store";
 import type { CodeSessionStore } from "./lib/code-session-store";
 import {
   reactivateCurrentFocusDestination,
@@ -3108,12 +3109,6 @@ export class DeckManager implements IDeckManagerStore {
     interrupted: string[];
     unacknowledged: string[];
   }> {
-    // Imported at call time, not at module scope: `card-services-store`
-    // pulls in the whole session-services graph, and importing it from here
-    // would move that graph's evaluation ahead of the deck's own — an
-    // ordering change no consumer of `DeckManager` asked for. By the time a
-    // quit runs, the module is long since loaded.
-    const { cardServicesStore } = await import("./lib/card-services-store");
     const live = cardServicesStore
       .allServices()
       .map((services) => services.codeSessionStore)

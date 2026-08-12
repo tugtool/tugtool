@@ -311,9 +311,10 @@ app-debug: build wasm
     # resource-bundle targets would all take the same name and collide
     # ("Multiple commands produce ....bundle").
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh debug)"
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
+    bash tugrust/scripts/xcodebuild-quiet.sh "${PRODUCT_NAME}.app (Debug)" \
+        -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug \
+        -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
     APP_DIR="$DERIVED/Build/Products/Debug/${PRODUCT_NAME}.app"
-    echo "==> Re-signing with Developer ID for stable AX grant"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Non-blocking orphan-detection preamble so users get a nudge to
     # clean up bundle-less data dirs without ever failing the build.
@@ -353,9 +354,10 @@ app-release: build wasm
     bash tugrust/scripts/build-release-inputs.sh
     find tugapp/Sources -name '*.swift' -exec touch {} +
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh release)"
-    xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
+    bash tugrust/scripts/xcodebuild-quiet.sh "${PRODUCT_NAME}.app (Release)" \
+        -project tugapp/Tug.xcodeproj -scheme Tug -configuration Release \
+        -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
     APP_DIR="$DERIVED/Build/Products/Release/${PRODUCT_NAME}.app"
-    echo "==> Re-signing with Developer ID"
     bash tugrust/scripts/sign-bundle.sh "$APP_DIR"
     # Seed source-tree-path for the release instance too. AppDelegate
     # falls back to BuildInfo.sourceTree if the tugbank value is
@@ -842,26 +844,9 @@ build-app:
     DERIVED="$(bash tugrust/scripts/derived-data-path.sh debug)"
     echo "==> [4/5] Build ${PRODUCT_NAME}.app (Debug)"
     find tugapp/Sources -name '*.swift' -exec touch {} +
-    # xcodebuild is very noisy (~800 lines of SwiftDriver/SwiftCompile
-    # phase headers + indented invocations) even on a clean build.
-    # Capture the full log; on success show only the signal (warnings,
-    # errors, BUILD banner). On failure, dump the full log so the user
-    # can diagnose.
-    XCODE_LOG="$(mktemp -t tugapp-xcode.XXXX.log)"
-    if xcodebuild -project tugapp/Tug.xcodeproj -scheme Tug \
-        -configuration Debug -destination 'platform=macOS,arch=arm64' \
-        -derivedDataPath "$DERIVED" build \
-        > "$XCODE_LOG" 2>&1; then
-        grep -E '^\*\*|warning:|error:|^ld: |^clang: |^Undefined' "$XCODE_LOG" || true
-        grep -q '^\*\* BUILD' "$XCODE_LOG" || echo "** BUILD SUCCEEDED **"
-        rm -f "$XCODE_LOG"
-    else
-        status=$?
-        echo "==> xcodebuild failed (status $status), full log:"
-        cat "$XCODE_LOG"
-        rm -f "$XCODE_LOG"
-        exit "$status"
-    fi
+    bash tugrust/scripts/xcodebuild-quiet.sh "${PRODUCT_NAME}.app (Debug)" \
+        -project tugapp/Tug.xcodeproj -scheme Tug -configuration Debug \
+        -destination 'platform=macOS,arch=arm64' -derivedDataPath "$DERIVED" build
     APP_DIR="$DERIVED/Build/Products/Debug/${PRODUCT_NAME}.app"
     APP_BIN="$APP_DIR/Contents/MacOS/${PRODUCT_NAME}"
     [ -x "$APP_BIN" ] || { echo "${PRODUCT_NAME}.app binary missing: $APP_BIN"; exit 1; }

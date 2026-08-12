@@ -38,6 +38,7 @@ import {
   buildCopyButton,
   buildFoldButton,
 } from "./enhance-block-chrome";
+import { highlightFragmentToHtml } from "@/lib/language-registry";
 
 /** Parses the language tag off a `<code class="language-X">` element.
  *  Returns `null` for unspecified-language fenced blocks. */
@@ -111,20 +112,23 @@ export function enhanceFencedCode(container: HTMLElement): void {
  * Syntax-color one fenced `<code>` element's body through the shared
  * Lezer tokenizer, replacing its text with class-per-token spans.
  *
- * Async: the tokenizer (and its grammar chunk) load lazily, so by the
- * time the HTML is ready the block may have been pruned or re-rendered
- * by the windowing engine. We patch only a still-connected node whose
- * text is byte-identical to what we tokenized — otherwise a stale paint
- * would land over new content (or throw on a detached node). Failure is
- * silent: the plain-text body is a fine fallback. The tokenizer imports
- * dynamically so a transcript with no fences never pulls CodeMirror.
+ * Async: the per-language grammar chunk loads lazily, so by the time the
+ * HTML is ready the block may have been pruned or re-rendered by the
+ * windowing engine. We patch only a still-connected node whose text is
+ * byte-identical to what we tokenized — otherwise a stale paint would
+ * land over new content (or throw on a detached node). Failure is
+ * silent: the plain-text body is a fine fallback.
+ *
+ * The registry itself imports statically: every markdown-styled editing
+ * surface already pulls it into the base chunk, so deferring it here
+ * bought no split. The laziness that matters — one chunk per grammar —
+ * lives inside the registry's loader table.
  */
 function highlightFencedCode(codeEl: HTMLElement, lang: string): void {
   const source = codeEl.textContent ?? "";
   if (source === "") return;
-  void import("@/lib/language-registry")
-    .then(async ({ highlightFragmentToHtml }) => {
-      const html = await highlightFragmentToHtml(source, lang);
+  void highlightFragmentToHtml(source, lang)
+    .then((html) => {
       if (html === "") return;
       if (!codeEl.isConnected) return;
       if (codeEl.textContent !== source) return;
