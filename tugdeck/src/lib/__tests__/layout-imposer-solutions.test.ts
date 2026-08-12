@@ -499,10 +499,19 @@ function assertInvariants(
   const comfortTotal = bounds.reduce((sum, b) => sum + b.comfortFloor, 0);
   const atHardFloor = pictureAt(input, floorTotal);
   const atComfortFloor = pictureAt(input, comfortTotal);
+  // The TIER of a picture — clean (2), unoccluded but cramped (1), occluded
+  // (0) — is what the comfort rule turns on, so it is what the branch is read
+  // from: comfort is given up exactly when the range below it reaches a higher
+  // tier than the comfort domain can.
+  const tierOf = (p: {
+    worstOverlap: number;
+    worstShortfall: number;
+  }): number => (p.worstOverlap > 0 ? 0 : p.worstShortfall > 0 ? 1 : 2);
+  const comfortTier = tierOf(atComfortFloor);
   const branch: ComfortBranch =
-    atComfortFloor.worstOverlap === 0
+    comfortTier === 2
       ? "comfort"
-      : atHardFloor.worstOverlap === 0
+      : tierOf(atHardFloor) > comfortTier
         ? "hard"
         : "held";
 
@@ -514,21 +523,25 @@ function assertInvariants(
     ).toBe(0);
   }
 
-  // 2 — no avoidable crowding, WITHIN THE DOMAIN THE COMFORT RULE LICENSED. If
-  // some total in that domain puts every seam at or over the gap, the answer
-  // is one of those.
+  // 2 — no avoidable crowding, over the WHOLE REACHABLE RANGE. If any total
+  // down to the hard floors puts every seam at or over the gap, the answer is
+  // one of those.
   //
-  // Scoped to the domain and not to the whole reachable range on purpose: a
-  // cramped seam is not occlusion, and comfort is surrendered to remove
-  // occlusion and for nothing else. A rail that gave up its measure so a
-  // tight seam could open up would be trading a legibility loss the user
-  // sees against a rhythm gain they barely do.
+  // This was once scoped to the comfort domain, on the argument that a cramped
+  // seam is not occlusion and comfort is spent only on occlusion. That
+  // argument is wrong, and scoping the assertion to fit it hid a real defect
+  // for a whole phase: on a three-up deck of slim cards the tiling total can
+  // land a few pixels UNDER the comfort floors, and an overlap-only rule then
+  // pinned the rails at comfort and painted every interior seam at 2px for want
+  // of six pixels of rail. Cramped rhythm IS the chain failing to read as
+  // arranged — the symptom this phase was opened to fix — and the reachable
+  // range is what "avoidable" has to mean, or the invariant only ever asks the
+  // solver to justify itself where it already agrees with itself.
   //
   // The allowance is the rounding residual the solver deliberately leaves with
   // the band's travel — at most one pixel per rail, and a pixel of seam slack
   // is invisible where a cramped chain is not.
-  const atDomainLow = branch === "hard" ? atHardFloor : atComfortFloor;
-  if (atDomainLow.worstOverlap === 0 && atDomainLow.worstShortfall === 0) {
+  if (atHardFloor.worstOverlap === 0 && atHardFloor.worstShortfall === 0) {
     expect(
       picture.worstShortfall,
       `${where}: an uncramped total is in reach, so the answer must not cramp`,
@@ -536,19 +549,16 @@ function assertInvariants(
   }
 
   // 3 — comfort is spent for a reason: a rail stands below its comfort floor
-  // only when comfort could not remove the overlap and the hard floor could.
+  // only when the range below it reaches a better tier of picture than the
+  // comfort domain can.
   for (const side of sides) {
     const width = answer[side] as number;
     const { comfortFloor } = boundsOf(input.rails[side] as RailPolicy);
     if (width >= comfortFloor) continue;
     expect(
-      atComfortFloor.worstOverlap,
-      `${where}: ${side} gave up comfort, so comfort must not have sufficed`,
-    ).toBeGreaterThan(0);
-    expect(
-      atHardFloor.worstOverlap,
-      `${where}: ${side} gave up comfort, so giving it up must have removed the overlap`,
-    ).toBe(0);
+      tierOf(atHardFloor),
+      `${where}: ${side} gave up comfort, so giving it up must have bought a better picture`,
+    ).toBeGreaterThan(comfortTier);
   }
 
   // 7 (List L03) — comfort never re-inflates a drag. The comfort floor sits at
@@ -709,11 +719,14 @@ describe("the allocator's solution space", () => {
 
             // The comfort rule picks the domain; the scan's job is only to
             // find the best total INSIDE it, so that is what is cross-checked.
+            // Same tier comparison the solver makes: descend only when the
+            // range below comfort reaches a better tier of picture.
+            const tierAt = (total: number): number => {
+              const p = pictureAt(input, total);
+              return p.worstOverlap > 0 ? 0 : p.worstShortfall > 0 ? 1 : 2;
+            };
             const domainLow =
-              pictureAt(input, comfortTotal).worstOverlap === 0 ||
-              pictureAt(input, floorTotal).worstOverlap > 0
-                ? comfortTotal
-                : floorTotal;
+              tierAt(floorTotal) > tierAt(comfortTotal) ? floorTotal : comfortTotal;
             const key = (total: number): readonly number[] => {
               const p = pictureAt(input, total);
               return [

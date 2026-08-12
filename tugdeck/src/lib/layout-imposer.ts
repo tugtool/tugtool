@@ -1119,14 +1119,16 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
  *      outrank a width the card cannot be drawn under.
  *   2. **The picture is chosen from the comfort domain when it can be.** The
  *      total is the best-scoring one at or above `Σ comfortWidth`.
- *   3. **Comfort is surrendered to REMOVE overlap, and for nothing else.** If
- *      no total in the comfort domain removes the overlap and some total below
- *      it does, the search runs again over the whole domain down to the hard
- *      floors. If neither domain can remove it, comfort is kept: cramping a
- *      rail buys occlusion the user still sees, at the cost of a rail they can
- *      no longer read. This is a yes/no rule, not a graded judgement — which
- *      is what makes it testable, and what distinguishes it from the licence
- *      this allocator deleted.
+ *   3. **Comfort is surrendered to reach a better TIER of picture, and for
+ *      nothing else.** The tiers are clean (nothing occluded, no seam under
+ *      the gap), unoccluded-but-cramped, and occluded. If the range below the
+ *      comfort floors reaches a higher tier than the comfort domain can, the
+ *      rails give up their measure; otherwise comfort is kept, because
+ *      cramping a rail to improve a picture that stays broken buys nothing at
+ *      the cost of a rail the user can no longer read. A tier comparison is
+ *      still a yes/no rule, not a graded judgement — which is what makes it
+ *      testable, and what distinguishes it from the licence this allocator
+ *      deleted.
  *   4. **Preferences fill in greed order.** Each rail starts at the width it
  *      wants. A deficit drains the LEAST greedy rail first — to its comfort
  *      floor, and only then, if the total is still unmet, to its hard floor;
@@ -1365,10 +1367,11 @@ function compareScores(a: readonly number[], b: readonly number[]): number {
  *
  * Two domains. The search runs first over `[Σ comfortFloor, Σ ceiling]`; it
  * descends into the range below the comfort floors IF AND ONLY IF some total
- * down there removes the overlap entirely and nothing in the comfort domain
- * does. Comfort is surrendered to fix a picture, never merely to improve one —
- * on a chain no total can repair, cramping the rails buys occlusion the user
- * still sees at the cost of a rail they can no longer read.
+ * down there reaches a better TIER of picture than anything up here can —
+ * clean over cramped, cramped over occluded. Comfort is surrendered to fix a
+ * picture, never merely to improve one: on a chain no total can repair,
+ * cramping the rails leaves the user a picture they still see is wrong, at the
+ * cost of a rail they can no longer read.
  */
 function chooseRailTotal(
   input: AllocatorInput,
@@ -1419,10 +1422,36 @@ function chooseRailTotal(
     return best;
   };
 
+  // How well a total reads, in three tiers: CLEAN (nothing occluded and no
+  // seam under the gap), UNOCCLUDED (nothing on top of anything, but the
+  // rhythm is cramped), and OCCLUDED. Comfort is surrendered if and only if
+  // doing so reaches a HIGHER tier — never to improve the picture within one.
+  //
+  // Both of the lower tiers are the chain failing to read as arranged, and
+  // both are repaired by the same few pixels of rail, which is why the rule
+  // cannot turn on occlusion alone: on a three-up deck of slim cards with the
+  // Gazette's rail on one edge, the total that tiles can land a handful of
+  // pixels BELOW the comfort floors. Nothing occludes there, so an
+  // overlap-only rule holds the measure and paints every interior seam at 2px
+  // instead of 5 — cramped rhythm bought for six pixels of width nobody was
+  // reading, in a trap door a few pixels wide that a window resize walks
+  // straight through.
+  //
+  // It cannot turn on cleanliness alone either: where the comfort domain is
+  // occluded and the range below it can only get as far as cramped, giving up
+  // comfort still buys the user their cards back, and a clean-or-nothing rule
+  // would refuse it. Tiers say both of those in one comparison, and keep the
+  // yes/no character that makes the rule testable.
+  const tierOf = (total: number): number => {
+    const key = score(total);
+    if (key[0] > 0) return 0;
+    return key[1] > 0 ? 1 : 2;
+  };
   const comfortBest = bestIn(comfortTotal, ceilingTotal);
-  if (score(comfortBest)[0] === 0) return comfortBest;
+  const comfortTier = tierOf(comfortBest);
+  if (comfortTier === 2) return comfortBest;
   const hardBest = bestIn(floorTotal, ceilingTotal);
-  return score(hardBest)[0] === 0 ? hardBest : comfortBest;
+  return tierOf(hardBest) > comfortTier ? hardBest : comfortBest;
 }
 
 /**
