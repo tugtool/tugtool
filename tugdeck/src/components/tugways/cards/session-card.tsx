@@ -215,7 +215,10 @@ import {
 } from "@/lib/session-ledger-store";
 import type { SessionRow } from "@/protocol";
 import { encodeSetSessionPrivate } from "@/protocol";
-import { sessionPrivateStore } from "@/lib/session-private-store";
+import {
+  privateRefusalDetail,
+  sessionPrivateStore,
+} from "@/lib/session-private-store";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   TugPaneBulletinProvider,
@@ -3385,12 +3388,20 @@ export function SessionCardBody({
     showSheet: cardPickerSheet.showSheet,
   });
 
+  // Pane-scoped bulletin API, captured from inside the provider by
+  // `PaneBulletinAnchor` (rendered below) so `/copy` can raise its
+  // confirmation toast in this card.
+  const paneBulletinRef = useRef<TugPaneBulletinApi>(null);
+
   // `/rename` session name ([#step-13d]). `/rename <text>` sets it directly;
   // bare `/rename` opens a one-field dialog seeded with the current name. Both
-  // optimistically update the Z4B chip and send `rename_session` to tugcast.
+  // optimistically update the Z4B chip, send `rename_session` to tugcast, and
+  // report the outcome in this card's bulletin when the ack lands — which is
+  // why the hook is handed the bulletin: the dialog path has no other voice.
   const renameSheet = useRenameSessionSheet({
     cardId,
     showSheet: cardPickerSheet.showSheet,
+    notify: () => paneBulletinRef.current,
   });
 
   // Reasoning-effort set path + per-card persistence/restore ([#step-4],
@@ -3413,10 +3424,6 @@ export function SessionCardBody({
   // command just opens the same surface (no separate sheet). Null while
   // the row isn't the current Z2 datum, in which case the call no-ops.
   const statusRowRef = useRef<SessionTelemetryStatusRowHandle>(null);
-  // Pane-scoped bulletin API, captured from inside the provider by
-  // `PaneBulletinAnchor` (rendered below) so `/copy` can raise its
-  // confirmation toast in this card.
-  const paneBulletinRef = useRef<TugPaneBulletinApi>(null);
 
   // Close out a `/compact` run: when the progress store reaches a terminal
   // outcome, clear the store — which dismisses the progress sheet (it watches
@@ -3659,22 +3666,37 @@ export function SessionCardBody({
     // `/private` — toggle this session out of the Gazette ([P05], [Q01]).
     // Deliberately a composer command and nothing else: no menu row, no chord.
     // The store write is optimistic so the atom's marker turns over with the
-    // gesture; the `set_session_private_ok` / `_err` acks reconcile it. The
-    // bulletin confirms the TRANSITION — the marker is the record of the STATE,
-    // which is why both exist. Reads the binding live at invoke time ([L07]).
+    // gesture; the `set_session_private_ok` / `_err` acks reconcile it either
+    // way. The bulletin confirms the TRANSITION — the marker is the record of
+    // the STATE, which is why both exist — and it waits for the ack, because a
+    // refused write would otherwise leave the user holding a promise that the
+    // Gazette has stopped listening when it has not. The wait is a local socket
+    // and one row's UPDATE. Reads the binding live at invoke time ([L07]).
     private: () => {
       const binding = cardSessionBindingStore.getBinding(cardId);
       const connection = getConnection();
       if (binding === undefined || connection === null) return;
       const next = !sessionPrivateStore.isPrivate(binding.tugSessionId);
+      const notify = paneBulletinRef.current;
       sessionPrivateStore.setPrivate(binding.tugSessionId, next);
+      sessionPrivateStore.awaitSettle(binding.tugSessionId, next, (settle) => {
+        if (settle.ok) {
+          notify?.success(
+            next
+              ? "This session is now private — nothing new reaches the Gazette"
+              : "This session is public again — the Gazette resumes from here",
+          );
+          return;
+        }
+        notify?.danger(
+          next
+            ? "This session is still public — the Gazette is still listening"
+            : "This session is still private — the Gazette is still skipping it",
+          { description: privateRefusalDetail(settle.reason), sticky: true },
+        );
+      });
       const frame = encodeSetSessionPrivate(binding.tugSessionId, next);
       connection.send(frame.feedId, frame.payload);
-      paneBulletinRef.current?.success(
-        next
-          ? "This session is now private — nothing new reaches the Gazette"
-          : "This session is public again — the Gazette resumes from here",
-      );
     },
     // `/compact [focus]` — native compaction over the stream-json bridge
     // ([P01]). Dispatch the literal `/compact` (plus focus args) as a normal,
@@ -3854,9 +3876,11 @@ export function SessionCardBody({
         notify?.success("Working directory added");
       });
     },
-    // `/rename <text>` names the session directly (with a pane-bulletin
-    // confirmation, since there's no dialog to signal success); bare `/rename`
-    // opens the one-field dialog seeded with the current name ([#step-13d]).
+    // `/rename <text>` names the session directly; bare `/rename` opens the
+    // one-field dialog seeded with the current name ([#step-13d]). The
+    // pane-bulletin confirmation belongs to the rename surface, which raises it
+    // on the ack for both paths — naming a session is not done until the ledger
+    // says it is.
     rename: (args) => {
       const name = args.trim();
       if (name.length === 0) {
@@ -3864,7 +3888,6 @@ export function SessionCardBody({
         return;
       }
       renameSheet.renameTo(name);
-      paneBulletinRef.current?.success(`Session renamed to “${name}”`);
     },
     // `/logout` — app-level. Hands off to the deck-root TugLogout orchestrator
     // (confirm → interrupt every turn → `claude_logout` → ConfigureTug reopens);

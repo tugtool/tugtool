@@ -10,6 +10,14 @@ import {
   _resetForTest,
 } from "../action-dispatch";
 import { FeedId } from "../protocol";
+import {
+  sessionPrivateStore,
+  type PrivateSettle,
+} from "../lib/session-private-store";
+import {
+  sessionNameStore,
+  type NameSettle,
+} from "../lib/session-name-store";
 import type { ActionEvent } from "../components/tugways/responder-chain";
 import { ResponderChainManager } from "../components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -1013,5 +1021,156 @@ describe("initActionDispatch: imposition verbs", () => {
       dispatchAction({ action: "assign-slot", cardId: "card-1", slot });
     }
     expect(assignments).toEqual([]);
+  });
+});
+
+// ---- set_session_private acks ----
+
+describe("set_session_private acks", () => {
+  beforeEach(() => {
+    _resetForTest();
+    initActionDispatch(createMockConnection() as any, createMockDeckManager() as any);
+    sessionPrivateStore.forget("sess");
+  });
+
+  it("takes the written value from the ok ack", () => {
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: true });
+    expect(sessionPrivateStore.isPrivate("sess")).toBe(true);
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: false });
+    expect(sessionPrivateStore.isPrivate("sess")).toBe(false);
+  });
+
+  it("puts back `public` when making it private is refused", () => {
+    sessionPrivateStore.setPrivate("sess", true); // the optimistic write
+    dispatchAction({
+      action: "set_session_private_err",
+      session_id: "sess",
+      private: true,
+      reason: "ledger_write_failed",
+    });
+    expect(sessionPrivateStore.isPrivate("sess")).toBe(false);
+  });
+
+  it("puts back `private` when making it public is refused", () => {
+    // The direction that used to be lost: the optimistic write says public,
+    // the ledger is still private, and no push is coming to correct it.
+    sessionPrivateStore.setPrivate("sess", false);
+    dispatchAction({
+      action: "set_session_private_err",
+      session_id: "sess",
+      private: false,
+      reason: "ledger_write_failed",
+    });
+    expect(sessionPrivateStore.isPrivate("sess")).toBe(true);
+  });
+
+  it("resolves the gesture's waiter with the outcome", () => {
+    const settles: PrivateSettle[] = [];
+    sessionPrivateStore.awaitSettle("sess", true, (s) => settles.push(s));
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: true });
+    expect(settles).toEqual([{ ok: true }]);
+
+    sessionPrivateStore.awaitSettle("sess", false, (s) => settles.push(s));
+    dispatchAction({
+      action: "set_session_private_err",
+      session_id: "sess",
+      private: false,
+      reason: "not_found",
+    });
+    expect(settles[1]).toEqual({ ok: false, reason: "not_found" });
+  });
+
+  it("does not let an ack for another value resolve the pending gesture", () => {
+    // Two toggles in flight: the ack for the superseded one must not speak
+    // the newer gesture's outcome.
+    const settles: PrivateSettle[] = [];
+    sessionPrivateStore.awaitSettle("sess", false, (s) => settles.push(s));
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: true });
+    expect(settles).toEqual([]);
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: false });
+    expect(settles).toEqual([{ ok: true }]);
+  });
+
+  it("resolves a waiter once — a repeat echo says nothing", () => {
+    const settles: PrivateSettle[] = [];
+    sessionPrivateStore.awaitSettle("sess", true, (s) => settles.push(s));
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: true });
+    dispatchAction({ action: "set_session_private_ok", session_id: "sess", private: true });
+    expect(settles.length).toBe(1);
+  });
+});
+
+// ---- rename_session acks ----
+
+describe("rename_session acks", () => {
+  beforeEach(() => {
+    _resetForTest();
+    initActionDispatch(createMockConnection() as any, createMockDeckManager() as any);
+    sessionNameStore.setName("sess", null);
+  });
+
+  /** Mimic the rename surface: optimistic write, then arm the waiter. */
+  function renameTo(name: string, settles: NameSettle[]): void {
+    const previous = sessionNameStore.getName("sess");
+    sessionNameStore.setName("sess", name);
+    sessionNameStore.awaitSettle("sess", name, previous, (s) => settles.push(s));
+  }
+
+  it("keeps the new name when the ledger took it", () => {
+    const settles: NameSettle[] = [];
+    sessionNameStore.setName("sess", "old");
+    renameTo("harbor light", settles);
+    dispatchAction({ action: "rename_session_ok", session_id: "sess", name: "harbor light" });
+    expect(sessionNameStore.getName("sess")).toBe("harbor light");
+    expect(settles).toEqual([{ ok: true }]);
+  });
+
+  it("puts the replaced name back when the rename is refused", () => {
+    // Nothing else would: a failed write broadcasts no `session_updated`, so
+    // the optimistic name would otherwise stand for the life of the tab.
+    const settles: NameSettle[] = [];
+    sessionNameStore.setName("sess", "old");
+    renameTo("harbor light", settles);
+    expect(sessionNameStore.getName("sess")).toBe("harbor light");
+    dispatchAction({
+      action: "rename_session_err",
+      session_id: "sess",
+      name: "harbor light",
+      reason: "ledger_write_failed",
+    });
+    expect(sessionNameStore.getName("sess")).toBe("old");
+    expect(settles).toEqual([{ ok: false, reason: "ledger_write_failed" }]);
+  });
+
+  it("restores an unnamed session to unnamed", () => {
+    const settles: NameSettle[] = [];
+    renameTo("harbor light", settles);
+    dispatchAction({
+      action: "rename_session_err",
+      session_id: "sess",
+      name: "harbor light",
+      reason: "not_found",
+    });
+    expect(sessionNameStore.getName("sess")).toBeNull();
+  });
+
+  it("matches a cleared name against the ack's null", () => {
+    const settles: NameSettle[] = [];
+    sessionNameStore.setName("sess", "old");
+    renameTo("", settles);
+    // tugcast normalizes a blank name to `None`, which serializes as null.
+    dispatchAction({ action: "rename_session_ok", session_id: "sess", name: null });
+    expect(settles).toEqual([{ ok: true }]);
+  });
+
+  it("does not let a superseded rename's ack resolve the pending one", () => {
+    const settles: NameSettle[] = [];
+    sessionNameStore.setName("sess", "old");
+    renameTo("first", settles);
+    renameTo("second", settles);
+    dispatchAction({ action: "rename_session_ok", session_id: "sess", name: "first" });
+    expect(settles).toEqual([]);
+    dispatchAction({ action: "rename_session_ok", session_id: "sess", name: "second" });
+    expect(settles).toEqual([{ ok: true }]);
   });
 });

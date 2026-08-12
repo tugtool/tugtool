@@ -8,6 +8,12 @@
  * frame — tugcast writes the ledger and broadcasts `session_updated`, which
  * makes the name authoritative for the chip + the session chooser.
  *
+ * The optimistic chip write is paired with a settle waiter holding the name it
+ * replaced, so a refused rename puts the old name back instead of leaving the
+ * chip showing a name the ledger never took. Both paths report the outcome in
+ * the card's bulletin when the ack lands, rather than claiming success on the
+ * gesture — the dialog closes on submit and has no other way to speak.
+ *
  * Compositional — the bare dialog composes the card's shared `TugSheet` (via
  * `showSheet`), `TugInput`, and `TugPushButton`; composed children keep their
  * own tokens ([L20]). No-op when the card has no bound session.
@@ -28,13 +34,23 @@ import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { getConnection } from "@/lib/connection-singleton";
 import { encodeRenameSession } from "@/protocol";
-import { sessionNameStore } from "@/lib/session-name-store";
+import {
+  renameRefusalDetail,
+  sessionNameStore,
+} from "@/lib/session-name-store";
+import type { TugPaneBulletinApi } from "@/components/tugways/tug-pane-bulletin";
 
 export interface UseRenameSessionSheetArgs {
   /** Card whose bound session is renamed. */
   cardId: string;
   /** The card's shared sheet host (`useTugSheet().showSheet`). */
   showSheet: (options: ShowSheetOptions) => Promise<string | undefined>;
+  /**
+   * The card's pane bulletin, read at ack time — the ref it comes from is
+   * populated by an anchor rendered inside the provider, so it is only good
+   * to read live, never to capture.
+   */
+  notify: () => TugPaneBulletinApi | null;
 }
 
 export interface RenameSessionSheetController {
@@ -47,20 +63,45 @@ export interface RenameSessionSheetController {
 export function useRenameSessionSheet({
   cardId,
   showSheet,
+  notify,
 }: UseRenameSessionSheetArgs): RenameSessionSheetController {
-  // Optimistic chip update + the `rename_session` frame. Read the binding fresh
-  // ([L07]); a no-op when the card isn't bound. A blank name clears the name.
+  // Optimistic chip update + the `rename_session` frame, with the replaced name
+  // held for the refusal path. Read the binding fresh ([L07]); a no-op when the
+  // card isn't bound. A blank name clears the name.
   const commitRename = useCallback(
     (name: string) => {
       const binding = cardSessionBindingStore.getBinding(cardId);
       const connection = getConnection();
       if (binding === undefined || connection === null) return;
       const trimmed = name.trim();
+      const previous = sessionNameStore.getName(binding.tugSessionId);
+      const bulletin = notify();
       sessionNameStore.setName(binding.tugSessionId, trimmed);
+      sessionNameStore.awaitSettle(
+        binding.tugSessionId,
+        trimmed,
+        previous,
+        (settle) => {
+          if (settle.ok) {
+            bulletin?.success(
+              trimmed.length === 0
+                ? "Session name cleared"
+                : `Session renamed to “${trimmed}”`,
+            );
+            return;
+          }
+          bulletin?.danger(
+            previous === null
+              ? "The session was not renamed"
+              : `The session is still named “${previous}”`,
+            { description: renameRefusalDetail(settle.reason), sticky: true },
+          );
+        },
+      );
       const frame = encodeRenameSession(binding.tugSessionId, trimmed);
       connection.send(frame.feedId, frame.payload);
     },
-    [cardId],
+    [cardId, notify],
   );
 
   const renameTo = useCallback(

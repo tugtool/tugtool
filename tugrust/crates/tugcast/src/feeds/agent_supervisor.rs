@@ -5738,11 +5738,17 @@ impl AgentSupervisor {
     /// Handle a `rename_session` CONTROL request ([#step-13d]). Writes the name
     /// to the ledger and broadcasts a `session_updated` so the chooser + the
     /// Z4B session chip pick it up live, then acks `rename_session_ok` / `_err`.
+    ///
+    /// Both acks carry the name they were asked for. CONTROL is a broadcast and
+    /// the client renames optimistically, so the name is what lets it tell this
+    /// ack from the one for a rename it has already superseded — and a refusal
+    /// no client can place is a refusal it cannot undo.
     async fn do_rename_session(&self, session_id: &str, name: Option<&str>) {
         let Some(ledger) = self.session_ledger.as_ref() else {
             let body = serde_json::json!({
                 "action": "rename_session_err",
                 "session_id": session_id,
+                "name": name,
                 "reason": "no_ledger",
             });
             let _ = self.control_tx.send(Frame::new(
@@ -5785,6 +5791,7 @@ impl AgentSupervisor {
                 let body = serde_json::json!({
                     "action": "rename_session_ok",
                     "session_id": session_id,
+                    "name": name,
                 });
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
@@ -5795,6 +5802,7 @@ impl AgentSupervisor {
                 let body = serde_json::json!({
                     "action": "rename_session_err",
                     "session_id": session_id,
+                    "name": name,
                     "reason": "not_found",
                 });
                 let _ = self.control_tx.send(Frame::new(
@@ -5807,6 +5815,7 @@ impl AgentSupervisor {
                 let body = serde_json::json!({
                     "action": "rename_session_err",
                     "session_id": session_id,
+                    "name": name,
                     "reason": "ledger_write_failed",
                 });
                 let _ = self.control_tx.send(Frame::new(
@@ -5822,11 +5831,18 @@ impl AgentSupervisor {
     /// Writes the flag, pushes the row so the chip shows the resting state, and
     /// acks `set_session_private_ok` / `_err`. **No fact is recorded for the
     /// toggle itself** — recording the act of hiding would leak the hiding.
+    ///
+    /// The refusal carries the value it refused, the way the ack carries the
+    /// value it wrote. The client toggles from what it holds, so a refused
+    /// write's prior state is the negation of the request — and without that
+    /// value on the wire the client cannot tell a refused "make it private"
+    /// from a refused "make it public", which are opposite states to put back.
     async fn do_set_session_private(&self, session_id: &str, private: bool) {
         let err = |reason: &str| {
             serde_json::json!({
                 "action": "set_session_private_err",
                 "session_id": session_id,
+                "private": private,
                 "reason": reason,
             })
         };
@@ -11514,6 +11530,81 @@ mod tests {
             .expect_handled();
         let err = drain_until_action(&mut rx, "set_session_private_err");
         assert_eq!(err["reason"], "not_found");
+    }
+
+    /// A refusal names the value it refused in either direction. The client
+    /// puts back the negation of that value, so an omitted or one-sided field
+    /// would leave a failed un-private toggle showing "public" over a session
+    /// the ledger still holds private.
+    #[tokio::test]
+    async fn a_refused_toggle_names_the_value_it_refused() {
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger();
+        for requested in [true, false] {
+            let payload = serde_json::to_vec(&serde_json::json!({
+                "action": "set_session_private",
+                "session_id": "nope",
+                "private": requested,
+            }))
+            .unwrap();
+            sup.handle_control("set_session_private", &payload, 10)
+                .await
+                .expect_handled();
+            let err = drain_until_action(&mut rx, "set_session_private_err");
+            assert_eq!(err["session_id"], "nope");
+            assert_eq!(err["private"], requested);
+        }
+    }
+
+    /// Both rename acks name the rename they answer. The client renames
+    /// optimistically off a broadcast feed, so an ack it cannot place is one it
+    /// cannot act on — and the refusal is the only thing that puts the replaced
+    /// name back.
+    #[tokio::test]
+    async fn rename_acks_carry_the_name_they_answer() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+        ledger
+            .record_spawn("sess", "ws-1", "/proj", "card-A", 1_000, None)
+            .unwrap();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "rename_session",
+            "session_id": "sess",
+            "name": "harbor light",
+        }))
+        .unwrap();
+        sup.handle_control("rename_session", &payload, 10)
+            .await
+            .expect_handled();
+        let ack = drain_until_action(&mut rx, "rename_session_ok");
+        assert_eq!(ack["session_id"], "sess");
+        assert_eq!(ack["name"], "harbor light");
+
+        // A cleared name acks as null — the same value the request carried.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "rename_session",
+            "session_id": "sess",
+            "name": "   ",
+        }))
+        .unwrap();
+        sup.handle_control("rename_session", &payload, 10)
+            .await
+            .expect_handled();
+        let ack = drain_until_action(&mut rx, "rename_session_ok");
+        assert!(ack["name"].is_null());
+
+        // And the refusal names it too.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "rename_session",
+            "session_id": "nope",
+            "name": "harbor light",
+        }))
+        .unwrap();
+        sup.handle_control("rename_session", &payload, 10)
+            .await
+            .expect_handled();
+        let err = drain_until_action(&mut rx, "rename_session_err");
+        assert_eq!(err["reason"], "not_found");
+        assert_eq!(err["name"], "harbor light");
     }
 
     /// `list_card_bindings` returns every non-failed row carrying a

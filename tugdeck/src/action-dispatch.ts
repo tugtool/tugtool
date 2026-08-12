@@ -983,6 +983,29 @@ export function initActionDispatch(
     publishSessionUpdated(decoded);
   });
 
+  // rename_session_ok / _err: the ack for `/rename`. The rename surface writes
+  // the chip name optimistically and holds the name it replaced; these arms
+  // resolve that waiter, which puts the old name back on a refusal and reports
+  // either outcome in the card's bulletin. The name identifies WHICH rename is
+  // being acked — CONTROL is a broadcast, and a second rename in flight must
+  // not have its outcome spoken by the first one's ack.
+  registerAction("rename_session_ok", (payload) => {
+    const sessionId = payload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    const name = typeof payload.name === "string" ? payload.name : null;
+    sessionNameStore.settle(sessionId, name, { ok: true });
+  });
+  registerAction("rename_session_err", (payload) => {
+    console.warn("rename_session failed", payload);
+    const sessionId = payload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    const name = typeof payload.name === "string" ? payload.name : null;
+    sessionNameStore.settle(sessionId, name, {
+      ok: false,
+      reason: typeof payload.reason === "string" ? payload.reason : undefined,
+    });
+  });
+
   // set_session_private_ok / _err: the ack for `/private`. The command writes
   // the store optimistically so the atom's marker turns over with the gesture;
   // these arms reconcile it with what the ledger actually did. The `_err` arm
@@ -991,13 +1014,26 @@ export function initActionDispatch(
   registerAction("set_session_private_ok", (payload) => {
     const sessionId = payload.session_id;
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
-    sessionPrivateStore.setPrivate(sessionId, payload.private === true);
+    const written = payload.private === true;
+    sessionPrivateStore.setPrivate(sessionId, written);
+    sessionPrivateStore.settle(sessionId, written, { ok: true });
   });
   registerAction("set_session_private_err", (payload) => {
     console.warn("set_session_private failed", payload);
     const sessionId = payload.session_id;
     if (typeof sessionId !== "string" || sessionId.length === 0) return;
-    sessionPrivateStore.setPrivate(sessionId, false);
+    // Put back the state the toggle came FROM, which is the negation of what
+    // was refused — the command toggles off what the store holds, and a
+    // refused write left the ledger where it was. Restoring a fixed `false`
+    // would only undo one of the two directions: a refused un-private would
+    // leave the deck showing "public" over a session that is still private,
+    // and no `session_updated` is coming to correct it, since nothing changed.
+    const refused = payload.private === true;
+    sessionPrivateStore.setPrivate(sessionId, !refused);
+    sessionPrivateStore.settle(sessionId, refused, {
+      ok: false,
+      reason: typeof payload.reason === "string" ? payload.reason : undefined,
+    });
   });
 
   // list_sessions_ok / _err: response to a `list_sessions` request. The

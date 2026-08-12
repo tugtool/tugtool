@@ -12,13 +12,37 @@
  * pushes and `list_sessions_ok` rows make it **authoritative** (a rename from
  * anywhere, or opening the chooser, fills it in). A blank name clears the entry.
  *
+ * The optimistic write is only safe because the refusal is caught: the rename
+ * surface arms a one-shot {@link SessionNameStore.awaitSettle} waiter before it
+ * sends, holding the name being replaced, and a `rename_session_err` puts that
+ * name back. Nothing else would — a failed write broadcasts no `session_updated`,
+ * so an unreconciled optimistic name is permanent. A session is bound to exactly
+ * one card (`card_id` is 1:1 on the ledger row), so the session id addresses the
+ * waiter as precisely as a card id would.
+ *
  * @module lib/session-name-store
  */
+
+/** How a `/rename` came back from the ledger. */
+export interface NameSettle {
+  /** Whether the ledger wrote the name. */
+  ok: boolean;
+  /** Wire reason from `rename_session_err` — absent when `ok`. */
+  reason?: string;
+}
 
 class SessionNameStore {
   private names = new Map<string, string>();
   private readonly listeners = new Set<() => void>();
   private version = 0;
+  private readonly waiters = new Map<
+    string,
+    {
+      requested: string | null;
+      previous: string | null;
+      notify?: (settle: NameSettle) => void;
+    }
+  >();
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -71,7 +95,66 @@ class SessionNameStore {
     if ((name?.trim() ?? "").length === 0) return;
     this.setName(tugSessionId, name);
   }
+
+  /**
+   * Arm a one-shot waiter for the rename just sent on `tugSessionId`, to be
+   * resolved by the ack for `requested`.
+   *
+   * `previous` is the name being replaced — a string cannot be recovered from
+   * the refusal the way a toggled boolean can, so the value to put back is
+   * remembered here at the moment it is still known. One waiter per session,
+   * superseded by a newer rename, and matched on the name that was asked for,
+   * so a rapid second rename's ack doesn't resolve the first's waiter.
+   *
+   * No timeout, for the reason the privacy store gives: an ack that never
+   * arrives means the transport is down, which the deck already says globally.
+   */
+  awaitSettle(
+    tugSessionId: string,
+    requested: string | null,
+    previous: string | null,
+    notify?: (settle: NameSettle) => void,
+  ): void {
+    this.waiters.set(tugSessionId, { requested, previous, notify });
+  }
+
+  /**
+   * Resolve the pending waiter for `tugSessionId` if it asked for `requested`.
+   * A refusal restores the remembered previous name before notifying — the
+   * rollback lives here because this is the only place that value survives.
+   */
+  settle(
+    tugSessionId: string,
+    requested: string | null,
+    settle: NameSettle,
+  ): void {
+    const waiter = this.waiters.get(tugSessionId);
+    if (waiter === undefined) return;
+    const asked = requested?.trim() ?? "";
+    if ((waiter.requested?.trim() ?? "") !== asked) return;
+    this.waiters.delete(tugSessionId);
+    if (!settle.ok) this.setName(tugSessionId, waiter.previous);
+    waiter.notify?.(settle);
+  }
 }
 
 /** Module-scope singleton — mirrors the other per-card stores' usage shape. */
 export const sessionNameStore = new SessionNameStore();
+
+/**
+ * Human copy for a `rename_session_err` reason, for the refusal bulletin's
+ * description. An unknown code falls through to a legible line rather than a
+ * raw token — mirrors `spawnErrorMessage` and `privateRefusalDetail`.
+ */
+export function renameRefusalDetail(reason: string | undefined): string {
+  switch (reason) {
+    case "not_found":
+      return "This session has no ledger row to name.";
+    case "no_ledger":
+      return "The session ledger is unavailable.";
+    case "ledger_write_failed":
+      return "The session ledger refused the write.";
+    default:
+      return "The session ledger did not accept the change.";
+  }
+}
