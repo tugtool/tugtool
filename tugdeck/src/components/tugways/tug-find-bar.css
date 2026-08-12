@@ -12,8 +12,38 @@
 .tug-find-bar {
   /* Same contrasting rule the status bar draws against the content above. */
   border-top: 1px solid var(--tug7-element-global-divider-normal-default-rest);
+  /* Containing block for the corner ✕ below. */
+  position: relative;
   /* A find field opens one line tall (the substrate's own minimum) and
      soft-wraps, growing with a longer query up to its `maxRows` cap — no tall
      prompt floor here. */
   --tug-text-editor-min-height: 0;
+}
+
+/* The toolbar's controls are all `sm` (28px boxes), so the bar reads as a
+   line of entry with buttons beside it rather than a button rail with a
+   field above. `sm` pins its glyphs at 14px, which loses the chevrons and
+   the ✕ inside their own boxes — 16px is the largest mark that still leaves
+   the box reading as a button, and it matches the cluster's Case/Word/Grep
+   glyphs, so all three groups carry one glyph size. */
+.tug-find-bar .tug-button-icon-sm svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The dismissal rides the bar's top-right corner rather than a row of its
+   own — the bar is one line of entry, and a row for a single ✕ would double
+   its resting height. Out of flow, so the query field keeps the full panel;
+   the padding below is what keeps the text out from under it. */
+.tugx-find-dismiss {
+  position: absolute;
+  top: var(--tug-space-xs);
+  right: var(--tug-space-xs);
+  z-index: 1;
+}
+
+/* Reserve the corner: a query long enough to wrap would otherwise run its
+   first line under the ✕. Button box + the corner inset on either side. */
+.tug-find-bar .tug-entry-shell-input-area {
+  padding-right: calc(var(--tug-button-sm-height) + 2 * var(--tug-space-xs));
 }

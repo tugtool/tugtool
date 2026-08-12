@@ -16,10 +16,11 @@
 /* The option group's size variant pins its icon svgs (sm → 14px). The
    Case/Word/Grep marks (esp. the regex glyph) read too small there, so the
    Find cluster bumps them up — the buttons keep their sm metrics, only the
-   glyphs grow. */
+   glyphs grow. 16px, the same mark size the find bar's ✕ and ↑ / ↓ carry in
+   their own sm boxes. */
 .tugx-find-cluster .tug-option-group .tug-group-item-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 /* Read-only match-count badge. Tabular figures so "1 of 9" → "10 of 90"

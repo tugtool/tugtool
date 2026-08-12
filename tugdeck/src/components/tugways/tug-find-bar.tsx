@@ -6,8 +6,13 @@
  * + toolbar shell), a {@link TugTextEditor} CM6 substrate as the query field,
  * and one trailing group holding the shared {@link TugFindCluster} (the count
  * badge, then Case / Word / Grep) beside the ↑ / ↓ pair (outlined "Find
- * previous" beside filled "Find next"). It docks immediately above the host's
- * status bar; ⌘F summons and dismisses it, Escape dismisses — there is no ✕.
+ * previous" beside filled "Find next"), led by a ghost ✕. It docks immediately
+ * above the host's status bar; ⌘F summons and dismisses it, Escape dismisses,
+ * and the ✕ is that same dismissal for a hand already on the mouse.
+ *
+ * The controls sit at `sm` metrics — a find bar is one line of thin entry
+ * field, and a rail of `lg` buttons under it reads as the loudest thing on the
+ * card rather than its quietest.
  *
  * Keys: Enter → next, Shift-Enter → previous, Escape → dismiss — a dedicated
  * find field follows the universal find-bar convention. Bound as a
@@ -33,7 +38,7 @@
 import "./tug-find-bar.css";
 
 import React, { useEffect, useMemo, useRef } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
@@ -289,6 +294,41 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
           ref={shellRef}
           className={className ? `tug-find-bar ${className}` : "tug-find-bar"}
           data-slot={dataSlot}
+          statusRow={
+            // Dismissal sits in the bar's top-right corner, out of the
+            // toolbar entirely: in the trailing group it read as a fourth
+            // navigation button. It takes no cycle stop — Escape and ⌘F are
+            // the keyboard's two dismissals already, and a fifth stop here
+            // would push every host's find span into the orders its status
+            // strip owns. Ghost, so the one control that ends the search is
+            // also the quietest.
+            <div
+              className="tugx-find-dismiss"
+              data-slot="find-dismiss"
+              // Same refusal the shell's toolbar row carries: clicking the ✕
+              // must not pull first-responder off the host's editor on its
+              // way to dismissing the bar. Ancestor-matched, so the button
+              // inherits it. [L11]
+              data-tug-focus="refuse"
+            >
+              <TugActionTooltip
+                // Escape's own command — the chord the tooltip shows for this
+                // button is the one that does the same thing without it.
+                action={TUG_ACTIONS.CANCEL_DIALOG}
+                content="Close the find bar"
+              >
+                <TugPushButton
+                  subtype="icon"
+                  size="sm"
+                  emphasis="ghost"
+                  role="action"
+                  onClick={() => onCloseRef.current()}
+                  aria-label="Close find bar"
+                  icon={<X size={16} strokeWidth={2.5} />}
+                />
+              </TugActionTooltip>
+            </div>
+          }
           toolbarTrailing={
             <>
               {/* Everything about the search reads as one trailing group:
@@ -307,7 +347,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
               >
                 <TugPushButton
                   subtype="icon"
-                  size="lg"
+                  size="sm"
                   // Outlined, not filled: Previous is the secondary of the
                   // Next/Previous pair — the filled button is "next" (the
                   // Return gesture's twin), this outlined one is "previous".
@@ -315,7 +355,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                   role="action"
                   onClick={() => session.previous()}
                   aria-label="Find previous"
-                  icon={<ChevronUp size={18} strokeWidth={2.5} />}
+                  icon={<ChevronUp size={16} strokeWidth={2.5} />}
                   focusGroup={focusGroup}
                   focusOrder={focusOrderBase + FIND_STOP_PREVIOUS}
                 />
@@ -326,7 +366,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
               >
                 <TugPushButton
                   subtype="icon"
-                  size="lg"
+                  size="sm"
                   emphasis="filled"
                   role="action"
                   // Return in the query field IS this button, so it wears the
@@ -336,7 +376,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
                   data-tug-entry-default=""
                   onClick={() => session.next()}
                   aria-label="Find next"
-                  icon={<ChevronDown size={18} strokeWidth={2.5} />}
+                  icon={<ChevronDown size={16} strokeWidth={2.5} />}
                   focusGroup={focusGroup}
                   focusOrder={focusOrderBase + FIND_STOP_NEXT}
                 />
