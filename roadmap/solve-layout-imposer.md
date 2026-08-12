@@ -661,3 +661,553 @@ The substitution is exact, not a compromise. `T*` is `canvasWidth − gap·(R+2)
 | Behavior drift | golden JSON diff in review |
 | Typography ↔ width coherence | at0365 measure pin |
 | Real-deck greed order | at0303 |
+
+---
+---
+
+## Phase 2 Fixup Addendum — the picture-directed total {#phase-2-fixup}
+
+**Purpose:** Phase 1 landed on `main` at `931665ecc` and is **not acceptable in use**. This addendum diagnoses why, from measured evidence, and specifies the repair: a rail total chosen by evaluating the *real painted geometry* rather than by a least-squares fit over a linear model, and a two-level floor that stops a legibility preference from outranking the deck's duty to show the user's cards without overlap. It also repairs the regression net, which was built so that it could not observe the failure.
+
+Phase 2 is a **correction of Phase 1's design**, not new capability. Everything in Phase 1's #non-goals stays out of scope.
+
+---
+
+### Phase 2 Metadata {#phase-2-metadata}
+
+| Field | Value |
+|------|-------|
+| Owner | Ken Kocienda |
+| Status | draft |
+| Target branch | main |
+| Phase 1 landed at | `931665ecc` (squash-joined from `tugdash/solve-layout-imposer`) |
+| Last updated | 2026-08-12 |
+
+---
+
+### Phase 2 Context — what shipped, and what is wrong with it {#phase-2-context}
+
+Phase 1 replaced the allocator's graded acceptance policy with a lexicographic water-fill: hard floors, then the least-squares tiling total as the target, then preferences filled in registered greed order, then the shared ceiling. In use it is worse than what it replaced. The reported symptoms, all four of them real and all four reproduced below:
+
+1. It does a poor job of resolving small overlaps.
+2. The Gazette stays stubbornly wide when shrinking it would find a solution.
+3. Gaps between cards are sometimes narrower than the imposition gap — not the standard snap rhythm.
+4. It behaves as though it does not run on an OS window / canvas resize at all.
+
+#### The measured evidence {#phase-2-evidence}
+
+Reproduced against the landed module (`tugdeck/src/lib/layout-imposer.ts` at `931665ecc`) with a three-up deck, three 800px content cards in slots 0/1/2, Gazette right (preferred 580, floor 512, rank 1) and Lens left (preferred 420, floor 320, rank 2), ceiling 675.
+
+**Table T03: the answer as the canvas grows** {#t03-flat-answer}
+
+| canvas | `T*` (least-squares total) | answer (left / right) | worst overlap |
+|---|---|---|---|
+| 1400 | −1030 | 320 / 512 | 800 |
+| 2000 | −430 | 320 / 512 | 626 |
+| 2600 | 170 | 320 / 512 | 326 |
+| 3200 | 770 | 320 / 512 | **26** |
+| 3300 | 870 | 320 / 550 | 0 |
+| 3400 | 970 | 390 / 580 | 0 |
+
+The answer is **identical across an 1800px range of canvas widths**. Symptom 4 is not a wiring bug: the settled-resize observer in `tugdeck/src/components/chrome/deck-canvas.tsx` (the `ResizeObserver` that calls `store.retuneSidebarAllocation()` after `RESIZE_RETUNE_QUIET_MS`) is intact and fires. The allocator runs and returns the same number every time, because `target = clamp(T*, Σfloor, Σceil)` saturates at `Σfloor = 832` for every canvas in that range. **Symptom 4 is a consequence of symptom 2.**
+
+**Table T04: the 26px overlap at canvas 3200 is trivially fixable** {#t04-floor-blocks-solution}
+
+| Gazette floor | answer (left / right) | worst overlap | worst seam error |
+|---|---|---|---|
+| 512 (shipped) | 320 / 512 | 26 | 31 |
+| 480 | 320 / 480 | 10 | 15 |
+| **440** | 320 / **450** | **0** | **0** |
+| 400 | 320 / 450 | 0 | 0 |
+
+A total of 770 tiles this deck exactly. The rails can reach it. The 512 floor forbids it. Symptom 2 is mechanical, and the user diagnosed it correctly from the outside.
+
+**Least squares spreads error rather than removing it.** Five-up with cards in slots 0, 1 and 4 (an occupancy no band tiles), Gazette alone on the right, at canvas 3200:
+
+```
+seams: -372.5 | +482.5        (the imposition gap is 5)
+```
+
+One pair of cards occluding by 372px so the next pair can stand 482px apart. Sum-of-squares treats an overlap and a gap as equally costly; on screen they are not remotely equivalent. The rail sits pinned at its 675 ceiling contributing nothing. Phase 1's predecessor recognised this case ("the best band there is, is not a tiled one") and returned `null` — it left the rails alone. Phase 1 always commits the compromise, so the user now always sees it. This is symptom 3, and part of symptom 1.
+
+#### The three root causes {#phase-2-root-causes}
+
+**Cause A — a legibility preference was registered as an inviolable constraint.** `MIN_GAZETTE_WIDTH_PX` (`tugdeck/src/lib/gazette-measure.ts`) is `56ch + chrome = 512`, meaning "the narrowest measure that still reads as prose". That is a *preference*. Phase 1 registered it as `sizePolicy.min.width`, which the solver treats as rank-1 inviolable — above the requirement that the chain not overlap. The deck now prefers a well-measured Gazette to showing the user's own cards un-occluded, which inverts the priority the pre-Phase-1 code stated correctly ("cards crowding or occluding one another is the deck failing to show the user's cards, and that outranks holding a rail's chosen width").
+
+It is worse than an allocator problem: `sizePolicy.min.width` also clamps the user's own resize drag (`tugdeck/src/components/chrome/tug-pane.tsx`, the `Math.max(newSize.width, sizePolicy.min.width)` in the resize commit), and `allocateSidebarWidths` clamps `preferredWidth` up to the floor. **The user cannot drag their way out of it either.**
+
+Phase 1 deleted `LENS_FLEX_SHRINK_FRACTION` — a *soft* floor sitting above the hard `minWidth`, with the hard floor reachable when the picture was suffering — as part of deleting the graded licence. The two-level floor was the load-bearing idea; the three grades were the decoration. Both were demolished together.
+
+**Cause B — the objective is wrong in the crowded regime.** `solveSidebarWidths` minimises the sum of squared seam errors over the *linear* seam model. That model is only valid while every pane still has travel left; `imposeRect` clamps travel at zero, so on a crowded deck the linear form describes a picture the browser never paints. Phase 1's predecessor compensated by judging its own answers through `seamPicture` — the real painted geometry. Phase 1 removed `seamPicture` from the decision path entirely and demoted it to a test helper. **The one component that knew what the screen actually looked like was deleted from the decision.**
+
+**Cause C — the regression net was built with a hole exactly where the failure is.** `tugdeck/src/lib/__tests__/layout-imposer-solutions.test.ts` asserts its tiling invariant only under this guard:
+
+```ts
+if (solved !== null && solved >= floorTotal && solved <= ceilingTotal && chainTilesExactly(input, answer)) { … }
+```
+
+That condition *is* "the regime that already works". Every failing case is excluded by construction, so 1.46M assertions proved nothing about the failure mode. The golden table then froze the behavior as correct, and at0303 passes because it checks numbers derived from the same wrong model. See #phase-2-net-postmortem.
+
+---
+
+### Phase 2 Strategy {#phase-2-strategy}
+
+- **Keep what was right.** The separation property (#piecewise-linear) is sound and load-bearing: the band, and therefore every seam, depends only on the rails' **total** and never on how that total is split. So the problem decomposes cleanly into *choose the total* (which determines the picture) and *distribute the total* (which cannot affect the picture at all). Phase 1's distribution — greed-ordered fill with tie splitting — is correct and survives unchanged except for the two-level floor. **The bug is entirely in choosing the total.**
+- **Choose the total by looking at the real picture.** Replace "least-squares fit, then clamp" with a search over candidate totals scored by `seamPicture` — the actual `imposeRect` geometry. The candidate range is a bounded integer interval, and the scoring is a lexicographic key, so the result is still exact, pure, deterministic and total ([P10], Spec S04).
+- **Restore two floors, and state when the softer one is spent.** A hard floor (can't paint below this — also the user's drag floor) and a comfort floor (the 56ch measure). Comfort is given up **if and only if** giving it up removes overlap entirely ([P11]).
+- **Fix the net before trusting the fix.** Add invariants that assert on the crowded regime and confirm they fail against the landed solver before implementing ([P14]).
+- **Look at it.** Phase 1's only live-deck criterion was left for the user, and it was the one thing that would have caught all of this in thirty seconds. Phase 2 closes with an observed vetting pass on a debug build ([P15]).
+
+---
+
+### Phase 2 Success Criteria (Measurable) {#phase-2-success-criteria}
+
+- For the Table T03 fixture, the answer takes **at least 8 distinct values** as the canvas sweeps 1400 → 3400 in 100px steps (today: two). Direct pin on symptom 4 — unit-asserted in the solutions sweep.
+- At canvas 3200 for the Table T03 fixture, the answer is `left 320 / right 450`, worst overlap 0, worst seam error 0. Direct pin on symptoms 1 and 2.
+- **The no-overlap invariant:** for every enumerated configuration, if any rail total in `[Σ hardFloor, Σ ceiling]` yields zero overlap, the answer has zero overlap. This assertion **fails against `931665ecc`** — that failure is the proof the net has teeth ([P14]).
+- **The rhythm invariant:** among totals with zero overlap, no seam is under `IMPOSITION_GAP_PX` unless no reachable total avoids it. Direct pin on symptom 3.
+- **The comfort invariant:** a rail is below its comfort floor only when no total at or above `Σ comfortFloor` yields zero overlap *and* some total below it does. Pins that comfort is spent for a reason and never gratuitously.
+- The user can drag the Gazette rail down to `MIN_GAZETTE_WIDTH_PX` by hand (at0365 or at0303 gesture assertion) — the Phase 1 512 trap is gone.
+- Phase 1's surviving guarantees hold unchanged: totality, bounds, greed soundness, canvas monotonicity, stacking folds, tie fairness (List L02), and the no-ratchet property (`RailPolicy` still cannot see a standing width).
+- `cd tugdeck && bunx tsc --noEmit && bunx vite build` clean; `bun test src` green; the derived app-test selection green.
+- The golden table is regenerated in its own commit, so the behavioral diff is reviewable as the repair rather than buried in the solver commit.
+
+---
+
+### Phase 2 Scope {#phase-2-scope}
+
+1. `tugdeck/src/lib/layout-imposer.ts` — total selection rewritten (Spec S04); `RailPolicy` gains `comfortWidth` (Spec S06); two-level drain in distribution (Spec S05); `seamPicture` gains a shortfall reading and returns to the decision path.
+2. `tugdeck/src/lib/gazette-measure.ts` — split the single floor into a hard floor and a comfort floor.
+3. `tugdeck/src/card-registry.ts` — `comfortWidth?` registration field and accessor; Gazette registers it.
+4. `tugdeck/src/deck-manager.ts` — max-fold `comfortWidth` in `_sidebarRails`.
+5. Regression nets: crowded-regime invariants in `layout-imposer-solutions.test.ts`, new unit cases, regenerated golden, at0303 additions.
+
+### Phase 2 Non-goals {#phase-2-non-goals}
+
+- Everything in Phase 1's #non-goals remains out of scope — placement (Layer A), the split-rail math, the moments ([P08] still holds: this changes *what the answer is*, never *when it is asked for*), per-card ceilings, content width presets, preference sourcing.
+- **Not reverting Phase 1.** Per-rail answers, registered greed order, the ch-derived Gazette measure and the totality contract are all kept. This addendum repairs how the total is chosen and re-introduces the second floor.
+- No new runtime state (see #phase-2-state-zone-mapping).
+- The Gazette's *comfort* measure stays 56ch — this addendum does not re-tune the typography.
+
+### Phase 2 Constraints {#phase-2-constraints}
+
+- Inherits Phase 1's #constraints in full: pure tugdeck phase, bun never npm, `bunx vite build` mandatory before declaring done, app-tests selective and never piped, warnings are errors, no `localStorage`, tuglaws [L02]/[L06] apply.
+- **The solver must stay cheap.** It runs on every settled resize. Spec S04's search must cost no more than a few hundred `seamPicture` evaluations, and the solutions sweep (~50k solves) must still finish in a couple of seconds — see [P13].
+- The solver stays **pure**: no DOM, no store, no measurement. `seamPicture` is already pure arithmetic over `imposeRect`.
+
+### Phase 2 Assumptions {#phase-2-assumptions}
+
+- `seamPicture(input, widths)` reads the same picture for any split of a given total. This is the separation property and it is already unit-asserted in `layout-imposer.test.ts` ("moving width between the rails leaves every seam where it was"). **Caveat for the implementer:** the *number of standing sides* does matter, because `resolveSpan` adds one imposition gap per occupied side. A candidate total must therefore be evaluated with a `RailWidths` carrying the same sides the answer will, summing to the candidate.
+- Every seam is non-increasing in the rails' total (a bigger total means a smaller band). This holds exactly while all panes have travel; it can flatten where `imposeRect`'s `max(0, …)` clamps. Spec S04 therefore uses a scan rather than a binary search — see [P13].
+
+---
+
+### Phase 2 Open Questions {#phase-2-open-questions}
+
+#### [Q04] What is the Gazette's true hard floor? (DECIDED, one constant) {#q04-gazette-hard-floor}
+
+**Question:** 512 is the comfort floor (56ch + chrome). What is the width below which the Gazette genuinely cannot be painted?
+
+**Why it matters:** It sets how much overlap relief the deck can buy, and it is the width the user's own drag can reach.
+
+**Resolution:** DECIDED — **400**, which is what shipped before Phase 1 and, at the landed `GAZETTE_BODY_CH_PX = 8.4` and `GAZETTE_ROW_CHROME_PX = 42`, is a measure of about 42 characters — narrow, still readable, and enough for the byline and a ref chip. This is a single constant (`MIN_GAZETTE_WIDTH_PX` in `tugdeck/src/lib/gazette-measure.ts`); raising it to ~460 trades overlap relief for a wider guaranteed measure and requires no other change. The owner can overrule the number without touching the design.
+
+#### [Q05] Should `seamPicture` distinguish a too-narrow seam from a too-wide one? (DECIDED) {#q05-shortfall-reading}
+
+**Question:** `seamPicture` reports `worstError = max |seam − gap|`, which scores a seam 10px *under* the gap the same as one 10px *over* it.
+
+**Why it matters:** Symptom 3 is specifically "gaps sometimes too narrow". A chooser minimising `worstError` will happily land on a cramped chain when an airy one scored the same.
+
+**Resolution:** DECIDED — `seamPicture` gains `worstShortfall` (`max(0, gap − seam)`), and Spec S04 ranks it ahead of `worstError`. A chain that is slightly airy reads as arranged; a chain that is slightly cramped reads as broken. `worstOverlap` stays a separate, higher-ranked term because occlusion is a different kind of failure from a tight seam.
+
+#### [Q06] Should the Lens and Jots carry comfort floors too? (DEFERRED) {#q06-other-comfort-floors}
+
+**Question:** Only the Gazette has a typographic comfort width. Should the list rails get one?
+
+**Resolution:** DEFERRED. `comfortWidth` defaults to `minWidth` (no comfort band), which reproduces today's Lens and Jots behavior exactly, and neither was reported as a problem. Revisit if a list rail is ever reported as cramped.
+
+---
+
+### Phase 2 Risks and Mitigations {#phase-2-risks}
+
+| Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
+|------|--------|------------|------------|--------------------|
+| The scan is too slow for the solutions sweep | med | med | Coarse-to-fine scan ([P13]); sweep timing asserted in the test | Sweep runtime over ~5s |
+| The new objective is wrong in some regime nobody enumerated | high | low | The sweep now asserts on the crowded regime, which is where Phase 1 was blind; plus an exhaustive-optimum cross-check on a subset ([P13]) | Any user-visible arrangement complaint |
+| Golden churn hides the repair | low | high | Golden regenerated in its OWN commit, after the solver commit ([P14]) | — |
+| Rails move more often now | low | med | Unchanged from Phase 1's R01 — the moments are untouched, the answer is idempotent, `_commitImposition`'s 1px deadband still suppresses no-ops | Visible churn on ordinary resizes |
+
+**Risk R03: the comfort floor becomes a second stubbornness** {#r03-comfort-stubbornness}
+
+- **Risk:** If comfort is spent only when it removes overlap *entirely*, a deck that stays overlapped no matter what keeps its rails at comfort width while the cards occlude — visually the same complaint, one level down.
+- **Mitigation:** This is deliberate and is the correct reading (see [P11]): on a chain that cannot be repaired, cramping the rails buys occlusion the user still sees, at the cost of a rail they can no longer read. The prototype confirms the behavior is coherent — on a hopeless deck the rails sit at comfort, and on a truly tiny canvas they return to their *preferences* (nothing helps, so nothing is spent).
+- **Residual risk:** A user on a permanently-too-small window sees overlap that the old code also could not fix. The honest answer there is fewer cards or a narrower content width, not a cramped rail.
+
+**Risk R04: the hard floor drop changes the drag floor** {#r04-drag-floor-change}
+
+- **Risk:** Lowering the Gazette's registered `sizePolicy.min.width` from 512 to 400 lets the user drag it narrower than the measure it was designed for.
+- **Mitigation:** That is the point — Phase 1 trapped them at 512 and [L23] says a width the user chose is theirs. The comfort floor keeps the *allocator* off that range.
+- **Residual risk:** None beyond the user choosing a narrow rail deliberately.
+
+---
+
+### Phase 2 Design Decisions {#phase-2-design-decisions}
+
+#### [P10] The rail total is chosen by scoring the real painted geometry (DECIDED) {#p10-picture-directed-total}
+
+**Decision:** `allocateSidebarWidths` no longer takes `solveSidebarWidths`'s least-squares total as its target. It searches candidate totals over `[Σ hardFloor, Σ ceiling]` and picks the one whose **real** `seamPicture` scores best on a lexicographic key (Spec S04). `solveSidebarWidths` is kept and exported — it is still the honest closed-form band fit, it is still what the golden/breakpoint arithmetic is built on, and it is used to seed the scan — but it is no longer the answer.
+
+**Rationale:**
+- The separation property makes this legitimate and cheap: the picture is a function of the *total alone*, so a one-dimensional search over an integer interval is an exhaustive search of the entire picture space.
+- Least squares minimises a sum over a linear model. What the user sees is the *worst* seam under `imposeRect`'s real clamped rule. Those are different objectives, and Table T03/T04 is what the difference looks like.
+- It restores the pre-Phase-1 insight — judge the result by the picture — without restoring the machinery that was actually wrong (the grades, the tolerance constants, the comparison against the standing widths). The score is an **objective**, not an acceptance test: there is no tolerance to tune and no "refuse" branch.
+
+**Implications:**
+- `seamPicture` returns to the decision path and stops being test-only. It gains `worstShortfall` ([Q05]).
+- The answer stays a pure, total, deterministic function of `(canvasWidth, kind, occupied, rails, maxRailWidth)`. No ratchet: `RailPolicy` still cannot carry a standing width.
+- The `null` contract is unchanged ([P06]): no rail stands, or an input is non-finite.
+
+#### [P11] Two floors, and comfort is spent only to remove overlap (DECIDED) {#p11-two-floors}
+
+**Decision:** A rail carries a **hard floor** (`minWidth` — the width below which the card cannot be painted, and the floor the user's resize drag clamps to) and a **comfort floor** (`comfortWidth` — the narrowest the rail is comfortable at). The chooser runs its search over the comfort domain first; it descends into `[Σ hardFloor, Σ comfortFloor)` **if and only if** some total down there yields zero overlap and nothing in the comfort domain does.
+
+**Rationale:**
+- This is the priority the pre-Phase-1 allocator stated correctly and Phase 1 inverted: the deck's duty to show the user's cards un-occluded outranks a rail's preferred measure, but not the rail's ability to paint at all.
+- Stated as "if and only if it removes overlap entirely", it is a rule with a yes/no answer rather than a graded judgement — which is what makes it testable and what distinguishes it from the licence Phase 1 deleted for good reason.
+- Validated against the failing cases: at canvas 3200 comfort is spent and the chain tiles exactly (320/450, zero overlap, zero seam error); at 3400 comfort is untouched; on an unrepairable deck comfort is held rather than squandered.
+
+**Implications:**
+- Gazette: `MIN_GAZETTE_WIDTH_PX` becomes 400 ([Q04]); the 56ch derivation becomes `COMFORT_GAZETTE_WIDTH_PX = 512`.
+- `comfortWidth` folds across a rail's stacked members by `Math.max`, exactly as `minWidth` does — a rail must satisfy its most demanding member.
+- Cards that register no comfort width take `comfortWidth = minWidth`, which is today's behavior ([Q06]).
+
+#### [P12] Greed-ordered distribution is unchanged, but drains in two tiers (DECIDED) {#p12-two-tier-drain}
+
+**Decision:** Distribution keeps Phase 1's greed-ordered water-fill with even tie splitting and remainder redistribution (Spec S01 step 4). The only change: a deficit drains every rail to its **comfort** floor in reverse-greed order first, and only if the total is still unmet does it continue draining to **hard** floors, again in reverse-greed order.
+
+**Rationale:**
+- Distribution cannot affect the picture (the separation property), so nothing about the reported symptoms lives here. Changing it would be scope creep.
+- Two-tier draining keeps the greed order meaningful in the comfort band: the least greedy rail gives up its comfort before the greediest gives up any.
+
+**Implications:** Phase 1's greed-soundness invariants (List L02 item 3) are restated per tier and stay asserted.
+
+#### [P13] The search is a coarse-to-fine scan, cross-checked against exhaustive (DECIDED) {#p13-scan-strategy}
+
+**Decision:** The chooser scans the candidate interval at a coarse stride (16px), then rescans ±16px around the coarse winner at 1px. A test cross-checks the scan's answer against a full 1px exhaustive search over a representative subset of configurations.
+
+**Rationale:**
+- A binary search would be tempting — every seam is non-increasing in the total, so overlap is monotone — but `imposeRect`'s `max(0, band − w)` clamp flattens that relationship where a pane runs out of travel, and with unequal card widths the flat regions do not line up. A scan is robust to that; a binary search would be correct almost always, which is the worst kind of correct.
+- Cost: an interval of ~630px is ~40 coarse plus ~32 fine evaluations, each `O(chain)` — well under a millisecond, and cheap enough that the ~50k-solve sweep stays in seconds.
+- The exhaustive cross-check is what makes the stride a performance decision rather than a correctness gamble.
+
+**Implications:** The stride is a named constant with a doc comment. If the cross-check ever fails, the stride is wrong, not the objective.
+
+#### [P14] The net is repaired before the solver, and proven to fail first (DECIDED) {#p14-net-first}
+
+**Decision:** The crowded-regime invariants (List L03) are written and **run against the landed solver to confirm they fail**, before the fix is implemented. Because a red commit is not allowed, the invariants and the fix land in the same commit (as Phase 1's Step 2 landed its solver and suite together) — but the observed failure is recorded in the step's dash-round summary. The golden table is regenerated in a **separate, later commit** so the behavioral diff is reviewable on its own.
+
+**Rationale:**
+- Phase 1's net passed 1.46M assertions against a solver the user rejected on sight. A net that has never been observed to fail has not been shown to test anything.
+- Regenerating the golden in the same commit as the solver would bury the repair in ~488 rows of churn; separated, the golden diff *is* the evidence of what changed.
+
+**Implications:** The Step 9 checkpoint includes "the new invariants were observed failing against `931665ecc` before the fix" as a recorded fact.
+
+#### [P15] The phase does not close without an observed live deck (DECIDED) {#p15-observed-close}
+
+**Decision:** Phase 2's final step is a vetting pass on a `just app-debug` build in which the implementer **actually resizes the window** with Gazette and Lens open and reports what was observed — rail widths tracking the canvas, no overlap where a reachable total removes it, seams on the gap.
+
+**Rationale:** Phase 1's automated checkpoints were all green while the feature was unusable. Every symptom was visible in seconds of real use. An automated suite is a regression net, not evidence that a thing is good.
+
+**Implications:** The step's checkpoint is a written observation, not only a green command. It is falsifiable by the specific claims it must make (see #step-11).
+
+---
+
+### Phase 2 Deep Dives {#phase-2-deep-dives}
+
+#### Why Phase 1's net could not see the failure {#phase-2-net-postmortem}
+
+Worth reading before writing the new assertions, because the failure mode is easy to reproduce.
+
+`layout-imposer-solutions.test.ts` enumerates a genuinely large space — six kinds × every non-empty slot subset × three uniform widths plus a mixed pattern × eight rail fixtures × breakpoints and a sweep — and asserts totality, bounds, greed soundness, monotonicity, stacking folds and tie fairness on every point. All of those are **structural** properties: they constrain the *shape* of the answer relative to the inputs. Every one of them is satisfied by an answer that looks terrible on screen.
+
+The only invariant about the *picture* — tiling — was guarded by `solved >= floorTotal && solved <= ceilingTotal && chainTilesExactly(...)`, i.e. "the target was reachable and the chain admits an exact fit". That is exactly the set of configurations in which the Phase 1 algorithm is correct. The test asked the solver to justify itself only where it already knew the answer.
+
+The lesson to encode in List L03: **a picture invariant must be stated against what was achievable, not against what the algorithm attempted.** "If any reachable total removes the overlap, the answer removes the overlap" makes no reference to the algorithm's internals, cannot be satisfied by a structurally-tidy wrong answer, and fails loudly on `931665ecc`.
+
+#### The prototype that validated Spec S04 {#phase-2-prototype}
+
+The chooser in Spec S04 was prototyped against the real module before this addendum was written. For the Table T03 fixture:
+
+| canvas | chosen total | comfort spent? | worst overlap | worst seam error |
+|---|---|---|---|---|
+| 1400 | 1000 (= Σ preferred) | no | 800 | 805 |
+| 2000 | 832 (= Σ comfort) | no | 626 | 631 |
+| 3000 | 832 (= Σ comfort) | no | 126 | 131 |
+| **3200** | **770** | **yes** | **0** | **0** |
+| 3400 | 970 | no | 0 | 0 |
+
+Three behaviors to preserve, each of which is an assertion in List L03:
+
+1. **Canvas 3200** — comfort is spent, and the chain tiles exactly. This is the repair.
+2. **Canvas 2000–3000** — no total removes the overlap (three 800px cards genuinely do not fit), so comfort is *held* and the rails sit at comfort floors having reduced the overlap as far as comfort allows.
+3. **Canvas 1400** — the deck is hopeless and every total scores the same overlap, so the tie-break returns the rails to their **preferences** rather than cramping them for nothing.
+
+---
+
+### Phase 2 Specification {#phase-2-specification}
+
+**Spec S04: choosing the rail total** {#s04-choose-total}
+
+Replaces Spec S01 step 3. Signature and module unchanged; this is internal to `allocateSidebarWidths`.
+
+Given the per-rail bounds from Spec S01 step 2, extended per Spec S06:
+
+1. **Domains.** `hardTotal = Σ floor_i`, `comfortTotal = Σ max(floor_i, min(comfort_i, ceil_i))`, `ceilTotal = Σ ceil_i`, `prefTotal = Σ pref_i`. Clamp `comfortTotal` into `[hardTotal, ceilTotal]`.
+2. **Score.** For a candidate total `T`, build a `RailWidths` carrying **the same sides the answer will carry**, summing to `T` (any split — the picture depends only on the total; see #phase-2-assumptions), and read `seamPicture`. The score is the lexicographic key:
+
+   ```
+   key(T) = [ worstOverlap, worstShortfall, worstError, |T − prefTotal| ]
+   ```
+
+   `worstOverlap` = deepest occlusion (`max(0, −seam)`); `worstShortfall` = tightest seam under the gap (`max(0, gap − seam)`, [Q05]); `worstError` = `max |seam − gap|`; the last term keeps the rails as close to the user's chosen widths as the picture allows and makes the answer unique.
+3. **Search.** `bestIn(lo, hi)` = the `T` in `[lo, hi]` minimising `key(T)`, found by the coarse-to-fine scan of [P13], ties broken toward the smaller `T` so the result is order-independent.
+4. **The comfort rule ([P11]).**
+   ```
+   comfortBest = bestIn(comfortTotal, ceilTotal)
+   if worstOverlap(comfortBest) == 0            → target = comfortBest
+   else hardBest = bestIn(hardTotal, ceilTotal)
+        if worstOverlap(hardBest) == 0          → target = hardBest
+        else                                    → target = comfortBest
+   ```
+   Comfort is surrendered only to *remove* overlap, never merely to reduce it.
+5. **No chain.** When the chain has fewer than two occupied slots there is no seam and every score is zero, so the key reduces to `|T − prefTotal|` and the target is `prefTotal` — which is exactly [Q02]/[P06]'s existing answer, now falling out of the objective instead of being a special case. The implementer should keep the explicit early return anyway, to skip the scan.
+6. **Guards unchanged** (Spec S01 step 1): `null` only for no standing rail or a non-finite input, `greedRank` included. `comfortWidth` joins the finiteness check in `chainOf`, the single validation site.
+
+**Spec S05: distributing the total across two floor tiers** {#s05-two-tier-drain}
+
+Replaces Spec S01 step 4's deficit branch; the surplus branch is unchanged.
+
+Start every rail at `pref_i`. Let `need = Σ pref_i − target`.
+
+1. **Deficit, comfort tier.** Visit rails in reverse greed order (largest `greedRank` first). Shrink each toward `comfortFloor_i = max(floor_i, min(comfort_i, ceil_i))` until `need` is met. Equal ranks split their tier's delta evenly with one-pass remainder redistribution, exactly as today.
+2. **Deficit, hard tier.** If `need` remains, visit rails again in reverse greed order, shrinking each from its comfort floor toward `floor_i`.
+3. **Surplus** — unchanged from Spec S01 step 4: greed order, growth bounded by `target` then `ceil_i`, preference is not a cap.
+4. **Rounding** — unchanged: round each width; the ≤R px residual stays with the band's travel.
+
+**Spec S06: type changes** {#s06-types}
+
+```ts
+// layout-imposer.ts
+export interface RailPolicy {
+  preferredWidth: number;  // the user's durable choice (or the registered preferred)
+  minWidth: number;        // the HARD floor — the width below which the card cannot paint
+  comfortWidth: number;    // the narrowest this rail is comfortable at; ≥ minWidth
+  greedRank: number;       // lower = greedier: fed first, drained last
+}
+
+// seamPicture gains a shortfall reading ([Q05])
+export function seamPicture(
+  input: AllocatorInput,
+  widths: RailWidths,
+): { worstError: number; worstOverlap: number; worstShortfall: number };
+
+// card-registry.ts
+export interface CardRegistration { /* … */ comfortWidth?: number }
+export function getComfortWidth(componentId: string): number;  // ?? getSizePolicy(id).min.width
+
+// lib/gazette-measure.ts
+export const MIN_GAZETTE_WIDTH_PX = 400;                    // hard floor ([Q04]) — ~42ch
+export const COMFORT_GAZETTE_WIDTH_PX =                     // 56ch + chrome = 512
+  Math.round(GAZETTE_MIN_MEASURE_CH * GAZETTE_BODY_CH_PX) + GAZETTE_ROW_CHROME_PX;
+```
+
+`_sidebarRails` (deck-manager.ts) folds `comfortWidth` with `Math.max`, beside the existing max-folds for `preferredWidth` and `minWidth` and the min-fold for `greedRank`.
+
+**Table T05: symptom → cause → the decision that fixes it** {#t05-symptom-map}
+
+| Reported symptom | Root cause | Fixed by |
+|---|---|---|
+| Poor at resolving small overlaps | A + B — floor blocks the reachable total; objective ignores the real geometry | [P10], [P11] |
+| Gazette stubbornly too wide | A — comfort registered as an inviolable floor, trapping the drag too | [P11], [Q04] |
+| Gaps too narrow / not the snap gap | B — least squares spreads error and scores cramped == airy | [P10], [Q05] |
+| Doesn't seem to run on resize | consequence of A — the answer saturates at `Σ floor` across ~1800px of canvas | [P11] (pinned by the distinct-values criterion) |
+| (not reported) the net was blind | C — picture invariant guarded by the algorithm's own success condition | [P14], List L03 |
+
+**List L03: the crowded-regime invariants** {#l03-crowded-invariants}
+
+Added to `layout-imposer-solutions.test.ts` alongside List L02, which is kept in full. Every one of these is asserted over the same enumeration, and items 1–3 **must be observed failing against `931665ecc`** before the fix ([P14]).
+
+1. **No avoidable overlap.** If any `T ∈ [Σ floor, Σ ceiling]` yields `worstOverlap == 0`, the answer's `worstOverlap` is 0.
+2. **No avoidable crowding.** Among totals with `worstOverlap == 0`, if any yields `worstShortfall == 0`, the answer's `worstShortfall` is 0.
+3. **Comfort is spent for a reason.** A rail is below its comfort floor only if no `T ≥ Σ comfort` yields zero overlap *and* some `T ≥ Σ hard` does.
+4. **The answer tracks the canvas.** For the Table T03 fixture across 1400 → 3400 in 100px steps, the answers take ≥ 8 distinct values.
+5. **The scan finds the true optimum.** On a representative subset, the coarse-to-fine result equals a full 1px exhaustive search ([P13]).
+6. **Everything in List L02 still holds** — totality, bounds, greed soundness (restated per tier, [P12]), tiling where exactly achievable, canvas monotonicity, stacking folds, tie fairness.
+
+#### Phase 2 State Zone Mapping {#phase-2-state-zone-mapping}
+
+| State | Zone | Mechanism | Law |
+|-------|------|-----------|-----|
+| `comfortWidth` | none — static registration data | `registerCard` field + accessor, folded into `RailPolicy` | [D04] |
+| Solved rail widths | structure (already exists) | deck store `pane.size.width` via `_commitImposition`, read through `useSyncExternalStore` | [L02] |
+| Chosen total | none — a local in a pure function | — | — |
+
+No new runtime state. No React, DOM or store surface is touched by this addendum.
+
+---
+
+### Phase 2 Execution Steps {#phase-2-execution-steps}
+
+> **Commit after all checkpoints pass.** Run app-tests bare via `just` — never piped.
+
+#### Phase 2 Step Status Ledger {#phase-2-step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-8 | Two floors in the registry and the Gazette's measure | pending | — |
+| #step-9 | The picture-directed total, and the net that proves it | pending | — |
+| #step-10 | Regenerate the golden table | pending | — |
+| #step-11 | Real-deck coverage, integration, and an observed vetting pass | pending | — |
+
+---
+
+#### Step 8: Two floors in the registry and the Gazette's measure {#step-8}
+
+**Commit:** `tugdeck(imposer): give a rail a comfort floor beneath its preference and above its hard floor`
+
+**References:** [P11] Two floors, [Q04] Gazette hard floor, [Q06] other comfort floors, Spec S06, (#phase-2-root-causes)
+
+**Artifacts:**
+- `comfortWidth?` on `CardRegistration`, `getComfortWidth()` in `tugdeck/src/card-registry.ts`.
+- `MIN_GAZETTE_WIDTH_PX = 400` and `COMFORT_GAZETTE_WIDTH_PX = 512` in `tugdeck/src/lib/gazette-measure.ts`; the Gazette registers both (`sizePolicy.min.width` = hard, `comfortWidth` = comfort) in `gazette-card-registration.tsx`.
+- `RailPolicy.comfortWidth` in `layout-imposer.ts`; `_sidebarRails` max-folds it in `deck-manager.ts`; `chainOf` validates its finiteness.
+
+**Tasks:**
+- [ ] Add the field, accessor and fold with doc comments stating the two-floor semantics: the hard floor is where the card stops being paintable *and* is what the user's resize drag clamps to (`tug-pane.tsx`); the comfort floor is what the allocator respects unless surrendering it removes overlap.
+- [ ] Split the Gazette's floor. Keep the 56ch derivation intact and rename its result to `COMFORT_GAZETTE_WIDTH_PX`; author `MIN_GAZETTE_WIDTH_PX = 400` beside it with a comment recording that at the landed `GAZETTE_BODY_CH_PX = 8.4` / `GAZETTE_ROW_CHROME_PX = 42` that is a measure of roughly 42 characters.
+- [ ] **Keep this step behavior-neutral in the solver:** `allocateSidebarWidths` continues to use a single effective floor of `max(minWidth, comfortWidth)`, so the answer is byte-identical to `931665ecc` and the golden table does not move. The relaxation is Step 9's.
+- [ ] Update at0365's measure pin: it asserts the *derived width formula*, which now produces `COMFORT_GAZETTE_WIDTH_PX`. Keep the formula assertion pointed at the comfort constant.
+
+**Tests:**
+- [ ] Unit: `getComfortWidth` returns the registered value, and falls back to `getSizePolicy(id).min.width` for a card that registers none and for an unregistered id.
+- [ ] Unit: the `_sidebarRails` fold shape — a stacked rail takes the **largest** comfort width among its members, beside the existing preferred/min max-folds and the greed min-fold.
+- [ ] Unit: `comfortWidth: NaN` returns `null` from the allocator, at the same guard as the other numbers.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bunx tsc --noEmit && bun test src` — and the golden table is **unchanged**, which is this step's proof of neutrality.
+- [ ] `cd tugdeck && bunx vite build`
+- [ ] `just app-test at0365-gazette-card.test.ts`
+
+---
+
+#### Step 9: The picture-directed total, and the net that proves it {#step-9}
+
+**Depends on:** #step-8
+
+**Commit:** `tugdeck(imposer): choose the rail total by the picture it paints, not by a least-squares fit`
+
+**References:** [P10] Picture-directed total, [P11] Two floors, [P12] Two-tier drain, [P13] Scan strategy, [P14] Net first, [Q05] Shortfall, Spec S04, Spec S05, Spec S06, List L03, (#phase-2-evidence, #phase-2-net-postmortem, #phase-2-prototype)
+
+**Artifacts:**
+- `seamPicture` gains `worstShortfall` and returns to the decision path in `tugdeck/src/lib/layout-imposer.ts`.
+- Total selection rewritten per Spec S04; deficit distribution rewritten per Spec S05; `allocateSidebarWidths`'s doc comment rewritten to state the new objective and the comfort rule.
+- List L03 invariants added to `tugdeck/src/lib/__tests__/layout-imposer-solutions.test.ts`; new regime cases in `layout-imposer.test.ts`.
+
+**Tasks:**
+- [ ] **First, prove the net has teeth.** Write List L03 items 1–3 and run them against the current solver. They must FAIL. Record the observed failure (which configurations, what overlap was left on the table) in the dash-round summary — this is the artifact Phase 1 never produced ([P14]). Do not implement until they have been seen to fail.
+- [ ] Add `worstShortfall` to `seamPicture` and un-demote it: its doc comment currently says it is "a measurement, never a decision", which becomes wrong. State instead that it is the objective the total is chosen against, and that it reads `imposeRect`'s real clamped geometry rather than the linear model — which is precisely why it is the right thing to score.
+- [ ] Implement Spec S04: the two domains, the lexicographic key, the coarse-to-fine scan with its named stride constant, and the comfort rule. Keep the no-chain early return.
+- [ ] Implement Spec S05's two-tier deficit drain; leave the surplus branch and the tie-splitting exactly as they are.
+- [ ] Port the #phase-2-prototype table as one named unit test — canvases 1400 / 2000 / 3000 / 3200 / 3400 with their expected totals, comfort-spent flags, overlaps and errors — so the plan and the suite share an oracle, exactly as Phase 1's worked example does.
+- [ ] Add the specific repair case as its own test: the Table T04 fixture at canvas 3200 answers `{ left: 320, right: 450 }` with zero overlap and zero seam error.
+- [ ] Add the anti-flatness test (List L03 item 4) and the exhaustive cross-check (item 5).
+- [ ] Re-check Phase 1's `layout-imposer.test.ts` cases against the new objective and update the ones whose expected numbers legitimately move; each change gets a comment saying why the new number is right. Do not "fix" a test by loosening an assertion.
+
+**Tests:**
+- [ ] The rewritten allocator suite and the extended solutions sweep, both green.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test src/lib/__tests__/layout-imposer.test.ts src/lib/__tests__/layout-imposer-solutions.test.ts`
+- [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
+- [ ] The solutions sweep still completes in under ~5s ([P13] / #phase-2-constraints).
+- [ ] The golden comparison is expected to FAIL here — that failure is the repair, and Step 10 records it. Note the failure; do not regenerate in this commit.
+
+---
+
+#### Step 10: Regenerate the golden table {#step-10}
+
+**Depends on:** #step-9
+
+**Commit:** `tugdeck(imposer): regenerate the solution golden after the picture-directed repair`
+
+**References:** [P14] Net first, [P09] Golden table, (#phase-2-evidence)
+
+**Artifacts:**
+- `tugdeck/src/lib/__tests__/golden/imposer-solutions.json` regenerated.
+
+**Tasks:**
+- [ ] Regenerate: `cd tugdeck && IMPOSER_GOLDEN_UPDATE=1 bun test ./src/lib/__tests__/layout-imposer-solutions.test.ts`.
+- [ ] **Read the diff before committing it.** Summarise it in the commit body: how many rows moved, in which direction (rails narrower on crowded decks, unchanged on roomy ones), and confirm no row moved in a direction the repair does not explain. A golden regeneration nobody read is a rubber stamp.
+
+**Tests:**
+- [ ] The golden comparison, green again.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test src` fully green.
+
+---
+
+#### Step 11: Real-deck coverage, integration, and an observed vetting pass {#step-11}
+
+**Depends on:** #step-9, #step-10
+
+**Commit:** `tests(at0303): cover the crowded deck and the hand-dragged Gazette floor`
+
+**References:** [P15] Observed close, [P11] Two floors, [P08] Moments unchanged, Table T05, (#phase-2-success-criteria)
+
+**Artifacts:**
+- at0303 gains a crowded-deck case and a drag-floor case; any fixture in the selected app-tests that baked in Phase 1 behavior is repinned with a comment saying why.
+
+**Tasks:**
+- [ ] Add to `tests/app-test/at0303-imposer-space-allocator.test.ts`: seed a deck whose chain overlaps at the comfort floors but tiles below them (the Table T04 shape — compute the card widths from the measured canvas, since **the harness cannot resize the window**; see Phase 1's #step-6 note), re-assert the layout, and assert on real pane rects that **no two chain panes overlap** and the Gazette stands below its comfort width.
+- [ ] Add a drag case: with the Gazette open, drive a real edge-resize drag below 512 and assert the pane lands at or near `MIN_GAZETTE_WIDTH_PX`, proving the Phase 1 trap is gone. (If the harness cannot drive that edge reliably, assert the same claim at the store layer through `getSizePolicy("gazette").min.width` and say so in the test's docblock.)
+- [ ] Re-run the app-tests the diff derives. Note that Phase 1's selection exceeded the 20-file budget in one go and had to be run in scoped batches — expect the same, and name the batches in the commit body. `at0294-imposer-flip-settle.test.ts` is the fixture most likely to need attention again: it pins its Lens at the 675 ceiling specifically so the allocator's answer equals its standing width, and that assumption must be re-checked under the new chooser.
+- [ ] Grep-verify no stale vocabulary survives: `grep -rn "least-squares\|graded" tugdeck/src/lib/layout-imposer.ts` should describe only `solveSidebarWidths`'s own closed form, never the allocator's decision.
+- [ ] **Observe it.** `just app-debug` from the worktree, open Gazette and Lens, and *drag the window edge across a wide range*. Record in the commit body: whether rail widths track the canvas continuously, whether any card pair overlaps at any width where the rails had room left, and whether the seams read as the standard gap. Attach the observed numbers, not an impression ([P15]).
+
+**Tests:**
+- [ ] at0303, plus the derived app-test selection in scoped batches.
+
+**Checkpoint:**
+- [ ] `cd tugdeck && bun test src && bunx tsc --noEmit && bunx vite build`
+- [ ] `just app-test at0303-imposer-space-allocator.test.ts at0294-imposer-flip-settle.test.ts at0365-gazette-card.test.ts`
+- [ ] The written observation from the live deck, in the commit body.
+
+---
+
+### Phase 2 Deliverables {#phase-2-deliverables}
+
+**Deliverable:** A space allocator that chooses the rails' total by the picture it actually paints, gives up the Gazette's comfortable measure precisely when that removes overlap, and is pinned by invariants stated against what was achievable rather than against what the algorithm attempted.
+
+#### Phase 2 Exit Criteria ("Done means…") {#phase-2-exit-criteria}
+
+- [ ] Every #phase-2-success-criteria item verified by its named mechanism.
+- [ ] List L03 items 1–3 were observed FAILING against `931665ecc` before the fix, and pass after ([P14]).
+- [ ] Phase 2 Step Status Ledger fully `done` with commit hashes recorded.
+- [ ] The golden diff was read and summarised by a human-readable commit body, not merely regenerated.
+- [ ] **Observed on a live deck** ([P15]): Gazette + Lens open, window dragged across a wide range — the rails track the canvas, no avoidable overlap appears at any width, and the seams read as the imposition gap. Reported with numbers.
+
+#### Phase 2 Roadmap / Follow-ons {#phase-2-roadmap}
+
+- [ ] Comfort floors for the Lens and Jots if either is ever reported as cramped ([Q06]).
+- [ ] A global design-decision entry for the two-floor doctrine and picture-directed selection in `tuglaws/design-decisions.md` — this is now a rule with scars, and worth writing down (user lands tuglaws edits).
+- [ ] Revisit whether `solveSidebarWidths` still earns its keep once the scan is the answer, or whether it should be demoted to the breakpoint arithmetic the tests use.
+
+| Checkpoint | Verification |
+|------------|--------------|
+| The repair itself | the Table T04 case: canvas 3200 → 320/450, zero overlap |
+| No avoidable overlap or crowding | List L03 items 1–3 over the full enumeration |
+| Resize is visibly alive | List L03 item 4 (≥ 8 distinct answers across the sweep) |
+| Search correctness | List L03 item 5 (scan vs exhaustive) |
+| Behavior drift | golden JSON diff, read and summarised (#step-10) |
+| It is actually good | the observed live-deck pass ([P15]) |
