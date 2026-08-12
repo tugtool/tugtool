@@ -717,10 +717,7 @@ mod tests {
         ),
     }
 
-    async fn start(
-        spawner: Arc<dyn AgentWorkerSpawner>,
-        sitrep_secs: i64,
-    ) -> Harness {
+    async fn start(spawner: Arc<dyn AgentWorkerSpawner>, sitrep_secs: i64) -> Harness {
         let (code_tx, keep_code) = broadcast::channel(64);
         let (submission_tx, keep_sub) = broadcast::channel(64);
         let (state_tx, keep_state) = broadcast::channel(64);
@@ -924,12 +921,10 @@ mod tests {
     /// survives ref validation, which is the whole point of the second corpus.
     #[tokio::test]
     async fn a_wake_carries_the_facts_recorded_since_the_last_post() {
-        let spawner = FakeSpawner::always(Ok(
-            r#"{"post": {"body": "A commit landed.", "refs": [
+        let spawner = FakeSpawner::always(Ok(r#"{"post": {"body": "A commit landed.", "refs": [
                 {"kind": "commit", "target": "03fcaa087"}
             ]}}"#
-                .to_string(),
-        ));
+            .to_string()));
         let fake = Arc::clone(&spawner);
         let mut h = start(spawner, 0).await;
         h.ledger
@@ -955,9 +950,7 @@ mod tests {
             .last()
             .cloned()
             .expect("the pool saw a turn");
-        assert!(input.contains(
-            crate::feeds::reporter_wake::FACTS_SECTION_HEADER
-        ));
+        assert!(input.contains(crate::feeds::reporter_wake::FACTS_SECTION_HEADER));
         assert!(
             input.contains("03fcaa087"),
             "the commit fact reached the wake input: {input}"
@@ -983,7 +976,9 @@ mod tests {
             .set_session_private("s1", true)
             .expect("marked private");
 
-        h.code_tx.send(assistant_text("s1", "private work")).unwrap();
+        h.code_tx
+            .send(assistant_text("s1", "private work"))
+            .unwrap();
         h.code_tx.send(turn_complete("s1")).unwrap();
         expect_no_post(&mut h.gazette_rx).await;
         assert!(h.ledger.list_gazette_posts_tail(10).unwrap().is_empty());

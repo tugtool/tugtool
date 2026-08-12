@@ -765,46 +765,57 @@ impl SessionsRecorder for LedgerSessionsRecorder {
 
     fn mark_closed(&self, session_id: &str) {
         let handle = self.session_handle(session_id);
-        if let Err(err) = self.ledger.mark_closed(session_id) {
-            warn!(error = %err, session_id, "ledger mark_closed failed");
-            return;
-        }
+        let transitioned = match self.ledger.mark_closed(session_id) {
+            Ok(transitioned) => transitioned,
+            Err(err) => {
+                warn!(error = %err, session_id, "ledger mark_closed failed");
+                return;
+            }
+        };
         tracing::info!(
             target: "dev::session-lifecycle",
             event = "ledger.mark_closed",
             session_id,
         );
         // The fact rides the durable transition rather than any one of the
-        // several `closed` publish sites, so every path that really ends a
-        // session records exactly once.
-        self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
-            crate::session_ledger::now_millis(),
-            session_id,
-            false,
-            &handle,
-            None,
-        ));
+        // several `closed` publish sites, and only when a row really moved —
+        // so a session that ended once has one ending in the fact base however
+        // many paths call this for it.
+        if transitioned {
+            self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
+                crate::session_ledger::now_millis(),
+                session_id,
+                false,
+                &handle,
+                None,
+            ));
+        }
         self.broadcast_row(session_id);
     }
 
     fn mark_failed(&self, session_id: &str) {
         let handle = self.session_handle(session_id);
-        if let Err(err) = self.ledger.mark_failed(session_id) {
-            warn!(error = %err, session_id, "ledger mark_failed failed");
-            return;
-        }
+        let transitioned = match self.ledger.mark_failed(session_id) {
+            Ok(transitioned) => transitioned,
+            Err(err) => {
+                warn!(error = %err, session_id, "ledger mark_failed failed");
+                return;
+            }
+        };
         tracing::info!(
             target: "dev::session-lifecycle",
             event = "ledger.mark_failed",
             session_id,
         );
-        self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
-            crate::session_ledger::now_millis(),
-            session_id,
-            true,
-            &handle,
-            None,
-        ));
+        if transitioned {
+            self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
+                crate::session_ledger::now_millis(),
+                session_id,
+                true,
+                &handle,
+                None,
+            ));
+        }
         self.broadcast_row(session_id);
     }
 
@@ -4269,8 +4280,7 @@ impl AgentSupervisor {
                 // without re-running git — today the receipt is built here and
                 // thrown away after the broadcast.
                 if let Some(sessions) = self.session_ledger.as_ref() {
-                    let files: Vec<String> =
-                        receipt.files.iter().map(|f| f.path.clone()).collect();
+                    let files: Vec<String> = receipt.files.iter().map(|f| f.path.clone()).collect();
                     let fact = crate::feeds::facts_library::commit_fact(
                         crate::session_ledger::now_millis(),
                         request.session_id.as_deref().filter(|s| !s.is_empty()),
@@ -5750,14 +5760,14 @@ impl AgentSupervisor {
             .and_then(|row| row.name);
         match ledger.rename(session_id, name) {
             Ok(_) => {
-                if let Err(err) = ledger.record_fact(
-                    &crate::feeds::facts_library::session_renamed_fact(
+                if let Err(err) =
+                    ledger.record_fact(&crate::feeds::facts_library::session_renamed_fact(
                         crate::session_ledger::now_millis(),
                         session_id,
                         old_name.as_deref(),
                         name,
-                    ),
-                ) {
+                    ))
+                {
                     warn!(error = %err, session_id, "rename fact write failed");
                 }
                 // Push the updated row so the chooser + chip reflect the rename
@@ -5996,7 +6006,8 @@ impl AgentSupervisor {
         // the card's state machine talking, not two more events — and the
         // ledger row is not transitioned here, so no `session.closed` fact
         // fires alongside it.
-        if let (Some(ledger), Some(claude_id)) = (self.session_ledger.as_ref(), &cleared_claude_id) {
+        if let (Some(ledger), Some(claude_id)) = (self.session_ledger.as_ref(), &cleared_claude_id)
+        {
             let handle = ledger
                 .get(claude_id)
                 .ok()
@@ -11195,6 +11206,36 @@ mod tests {
         // semantics — the persisted row keeps the binding so client-side
         // restore can reconstruct it.
         assert_eq!(row.card_id.as_deref(), Some("card-1"));
+    }
+
+    /// A session ends once. Several paths call `mark_closed` for one ending —
+    /// a close after a startup demote, a teardown after the close — and the
+    /// lifecycle fact hangs off whether a row really moved, not off the call.
+    #[test]
+    fn ledger_recorder_records_one_ending_however_often_close_is_called() {
+        let (ledger, recorder) = fresh_ledger_recorder();
+        recorder.record(SessionRecord {
+            session_id: "claude-abc",
+            workspace_key: "ws-1",
+            project_dir: "/proj/x",
+            card_id: "card-1",
+            tag: None,
+        });
+
+        recorder.mark_closed("claude-abc");
+        recorder.mark_closed("claude-abc");
+        recorder.mark_closed("claude-abc");
+
+        let endings = ledger
+            .facts_for_test()
+            .into_iter()
+            .filter(|(kind, _, _)| kind == "session.closed")
+            .count();
+        assert_eq!(endings, 1, "one ending in the fact base");
+        assert_eq!(
+            ledger.get("claude-abc").unwrap().unwrap().state,
+            LedgerState::Closed
+        );
     }
 
     #[test]

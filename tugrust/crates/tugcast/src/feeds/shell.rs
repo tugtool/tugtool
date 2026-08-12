@@ -985,9 +985,12 @@ async fn shell_session_task(
                 warn!(error = %e, %tug_session_id, "shell fact write failed");
             }
             if let Some(run) = facts_library::classify_test_run(&command, &out) {
-                if let Err(e) =
-                    sessions.record_fact(&facts_library::test_run_fact(at_ms, Some(&tug_session_id), &run, None))
-                {
+                if let Err(e) = sessions.record_fact(&facts_library::test_run_fact(
+                    at_ms,
+                    Some(&tug_session_id),
+                    &run,
+                    None,
+                )) {
                     warn!(error = %e, %tug_session_id, "test_run fact write failed");
                 }
             }
@@ -1521,8 +1524,7 @@ mod tests {
     /// exit code ([P07]).
     #[tokio::test]
     async fn a_settled_user_command_records_its_shell_and_test_run_facts() {
-        let sessions =
-            Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let sessions = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
         let mut rx = output.subscribe();
         let (tx, in_rx) = mpsc::channel(64);

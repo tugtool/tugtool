@@ -3057,6 +3057,24 @@ impl SessionLedger {
         Ok(private.unwrap_or(0) != 0)
     }
 
+    /// Every session currently marked private, for a reader whose own SQL
+    /// cannot reach this table ([P05]).
+    ///
+    /// `shell_exchanges` lives in its own database, so `not_private!` has no
+    /// `sessions` to test against there. The ids travel instead, and the
+    /// exclusion still happens inside that query — ahead of its LIMIT, which a
+    /// filter over the returned page could not manage. Only sessions this
+    /// ledger holds a row for are named: an id it has never seen reads as
+    /// public, which is the same reading `NOT EXISTS` takes.
+    pub fn private_session_ids(&self) -> Result<Vec<String>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare("SELECT session_id FROM sessions WHERE private = 1")?;
+        let ids = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(ids)
+    }
+
     /// Allocate the fork's callsign from its parent's lineage ([P11]).
     ///
     /// The grammar is `<root>-<Letter><Number>`: the **letter** names the
@@ -3316,31 +3334,42 @@ impl SessionLedger {
     /// Transition a row to `closed`. `card_id` is preserved across
     /// transitions so the client-side restore can ask "which session
     /// was last bound to this card?" after a tugcast restart.
-    pub fn mark_closed(&self, session_id: &str) -> Result<(), LedgerError> {
+    ///
+    /// Returns whether a row actually moved. A session already closed is not
+    /// closing again, and the caller's lifecycle fact hangs off this answer:
+    /// several paths can call this for one ending (a close after a startup
+    /// demote, a teardown after a crash), and each one recording would put two
+    /// endings in the fact base for a session that ended once.
+    pub fn mark_closed(&self, session_id: &str) -> Result<bool, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
-        conn.execute(
+        let affected = conn.execute(
             "UPDATE sessions
              SET state = 'closed'
-             WHERE session_id = ?1",
+             WHERE session_id = ?1
+               AND state != 'closed'",
             params![session_id],
         )?;
+        drop(conn);
         self.notify_sessions_changed();
-        Ok(())
+        Ok(affected > 0)
     }
 
     /// Transition a row to `failed`. Replaces the previous "remove on
     /// resume_failed" semantics — the row is retained as a diagnostic crumb.
-    /// `card_id` is preserved across transitions; see [`mark_closed`].
-    pub fn mark_failed(&self, session_id: &str) -> Result<(), LedgerError> {
+    /// `card_id` is preserved across transitions; see [`mark_closed`], whose
+    /// return value means the same thing here.
+    pub fn mark_failed(&self, session_id: &str) -> Result<bool, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
-        conn.execute(
+        let affected = conn.execute(
             "UPDATE sessions
              SET state = 'failed'
-             WHERE session_id = ?1",
+             WHERE session_id = ?1
+               AND state != 'failed'",
             params![session_id],
         )?;
+        drop(conn);
         self.notify_sessions_changed();
-        Ok(())
+        Ok(affected > 0)
     }
 
     /// Delete the ledger row for `session_id` and move its claude-side
@@ -3557,9 +3586,7 @@ impl SessionLedger {
         // so each demotion records its own fact. `startup-demote` is the
         // detail because the distinction matters when reading history back:
         // this session did not end, the process under it did.
-        let mut stmt = conn.prepare(
-            "SELECT session_id, tag FROM sessions WHERE state = 'live'",
-        )?;
+        let mut stmt = conn.prepare("SELECT session_id, tag FROM sessions WHERE state = 'live'")?;
         let demoted: Vec<(String, Option<String>)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
@@ -8317,7 +8344,12 @@ mod tests {
         // what happened afterwards.
         let ledger = fresh();
         seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
-        let mut f = fact(1_000, "commit", "a1b2c3d4", "commit a1b2c3d4 \"land it\" — 3 file(s)");
+        let mut f = fact(
+            1_000,
+            "commit",
+            "a1b2c3d4",
+            "commit a1b2c3d4 \"land it\" — 3 file(s)",
+        );
         f.session_id = Some("s1".to_string());
         ledger.record_fact(&f).expect("record");
 
@@ -8431,7 +8463,12 @@ mod tests {
         // No session named, so no session's flag can hide it.
         assert!(
             ledger
-                .record_fact(&fact(1_000, "shell", "just build-app", "$ just build-app → ok"))
+                .record_fact(&fact(
+                    1_000,
+                    "shell",
+                    "just build-app",
+                    "$ just build-app → ok"
+                ))
                 .expect("record")
                 .is_some()
         );

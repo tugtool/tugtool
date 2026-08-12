@@ -1,11 +1,18 @@
 /**
  * session-private-store.ts — per-session Gazette-privacy cache.
  *
- * `sessions.private` lives authoritatively in tugcast's ledger and rides the
- * `SessionRow` shape on `list_sessions_ok` rows and `session_updated` pushes.
- * The `/private` command needs to know the current value to toggle it, and the
- * session atom needs it to show the resting state — so this store indexes
+ * `sessions.private` lives authoritatively in tugcast's ledger. The `/private`
+ * command needs to know the current value to toggle it, and the session atom
+ * needs it to show the resting state — so this store indexes
  * `tugSessionId → private` and each surface subscribes by id ([L02]).
+ *
+ * Three arms fill it, and between them a card is never left guessing: the
+ * `spawn_session_ok` bind ack (which is how a card reloaded or resumed
+ * mid-turn learns the flag without waiting for a later frame), the
+ * `session_updated` push, and `/private`'s own ack. The flag also rides
+ * `list_sessions_ok` rows on the wire, but nothing reads it there — the picker
+ * shows no marker, and a listing is about sessions this deck may not be
+ * holding.
  *
  * Privacy is a **resting state**, which is why it gets a store rather than
  * living in the ack: a transient "this session is now private" notice is gone

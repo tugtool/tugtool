@@ -909,6 +909,20 @@ impl PendingShellFacts {
                     None => break,
                 }
             }
+            // Tombstones are only ever drained by an eviction, and a relay
+            // whose calls all settle promptly never evicts — so a long-lived
+            // session would grow one dead id per Bash call forever. Drop them
+            // whenever they come to outnumber the live entries this map is
+            // sized for; a live key can be reached this way too, which is the
+            // eviction the cap already sanctions.
+            while self.order.len() > PENDING_SHELL_FACTS_CAP * 2 {
+                match self.order.pop_front() {
+                    Some(oldest) => {
+                        self.map.remove(&oldest);
+                    }
+                    None => break,
+                }
+            }
         }
     }
 
@@ -3439,10 +3453,34 @@ mod tests {
 
     // ---- the facts library, driven through the real relay ([P06], [P07]) ----
 
+    /// The map holds calls awaiting a result, and a settled call leaves a dead
+    /// id behind. Nothing evicts in a relay whose pairs all close, so without
+    /// compaction a day-long session would carry one dead id per Bash command
+    /// for as long as tugcast runs.
+    #[test]
+    fn the_shell_fact_map_forgets_settled_calls_rather_than_growing_forever() {
+        let mut pending = PendingShellFacts::new();
+        for i in 0..(PENDING_SHELL_FACTS_CAP * 4) {
+            let id = format!("tu-{i}");
+            pending.insert(
+                id.clone(),
+                PendingShellFact {
+                    command: "cargo nextest run".to_string(),
+                    at_ms: 1_700_000_000_000,
+                },
+            );
+            assert!(pending.take(&id).is_some(), "the pair settled");
+        }
+        assert!(pending.map.is_empty(), "nothing is still in flight");
+        assert!(
+            pending.order.len() <= PENDING_SHELL_FACTS_CAP * 2,
+            "dead ids are dropped: {}",
+            pending.order.len()
+        );
+    }
+
     /// Every fact the relay recorded, as `(kind, subject, text)` in id order.
-    fn relay_facts(
-        ledger: &crate::session_ledger::SessionLedger,
-    ) -> Vec<(String, String, String)> {
+    fn relay_facts(ledger: &crate::session_ledger::SessionLedger) -> Vec<(String, String, String)> {
         ledger.facts_for_test()
     }
 
@@ -3485,7 +3523,10 @@ mod tests {
 
         let facts = relay_facts(&ledger);
         assert!(facts[0].2.ends_with("→ ok"), "the call itself succeeded");
-        assert_eq!(facts[1].2, "tests: cargo nextest — failed (8 passed, 2 failed)");
+        assert_eq!(
+            facts[1].2,
+            "tests: cargo nextest — failed (8 passed, 2 failed)"
+        );
     }
 
     /// A recognized runner is a second fact; anything else is a shell fact
@@ -3515,7 +3556,10 @@ mod tests {
 
         let facts = relay_facts(&ledger);
         assert_eq!(facts[1].0, "test_run");
-        assert_eq!(facts[1].2, "tests: just app-test — passed (7 passed, 0 failed)");
+        assert_eq!(
+            facts[1].2,
+            "tests: just app-test — passed (7 passed, 0 failed)"
+        );
     }
 
     /// The relay re-streams replayed frames on every resume. Back-fill is

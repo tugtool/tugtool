@@ -284,32 +284,61 @@ impl ShellLedger {
     /// that" is a containment question rather than a relevance one. Session and
     /// time bounds are all optional; with none of them this is the machine's
     /// recent command history.
+    ///
+    /// `exclude_sessions` drops whole sessions from the answer — the privacy
+    /// exclusion, carried in rather than expressed in SQL because `sessions`
+    /// lives in another database. It rides the query, not a filter over the
+    /// result, so a private session's commands cannot consume the `limit` and
+    /// push public ones off the end of the page.
     pub fn search_exchanges(
         &self,
         tug_session_id: Option<&str>,
         query: Option<&str>,
         since_ms: Option<i64>,
         until_ms: Option<i64>,
+        exclude_sessions: &[String],
         limit: usize,
     ) -> Result<Vec<ShellExchangeRow>, ShellLedgerError> {
-        let like = query.map(|q| format!("%{q}%"));
-        let conn = self.db.lock().expect("shell ledger mutex");
-        let mut stmt = conn.prepare(
+        use rusqlite::types::Value as SqlValue;
+
+        let mut sql = String::from(
             "SELECT id, tug_session_id, seq, command, output, exit_code, cwd, cwd_after,
                     started_at_ms, settled_at_ms
              FROM shell_exchanges
              WHERE (?1 IS NULL OR tug_session_id = ?1)
-               AND (?2 IS NULL OR command LIKE ?2)
+               AND (?2 IS NULL OR command LIKE ?2 ESCAPE '\\')
                AND (?3 IS NULL OR settled_at_ms >= ?3)
-               AND (?4 IS NULL OR settled_at_ms <= ?4)
-             ORDER BY settled_at_ms DESC, id DESC
+               AND (?4 IS NULL OR settled_at_ms <= ?4)",
+        );
+        if !exclude_sessions.is_empty() {
+            sql.push_str(" AND tug_session_id NOT IN (");
+            for i in 0..exclude_sessions.len() {
+                if i > 0 {
+                    sql.push(',');
+                }
+                // Placeholders only — the ids themselves are bound below.
+                sql.push_str(&format!("?{}", i + 6));
+            }
+            sql.push(')');
+        }
+        sql.push_str(
+            " ORDER BY settled_at_ms DESC, id DESC
              LIMIT ?5",
-        )?;
+        );
+
+        let mut binds: Vec<SqlValue> = vec![
+            tug_session_id.map_or(SqlValue::Null, |s| SqlValue::Text(s.to_owned())),
+            query.map_or(SqlValue::Null, |q| SqlValue::Text(like_contains(q))),
+            since_ms.map_or(SqlValue::Null, SqlValue::Integer),
+            until_ms.map_or(SqlValue::Null, SqlValue::Integer),
+            SqlValue::Integer(limit as i64),
+        ];
+        binds.extend(exclude_sessions.iter().cloned().map(SqlValue::Text));
+
+        let conn = self.db.lock().expect("shell ledger mutex");
+        let mut stmt = conn.prepare(&sql)?;
         let rows = stmt
-            .query_map(
-                params![tug_session_id, like, since_ms, until_ms, limit as i64],
-                exchange_from_row,
-            )?
+            .query_map(rusqlite::params_from_iter(binds), exchange_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -330,6 +359,26 @@ impl ShellLedger {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+}
+
+/// A containment pattern for LIKE, with the caller's own text taken literally.
+///
+/// `%` and `_` are LIKE's wildcards, and a search string is data rather than a
+/// pattern — `shell.history` promises a substring match, so a query for `100%`
+/// must not quietly become "anything starting with 100". Escaping them (and the
+/// escape character itself) keeps the promise; the statement pairs this with
+/// `ESCAPE '\'`.
+fn like_contains(query: &str) -> String {
+    let mut pattern = String::with_capacity(query.len() + 2);
+    pattern.push('%');
+    for ch in query.chars() {
+        if matches!(ch, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(ch);
+    }
+    pattern.push('%');
+    pattern
 }
 
 /// Decode one `shell_exchanges` row. The column order matches both reads.
@@ -377,6 +426,61 @@ mod tests {
         assert_eq!(rows[1].command, "false");
         assert_eq!(rows[1].seq, 2);
         assert_eq!(rows[1].exit_code, Some(1));
+    }
+
+    /// `shell.history` promises a substring match, and LIKE's own wildcards
+    /// are the one way a search string could quietly stop meaning itself.
+    #[test]
+    fn a_query_carrying_like_wildcards_matches_them_literally() {
+        let led = ShellLedger::open_in_memory().unwrap();
+        led.record_exchange(&ex("s1", "printf '100%% done'", Some(0)))
+            .unwrap();
+        led.record_exchange(&ex("s1", "printf '100 done'", Some(0)))
+            .unwrap();
+        led.record_exchange(&ex("s1", "git_status", Some(0)))
+            .unwrap();
+        led.record_exchange(&ex("s1", "git status", Some(0)))
+            .unwrap();
+
+        let percent = led
+            .search_exchanges(None, Some("100%"), None, None, &[], 50)
+            .unwrap();
+        assert_eq!(percent.len(), 1, "`%` is a character, not a wildcard");
+        assert!(percent[0].command.contains("100%"));
+
+        let underscore = led
+            .search_exchanges(None, Some("git_"), None, None, &[], 50)
+            .unwrap();
+        assert_eq!(underscore.len(), 1, "`_` is a character, not a wildcard");
+        assert_eq!(underscore[0].command, "git_status");
+    }
+
+    /// The exclusion rides the query, so a private session cannot spend the
+    /// row cap and push a public command off the end of the page.
+    #[test]
+    fn excluded_sessions_are_dropped_before_the_limit_not_after() {
+        let led = ShellLedger::open_in_memory().unwrap();
+        led.record_exchange(&ex("public", "the one public command", Some(0)))
+            .unwrap();
+        for i in 0..20 {
+            let mut row = ex("private", &format!("secret {i}"), Some(0));
+            // Newer than the public command, so an unfiltered page is all
+            // private ones.
+            row.settled_at_ms = 2_000 + i;
+            led.record_exchange(&row).unwrap();
+        }
+
+        let page = led
+            .search_exchanges(None, None, None, None, &["private".to_string()], 5)
+            .unwrap();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].command, "the one public command");
+        assert!(
+            led.search_exchanges(None, None, None, None, &[], 5)
+                .unwrap()
+                .iter()
+                .all(|row| row.tug_session_id == "private")
+        );
     }
 
     fn sess(session_id: &str, card_id: &str, turn_count: i64) -> SessionForReconcile {

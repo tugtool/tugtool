@@ -92,18 +92,23 @@ impl FactKind {
 
 /// The one rendering of a fact ([P02]).
 ///
-/// `payload` is the same JSON the fact stores. A field the payload does not
-/// carry is rendered as absent rather than as a stand-in default: an omitted
-/// token count prints nothing, never `0`, because a zero that means "claude
-/// didn't say" is a lie with a number on it.
-pub fn render_text(kind: FactKind, subject: Option<&str>, payload: &serde_json::Value) -> String {
+/// `payload` is the same JSON the fact stores, and it is the whole input: the
+/// `subject` a fact is filed under is a handle for finding it, and every kind
+/// already says whatever of it belongs in the sentence. A field the payload
+/// does not carry is rendered as absent rather than as a stand-in default: an
+/// omitted token count prints nothing, never `0`, because a zero that means
+/// "claude didn't say" is a lie with a number on it.
+pub fn render_text(kind: FactKind, payload: &serde_json::Value) -> String {
     let str_field = |name: &str| payload.get(name).and_then(|v| v.as_str());
     let int_field = |name: &str| payload.get(name).and_then(serde_json::Value::as_i64);
 
     let rendered = match kind {
         FactKind::Prompt => {
             let text = str_field("text").unwrap_or_default();
-            format!("prompt: \"{}\"", truncate(collapse(text).as_str(), PROMPT_RENDER_CAP))
+            format!(
+                "prompt: \"{}\"",
+                truncate(collapse(text).as_str(), PROMPT_RENDER_CAP)
+            )
         }
         FactKind::SessionSpawned | FactKind::SessionResumed => {
             let verb = if kind == FactKind::SessionSpawned {
@@ -189,9 +194,6 @@ pub fn render_text(kind: FactKind, subject: Option<&str>, payload: &serde_json::
             }
         }
     };
-    // `subject` is not in every rendering by design — it is the handle the
-    // fact is filed under, and most kinds already say it in their sentence.
-    let _ = subject;
     truncate(rendered.as_str(), TEXT_CAP)
 }
 
@@ -261,7 +263,7 @@ fn compose(
     payload: serde_json::Value,
     dedupe_key: Option<String>,
 ) -> NewFact {
-    let text = render_text(kind, subject.as_deref(), &payload);
+    let text = render_text(kind, &payload);
     NewFact {
         at_ms,
         kind: kind.as_str().to_string(),
@@ -650,10 +652,7 @@ fn parse_bun_test(tail: &str) -> Option<TestRunFact> {
         }
     }
     Some(TestRunFact::from_counts(
-        "bun test",
-        passed?,
-        failed?,
-        skipped,
+        "bun test", passed?, failed?, skipped,
     ))
 }
 
@@ -829,7 +828,9 @@ pub fn synthesize_facts_from_frames(frames: &[SynthFrame<'_>]) -> SynthesizedFac
                     frame.at_ms,
                     session_id,
                     payload.get("trigger").and_then(|v| v.as_str()),
-                    payload.get("pre_tokens").and_then(serde_json::Value::as_i64),
+                    payload
+                        .get("pre_tokens")
+                        .and_then(serde_json::Value::as_i64),
                     payload
                         .get("post_tokens")
                         .and_then(serde_json::Value::as_i64),
@@ -1004,7 +1005,10 @@ mod tests {
             frame(1_100, "user_message", echo),
             frame(1_200, "user_message", real),
         ]);
-        assert_eq!(out.facts, vec![prompt_fact(1_200, "s1", "now make it faster")]);
+        assert_eq!(
+            out.facts,
+            vec![prompt_fact(1_200, "s1", "now make it faster")]
+        );
     }
 
     #[test]
@@ -1021,7 +1025,12 @@ mod tests {
         );
         assert_eq!(fact.text, "$ cd tugrust && cargo nextest run → ok");
         // The payload keeps the command verbatim; only the rendering is a line.
-        assert!(payload_of(&fact)["command"].as_str().unwrap().contains('\n'));
+        assert!(
+            payload_of(&fact)["command"]
+                .as_str()
+                .unwrap()
+                .contains('\n')
+        );
     }
 
     #[test]
@@ -1180,7 +1189,10 @@ VERDICT: PASS  (20/20 files green; 137/137 tests passed)";
             frame(1_300, "compact_boundary", boundary),
         ]);
 
-        assert_eq!(out.kinds, vec!["prompt", "shell", "test_run", "session.compacted"]);
+        assert_eq!(
+            out.kinds,
+            vec!["prompt", "shell", "test_run", "session.compacted"]
+        );
         assert_eq!(
             out.facts,
             vec![

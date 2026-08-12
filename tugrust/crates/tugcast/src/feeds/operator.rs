@@ -401,32 +401,30 @@ fn shell_history(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     if let Some(query) = query {
         plain_arg(query, "query")?;
     }
+    // The command history lives in its own database, so the privacy exclusion
+    // cannot be written into the query the way it is for every session-ledger
+    // read — the sessions table is not there to test against. The private ids
+    // are carried over instead so the exclusion still happens *inside* the
+    // query: filtering the returned page would let a private session's commands
+    // spend the row cap and push public ones off the end of the answer. An
+    // unreadable flag fails the verb rather than answering without it — the
+    // wake-time posture, for the same reason.
+    let excluded = ctx
+        .ledger
+        .private_session_ids()
+        .map_err(|err| format!("shell.history: {err}"))?;
     let rows = shell
         .search_exchanges(
             opt_str(args, "session_id")?,
             query,
             opt_i64(args, "since_ms")?,
             opt_i64(args, "until_ms")?,
+            &excluded,
             SHELL_HISTORY_LIMIT,
         )
         .map_err(|err| format!("shell.history: {err}"))?;
-    // The command history lives in its own database, so the privacy exclusion
-    // cannot ride the query the way it does for every session-ledger read: the
-    // sessions table is not there to join against. One lookup per distinct
-    // session in the result page is what that costs, and a session the ledger
-    // cannot answer for reads as public — the `NOT EXISTS` reading.
-    let mut privacy: std::collections::HashMap<&str, bool> = std::collections::HashMap::new();
     let commands: Vec<Value> = rows
         .iter()
-        .filter(|row| {
-            !*privacy
-                .entry(row.tug_session_id.as_str())
-                .or_insert_with(|| {
-                    ctx.ledger
-                        .is_session_private(&row.tug_session_id)
-                        .unwrap_or(false)
-                })
-        })
         .map(|row| {
             json!({
                 "command": row.command,
@@ -1796,7 +1794,10 @@ mod tests {
                 .await
                 .unwrap_or_else(|err| json!({ "err": err }));
             assert!(
-                err["err"].as_str().unwrap_or_default().contains("no session"),
+                err["err"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("no session"),
                 "{verb} answers as if the session were not there: {err}"
             );
         }
@@ -1822,8 +1823,14 @@ mod tests {
         let out = run_verb(&f.ctx, "changes.for_path", &json!({"pattern": "%.css"}))
             .await
             .expect("changes ran");
-        assert_eq!(out["count"], 1, "an absent session row reads as not-private");
-        assert_eq!(out["changes"][0]["session_id"], "sess-from-another-instance");
+        assert_eq!(
+            out["count"], 1,
+            "an absent session row reads as not-private"
+        );
+        assert_eq!(
+            out["changes"][0]["session_id"],
+            "sess-from-another-instance"
+        );
     }
 
     // MARK: - The pipeline
