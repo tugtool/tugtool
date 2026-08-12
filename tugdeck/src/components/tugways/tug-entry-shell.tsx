@@ -24,7 +24,7 @@
  * shared layout/appearance CSS while host-specific rules (and app-test
  * selectors) keep matching on the host classes, which live on the very same
  * elements. The shared CSS custom properties (`--tugx-entry-shell-surface`,
- * `--tugx-entry-shell-editor-rest`, `--tugx-entry-shell-editor-focus`) are
+ * `--tugx-entry-shell-rest`, `--tugx-entry-shell-focus`) are
  * defined in `tug-entry-shell.css` and are host-referenceable the same way.
  *
  * The shell claims no focus and owns no responder. It does keep ONE derived

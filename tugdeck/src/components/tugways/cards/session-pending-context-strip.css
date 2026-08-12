@@ -18,7 +18,7 @@
   padding: var(--tug-space-xs) var(--tug-space-sm);
   /* Same surface as the prompt-entry field (not the pane / pulse background),
      framed by a rule above and below. */
-  background: var(--tugx-entry-shell-editor-rest);
+  background: var(--tugx-entry-shell-rest);
   border-top: 1px solid var(--tug7-element-global-border-normal-default-rest);
   border-bottom: 1px solid var(--tug7-element-global-border-normal-default-rest);
 }

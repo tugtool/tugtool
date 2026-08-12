@@ -23,15 +23,14 @@
    ----------------------------------------------------------------------------- */
 
 body {
-  --tugx-entry-shell-surface: var(--tug7-surface-global-primary-normal-control-rest);
-  /* The editor's resting/blurred/deactivated surface: the CARD body surface
+  /* The shell's resting/blurred/deactivated surface: the CARD body surface
      (--tugx-pane-bg) carrying a measure of the theme's focus surface, so a
      deactivated entry still reads as an INPUT — distinct from the chrome
      that shares the bare pane background around it — while the full focus
      surface stays reserved for the caret-blinking state. A component-tier
      color-mix over two existing tokens, so no theme-file edit is needed
      ([D11]); each theme's own focus surface drives the tint. */
-  --tugx-entry-shell-editor-rest: color-mix(
+  --tugx-entry-shell-rest: color-mix(
     in oklab,
     var(--tug7-surface-field-primary-normal-plain-focus) 65%,
     var(--tugx-pane-bg, var(--tug7-surface-global-primary-normal-content-rest))
@@ -39,7 +38,7 @@ body {
   /* The single "lit" state: caret blinking here. Aliased so the focus surface
      is retunable in one place; today it reuses the existing field focus
      surface, so no theme-file edit is needed ([D11]). */
-  --tugx-entry-shell-editor-focus: var(--tug7-surface-field-primary-normal-plain-focus);
+  --tugx-entry-shell-focus: var(--tug7-surface-field-primary-normal-plain-focus);
 }
 
 /* ----------------------------------------------------------------------------
@@ -54,6 +53,12 @@ body {
    Host chrome — pane edges, card frame, sheet background — belongs to the
    parent; the shell itself has no border, no radius, no padding. The
    toolbar sits at the bottom naturally via the flex-column order.
+
+   The root wears the SAME surface as the editor inside it, state for state:
+   `-rest` here and on `.cm-editor:not(.cm-focused)` below, `-focus` on both
+   when the caret is live. The shell is one control — status row, text, and
+   toolbar — so it is one background, and a deactivated shell is that control
+   at rest, not a text field stranded on chrome.
    ----------------------------------------------------------------------------- */
 
 .tug-entry-shell {
@@ -61,16 +66,15 @@ body {
   flex-direction: column;
   flex: 0 0 auto;
   min-height: 0;
-  background-color: var(--tugx-entry-shell-surface);
+  background-color: var(--tugx-entry-shell-rest);
   transition: background-color var(--tug-motion-duration-fast, 120ms) ease;
 }
 
 /* When the composed input is focused (editor carries focus), the whole
-   shell adopts the input's focus surface so the status row, input, and
-   toolbar all read as one coherent control. Rule sets only
+   shell moves to the input's focus surface together. Rule sets only
    background-color — self-documenting per [L16]. */
 .tug-entry-shell:focus-within {
-  background-color: var(--tugx-entry-shell-editor-focus);
+  background-color: var(--tugx-entry-shell-focus);
 }
 
 /* .tug-entry-shell-input-area — wrapper around the embedded TugTextEditor.
@@ -110,7 +114,7 @@ body {
 
    - Rest, blurred, AND deactivated (pane/window inactive — the editor is
      blurred, so never `.cm-focused`) all read as ONE resting surface (see
-     the `--tugx-entry-shell-editor-rest` alias above), so the input stays
+     the `--tugx-entry-shell-rest` alias above), so the input stays
      distinguishable from the chrome around it on the bare pane background.
      No field-rest / disabled (red-tinted) surfaces of its own.
    - Focused (caret blinking, pane active → `.cm-focused`) diverges onto the
@@ -119,10 +123,10 @@ body {
    Specificity (4 classes) intentionally beats the substrate's `&` (1),
    `&.cm-focused` (2), and `&[data-disabled]` (2) generated theme rules. --- */
 .tug-entry-shell .tug-text-editor .cm-editor:not(.cm-focused) {
-  background-color: var(--tugx-entry-shell-editor-rest);
+  background-color: var(--tugx-entry-shell-rest);
 }
 .tug-entry-shell .tug-text-editor .cm-editor.cm-focused {
-  background-color: var(--tugx-entry-shell-editor-focus);
+  background-color: var(--tugx-entry-shell-focus);
 }
 
 /* Drop the field border outright. `borderless` only zeroes its COLOR, leaving
@@ -166,7 +170,7 @@ body {
 
    2. **On `.cm-editor`, not on the host.** The substrate is an in-flow child
       filling the host to the pixel and painting an opaque background over it
-      (`--tugx-entry-shell-editor-rest` / `-focus` above), so a descendant
+      (`--tugx-entry-shell-rest` / `-focus` above), so a descendant
       background covers an inset outline drawn on the host. `.cm-scroller`
       inside it sets no background, so the ring drawn at this level shows.
 
@@ -195,24 +199,22 @@ html[data-app-active="false"]
    WebKit withholds the pseudo-class (a window that is not key) and for any
    engine-routed key view inside the shell. */
 .tug-entry-shell[data-entry-keyboard] {
-  background-color: var(--tugx-entry-shell-editor-focus);
+  background-color: var(--tugx-entry-shell-focus);
 }
 .tug-entry-shell[data-entry-keyboard] .tug-text-editor .cm-editor:not(.cm-focused) {
-  background-color: var(--tugx-entry-shell-editor-focus);
+  background-color: var(--tugx-entry-shell-focus);
 }
 
 /* A background window's entry is not the live one — stand the wash down with
    every other focus mark (focus-ring.css). `:focus-within` does this for free
    (WebKit drops it with the key window); the engine mark persists, so it needs
    saying. */
-html[data-app-active="false"] .tug-entry-shell[data-entry-keyboard] {
-  background-color: var(--tugx-entry-shell-surface);
-}
+html[data-app-active="false"] .tug-entry-shell[data-entry-keyboard],
 html[data-app-active="false"]
   .tug-entry-shell[data-entry-keyboard]
   .tug-text-editor
   .cm-editor:not(.cm-focused) {
-  background-color: var(--tugx-entry-shell-editor-rest);
+  background-color: var(--tugx-entry-shell-rest);
 }
 
 /* ----------------------------------------------------------------------------

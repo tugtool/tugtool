@@ -18,16 +18,16 @@
    ========================================================================= */
 
 /* @tug-pairings {
- *   --tug7-element-field-border-normal-danger-rest   | --tug7-surface-global-primary-normal-control-rest | informational
- *   --tug7-element-global-text-normal-muted-rest     | --tug7-surface-global-primary-normal-control-rest | content
+ *   --tug7-element-field-border-normal-danger-rest   | --tugx-entry-shell-rest | informational
+ *   --tug7-element-global-text-normal-muted-rest     | --tugx-entry-shell-rest | content
  * } */
 
 /**
  * @tug-pairings
  * | Element                                             | Surface                                              | Role          | Context                                                            |
  * |-----------------------------------------------------|------------------------------------------------------|---------------|--------------------------------------------------------------------|
- * | --tug7-element-field-border-normal-danger-rest      | --tug7-surface-global-primary-normal-control-rest    | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
- * | --tug7-element-global-text-normal-muted-rest        | --tug7-surface-global-primary-normal-control-rest    | content       | .tug-prompt-entry-status-content (color) — status row text         |
+ * | --tug7-element-field-border-normal-danger-rest      | --tugx-entry-shell-rest                              | informational | .tug-prompt-entry[data-errored] (outline) — errored ring           |
+ * | --tug7-element-global-text-normal-muted-rest        | --tugx-entry-shell-rest                              | content       | .tug-prompt-entry-status-content (color) — status row text         |
  */
 
 /* ----------------------------------------------------------------------------
@@ -98,10 +98,10 @@ body {
    caret itself, so editor focus is the block's focus. Rules set only
    background-color — self-documenting per [L16]. */
 .tug-prompt-entry .tug-prompt-entry-attachments {
-  background-color: var(--tugx-entry-shell-editor-rest);
+  background-color: var(--tugx-entry-shell-rest);
 }
 .tug-prompt-entry:focus-within .tug-prompt-entry-attachments {
-  background-color: var(--tugx-entry-shell-editor-focus);
+  background-color: var(--tugx-entry-shell-focus);
 }
 
 /* Z4A route group — the composer's two routes, Prompt and Changes.
@@ -192,7 +192,7 @@ body {
 .tug-prompt-entry-input-area:has(> .tug-text-editor[data-drop-active]) {
   position: relative;
 }
-/* @tug-renders-on: --tug7-surface-field-primary-normal-plain-rest */
+/* @tug-renders-on: --tugx-entry-shell-rest */
 .tug-prompt-entry-input-area:has(> .tug-text-editor[data-drop-active])::after {
   content: "";
   position: absolute;
@@ -310,7 +310,7 @@ body {
    base errored treatment.
    ----------------------------------------------------------------------------- */
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+/* @tug-renders-on: --tugx-entry-shell-rest */
 .tug-prompt-entry[data-errored] {
   outline: 2px solid var(--tugx-prompt-entry-errored);
   outline-offset: -2px;
@@ -366,7 +366,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* @tug-renders-on: --tug7-surface-global-primary-normal-control-rest */
+  /* @tug-renders-on: --tugx-entry-shell-rest */
   color: var(--tug7-element-global-text-normal-muted-rest);
   font-size: var(--tug-font-size-xs);
 }

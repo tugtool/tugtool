@@ -1,6 +1,6 @@
 /**
  * at0398-chord-ring.test.ts — the double ring means "Return fires this", and a
- * default whose activation is a CHORD says so by going dashed.
+ * default whose activation is a CHORD says so by going dotted.
  *
  * ## Why this exists
  *
@@ -18,14 +18,14 @@
  *
  * This suite pins all three claims against the real app:
  *
- *   1. **Dashed at rest.** The Z5 declares `data-default-chord="shift"` and
- *      computes a dashed outline while its shell holds the keyboard.
+ *   1. **Dotted at rest.** The Z5 declares `data-default-chord="shift"` and
+ *      computes a dotted outline while its shell holds the keyboard.
  *   2. **Solid while held.** With Shift physically down (`withModifiersHeld`,
  *      which unlike `holdModifier` lets the test look at the app mid-hold),
  *      `data-mods` lands on `<html>` and the same outline computes solid —
- *      then goes back to dashed on release.
+ *      then goes back to dotted on release.
  *   2b. **Exclusively.** Shift+Return is an exclusive chord — Cmd+Shift+Return
- *      submits nothing — so Shift held WITH Cmd leaves the ring dashed. The
+ *      submits nothing — so Shift held WITH Cmd leaves the ring dotted. The
  *      latch carries the whole held set for exactly this read.
  *   3. **The honest wearer is untouched, and only one wearer lights.** ⌘F
  *      moves the keyboard to the find bar, whose default IS fired by a plain
@@ -146,10 +146,10 @@ function returnPromiseCount(app: App): Promise<number> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0398: a chord-activated default wears the ring dashed, solid while the chord is held",
+  "AT0398: a chord-activated default wears the ring dotted, solid while the chord is held",
   () => {
     test(
-      "Z5 dashed at rest → solid under held Shift → dashed again; the find bar's honest default stays solid and alone",
+      "Z5 dotted at rest → solid under held Shift → dotted again; the find bar's honest default stays solid and alone",
       async () => {
         const app = await launchTugApp({ testName: "at0398-chord-ring" });
         try {
@@ -162,7 +162,7 @@ describe.skipIf(!SHOULD_RUN)(
           await app.bindSession("A", { projectDir });
           await app.awaitEngineReady("A");
 
-          // --- 1. Dashed at rest. ---
+          // --- 1. Dotted at rest. ---
           // A draft first: the Z5 is disabled on an empty composer, and a
           // disabled default is no Return target on either paint path.
           await app.nativeClickAtElement(EDITOR);
@@ -181,8 +181,8 @@ describe.skipIf(!SHOULD_RUN)(
           expect(atRest?.chord, "the Z5 declares its chord").toBe("shift");
           expect(
             atRest?.style,
-            "a chord default paints the ring dashed — plain Return inserts a newline",
-          ).toBe("dashed");
+            "a chord default paints the ring dotted — plain Return inserts a newline",
+          ).toBe("dotted");
 
           // --- 2. Solid while Shift is held. ---
           // `withModifiersHeld` is the introspectable hold: the press and the
@@ -207,7 +207,7 @@ describe.skipIf(!SHOULD_RUN)(
 
           // --- 2b. Shift is not enough — Shift ALONE is. ---
           // Cmd+Shift+Return submits nothing (every keystroke path matches
-          // modifiers exactly), so the ring must stay dashed under the pair.
+          // modifiers exactly), so the ring must stay dotted under the pair.
           let pairMods = "";
           let pairStyle = "";
           await app.withModifiersHeld(["shift", "cmd"], async () => {
@@ -226,9 +226,9 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             pairStyle,
             "Cmd+Shift+Return fires nothing, so the conditional promise stays conditional",
-          ).toBe("dashed");
+          ).toBe("dotted");
 
-          // --- 3. Dashed again on release. ---
+          // --- 3. Dotted again on release. ---
           await app.waitForCondition<boolean>(
             `!document.documentElement.hasAttribute("data-mods")`,
             { timeoutMs: 4000 },
@@ -236,7 +236,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             (await readRing(app, SUBMIT))?.style,
             "releasing Shift takes the promise back",
-          ).toBe("dashed");
+          ).toBe("dotted");
           expect(
             await returnPromiseCount(app),
             "exactly one control promises Return with the composer focused",
