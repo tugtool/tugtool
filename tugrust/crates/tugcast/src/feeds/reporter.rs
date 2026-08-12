@@ -51,9 +51,9 @@ use crate::shared_agent::SharedAgentPool;
 use super::gazette_agent::DEFAULT_CARD_ROWS;
 use super::payload_inspector::InspectedPayload;
 use super::reporter_wake::{
-    FactLine, FrameBuffer, PriorPost, WakeReason, compose_reporter_input,
-    counts_as_assistant_activity, forwardable_session, parse_envelope, render_facts_section,
-    validate_refs,
+    FactLine, FrameBuffer, PriorPost, REPORTER_PROSE_LIMIT, WakeReason, clamp_post_body,
+    compose_reporter_input, counts_as_assistant_activity, forwardable_session, parse_envelope,
+    render_facts_section, validate_refs,
 };
 
 /// How many posts the card's CONTROL tail read answers with. Matches the
@@ -643,13 +643,27 @@ fn settle(
         );
     }
 
+    // The prose budget's backstop: the instructions state the limit, and a
+    // body that ignored it is cut here so what persists and what broadcasts
+    // are the same clamped text. Logged because a rising clamp rate means the
+    // prompt has stopped binding.
+    let body = clamp_post_body(&post.body, REPORTER_PROSE_LIMIT);
+    if body != post.body {
+        warn!(
+            session_id,
+            reason = reason.as_str(),
+            chars = post.body.chars().count(),
+            "gazette reporter: body over the prose budget; clamped",
+        );
+    }
+
     let mut record = GazettePost {
         id: None,
         at_ms: now_ms(),
         author: GazetteAuthor::Reporter,
         session_id: Some(session_id.clone()),
         wake_reason: Some(reason.as_str().to_string()),
-        body: post.body,
+        body,
         refs: validated.kept,
         request_id: None,
         transient: false,

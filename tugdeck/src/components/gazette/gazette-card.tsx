@@ -5,40 +5,65 @@
  * One scrolling column of posts, oldest at the top, newest at the bottom, in
  * the order they were written. Three voices share it — the Reporter, which
  * digests session work as it happens; the Operator, which answers questions;
- * and the user, who asks them — so every row leads with the glyph of whoever
- * wrote it. The channel is app-wide, not per-session: a post names the session
- * it narrates through its refs rather than by living inside that card.
+ * and the user, who asks them. The channel is app-wide, not per-session: a
+ * post names the session it narrates through its refs rather than by living
+ * inside that card.
  *
- * The composer sits in its own grid track below the transcript, so the reading
- * column never moves when the field grows under a long question.
+ * The rows are a **mini transcript**: each post is a {@link TugTranscriptEntry}
+ * — the same attribution anatomy the Session card's transcript uses, with the
+ * author's colored icon in the gutter, the identifier + timestamp header, the
+ * narrated session's citation and an icon-only copy button riding the header's
+ * trailing edge. Post bodies are selectable prose; ⌘C and the right-click menu
+ * work per row through the shared transcript cell wiring.
  *
- * The transcript follows the newest post only while the reader is already at
- * the bottom. Scroll up to read history and new arrivals stay below the fold
- * rather than yanking the view — the standard transcript courtesy.
+ * A body that spells out one of its own refs — a path, a sha — renders that
+ * mention as an inline atom (the annotator's `data-tugx-wrapped` DOM contract,
+ * so it wears the global annotation affordance) driving the same intent the
+ * trailing chips drive; refs the prose does not mention keep their chip row
+ * under the body.
  *
- * Laws: [L02] the channel enters through `useGazette`'s `useSyncExternalStore`;
- * [L06] the follow-the-bottom scroll is a DOM write, never React state; [L12]
- * the card's selection boundary is `CardHost`'s per-card registration, which
- * clamps a drag that escapes the rail — the transcript needs no second entry,
- * and a duplicate under the same card id would replace the host's; [L19]/[L20]
- * module docstring, exported props, `data-slot`, tokens scoped to the card's
- * own slot.
+ * The composer is the session prompt-entry's core: a {@link TugEntryShell}
+ * holding the CM6 {@link TugTextEditor} substrate (with `@` file-atom
+ * completion) and the Z5-style submit button in the toolbar's trailing slot.
+ * No Z2 status bar, no Z4A route picker, no Z4B indicators — just the field
+ * and the button.
+ *
+ * Laws: [L02] the channel enters through `useGazette`'s
+ * `useSyncExternalStore`; [L06] the follow-the-bottom scroll and the
+ * composer's `data-empty` bridge are DOM writes, never React state; [L12] the
+ * card's selection boundary is `CardHost`'s per-card registration — the
+ * transcript needs no second entry; [L19]/[L20] module docstring, exported
+ * props, `data-slot`, tokens scoped to the card's own slot.
  *
  * @module components/gazette/gazette-card
  */
 
 import React, { useLayoutEffect, useMemo, useRef } from "react";
-import { Newspaper, User } from "lucide-react";
+import { EditorView } from "@codemirror/view";
+import { ArrowUp } from "lucide-react";
 
-import { Operator } from "@/components/tugways/tug-icons";
-import {
-  TugMessageEditor,
-  type TugMessageEditorHandle,
-} from "@/components/tugways/tug-message-editor";
+import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
+import { useTranscriptCellMenu } from "@/components/tugways/cards/transcript-host-helpers";
+import { TugEntryShell } from "@/components/tugways/tug-entry-shell";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
+import {
+  TugTextEditor,
+  type TugTextEditorDelegate,
+} from "@/components/tugways/tug-text-editor";
+import {
+  TugTranscriptEntry,
+  type Participant,
+} from "@/components/tugways/tug-transcript-entry";
 import { useDeckManager } from "@/deck-manager-context";
 import { formatContextualStamp } from "@/lib/contextual-stamp";
+import { FeedStore } from "@/lib/feed-store";
+import { FileTreeStore } from "@/lib/filetree-store";
+import { getConnection } from "@/lib/connection-singleton";
+import {
+  inlineRefTargets,
+  segmentGazetteBody,
+} from "@/lib/gazette-body-segments";
 import {
   gazetteRefIntent,
   runGazetteRefIntent,
@@ -48,7 +73,9 @@ import {
   useGazette,
   type GazettePostEntry,
 } from "@/lib/gazette-store";
-import type { GazetteAuthor, GazetteRef } from "@/protocol";
+import { buildSlashCommandLine } from "@/lib/slash-commands";
+import type { CompletionProvider } from "@/lib/tug-text-types";
+import { FeedId, type GazetteAuthor, type GazetteRef } from "@/protocol";
 import "./gazette-card.css";
 
 /** How close to the bottom still counts as "following", in px. Slack for a
@@ -56,16 +83,9 @@ import "./gazette-card.css";
 const FOLLOW_SLACK_PX = 24;
 
 /**
- * The card's focus group — the Jots shape, one group for every stop the card
- * offers, walked in the order the eye reads them.
- *
- * The card registers `kbfAtRest` (Class B): arriving here engages keyboard-focus
- * mode with no gesture, so it owes the mode somewhere to put the ring. The
- * composer's two controls are that, and for now they are all of it — the
- * transcript's posts and their ref chips are not stops yet, which is why the
- * composer starts at 0 rather than reserving the negative band Jots gives its
- * chrome. A composer reached this way PARKS (ring, no caret) like any text stop
- * the engine moved to; `Return` or a printable grants the caret.
+ * The card's focus group — one group for every stop the card offers, walked
+ * in the order the eye reads them. The composer's two controls (field, then
+ * submit) are the stops; the transcript's posts are not stops yet.
  */
 const GAZETTE_FOCUS_GROUP = "gazette-card";
 
@@ -75,25 +95,24 @@ export interface GazetteContentProps {
   cardId: string;
 }
 
-/** Human-readable name of each voice, for the glyph's tooltip. */
+/** Human-readable name of each voice — the row's identifier. */
 const AUTHOR_LABEL: Record<GazetteAuthor, string> = {
   reporter: "Reporter",
   operator: "Operator",
   user: "You",
 };
 
-function AuthorGlyph({ author }: { author: GazetteAuthor }): React.ReactElement {
-  if (author === "operator") return <Operator size={14} aria-hidden />;
-  if (author === "user") return <User size={14} aria-hidden />;
-  return <Newspaper size={14} aria-hidden />;
-}
+/** The transcript participant each Gazette voice renders as. */
+const AUTHOR_PARTICIPANT: Record<GazetteAuthor, Participant> = {
+  reporter: "reporter",
+  operator: "operator",
+  user: "user",
+};
 
 /**
  * A post's time, in the reader's locale, read against today: a post from today
- * shows its clock alone — the channel is a running feed, and a full stamp on
- * every row would out-weigh the sentence it labels — while an older post names
- * its day (`Yesterday`, `Monday`, `Aug 4`) so it can't be misread as this
- * afternoon's. The full stamp always rides the `title`.
+ * shows its clock alone, an older post names its day. The full stamp always
+ * rides the `title`.
  */
 function useTimeFormats(): {
   short: (at: Date) => string;
@@ -112,28 +131,17 @@ function useTimeFormats(): {
 }
 
 /**
- * One ref chip — provenance you can follow. A path opens in the card every
- * other path opens in, a sha opens its diff, and a session raises its card;
- * each reaches an existing verb rather than a mechanism of its own.
- *
- * A ref with nowhere to go (a session whose card is closed) renders disabled
- * with the reason on its tooltip, rather than looking clickable and doing
- * nothing. The label is the target's last segment with the whole of it on the
- * tooltip — the rail is too narrow to spell a path twice.
+ * One trailing ref chip — provenance the prose did not spell out. A path
+ * opens in the card every other path opens in, a sha opens its diff, and a
+ * session raises its card; each reaches an existing verb rather than a
+ * mechanism of its own. A ref with nowhere to go renders disabled with the
+ * reason on its tooltip.
  */
 function RefChip({ chipRef }: { chipRef: GazetteRef }): React.ReactElement {
   const store = useDeckManager();
   // A session ref is a CITATION, and it renders as one: the session atom, the
-  // callsign, the same chip every foreign surface shows. It used to fall
-  // through to the generic label rule below — `target.split("/").pop()`, which
-  // is a no-op on a UUID — so the Gazette printed all thirty-six characters of
-  // an id nobody can read.
-  //
-  // The chip owns the whole gesture, including whether to offer it: it asks the
-  // ledger whether the session is findable and the binding store whether a card
-  // is open, which is the same pair `gazetteRefIntent` decides the other kinds
-  // on. Passing an intent in as well would be a second opinion about a session
-  // ref, and the two would drift.
+  // callsign, the same chip every foreign surface shows. The chip owns the
+  // whole gesture, including whether to offer it.
   if (chipRef.kind === "session") {
     return (
       <TugSessionCitation
@@ -155,13 +163,74 @@ function RefChip({ chipRef }: { chipRef: GazetteRef }): React.ReactElement {
       role="data"
       className="gazette-ref-chip"
       disabled={inert}
-      title={
-        inert ? intent.reason : `${chipRef.kind}: ${chipRef.target}`
-      }
+      title={inert ? intent.reason : `${chipRef.kind}: ${chipRef.target}`}
       onClick={() => runGazetteRefIntent(intent, store)}
     >
       {label}
     </TugPushButton>
+  );
+}
+
+/**
+ * A post body with its ref mentions rendered as inline atoms. Plain runs stay
+ * plain (and selectable); a run that mentions a session ref mounts the live
+ * {@link TugSessionCitation}, and every other ref kind becomes an annotated
+ * span wearing the annotator's `data-tugx-wrapped` contract — resting-plain,
+ * hover reveals the affordance, exactly as detected entities read in the
+ * Session transcript. The click is serviced by the transcript root's
+ * delegated listener, not per-span handlers.
+ */
+function GazettePostBody({
+  post,
+  bodyRef,
+}: {
+  post: GazettePostEntry;
+  bodyRef?: React.MutableRefObject<HTMLElement | null>;
+}): React.ReactElement {
+  const segments = useMemo(
+    () => segmentGazetteBody(post.body, post.refs),
+    [post],
+  );
+  return (
+    <p
+      className="gazette-post-body"
+      ref={(el) => {
+        if (bodyRef !== undefined) bodyRef.current = el;
+      }}
+    >
+      {segments.map((seg, i) => {
+        if (seg.ref === null) {
+          return <React.Fragment key={i}>{seg.text}</React.Fragment>;
+        }
+        if (seg.ref.kind === "session") {
+          return (
+            <TugSessionCitation
+              key={i}
+              citedId={seg.ref.target}
+              className="gazette-body-atom"
+            />
+          );
+        }
+        return (
+          <span
+            key={i}
+            className="gazette-body-atom"
+            data-tugx-wrapped=""
+            data-tug-annotation={
+              seg.ref.kind === "commit" ? "commit-sha" : "file-path"
+            }
+            data-gazette-ref-kind={seg.ref.kind}
+            data-gazette-ref-target={seg.ref.target}
+            // Opening a card must not move DOM focus with the press.
+            data-tug-focus="refuse"
+            data-no-activate=""
+            title={`${seg.ref.kind}: ${seg.ref.target}`}
+          >
+            {seg.text}
+          </span>
+        );
+      })}
+    </p>
   );
 }
 
@@ -174,34 +243,71 @@ function GazettePostRow({
 }): React.ReactElement {
   const at = new Date(post.atMs);
   const authorLabel = AUTHOR_LABEL[post.author];
-  // The wake reason belongs on the glyph, not in the row: it explains why this
-  // post exists at all, which is background to the sentence rather than part
-  // of it.
-  const glyphTitle =
+  // Per-row ⌘C / right-click Copy — the same cell wiring the Session
+  // transcript's rows use. No markdown resolver: a post is plain prose, so
+  // copy is the selection verbatim.
+  const { ResponderScope, cellProps, bodyRef, menu } = useTranscriptCellMenu();
+  // The wake reason explains why this post exists at all — background to the
+  // sentence, so it rides the identifier's tooltip rather than the row.
+  const identifierTitle =
     post.wakeReason !== null
       ? `${authorLabel} — ${post.wakeReason}`
-      : authorLabel;
+      : undefined;
+  const inlined = useMemo(
+    () => inlineRefTargets(segmentGazetteBody(post.body, post.refs)),
+    [post],
+  );
+  // Refs the prose already carries inline need no chip; the narrated
+  // session's citation rides the header, so its chip is redundant too.
+  const chipRefs = post.refs.filter(
+    (r) =>
+      !inlined.has(r.target) &&
+      !(r.kind === "session" && r.target === post.sessionId),
+  );
   return (
-    <article className="gazette-post" data-author={post.author}>
-      <span className="gazette-post-glyph" title={glyphTitle}>
-        <AuthorGlyph author={post.author} />
-      </span>
-      <div className="gazette-post-main">
-        <div className="gazette-post-meta">
-          <time dateTime={at.toISOString()} title={formats.full.format(at)}>
-            {formats.short(at)}
-          </time>
-        </div>
-        <p className="gazette-post-body">{post.body}</p>
-        {post.refs.length > 0 ? (
-          <div className="gazette-post-refs">
-            {post.refs.map((r) => (
-              <RefChip key={`${r.kind}:${r.target}`} chipRef={r} />
-            ))}
-          </div>
-        ) : null}
+    <ResponderScope>
+      <div className="gazette-cell" data-author={post.author} {...cellProps}>
+        <TugTranscriptEntry
+          className="gazette-post"
+          participant={AUTHOR_PARTICIPANT[post.author]}
+          identifier={<span title={identifierTitle}>{authorLabel}</span>}
+          timestamp={
+            <time dateTime={at.toISOString()} title={formats.full.format(at)}>
+              {formats.short(at)}
+            </time>
+          }
+          headerTrailing={
+            <>
+              {post.sessionId !== null ? (
+                <TugSessionCitation
+                  citedId={post.sessionId}
+                  className="gazette-post-session"
+                />
+              ) : null}
+              <BlockCopyButton
+                subtype="icon"
+                emphasis="ghost"
+                size="2xs"
+                getText={() => post.body}
+                aria-label="Copy post"
+                data-slot="gazette-post-copy"
+              />
+            </>
+          }
+          body={<GazettePostBody post={post} bodyRef={bodyRef} />}
+          controls={
+            chipRefs.length > 0 ? (
+              <div className="gazette-post-refs">
+                {chipRefs.map((r) => (
+                  <RefChip key={`${r.kind}:${r.target}`} chipRef={r} />
+                ))}
+              </div>
+            ) : undefined
+          }
+        />
+        {menu}
       </div>
-    </article>
+    </ResponderScope>
   );
 }
 
@@ -214,6 +320,7 @@ export function GazetteContent({
 }: GazetteContentProps): React.ReactElement {
   const { posts, status, pendingRequestId } = useGazette();
   const formats = useTimeFormats();
+  const store = useDeckManager();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the reader is at the bottom, sampled BEFORE the new post is laid
   // out — reading it afterwards would always say "no", since the arriving row
@@ -226,6 +333,46 @@ export function GazetteContent({
     // [L06]: following the newest post is a scroll write, not React state.
     el.scrollTop = el.scrollHeight;
   }, [posts]);
+
+  // The delegated gesture layer for the inline body atoms — one listener on
+  // the transcript root, the Session transcript's idiom. A click on an
+  // annotated mention resolves back to its ref and runs the same intent the
+  // chips run; the paired mousedown keeps an opening press from moving DOM
+  // focus. [L03] — live before any click it services.
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (root === null) return;
+    const refFromEvent = (event: MouseEvent): GazetteRef | null => {
+      const target = event.target;
+      if (!(target instanceof Element)) return null;
+      const el = target.closest<HTMLElement>("[data-gazette-ref-kind]");
+      if (el === null) return null;
+      const kind = el.dataset.gazetteRefKind;
+      const refTarget = el.dataset.gazetteRefTarget;
+      if (kind === undefined || refTarget === undefined) return null;
+      return { kind, target: refTarget } as GazetteRef;
+    };
+    const onClick = (event: MouseEvent): void => {
+      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      // The tail of a drag-selection over the atom is not a click on it.
+      const selection = window.getSelection();
+      if (selection !== null && !selection.isCollapsed) return;
+      const ref = refFromEvent(event);
+      if (ref === null) return;
+      runGazetteRefIntent(gazetteRefIntent(ref), store);
+    };
+    const onMouseDown = (event: MouseEvent): void => {
+      if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      if (refFromEvent(event) === null) return;
+      event.preventDefault();
+    };
+    root.addEventListener("click", onClick);
+    root.addEventListener("mousedown", onMouseDown);
+    return () => {
+      root.removeEventListener("click", onClick);
+      root.removeEventListener("mousedown", onMouseDown);
+    };
+  }, [store]);
 
   const onScroll = (): void => {
     const el = scrollRef.current;
@@ -263,22 +410,24 @@ export function GazetteContent({
           // [L26]: keyed exactly as the answer will be, so the placeholder
           // becomes the answer in place rather than being torn down and a new
           // row built where it stood.
-          <article
+          <div
             key={`req:operator:${pendingRequestId}`}
-            className="gazette-post"
+            className="gazette-cell"
             data-author="operator"
             data-pending=""
             data-testid="gazette-pending-row"
           >
-            <span className="gazette-post-glyph" title={AUTHOR_LABEL.operator}>
-              <AuthorGlyph author="operator" />
-            </span>
-            <div className="gazette-post-main">
-              <p className="gazette-post-body" role="status">
-                Looking into it…
-              </p>
-            </div>
-          </article>
+            <TugTranscriptEntry
+              className="gazette-post"
+              participant="operator"
+              identifier={AUTHOR_LABEL.operator}
+              body={
+                <p className="gazette-post-body" role="status">
+                  Looking into it…
+                </p>
+              }
+            />
+          </div>
         ) : null}
       </div>
       <div className="gazette-composer-slot" data-testid="gazette-composer-slot">
@@ -289,77 +438,136 @@ export function GazetteContent({
 }
 
 /**
- * Ask the Operator something.
+ * `@` file completion for the composer, against the bootstrap workspace: the
+ * Gazette is app-wide, so it has no per-card project binding; an unrooted
+ * FILETREE query falls through to tugcast's bootstrap workspace, which is the
+ * right default for a channel that narrates the whole app. Lazy singleton —
+ * one feed subscription however many times the card mounts.
+ */
+let _fileCompletionProvider: CompletionProvider | null = null;
+function gazetteFileCompletionProvider(): CompletionProvider {
+  if (_fileCompletionProvider !== null) return _fileCompletionProvider;
+  const conn = getConnection();
+  if (conn === null) return ((_q: string) => []) as CompletionProvider;
+  const feedStore = new FeedStore(conn, [FeedId.FILETREE]);
+  _fileCompletionProvider = new FileTreeStore(
+    feedStore,
+    FeedId.FILETREE,
+  ).getFileCompletionProvider();
+  return _fileCompletionProvider;
+}
+
+/**
+ * Ask the Operator something — the session prompt-entry's core editing
+ * experience, without its session-bound chrome.
  *
- * The field is a {@link TugMessageEditor} — the CM6 substrate, which brings the
- * clipboard and undo responders with it ([L11]), so Cmd-A/C/X/V/Z work in the
- * rail without this card wiring one of them. The document lives in CM6 rather
- * than in React state ([L02]); `mirrored` tracks only whether the field is
- * empty, which is what the submit button's enablement reads.
+ * The shell is {@link TugEntryShell} (the composer/find-bar structural
+ * primitive): the CM6 {@link TugTextEditor} substrate as the input area —
+ * which brings the clipboard and undo responders with it ([L11]), plus `@`
+ * file-atom completion — and the Z5-style submit button alone in the
+ * toolbar's trailing slot. Return submits; Shift-Return breaks the line;
+ * atoms flatten to their values on the wire.
  *
- * One question at a time: while an answer is outstanding the field is disabled
- * and says so. The store enforces the same rule — this is the affordance, not
- * the guarantee.
+ * Emptiness is the `data-empty` DOM bridge on the shell root, written from a
+ * substrate update listener and read by CSS to dim the submit — never React
+ * state ([L06], the prompt entry's own technique).
  *
- * Its two controls are the card's keyboard stops — see {@link
- * GAZETTE_FOCUS_GROUP}.
+ * One question at a time: while an answer is outstanding the field is
+ * disabled and says so. The store enforces the same rule — this is the
+ * affordance, not the guarantee.
  */
 function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement {
-  const editorRef = useRef<TugMessageEditorHandle | null>(null);
-  const [empty, setEmpty] = React.useState(true);
+  const editorRef = useRef<TugTextEditorDelegate | null>(null);
+  const shellRef = useRef<HTMLDivElement | null>(null);
+
+  // The data-empty bridge, captured at mount (the substrate reads
+  // `extensions` once). Any doc change — typing, paste, the programmatic
+  // clear after a submit — re-mirrors emptiness onto the shell root.
+  const emptyBridge = useMemo(
+    () =>
+      EditorView.updateListener.of((update) => {
+        if (!update.docChanged) return;
+        shellRef.current?.setAttribute(
+          "data-empty",
+          String(update.state.doc.length === 0),
+        );
+      }),
+    [],
+  );
+
+  const completionProviders = useMemo<Record<string, CompletionProvider>>(
+    () => ({ "@": gazetteFileCompletionProvider() }),
+    [],
+  );
 
   const submit = (): void => {
-    if (pending || empty) return;
+    if (pending) return;
     const store = getGazetteStore();
     if (store === null) return;
-    const text = draftRef.current;
+    const state = editorRef.current?.captureState();
+    if (state === undefined) return;
+    // Atoms flatten to their values — an `@`-completed path survives as the
+    // path the Operator can act on.
+    const text = buildSlashCommandLine(
+      state.text,
+      state.atoms.map((a) => ({
+        position: a.position,
+        segment: { type: a.type, value: a.value },
+      })),
+    ).trim();
+    if (text === "") return;
     if (store.submitQuestion(text) === null) return;
-    // The question comes back off the wire as a post; the field's job is done.
+    // The question comes back off the wire as a post; the field's job is
+    // done. `clear` fires the update listener, which resets `data-empty`.
     editorRef.current?.clear();
-    draftRef.current = "";
-    setEmpty(true);
   };
 
-  // The document mirrored out of CM6, held in a ref rather than state: the
-  // submit reads it once, and re-rendering the card on every keystroke would
-  // re-render the whole transcript with it.
-  const draftRef = useRef("");
-
   return (
-    <div className="gazette-composer" data-slot="gazette-composer">
-      <TugMessageEditor
-        ref={editorRef}
+    <TugEntryShell
+      ref={shellRef}
+      className="gazette-composer"
+      data-slot="gazette-composer"
+      data-testid="gazette-composer"
+      data-empty="true"
+      toolbarTrailing={
+        <TugPushButton
+          subtype="icon"
+          size="lg"
+          emphasis="filled"
+          role="action"
+          className="gazette-composer-send"
+          data-testid="gazette-composer-send"
+          data-tug-entry-default=""
+          aria-label="Ask the Operator"
+          focusGroup={GAZETTE_FOCUS_GROUP}
+          focusOrder={1}
+          disabled={pending}
+          onClick={submit}
+          icon={<ArrowUp size={16} strokeWidth={2.5} />}
+        />
+      }
+    >
+      <TugTextEditor
+        ref={(delegate) => {
+          editorRef.current = delegate;
+        }}
         className="gazette-composer-field"
         data-testid="gazette-composer-field"
-        placeholder={
-          pending ? "Waiting for an answer…" : "Ask the Operator…"
-        }
+        borderless
+        lineWrap
+        markdownTextStyling
+        maxRows={8}
+        preserveState={false}
+        returnAction="submit"
+        placeholder={pending ? "Waiting for an answer…" : "Ask the Operator…"}
         aria-label="Ask the Operator"
         focusGroup={GAZETTE_FOCUS_GROUP}
         focusOrder={0}
         disabled={pending}
-        borderless={false}
-        lineWrap
-        maxRows={6}
-        onChange={(text) => {
-          draftRef.current = text;
-          const isEmpty = text.trim() === "";
-          if (isEmpty !== empty) setEmpty(isEmpty);
-        }}
+        completionProviders={completionProviders}
         onSubmit={submit}
+        extensions={emptyBridge}
       />
-      <TugPushButton
-        size="xs"
-        emphasis="filled"
-        className="gazette-composer-send"
-        data-testid="gazette-composer-send"
-        focusGroup={GAZETTE_FOCUS_GROUP}
-        focusOrder={1}
-        disabled={pending || empty}
-        onClick={submit}
-      >
-        Ask
-      </TugPushButton>
-    </div>
+    </TugEntryShell>
   );
 }

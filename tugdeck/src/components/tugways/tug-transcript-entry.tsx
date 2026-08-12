@@ -68,8 +68,9 @@
 import "./tug-transcript-entry.css";
 
 import React from "react";
-import { Bot, GitCommitHorizontal, Shell, User } from "lucide-react";
+import { Bot, GitCommitHorizontal, Newspaper, Shell, User } from "lucide-react";
 
+import { Operator } from "@/components/tugways/tug-icons";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -82,7 +83,13 @@ import { cn } from "@/lib/utils";
  * {@link PARTICIPANT_ICONS}, and (optionally) defining new
  * `--tugx-transcript-*-<participant>` flavor tokens. No primitive edit.
  */
-export type Participant = "user" | "assistant" | "shell" | "git";
+export type Participant =
+  | "user"
+  | "assistant"
+  | "shell"
+  | "git"
+  | "reporter"
+  | "operator";
 
 /**
  * Icon rendered in the gutter for each participant. Lucide glyphs picked
@@ -117,6 +124,11 @@ const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   assistant: <Bot size={ICON_PIXEL_SIZE} />,
   shell: <Shell size={ICON_PIXEL_SIZE} />,
   git: <GitCommitHorizontal size={ICON_PIXEL_SIZE} />,
+  // The Gazette's two voices: the Reporter narrates sessions, the Operator
+  // answers questions. Both read at transcript scale, so they live in the
+  // shared registry rather than in a Gazette-only fork of the row.
+  reporter: <Newspaper size={ICON_PIXEL_SIZE} />,
+  operator: <Operator size={ICON_PIXEL_SIZE} />,
 };
 
 // ---------------------------------------------------------------------------
@@ -144,6 +156,13 @@ export interface TugTranscriptEntryProps {
    * through that range without re-aligning siblings as the count grows.
    */
   address?: TurnAddress;
+  /**
+   * Optional trailing header slot, pinned to the attribution row's right
+   * edge — per-row chrome that belongs with the attribution rather than
+   * under the body (an icon-only copy button, a provenance chip). Rendered
+   * after the sequence badge when both are present.
+   */
+  headerTrailing?: React.ReactNode;
   /** Row body content. The primitive imposes no opinion on text rendering. */
   body: React.ReactNode;
   /**
@@ -451,6 +470,7 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
   identifier,
   timestamp,
   address,
+  headerTrailing,
   body,
   inflightFooter,
   controls,
@@ -548,6 +568,11 @@ export const TugTranscriptEntry: React.FC<TugTranscriptEntryProps> = ({
               aria-label={`${SPEAKER_ARIA_NOUN[address.speaker]} message ${formatTurnAddress(address).slice(1)}`}
             >
               {formatTurnAddress(address)}
+            </span>
+          )}
+          {headerTrailing !== undefined && headerTrailing !== null && (
+            <span className="tug-transcript-entry__header-trailing">
+              {headerTrailing}
             </span>
           )}
         </div>

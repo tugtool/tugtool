@@ -25,7 +25,7 @@
  *     carrying its author's glyph, and a post's refs rendering as chips labelled
  *     by the target's last segment.
  *  3. **The composer completes a round trip.** Typing a question and pressing
- *     Ask sends GAZETTE_INPUT; the Operator echoes the question as a user post
+ *     the send button sends GAZETTE_INPUT; the Operator echoes the question as a user post
  *     and then answers. Under the app-test gate the agent pool answers nothing
  *     by design, so what comes back is the transient "couldn't answer" post —
  *     which is the assertion that matters here. The question left the card,
@@ -72,7 +72,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
 
 const CARD = '[data-testid="gazette-card"]';
-const POST = `${CARD} .gazette-post`;
+const POST = `${CARD} .gazette-cell`;
 const PENDING = '[data-testid="gazette-pending-row"]';
 const BODY = `${CARD} .gazette-post-body`;
 const FIELD = '[data-testid="gazette-composer-field"]';
@@ -105,7 +105,7 @@ const ROWS_JS = `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
       body: (body === null ? "" : body.textContent || "").trim(),
       chips: Array.from(el.querySelectorAll(".gazette-ref-chip"))
         .map(function (c) { return (c.textContent || "").trim(); }),
-      glyph: el.querySelector(".gazette-post-glyph svg") !== null,
+      glyph: el.querySelector(".tug-transcript-entry__icon svg") !== null,
     };
   })`;
 
@@ -399,7 +399,7 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         const chromePx = await app.evalJS<number>(
           `(function () {
             var body = document.querySelector(${JSON.stringify(BODY)});
-            var column = body.closest(".gazette-post-main");
+            var column = body.closest(".tug-transcript-entry__body-column");
             var pane = body.closest(".tug-pane");
             return pane.getBoundingClientRect().width
               - column.getBoundingClientRect().width;

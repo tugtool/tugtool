@@ -583,9 +583,167 @@ pub fn validate_refs(refs: Vec<GazetteRef>, corpora: &[&str]) -> ValidatedRefs {
     ValidatedRefs { kept, dropped }
 }
 
+// MARK: - The prose budget
+
+/// The Reporter's body budget, in characters of prose.
+///
+/// The instructions state the same number, so this clamp is the backstop for a
+/// model that ignored them, not the working limit. It is a *prose* budget:
+/// tokens that name something exactly — paths, commit shas, session ids — are
+/// excluded from the count, so precision is never what the clamp squeezes out.
+pub const REPORTER_PROSE_LIMIT: usize = 200;
+
+/// Characters of prose in `body` — every character except those of tokens that
+/// read as exact names rather than prose.
+///
+/// A token is exempt when it contains a path separator, reads as a commit sha
+/// (7+ lowercase hex with at least one digit — the digit requirement keeps
+/// ordinary all-hex words like "defaced" countable), reads as a UUID, or reads
+/// as a file name (stem.ext, both at least two characters, so "e.g." and
+/// "i.e." stay prose). Whitespace counts as prose: the budget measures how much
+/// there is to read, and a name is the only thing reading skips.
+pub fn prose_len(body: &str) -> usize {
+    pieces(body)
+        .map(|(piece, is_ws)| {
+            if !is_ws && token_is_exempt(piece) {
+                0
+            } else {
+                piece.chars().count()
+            }
+        })
+        .sum()
+}
+
+/// `body` unchanged when it is within the prose budget; otherwise cut at the
+/// last token boundary inside the budget, with an ellipsis marking the cut.
+pub fn clamp_post_body(body: &str, limit: usize) -> String {
+    if prose_len(body) <= limit {
+        return body.to_string();
+    }
+    let mut out = String::new();
+    let mut prose = 0usize;
+    for (piece, is_ws) in pieces(body) {
+        let cost = if !is_ws && token_is_exempt(piece) {
+            0
+        } else {
+            piece.chars().count()
+        };
+        if !is_ws && prose + cost > limit {
+            break;
+        }
+        prose += cost;
+        out.push_str(piece);
+    }
+    let trimmed = out.trim_end();
+    format!("{trimmed}…")
+}
+
+/// `body` as alternating whitespace / non-whitespace runs, each flagged.
+fn pieces(body: &str) -> impl Iterator<Item = (&str, bool)> {
+    let mut runs = Vec::new();
+    let mut start = 0usize;
+    let mut in_ws: Option<bool> = None;
+    for (i, ch) in body.char_indices() {
+        let ws = ch.is_whitespace();
+        match in_ws {
+            None => in_ws = Some(ws),
+            Some(prev) if prev != ws => {
+                runs.push((&body[start..i], prev));
+                start = i;
+                in_ws = Some(ws);
+            }
+            Some(_) => {}
+        }
+    }
+    if let Some(ws) = in_ws {
+        runs.push((&body[start..], ws));
+    }
+    runs.into_iter()
+}
+
+/// Whether one whitespace-delimited token names something exactly.
+fn token_is_exempt(token: &str) -> bool {
+    let core = token
+        .trim_matches(|c: char| !(c.is_alphanumeric() || c == '/' || c == '.' || c == '_' || c == '-'));
+    if core.is_empty() {
+        return false;
+    }
+    if core.contains('/') {
+        return true;
+    }
+    let len = core.chars().count();
+    if len >= 7
+        && core.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+        && core.chars().any(|c| c.is_ascii_digit())
+    {
+        return true;
+    }
+    if len == 36
+        && core.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit(),
+        })
+    {
+        return true;
+    }
+    if let Some((stem, ext)) = core.rsplit_once('.') {
+        if stem.chars().count() >= 2
+            && (2..=6).contains(&ext.chars().count())
+            && ext.chars().all(|c| c.is_ascii_alphanumeric())
+            && !stem.contains('.')
+        {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // MARK: - The prose budget
+
+    #[test]
+    fn prose_len_counts_prose_and_exempts_exact_names() {
+        // Plain prose counts every character, whitespace included.
+        assert_eq!(prose_len("hello there"), 11);
+        // A path costs nothing; the words and spaces around it still count.
+        assert_eq!(prose_len("touched tugdeck/src/main.tsx today"), prose_len("touched  today"));
+        // A sha costs nothing — but only with a digit in it, so ordinary
+        // all-hex words stay prose.
+        assert_eq!(prose_len("commit a1b2c3d4e landed"), prose_len("commit  landed"));
+        assert_eq!(prose_len("defaced facade"), 14);
+        // A UUID costs nothing.
+        assert_eq!(
+            prose_len("session 123e4567-e89b-42d3-a456-426614174000 ended"),
+            prose_len("session  ended"),
+        );
+        // A bare file name costs nothing; "e.g." is prose.
+        assert_eq!(prose_len("edited main.rs e.g. twice"), prose_len("edited  e.g. twice"));
+        // Punctuation stuck to a name rides along with it.
+        assert_eq!(prose_len("(tugdeck/src/main.tsx)."), 0);
+    }
+
+    #[test]
+    fn clamp_post_body_passes_short_bodies_and_cuts_long_ones() {
+        let short = "Fixed the flaky test in tugrust/crates/tugcast/src/feeds/reporter.rs.";
+        assert_eq!(clamp_post_body(short, REPORTER_PROSE_LIMIT), short);
+
+        // A body whose prose is long gets cut at a token boundary, marked.
+        let long = "word ".repeat(80);
+        let clamped = clamp_post_body(&long, REPORTER_PROSE_LIMIT);
+        assert!(clamped.ends_with("word…"), "cut lands between tokens, not inside one");
+        assert!(prose_len(&clamped) <= REPORTER_PROSE_LIMIT + 1);
+
+        // A body long only because of its paths is not cut at all.
+        let path_heavy = format!(
+            "Retuned the theme tokens in {} and {} to match.",
+            "tugdeck/styles/themes/a-very-long-theme-file-name-indeed.css".repeat(2),
+            "tugdeck/styles/themes/another-name.css",
+        );
+        assert_eq!(clamp_post_body(&path_heavy, REPORTER_PROSE_LIMIT), path_heavy);
+    }
 
     fn frame(session: &str, msg_type: &str, extra: &str) -> String {
         format!(r#"{{"tug_session_id":"{session}","type":"{msg_type}"{extra}}}"#)

@@ -88,6 +88,11 @@ body {
   --tugx-transcript-icon-color-assistant:    var(--tug7-element-tone-icon-normal-active-rest);
   --tugx-transcript-icon-color-shell:   var(--tug7-element-tone-icon-normal-data-rest);
   --tugx-transcript-icon-color-git:     var(--tug7-element-tone-icon-normal-success-rest);
+  /* The Gazette's voices: the Reporter narrates (data — it reports records),
+     the Operator answers as the resident agent (the active hue the assistant
+     wears — both are the AI speaking). */
+  --tugx-transcript-icon-color-reporter: var(--tug7-element-tone-icon-normal-data-rest);
+  --tugx-transcript-icon-color-operator: var(--tug7-element-tone-icon-normal-active-rest);
 
   /* Icon legibility halo — grounds the colored speaker icon against the
    * header surface. The light/dark decision lives in the theme: the light
@@ -187,6 +192,25 @@ body {
 }
 .tug-transcript-entry[data-participant="git"] {
   --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-git);
+}
+.tug-transcript-entry[data-participant="reporter"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-reporter);
+}
+.tug-transcript-entry[data-participant="operator"] {
+  --tugx-transcript-icon-color: var(--tugx-transcript-icon-color-operator);
+}
+
+/* Trailing header slot — per-row chrome that belongs with the attribution
+ * (an icon-only copy button, a provenance chip). Pinned to the row's right
+ * edge; centered on the control axis rather than the text baseline so an
+ * icon button doesn't ride high against the identifier. */
+.tug-transcript-entry__header-trailing {
+  margin-inline-start: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--tugx-transcript-header-gap);
+  align-self: center;
+  user-select: none;
 }
 
 .tug-transcript-entry__body-column {

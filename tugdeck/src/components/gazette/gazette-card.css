@@ -1,15 +1,15 @@
 /* The Gazette card. Tokens only — no literal colors. */
 
-/* @tug-pairings: none — the card sets a text color for inherited content only;
-   the ref chips' color comes from `TugBadge` and the glyphs inherit the row's
-   ([L20]). */
+/* @tug-pairings: none — the rows are `TugTranscriptEntry` (its own pair owns
+   the attribution colors), the chips are `TugPushButton`/`TugSessionCitation`,
+   and the composer is `TugEntryShell` + `TugTextEditor`; this sheet only
+   arranges them and tunes the reading measure ([L20]). */
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-card {
   display: grid;
   /* Two tracks: the transcript takes the height, the composer's track is
-     reserved at content height and is empty today — see the card's docstring
-     for why it is reserved rather than grown later. */
+     reserved at content height. */
   grid-template-rows: 1fr auto;
   block-size: 100%;
   min-block-size: 0;
@@ -18,7 +18,6 @@
   color: var(--tug7-element-global-text-normal-default-rest);
   /* Post rhythm — TUNE HERE. */
   --tugx-gazette-post-gap: var(--tug-space-md);
-  --tugx-gazette-gutter-inline-size: 18px;
 }
 
 .gazette-transcript {
@@ -31,39 +30,24 @@
   padding: var(--tug-space-md);
 }
 
-/* One post: the author's glyph in a fixed gutter, everything else in the
-   column beside it, so bodies from different voices share one left edge. */
-.gazette-post {
-  display: grid;
-  grid-template-columns: var(--tugx-gazette-gutter-inline-size) 1fr;
-  gap: var(--tug-space-sm);
-  align-items: start;
+/* The rows are the shared transcript primitive; the Gazette is a MINI
+   transcript, so the entry tokens step down one notch from the Session
+   card's scale — the identifier at body size, the sticky header backed by
+   the card's own surface. */
+.gazette-cell {
+  --tugx-transcript-identifier-font-size: var(--tug-font-size-md);
+  --tugx-transcript-icon-column-width: 28px;
+  --tugx-transcript-header-bg: var(--tug7-surface-global-primary-normal-default-rest);
+  --tugx-transcript-header-padding-block: var(--tug-space-xs);
 }
 
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gazette-post-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* Sits on the meta line's baseline band, not on the body's first line. */
+/* The mini scale's icon: the registry renders at the transcript's 20px; the
+   Gazette's narrower gutter reads better at 16. Sized here rather than a
+   primitive prop — the icon tracks the identifier, and both step down
+   together in this card only. */
+.gazette-cell .tug-transcript-entry__icon > svg {
+  inline-size: 16px;
   block-size: 16px;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-}
-
-.gazette-post-main {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-inline-size: 0;
-}
-
-/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
-.gazette-post-meta {
-  /* TUNE HERE — the byline's size. Held under the body's, and inside the 16px
-     band it shares with the glyph gutter. */
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 .gazette-post-body {
@@ -84,11 +68,16 @@
   overflow-wrap: anywhere;
 }
 
+/* The narrated session's citation in the header keeps the header's single
+   line — a long callsign truncates rather than wrapping the attribution. */
+.gazette-post-session {
+  max-inline-size: 16ch;
+}
+
 .gazette-post-refs {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-block-start: 4px;
 }
 
 /* The chip's own color comes from `TugPushButton`'s `data` role; the card only
@@ -113,31 +102,22 @@
    growing under a long question never moves the reading column. */
 .gazette-composer-slot {
   min-block-size: 0;
+  padding: 0 var(--tug-space-sm) var(--tug-space-sm);
 }
 
-.gazette-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--tug-space-sm);
-  padding: var(--tug-space-sm) var(--tug-space-md) var(--tug-space-md);
-  border-block-start: 1px solid
-    var(--tug7-element-global-border-normal-subtle-rest);
-}
-
-.gazette-composer-field {
-  flex: 1 1 auto;
-  min-inline-size: 0;
-}
-
-/* The button holds its width across enabled and disabled so the field does not
-   resize as the answer arrives. */
-.gazette-composer-send {
-  flex: 0 0 auto;
+/* Empty-input gate [L06][L22]: the substrate's update listener mirrors
+   emptiness onto the shell root as `data-empty`; this is the CSS half — the
+   functional half is the submit handler's own empty check. The prompt
+   entry's exact rule, scoped to this card's send button. */
+.gazette-composer[data-empty="true"] .gazette-composer-send {
+  opacity: var(--tugx-control-disabled-opacity, 0.45);
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* A post still being written. The row is the answer's row already ([L26]);
    only its body is a placeholder, so it reads quiet rather than absent. */
-.gazette-post[data-pending] .gazette-post-body {
+.gazette-cell[data-pending] .gazette-post-body {
   color: var(--tug7-element-global-text-normal-subtle-rest);
   font-style: italic;
 }

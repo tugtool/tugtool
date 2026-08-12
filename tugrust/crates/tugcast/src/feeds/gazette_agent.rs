@@ -213,6 +213,11 @@ pub fn build_pool(
 /// and re-gave the answer the session had already given — the content, not a
 /// summary of it. A countable limit plus the rule that the post exists to get
 /// the reader to the session, not to stand in for it, is what actually binds.
+/// The budget is 200 characters of prose, and it is a *prose* budget: paths,
+/// shas, and session names the body must spell exactly are excluded from the
+/// count, so precision is never what the budget squeezes out. `settle` clamps
+/// the same measure Rust-side (`clamp_post_body`), so a model that ignores the
+/// budget still cannot put a long post in the channel.
 ///
 /// Two things here are load-bearing downstream and must not drift. The output
 /// is strict JSON with `{"post": null}` as a first-class answer — silence is
@@ -244,7 +249,7 @@ The WAKE REASON tells you why you are being asked now. Use it:
 - session-end — the session is over. Write a wrap-up of what it accomplished overall.
 - token-threshold — the session has spent a lot. Say what it has been spending on.
 
-Write like a person telling a colleague what happened. Two or three sentences, 60 words at the outside — this is a notice in a narrow rail, not a transcript. Concrete and specific: name what was built, what was found, what broke, what was asked and what the answer was. Never narrate your own process.
+Write like a person telling a colleague what happened. One or two sentences, 200 characters of prose at the outside — this is a notice in a narrow rail, not a transcript. The budget counts prose only: file paths, commit shas, and session names you must spell exactly are free, so never vague-up a name to save characters. Concrete and specific: name what was built, what was found, what broke, what was asked and what the answer was. Never narrate your own process.
 
 The post is the summary, never the content. Say what happened and stop — enough that the reader knows where the session got to and can decide whether to look in, never so much that reading the post replaces opening it. If you are explaining how something works, listing every file touched, walking through the reasoning, or reproducing the answer the session already gave, you have written the content instead of the summary. The session itself is one click away; your job is to get them there knowing what they will find.
 
@@ -375,7 +380,7 @@ mod tests {
         // 100-plus-word posts that reproduced the answer the session had
         // already given; a countable limit and the summary-not-content rule
         // are what actually bind.
-        assert!(reporter.contains("60 words at the outside"));
+        assert!(reporter.contains("200 characters of prose at the outside"));
         assert!(reporter.contains("The post is the summary, never the content"));
         assert!(
             !reporter.contains("nothing to do with their code"),
