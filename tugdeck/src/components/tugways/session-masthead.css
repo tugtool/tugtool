@@ -289,36 +289,13 @@
 
 /* ── The telemetry widget ──────────────────────────────────────────────
    Everything identity deliberately does not say — branch, state, stamps,
-   the citation. Pane-chrome furniture like the close button: it takes no
-   card-cycle focus stop. */
-
-/* @tug-renders-on var(--tugx-pane-title-bar-bg-active) */
-.session-masthead-widget {
-  /* IN the pane's control cluster, portaled there by the masthead — so its
-     seat is that row's and not this file's. It was absolutely positioned
-     against the cluster's measured width, which read correctly and stood in the
-     wrong place: ahead of the stack badge, the one control that leads the row.
-     The cluster centers its members in the first chrome band, which is the
-     alignment the old `inset-block-start` was computing by hand.
-
-     Squared to the controls it now stands among: the same 14px glyph in the
-     same 28px box. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 28px;
-  block-size: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--tug-radius-sm);
-  background: transparent;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-  cursor: pointer;
-}
-
-.session-masthead-widget:hover {
-  background-color: color-mix(in oklab, currentcolor 12%, transparent);
-}
+   the citation. Pane-chrome furniture like the close button, and now the same
+   COMPONENT: a ghost icon `TugButton` portaled into the pane's control
+   cluster, so `tug-pane.css` dresses it exactly as it dresses the stack badge
+   and the close box — on/off palettes for the focused and unfocused pane, real
+   hover and active states, one 14px glyph in one 28px box. It has no rules of
+   its own here; a bespoke box beside those controls is what made it read as a
+   disabled one. */
 
 /* ── The telemetry panel ────────────────────────────────────────────────
    Composed on the same `TugPopupListFrame` the recent-pulses history uses, so

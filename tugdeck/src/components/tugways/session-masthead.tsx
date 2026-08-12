@@ -72,6 +72,8 @@ import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "rea
 import { createPortal } from "react-dom";
 import { Summary } from "lucide-react";
 
+import { TugButton } from "@/components/tugways/internal/tug-button";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import {
   TugPopover,
   TugPopoverAnchor,
@@ -633,24 +635,40 @@ export function SessionMasthead({
         the lines beside it. The popover portals to the deck's canvas overlay
         and positions itself against this button, which is what every other
         chrome affordance in the masthead already does.
+
+        The trigger is a ghost icon `TugButton`, the same control the stack
+        badge, the `…` menu, the width chevron, and the close box are. Standing
+        in that row is not enough to look like a member of it: the cluster's
+        palette is addressed at `.tug-pane-title-bar-controls .tug-button`, so
+        a hand-rolled button matched none of it and took a flat global muted
+        text token in every state — full-strength neighbours beside a grey
+        glyph whose only hover was a 12% wash of its own colour. That reads as
+        a disabled control, and it was never disabled.
+
+        The tooltip anchors a SPAN rather than the button: `TugTooltip` and
+        `TugPopoverTrigger` both hand their child to a Radix `asChild` slot and
+        neither forwards what the other injects, so they cannot nest directly —
+        the same composition every control beside this one uses.
       */}
       {accessoryHost !== null && createPortal(
+      <TugTooltip content="Show this session's summary">
+      <span className="tug-pane-title-bar-tooltip-anchor">
       <TugPopover dismissOnChainActivity={false}>
         <TugPopoverTrigger>
-          <button
-            type="button"
-            className="session-masthead-widget"
+          <TugButton
+            subtype="icon"
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            icon={<Summary />}
             data-slot="session-masthead-widget"
-            // Chrome, like the close button — never a card-cycle focus stop,
-            // and never steals first responder from the card's content.
+            // Chrome, like the close button — never a card-cycle focus stop.
+            // `TugButton` already refuses first responder on click; opening the
+            // panel on a background card must not raise it, hence no-activate.
             tabIndex={-1}
-            data-tug-focus="refuse"
             data-no-activate=""
             aria-label="Session telemetry"
-            title="Session telemetry"
-          >
-            <Summary size={14} aria-hidden />
-          </button>
+          />
         </TugPopoverTrigger>
         <TugPopoverContent side="bottom" align="end" sideOffset={8} arrow>
           <TugPopupListFrame
@@ -738,7 +756,9 @@ export function SessionMasthead({
             </div>
           </TugPopupListFrame>
         </TugPopoverContent>
-      </TugPopover>,
+      </TugPopover>
+      </span>
+      </TugTooltip>,
       accessoryHost,
       )}
     </div>
