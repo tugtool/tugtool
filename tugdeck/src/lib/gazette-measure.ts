@@ -49,15 +49,15 @@ export const GAZETTE_MEASURE_CH = 64;
  * box, both sides summed — measured in-app and authored here.
  *
  * Its anatomy, for whoever retunes it: the transcript's inline padding
- * (2 × `--tug-space-md` = 16), the transcript entry's icon column at the
- * Gazette's mini scale (`--tugx-transcript-icon-column-width` = 28, set in
- * `gazette-card.css`), the entry grid's column gap
+ * (2 × `--tug-space-md` = 16), the transcript entry's icon column
+ * (`--tugx-transcript-icon-column-width` = 2.5em ≈ 35 against the transcript's
+ * nominal 14px root — the Session card's own gutter), the entry grid's gap
  * (`--tugx-transcript-icon-column-gap` = `--tug-space-xs` = 4), plus whatever
  * pane and CardHost chrome — borders, host padding — stands outside those.
  * macOS overlay scrollbars contribute nothing. The authored number is the
  * MEASUREMENT, not the sum of this list.
  */
-export const GAZETTE_ROW_CHROME_PX = 50;
+export const GAZETTE_ROW_CHROME_PX = 57;
 
 /** The width the Gazette rail opens at before the user has sized it: the
  *  64-character measure, plus the chrome it is read through. */

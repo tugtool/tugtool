@@ -22,8 +22,8 @@
  *     `publishGazettePost`, which hands the bytes to the production parser and
  *     the production fold, so what lands on screen came off the same code path a
  *     live Reporter's would. Asserted: one row per post, in arrival order, each
- *     carrying its author's glyph, and a post's refs rendering as chips labelled
- *     by the target's last segment.
+ *     carrying its author's glyph, and a post's refs rendering in the Z1B as
+ *     the app's own atom chips, labelled by the target's last segment.
  *  3. **The composer completes a round trip.** Typing a question and pressing
  *     the send button sends GAZETTE_INPUT; the Operator echoes the question as a user post
  *     and then answers. Under the app-test gate the agent pool answers nothing
@@ -51,7 +51,9 @@
  * @covers tugdeck/src/lib/gazette-measure.ts
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-ref-action.ts
+ * @covers tugdeck/src/lib/gazette-body-segments.ts
  * @covers tugdeck/src/lib/contextual-stamp.ts
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -103,9 +105,13 @@ const ROWS_JS = `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
     return {
       author: el.getAttribute("data-author"),
       body: (body === null ? "" : body.textContent || "").trim(),
-      chips: Array.from(el.querySelectorAll(".gazette-ref-chip"))
-        .map(function (c) { return (c.textContent || "").trim(); }),
+      chips: Array.from(el.querySelectorAll(".gazette-post-refs .tug-atom-chip"))
+        .map(function (c) { return (c.getAttribute("aria-label") || "").trim(); }),
       glyph: el.querySelector(".tug-transcript-entry__icon svg") !== null,
+      z1b: (function () {
+        var z = el.querySelector(".gazette-post-z1b");
+        return z === null ? null : (z.textContent || "").replace(/\\s+/g, " ").trim();
+      })(),
     };
   })`;
 
@@ -114,6 +120,7 @@ interface Row {
   body: string;
   chips: string[];
   glyph: boolean;
+  z1b: string | null;
 }
 
 const AT_MS = 1_754_600_000_000;
@@ -235,16 +242,26 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           expect(row.glyph, `${row.author}'s row carries a glyph`).toBe(true);
         }
 
-        // A ref renders as a chip labelled by the target's last segment; the
-        // whole path rides the tooltip, because the rail is too narrow to
-        // spell a path twice.
+        // A ref the prose did not spell out rides the Z1B as an ATOM — the
+        // app's own `TugAtomChip`, labelled by the target's last segment, with
+        // the whole path on the wrapper's tooltip because the rail is too
+        // narrow to spell a path twice.
         expect(rows[0]!.chips).toEqual(["layout-imposer.ts"]);
-        expect(rows[1]!.chips, "a post with no refs shows no chips").toEqual([]);
+        expect(rows[1]!.chips, "a post with no refs shows no atoms").toEqual([]);
+
+        // Every post carries the transcript's own end-state row under its
+        // body: the OK badge and the text+icon COPY, in the Session card's
+        // vocabulary. A post that answers no question shows no elapsed.
+        for (const row of rows) {
+          expect(row.z1b, `${row.author}'s row carries a Z1B`).toContain("OK");
+          expect(row.z1b, `${row.author}'s COPY is text+icon`).toContain("Copy");
+        }
 
         const chipTitle = await app.evalJS<string | null>(
           `(function () {
-            var chip = document.querySelector(${JSON.stringify(`${POST} .gazette-ref-chip`)});
-            return chip === null ? null : chip.getAttribute("title");
+            var chip = document.querySelector(${JSON.stringify(`${POST} .gazette-post-refs .tug-atom-chip`)});
+            var wrap = chip === null ? null : chip.closest("[data-gazette-ref-kind]");
+            return wrap === null ? null : wrap.getAttribute("title");
           })()`,
         );
         expect(chipTitle).toBe("file: tugdeck/src/lib/layout-imposer.ts");
@@ -266,7 +283,36 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           { timeoutMs: 8_000 },
         );
 
-        await app.nativeClickAtElement(SEND);
+        // The send button is the shell's default, and it says which key fires
+        // it: at the shipped `newline` setting that key is ⇧⏎, so the button
+        // wears the CHORD variant of the default ring ([#chord-ring]) — dotted
+        // while the promise is conditional. Asserted as the declaration plus
+        // the style it resolves to, since the ring is painted from a knob the
+        // attribute sets, not from the attribute itself.
+        const chordRing = await app.evalJS<{
+          chord: string | null;
+          style: string;
+        } | null>(
+          `(function () {
+            var send = document.querySelector(${JSON.stringify(SEND)});
+            if (send === null) return null;
+            return {
+              chord: send.getAttribute("data-default-chord"),
+              style: getComputedStyle(send).outlineStyle,
+            };
+          })()`,
+        );
+        note("send chord ring", JSON.stringify(chordRing));
+        expect(chordRing?.chord, "the send button names ⇧⏎ as its chord").toBe(
+          "shift",
+        );
+        expect(
+          chordRing?.style,
+          "a conditional promise is a dotted ring",
+        ).toBe("dotted");
+
+        // And the chord really submits — the gesture, not just its advertising.
+        await app.nativeKey("Return", ["shift"]);
 
         // Nothing is asserted about the pending placeholder standing: under
         // the app-test gate the Operator's reply comes back in the same

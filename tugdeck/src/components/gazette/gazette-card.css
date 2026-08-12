@@ -28,26 +28,52 @@
   flex-direction: column;
   gap: var(--tugx-gazette-post-gap);
   padding: var(--tug-space-md);
+  /* The em anchor. The Session transcript's attribution is sized in `em`
+     against a nominal 14px root (`.session-card-transcript`), so matching it
+     means adopting that root as well as the ratios below — the primitive's
+     own defaults are NOT the approved design, they are what the Session card
+     overrides. The post body sets its own px size and is unaffected. */
+  font-size: 14px;
 }
 
-/* The rows are the shared transcript primitive; the Gazette is a MINI
-   transcript, so the entry tokens step down one notch from the Session
-   card's scale — the identifier at body size, the sticky header backed by
-   the card's own surface. */
-.gazette-cell {
-  --tugx-transcript-identifier-font-size: var(--tug-font-size-md);
-  --tugx-transcript-icon-column-width: 28px;
-  --tugx-transcript-header-bg: var(--tug7-surface-global-primary-normal-default-rest);
-  --tugx-transcript-header-padding-block: var(--tug-space-xs);
+/* ---------------------------------------------------------------------------
+   The attribution line — the Session card's, value for value.
+   ---------------------------------------------------------------------------
+   Per [D12] a consumer's transcript tuning lives in the consumer's sheet, so
+   the approved line is spelled in `session-card.css` rather than in the
+   primitive. These rules are that block, restated for this card and read from
+   it directly: identifier 0.95em (≈13.3px — a hair under body, the weight and
+   the icon do the landmark work), timestamp 0.85em with tabular figures,
+   gutter 2.5em, glyph 1.2em nudged 1px down, controls hugging the body. A
+   number here that is not the number there is a second attribution design;
+   there is one.
+   ------------------------------------------------------------------------ */
+
+.gazette-transcript .tug-transcript-entry {
+  --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
+  --tugx-transcript-icon-column-width: 2.5em;
 }
 
-/* The mini scale's icon: the registry renders at the transcript's 20px; the
-   Gazette's narrower gutter reads better at 16. Sized here rather than a
-   primitive prop — the icon tracks the identifier, and both step down
-   together in this card only. */
-.gazette-cell .tug-transcript-entry__icon > svg {
-  inline-size: 16px;
-  block-size: 16px;
+.gazette-transcript .tug-transcript-entry__identifier {
+  font-size: 0.95em;
+}
+
+.gazette-transcript .tug-transcript-entry__timestamp {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+.gazette-transcript .tug-transcript-entry__icon svg {
+  width: 1.2em;
+  height: 1.2em;
+  margin-block-start: 1px;
+}
+
+/* Per-entry control-row icons (the copy button's glyph) scale with the row,
+   exactly as they do in the Session transcript. */
+.gazette-transcript .tug-transcript-entry__controls .lucide {
+  width: 1em;
+  height: 1em;
 }
 
 .gazette-post-body {
@@ -74,20 +100,26 @@
   max-inline-size: 16ch;
 }
 
+/* Z1B — the row's footer, under the body, exactly where the Session card's
+   end-state row sits and spaced the way it is: one uniform gap between every
+   member (badge, each `•`, elapsed, COPY, the atoms), which is
+   `session-card-z1b.css`'s single knob restated as this card's. Wraps,
+   because a post may name several files and the rail is narrow. */
+.gazette-post-z1b {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--tugx-gazette-z1b-gap, 14px);
+  margin-top: 2px;
+}
+
+/* The atom row itself — atoms sit closer to each other than to the copy
+   button, the same way the Z1B's end-state segments group. */
 .gazette-post-refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-}
-
-/* The chip's own color comes from `TugPushButton`'s `data` role; the card only
-   caps how much width one target may take, so a long path cannot push the
-   row's other chips off the rail. */
-.gazette-ref-chip {
-  max-inline-size: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  align-items: center;
+  gap: var(--tug-space-xs);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
@@ -99,10 +131,33 @@
 }
 
 /* The composer's track: content height, below the transcript, so the field
-   growing under a long question never moves the reading column. */
+   growing under a long question never moves the reading column.
+
+   It also captures the editor's inherited size under a name of its own —
+   `--tug-font-size-editor` is written onto the card root by the card's
+   `EditorSettingsStore` (the user's setting, the Session card's own value),
+   and a rule that subtracted from it in place would be a self-reference and
+   resolve to nothing. Captured here, the field below can do arithmetic on it
+   and still track the setting when the user changes it.
+
+   Full-bleed, like `.session-card-entry-region`: the composer spans the
+   card's whole width with no inset of its own. An entry inset here would be
+   a second composer geometry. */
 .gazette-composer-slot {
   min-block-size: 0;
-  padding: 0 var(--tug-space-sm) var(--tug-space-sm);
+  inline-size: 100%;
+  --tugx-gazette-editor-base: var(--tug-font-size-editor, 14px);
+}
+
+/* The Gazette's field reads one pixel smaller than the Session composer's:
+   this is a question typed into a narrow rail, not a prompt composed in a
+   full card. TUNE HERE — the delta, not an absolute size, so the user's own
+   editor font-size setting still moves this field with it. */
+.gazette-composer-field {
+  --tugx-gazette-composer-font-delta: 1px;
+  --tug-font-size-editor: calc(
+    var(--tugx-gazette-editor-base) - var(--tugx-gazette-composer-font-delta)
+  );
 }
 
 /* Empty-input gate [L06][L22]: the substrate's update listener mirrors
@@ -116,8 +171,10 @@
 }
 
 /* A post still being written. The row is the answer's row already ([L26]);
-   only its body is a placeholder, so it reads quiet rather than absent. */
-.gazette-cell[data-pending] .gazette-post-body {
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-  font-style: italic;
+   its body is the transcript's own in-flight wave, so the Gazette says
+   "working" in the language the Session card says it in — no prose stand-in.
+   The body sits on the wave's own line box; the margin is the entry's. */
+.gazette-post-pending {
+  display: flex;
+  align-items: center;
 }
