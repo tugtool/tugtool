@@ -83,7 +83,7 @@ Plain ⌘, for future grants under R3.
 | Slot | Standing |
 |---|---|
 | ⌘D, ⌘Y | Safest — weak conventions elsewhere. |
-| ⌘E | Claimable with honest use: Find-adjacent. |
+| ~~⌘E~~ | **Spent** — `find-selection`, Use Selection for Find. The honest use the slot was held for; see below. |
 | ⌘B, ⌘U | Hold in reserve — bold/underline, and Tug renders markdown. |
 | ⌘P | Hold in reserve — the print reflex is strong. The only accepted repurposing is a command palette. |
 | ⌘' ⌘; ⌘\ | Free punctuation. |
@@ -203,3 +203,25 @@ Recorded so a reader takes them as debt rather than as precedent.
 **Promotion to Window ▸ Bullseye is R6's half of the grant**, and here the preemption is the point rather than a cost: a menu item's key equivalent is claimed by AppKit before the web view sees the keydown, so no scoped binding can decline ⌃⌘B. A deck-level posture is not a surface's to refuse. The item carries an **empty** key equivalent so `applyCommandChords` writes the chord from the table and it stays rebindable — the discipline the sidebar toggles and the width row follow.
 
 **Tier occupancy after this grant.** ⌃⌘ letters in use: A, B, C, F, G, H, I, J, K, L, M, P, T, U. ⌃⌘ digits: 1–3 (the card widths); 4–9 and 0 free, and free only for an *ordered set* under the digit-row rule.
+
+---
+
+## The find-selection chord
+
+⌘E makes the selection the find query and runs it: the find bar appears if it is not already up, seeded with the selected text and landed on the first match.
+
+| Command | Chord | Derivation |
+|---|---|---|
+| `find-selection` | **⌘E** | The free pool held ⌘E for a Find-adjacent claim, and this is the claim it was held for — outside Tug, ⌘E *is* Use Selection for Find (AppKit's `NSFindPanelActionSetFindString`, and every editor that copies it). |
+
+**Why not the ⌃⌘ tier.** Finding is a universal verb, not Tug machinery — it sits with ⌘F and ⌘G, whose family it completes.
+
+**Why not a composed set.** R1 would want ⌘F's key, but a ⇧ or ⌥ twist of Find has to read as a *variant of opening the find bar*, and this is not one: it names what to search for. The reserved-slot convention is the stronger claim, and R1 explicitly sends a chord with no base to twist back to plain ⌘.
+
+**R3 is satisfied by the gesture's frequency, not the command's grandeur.** Search-for-the-thing-I-am-looking-at is reached constantly while reading a transcript or a file, and the alternative is copy, ⌘F, paste — three chords for one intent.
+
+**Promotion to Edit ▸ Find ▸ Use Selection for Find is R6's half of the grant**, alongside its three siblings. The item carries a construction-time `"e"` key equivalent, matching the rest of the Find submenu — and inheriting the same rebind debt the shade toggles are named for under Known anomalies.
+
+**Its gate is focus-granular, not selection-granular**, and that is a consequence of R6 rather than a shortcut. A mirrored gate is computed when the menuState is pushed; dragging out a selection pushes nothing. A gate that asked "is there a selection?" would therefore still read *disabled* with the text sitting right there — and because the chord is a menu key equivalent, AppKit would eat ⌘E with a beep before the web view saw the keydown. So the item is live wherever a find surface is focused and an empty selection is a no-op at the responder, which is the answer Edit ▸ Delete already gives for the same reason.
+
+**Not a toggle.** ⌘F summons and dismisses; ⌘E only ever seeds. A bar already up is re-seeded in place, because "search for this" can never mean "stop searching".

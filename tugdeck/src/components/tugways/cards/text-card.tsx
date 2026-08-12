@@ -327,11 +327,34 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // Root element — the shared wrap overlay's containment box.
   const cardRootRef = useRef<HTMLDivElement | null>(null);
 
+  // ⌘E's seed, handed to a bar that does not exist yet: the bar mounts on the
+  // render `setFindOpen` schedules, and reads this as its `initialQuery` then.
+  // A ref, not state, because nothing renders FROM it — the bar's CM6 doc owns
+  // the query the moment it is up ([L24] structure zone).
+  const findSeedRef = useRef("");
+
   const openFindBar = useCallback(() => {
     // Fresh bar: it focuses its own field on mount. Already open: ⌘F must
     // still land the caret in the query field, unconditionally.
+    findSeedRef.current = "";
     setFindOpen(true);
     findBarRef.current?.focusQuery();
+  }, []);
+
+  // ⌘E — the editor's selection becomes the query and the search runs. Not a
+  // toggle: an open bar is re-seeded in place, because "search for this" can
+  // never mean "stop searching". The editor supplies the text (it owns the
+  // selection) and gates the command; the card owns the bar.
+  const findSelection = useCallback((query: string) => {
+    // The bar's own ref answers "is it up?" without a second flag to keep
+    // honest — React nulls it on unmount, which is exactly when the bar is
+    // gone and the seed path is the right one.
+    if (findBarRef.current !== null) {
+      findBarRef.current.setQuery(query);
+      return;
+    }
+    findSeedRef.current = query;
+    setFindOpen(true);
   }, []);
 
   const closeFindBar = useCallback(() => {
@@ -1094,6 +1117,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             languageExt={effectiveLanguageExt}
             className="text-card-editor"
             onFindRequested={openFindBar}
+            onFindSelectionRequested={findSelection}
             onFindNavigated={() => findBarRef.current?.refreshCount()}
             onSaveCommand={onSaveCommand}
             onStats={statsStore.set}
@@ -1108,6 +1132,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             <TextCardFindBar
               ref={findBarRef}
               getDelegate={() => editorRef.current}
+              initialQuery={findSeedRef.current}
               onClose={closeFindBar}
               cardRootRef={cardRootRef}
               focusGroup={TEXT_CARD_CYCLE_GROUP}

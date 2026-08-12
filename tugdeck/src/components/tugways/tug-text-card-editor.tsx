@@ -425,6 +425,13 @@ export interface TugTextCardEditorProps {
    */
   onFindRequested?: () => void;
   /**
+   * Called when the responder chain receives `FIND_SELECTION` (⌘E) over a
+   * ranged selection, carrying the selected text. The Text card opens its
+   * find bar seeded with it — the editor supplies the query because the
+   * editor owns the selection model; the card owns the bar.
+   */
+  onFindSelectionRequested?: (query: string) => void;
+  /**
    * Invoked after this editor's OWN find-navigation handlers run (⌘G /
    * ⇧⌘G handled here because the walk from the focused document reaches
    * this responder first). The host forwards it to the find bar so the
@@ -471,6 +478,7 @@ export const TugTextCardEditor = React.forwardRef<
     languageExt,
     className,
     onFindRequested,
+    onFindSelectionRequested,
     onFindNavigated,
     onSaveCommand,
     onStats,
@@ -492,6 +500,9 @@ export const TugTextCardEditor = React.forwardRef<
   const settingsRef = useRef(settings);
   const readOnlyRef = useRef(readOnly);
   const onFindRequestedRef = useRef<(() => void) | undefined>(onFindRequested);
+  const onFindSelectionRequestedRef = useRef<((query: string) => void) | undefined>(
+    onFindSelectionRequested,
+  );
   const onFindNavigatedRef = useRef<(() => void) | undefined>(onFindNavigated);
   const onSaveCommandRef = useRef<TugTextCardEditorProps["onSaveCommand"]>(onSaveCommand);
   const onStatsRef = useRef<((stats: EditorStats) => void) | undefined>(onStats);
@@ -519,6 +530,9 @@ export const TugTextCardEditor = React.forwardRef<
   useLayoutEffect(() => {
     onFindRequestedRef.current = onFindRequested;
   }, [onFindRequested]);
+  useLayoutEffect(() => {
+    onFindSelectionRequestedRef.current = onFindSelectionRequested;
+  }, [onFindSelectionRequested]);
   useLayoutEffect(() => {
     onFindNavigatedRef.current = onFindNavigated;
   }, [onFindNavigated]);
@@ -1304,6 +1318,28 @@ export const TugTextCardEditor = React.forwardRef<
     onFindRequestedRef.current?.();
   }, []);
 
+  /** The document text under a ranged selection, trimmed; empty on a bare
+   *  caret — ⌘E's query, and a no-op when there is none. Deliberately NOT a
+   *  `validateAction` branch: a gate is computed when the menuState is
+   *  pushed, and selecting text pushes nothing, so a selection-granular
+   *  answer would leave the item reading disabled with the text right there
+   *  and AppKit eating ⌘E at the menu bar. Focus granularity — the editor
+   *  handles the action, so the item is live — is the same answer Delete
+   *  gives, for the same reason. Read-only makes no difference: finding is
+   *  reading. */
+  const selectedQuery = useCallback((): string => {
+    const live = viewRef.current;
+    if (live === null) return "";
+    const { from, to } = live.state.selection.main;
+    return from === to ? "" : live.state.sliceDoc(from, to).trim();
+  }, []);
+
+  const handleFindSelection = useCallback((): ActionHandlerResult => {
+    const query = selectedQuery();
+    if (query === "") return;
+    onFindSelectionRequestedRef.current?.(query);
+  }, [selectedQuery]);
+
   const handleFindNext = useCallback((): ActionHandlerResult => {
     const live = viewRef.current;
     if (live !== null) cmFindNext(live);
@@ -1332,6 +1368,7 @@ export const TugTextCardEditor = React.forwardRef<
     [TUG_ACTIONS.REVERT_TO_SAVED]: handleRevertToSaved,
     [TUG_ACTIONS.RELOAD_FROM_DISK]: handleReloadFromDisk,
     [TUG_ACTIONS.FIND]: handleFind,
+    [TUG_ACTIONS.FIND_SELECTION]: handleFindSelection,
     [TUG_ACTIONS.FIND_NEXT]: handleFindNext,
     [TUG_ACTIONS.FIND_PREVIOUS]: handleFindPrevious,
   };

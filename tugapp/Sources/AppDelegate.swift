@@ -1041,6 +1041,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         findMenu.addItem(NSMenuItem(title: "Find...", action: #selector(performFind(_:)), keyEquivalent: "f").identified("edit.find"))
         findMenu.addItem(NSMenuItem(title: "Find Next", action: #selector(performFindNext(_:)), keyEquivalent: "g").identified("edit.findNext"))
         findMenu.addItem(NSMenuItem(title: "Find Previous", action: #selector(performFindPrevious(_:)), keyEquivalent: "g", modifierMask: [.command, .shift]).identified("edit.findPrevious"))
+        // ⌘E — the selection becomes the query and the search runs. Its gate
+        // is stricter than its siblings': a find-capable surface with nothing
+        // selected validates it disabled.
+        findMenu.addItem(NSMenuItem(title: "Use Selection for Find", action: #selector(performFindSelection(_:)), keyEquivalent: "e").identified("edit.useSelectionForFind"))
         editMenu.addItem(findMenuItem)
 
         // Session Menu - position 3. The session card's command surfaces,
@@ -1738,6 +1742,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func performFindPrevious(_ sender: Any?) {
         sendControl("find-previous")
+    }
+
+    @objc private func performFindSelection(_ sender: Any?) {
+        sendControl("find-selection")
     }
 
     // Window ▸ card / pane navigation — chain-action round-trips for the

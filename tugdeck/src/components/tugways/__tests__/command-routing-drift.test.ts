@@ -228,6 +228,7 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   find: "command",
   "find-next": "command",
   "find-previous": "command",
+  "find-selection": "command",
   "previous-tab": "command",
   "next-tab": "command",
   "reveal-stack": "command",
@@ -469,6 +470,11 @@ describe("every chord the static map held reaches the same command", () => {
    */
   const HOST_DERIVED_CHORDS: ReadonlyMap<string, string> = new Map([
     ["⌘I", TUG_ACTIONS.INSERT_FILE],
+    // ⌘E arrived after the static map was retired, so it was never in it:
+    // Edit ▸ Find ▸ Use Selection for Find spells the key equivalent the way
+    // the rest of that submenu does, and the table states the same chord so
+    // the keymap pane can show it.
+    ["⌘E", TUG_ACTIONS.FIND_SELECTION],
     ["⇧⌘S", TUG_ACTIONS.SAVE_AS],
     ["⌘R", TUG_ACTIONS.REVEAL_STACK],
     ["⌘+", TUG_ACTIONS.ZOOM_IN],

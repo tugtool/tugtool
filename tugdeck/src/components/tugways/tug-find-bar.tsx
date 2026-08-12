@@ -102,6 +102,16 @@ export interface TugFindBarProps {
  *  `refreshCount`. */
 export interface TugFindBarHandle {
   focusQuery(): void;
+  /**
+   * Replace the query with `query`, select it whole, and take the caret —
+   * ⌘E's landing on an ALREADY-OPEN bar (a bar summoned by ⌘E seeds the same
+   * text through `initialQuery` at mount, which is the identical gesture one
+   * render earlier). The write goes through the CM6 doc rather than the
+   * session, because the doc is the query's only home once the bar is up: the
+   * substrate's `updateListener` is what mirrors it into the session and runs
+   * the search.
+   */
+  setQuery(query: string): void;
   refreshCount(): void;
   /**
    * Whether the keyboard is currently inside the bar — the caret in the query
@@ -180,25 +190,36 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
       [session],
     );
 
+    // Write the query doc whole and select what was written, so the next
+    // keystroke replaces it. The only writer besides the user's own typing:
+    // the mount seed and ⌘E's re-seed both land here, and both are mirrored
+    // into the session by the `updateListener` above.
+    const writeQuery = React.useCallback((text: string) => {
+      const view = substrateRef.current?.view() ?? null;
+      if (view === null) return;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: 0, head: text.length },
+      });
+    }, []);
+
     // Summoned: seed the remembered query (selected whole, so typing replaces
     // it) and take the caret. The `updateListener` above mirrors the seeded
     // doc into the session, which re-runs the search. ⌘F on an already-open
     // bar re-summons through the same imperative seam.
     useEffect(() => {
       const seed = initialQueryRef.current;
-      const view = substrateRef.current?.view() ?? null;
-      if (view !== null && seed.length > 0) {
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: seed },
-          selection: { anchor: 0, head: seed.length },
-        });
-      }
+      if (seed.length > 0) writeQuery(seed);
       substrateRef.current?.focus();
-    }, []);
+    }, [writeQuery]);
     React.useImperativeHandle(
       ref,
       (): TugFindBarHandle => ({
         focusQuery: () => {
+          substrateRef.current?.focus();
+        },
+        setQuery: (query: string) => {
+          writeQuery(query);
           substrateRef.current?.focus();
         },
         refreshCount: () => {
@@ -218,7 +239,7 @@ export const TugFindBar = React.forwardRef<TugFindBarHandle, TugFindBarProps>(
           );
         },
       }),
-      [session],
+      [session, writeQuery],
     );
 
     // The bar is the responder for find NAVIGATION while it is open: with the

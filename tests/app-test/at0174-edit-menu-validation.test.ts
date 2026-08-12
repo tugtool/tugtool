@@ -15,8 +15,8 @@
  *      item — including Copy and Select All — and every Find item is
  *      disabled.
  *   2. **A text input focused**: the actions that text surface handles
- *      (Cut / Copy / Paste / Select All) enable, while Find stays
- *      disabled (no surface implements find).
+ *      (Cut / Copy / Paste / Select All) enable, while Find — including Use
+ *      Selection for Find — stays disabled (no surface implements find).
  *   3. **Undo/Redo are card-specific.** They ride the edit caps like the
  *      other items, with depth supplied by the focused editor's
  *      `validateAction` (CM6 `undoDepth`/`redoDepth`) and a liveness gate
@@ -74,6 +74,7 @@ const REDO = "edit.redo";
 const FIND = "edit.find";
 const FIND_NEXT = "edit.findNext";
 const FIND_PREVIOUS = "edit.findPrevious";
+const FIND_SELECTION = "edit.useSelectionForFind";
 
 /** One single-card pane holding a card of the given component. */
 function paneOf(component: string) {
@@ -142,6 +143,7 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await expectEnabled(app, FIND, false);
         await expectEnabled(app, FIND_NEXT, false);
         await expectEnabled(app, FIND_PREVIOUS, false);
+        await expectEnabled(app, FIND_SELECTION, false);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0174-static] log tail:\n${tail}\n`);
@@ -186,10 +188,12 @@ describe.skipIf(!SHOULD_RUN)("AT0174: Edit-menu capability validation", () => {
         await expectEnabled(app, DELETE, true);
 
         // No surface implements find, so the Find items stay disabled
-        // even with a text input focused.
+        // even with a text input focused — Use Selection for Find included,
+        // which needs both a find surface AND a selection.
         await expectEnabled(app, FIND, false);
         await expectEnabled(app, FIND_NEXT, false);
         await expectEnabled(app, FIND_PREVIOUS, false);
+        await expectEnabled(app, FIND_SELECTION, false);
       } catch (err) {
         const tail = app.tailLog(200);
         if (tail !== "") process.stderr.write(`\n[at0174-textinput] log tail:\n${tail}\n`);

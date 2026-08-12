@@ -68,6 +68,13 @@ function documentFindEngine(
 export interface TextCardFindBarProps {
   /** Resolve the live editor delegate (null while unmounted). */
   getDelegate: () => TugTextCardEditorDelegate | null;
+  /**
+   * Seeds the query field at mount, selected whole. Empty for a plain ⌘F —
+   * this card's session dies with the bar, so there is no remembered query;
+   * ⌘E is the one gesture that opens the bar already knowing what to search
+   * for.
+   */
+  initialQuery?: string;
   /** Dismiss gesture (Escape). The host clears the search + refocuses. */
   onClose: () => void;
   /**
@@ -92,7 +99,14 @@ export const TextCardFindBar = React.forwardRef<
   TextCardFindBarHandle,
   TextCardFindBarProps
 >(function TextCardFindBar(
-  { getDelegate, onClose, cardRootRef, focusGroup, focusOrderBase }: TextCardFindBarProps,
+  {
+    getDelegate,
+    initialQuery,
+    onClose,
+    cardRootRef,
+    focusGroup,
+    focusOrderBase,
+  }: TextCardFindBarProps,
   ref,
 ): React.ReactElement {
   const getDelegateRef = useRef(getDelegate);
@@ -117,6 +131,7 @@ export const TextCardFindBar = React.forwardRef<
       session={session}
       onClose={onClose}
       cardRootRef={cardRootRef}
+      initialQuery={initialQuery}
       placeholder="Find in file"
       className="text-card-find-bar"
       dataSlot="text-card-find-bar"

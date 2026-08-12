@@ -85,6 +85,7 @@ const STATIC_ITEMS: ReadonlyArray<{ id: string; key?: string; mods?: number }> =
   { id: "edit.find", key: "f", mods: MOD.command },
   { id: "edit.findNext", key: "g", mods: MOD.command },
   { id: "edit.findPrevious", key: "g", mods: MOD.command | MOD.shift },
+  { id: "edit.useSelectionForFind", key: "e", mods: MOD.command },
   // Session
   { id: "session.focusPrompt", key: "k", mods: MOD.command },
   { id: "session.stop", key: "" },

@@ -127,6 +127,7 @@ import { deckTrace } from "@/deck-trace";
 import { useSheetDelegate } from "@/lib/sheet-lifecycle";
 import { useBannerDelegate } from "@/lib/banner-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { HighlightSelectionAdapter } from "../text-selection-adapter";
 import { dispatchCommand } from "@/command-dispatch";
 import type { CodeSessionSnapshot, CodeSessionStore } from "@/lib/code-session-store";
 import { FindSession } from "@/lib/find-session";
@@ -3897,6 +3898,16 @@ export function SessionCardBody({
     },
   };
 
+  // What ⌘E searches for: the live selection anywhere inside this card —
+  // transcript prose, a shell row, the composer — read through the shared
+  // query-only selection adapter over the card's own root, so a selection in
+  // some other card is not this card's to search for.
+  const cardSelectionQuery = useCallback((): string => {
+    const root = sessionCardRootRef.current;
+    if (root === null) return "";
+    return new HighlightSelectionAdapter(root).getSelectedText().trim();
+  }, []);
+
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -3918,6 +3929,32 @@ export function SessionCardBody({
       // outside the bar — which is exactly when "dismiss" is the right reading.
       [TUG_ACTIONS.FIND]: (_event: ActionEvent) => {
         toggleFindBar();
+      },
+      // ⌘E / Edit ▸ Use Selection for Find — the selection becomes the query
+      // and the search runs. Unlike ⌘F this is not a toggle: an open bar is
+      // re-seeded in place rather than dismissed, because the gesture names
+      // what to search for, and "search for this" can never mean "stop
+      // searching". A closed bar seeds through the same `lastFindQueryRef`
+      // the remembered-query path uses, so the summoned bar arrives with the
+      // text already selected whole and the first match already active.
+      //
+      // Registering the handler is the whole gate, exactly as it is for FIND:
+      // the item is live wherever this card is, and an empty selection is a
+      // no-op here rather than a dark menu item. Gating on the selection
+      // would be a LIE the mirror cannot correct — a gate is computed when
+      // the menuState is pushed, and dragging out a selection pushes nothing,
+      // so the item would still read disabled and AppKit would eat ⌘E with a
+      // beep. Edit ▸ Delete carries the same focus-granular answer for the
+      // same reason.
+      [TUG_ACTIONS.FIND_SELECTION]: (_event: ActionEvent) => {
+        const query = cardSelectionQuery();
+        if (query === "") return;
+        if (findBarOpenRef.current) {
+          findBarRef.current?.setQuery(query);
+          return;
+        }
+        lastFindQueryRef.current = query;
+        openFindBar();
       },
       // ⌥⇥ toggles keyboard-focus-cycling: the editor's Tab gives way to a
       // trapped tour of the card's chrome zones, seeded on the submit
