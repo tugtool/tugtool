@@ -27,10 +27,10 @@ export { GAZETTE_CARD_ID };
 
 /** The width the Gazette rail opens at before the user has sized it. Wider
  *  than Jots: a post is prose, and prose wants a measure. */
-export const DEFAULT_GAZETTE_WIDTH_PX = 460;
+export const DEFAULT_GAZETTE_WIDTH_PX = 480;
 
 /** The narrowest a post's body and its ref chips still read at. */
-export const MIN_GAZETTE_WIDTH_PX = 320;
+export const MIN_GAZETTE_WIDTH_PX = 400;
 
 /** Register the Gazette card. `hidden` keeps it out of the type-picker `[+]`
  *  menu — it is reachable through its own toggle, like Jots and the Lens. */
