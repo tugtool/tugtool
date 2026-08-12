@@ -33,12 +33,12 @@ import React, {
   type CSSProperties,
 } from "react";
 import {
+  CircleDot,
   Layers,
   MoreHorizontal,
   MoveHorizontal,
   Rows2,
   Rows3,
-  Target,
   X,
   icons,
 } from "lucide-react";
@@ -884,7 +884,7 @@ function CardTitleBar({
               emphasis="ghost"
               role="action"
               size="sm"
-              icon={<Target />}
+              icon={<CircleDot />}
               className="tug-pane-title-bar-bullseye-button"
               {...(bullseye ? { "data-on": "" } : {})}
               aria-pressed={bullseye}
