@@ -22,6 +22,7 @@ import React from "react";
 import { registerCard } from "@/card-registry";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
 import {
+  COMFORT_GAZETTE_WIDTH_PX,
   DEFAULT_GAZETTE_WIDTH_PX,
   MIN_GAZETTE_WIDTH_PX,
 } from "@/lib/gazette-measure";
@@ -32,7 +33,11 @@ export { GAZETTE_CARD_ID };
 // for the derivation and why its inputs are authored rather than measured at
 // boot. Re-exported here because the registration is where a reader looks for
 // what the card opens at.
-export { DEFAULT_GAZETTE_WIDTH_PX, MIN_GAZETTE_WIDTH_PX };
+export {
+  COMFORT_GAZETTE_WIDTH_PX,
+  DEFAULT_GAZETTE_WIDTH_PX,
+  MIN_GAZETTE_WIDTH_PX,
+};
 
 /** Register the Gazette card. `hidden` keeps it out of the type-picker `[+]`
  *  menu — it is reachable through its own toggle, like Jots and the Lens. */
@@ -46,6 +51,11 @@ export function registerGazetteCard(): void {
     // The greediest rail on the deck: a post is prose, and prose is what a
     // narrow rail costs the most. Fed first in surplus, drained last in deficit.
     greedRank: 1,
+    // The 56-character measure: the narrowest a post still reads as prose. The
+    // allocator holds the rail here and gives it up only to remove overlap;
+    // `sizePolicy.min.width` below is the different, harder question of where
+    // the card stops painting.
+    comfortWidth: COMFORT_GAZETTE_WIDTH_PX,
     hidden: true,
     // A rail of buttons, walked by keyboard — engine stops all the way down
     // ([P10]).

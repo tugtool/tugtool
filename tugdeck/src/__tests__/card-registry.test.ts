@@ -19,6 +19,7 @@ import {
   getLayoutRole,
   isSidebarCard,
   getGreedRank,
+  getComfortWidth,
   DEFAULT_GREED_RANK,
   _resetForTest,
 } from "../card-registry";
@@ -312,5 +313,31 @@ describe("greedRank", () => {
     // Every declared rank must be greedier than the fallback, or a card that
     // reasoned about its greed would lose to one that never did.
     expect(DEFAULT_GREED_RANK).toBeGreaterThan(3);
+  });
+});
+
+describe("comfortWidth", () => {
+  it("resolves what the registration declares", () => {
+    registerCard({ ...makeRegistration("prose"), comfortWidth: 512 });
+    expect(getComfortWidth("prose")).toBe(512);
+  });
+
+  it("falls back to the hard floor when a registration declares none", () => {
+    // No comfort band means comfort sits ON the hard floor, which makes the
+    // allocator's comfort tier empty for that rail — today's behavior exactly.
+    registerCard({
+      ...makeRegistration("plainrail"),
+      sizePolicy: {
+        min: { width: 320, height: 100 },
+        preferred: { width: 420, height: 400 },
+      },
+    });
+    expect(getComfortWidth("plainrail")).toBe(320);
+  });
+
+  it("resolves an unregistered componentId to the default policy's floor", () => {
+    expect(getComfortWidth("never-registered")).toBe(
+      DEFAULT_SIZE_POLICY.min.width,
+    );
   });
 });

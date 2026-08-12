@@ -11,9 +11,13 @@
  * total is then shared out under a fixed order of invariants: floors are
  * inviolable, the tiling total outranks preferences, preferences fill in greed
  * order (the Gazette is greedier than the Lens, which is greedier than Jots),
- * and the slim content width (675) caps everything. Nothing is graded, nothing
- * is compared against the picture the rails are standing in, and the answer is
- * a pure function of the canvas, the chain, and the rails' policies.
+ * and the slim content width (675) caps everything. Nothing is graded and the
+ * answer is a pure function of the canvas, the chain, and the rails' policies.
+ *
+ * The total is chosen by the picture it PAINTS — scored on `imposeRect`'s real
+ * clamped geometry, worst occlusion first — and a rail carries two floors: the
+ * width it cannot paint under, and the narrower-than-comfortable width it will
+ * accept when accepting it is what clears the overlap.
  *
  * What has to hold:
  *
@@ -45,6 +49,16 @@
  *     and which one is wide is the registered greed order's answer: shrink what
  *     the chain leaves and the Lens drains to its floor while the Gazette holds
  *     its measure.
+ *  7. A crowded deck spends comfort to un-occlude the cards. When the chain
+ *     overlaps at the rails' comfort floors but tiles below them, the Gazette
+ *     gives up its 56-character measure and the chain stands clear — showing
+ *     the user's cards outranks a rail's preferred measure. Asserted on real
+ *     pane rects: no two chain panes overlap, and the Gazette is narrower than
+ *     its comfort width while never under its hard floor.
+ *  8. The hard floor is the DRAG floor, and it is genuinely reachable. A real
+ *     edge drag can take the Gazette below its comfort measure, down to the
+ *     width it cannot paint under and no further. The rail's comfort measure
+ *     constrains the ALLOCATOR; it may not trap the user's own hand.
  *
  * **THE HARNESS CANNOT RESIZE THE WINDOW**, which is why every fixture card
  * width is computed at runtime from the measured canvas: `T*` is
@@ -64,6 +78,7 @@ import { describe, expect, test } from "bun:test";
 
 import { launchTugApp, type App } from "./_harness";
 import {
+  COMFORT_GAZETTE_WIDTH_PX,
   DEFAULT_GAZETTE_WIDTH_PX,
   MIN_GAZETTE_WIDTH_PX,
 } from "../../tugdeck/src/lib/gazette-measure";
@@ -601,6 +616,118 @@ describe.skipIf(!SHOULD_RUN)(
           for (const seam of await seams(app)) {
             expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
           }
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a crowded deck spends the Gazette's comfort measure to clear the overlap",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0303-imposer-allocator-crowded",
+        });
+        try {
+          await seedPreferredWidth(app, PREFERRED);
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.gazette", "widthPx", { kind: "i64", value: ${DEFAULT_GAZETTE_WIDTH_PX} }), null)`,
+          );
+          await seedFixture(app, 400, PREFERRED);
+
+          const canvas = await canvasWidth(app);
+
+          // The shape the whole addendum is about. Size the cards so the chain
+          // tiles at a rail total BELOW what the two comfort floors add up to
+          // (320 for the Lens, which has no comfort band, plus the Gazette's
+          // 512 = 832): at the comfort floors these cards occlude one another,
+          // and 60px lower they stand clear. The deck's duty to show the user's
+          // cards outranks the Gazette's preferred measure, so comfort is spent
+          // — and spent by the greediest rail last, only after the Lens has
+          // given everything it has.
+          const tiling = MIN_LENS_WIDTH_PX + COMFORT_GAZETTE_WIDTH_PX - 60;
+          const crowdedPane = twoRailPaneWidth(canvas, tiling);
+          expect(crowdedPane).toBeGreaterThan(200);
+          await seedTwoRails(app, crowdedPane, "five-up");
+          await app.nativeClickAtElement(FIVE_UP_TILE);
+          await wait(AFTER_LAND_MS);
+
+          const gazette = await frameWidth(app, "pGaz");
+          const lens = await frameWidth(app, "pLens");
+
+          // The cards stand clear. This is the assertion the landed Phase 1
+          // solver failed: it held the Gazette at 512 and let the chain occlude
+          // by whatever the arithmetic left over.
+          for (const seam of await seams(app)) {
+            expect(seam, "no two chain panes overlap").toBeGreaterThan(0);
+            expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
+          }
+
+          // And it was bought with the Gazette's comfort, at the Lens's
+          // expense first and never below the width the Gazette cannot paint
+          // under.
+          expect(
+            lens,
+            "the least greedy rail gives everything before comfort is spent",
+          ).toBeCloseTo(MIN_LENS_WIDTH_PX, 0);
+          expect(gazette).toBeLessThan(COMFORT_GAZETTE_WIDTH_PX);
+          expect(gazette).toBeGreaterThanOrEqual(MIN_GAZETTE_WIDTH_PX);
+          expect(gazette + lens).toBeCloseTo(
+            railTotalFor(canvas, crowdedPane),
+            0,
+          );
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the user can drag the Gazette below its comfort measure, down to its hard floor",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0303-imposer-allocator-drag-floor",
+        });
+        try {
+          await seedPreferredWidth(app, PREFERRED);
+          await app.evalJS<null>(
+            `(window.__tug.setTugbankValue("dev.tugtool.gazette", "widthPx", { kind: "i64", value: ${DEFAULT_GAZETTE_WIDTH_PX} }), null)`,
+          );
+          await seedFixture(app, 400, PREFERRED);
+          await seedTwoRails(app, 400, "five-up");
+
+          // The Gazette holds the LEFT edge, so its one handle is its east
+          // one — a rail exposes only its deck-facing edge.
+          const handle = '.tug-pane[data-pane-id="pGaz"] .tug-pane-resize-e';
+          expect(
+            await app.evalJS<number>(
+              `document.querySelectorAll(${JSON.stringify(handle)}).length`,
+            ),
+          ).toBe(1);
+
+          const grip = await app.evalJS<{ x: number; y: number }>(
+            `(function () {
+              var r = document.querySelector(${JSON.stringify(handle)}).getBoundingClientRect();
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            })()`,
+          );
+
+          // Drag it well past the comfort measure and past the hard floor too:
+          // 300px in from a 580px rail asks for 280, which is under both. The
+          // resize commit clamps to the registered `sizePolicy.min.width`, so
+          // where it lands is the answer to "what floor does the user's own
+          // hand actually meet".
+          await app.nativeDrag(grip, { x: grip.x - 300, y: grip.y });
+          await wait(AFTER_LAND_MS);
+
+          const dragged = await frameWidth(app, "pGaz");
+          expect(
+            dragged,
+            "the drag reaches the hard floor, not the comfort measure",
+          ).toBeCloseTo(MIN_GAZETTE_WIDTH_PX, 0);
+          expect(dragged).toBeLessThan(COMFORT_GAZETTE_WIDTH_PX);
         } finally {
           await app.close();
         }

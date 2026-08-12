@@ -678,7 +678,7 @@ Phase 2 is a **correction of Phase 1's design**, not new capability. Everything 
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (awaiting the owner's live-deck vetting pass — [P15]) |
 | Target branch | main |
 | Phase 1 landed at | `931665ecc` (squash-joined from `tugdash/solve-layout-imposer`) |
 | Last updated | 2026-08-12 |
@@ -1100,10 +1100,10 @@ No new runtime state. No React, DOM or store surface is touched by this addendum
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-8 | Two floors in the registry and the Gazette's measure | pending | — |
-| #step-9 | The picture-directed total, and the net that proves it | pending | — |
-| #step-10 | Regenerate the golden table | pending | — |
-| #step-11 | Real-deck coverage, integration, and an observed vetting pass | pending | — |
+| #step-8 | Two floors in the registry and the Gazette's measure | done | `5ddb05a1e` |
+| #step-9 | The picture-directed total, and the net that proves it | done | `bf412d324` |
+| #step-10 | Regenerate the golden table | done | `e64a6f9f0` |
+| #step-11 | Real-deck coverage, integration, and an observed vetting pass | done (the [P15] live pass is the owner's, still open) | `9cfdfbfb3` |
 
 ---
 
@@ -1230,11 +1230,11 @@ No new runtime state. No React, DOM or store surface is touched by this addendum
 
 #### Phase 2 Exit Criteria ("Done means…") {#phase-2-exit-criteria}
 
-- [ ] Every #phase-2-success-criteria item verified by its named mechanism.
-- [ ] List L03 items 1–3 were observed FAILING against `931665ecc` before the fix, and pass after ([P14]).
-- [ ] Phase 2 Step Status Ledger fully `done` with commit hashes recorded.
-- [ ] The golden diff was read and summarised by a human-readable commit body, not merely regenerated.
-- [ ] **Observed on a live deck** ([P15]): Gazette + Lens open, window dragged across a wide range — the rails track the canvas, no avoidable overlap appears at any width, and the seams read as the imposition gap. Reported with numbers.
+- [x] Every #phase-2-success-criteria item verified by its named mechanism.
+- [x] List L03 items 1–3 were observed FAILING against `931665ecc` before the fix, and pass after ([P14]). Observed failure: `two-up/3:slim/gazette-right@1769` left 108px of occlusion where a reachable total removes it; over the enumeration, 254 of 5990 repairable points were left overlapped, the worst by 190px.
+- [x] Phase 2 Step Status Ledger fully `done` with commit hashes recorded.
+- [x] The golden diff was read and summarised by a human-readable commit body, not merely regenerated. All 488 old sampled points answer identically; the churn is the new dragged-below-comfort fixture (76 rows) plus 25 configurations whose breakpoint canvases moved 112px with the floor they are derived from.
+- [ ] **Observed on a live deck** ([P15]): Gazette + Lens open, window dragged across a wide range — the rails track the canvas, no avoidable overlap appears at any width, and the seams read as the imposition gap. Reported with numbers. *(Open — the owner's pass. The debug instance `debug-tugdash-solve-layout-imposer-p2` is built and running; driving it from the implementer's side means activating a background window and taking the owner's screen.)*
 
 #### Phase 2 Roadmap / Follow-ons {#phase-2-roadmap}
 

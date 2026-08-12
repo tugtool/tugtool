@@ -262,6 +262,29 @@ export interface CardRegistration {
    * about cards.
    */
   greedRank?: number;
+  /**
+   * The narrowest width this card's rail is COMFORTABLE at, as distinct from
+   * `sizePolicy.min.width`, which is the narrowest it can be painted at all.
+   *
+   * The two floors answer different questions. The hard floor is a fact about
+   * rendering — below it the card's contents clip — and it is what the user's
+   * own resize drag clamps to (`tug-pane.tsx`). The comfort floor is a
+   * preference about quality — for the Gazette, the narrowest measure a post
+   * still reads as prose. The space allocator respects the comfort floor
+   * unless surrendering it removes overlap from the deck's chain entirely:
+   * showing the user's cards un-occluded outranks a rail's comfortable
+   * measure, but not the rail's ability to paint.
+   *
+   * Omit when a card has no comfort band — {@link getComfortWidth} then
+   * answers with its hard floor, which makes the two-tier drain a no-op for
+   * that rail. A rail carrying several cards takes the LARGEST comfort width
+   * among its members (`deck-manager.ts` folds with `Math.max`), exactly as it
+   * takes the largest hard floor.
+   *
+   * Read only through {@link getComfortWidth}, by the rail fold that builds
+   * the allocator's input.
+   */
+  comfortWidth?: number;
 }
 
 /**
@@ -416,6 +439,21 @@ export function isSidebarCard(componentId: string): boolean {
  */
 export function getGreedRank(componentId: string): number {
   return registry.get(componentId)?.greedRank ?? DEFAULT_GREED_RANK;
+}
+
+/**
+ * The narrowest width a card type's rail is comfortable at: what the
+ * registration declares, or its hard floor when it declares nothing. See
+ * {@link CardRegistration.comfortWidth} for what the two floors mean.
+ *
+ * Falling back to the hard floor rather than to a constant is what makes the
+ * comfort band opt-in: a card with no declared comfort width has
+ * `comfortWidth === minWidth`, so the allocator's comfort tier is empty for
+ * its rail and its behavior is unchanged. An unregistered componentId answers
+ * from `DEFAULT_SIZE_POLICY` for the same reason `getSizePolicy` does.
+ */
+export function getComfortWidth(componentId: string): number {
+  return registry.get(componentId)?.comfortWidth ?? getSizePolicy(componentId).min.width;
 }
 
 /**

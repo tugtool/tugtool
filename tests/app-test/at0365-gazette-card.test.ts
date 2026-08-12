@@ -58,6 +58,7 @@ import { describe, expect, test } from "bun:test";
 
 import { launchTugApp, note, type App } from "./_harness";
 import {
+  COMFORT_GAZETTE_WIDTH_PX,
   DEFAULT_GAZETTE_WIDTH_PX,
   GAZETTE_BODY_CH_PX,
   GAZETTE_BODY_FONT_PX,
@@ -407,26 +408,35 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         note("measured row chrome px", String(chromePx));
         expect(Math.abs(chromePx - GAZETTE_ROW_CHROME_PX)).toBeLessThanOrEqual(2);
 
-        // And the derivation itself: the two registered widths ARE the two
+        // And the derivation itself: the two TYPOGRAPHIC widths ARE the two
         // measures plus that chrome. Authored constants, checked against the
         // render — which is the whole point of authoring them.
+        //
+        // The 56ch measure derives the rail's COMFORT floor, not its hard one.
+        // The hard floor is the different question of where a post stops
+        // painting; it is a judgement, has no ch derivation to check, and is
+        // asserted only to sit below the comfort measure it makes room under.
         const expectedPreferred =
           Math.round(GAZETTE_MEASURE_CH * (chPx as number)) + chromePx;
-        const expectedMin =
+        const expectedComfort =
           Math.round(GAZETTE_MIN_MEASURE_CH * (chPx as number)) + chromePx;
         note(
           "derived widths",
           JSON.stringify({
             registeredPreferred: DEFAULT_GAZETTE_WIDTH_PX,
             measuredPreferred: expectedPreferred,
-            registeredMin: MIN_GAZETTE_WIDTH_PX,
-            measuredMin: expectedMin,
+            registeredComfort: COMFORT_GAZETTE_WIDTH_PX,
+            measuredComfort: expectedComfort,
+            registeredHardFloor: MIN_GAZETTE_WIDTH_PX,
           }),
         );
         expect(
           Math.abs(DEFAULT_GAZETTE_WIDTH_PX - expectedPreferred),
         ).toBeLessThanOrEqual(4);
-        expect(Math.abs(MIN_GAZETTE_WIDTH_PX - expectedMin)).toBeLessThanOrEqual(4);
+        expect(
+          Math.abs(COMFORT_GAZETTE_WIDTH_PX - expectedComfort),
+        ).toBeLessThanOrEqual(4);
+        expect(MIN_GAZETTE_WIDTH_PX).toBeLessThan(COMFORT_GAZETTE_WIDTH_PX);
       } finally {
         await app.close();
       }

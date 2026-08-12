@@ -4,9 +4,12 @@
  * The Gazette's widths are DERIVED FROM ITS TYPE, not chosen as pixel counts.
  * A post is prose, and prose wants a measure: 64 characters by default,
  * fungible down to 56 before the column stops reading as prose. Those two
- * numbers are exactly the two inputs the space allocator takes for a rail — a
- * preference and a floor ({@link lib/layout-imposer!RailPolicy}) — so the
- * typography defines the policy directly, with no new mechanism between them.
+ * numbers are two of the widths the space allocator takes for a rail — its
+ * preference and its comfort floor ({@link lib/layout-imposer!RailPolicy}) —
+ * so the typography defines the policy directly, with no new mechanism
+ * between them. The third, the hard floor, is not a typographic number at
+ * all: it is the width below which the card stops painting, and it is what the
+ * user's own resize drag may reach.
  *
  * {@link GAZETTE_BODY_CH_PX} and {@link GAZETTE_ROW_CHROME_PX} are AUTHORED
  * constants, measured once against the real render and pinned by at0365,
@@ -59,7 +62,26 @@ export const GAZETTE_ROW_CHROME_PX = 42;
 export const DEFAULT_GAZETTE_WIDTH_PX =
   Math.round(GAZETTE_MEASURE_CH * GAZETTE_BODY_CH_PX) + GAZETTE_ROW_CHROME_PX;
 
-/** The narrowest the rail may stand: the 56-character measure, plus chrome. */
-export const MIN_GAZETTE_WIDTH_PX =
+/**
+ * The narrowest the rail is COMFORTABLE at: the 56-character measure, plus
+ * chrome. A preference about reading quality, not a fact about rendering — the
+ * space allocator holds the rail here and gives it up only when doing so
+ * removes overlap from the deck's chain, and the user's own drag may go below
+ * it down to {@link MIN_GAZETTE_WIDTH_PX}.
+ */
+export const COMFORT_GAZETTE_WIDTH_PX =
   Math.round(GAZETTE_MIN_MEASURE_CH * GAZETTE_BODY_CH_PX) +
   GAZETTE_ROW_CHROME_PX;
+
+/**
+ * The narrowest the rail may stand at all — the width below which a post stops
+ * being paintable rather than merely uncomfortable, and the floor the user's
+ * resize drag clamps to.
+ *
+ * At the authored {@link GAZETTE_BODY_CH_PX} and {@link GAZETTE_ROW_CHROME_PX}
+ * this is a measure of roughly 42 characters: narrow, still readable, and
+ * enough for a byline and a ref chip. It is a judgement, not a derivation —
+ * raising it trades the deck's room to relieve overlap for a wider guaranteed
+ * measure, and needs no other change.
+ */
+export const MIN_GAZETTE_WIDTH_PX = 400;

@@ -78,13 +78,13 @@
  *
  * One number can. The pinned sidebar rails are the band's other ends, so their
  * total width and the band's are the same quantity read from opposite sides.
- * The **space allocator** ({@link allocateSidebarWidths}) solves for the total
- * that puts every seam in the chain on one imposition gap — a closed-form
- * least-squares fit, since each seam is linear in the band — and then hands
- * that total out to the rails under a fixed order of invariants: floors first,
- * the tiling total next, preferences filled in registered greed order after
- * that, ceilings over all of it. Each rail gets its OWN width; a wide reading
- * rail no longer drags a list rail wide with it.
+ * The **space allocator** ({@link allocateSidebarWidths}) chooses the total
+ * that gives the chain its best picture — scored on the geometry the browser
+ * actually paints ({@link seamPicture}): no occlusion first, then no cramped
+ * seam, then no raggedness, then as close to the widths the user chose as all
+ * of that allows — and then hands that total out to the rails in registered
+ * greed order, between two floors and under a shared ceiling. Each rail gets
+ * its OWN width; a wide reading rail no longer drags a list rail wide with it.
  *
  * **The moments.** The deck re-solves when the user asks it to arrange itself:
  * a click in the Layouts section, a card assigned to a slot (the imposer's own
@@ -943,13 +943,13 @@ export function imposeStyle(
 export const RESIZE_RETUNE_QUIET_MS = 200;
 
 /**
- * One rail's policy: the width it wants, the hard floor it may not cross, and
- * how greedy it is for whatever width the deck has to share out.
+ * One rail's policy: the width it wants, the two floors beneath it, and how
+ * greedy it is for whatever width the deck has to share out.
  *
  * A rail shared by a stack carries the WIDEST preference among its members (a
  * rail must be able to show the card its owner sized widest), the TIGHTEST
- * floor (a rail is one width, so a floor binding on either card binds the
- * rail), and the GREEDIEST rank.
+ * floors — both of them (a rail is one width, so a floor binding on either
+ * card binds the rail) — and the GREEDIEST rank.
  */
 export interface RailPolicy {
   /** The width this rail wants: the width the user chose for it, or the
@@ -957,8 +957,22 @@ export interface RailPolicy {
    *  and drains away from it; it is never read back from the rail's own
    *  standing width, which is what keeps past answers out of the input. */
   preferredWidth: number;
-  /** The hard floor this rail may not go below — the ONLY floor. */
+  /** The HARD floor: the width below which this rail cannot paint its
+   *  contents at all. Inviolable, and the same floor the user's own resize
+   *  drag clamps to. */
   minWidth: number;
+  /**
+   * The COMFORT floor: the narrowest this rail is comfortable at, at or above
+   * {@link minWidth}. A card with no comfort band registers its hard floor
+   * here, which makes the comfort tier empty for its rail.
+   *
+   * The allocator holds every rail at or above its comfort floor unless
+   * descending below removes overlap from the chain ENTIRELY — comfort is
+   * spent to fix a picture, never merely to improve one. Showing the user's
+   * cards un-occluded outranks a rail's comfortable measure; nothing outranks
+   * the rail's ability to paint.
+   */
+  comfortWidth: number;
   /**
    * How greedy this rail is: **lower is greedier** — fed first when the deck
    * has width to give, drained last when it has width to take. Folded from
@@ -1070,32 +1084,68 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
  * fit spreads the error rather than removing it, and the rails still stand at
  * the best total there is.
  *
+ * ## Choosing the total: the picture, not the fit
+ *
+ * The total is chosen by looking at the picture it paints. Every candidate
+ * total in `[Σ floor, Σ ceiling]` is scored by {@link seamPicture} — which
+ * reads `imposeRect`'s REAL clamped geometry — on a lexicographic key:
+ *
+ * ```
+ *   key(T) = [ worstOverlap, worstShortfall, worstError, |T − Σ preferred| ]
+ * ```
+ *
+ * Occlusion first (a card the user cannot see), then cramping (a chain that
+ * reads as broken rather than arranged), then raggedness, and last the
+ * distance from the widths the user chose — which breaks every remaining tie
+ * toward leaving the rails where their owner put them, and makes the answer
+ * unique.
+ *
+ * `B*` is not the answer. The least-squares fit minimises a SUM of squared
+ * errors over the LINEAR seam model; what the user sees is the WORST seam
+ * under the real rule that clamps a pane's travel at zero. On a crowded deck
+ * those are different objectives, and the difference is a chain that puts one
+ * pair of cards 372px on top of one another so the next pair can stand 482px
+ * apart. `solveSidebarWidths` survives as the honest closed form and seeds the
+ * scan, but it no longer decides.
+ *
  * ## The invariant order — what the answer must satisfy
  *
- * The allocator judges nothing. It satisfies four requirements in strict
+ * The allocator judges nothing. It satisfies these requirements in strict
  * priority, and the answer is whatever comes out:
  *
- *   1. **Floors are inviolable.** Every rail stands at or above its
+ *   1. **Hard floors are inviolable.** Every rail stands at or above its
  *      `minWidth` — the width below which it cannot paint its contents.
  *      A floor above the ceiling wins: a policy about maximum width does not
  *      outrank a width the card cannot be drawn under.
- *   2. **The chain tiles.** The rails' total goes to `T*` whenever `T*` is
- *      reachable inside the rails' bounds. This outranks every preference:
- *      cards crowding or occluding one another is the deck failing to show
- *      the user's own cards.
- *   3. **Preferences fill in greed order.** Each rail starts at the width it
- *      wants. A deficit drains the LEAST greedy rail first, to its floor,
- *      before the greediest gives a pixel; a surplus feeds the GREEDIEST
- *      first, to its ceiling, before a less greedy rail grows past what it
- *      wants. Rails of equal rank split their tier's share evenly.
- *   4. **Ceilings cap everything.** No rail stands wider than
+ *   2. **The picture is chosen from the comfort domain when it can be.** The
+ *      total is the best-scoring one at or above `Σ comfortWidth`.
+ *   3. **Comfort is surrendered to REMOVE overlap, and for nothing else.** If
+ *      no total in the comfort domain removes the overlap and some total below
+ *      it does, the search runs again over the whole domain down to the hard
+ *      floors. If neither domain can remove it, comfort is kept: cramping a
+ *      rail buys occlusion the user still sees, at the cost of a rail they can
+ *      no longer read. This is a yes/no rule, not a graded judgement — which
+ *      is what makes it testable, and what distinguishes it from the licence
+ *      this allocator deleted.
+ *   4. **Preferences fill in greed order.** Each rail starts at the width it
+ *      wants. A deficit drains the LEAST greedy rail first — to its comfort
+ *      floor, and only then, if the total is still unmet, to its hard floor;
+ *      a surplus feeds the GREEDIEST first, to its ceiling, before a less
+ *      greedy rail grows past what it wants. Rails of equal rank split their
+ *      tier's share evenly.
+ *   5. **Ceilings cap everything.** No rail stands wider than
  *      {@link AllocatorInput.maxRailWidth}.
  *
- * There is no tolerance, no grade, and no comparison against the picture the
- * rails are standing in — the standing widths are not an input at all
- * (`RailPolicy` cannot carry them), which is what makes it structurally
- * impossible for the allocator to read its own past answers back as the
- * user's choice.
+ * Which rail is the wide one cannot affect the picture at all: the band, and
+ * therefore every seam, depends on the rails' TOTAL and never on how that
+ * total is split (the separation property, above). So step 4 can never trade
+ * away what steps 2 and 3 bought.
+ *
+ * There is no tolerance and no grade — the score is an OBJECTIVE, not an
+ * acceptance test, so there is nothing to tune and no "refuse" branch. The
+ * standing widths are not an input at all (`RailPolicy` cannot carry them),
+ * which is what makes it structurally impossible for the allocator to read its
+ * own past answers back as the user's choice.
  *
  * **The solver is total.** It answers whenever a rail stands: `null` means
  * exactly two things, and neither is a shrug — no rail stands, or a number in
@@ -1116,75 +1166,76 @@ export function allocateSidebarWidths(input: AllocatorInput): RailWidths | null 
   // policy number. A chain of fewer than two cards is NOT an error here — it
   // has no seam to fit, which is a question about the target, not about
   // whether the rails may be answered for.
-  if (chainOf(input) === null) return null;
+  const chain = chainOf(input);
+  if (chain === null) return null;
 
   const ceiling = Math.round(input.maxRailWidth);
-  const rails = sides.map((side) => {
+  const rails: RailBounds[] = sides.map((side) => {
     const policy = input.rails[side] as RailPolicy;
     // Floors round UP so that an integer answer can never land under a
     // fractional floor; the ceiling and preference then live inside it.
     const floor = Math.ceil(policy.minWidth);
     const top = Math.max(ceiling, floor);
+    const preferred = Math.min(
+      Math.max(Math.round(policy.preferredWidth), floor),
+      top,
+    );
     return {
       side,
       floor,
+      // The comfort floor is clamped UNDER the rail's preference. A rail the
+      // user dragged below its comfort measure keeps that drag as its
+      // effective comfort floor, so the comfort rule can never grow a rail
+      // back past a width its owner chose — comfort constrains the allocator,
+      // never the user. It is also what keeps every comfort-tier capacity
+      // (`standing − comfortFloor`) non-negative in the drain below.
+      comfortFloor: Math.max(floor, Math.min(Math.ceil(policy.comfortWidth), preferred)),
       ceiling: top,
-      preferred: Math.min(Math.max(Math.round(policy.preferredWidth), floor), top),
+      preferred,
       rank: policy.greedRank,
     };
   });
 
-  const sum = (of: (rail: (typeof rails)[number]) => number): number =>
+  const sum = (of: (rail: RailBounds) => number): number =>
     rails.reduce((running, rail) => running + of(rail), 0);
   const preferredTotal = sum((rail) => rail.preferred);
-  // `solveSidebarWidths` returns the rails' TOTAL, not the band — the band is
-  // already subtracted inside it. With no seam to fit, the rails want exactly
-  // what they prefer.
-  const solved = solveSidebarWidths(input);
-  const target = Math.min(
-    Math.max(solved ?? preferredTotal, sum((rail) => rail.floor)),
-    sum((rail) => rail.ceiling),
-  );
+  const floorTotal = sum((rail) => rail.floor);
+  const comfortTotal = sum((rail) => rail.comfortFloor);
+  const ceilingTotal = sum((rail) => rail.ceiling);
+
+  const target =
+    chain.length < 2
+      ? // No seam is no picture: every candidate scores zero on the first
+        // three terms and the key reduces to its last, which is minimised at
+        // Σ preferred. Returned directly rather than scanned for it — the
+        // answer falls out of the objective, so this is a shortcut, not a
+        // special case.
+        preferredTotal
+      : chooseRailTotal(input, chain, {
+          floorTotal,
+          comfortTotal,
+          ceilingTotal,
+          preferredTotal,
+          sides,
+        });
 
   const widths = new Map(rails.map((rail) => [rail.side, rail.preferred]));
   const outstanding = target - preferredTotal;
-  if (outstanding !== 0) {
-    const surplus = outstanding > 0;
-    // Greed order: greediest (lowest rank) first when feeding, last when
-    // draining. Same comparison read in both directions, so no tier can be
-    // fed out of one order and drained out of another.
-    const ordered = [...rails].sort((a, b) =>
-      surplus ? a.rank - b.rank : b.rank - a.rank,
+  if (outstanding > 0) {
+    waterFill(widths, rails, outstanding, true, (rail) => rail.ceiling);
+  } else if (outstanding < 0) {
+    // Two tiers, both in reverse greed order: every rail gives up its comfort
+    // before any rail gives up more than that, and inside each tier the least
+    // greedy rail gives first. The greediest rail is the last to be
+    // uncomfortable and the last to approach the width it cannot paint under.
+    const still = waterFill(
+      widths,
+      rails,
+      -outstanding,
+      false,
+      (rail) => rail.comfortFloor,
     );
-    let need = Math.abs(outstanding);
-    for (let start = 0; start < ordered.length && need > 0; ) {
-      let end = start;
-      while (end < ordered.length && ordered[end].rank === ordered[start].rank) {
-        end += 1;
-      }
-      // One tier: equal-rank rails split what the tier takes evenly, and a
-      // member that hits its bound hands the rest back to the members still
-      // short of theirs. Ordering the tier by capacity makes that a single
-      // pass rather than a loop.
-      const tier = ordered.slice(start, end).sort((a, b) => {
-        const capacity = (rail: (typeof rails)[number]): number =>
-          surplus
-            ? rail.ceiling - (widths.get(rail.side) as number)
-            : (widths.get(rail.side) as number) - rail.floor;
-        return capacity(a) - capacity(b);
-      });
-      for (let i = 0; i < tier.length && need > 0; i += 1) {
-        const rail = tier[i];
-        const standing = widths.get(rail.side) as number;
-        const capacity = surplus
-          ? rail.ceiling - standing
-          : standing - rail.floor;
-        const taken = Math.min(need / (tier.length - i), capacity);
-        widths.set(rail.side, surplus ? standing + taken : standing - taken);
-        need -= taken;
-      }
-      start = end;
-    }
+    if (still > 0) waterFill(widths, rails, still, false, (rail) => rail.floor);
   }
 
   // Rounding leaves at most one pixel per rail on the table. It is left with
@@ -1195,6 +1246,183 @@ export function allocateSidebarWidths(input: AllocatorInput): RailWidths | null 
     answer[rail.side] = Math.round(widths.get(rail.side) as number);
   }
   return answer;
+}
+
+/** One rail's solved bounds: the two floors it stands on, the ceiling it may
+ *  not pass, the width it wants, and how greedy it is for the rest. */
+interface RailBounds {
+  side: SidebarSide;
+  floor: number;
+  comfortFloor: number;
+  ceiling: number;
+  preferred: number;
+  rank: number;
+}
+
+/**
+ * One greed-ordered pass of the water-fill, moving every rail toward `bound`
+ * until `need` is met. Returns whatever is left unmet, which is how the
+ * deficit's two tiers chain: drain to comfort, and hand what comfort could not
+ * cover to a second pass that drains to the hard floors.
+ *
+ * Greed order: greediest (lowest rank) first when feeding, last when draining.
+ * The same comparison is read in both directions, so no tier can be fed out of
+ * one order and drained out of another.
+ */
+function waterFill(
+  widths: Map<SidebarSide, number>,
+  rails: readonly RailBounds[],
+  need: number,
+  surplus: boolean,
+  bound: (rail: RailBounds) => number,
+): number {
+  let outstanding = need;
+  const ordered = [...rails].sort((a, b) =>
+    surplus ? a.rank - b.rank : b.rank - a.rank,
+  );
+  const capacityOf = (rail: RailBounds): number => {
+    const standing = widths.get(rail.side) as number;
+    return Math.max(0, surplus ? bound(rail) - standing : standing - bound(rail));
+  };
+  for (let start = 0; start < ordered.length && outstanding > 0; ) {
+    let end = start;
+    while (end < ordered.length && ordered[end].rank === ordered[start].rank) {
+      end += 1;
+    }
+    // One tier: equal-rank rails split what the tier takes evenly, and a
+    // member that hits its bound hands the rest back to the members still
+    // short of theirs. Ordering the tier by capacity makes that a single pass
+    // rather than a loop.
+    const tier = ordered
+      .slice(start, end)
+      .sort((a, b) => capacityOf(a) - capacityOf(b));
+    for (let i = 0; i < tier.length && outstanding > 0; i += 1) {
+      const rail = tier[i];
+      const standing = widths.get(rail.side) as number;
+      const taken = Math.min(outstanding / (tier.length - i), capacityOf(rail));
+      widths.set(rail.side, surplus ? standing + taken : standing - taken);
+      outstanding -= taken;
+    }
+    start = end;
+  }
+  return outstanding;
+}
+
+/**
+ * The coarse stride the total scan takes before rescanning at 1px around the
+ * coarse winner.
+ *
+ * A binary search would be tempting — every seam is non-increasing in the
+ * rails' total, so overlap is monotone — but `imposeRect`'s `max(0, band − w)`
+ * clamps a pane's travel at zero, which FLATTENS that relationship wherever a
+ * pane has run out of room, and with unequal card widths those flat regions do
+ * not line up. A scan is robust to that; a binary search would be correct
+ * almost always, which is the worst kind of correct.
+ *
+ * If the exhaustive cross-check in the solutions sweep ever fails, this stride
+ * is wrong — not the objective.
+ */
+const TOTAL_SCAN_STRIDE_PX = 16;
+
+/**
+ * The lexicographic score of a candidate total: occlusion, then cramping, then
+ * raggedness, then distance from the widths the user chose.
+ *
+ * The candidate is evaluated through a `RailWidths` carrying THE SAME SIDES
+ * the answer will carry. The split across those sides is immaterial — the band
+ * depends only on the total — but the number of standing sides is not, because
+ * `resolveSpan` spends one imposition gap per occupied side.
+ */
+function scoreRailTotal(
+  input: AllocatorInput,
+  chain: readonly { slot: number; width: number }[],
+  total: number,
+  sides: readonly SidebarSide[],
+  preferredTotal: number,
+): readonly number[] {
+  const widths: RailWidths = {};
+  for (const side of sides) widths[side] = total / sides.length;
+  const picture = pictureOfChain(input, chain, widths);
+  return [
+    picture.worstOverlap,
+    picture.worstShortfall,
+    picture.worstError,
+    Math.abs(total - preferredTotal),
+  ];
+}
+
+/** Lexicographic comparison — negative when `a` is the better score. */
+function compareScores(a: readonly number[], b: readonly number[]): number {
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return a[i] - b[i];
+  }
+  return 0;
+}
+
+/**
+ * The rails' total, chosen by the picture it paints ({@link seamPicture})
+ * rather than by the least-squares fit.
+ *
+ * Two domains. The search runs first over `[Σ comfortFloor, Σ ceiling]`; it
+ * descends into the range below the comfort floors IF AND ONLY IF some total
+ * down there removes the overlap entirely and nothing in the comfort domain
+ * does. Comfort is surrendered to fix a picture, never merely to improve one —
+ * on a chain no total can repair, cramping the rails buys occlusion the user
+ * still sees at the cost of a rail they can no longer read.
+ */
+function chooseRailTotal(
+  input: AllocatorInput,
+  chain: readonly { slot: number; width: number }[],
+  totals: {
+    floorTotal: number;
+    comfortTotal: number;
+    ceilingTotal: number;
+    preferredTotal: number;
+    sides: readonly SidebarSide[];
+  },
+): number {
+  const { floorTotal, comfortTotal, ceilingTotal, preferredTotal, sides } = totals;
+  const score = (total: number): readonly number[] =>
+    scoreRailTotal(input, chain, total, sides, preferredTotal);
+
+  // The closed-form fit is no longer the answer, but it is still an excellent
+  // guess at where the answer sits, so it joins the coarse candidates.
+  const fitted = solveSidebarWidths(input);
+
+  const bestIn = (lo: number, hi: number): number => {
+    if (hi <= lo) return lo;
+    let best = lo;
+    let bestScore = score(lo);
+    const consider = (candidate: number): void => {
+      if (candidate <= lo || candidate > hi) return;
+      const candidateScore = score(candidate);
+      // Ties keep the SMALLER total, which the ascending sweep already does
+      // and this makes true of the out-of-order candidates too.
+      if (
+        compareScores(candidateScore, bestScore) < 0 ||
+        (compareScores(candidateScore, bestScore) === 0 && candidate < best)
+      ) {
+        best = candidate;
+        bestScore = candidateScore;
+      }
+    };
+    for (let t = lo + TOTAL_SCAN_STRIDE_PX; t < hi; t += TOTAL_SCAN_STRIDE_PX) {
+      consider(t);
+    }
+    consider(hi);
+    if (fitted !== null) consider(Math.min(Math.max(fitted, lo), hi));
+    // Then 1px around the coarse winner, which is where the true optimum sits:
+    // the score is monotone in the total on either side of it up to the stride.
+    const fineLo = Math.max(lo, best - TOTAL_SCAN_STRIDE_PX);
+    const fineHi = Math.min(hi, best + TOTAL_SCAN_STRIDE_PX);
+    for (let t = fineLo; t <= fineHi; t += 1) consider(t);
+    return best;
+  };
+
+  const comfortBest = bestIn(comfortTotal, ceilingTotal);
+  if (score(comfortBest)[0] === 0) return comfortBest;
+  const hardBest = bestIn(floorTotal, ceilingTotal);
+  return score(hardBest)[0] === 0 ? hardBest : comfortBest;
 }
 
 /**
@@ -1266,9 +1494,12 @@ function chainOf(
   const { canvasWidth, kind, occupied, rails } = input;
   if (!Number.isFinite(canvasWidth)) return null;
   for (const side of railSidesOf(rails)) {
-    const { preferredWidth, minWidth, greedRank } = rails[side] as RailPolicy;
+    const { preferredWidth, minWidth, comfortWidth, greedRank } = rails[
+      side
+    ] as RailPolicy;
     if (!Number.isFinite(preferredWidth) || preferredWidth <= 0) return null;
     if (!Number.isFinite(minWidth)) return null;
+    if (!Number.isFinite(comfortWidth)) return null;
     if (!Number.isFinite(greedRank)) return null;
   }
 
@@ -1286,30 +1517,51 @@ function chainOf(
 
 /**
  * How the chain reads when the rails stand at `widths`: the widest any seam
- * misses {@link IMPOSITION_GAP_PX} by (`worstError` — how ragged), and the
- * deepest any pair of neighbours occlude one another (`worstOverlap` — zero
- * when nothing overlaps).
+ * misses {@link IMPOSITION_GAP_PX} by (`worstError` — how ragged), the deepest
+ * any pair of neighbours occlude one another (`worstOverlap` — zero when
+ * nothing overlaps), and the tightest any seam falls SHORT of the gap
+ * (`worstShortfall` — zero when no seam is cramped).
  *
- * **A measurement, never a decision.** The allocator once graded its own
- * answers against this; it no longer consults it at all — the invariant order
- * says what the answer is, and a picture cannot outvote a floor. What remains
- * is the honest way to ask what a set of rail widths does to the chain, which
- * is exactly what the tiling invariant in the solution sweep needs to check.
+ * **This is the objective the rails' total is chosen against**, not a report
+ * written after the fact. The chooser scans the candidate totals and keeps the
+ * one whose picture scores best; the reason it scores THIS and not the
+ * least-squares fit is the difference between the two measurements below.
  *
  * Measured from {@link imposeRect}'s actual rule rather than from the linear
- * form the fit is built on. The two agree while every pane still has travel
- * left, and part company exactly when a pane is wider than the band: the real
- * rule clamps its travel at zero and the line does not, so on a crowded deck
- * the linear form describes a picture the browser never paints.
+ * form {@link solveSidebarWidths} fits. The two agree while every pane still
+ * has travel left, and part company exactly when a pane is wider than the
+ * band: the real rule clamps its travel at zero and the line does not, so on a
+ * crowded deck the linear form describes a picture the browser never paints —
+ * which is precisely the deck the allocator most needs to get right.
+ *
+ * The three readings are separate because the failures are separate.
+ * `worstOverlap` is occlusion: a card the user cannot see. `worstShortfall` is
+ * cramping: a chain that reads as broken rather than arranged. `worstError`
+ * takes a seam over the gap as seriously as one under it, which is right for
+ * raggedness and wrong for either of the other two — a slightly airy chain
+ * still reads as arranged.
  */
 export function seamPicture(
   input: AllocatorInput,
   widths: RailWidths,
-): { worstError: number; worstOverlap: number } {
+): { worstError: number; worstOverlap: number; worstShortfall: number } {
   const chain = chainOf(input);
   if (chain === null || chain.length < 2) {
-    return { worstError: 0, worstOverlap: 0 };
+    return { worstError: 0, worstOverlap: 0, worstShortfall: 0 };
   }
+  return pictureOfChain(input, chain, widths);
+}
+
+/**
+ * {@link seamPicture} with the chain already in hand — the form the total
+ * chooser calls, since it reads the same chain a few dozen times over and
+ * `chainOf` folds and sorts the occupancy afresh on every call.
+ */
+function pictureOfChain(
+  input: AllocatorInput,
+  chain: readonly { slot: number; width: number }[],
+  widths: RailWidths,
+): { worstError: number; worstOverlap: number; worstShortfall: number } {
   // The span comes from `resolveSpan`, not from an inline single-rail
   // expression: with rails on both edges the band is inset twice, and a span
   // built for one of them describes a picture the browser never paints — which
@@ -1321,6 +1573,7 @@ export function seamPicture(
   const count = slotCount(input.kind);
   let worstError = 0;
   let worstOverlap = 0;
+  let worstShortfall = 0;
   for (let j = 0; j < chain.length - 1; j += 1) {
     const near = chain[j];
     const far = chain[j + 1];
@@ -1330,8 +1583,9 @@ export function seamPicture(
       farRect.position.x - (nearRect.position.x + nearRect.size.width);
     worstError = Math.max(worstError, Math.abs(seam - IMPOSITION_GAP_PX));
     worstOverlap = Math.max(worstOverlap, -seam);
+    worstShortfall = Math.max(worstShortfall, IMPOSITION_GAP_PX - seam);
   }
-  return { worstError, worstOverlap };
+  return { worstError, worstOverlap, worstShortfall };
 }
 
 /**

@@ -35,9 +35,27 @@ import {
   type ImposerSpan,
   type ImposedPlacement,
   type ImpositionKind,
+  type RailPolicy,
 } from "@/lib/layout-imposer";
 
 const GAP = IMPOSITION_GAP_PX;
+
+/**
+ * A rail policy with no comfort band above its hard floor — `comfortWidth`
+ * defaults to `minWidth`, which is what every card that registers no comfort
+ * width resolves to, and which makes the allocator's comfort tier empty for
+ * that rail. Cases that care about the two-tier drain pass their own
+ * `comfortWidth`.
+ */
+const rail = (policy: {
+  preferredWidth: number;
+  minWidth: number;
+  greedRank: number;
+  comfortWidth?: number;
+}): RailPolicy => ({
+  ...policy,
+  comfortWidth: policy.comfortWidth ?? policy.minWidth,
+});
 
 /** The rank a rail takes when nothing has ranked it — the registry's
  *  `DEFAULT_GREED_RANK`, spelled out here rather than imported, because the
@@ -56,6 +74,7 @@ function allocateOneRail(input: {
   occupied: readonly { slot: number; width: number }[];
   preferredWidth: number;
   minWidth: number;
+  comfortWidth?: number;
   greedRank?: number;
   maxRailWidth?: number;
 }): number | null {
@@ -64,11 +83,12 @@ function allocateOneRail(input: {
     kind: input.kind,
     occupied: input.occupied,
     rails: {
-      right: {
+      right: rail({
         preferredWidth: input.preferredWidth,
         minWidth: input.minWidth,
+        comfortWidth: input.comfortWidth,
         greedRank: input.greedRank ?? UNRANKED,
-      },
+      }),
     },
     maxRailWidth: input.maxRailWidth ?? CONTENT_WIDTH_SLIM_PX,
   });
@@ -88,11 +108,11 @@ function solveOneRail(input: {
     kind: input.kind,
     occupied: input.occupied,
     rails: {
-      right: {
+      right: rail({
         preferredWidth: input.preferredWidth,
         minWidth: input.minWidth,
         greedRank: UNRANKED,
-      },
+      }),
     },
     maxRailWidth: CONTENT_WIDTH_SLIM_PX,
   });
@@ -1126,10 +1146,13 @@ describe("the space allocator", () => {
     expect(shrunk).toBeLessThan(preferredWidth);
   });
 
-  test("irregular occupancy still stands the rail at the best total there is", () => {
-    // Slots 1, 2 and 5 of five-up: fractions 0, 1/4, 1 with uniform 800s.
-    // No band tiles that at all, so the least-squares fit does not remove the
-    // error, it spreads it — B* = Σa(gap − c)/Σa² = 1305 / 0.625 = 2088.
+  test("irregular occupancy takes the narrowest rail, not the least-squares fit", () => {
+    // Slots 1, 2 and 5 of five-up: fractions 0, 1/4, 1 with uniform 800s. No
+    // band tiles that at all, so the least-squares fit does not remove the
+    // error, it spreads it — B* = Σa(gap − c)/Σa² = 1305 / 0.625 = 2088, which
+    // puts one pair of cards deep under one another so the next pair can stand
+    // far apart. Sum-of-squares scores an overlap and a gap alike; on screen
+    // they are not remotely the same thing.
     const canvasWidth = 2523;
     const input = {
       canvasWidth,
@@ -1143,13 +1166,31 @@ describe("the space allocator", () => {
       minWidth: 320,
     };
 
-    // The geometry answers: this is the best band there is, and the rail
-    // stands at the total that produces it. "The picture cannot be perfected"
-    // is not a reason to leave the rail somewhere else — there is no other
-    // width with a better claim.
-    const wanted = canvasWidth - GAP * 3 - 2088;
-    expect(solveOneRail(input)).toBe(wanted);
-    expect(allocateOneRail(input)).toBe(wanted);
+    // The closed form still says what it always said, and is still worth
+    // reading — it is just no longer the answer.
+    expect(solveOneRail(input)).toBe(canvasWidth - GAP * 3 - 2088);
+
+    // The answer is the narrowest rail the policy allows, because on a deck
+    // this crowded every pixel of rail is a pixel of band, and every pixel of
+    // band is occlusion removed. Nothing here can tile — the rail cannot buy a
+    // clean picture at any width — so it buys the least bad one instead of
+    // sitting at a compromise the browser never paints.
+    expect(allocateOneRail(input)).toBe(320);
+    const at320 = seamPicture(
+      {
+        canvasWidth,
+        kind: "five-up",
+        occupied: input.occupied,
+        rails: {
+          right: rail({ preferredWidth: 400, minWidth: 320, greedRank: UNRANKED }),
+        },
+        maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+      },
+      { right: 320 },
+    );
+    // 453px of occlusion is still a bad deck. It is 25px better than the fit's
+    // answer, and every pixel of that is a card edge the user can see.
+    expect(at320.worstOverlap).toBe(453);
   });
 
   test("growth is bounded by the slim width, and reaches it", () => {
@@ -1321,6 +1362,7 @@ describe("the space allocator", () => {
     };
     expect(allocateOneRail({ ...base, canvasWidth: Number.NaN })).toBeNull();
     expect(allocateOneRail({ ...base, minWidth: Number.NaN })).toBeNull();
+    expect(allocateOneRail({ ...base, comfortWidth: Number.NaN })).toBeNull();
     // A rank that is not a number would make the greed sort nondeterministic,
     // so it is refused at the same gate as every other bad number.
     expect(allocateOneRail({ ...base, greedRank: Number.NaN })).toBeNull();
@@ -1346,6 +1388,124 @@ describe("the space allocator", () => {
   });
 });
 
+describe("the total is chosen by the picture it paints", () => {
+  // The crowded deck the picture-directed chooser exists for: three comfy
+  // cards side by side in three-up, the Gazette holding the right at its
+  // 56ch comfort measure over a 400px hard floor, the Lens on the left.
+  //
+  // A least-squares total is flat across ~1800px of canvas here, because it
+  // saturates against the floors — which is why the deck looked, from the
+  // outside, as though the allocator did not run on a window resize at all.
+  const GAZETTE = rail({
+    preferredWidth: 580,
+    minWidth: 400,
+    comfortWidth: 512,
+    greedRank: 1,
+  });
+  const LENS = rail({ preferredWidth: 420, minWidth: 320, greedRank: 2 });
+  const THREE_COMFY = [0, 1, 2].map((slot) => ({ slot, width: 800 }));
+  const at = (canvasWidth: number) => ({
+    canvasWidth,
+    kind: "three-up" as const,
+    occupied: THREE_COMFY,
+    rails: { left: LENS, right: GAZETTE },
+    maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+  });
+  const answerAt = (canvasWidth: number) =>
+    allocateSidebarWidths(at(canvasWidth)) as { left: number; right: number };
+
+  test("a canvas that can be tiled is tiled, by spending comfort", () => {
+    // The repair, stated as one case. A rail total of 770 tiles this deck
+    // exactly; the rails can reach it; the 56ch comfort floor forbade it, and
+    // the deck sat on 26px of occlusion rather than give up 62px of measure.
+    // Comfort is spent precisely because spending it removes the overlap.
+    expect(answerAt(3200)).toEqual({ left: 320, right: 450 });
+    const picture = seamPicture(at(3200), { left: 320, right: 450 });
+    expect(picture.worstOverlap).toBe(0);
+    expect(picture.worstError).toBe(0);
+    expect(picture.worstShortfall).toBe(0);
+  });
+
+  test("comfort is held when giving it up would not remove the overlap", () => {
+    // Three 800px cards genuinely do not fit on a 2000–3000px canvas at any
+    // rail total, so there is nothing to buy. The rails sit on their comfort
+    // floors having reduced the occlusion as far as comfort allows, and the
+    // Gazette stays readable — cramping it would buy overlap the user still
+    // sees at the cost of a rail they no longer can read.
+    for (const canvasWidth of [2000, 3000]) {
+      expect(answerAt(canvasWidth)).toEqual({ left: 320, right: 512 });
+    }
+    expect(seamPicture(at(3000), answerAt(3000)).worstOverlap).toBe(126);
+  });
+
+  test("a hopeless deck returns the rails to their preferences", () => {
+    // At 1400 every total scores the same overlap — the panes have run out of
+    // travel, so moving the rails does not move a seam. With nothing to buy,
+    // the last term of the key decides and the rails go back to the widths
+    // their owner chose. Nothing is spent, because nothing would be bought.
+    expect(answerAt(1400)).toEqual({ left: 420, right: 580 });
+  });
+
+  test("a roomy canvas leaves comfort alone and feeds the greediest rail", () => {
+    expect(answerAt(3400)).toEqual({ left: 390, right: 580 });
+    expect(seamPicture(at(3400), answerAt(3400)).worstOverlap).toBe(0);
+  });
+
+  test("the answer tracks the canvas instead of saturating", () => {
+    // The direct pin on "it doesn't seem to run on resize". The landed
+    // Phase 1 answer was 320/512 for EVERY canvas from 1700 to 3100 and took
+    // three distinct values across the whole coarse sweep.
+    const coarse = new Set<string>();
+    for (let canvasWidth = 1400; canvasWidth <= 3400; canvasWidth += 100) {
+      coarse.add(JSON.stringify(answerAt(canvasWidth)));
+    }
+    expect(coarse.size).toBeGreaterThanOrEqual(5);
+
+    // And in the band where zero-overlap totals are reachable, the answer
+    // tracks the window pixel for pixel rather than in steps.
+    const fine = new Set<string>();
+    for (let canvasWidth = 3150; canvasWidth <= 3350; canvasWidth += 10) {
+      fine.add(JSON.stringify(answerAt(canvasWidth)));
+    }
+    expect(fine.size).toBeGreaterThanOrEqual(15);
+  });
+
+  test("comfort never re-inflates a width the user dragged", () => {
+    // The Gazette dragged to 450 — below its 512 comfort measure, which the
+    // user is entitled to do. On a crowded deck the comfort floor must not
+    // grow it back: that would widen the rail against an explicit choice AND
+    // deepen the overlap by the same pixels.
+    const dragged = rail({
+      preferredWidth: 450,
+      minWidth: 400,
+      comfortWidth: 512,
+      greedRank: 1,
+    });
+    const crowded = {
+      canvasWidth: 3000,
+      kind: "three-up" as const,
+      occupied: THREE_COMFY,
+      rails: { left: LENS, right: dragged },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    };
+    const answer = allocateSidebarWidths(crowded) as {
+      left: number;
+      right: number;
+    };
+    expect(answer.right).toBeLessThanOrEqual(450);
+    expect(answer.left + answer.right).toBeLessThanOrEqual(450 + 420);
+  });
+
+  test("a deficit drains comfort before it drains the hard floor", () => {
+    // Both tiers, in reverse greed order within each: the Lens gives up its
+    // whole range before the Gazette gives up a pixel of measure, and the
+    // Gazette reaches its hard floor last of all.
+    const drained = answerAt(3200);
+    expect(drained.left).toBe(320);
+    expect(drained.right).toBeGreaterThan(400);
+  });
+});
+
 describe("greed order decides which rail is the wide one", () => {
   /** The plan's worked example: three-up with 800px cards in slots 0 and 2.
    *  One 5px seam between them wants a band of exactly 1605, so with two
@@ -1359,9 +1519,9 @@ describe("greed order decides which rail is the wide one", () => {
 
   /** The Gazette: the greediest rail, at the ch-derived magnitudes the plan's
    *  example uses. Fed first, drained last. */
-  const GAZETTE = { preferredWidth: 560, minWidth: 496, greedRank: 1 };
+  const GAZETTE = rail({ preferredWidth: 560, minWidth: 496, greedRank: 1 });
   /** The Lens: greedier than Jots, less greedy than the Gazette. */
-  const LENS = { preferredWidth: 420, minWidth: 320, greedRank: 2 };
+  const LENS = rail({ preferredWidth: 420, minWidth: 320, greedRank: 2 });
 
   const solve = (
     canvasWidth: number,
@@ -1443,7 +1603,7 @@ describe("greed order decides which rail is the wide one", () => {
   });
 
   test("equal ranks split the difference evenly", () => {
-    const twin = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    const twin = rail({ preferredWidth: 400, minWidth: 320, greedRank: 5 });
     expect(solve(canvasFor(900), twin, { ...twin })).toEqual({
       left: 450,
       right: 450,
@@ -1458,8 +1618,8 @@ describe("greed order decides which rail is the wide one", () => {
     // Both rails rank 5, but the left one starts 25px under the ceiling. It
     // takes those 25 and the other 75 go to the right rail — the tier's split
     // is even until a member runs out of room, and then it is not.
-    const near = { preferredWidth: 650, minWidth: 320, greedRank: 5 };
-    const far = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    const near = rail({ preferredWidth: 650, minWidth: 320, greedRank: 5 });
+    const far = rail({ preferredWidth: 400, minWidth: 320, greedRank: 5 });
     expect(solve(canvasFor(1150), near, far)).toEqual({
       left: CONTENT_WIDTH_SLIM_PX,
       right: 475,
@@ -1515,25 +1675,34 @@ describe("greed order decides which rail is the wide one", () => {
 
 describe("the stacking folds a rail is built from", () => {
   // `deck-manager.ts`'s `_sidebarRails` folds a side's members into ONE
-  // policy: widest preference, tightest (largest) floor, greediest (smallest)
-  // rank. These assert the arithmetic those folds produce, so a rail carrying
+  // policy: widest preference, tightest (largest) floors — hard and comfort
+  // alike — and greediest (smallest) rank. These assert the arithmetic those
+  // folds produce, so a rail carrying
   // a prose reader and a modest stackmate cannot silently become modest.
-  const fold = (
-    members: readonly { preferredWidth: number; minWidth: number; greedRank: number }[],
-  ) => ({
+  const fold = (members: readonly RailPolicy[]): RailPolicy => ({
     preferredWidth: Math.max(...members.map((m) => m.preferredWidth)),
     minWidth: Math.max(...members.map((m) => m.minWidth)),
+    comfortWidth: Math.max(...members.map((m) => m.comfortWidth)),
     greedRank: Math.min(...members.map((m) => m.greedRank)),
   });
 
-  const GAZETTE = { preferredWidth: 560, minWidth: 496, greedRank: 1 };
-  const JOTS = { preferredWidth: 420, minWidth: 320, greedRank: 3 };
-  const LENS = { preferredWidth: 420, minWidth: 320, greedRank: 2 };
+  const GAZETTE = rail({
+    preferredWidth: 560,
+    minWidth: 440,
+    comfortWidth: 496,
+    greedRank: 1,
+  });
+  const JOTS = rail({ preferredWidth: 420, minWidth: 320, greedRank: 3 });
+  const LENS = rail({ preferredWidth: 420, minWidth: 320, greedRank: 2 });
 
-  test("a stacked rail takes the wider preference and the tighter floor", () => {
+  test("a stacked rail takes the wider preference and the tighter floors", () => {
+    // Both floors fold the same way, and independently: the rail must satisfy
+    // its most demanding member's hard floor AND its most demanding member's
+    // comfort floor.
     expect(fold([GAZETTE, JOTS])).toEqual({
       preferredWidth: 560,
-      minWidth: 496,
+      minWidth: 440,
+      comfortWidth: 496,
       greedRank: 1,
     });
   });
@@ -1585,14 +1754,14 @@ describe("the rails' gap count follows how many of them stand", () => {
       canvasWidth: 420 + GAP * 3 + EXACT_BAND,
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
-      rails: { left: { preferredWidth: 400, minWidth: 320, greedRank: 2 } },
+      rails: { left: rail({ preferredWidth: 400, minWidth: 320, greedRank: 2 }) },
       maxRailWidth: CONTENT_WIDTH_SLIM_PX,
     });
     expect(widths).toEqual({ left: 420 });
   });
 
   test("two rails spend four gaps, and the total is what tiles", () => {
-    const twin = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    const twin = rail({ preferredWidth: 400, minWidth: 320, greedRank: 5 });
     const widths = allocateSidebarWidths({
       canvasWidth: 840 + GAP * 4 + EXACT_BAND,
       kind: "five-up",

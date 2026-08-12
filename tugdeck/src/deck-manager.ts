@@ -42,6 +42,7 @@ import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import {
   getAllRegistrations,
   getRegistration,
+  getComfortWidth,
   getGreedRank,
   getSizePolicy,
   getStackSizePolicy,
@@ -1443,15 +1444,17 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * The pinned sidebar panes standing on each side, with the side's rail
-   * policy — the width the user chose for it, the floor it may not cross, and
+   * policy — the width the user chose for it, the two floors beneath it, and
    * how greedy it is for the width the deck has to share out.
    *
    * Same-side cards share ONE rail, so the side's policy folds its members:
    * the preferred width is the widest chosen width (a rail must be able to show
-   * the card its owner sized widest), the floor is the tightest member floor (a
-   * rail is one width, so any member's floor binds it), and the greed rank is
-   * the GREEDIEST member's — a rail carrying a prose reader is a prose reader's
-   * rail wherever it stands, whatever modest card is stacked behind it.
+   * the card its owner sized widest), each floor — the hard one below which a
+   * card cannot paint, and the comfort one below which it is merely uncomfy —
+   * is the tightest member's (a rail is one width, so any member's floor binds
+   * it), and the greed rank is the GREEDIEST member's — a rail carrying a prose
+   * reader is a prose reader's rail wherever it stands, whatever modest card is
+   * stacked behind it.
    *
    * The rail's own standing width is deliberately not folded in, and not
    * carried at all: the allocator answers from the canvas, the chain, and these
@@ -1476,6 +1479,7 @@ export class DeckManager implements IDeckManagerStore {
       const policy: RailPolicy = {
         preferredWidth: this._sidebarPreferredWidth(componentId),
         minWidth: getSizePolicy(componentId).min.width,
+        comfortWidth: getComfortWidth(componentId),
         greedRank: getGreedRank(componentId),
       };
       const standing = rails[side];
@@ -1488,6 +1492,10 @@ export class DeckManager implements IDeckManagerStore {
                 policy.preferredWidth,
               ),
               minWidth: Math.max(standing.minWidth, policy.minWidth),
+              comfortWidth: Math.max(
+                standing.comfortWidth,
+                policy.comfortWidth,
+              ),
               greedRank: Math.min(standing.greedRank, policy.greedRank),
             };
     }
