@@ -44,6 +44,9 @@ export function registerLensCard(): void {
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <LensContent cardId={cardId} />,
     defaultMeta: { title: "Lens", icon: "Microscope", closable: true },
+    // Greedier than Jots, less greedy than the Gazette: rows elide where prose
+    // cannot, so the Lens gives width back before a reading surface does.
+    greedRank: 2,
     hidden: true,
     // Every row here is an engine focus stop and the arrows are how the Lens
     // is read, so it engages KBF mode the moment it is the key card ([P10]).

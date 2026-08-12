@@ -41,6 +41,9 @@ export function registerJotsCard(): void {
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <JotsContent cardId={cardId} />,
     defaultMeta: { title: "Jots", icon: "NotebookPen", closable: true },
+    // The least greedy of the three rails: an incipit is a line, and a line
+    // survives the narrowest rail the deck can stand.
+    greedRank: 3,
     hidden: true,
     // The jot LIST is the card's resting surface — rows, arrows, rings ([P10]).
     // An open jot is a typing descend inside that list, not a different mode:

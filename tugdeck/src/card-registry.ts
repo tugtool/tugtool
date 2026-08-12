@@ -246,7 +246,31 @@ export interface CardRegistration {
    * pointing at no ring.
    */
   kbfAtRest?: boolean;
+  /**
+   * How greedy this card's rail is for width when the space allocator shares
+   * out the deck: **lower is greedier** — fed first when there is surplus,
+   * drained last when there is a deficit.
+   *
+   * The Gazette is 1, the Lens 2, Jots 3; anything else takes
+   * {@link DEFAULT_GREED_RANK}. A rail carrying several cards is as greedy as
+   * its greediest member (`deck-manager.ts` folds the members with `Math.min`),
+   * so a prose reader stacked with a modest card keeps the prose reader's
+   * standing.
+   *
+   * Read only through {@link getGreedRank}, by the rail fold that builds the
+   * allocator's input. The allocator itself sees numbers and knows nothing
+   * about cards.
+   */
+  greedRank?: number;
 }
+
+/**
+ * The greed rank a card gets when its registration declares none — hungrier
+ * than nothing, greedier than nothing else either. Every sidebar card that
+ * cares declares a rank below this, so the default is simply "last fed, first
+ * drained", which is the right standing for a rail nobody has reasoned about.
+ */
+export const DEFAULT_GREED_RANK = 9;
 
 /** Module-level registry map. Keyed by componentId. */
 const registry = new Map<string, CardRegistration>();
@@ -381,6 +405,17 @@ export function getLayoutRole(componentId: string): LayoutRole {
 /** True when the card type pins to a deck edge instead of taking a slot. */
 export function isSidebarCard(componentId: string): boolean {
   return getLayoutRole(componentId) === "sidebar";
+}
+
+/**
+ * How greedy a card type's rail is for width: what the registration declares,
+ * or {@link DEFAULT_GREED_RANK}. See {@link CardRegistration.greedRank} —
+ * lower is greedier. An unregistered componentId takes the default too, so a
+ * card seeded before its registration lands is simply the least greedy thing
+ * on its rail rather than a hole in the fold.
+ */
+export function getGreedRank(componentId: string): number {
+  return registry.get(componentId)?.greedRank ?? DEFAULT_GREED_RANK;
 }
 
 /**

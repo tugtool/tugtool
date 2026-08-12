@@ -1,35 +1,37 @@
 /**
- * at0303-imposer-space-allocator.test.ts — the imposer flexes the Lens so the
- * cards tile evenly, and knows when not to.
+ * at0303-imposer-space-allocator.test.ts — the space allocator, on the real
+ * deck: each rail solved on its own, in registered greed order.
  *
  * A slot is an anchor at a fixed fraction of the band and a card's width is its
  * own, so whatever the band leaves over shows up as slack between the cards:
  * choose Five Up on a roomy deck and the cards stand apart, narrow the window
  * slightly and the same arrangement overlaps. The **space allocator** treats the
- * pinned Lens's width as the one flexible quantity — it is the band's other end
- * — and picks the width that puts every seam on one imposition gap. The
- * licence is graded: a rail may grow to the slim content width (675) —
- * whatever Card Width the deck is set to, a rail is a reading surface and
- * never sprawls — and shrink a fifth under the width the user chose; crowding
- * the soft allowance cannot absorb deepens the shrink to the rail's hard
- * floor; and a solve that cannot tile at all still moves the rails as far as
- * visibly helps, never into new overlap and never past the chosen width.
+ * pinned rails' width as the flexible quantity — they are the band's other ends
+ * — and solves for the total that puts every seam on one imposition gap. That
+ * total is then shared out under a fixed order of invariants: floors are
+ * inviolable, the tiling total outranks preferences, preferences fill in greed
+ * order (the Gazette is greedier than the Lens, which is greedier than Jots),
+ * and the slim content width (675) caps everything. Nothing is graded, nothing
+ * is compared against the picture the rails are standing in, and the answer is
+ * a pure function of the canvas, the chain, and the rails' policies.
  *
  * What has to hold:
  *
- *  1. It engages. Picking an arrangement whose exact solve is inside the flex
- *     allowance lands the Lens on that solve, and every seam in the chain on
- *     `IMPOSITION_GAP_PX`. The Lens's crossing is a FLIP settle like any other
+ *  1. It engages. Picking an arrangement whose solve is inside the rail's
+ *     bounds lands the rail on that solve, and every seam in the chain on
+ *     `IMPOSITION_GAP_PX`. The rail's crossing is a FLIP settle like any other
  *     arrangement change, not a cut.
  *  2. It leaves the preference alone. The allocated width is live geometry; the
  *     width the user CHOSE is what the Lens reopens at, and no number of
  *     re-tunes may touch it. Read through the production path — close the Lens,
- *     open it again, and it must come back at the preferred width.
- *  3. An untileable solve gives back, and gives back no further than the
- *     chosen width. A Lens standing under its preference (only past
- *     allocations put it there) returns to the width the user chose when the
- *     deck has slack no width can tile — and not one pixel past it toward the
- *     untileable fit. The chosen width is the cap on what slack may buy.
+ *     open it again, and it must come back at the preferred width. This is the
+ *     no-ratchet guard, and it is now structural: the solver cannot see a rail's
+ *     standing width at all.
+ *  3. A surplus grows the rail PAST its preference, up to the ceiling. The old
+ *     rule capped an untileable slack at the width the user chose and left the
+ *     deck's slack pooled between the cards instead; preference is where the
+ *     fill starts, not a cap on it. Asserted explicitly so the deleted cap
+ *     cannot creep back.
  *  4. Re-asserting the layout re-tunes. Re-clicking the already-active Cards
  *     option used to be a total no-op; it now drives the same entry the
  *     settled-resize observer calls. The harness cannot resize the app's
@@ -38,32 +40,45 @@
  *     own verb — the user asked the deck to arrange itself, whichever door
  *     dispatched it — so the assign itself re-solves the rails for the chain
  *     it just completed, with no separate Layouts click needed.
- *  6. Two rails take ONE width. With sidebars on both edges, the allocator's
- *     answer is a single width every standing rail lands on — whatever each
- *     card's chosen width was. Sidebars are a uniform class; the deck never
- *     answers with two rails at two widths.
+ *  6. Two rails answer with two widths, in greed order. With the Gazette on one
+ *     edge and the Lens on the other, the two rails stand at DIFFERENT widths,
+ *     and which one is wide is the registered greed order's answer: shrink what
+ *     the chain leaves and the Lens drains to its floor while the Gazette holds
+ *     its measure.
  *
- * The fixture card width is computed at runtime from the measured canvas, so
- * the solve lands a known distance from the preferred width whatever size the
- * app launched at. The preferred width itself is seeded through tugbank rather
- * than assumed.
+ * **THE HARNESS CANNOT RESIZE THE WINDOW**, which is why every fixture card
+ * width is computed at runtime from the measured canvas: `T*` is
+ * `canvas − gap·(R+2) − B*` and `B*` is a function of the chain's card widths,
+ * so moving a fixture card's width moves the target exactly as moving the
+ * canvas would. Seeding card widths and re-asserting the layout is how this
+ * test reaches either side of a breakpoint. Preferences are seeded through
+ * tugbank rather than assumed.
  *
  * @covers tugdeck/src/lib/layout-imposer.ts
  * @covers tugdeck/src/deck-manager.ts
+ * @covers tugdeck/src/card-registry.ts
  * @covers tugdeck/src/components/chrome/deck-canvas.tsx
  */
 
 import { describe, expect, test } from "bun:test";
 
 import { launchTugApp, type App } from "./_harness";
+import {
+  DEFAULT_GAZETTE_WIDTH_PX,
+  MIN_GAZETTE_WIDTH_PX,
+} from "../../tugdeck/src/lib/gazette-measure";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 90_000;
 
 /** The imposition gap (`lib/layout-imposer.ts`). */
 const GAP = 5;
+/** The widest any rail may stand: the slim content width. */
+const CEILING = 675;
 /** The preferred Lens width this test seeds, so nothing depends on the default. */
 const PREFERRED = 420;
+/** The Lens's registered floor (`lib/lens-store/types.ts`). */
+const MIN_LENS_WIDTH_PX = 320;
 /** The settle window, with room for the tween to land. */
 const AFTER_LAND_MS = 900;
 /** Frames are measured in device pixels; a rounded pin is within a pixel. */
@@ -171,6 +186,65 @@ function predictedLensWidth(canvas: number, paneWidth: number): number {
   return canvas - GAP * 5 - paneWidth * 3;
 }
 
+/**
+ * The pane width whose solve wants the two rails to total `railTotal`.
+ *
+ * With rails on both edges the canvas spends six gaps — one per rail, one at
+ * each end of the band, and one interior seam per card pair — so
+ * `canvas = railTotal + 6·gap + 3·pane`. Seeding the CARD width is how this
+ * test moves the target: `T*` is a function of the chain's widths exactly as
+ * it is of the canvas, and the harness cannot resize the window.
+ */
+function twoRailPaneWidth(canvas: number, railTotal: number): number {
+  return Math.floor((canvas - GAP * 6 - railTotal) / 3);
+}
+
+/** The rail total that fixture actually asks for — the floor above leaves up
+ *  to 2px on the table, and the assertions are exact, so they read it back. */
+function railTotalFor(canvas: number, paneWidth: number): number {
+  return canvas - GAP * 6 - paneWidth * 3;
+}
+
+/** The three-card chain with the Gazette pinned left and the Lens right, each
+ *  standing at the width its owner chose. */
+async function seedTwoRails(
+  app: App,
+  paneWidth: number,
+  kind: "two-up" | "five-up" = "two-up",
+): Promise<void> {
+  const shape = deckShape(paneWidth, PREFERRED);
+  shape.cards.push({
+    id: "G",
+    componentId: "gazette",
+    title: "Gazette",
+    closable: true,
+  });
+  shape.panes.push({
+    id: "pGaz",
+    position: { x: 0, y: 0 },
+    size: { width: DEFAULT_GAZETTE_WIDTH_PX, height: 900 },
+    cardIds: ["G"],
+    activeCardId: "G",
+    title: "Gazette",
+    acceptsFamilies: [],
+  });
+  await app.seedDeckState({
+    state: {
+      ...shape,
+      imposition: {
+        kind,
+        sidebars: { lens: { side: "right" }, gazette: { side: "left" } },
+      },
+    },
+    focusCardId: "A",
+  });
+  await app.waitForCondition<boolean>(
+    `document.querySelectorAll(${JSON.stringify(KIND_TILES)}).length > 0`,
+    { timeoutMs: 8_000 },
+  );
+  await wait(AFTER_LAND_MS);
+}
+
 async function seedFixture(
   app: App,
   paneWidth: number,
@@ -267,52 +341,64 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "an untileable solve gives back to the chosen width, and never past it",
+      "a surplus grows the rail past its preference, and stops at the ceiling",
       async () => {
         const app = await launchTugApp({
-          testName: "at0303-imposer-allocator-giveback",
+          testName: "at0303-imposer-allocator-surplus",
         });
         try {
           await seedPreferredWidth(app, PREFERRED);
           await seedFixture(app, 400, PREFERRED);
 
-          // A rail may grow to the slim width (675), so the untileable
-          // fixture has to want MORE than that ceiling. The exact solve sits
-          // 320px above the preferred 420 — 65 past the ceiling, where the
-          // widest width the allocator may have still leaves the chain
-          // visibly ragged: no width tiles this deck.
           const canvas = await canvasWidth(app);
-          const paneWidth = paneWidthFor(canvas, 320);
-          expect(paneWidth).toBeGreaterThan(200);
 
-          // The Lens stands UNDER its preference — the state only a past
-          // allocation leaves behind, since a hand-drag writes the durable
-          // preference as it goes. The give-back rule owes the user this
-          // width back the moment holding it buys nothing.
-          const standing = PREFERRED - 60;
-          await seedFixture(app, paneWidth, standing);
+          // First, a surplus the rail can absorb: the solve sits 120px above
+          // the chosen 420, well under the 675 ceiling. The rail takes all of
+          // it. The width the user chose is where the fill STARTS — the
+          // deleted rule capped an untileable slack here and left the deck's
+          // spare pixels pooled between the cards instead.
+          const reachable = paneWidthFor(canvas, 120);
+          expect(reachable).toBeGreaterThan(200);
+          await seedFixture(app, reachable, PREFERRED);
           await wait(AFTER_LAND_MS);
-          expect(await frameWidth(app, "pLens")).toBeCloseTo(standing, 0);
+          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
 
           await app.nativeClickAtElement(FIVE_UP_TILE);
           await wait(AFTER_LAND_MS);
-
-          // The Lens returns to the CHOSEN width — closer to the fit than
-          // where it stood — and not one pixel past it: an untileable
-          // arrangement never conscripts width beyond the preference.
-          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
-          // The seams are still what the classic rule produces: the cards
-          // stand apart, because the deck really is wider than any width
-          // the rails may stand at can absorb.
+          const grown = await frameWidth(app, "pLens");
+          expect(grown).toBeCloseTo(predictedLensWidth(canvas, reachable), 0);
+          expect(grown).toBeGreaterThan(PREFERRED);
           for (const seam of await seams(app)) {
-            expect(seam).toBeGreaterThan(GAP + 10);
+            expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
           }
 
-          // Re-clicking is now a no-op: the Lens already stands at the cap,
-          // so the same unusable solve has nothing left to give back.
+          // Then a surplus it cannot: the solve sits 320px above the chosen
+          // width — 65 past the slim ceiling. The rail grows as far as it may
+          // and stops there, and the pixels it could not take stay in the
+          // chain, which is why the cards still stand apart.
+          const unreachable = paneWidthFor(canvas, 320);
+          expect(unreachable).toBeGreaterThan(200);
+          await app.seedDeckState({
+            state: {
+              ...deckShape(unreachable, PREFERRED),
+              imposition: { kind: "five-up", lens: "right" },
+            },
+            focusCardId: "A",
+          });
+          await wait(AFTER_LAND_MS);
           await app.nativeClickAtElement(FIVE_UP_TILE);
           await wait(AFTER_LAND_MS);
-          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
+
+          expect(await frameWidth(app, "pLens")).toBeCloseTo(CEILING, 0);
+          for (const seam of await seams(app)) {
+            expect(seam).toBeGreaterThan(GAP);
+          }
+
+          // Idempotent: the answer is a function of the inputs, not of where
+          // the rail happens to be standing, so re-asserting changes nothing.
+          await app.nativeClickAtElement(FIVE_UP_TILE);
+          await wait(AFTER_LAND_MS);
+          expect(await frameWidth(app, "pLens")).toBeCloseTo(CEILING, 0);
         } finally {
           await app.close();
         }
@@ -444,76 +530,74 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "two rails, one width: opposite-side sidebars land equal, whatever they preferred",
+      "two rails answer with two widths, and greed decides which one is wide",
       async () => {
         const app = await launchTugApp({
-          testName: "at0303-imposer-allocator-shared-width",
+          testName: "at0303-imposer-allocator-greed-order",
         });
         try {
-          // The two cards CHOSE different widths — 420 and 560 — which is
-          // exactly the state the shared-width rule has to erase when it
-          // moves: the answer is one number, not one delta.
+          // Both preferences are seeded, so nothing here depends on a default:
+          // the Gazette at its ch-derived width, the Lens at 420.
           await seedPreferredWidth(app, PREFERRED);
           await app.evalJS<null>(
-            `(window.__tug.setTugbankValue("dev.tugtool.jots", "widthPx", { kind: "i64", value: 560 }), null)`,
+            `(window.__tug.setTugbankValue("dev.tugtool.gazette", "widthPx", { kind: "i64", value: ${DEFAULT_GAZETTE_WIDTH_PX} }), null)`,
           );
           await seedFixture(app, 400, PREFERRED);
 
-          // Two rails and three cards: canvas = T + 6·gap + 3·pane, with T the
-          // rails' total. Size the chain so each rail's share sits near 500 —
-          // above both shrink floors (0.8·420 = 336, 0.8·560 = 448), under the
-          // slim ceiling — so the solve is taken, not clamped.
           const canvas = await canvasWidth(app);
-          const paneWidth = Math.floor((canvas - GAP * 6 - 2 * 500) / 3);
-          expect(paneWidth).toBeGreaterThan(200);
 
-          const shape = deckShape(paneWidth, PREFERRED);
-          shape.cards.push({
-            id: "J",
-            componentId: "jots",
-            title: "Jots",
-            closable: true,
-          });
-          shape.panes.push({
-            id: "pJots",
-            position: { x: 0, y: 0 },
-            size: { width: 560, height: 900 },
-            cardIds: ["J"],
-            activeCardId: "J",
-            title: "Jots",
-            acceptsFamilies: [],
-          });
-          await app.seedDeckState({
-            state: {
-              ...shape,
-              imposition: {
-                kind: "two-up",
-                sidebars: {
-                  lens: { side: "right" },
-                  jots: { side: "left" },
-                },
-              },
-            },
-            focusCardId: "A",
-          });
-          await app.waitForCondition<boolean>(
-            `document.querySelectorAll(${JSON.stringify(KIND_TILES)}).length > 0`,
-            { timeoutMs: 8_000 },
+          // ── Surplus. The chain wants 60px more rail than the two
+          // preferences total. The GREEDIEST rail is fed first, so all of it
+          // goes to the Gazette and the Lens does not move at all. ──────────
+          const surplusPane = twoRailPaneWidth(
+            canvas,
+            PREFERRED + DEFAULT_GAZETTE_WIDTH_PX + 60,
           );
-          await wait(AFTER_LAND_MS);
-
+          expect(surplusPane).toBeGreaterThan(200);
+          await seedTwoRails(app, surplusPane);
           await app.nativeClickAtElement(FIVE_UP_TILE);
           await wait(AFTER_LAND_MS);
 
-          // ONE width. Not "each moved the same amount" — the SAME number.
-          const lensWidth = await frameWidth(app, "pLens");
-          const jotsWidth = await frameWidth(app, "pJots");
-          expect(Math.round(lensWidth)).toBe(Math.round(jotsWidth));
+          const surplusTotal = railTotalFor(canvas, surplusPane);
+          const fedGazette = await frameWidth(app, "pGaz");
+          const heldLens = await frameWidth(app, "pLens");
+          expect(heldLens, "the less greedy rail is not fed first").toBeCloseTo(
+            PREFERRED,
+            0,
+          );
+          expect(fedGazette).toBeCloseTo(surplusTotal - PREFERRED, 0);
+          expect(fedGazette).toBeGreaterThan(DEFAULT_GAZETTE_WIDTH_PX);
+          expect(Math.round(fedGazette)).not.toBe(Math.round(heldLens));
+          for (const seam of await seams(app)) {
+            expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
+          }
 
-          // And it is the solve: each rail's equal share of the total the
-          // seams want, which tiles the chain.
-          const share = (canvas - GAP * 6 - paneWidth * 3) / 2;
-          expect(lensWidth).toBeCloseTo(Math.round(share), 0);
+          // ── Deficit. Now the chain wants 140px LESS rail than the two
+          // preferences total, which is more than the Lens alone can give.
+          // The least greedy rail drains first and lands on its floor; only
+          // then does the Gazette give the remainder — and it is still the
+          // wider of the two. ───────────────────────────────────────────────
+          const deficitPane = twoRailPaneWidth(
+            canvas,
+            PREFERRED + DEFAULT_GAZETTE_WIDTH_PX - 140,
+          );
+          expect(deficitPane).toBeGreaterThan(200);
+          await seedTwoRails(app, deficitPane, "five-up");
+          await app.nativeClickAtElement(FIVE_UP_TILE);
+          await wait(AFTER_LAND_MS);
+
+          const deficitTotal = railTotalFor(canvas, deficitPane);
+          const drainedLens = await frameWidth(app, "pLens");
+          const holdingGazette = await frameWidth(app, "pGaz");
+          expect(
+            drainedLens,
+            "the least greedy rail drains all the way to its floor",
+          ).toBeCloseTo(MIN_LENS_WIDTH_PX, 0);
+          expect(holdingGazette).toBeCloseTo(deficitTotal - MIN_LENS_WIDTH_PX, 0);
+          expect(holdingGazette).toBeGreaterThan(drainedLens);
+          // And never under the Gazette's own floor, which is the width its
+          // 56-character measure needs.
+          expect(holdingGazette).toBeGreaterThanOrEqual(MIN_GAZETTE_WIDTH_PX);
           for (const seam of await seams(app)) {
             expect(Math.abs(seam - GAP)).toBeLessThanOrEqual(TOL);
           }

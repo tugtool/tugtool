@@ -59,15 +59,25 @@
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-post-meta {
-  font-size: 10px;
+  /* TUNE HERE — the byline's size. Held under the body's, and inside the 16px
+     band it shares with the glyph gutter. */
+  font-size: 11px;
   line-height: 16px;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
 .gazette-post-body {
   margin: 0;
-  font-size: 12px;
+  /* TUNE HERE — the reading size. `gazette-card-registration.tsx` derives the
+     rail's floor and preferred width from it (56ch and 64ch of this face), and
+     an app-test measures the real render against those constants, so a change
+     here fails loudly rather than leaving a stale width behind. */
+  font-size: 14px;
   line-height: 1.45;
+  /* The measure the widths are derived from. A rail widened by hand past its
+     preference keeps a comfortable line rather than stretching it to the
+     ceiling. */
+  max-inline-size: 64ch;
   /* Posts arrive as prose with hard newlines the model chose; honor them
      rather than collapsing a two-beat digest into one run-on line. */
   white-space: pre-wrap;
@@ -94,7 +104,8 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-empty {
   padding: var(--tug-space-sm);
-  font-size: 12px;
+  /* The empty state is read at the same size as a post. */
+  font-size: 14px;
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 

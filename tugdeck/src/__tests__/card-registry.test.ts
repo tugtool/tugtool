@@ -18,6 +18,8 @@ import {
   DEFAULT_SIZE_POLICY,
   getLayoutRole,
   isSidebarCard,
+  getGreedRank,
+  DEFAULT_GREED_RANK,
   _resetForTest,
 } from "../card-registry";
 import type { CardRegistration, CardSizePolicy } from "../card-registry";
@@ -288,5 +290,27 @@ describe("layoutRole", () => {
     // silently pinned to a deck edge.
     expect(getLayoutRole("never-registered")).toBe("content");
     expect(isSidebarCard("never-registered")).toBe(false);
+  });
+});
+
+describe("greedRank", () => {
+  it("resolves what the registration declares", () => {
+    registerCard({ ...makeRegistration("hungry"), greedRank: 1 });
+    expect(getGreedRank("hungry")).toBe(1);
+  });
+
+  it("resolves to the default when a registration declares nothing", () => {
+    registerCard(makeRegistration("indifferent"));
+    expect(getGreedRank("indifferent")).toBe(DEFAULT_GREED_RANK);
+  });
+
+  it("resolves an unregistered componentId to the default", () => {
+    expect(getGreedRank("never-registered")).toBe(DEFAULT_GREED_RANK);
+  });
+
+  it("keeps the default the least greedy rank", () => {
+    // Every declared rank must be greedier than the fallback, or a card that
+    // reasoned about its greed would lose to one that never did.
+    expect(DEFAULT_GREED_RANK).toBeGreaterThan(3);
   });
 });

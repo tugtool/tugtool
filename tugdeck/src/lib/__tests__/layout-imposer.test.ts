@@ -17,7 +17,7 @@ import {
   withRailOrder,
   withRailShares,
   withoutRailShares,
-  LENS_FLEX_SHRINK_FRACTION,
+  seamPicture,
   imposeRect,
   imposeStyle,
   imposeSidebarStyle,
@@ -39,19 +39,24 @@ import {
 
 const GAP = IMPOSITION_GAP_PX;
 
+/** The rank a rail takes when nothing has ranked it — the registry's
+ *  `DEFAULT_GREED_RANK`, spelled out here rather than imported, because the
+ *  imposer is a pure module that knows nothing about the card registry and
+ *  neither does its test. */
+const UNRANKED = 9;
+
 /** The allocator's one-rail reading: a single right-side rail, answered as a
- *  plain width. Every number the allocator describes assert is the number the
- *  single-Lens solve produced before the rails generalized — this wrapper is
- *  what makes them a regression guard rather than a rewrite. The ceiling
- *  defaults to slim (675) — the one the deck passes, whatever Card Width is
- *  set, because a sidebar is a reading surface. */
+ *  plain width. Greed rank is immaterial with one rail — nothing to order
+ *  against — so it takes the registry's default. The ceiling defaults to slim
+ *  (675), the one the deck passes whatever Card Width is set, because a
+ *  sidebar is a reading surface. */
 function allocateOneRail(input: {
   canvasWidth: number;
   kind: ImpositionKind;
   occupied: readonly { slot: number; width: number }[];
   preferredWidth: number;
   minWidth: number;
-  currentWidth?: number;
+  greedRank?: number;
   maxRailWidth?: number;
 }): number | null {
   const widths = allocateSidebarWidths({
@@ -62,7 +67,7 @@ function allocateOneRail(input: {
       right: {
         preferredWidth: input.preferredWidth,
         minWidth: input.minWidth,
-        currentWidth: input.currentWidth,
+        greedRank: input.greedRank ?? UNRANKED,
       },
     },
     maxRailWidth: input.maxRailWidth ?? CONTENT_WIDTH_SLIM_PX,
@@ -83,7 +88,11 @@ function solveOneRail(input: {
     kind: input.kind,
     occupied: input.occupied,
     rails: {
-      right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
+      right: {
+        preferredWidth: input.preferredWidth,
+        minWidth: input.minWidth,
+        greedRank: UNRANKED,
+      },
     },
     maxRailWidth: CONTENT_WIDTH_SLIM_PX,
   });
@@ -1117,7 +1126,7 @@ describe("the space allocator", () => {
     expect(shrunk).toBeLessThan(preferredWidth);
   });
 
-  test("irregular occupancy is solved, then refused", () => {
+  test("irregular occupancy still stands the rail at the best total there is", () => {
     // Slots 1, 2 and 5 of five-up: fractions 0, 1/4, 1 with uniform 800s.
     // No band tiles that at all, so the least-squares fit does not remove the
     // error, it spreads it — B* = Σa(gap − c)/Σa² = 1305 / 0.625 = 2088.
@@ -1134,21 +1143,21 @@ describe("the space allocator", () => {
       minWidth: 320,
     };
 
-    // The geometry still answers: this is the best band there is.
-    expect(solveOneRail(input)).toBe(canvasWidth - GAP * 3 - 2088);
-
-    // And standing there the cards overlap by 478 at one seam and stand 166
-    // apart at the other — the best band there is, is not a tiled one. The
-    // Lens's width buys nothing here, so it is not spent.
-    expect(allocateOneRail(input)).toBeNull();
+    // The geometry answers: this is the best band there is, and the rail
+    // stands at the total that produces it. "The picture cannot be perfected"
+    // is not a reason to leave the rail somewhere else — there is no other
+    // width with a better claim.
+    const wanted = canvasWidth - GAP * 3 - 2088;
+    expect(solveOneRail(input)).toBe(wanted);
+    expect(allocateOneRail(input)).toBe(wanted);
   });
 
-  test("growth is bounded by the slim width, not a fraction", () => {
+  test("growth is bounded by the slim width, and reaches it", () => {
     // A rail may stand as wide as a slim content card — a fixed ceiling,
-    // however far that is from the width the user chose.
-    const preferredWidth = 420;
+    // however far that is from the width the user chose. Past the ceiling the
+    // answer is the ceiling, at every distance: a target the rails cannot
+    // reach is still a direction they move in as far as they may.
     const maxRailWidth = CONTENT_WIDTH_SLIM_PX;
-
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
     const solve = (canvasWidth: number): number | null =>
@@ -1156,141 +1165,76 @@ describe("the space allocator", () => {
         canvasWidth,
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
-        preferredWidth,
+        preferredWidth: 420,
         minWidth: 320,
         maxRailWidth,
       });
 
-    // The whole run up to the ceiling is available, taken whole.
     expect(solve(canvasFor(maxRailWidth))).toBe(maxRailWidth);
-
-    // Just past the ceiling the clamped width still lands the chain even, so
-    // the move is made as far as the ceiling — and NEVER further. The
-    // fixture's slots are a half-stride apart, so a Lens off by `d` leaves
-    // seams off by `d / 2`: four pixels over still tiles.
-    for (const over of [1, 4]) {
+    for (const over of [1, 5, 400]) {
       expect(solve(canvasFor(maxRailWidth + over))).toBe(maxRailWidth);
     }
-
-    // Far enough past that the clamp leaves the seams visibly ragged, moving
-    // the Lens would buy nothing, so it does not move.
-    expect(solve(canvasFor(maxRailWidth + 5))).toBeNull();
   });
 
-  test("shrinkage holds its soft allowance while standing there tiles", () => {
-    // Shrinking takes room from a surface the user sized to hold content, so
-    // the ordinary low end stays anchored to their choice rather than to the
-    // preset: as long as standing AT the soft floor tiles within tolerance,
-    // the rail gives no more than the fifth.
-    const preferredWidth = 420;
-    const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
-
-    const canvasFor = (lensWidth: number): number =>
-      lensWidth + GAP * 3 + EXACT_BAND;
-    const solve = (canvasWidth: number): number | null =>
-      allocateOneRail({
-        canvasWidth,
-        kind: "five-up",
-        occupied: FIVE_UP_THIRDS,
-        preferredWidth,
-        minWidth: 320,
-      });
-
-    // At the low end, taken whole; just past it the clamp still tiles within
-    // tolerance and the soft floor holds.
-    expect(solve(canvasFor(preferredWidth - down))).toBe(preferredWidth - down);
-    for (const over of [1, 4]) {
-      expect(solve(canvasFor(preferredWidth - down - over))).toBe(
-        preferredWidth - down,
-      );
-    }
-  });
-
-  test("crowding the soft floor cannot absorb deepens the licence to the hard floor", () => {
-    // Far enough under the soft floor that standing there leaves the cards
-    // visibly crowded, the licence deepens: the fit is inside the hard floor,
-    // so the rail gives past the fifth and the chain tiles EXACTLY. The old
-    // answer — refuse, and preserve the crowding — is the timidity this
-    // grade exists to remove.
-    const preferredWidth = 420;
-    const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
-    const canvasFor = (lensWidth: number): number =>
-      lensWidth + GAP * 3 + EXACT_BAND;
-    const wanted = preferredWidth - down - 5;
-    expect(
-      allocateOneRail({
-        canvasWidth: canvasFor(wanted),
-        kind: "five-up",
-        occupied: FIVE_UP_THIRDS,
-        preferredWidth,
-        minWidth: 320,
-      }),
-    ).toBe(wanted);
-  });
-
-  test("below the hard floor the rail gives all it has — when that visibly helps", () => {
-    // The fit wants 300, under the 320 floor. The floor is the nearest the
-    // rail may stand, and standing there still leaves the seams 10px under
-    // the gap — not tiled. But the rail as it stands (at its chosen 420)
-    // leaves the cards overlapping by 55, so the move visibly repairs the
-    // picture and is made: improvement, not perfection.
+  test("surplus grows the rail past its preference, up to the ceiling", () => {
+    // The width the user chose is where the fill STARTS, not a cap on it. The
+    // deleted grade capped an untileable slack at the chosen width and left
+    // the deck's slack pooled between the cards instead; the geometry wants
+    // the width, so the rail takes it.
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
     const input = {
-      canvasWidth: canvasFor(300),
+      canvasWidth: canvasFor(560),
       kind: "five-up" as const,
       occupied: FIVE_UP_THIRDS,
       preferredWidth: 420,
       minWidth: 320,
     };
-    expect(allocateOneRail(input)).toBe(320);
-    // Idempotent: standing at the floor already, the same solve has nothing
-    // left to improve and the rail is left alone.
-    expect(allocateOneRail({ ...input, currentWidth: 320 })).toBeNull();
+    expect(allocateOneRail(input)).toBe(560);
+    // Idempotent — the answer is a pure function of the inputs, and the rail's
+    // own standing width is not one of them.
+    expect(allocateOneRail(input)).toBe(560);
   });
 
-  test("an untileable slack gives back to the chosen width, and never past it", () => {
-    // A rail the allocator crushed to 320 stands on a deck whose fit now
-    // wants far more rail than even the slim ceiling permits: no width tiles.
-    // The rail returns to the width the user chose — giving back what past
-    // allocations took — and not one pixel further toward the untileable fit.
+  test("the hard floor is the only floor, and it holds", () => {
+    // The fit wants 300, under the 320 floor: the rail gives everything it
+    // has and stops there. What the chain does with the 20px it did not get
+    // is the chain's business — a floor is a width below which the card
+    // cannot be painted at all.
     const canvasFor = (lensWidth: number): number =>
       lensWidth + GAP * 3 + EXACT_BAND;
-    const input = {
-      canvasWidth: canvasFor(1000),
-      kind: "five-up" as const,
-      occupied: FIVE_UP_THIRDS,
-      preferredWidth: 420,
-      minWidth: 320,
-    };
-    expect(allocateOneRail({ ...input, currentWidth: 320 })).toBe(420);
-    // Already standing at the chosen width, there is nothing to give back:
-    // an untileable arrangement never conscripts width past the preference.
-    expect(allocateOneRail({ ...input, currentWidth: 420 })).toBeNull();
-    expect(allocateOneRail(input)).toBeNull();
-  });
-
-  test("a solve past the ceiling leaves the Lens alone", () => {
-    // The exact fit here wants a Lens of 1575 — far past the slim ceiling —
-    // and standing at the ceiling leaves the seams as ragged as they were.
-    // The width buys nothing, so it is not spent.
     expect(
       allocateOneRail({
-        canvasWidth: 4000,
+        canvasWidth: canvasFor(300),
         kind: "five-up",
         occupied: FIVE_UP_THIRDS,
         preferredWidth: 420,
         minWidth: 320,
       }),
-    ).toBeNull();
+    ).toBe(320);
+  });
+
+  test("a floor above the ceiling beats the ceiling", () => {
+    // A rail whose card cannot paint under 700 stands at 700 even though the
+    // deck's policy caps rails at the slim width: a maximum is a policy about
+    // how wide the deck may stand a rail, and a minimum is a width below which
+    // there is nothing to look at.
+    const canvasFor = (lensWidth: number): number =>
+      lensWidth + GAP * 3 + EXACT_BAND;
+    expect(
+      allocateOneRail({
+        canvasWidth: canvasFor(300),
+        kind: "five-up",
+        occupied: FIVE_UP_THIRDS,
+        preferredWidth: 420,
+        minWidth: 700,
+      }),
+    ).toBe(700);
   });
 
   test("the floor clips the low end of the range", () => {
-    // 20% below 340 is 272, but the Lens may not go under 320 — so a solve of
-    // 310 is clipped to the floor. Standing there still leaves the seams 5px
-    // off — not tiled — but it beats the standing picture (15px off, with the
-    // cards 10 deep into one another), so the floor is where the Lens lands:
-    // the nearest it may stand to the fit.
+    // A solve of 310 is clipped to the 320 floor — the nearest the rail may
+    // stand to the fit.
     expect(
       allocateOneRail({
         canvasWidth: 2735,
@@ -1341,7 +1285,7 @@ describe("the space allocator", () => {
     expect(shuffled).toBe(lensFor(canvasWidth));
   });
 
-  test("no seam to solve for means the Lens does not move", () => {
+  test("no seam to solve for still answers, at the chosen width", () => {
     const base = {
       canvasWidth: 2845,
       kind: "five-up" as const,
@@ -1349,16 +1293,22 @@ describe("the space allocator", () => {
       minWidth: 320,
     };
     // One card, no cards, and one-up (whose every slot clamps to the same
-    // anchor) all leave the chain without a pair of neighbours.
-    expect(allocateOneRail({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBeNull();
-    expect(allocateOneRail({ ...base, occupied: [] })).toBeNull();
+    // anchor) all leave the chain without a pair of neighbours. There is no
+    // fit to make, so the rail stands at the width the user chose — which is
+    // read from their own durable setting, never from a past answer, so
+    // snapping to it can only ever restore their choice.
+    expect(allocateOneRail({ ...base, occupied: [{ slot: 0, width: 800 }] })).toBe(400);
+    expect(allocateOneRail({ ...base, occupied: [] })).toBe(400);
     expect(
-      allocateOneRail({
-        ...base,
-        kind: "one-up",
-        occupied: FIVE_UP_THIRDS,
-      }),
-    ).toBeNull();
+      allocateOneRail({ ...base, kind: "one-up", occupied: FIVE_UP_THIRDS }),
+    ).toBe(400);
+    // The chosen width is still held between the rail's own bounds.
+    expect(
+      allocateOneRail({ ...base, occupied: [], preferredWidth: 900 }),
+    ).toBe(CONTENT_WIDTH_SLIM_PX);
+    expect(
+      allocateOneRail({ ...base, occupied: [], preferredWidth: 100 }),
+    ).toBe(320);
   });
 
   test("a non-finite input leaves the Lens alone", () => {
@@ -1371,12 +1321,16 @@ describe("the space allocator", () => {
     };
     expect(allocateOneRail({ ...base, canvasWidth: Number.NaN })).toBeNull();
     expect(allocateOneRail({ ...base, minWidth: Number.NaN })).toBeNull();
+    // A rank that is not a number would make the greed sort nondeterministic,
+    // so it is refused at the same gate as every other bad number.
+    expect(allocateOneRail({ ...base, greedRank: Number.NaN })).toBeNull();
     expect(
       allocateOneRail({
         ...base,
         occupied: [{ slot: 0, width: Number.NaN }, { slot: 2, width: 800 }],
       }),
     ).toBeNull();
+    expect(allocateOneRail({ ...base, maxRailWidth: Number.NaN })).toBeNull();
   });
 
   test("with no rail standing there is nothing to allocate", () => {
@@ -1392,105 +1346,238 @@ describe("the space allocator", () => {
   });
 });
 
-describe("every standing rail takes one shared width", () => {
+describe("greed order decides which rail is the wide one", () => {
+  /** The plan's worked example: three-up with 800px cards in slots 0 and 2.
+   *  One 5px seam between them wants a band of exactly 1605, so with two
+   *  rails standing the fit wants a rail TOTAL of `canvas − 1625`. */
+  const TWO_CARDS = [
+    { slot: 0, width: 800 },
+    { slot: 2, width: 800 },
+  ] as const;
+  /** The canvas whose fit wants the two rails to total `total`. */
+  const canvasFor = (total: number): number => total + GAP * 4 + 1605;
+
+  /** The Gazette: the greediest rail, at the ch-derived magnitudes the plan's
+   *  example uses. Fed first, drained last. */
+  const GAZETTE = { preferredWidth: 560, minWidth: 496, greedRank: 1 };
+  /** The Lens: greedier than Jots, less greedy than the Gazette. */
+  const LENS = { preferredWidth: 420, minWidth: 320, greedRank: 2 };
+
+  const solve = (
+    canvasWidth: number,
+    left = LENS,
+    right = GAZETTE,
+    occupied: readonly { slot: number; width: number }[] = TWO_CARDS,
+  ) =>
+    allocateSidebarWidths({
+      canvasWidth,
+      kind: "three-up",
+      occupied,
+      rails: { left, right },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    });
+
+  test("the fit's own total is the target, taken verbatim", () => {
+    // Σ preferred is 980, and a canvas whose fit wants exactly that leaves
+    // every rail at the width its owner chose.
+    expect(solve(canvasFor(980))).toEqual({ left: 420, right: 560 });
+    expect(canvasFor(980)).toBe(2605);
+  });
+
+  test("a deficit drains the least greedy rail first, to its floor", () => {
+    // 100px short: the Lens gives all of it and lands on its floor while the
+    // Gazette does not move. The greediest rail gives width only after every
+    // other rail is standing on its floor.
+    expect(solve(canvasFor(880))).toEqual({ left: 320, right: 560 });
+    // 164px short: the Lens is already spent, so the Gazette gives the rest —
+    // exactly down to its own floor, and no further.
+    expect(solve(canvasFor(816))).toEqual({ left: 320, right: 496 });
+  });
+
+  test("a deficit past every floor stands both rails on their floors", () => {
+    // The plan's canvas-2430 case: the fit wants 805 of rail and the floors
+    // total 816, so the target clamps UP and the 11px the rails refuse to
+    // give is carried by the chain instead — the cards overlap by 6px at the
+    // single interior seam, reported honestly rather than repaired.
+    const canvasWidth = 2430;
+    expect(solve(canvasWidth)).toEqual({ left: 320, right: 496 });
+    const picture = seamPicture(
+      {
+        canvasWidth,
+        kind: "three-up",
+        occupied: TWO_CARDS,
+        rails: { left: LENS, right: GAZETTE },
+        maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+      },
+      { left: 320, right: 496 },
+    );
+    expect(picture.worstOverlap).toBe(6);
+  });
+
+  test("a surplus feeds the greediest rail first, to its ceiling", () => {
+    // 200px spare: the Gazette takes the 115 that carries it to the slim
+    // ceiling before the Lens grows a pixel, and the Lens takes the rest.
+    // BOTH rails end above their preferences — the fill is bounded by the
+    // target and the ceiling, never by a preference.
+    expect(solve(canvasFor(1180))).toEqual({
+      left: 505,
+      right: CONTENT_WIDTH_SLIM_PX,
+    });
+    expect(canvasFor(1180)).toBe(2805);
+  });
+
+  test("the two rails answer with different widths", () => {
+    // The rule that every standing rail takes ONE shared width is deleted: a
+    // rail carries its own policy, and two rails with different policies
+    // stand at different widths.
+    const widths = solve(canvasFor(980));
+    expect(widths?.left).not.toBe(widths?.right);
+  });
+
+  test("reversing the sides reverses the answer, not the order", () => {
+    // Greed is the rail's, not the side's.
+    expect(solve(canvasFor(880), GAZETTE, LENS)).toEqual({
+      left: 560,
+      right: 320,
+    });
+  });
+
+  test("equal ranks split the difference evenly", () => {
+    const twin = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    expect(solve(canvasFor(900), twin, { ...twin })).toEqual({
+      left: 450,
+      right: 450,
+    });
+    expect(solve(canvasFor(700), twin, { ...twin })).toEqual({
+      left: 350,
+      right: 350,
+    });
+  });
+
+  test("a tied rail that hits its bound hands the remainder to its twin", () => {
+    // Both rails rank 5, but the left one starts 25px under the ceiling. It
+    // takes those 25 and the other 75 go to the right rail — the tier's split
+    // is even until a member runs out of room, and then it is not.
+    const near = { preferredWidth: 650, minWidth: 320, greedRank: 5 };
+    const far = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    expect(solve(canvasFor(1150), near, far)).toEqual({
+      left: CONTENT_WIDTH_SLIM_PX,
+      right: 475,
+    });
+  });
+
+  test("with no chain to fit, every rail snaps to its own chosen width", () => {
+    // Fewer than two occupied slots is no seam and nothing to solve. Each
+    // rail answers with its preference, held between its own bounds — not
+    // with a shared number, and not with a refusal.
+    expect(solve(2605, LENS, GAZETTE, [{ slot: 0, width: 800 }])).toEqual({
+      left: 420,
+      right: 560,
+    });
+    expect(solve(2605, LENS, GAZETTE, [])).toEqual({ left: 420, right: 560 });
+  });
+
+  test("the answer tiles the chain measured through both rails", () => {
+    // The seam test is asked of the two-rail picture: a span built from one
+    // rail would be reading a band one rail too wide.
+    const canvasWidth = canvasFor(980);
+    const widths = solve(canvasWidth);
+    const span = resolveSpan({ width: canvasWidth, height: 800 }, [
+      { side: "left", width: widths?.left ?? 0 },
+      { side: "right", width: widths?.right ?? 0 },
+    ]);
+    const rects = TWO_CARDS.map((o) =>
+      imposeRect(resolvePlacement("three-up", o.slot), o.width, span),
+    );
+    const seam =
+      rects[1].position.x - (rects[0].position.x + rects[0].size.width);
+    expect(seam).toBeCloseTo(GAP, 9);
+  });
+
+  test("moving width between the rails leaves every seam where it was", () => {
+    // The separation property, which is why greed can never trade against
+    // picture quality: the band depends on the rails' TOTAL and not on how
+    // that total is divided, so the greed order picks which rail is wide
+    // without touching a single seam.
+    const canvasWidth = canvasFor(980);
+    const input = {
+      canvasWidth,
+      kind: "three-up" as const,
+      occupied: TWO_CARDS,
+      rails: { left: LENS, right: GAZETTE },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    };
+    const even = seamPicture(input, { left: 490, right: 490 });
+    const lopsided = seamPicture(input, { left: 320, right: 660 });
+    expect(lopsided).toEqual(even);
+  });
+});
+
+describe("the stacking folds a rail is built from", () => {
+  // `deck-manager.ts`'s `_sidebarRails` folds a side's members into ONE
+  // policy: widest preference, tightest (largest) floor, greediest (smallest)
+  // rank. These assert the arithmetic those folds produce, so a rail carrying
+  // a prose reader and a modest stackmate cannot silently become modest.
+  const fold = (
+    members: readonly { preferredWidth: number; minWidth: number; greedRank: number }[],
+  ) => ({
+    preferredWidth: Math.max(...members.map((m) => m.preferredWidth)),
+    minWidth: Math.max(...members.map((m) => m.minWidth)),
+    greedRank: Math.min(...members.map((m) => m.greedRank)),
+  });
+
+  const GAZETTE = { preferredWidth: 560, minWidth: 496, greedRank: 1 };
+  const JOTS = { preferredWidth: 420, minWidth: 320, greedRank: 3 };
+  const LENS = { preferredWidth: 420, minWidth: 320, greedRank: 2 };
+
+  test("a stacked rail takes the wider preference and the tighter floor", () => {
+    expect(fold([GAZETTE, JOTS])).toEqual({
+      preferredWidth: 560,
+      minWidth: 496,
+      greedRank: 1,
+    });
+  });
+
+  test("a rail carrying the greediest card is greedy wherever it stands", () => {
+    // Gazette + Jots on the left against the Lens on the right: the left rail
+    // is rank 1, so the Lens drains first even though Jots alone would not
+    // outrank it.
+    const widths = allocateSidebarWidths({
+      canvasWidth: 880 + GAP * 4 + 1605,
+      kind: "three-up",
+      occupied: [
+        { slot: 0, width: 800 },
+        { slot: 2, width: 800 },
+      ],
+      rails: { left: fold([GAZETTE, JOTS]), right: LENS },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    });
+    expect(widths).toEqual({ left: 560, right: 320 });
+  });
+
+  test("a stacked rail never falls below any member's floor", () => {
+    const widths = allocateSidebarWidths({
+      canvasWidth: 700 + GAP * 4 + 1605,
+      kind: "three-up",
+      occupied: [
+        { slot: 0, width: 800 },
+        { slot: 2, width: 800 },
+      ],
+      rails: { left: fold([GAZETTE, JOTS]), right: LENS },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    });
+    expect(widths?.left).toBeGreaterThanOrEqual(GAZETTE.minWidth);
+    expect(widths?.left).toBeGreaterThanOrEqual(JOTS.minWidth);
+  });
+});
+
+describe("the rails' gap count follows how many of them stand", () => {
   const FIVE_UP_THIRDS = [
     { slot: 0, width: 800 },
     { slot: 2, width: 800 },
     { slot: 4, width: 800 },
   ] as const;
-  /** The band the fixture tiles at, exactly — the same one the one-rail
-   *  describes are built on. */
   const EXACT_BAND = 3 * 800 + 2 * GAP;
-
-  const solve = (
-    canvasWidth: number,
-    left: { preferredWidth: number; minWidth: number },
-    right: { preferredWidth: number; minWidth: number },
-  ) =>
-    allocateSidebarWidths({
-      canvasWidth,
-      kind: "five-up",
-      occupied: FIVE_UP_THIRDS,
-      rails: { left, right },
-      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
-    });
-
-  /** The canvas that wants the two rails to total `total`: four gaps now, one
-   *  per rail plus one at each end of the band. */
-  const canvasFor = (total: number): number => total + GAP * 4 + EXACT_BAND;
-
-  test("the surplus is split evenly, not handed to one rail", () => {
-    // Both rails prefer 400 and the deck wants 840 of rail: 420 each.
-    const widths = solve(
-      canvasFor(840),
-      { preferredWidth: 400, minWidth: 320 },
-      { preferredWidth: 400, minWidth: 320 },
-    );
-    expect(widths).toEqual({ left: 420, right: 420 });
-  });
-
-  test("unequal chosen widths land on ONE width — rails may not differ", () => {
-    // 400 and 500 chosen; a deck wanting 980 of rail stands BOTH at 490. The
-    // sidebars are a uniform class: an allocator answer with two rails at two
-    // widths is not a picture this deck is allowed to paint.
-    const widths = solve(
-      canvasFor(980),
-      { preferredWidth: 400, minWidth: 320 },
-      { preferredWidth: 500, minWidth: 320 },
-    );
-    expect(widths).toEqual({ left: 490, right: 490 });
-  });
-
-  test("a floor binding on one rail binds the width both rails share", () => {
-    // The right rail's floor of 480 is a bound on the ONE shared width, so the
-    // left rail cannot be taken below it either. A deck wanting 940 of rail —
-    // 470 each — is refused outright: standing both rails at the bound 480
-    // does not tile, and it would push the cards 5px INTO one another where
-    // they now stand apart — a move may never introduce overlap the standing
-    // picture does not have.
-    expect(
-      solve(
-        canvasFor(940),
-        { preferredWidth: 400, minWidth: 320 },
-        { preferredWidth: 500, minWidth: 480 },
-      ),
-    ).toBeNull();
-    // Wanting 962 — 481 each — clears the floor and both rails stand at 481.
-    expect(
-      solve(
-        canvasFor(962),
-        { preferredWidth: 400, minWidth: 320 },
-        { preferredWidth: 500, minWidth: 480 },
-      ),
-    ).toEqual({ left: 481, right: 481 });
-  });
-
-  test("growth reaches the slim width, on both rails at once", () => {
-    // A deck wanting 1350 of rail stands both at the slim ceiling exactly —
-    // each sidebar as wide as a slim content card, the widest a rail goes.
-    const widths = solve(
-      canvasFor(2 * CONTENT_WIDTH_SLIM_PX),
-      { preferredWidth: 400, minWidth: 320 },
-      { preferredWidth: 400, minWidth: 320 },
-    );
-    expect(widths).toEqual({
-      left: CONTENT_WIDTH_SLIM_PX,
-      right: CONTENT_WIDTH_SLIM_PX,
-    });
-  });
-
-  test("a residual the rails cannot close moves neither of them", () => {
-    // The fit wants more rail than even the content-width ceiling permits, and
-    // the clamped widths leave the seams visibly ragged. Half a gesture is not
-    // a picture anyone asked for, so nothing moves.
-    expect(
-      solve(
-        canvasFor(2000),
-        { preferredWidth: 400, minWidth: 320 },
-        { preferredWidth: 400, minWidth: 320 },
-      ),
-    ).toBeNull();
-  });
 
   test("a left-only rail is solved with the left-only gap count", () => {
     // One rail, so three gaps — not the four a bilateral deck spends.
@@ -1498,33 +1585,22 @@ describe("every standing rail takes one shared width", () => {
       canvasWidth: 420 + GAP * 3 + EXACT_BAND,
       kind: "five-up",
       occupied: FIVE_UP_THIRDS,
-      rails: { left: { preferredWidth: 400, minWidth: 320 } },
+      rails: { left: { preferredWidth: 400, minWidth: 320, greedRank: 2 } },
       maxRailWidth: CONTENT_WIDTH_SLIM_PX,
     });
     expect(widths).toEqual({ left: 420 });
   });
 
-  test("the seam test is asked of the two-rail picture, not a one-rail one", () => {
-    // The answer tiles: measured through `resolveSpan` with BOTH rails, every
-    // seam lands on the gap. A test built from a single-rail span would be
-    // reading a band one rail too wide and would accept a ragged chain.
-    const widths = solve(
-      canvasFor(840),
-      { preferredWidth: 400, minWidth: 320 },
-      { preferredWidth: 400, minWidth: 320 },
-    );
-    const span = resolveSpan({ width: canvasFor(840), height: 800 }, [
-      { side: "left", width: widths?.left ?? 0 },
-      { side: "right", width: widths?.right ?? 0 },
-    ]);
-    const rects = FIVE_UP_THIRDS.map((o) =>
-      imposeRect(resolvePlacement("five-up", o.slot), o.width, span),
-    );
-    for (let i = 0; i < rects.length - 1; i += 1) {
-      const seam =
-        rects[i + 1].position.x - (rects[i].position.x + rects[i].size.width);
-      expect(seam).toBeCloseTo(GAP, 9);
-    }
+  test("two rails spend four gaps, and the total is what tiles", () => {
+    const twin = { preferredWidth: 400, minWidth: 320, greedRank: 5 };
+    const widths = allocateSidebarWidths({
+      canvasWidth: 840 + GAP * 4 + EXACT_BAND,
+      kind: "five-up",
+      occupied: FIVE_UP_THIRDS,
+      rails: { left: twin, right: { ...twin } },
+      maxRailWidth: CONTENT_WIDTH_SLIM_PX,
+    });
+    expect(widths).toEqual({ left: 420, right: 420 });
   });
 });
 

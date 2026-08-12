@@ -80,13 +80,20 @@ const TEST_TIMEOUT_MS = 90_000;
 
 /** The imposition gaps (`lib/layout-imposer.ts`). */
 const GAP = 5;
-/** The Lens's hard floor (`MIN_LENS_WIDTH_PX`). The fixture stands the Lens
- *  here AND seeds it as the durable chosen width, which pins the allocator
- *  ([D136]) out of the picture: on this deliberately untileable deck the
- *  graded licence has nothing to give (the rail is at its floor) and nothing
- *  to give back (it is at its chosen width), so a settle here is pure motion
- *  and the transform-only census below stays a claim about the settle. */
-const LENS_WIDTH = 320;
+/** The widest a rail may stand (the slim content width). The fixture stands
+ *  the Lens here AND seeds it as the durable chosen width, which pins the
+ *  allocator ([D136]) out of the picture for the settles below: this deck's
+ *  two narrow cards leave the rails far more room than any rail may take, so
+ *  the allocator's answer is the CEILING at every one of its moments — which
+ *  is where the Lens already stands. A settle here is therefore pure motion,
+ *  and the transform-only census stays a claim about the settle rather than
+ *  about the allocator.
+ *
+ *  The floor would not do the job: a rail's preference is where the fill
+ *  starts and never a cap on it, so on a deck with room to give the rail grows
+ *  whatever it was standing at. The bound that binds is the one the deck's
+ *  slack runs into. */
+const LENS_WIDTH = 675;
 const PANE_WIDTH = 420;
 /** The settle window (`IMPOSITION_SETTLE_MS`), with room for the tween to land. */
 const SETTLE_MS = 300;

@@ -57,6 +57,7 @@ import {
   type ActivityChannel,
 } from "./lib/session-activity-store";
 import { peekSparklineTape } from "./components/tugways/tug-sparkline";
+import { textMeasurer, whenFaceLoaded } from "./lib/font-metrics";
 import type { SparklineTapeDebugState } from "./lib/sparkline-tape";
 import { nodeToPath, selectionGuard } from "./components/tugways/selection-guard";
 import {
@@ -278,8 +279,14 @@ import {
  * to the real pasteboard through the production writer, so a test can assert
  * the flavors and the paste round-trip without driving a context menu.
  * Additive; major stays `2`.
+ *
+ * `2.6.0`: adds {@link TugTestSurface.measureFaceAdvance} — the advance of a
+ * string in the face an element actually renders in, through the production
+ * `font-metrics` pair, so a width constant derived from a type size can be
+ * pinned against the real render instead of against a fallback. Additive;
+ * major stays `2`.
  */
-export const SURFACE_VERSION = "2.5.0" as const;
+export const SURFACE_VERSION = "2.6.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -922,6 +929,19 @@ export interface TugTestSurface {
    * store rather than through a reconstructed one.
    */
   sparklineTapeState(selector: string): SparklineTapeDebugState | null;
+
+  /**
+   * The advance of `text` in the face `selector`'s element ACTUALLY renders in
+   * (SURFACE_VERSION 2.6.0), or `null` when nothing matches.
+   *
+   * Goes through the production `whenFaceLoaded` + `textMeasurer` pair, so it
+   * asks for the element's own face and waits for that face before measuring —
+   * a test that measured on its own would be reporting the fallback's metrics
+   * whenever it ran early, which is the trap `lib/font-metrics.ts` exists to
+   * close. This is how a width constant derived from a type size (the
+   * Gazette's `ch`-derived rail widths) is pinned against the real render.
+   */
+  measureFaceAdvance(selector: string, text: string): Promise<number | null>;
 
   /**
    * Register an element as a selection boundary on behalf of a test
@@ -1928,6 +1948,16 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       const container = document.querySelector(selector);
       if (container === null) return null;
       return peekSparklineTape(container)?.debugState() ?? null;
+    },
+
+    async measureFaceAdvance(
+      selector: string,
+      text: string,
+    ): Promise<number | null> {
+      const el = document.querySelector(selector);
+      if (!(el instanceof HTMLElement)) return null;
+      await whenFaceLoaded(el, text);
+      return textMeasurer(el)?.(text) ?? null;
     },
 
     publishGazettePost(payloadJson: string): boolean {

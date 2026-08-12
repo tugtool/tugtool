@@ -21,16 +21,18 @@
 import React from "react";
 import { registerCard } from "@/card-registry";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
+import {
+  DEFAULT_GAZETTE_WIDTH_PX,
+  MIN_GAZETTE_WIDTH_PX,
+} from "@/lib/gazette-measure";
 import { GazetteContent } from "./gazette-card";
 
 export { GAZETTE_CARD_ID };
-
-/** The width the Gazette rail opens at before the user has sized it. Wider
- *  than Jots: a post is prose, and prose wants a measure. */
-export const DEFAULT_GAZETTE_WIDTH_PX = 480;
-
-/** The narrowest a post's body and its ref chips still read at. */
-export const MIN_GAZETTE_WIDTH_PX = 400;
+// The rail's widths are derived from the body type — see `lib/gazette-measure`
+// for the derivation and why its inputs are authored rather than measured at
+// boot. Re-exported here because the registration is where a reader looks for
+// what the card opens at.
+export { DEFAULT_GAZETTE_WIDTH_PX, MIN_GAZETTE_WIDTH_PX };
 
 /** Register the Gazette card. `hidden` keeps it out of the type-picker `[+]`
  *  menu — it is reachable through its own toggle, like Jots and the Lens. */
@@ -41,6 +43,9 @@ export function registerGazetteCard(): void {
     acceptsFamilies: [],
     contentFactory: (cardId: string) => <GazetteContent cardId={cardId} />,
     defaultMeta: { title: "Gazette", icon: "Newspaper", closable: true },
+    // The greediest rail on the deck: a post is prose, and prose is what a
+    // narrow rail costs the most. Fed first in surplus, drained last in deficit.
+    greedRank: 1,
     hidden: true,
     // A rail of buttons, walked by keyboard — engine stops all the way down
     // ([P10]).

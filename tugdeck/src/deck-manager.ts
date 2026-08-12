@@ -42,6 +42,7 @@ import { buildDefaultLayout, serialize, deserialize } from "./serialization";
 import {
   getAllRegistrations,
   getRegistration,
+  getGreedRank,
   getSizePolicy,
   getStackSizePolicy,
   isSidebarCard,
@@ -1442,12 +1443,19 @@ export class DeckManager implements IDeckManagerStore {
 
   /**
    * The pinned sidebar panes standing on each side, with the side's rail
-   * policy — the width the user chose for it and the floor it may not cross.
+   * policy — the width the user chose for it, the floor it may not cross, and
+   * how greedy it is for the width the deck has to share out.
    *
    * Same-side cards share ONE rail, so the side's policy folds its members:
    * the preferred width is the widest chosen width (a rail must be able to show
-   * the card its owner sized widest) and the floor is the tightest member floor
-   * (a rail is one width, so any member's floor binds it).
+   * the card its owner sized widest), the floor is the tightest member floor (a
+   * rail is one width, so any member's floor binds it), and the greed rank is
+   * the GREEDIEST member's — a rail carrying a prose reader is a prose reader's
+   * rail wherever it stands, whatever modest card is stacked behind it.
+   *
+   * The rail's own standing width is deliberately not folded in, and not
+   * carried at all: the allocator answers from the canvas, the chain, and these
+   * policies, so it cannot read its own past answers back as an input.
    */
   private _sidebarRails(
     panes: readonly TugPaneState[],
@@ -1468,7 +1476,7 @@ export class DeckManager implements IDeckManagerStore {
       const policy: RailPolicy = {
         preferredWidth: this._sidebarPreferredWidth(componentId),
         minWidth: getSizePolicy(componentId).min.width,
-        currentWidth: pane.size.width,
+        greedRank: getGreedRank(componentId),
       };
       const standing = rails[side];
       rails[side] =
@@ -1480,24 +1488,22 @@ export class DeckManager implements IDeckManagerStore {
                 policy.preferredWidth,
               ),
               minWidth: Math.max(standing.minWidth, policy.minWidth),
-              currentWidth: Math.max(
-                standing.currentWidth ?? 0,
-                policy.currentWidth ?? 0,
-              ),
+              greedRank: Math.min(standing.greedRank, policy.greedRank),
             };
     }
     return { rails, panesBySide };
   }
 
   /**
-   * The width the user last chose for a sidebar card — the anchor its rail's
-   * shrink allowance hangs under. Read from the card's DURABLE store (the
-   * Lens's own `lensStore`, `sidebarWidthStore` for every other card), never
-   * from the live pane: the live width is where the allocator writes its own
-   * answers, and an allocator that reads its output back as the user's
-   * preference re-anchors on every solve and keeps every past grant — the
-   * ratchet that let one rail quietly absorb the deck's slack. A card the user
-   * has never sized anchors on its registered preferred width.
+   * The width the user last chose for a sidebar card — the width its rail
+   * fills toward and drains away from, and the width it snaps to when there is
+   * no chain to fit. Read from the card's DURABLE store (the Lens's own
+   * `lensStore`, `sidebarWidthStore` for every other card), never from the live
+   * pane: the live width is where the allocator writes its own answers, and an
+   * allocator that reads its output back as the user's preference re-anchors on
+   * every solve and keeps every past grant — the ratchet that let one rail
+   * quietly absorb the deck's slack. A card the user has never sized anchors on
+   * its registered preferred width.
    */
   private _sidebarPreferredWidth(componentId: string): number {
     if (componentId === LENS_CARD_ID) return lensStore.getSnapshot().widthPx;
@@ -1514,7 +1520,10 @@ export class DeckManager implements IDeckManagerStore {
    *
    * It does not apply unless a sidebar card is open, pinned, and there is an
    * arrangement for it to stand at the end of: a floating or closed sidebar is
-   * not the band's other end, and with no kind there is no chain to tile.
+   * not the band's other end, and with no kind there is no chain to tile. Those
+   * are the `null`s — the allocator itself is a total function and answers for
+   * every rail that stands, so "the answer is the widths already showing" is a
+   * comparison the callers make, never a refusal the solver returns.
    *
    * The widths handed to the solver are RENDER widths, raised to each stack's
    * size floor exactly as `TugPane` and `DeckCanvas` raise them. A chain solved
@@ -1576,7 +1585,8 @@ export class DeckManager implements IDeckManagerStore {
    * quietly overwrite the preference it is supposed to flex around.
    *
    * Every pane sharing a side takes that side's one width: a rail is one width
-   * whoever stands in it.
+   * whoever stands in it. The two SIDES are solved separately, though — a wide
+   * reading rail does not drag a list rail wide with it.
    */
   private _commitImposition(
     imposition: DeckImposition,

@@ -1,0 +1,2930 @@
+[
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4871,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4872,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4873,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4939,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4940,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 4941,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5219,
+    "left": 599,
+    "right": 580
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5220,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5221,
+    "left": 600,
+    "right": 581
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5314,
+    "left": 600,
+    "right": 674
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5315,
+    "left": 600,
+    "right": 675
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5316,
+    "left": 601,
+    "right": 675
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5389,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5390,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/dragged-left+gazette-right",
+    "canvas": 5391,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4679,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4680,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4681,
+    "left": 321,
+    "right": 321
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4759,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4760,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4761,
+    "left": 361,
+    "right": 361
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4839,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4840,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 4841,
+    "left": 401,
+    "right": 401
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5114,
+    "left": 537,
+    "right": 537
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5115,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5116,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5389,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5390,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/equal-rank-pair",
+    "canvas": 5391,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4546,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4547,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4548,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4614,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4615,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4616,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4709,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4710,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/gazette-jots-stacked-right",
+    "canvas": 4711,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4546,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4547,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4548,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4614,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4615,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4616,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4709,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4710,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/gazette-right",
+    "canvas": 4711,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4871,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4872,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4873,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4939,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4940,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 4941,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5039,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5040,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5041,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5134,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5135,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5136,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5389,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5390,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-left+gazette-right",
+    "canvas": 5391,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4354,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4355,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4356,
+    "left": null,
+    "right": 321
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4454,
+    "left": null,
+    "right": 419
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4455,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4456,
+    "left": null,
+    "right": 421
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4709,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4710,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/jots-right",
+    "canvas": 4711,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4354,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4355,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4356,
+    "left": 321,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4454,
+    "left": 419,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4455,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4456,
+    "left": 421,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4709,
+    "left": 674,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4710,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left",
+    "canvas": 4711,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4871,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4872,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4873,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4939,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4940,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 4941,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5039,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5040,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5041,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5134,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5135,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5136,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5389,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5390,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "five-up/lens-left+gazette-right",
+    "canvas": 5391,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4066,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4067,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4068,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4134,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4135,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4136,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4414,
+    "left": 599,
+    "right": 580
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4415,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4416,
+    "left": 600,
+    "right": 581
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4509,
+    "left": 600,
+    "right": 674
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4510,
+    "left": 600,
+    "right": 675
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4511,
+    "left": 601,
+    "right": 675
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4584,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4585,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/dragged-left+gazette-right",
+    "canvas": 4586,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3874,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3875,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3876,
+    "left": 321,
+    "right": 321
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3954,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3955,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 3956,
+    "left": 361,
+    "right": 361
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4034,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4035,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4036,
+    "left": 401,
+    "right": 401
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4309,
+    "left": 537,
+    "right": 537
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4310,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4311,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4584,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4585,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/equal-rank-pair",
+    "canvas": 4586,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3741,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3742,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3743,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3809,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3810,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3811,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3904,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3905,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/gazette-jots-stacked-right",
+    "canvas": 3906,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3741,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3742,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3743,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3809,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3810,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3811,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3904,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3905,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/gazette-right",
+    "canvas": 3906,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4066,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4067,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4068,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4134,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4135,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4136,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4234,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4235,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4236,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4329,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4330,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4331,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4584,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4585,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-left+gazette-right",
+    "canvas": 4586,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3549,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3550,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3551,
+    "left": null,
+    "right": 321
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3649,
+    "left": null,
+    "right": 419
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3650,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3651,
+    "left": null,
+    "right": 421
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3904,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3905,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/jots-right",
+    "canvas": 3906,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3549,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3550,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3551,
+    "left": 321,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3649,
+    "left": 419,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3650,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3651,
+    "left": 421,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3904,
+    "left": 674,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3905,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left",
+    "canvas": 3906,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4066,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4067,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4068,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4134,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4135,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4136,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4234,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4235,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4236,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4329,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4330,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4331,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4584,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4585,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "four-up/lens-left+gazette-right",
+    "canvas": 4586,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "one-up/dragged-left+gazette-right",
+    "canvas": 2000,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "one-up/equal-rank-pair",
+    "canvas": 2000,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "one-up/gazette-jots-stacked-right",
+    "canvas": 2000,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "one-up/gazette-right",
+    "canvas": 2000,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "one-up/jots-left+gazette-right",
+    "canvas": 2000,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "one-up/jots-right",
+    "canvas": 2000,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "one-up/lens-left",
+    "canvas": 2000,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "one-up/lens-left+gazette-right",
+    "canvas": 2000,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5676,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5677,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5678,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5744,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5745,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 5746,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6024,
+    "left": 599,
+    "right": 580
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6025,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6026,
+    "left": 600,
+    "right": 581
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6119,
+    "left": 600,
+    "right": 674
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6120,
+    "left": 600,
+    "right": 675
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6121,
+    "left": 601,
+    "right": 675
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6194,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6195,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/dragged-left+gazette-right",
+    "canvas": 6196,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5484,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5485,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5486,
+    "left": 321,
+    "right": 321
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5564,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5565,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5566,
+    "left": 361,
+    "right": 361
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5644,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5645,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5646,
+    "left": 401,
+    "right": 401
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5919,
+    "left": 537,
+    "right": 537
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5920,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 5921,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 6194,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 6195,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/equal-rank-pair",
+    "canvas": 6196,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5351,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5352,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5353,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5419,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5420,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5421,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5514,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5515,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/gazette-jots-stacked-right",
+    "canvas": 5516,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5351,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5352,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5353,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5419,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5420,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5421,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5514,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5515,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/gazette-right",
+    "canvas": 5516,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5676,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5677,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5678,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5744,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5745,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5746,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5844,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5845,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5846,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5939,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5940,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 5941,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 6194,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 6195,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-left+gazette-right",
+    "canvas": 6196,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5159,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5160,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5161,
+    "left": null,
+    "right": 321
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5259,
+    "left": null,
+    "right": 419
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5260,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5261,
+    "left": null,
+    "right": 421
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5514,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5515,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/jots-right",
+    "canvas": 5516,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5159,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5160,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5161,
+    "left": 321,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5259,
+    "left": 419,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5260,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5261,
+    "left": 421,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5514,
+    "left": 674,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5515,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left",
+    "canvas": 5516,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5676,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5677,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5678,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5744,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5745,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5746,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5844,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5845,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5846,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5939,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5940,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 5941,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 6194,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 6195,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "six-up/lens-left+gazette-right",
+    "canvas": 6196,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3261,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3262,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3263,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3329,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3330,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3331,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3609,
+    "left": 599,
+    "right": 580
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3610,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3611,
+    "left": 600,
+    "right": 581
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3704,
+    "left": 600,
+    "right": 674
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3705,
+    "left": 600,
+    "right": 675
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3706,
+    "left": 601,
+    "right": 675
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3779,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3780,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/dragged-left+gazette-right",
+    "canvas": 3781,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3069,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3070,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3071,
+    "left": 321,
+    "right": 321
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3149,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3150,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3151,
+    "left": 361,
+    "right": 361
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3229,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3230,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3231,
+    "left": 401,
+    "right": 401
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3504,
+    "left": 537,
+    "right": 537
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3505,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3506,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3779,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3780,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/equal-rank-pair",
+    "canvas": 3781,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 2936,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 2937,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 2938,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3004,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3005,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3006,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3099,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3100,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/gazette-jots-stacked-right",
+    "canvas": 3101,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 2936,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 2937,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 2938,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3004,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3005,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3006,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3099,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3100,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/gazette-right",
+    "canvas": 3101,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3261,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3262,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3263,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3329,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3330,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3331,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3429,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3430,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3431,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3524,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3525,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3526,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3779,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3780,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-left+gazette-right",
+    "canvas": 3781,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2744,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2745,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2746,
+    "left": null,
+    "right": 321
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2844,
+    "left": null,
+    "right": 419
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2845,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 2846,
+    "left": null,
+    "right": 421
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 3099,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 3100,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/jots-right",
+    "canvas": 3101,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2744,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2745,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2746,
+    "left": 321,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2844,
+    "left": 419,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2845,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 2846,
+    "left": 421,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 3099,
+    "left": 674,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 3100,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left",
+    "canvas": 3101,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3261,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3262,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3263,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3329,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3330,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3331,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3429,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3430,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3431,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3524,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3525,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3526,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3779,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3780,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "three-up/lens-left+gazette-right",
+    "canvas": 3781,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2456,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2457,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2458,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2524,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2525,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2526,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2804,
+    "left": 599,
+    "right": 580
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2805,
+    "left": 600,
+    "right": 580
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2806,
+    "left": 600,
+    "right": 581
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2899,
+    "left": 600,
+    "right": 674
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2900,
+    "left": 600,
+    "right": 675
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2901,
+    "left": 601,
+    "right": 675
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2974,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2975,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/dragged-left+gazette-right",
+    "canvas": 2976,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2264,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2265,
+    "left": 320,
+    "right": 320
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2266,
+    "left": 321,
+    "right": 321
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2344,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2345,
+    "left": 360,
+    "right": 360
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2346,
+    "left": 361,
+    "right": 361
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2424,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2425,
+    "left": 400,
+    "right": 400
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2426,
+    "left": 401,
+    "right": 401
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2699,
+    "left": 537,
+    "right": 537
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2700,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2701,
+    "left": 538,
+    "right": 538
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2974,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2975,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/equal-rank-pair",
+    "canvas": 2976,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2131,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2132,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2133,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2199,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2200,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2201,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2294,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2295,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/gazette-jots-stacked-right",
+    "canvas": 2296,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2131,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2132,
+    "left": null,
+    "right": 512
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2133,
+    "left": null,
+    "right": 513
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2199,
+    "left": null,
+    "right": 579
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2200,
+    "left": null,
+    "right": 580
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2201,
+    "left": null,
+    "right": 581
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2294,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2295,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/gazette-right",
+    "canvas": 2296,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2456,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2457,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2458,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2524,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2525,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2526,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2624,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2625,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2626,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2719,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2720,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2721,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2974,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2975,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-left+gazette-right",
+    "canvas": 2976,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 1939,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 1940,
+    "left": null,
+    "right": 320
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 1941,
+    "left": null,
+    "right": 321
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2039,
+    "left": null,
+    "right": 419
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2040,
+    "left": null,
+    "right": 420
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2041,
+    "left": null,
+    "right": 421
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2294,
+    "left": null,
+    "right": 674
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2295,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/jots-right",
+    "canvas": 2296,
+    "left": null,
+    "right": 675
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 1939,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 1940,
+    "left": 320,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 1941,
+    "left": 321,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2039,
+    "left": 419,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2040,
+    "left": 420,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2041,
+    "left": 421,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2294,
+    "left": 674,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2295,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left",
+    "canvas": 2296,
+    "left": 675,
+    "right": null
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2456,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2457,
+    "left": 320,
+    "right": 512
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2458,
+    "left": 320,
+    "right": 513
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2524,
+    "left": 320,
+    "right": 579
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2525,
+    "left": 320,
+    "right": 580
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2526,
+    "left": 321,
+    "right": 580
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2624,
+    "left": 419,
+    "right": 580
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2625,
+    "left": 420,
+    "right": 580
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2626,
+    "left": 420,
+    "right": 581
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2719,
+    "left": 420,
+    "right": 674
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2720,
+    "left": 420,
+    "right": 675
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2721,
+    "left": 421,
+    "right": 675
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2974,
+    "left": 674,
+    "right": 675
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2975,
+    "left": 675,
+    "right": 675
+  },
+  {
+    "config": "two-up/lens-left+gazette-right",
+    "canvas": 2976,
+    "left": 675,
+    "right": 675
+  }
+]

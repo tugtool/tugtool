@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (awaiting user vetting on the debug build) |
 | Target branch | main |
 | Last updated | 2026-08-12 |
 
@@ -444,13 +444,13 @@ No new runtime state of any kind is introduced.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Greed ranks in the registry | pending | — |
-| #step-2 | The per-rail solver + unit-suite rewrite | pending | — |
-| #step-3 | Deck-manager greed fold | pending | — |
-| #step-4 | Gazette typography and derived widths | pending | — |
-| #step-5 | The solutions sweep and golden table | pending | — |
-| #step-6 | at0303 rewrite | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | Greed ranks in the registry | done | `a0b73d4ed` |
+| #step-2 | The per-rail solver + unit-suite rewrite | done | `03d4193be` |
+| #step-3 | Deck-manager greed fold | done | `dce8073b2` |
+| #step-4 | Gazette typography and derived widths | done | `13f5f92ea` |
+| #step-5 | The solutions sweep and golden table | done | `47df4681d` |
+| #step-6 | at0303 rewrite | done | `f188b6d0a` |
+| #step-7 | Integration checkpoint | done | `0d5a5e3f8` |
 
 #### Step 1: Greed ranks in the registry {#step-1}
 
@@ -639,9 +639,11 @@ The substitution is exact, not a compromise. `T*` is `canvasWidth − gap·(R+2)
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Every #success-criteria item verified by its named mechanism.
-- [ ] Step Status Ledger fully `done` with commit hashes recorded.
-- [ ] On a live deck: Gazette right + Lens left, window narrowed — the Lens visibly drains to its floor while the Gazette holds its 64ch measure.
+- [x] Every #success-criteria item verified by its named mechanism.
+- [x] Step Status Ledger fully `done` with commit hashes recorded.
+- [ ] On a live deck: Gazette right + Lens left, window narrowed — the Lens visibly drains to its floor while the Gazette holds its 64ch measure. *(The user's vetting pass on the debug build. Clear the `dev.tugtool.gazette` / `widthPx` tugbank key first — see [P05]: a stored width is still the user's preference and the new measure only reaches a Gazette nobody has sized.)*
+
+**Landed values.** The measure came out at `GAZETTE_BODY_CH_PX = 8.4` and `GAZETTE_ROW_CHROME_PX = 42`, so the Gazette's preferred width is **580** and its floor **512** — both matching the in-app measurement exactly (at0365). The plan's illustrative 560/496 were estimates; the sweep, the golden table, and at0303 all read the landed constants rather than re-hardcoding them.
 
 **Acceptance tests:**
 - [ ] `cd tugdeck && bun test src` (allocator suite + solutions sweep + golden)

@@ -1,0 +1,65 @@
+/**
+ * gazette-measure.ts — the Gazette rail's widths, derived from its type.
+ *
+ * The Gazette's widths are DERIVED FROM ITS TYPE, not chosen as pixel counts.
+ * A post is prose, and prose wants a measure: 64 characters by default,
+ * fungible down to 56 before the column stops reading as prose. Those two
+ * numbers are exactly the two inputs the space allocator takes for a rail — a
+ * preference and a floor ({@link lib/layout-imposer!RailPolicy}) — so the
+ * typography defines the policy directly, with no new mechanism between them.
+ *
+ * {@link GAZETTE_BODY_CH_PX} and {@link GAZETTE_ROW_CHROME_PX} are AUTHORED
+ * constants, measured once against the real render and pinned by at0365,
+ * rather than measured here at boot. Registration runs before layout has
+ * requested the face, so `document.fonts` would answer for the fallback with
+ * complete confidence (the trap `lib/font-metrics.ts` documents), and a width
+ * that upgraded itself asynchronously mid-session would be a re-tune trigger
+ * the allocator's moments do not include. The pin closes the drift loop
+ * instead: retune the CSS and the test hands back the numbers to author here.
+ *
+ * A leaf module for the reason `gazette-card-id.ts` is one — the app-test that
+ * pins these numbers must read them without dragging the card's whole React
+ * graph (and its CSS import) into its module graph.
+ *
+ * @module lib/gazette-measure
+ */
+
+/** Must equal `.gazette-post-body`'s `font-size` — pinned by at0365. */
+export const GAZETTE_BODY_FONT_PX = 14;
+
+/**
+ * The advance of "0" in the real rendered body face at
+ * {@link GAZETTE_BODY_FONT_PX} — one `ch`, measured in-app and authored here.
+ */
+export const GAZETTE_BODY_CH_PX = 8.4;
+
+/** The narrowest measure a post still reads as prose at. */
+export const GAZETTE_MIN_MEASURE_CH = 56;
+
+/** The measure a post is written for; `.gazette-post-body` caps its column
+ *  at the same number of characters, so a rail widened by hand keeps a
+ *  comfortable line rather than stretching it to the ceiling. */
+export const GAZETTE_MEASURE_CH = 64;
+
+/**
+ * Everything standing between the pane's width and the body column's content
+ * box, both sides summed — measured in-app and authored here.
+ *
+ * Its anatomy, for whoever retunes it: the transcript's inline padding
+ * (2 × `--tug-space-md` = 16), the glyph gutter
+ * (`--tugx-gazette-gutter-inline-size` = 18), the post grid's column gap
+ * (`--tug-space-sm` = 6), plus whatever pane and CardHost chrome — borders,
+ * host padding — stands outside those. macOS overlay scrollbars contribute
+ * nothing. The authored number is the MEASUREMENT, not the sum of this list.
+ */
+export const GAZETTE_ROW_CHROME_PX = 42;
+
+/** The width the Gazette rail opens at before the user has sized it: the
+ *  64-character measure, plus the chrome it is read through. */
+export const DEFAULT_GAZETTE_WIDTH_PX =
+  Math.round(GAZETTE_MEASURE_CH * GAZETTE_BODY_CH_PX) + GAZETTE_ROW_CHROME_PX;
+
+/** The narrowest the rail may stand: the 56-character measure, plus chrome. */
+export const MIN_GAZETTE_WIDTH_PX =
+  Math.round(GAZETTE_MIN_MEASURE_CH * GAZETTE_BODY_CH_PX) +
+  GAZETTE_ROW_CHROME_PX;
