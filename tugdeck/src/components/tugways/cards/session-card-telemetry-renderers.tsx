@@ -1162,7 +1162,7 @@ export const SessionTelemetryStatusRow = React.forwardRef<
           <TugProgressIndicator
             variant="pulsing-dot"
             glyphPosition="both"
-            size={10}
+            size={12}
             state={workIndicatorState}
             label={workLabelText}
             labelAlign="center"

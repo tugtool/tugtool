@@ -140,10 +140,27 @@
 
 /* WORK value row — a single `TugProgressIndicator` (pulsing-dot
    variant) whose `label` carries the merged reading (`goal`, `N/M`, a
-   scheduled count, or `None`). */
+   scheduled count, or `None`), flanked by its two glyphs.
+
+   Unlike STATE, whose two glyphs and title are three siblings of the
+   value-wrap, WORK's whole row is ONE element — so `space-between` has
+   to be declared on the indicator itself, which stretches to the cell
+   width here. Without it the indicator sizes to its content and centers,
+   which parks the two dots ~30px inside the endcap ticks: their pulse
+   rings finish their travel in open space while STATE's cross the ticks.
+   Pinned to the same 2px inset as STATE, at the same 12px box, the ring's
+   excursion past the label apparatus is identical in both cells by
+   construction rather than by arithmetic. The two glyphs are equal-width,
+   so the label stays centered as its reading changes. */
+.session-telemetry-status-cell[data-priority="work"] .tug-progress-indicator {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+}
+
 .session-telemetry-status-cell[data-priority="work"]
-  .session-telemetry-status-value-wrap {
-  gap: var(--tug-space-xs);
+  .tug-progress-indicator-glyph {
+  margin-inline: 2px;
 }
 
 /* The indicator's label inside the WORK cell takes the same focal
