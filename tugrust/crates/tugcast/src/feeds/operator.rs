@@ -971,6 +971,8 @@ impl OperatorPipeline {
                 refs: Vec::new(),
                 // A question costs no agent turn; it is typed, not run.
                 elapsed_ms: None,
+                // And carries no refs, so there is no root to resolve under.
+                project_dir: None,
                 request_id: request_id.clone(),
                 transient: false,
             },
@@ -999,6 +1001,11 @@ impl OperatorPipeline {
                         body: post.body,
                         refs: validated.kept,
                         elapsed_ms: Some(started.elapsed().as_millis() as i64),
+                        // The verbs' own default repo ([Q03]): the root an
+                        // answer's refs are most likely spelled under.
+                        project_dir: Some(
+                            self.ctx.bootstrap_project_dir.to_string_lossy().into_owned(),
+                        ),
                         request_id: request_id.clone(),
                         transient: false,
                     },
@@ -1017,6 +1024,7 @@ impl OperatorPipeline {
                         body: format!("Couldn't answer that: {err}"),
                         refs: Vec::new(),
                         elapsed_ms: Some(started.elapsed().as_millis() as i64),
+                        project_dir: None,
                         request_id,
                         transient: true,
                     },
@@ -1215,6 +1223,7 @@ mod tests {
                     target: "tugdeck/styles/themes/brio.css".to_string(),
                 }],
                 elapsed_ms: None,
+                project_dir: None,
                 request_id: None,
                 transient: false,
             })

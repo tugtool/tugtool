@@ -61,6 +61,9 @@ export interface GazettePostEntry {
   /** How long the agent turn that wrote this post took, or null when nobody
    *  clocked it (a user question; a row older than the column). */
   elapsedMs: number | null;
+  /** The root the post's refs resolve against, or null when tugcast recorded
+   *  none — those refs render inert rather than against a guessed root. */
+  projectDir: string | null;
   requestId: string | null;
   transient: boolean;
 }
@@ -302,6 +305,7 @@ export class GazetteStore {
       body: post.body,
       refs: Object.freeze([...post.refs]) as readonly GazetteRef[],
       elapsedMs: post.elapsed_ms ?? null,
+      projectDir: post.project_dir ?? null,
       requestId: post.request_id ?? null,
       transient: post.transient,
     });

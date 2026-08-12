@@ -1466,6 +1466,7 @@ impl SessionLedger {
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
         Self::migrate_gazette_posts_add_elapsed_ms(conn)?;
+        Self::migrate_gazette_posts_add_project_dir(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1845,7 +1846,11 @@ impl SessionLedger {
                 -- How long the agent turn that wrote the post took. NULL on a
                 -- user question and on every row written before the column
                 -- existed (`migrate_gazette_posts_add_elapsed_ms`).
-                elapsed_ms  INTEGER
+                elapsed_ms  INTEGER,
+                -- The project directory the post's refs resolve against. NULL
+                -- on a user question and on every row written before the
+                -- column existed (`migrate_gazette_posts_add_project_dir`).
+                project_dir TEXT
             );
 
             CREATE INDEX IF NOT EXISTS gazette_posts_session
@@ -2424,6 +2429,21 @@ impl SessionLedger {
         }
         if !cols.iter().any(|(n, _)| n == "elapsed_ms") {
             conn.execute("ALTER TABLE gazette_posts ADD COLUMN elapsed_ms INTEGER", [])?;
+        }
+        Ok(())
+    }
+
+    /// Self-healing add of `gazette_posts.project_dir` — the root the post's
+    /// refs resolve against. Same ALTER-only posture as `elapsed_ms`, for the
+    /// same reason: the table is permanent history. Pre-column rows read
+    /// `NULL`, and their refs render inert rather than against a guessed root.
+    fn migrate_gazette_posts_add_project_dir(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "gazette_posts")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "project_dir") {
+            conn.execute("ALTER TABLE gazette_posts ADD COLUMN project_dir TEXT", [])?;
         }
         Ok(())
     }
@@ -5631,8 +5651,9 @@ impl SessionLedger {
         let refs_json = serde_json::to_string(&post.refs).unwrap_or_else(|_| "[]".to_string());
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
-            "INSERT INTO gazette_posts (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO gazette_posts
+                 (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 post.at_ms,
                 post.author.as_str(),
@@ -5641,6 +5662,7 @@ impl SessionLedger {
                 post.body,
                 refs_json,
                 post.elapsed_ms,
+                post.project_dir,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -5651,8 +5673,8 @@ impl SessionLedger {
     pub fn list_gazette_posts_tail(&self, limit: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
                  FROM gazette_posts ORDER BY id DESC LIMIT ?1
              ) ORDER BY id ASC",
         )?;
@@ -5674,8 +5696,8 @@ impl SessionLedger {
     ) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
                  FROM gazette_posts
                  WHERE session_id = ?1 AND author = 'reporter'
                  ORDER BY id DESC LIMIT ?2
@@ -5694,7 +5716,7 @@ impl SessionLedger {
     pub fn gazette_posts_window(&self, id: i64, n: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
              FROM gazette_posts
              WHERE id BETWEEN ?1 - ?2 AND ?1 + ?2
              ORDER BY id ASC",
@@ -5723,7 +5745,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT p.id, p.at_ms, p.author, p.session_id, p.wake_reason, p.body, p.refs,
-                    p.elapsed_ms,
+                    p.elapsed_ms, p.project_dir,
                     snippet(gazette_posts_fts, 0, '', '', '…', 32)
              FROM gazette_posts_fts f
              JOIN gazette_posts p ON p.id = f.rowid
@@ -5745,9 +5767,9 @@ impl SessionLedger {
                 limit as i64,
             ],
             |row| {
-                // Index 8: the hit columns are `gazette_post_from_row`'s own
-                // seven plus `elapsed_ms`, and the excerpt trails them.
-                let excerpt: String = row.get(8)?;
+                // Index 9: the hit columns are `gazette_post_from_row`'s own
+                // nine, and the excerpt trails them.
+                let excerpt: String = row.get(9)?;
                 Ok(gazette_post_from_row(row)?.map(|post| GazetteSearchHit { post, excerpt }))
             },
         )?;
@@ -6095,6 +6117,7 @@ fn gazette_post_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Gaz
         body: row.get(5)?,
         refs: serde_json::from_str(&refs_json).unwrap_or_default(),
         elapsed_ms: row.get(7)?,
+        project_dir: row.get(8)?,
         request_id: None,
         transient: false,
     }))
@@ -7979,6 +8002,7 @@ mod tests {
             body: body.to_string(),
             refs: vec![],
             elapsed_ms: None,
+            project_dir: None,
             request_id: None,
             transient: false,
         }

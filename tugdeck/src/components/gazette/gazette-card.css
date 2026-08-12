@@ -111,10 +111,18 @@
   overflow-wrap: anywhere;
 }
 
-/* The narrated session's citation in the header keeps the header's single
-   line — a long callsign truncates rather than wrapping the attribution. */
+/* The narrated session's citation in the header: SHRINK-ONLY truncation.
+   No fixed cap — a cap clips "tugtool/cuddly-…" while half the header sits
+   empty. The citation shows whole whenever the identifier and timestamp
+   leave it room, and gives way (its own internal ellipsis rule) only when
+   the rail genuinely runs out. `min-width: 0` down the trailing slot is
+   what lets the flex chain actually squeeze it. */
+.gazette-transcript .tug-transcript-entry__header-trailing {
+  min-width: 0;
+}
+
 .gazette-post-session {
-  max-inline-size: 16ch;
+  min-width: 0;
 }
 
 /* Z1B — the row's footer, under the body, exactly where the Session card's

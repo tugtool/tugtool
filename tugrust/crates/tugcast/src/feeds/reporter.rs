@@ -662,6 +662,16 @@ fn settle(
         );
     }
 
+    // The narrated session's project dir, from the ledger's session row —
+    // the root the refs were spelled under, so the deck can resolve them.
+    // A session the ledger does not know leaves it `None`, and those refs
+    // render inert rather than against a guessed root.
+    let project_dir = config
+        .ledger
+        .as_ref()
+        .and_then(|ledger| ledger.get(&session_id).ok().flatten())
+        .map(|row| row.project_dir);
+
     let mut record = GazettePost {
         id: None,
         at_ms: now_ms(),
@@ -671,6 +681,7 @@ fn settle(
         body,
         refs: validated.kept,
         elapsed_ms: Some(elapsed_ms),
+        project_dir,
         request_id: None,
         transient: false,
     };

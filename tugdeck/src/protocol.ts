@@ -963,6 +963,11 @@ export interface GazettePostWire {
   /** How long the agent turn that wrote the post took; absent on a user
    *  question and on rows written before tugcast recorded it. */
   elapsed_ms?: number;
+  /** The project directory the post's refs are spelled relative to — the
+   *  narrated session's, or the Operator's default repo. Absent on a user
+   *  question and on rows written before tugcast recorded it; those refs
+   *  render inert rather than resolve against a guessed root. */
+  project_dir?: string;
   request_id?: string;
   transient: boolean;
 }
@@ -1033,6 +1038,9 @@ export function parseGazettePost(value: unknown): GazettePostWire | null {
     refs,
     ...(typeof p.elapsed_ms === "number" && p.elapsed_ms >= 0
       ? { elapsed_ms: p.elapsed_ms }
+      : {}),
+    ...(typeof p.project_dir === "string" && p.project_dir.startsWith("/")
+      ? { project_dir: p.project_dir }
       : {}),
     ...(typeof p.request_id === "string" ? { request_id: p.request_id } : {}),
     transient: p.transient === true,

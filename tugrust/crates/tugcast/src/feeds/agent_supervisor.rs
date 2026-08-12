@@ -11829,6 +11829,7 @@ mod tests {
                     body: body.to_string(),
                     refs: Vec::new(),
                     elapsed_ms: None,
+                    project_dir: None,
                     request_id: None,
                     transient: false,
                 })

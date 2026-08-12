@@ -17,11 +17,15 @@
  * selectable prose; ⌘C and the right-click menu work per row through the
  * shared transcript cell wiring.
  *
- * A body that spells out one of its own refs — a path, a sha — renders that
- * mention as an inline atom (the annotator's `data-tugx-wrapped` DOM contract,
- * so it wears the global annotation affordance); refs the prose does not
- * mention ride the Z1B as {@link TugAtomChip}s — the app's one atom, not a
- * Gazette look-alike. Both drive the same intent.
+ * A body that mentions one of its own refs — a path by full spelling or
+ * basename, a sha at any length — renders that mention as an inline atom;
+ * refs the prose does not mention ride the Z1B as {@link TugAtomChip}s — the
+ * app's one atom, not a Gazette look-alike. A ref becomes actionable only
+ * once the annotator's resolvers confirm it against the post's own
+ * `projectDir` ({@link resolveGazetteRef}); a confirmed atom is stamped with
+ * the full annotation payload, so the registry's click and context menu are
+ * its gesture, and an unconfirmed one is inert with the reason on its
+ * tooltip.
  *
  * The composer is the session prompt-entry's core: a {@link TugEntryShell}
  * holding the CM6 {@link TugTextEditor} substrate (with `@` file-atom
@@ -40,6 +44,7 @@
  */
 
 import React, {
+  useCallback,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -68,9 +73,19 @@ import {
   TugTranscriptEntry,
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
-import { useDeckManager } from "@/deck-manager-context";
 import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import { annotationFromEvent } from "@/lib/annotator/annotation-element";
+import { commitResolverFor } from "@/lib/annotator/commit-resolution";
+import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
+import { annotationEntryFor } from "@/lib/annotator/registry";
+import { pathResolutionStore } from "@/lib/annotator/path-resolution";
+import { dataAttributesForPayload } from "@/lib/annotator/payloads";
 import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
+import {
+  acquireWorkspace,
+  getWorkspace,
+  subscribeWorkspaces,
+} from "@/lib/default-workspace-store";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
 import { FileTreeStore } from "@/lib/filetree-store";
@@ -80,9 +95,10 @@ import {
   segmentGazetteBody,
 } from "@/lib/gazette-body-segments";
 import {
-  gazetteRefIntent,
-  runGazetteRefIntent,
-} from "@/lib/gazette-ref-action";
+  resolveGazetteRef,
+  type GazetteRefResolution,
+  type GazetteRefRoot,
+} from "@/lib/gazette-ref-resolve";
 import {
   getGazetteStore,
   useGazette,
@@ -149,76 +165,113 @@ function useTimeFormats(): {
 }
 
 /**
+ * The wrapper attributes a resolved ref's atom wears — the annotation
+ * contract, FULLY stamped: kind plus the payload's whole dataset
+ * ({@link dataAttributesForPayload}), which is what lets the delegated
+ * click layer and the row's context menu read a real payload back off the
+ * element. A kind attribute alone is a half-stamped annotation, and the
+ * reader treats those as misses — the bug this stamping replaced.
+ */
+function annotationProps(
+  ref: GazetteRef,
+  resolution: GazetteRefResolution,
+): Record<string, unknown> {
+  const marks = {
+    "data-gazette-ref-kind": ref.kind,
+    "data-gazette-ref-target": ref.target,
+  };
+  if (resolution.state === "actionable") {
+    return {
+      ...marks,
+      className: ANNOTATION_CLASS,
+      "data-tug-annotation": resolution.payload.kind,
+      ...dataAttributesForPayload(resolution.payload),
+      // Opening a card must not move DOM focus with the press.
+      "data-tug-focus": "refuse",
+      "data-no-activate": "",
+      title: `${ref.kind}: ${ref.target}`,
+    };
+  }
+  return {
+    ...marks,
+    title:
+      resolution.state === "pending"
+        ? `${ref.kind}: ${ref.target} — checking…`
+        : `${ref.kind}: ${ref.target} — ${resolution.reason}`,
+  };
+}
+
+/**
  * One trailing ref atom — provenance the prose did not spell out.
  *
  * It is the SAME atom every other surface paints: {@link TugAtomChip}, the
  * baked SVG chip the transcript, the composer and the tool-call headers all
  * use, wrapped in the annotation contract so the card's delegated layer gives
- * it its gesture. A path opens in the card every other path opens in, a sha
- * opens its diff, and a session — which is not a file-shaped thing at all —
- * renders as the live {@link TugSessionCitation}, exactly as a session atom
- * does in a transcript body. A ref with nowhere to go wears no annotation and
- * carries the reason on its tooltip.
+ * it its gesture — but only once the resolvers confirm the target
+ * ({@link resolveGazetteRef}): a path that stats, a sha git can show. A
+ * session — which is not a file-shaped thing at all — renders as the live
+ * {@link TugSessionCitation}, exactly as a session atom does in a transcript
+ * body. A ref that cannot be confirmed wears no annotation and carries the
+ * reason on its tooltip.
  */
-function RefAtom({ chipRef }: { chipRef: GazetteRef }): React.ReactElement {
+function RefAtom({
+  chipRef,
+  root,
+}: {
+  chipRef: GazetteRef;
+  root: GazetteRefRoot | null;
+}): React.ReactElement {
   // A session ref is a CITATION, and it renders as one: the session atom, the
   // callsign, the same chip every foreign surface shows. The chip owns the
   // whole gesture, including whether to offer it.
   if (chipRef.kind === "session") {
     return <TugSessionCitation citedId={chipRef.target} />;
   }
-  const intent = gazetteRefIntent(chipRef);
-  const inert = intent.kind === "inert";
+  const resolution = resolveGazetteRef(chipRef, root);
   const label =
     chipRef.kind === "commit"
-      ? chipRef.target.slice(0, 9)
+      ? chipRef.target.slice(0, 8)
       : (chipRef.target.split("/").pop() ?? chipRef.target);
+  const isDir =
+    resolution.state === "actionable" &&
+    resolution.payload.kind === "directory";
   const chip = (
     <TugAtomChip
       className="tug-atom-chip"
-      // The chip's icon families are the atom vocabulary's own: a path is a
-      // `file`, a commit — a record, not a file on disk — takes `doc`.
-      type={chipRef.kind === "commit" ? "doc" : "file"}
+      // The chip's icon families are the atom vocabulary's own: a commit is
+      // a point on a line, a folder a folder, everything else a file.
+      type={chipRef.kind === "commit" ? "commit" : isDir ? "directory" : "file"}
       label={label}
       value={chipRef.target}
     />
   );
-  if (inert) return <span title={intent.reason}>{chip}</span>;
   return (
-    <span
-      // No `data-tugx-wrapped` — that mark is for a run the annotator split
-      // out of prose, whose affordance has to be painted onto the text. A chip
-      // has its own shape and its own hover, exactly as in a transcript body.
-      className={ANNOTATION_CLASS}
-      data-tug-annotation={
-        chipRef.kind === "commit" ? "commit-sha" : "file-path"
-      }
-      data-gazette-ref-kind={chipRef.kind}
-      data-gazette-ref-target={chipRef.target}
-      // Opening a card must not move DOM focus with the press.
-      data-tug-focus="refuse"
-      data-no-activate=""
-      title={`${chipRef.kind}: ${chipRef.target}`}
-    >
-      {chip}
-    </span>
+    // No `data-tugx-wrapped` — that mark is for a run the annotator split
+    // out of prose, whose affordance has to be painted onto the text. A chip
+    // has its own shape and its own hover, exactly as in a transcript body.
+    <span {...annotationProps(chipRef, resolution)}>{chip}</span>
   );
 }
 
 /**
  * A post body with its ref mentions rendered as inline atoms. Plain runs stay
  * plain (and selectable); a run that mentions a session ref mounts the live
- * {@link TugSessionCitation}, and every other ref kind becomes an annotated
- * span wearing the annotator's `data-tugx-wrapped` contract — resting-plain,
- * hover reveals the affordance, exactly as detected entities read in the
- * Session transcript. The click is serviced by the transcript root's
- * delegated listener, not per-span handlers.
+ * {@link TugSessionCitation}; a run that spells a resolved commit becomes the
+ * commit atom in place, showing its 8-character prefix; and a file-shaped
+ * mention becomes an annotated span wearing the annotator's
+ * `data-tugx-wrapped` contract — resting-plain, hover reveals the affordance,
+ * exactly as detected entities read in the Session transcript. A mention
+ * whose ref has not been confirmed stays plain prose: text promises nothing,
+ * so it never has to break a promise. The click is serviced by the
+ * transcript root's delegated listener, not per-span handlers.
  */
 function GazettePostBody({
   post,
+  root,
   bodyRef,
 }: {
   post: GazettePostEntry;
+  root: GazetteRefRoot | null;
   bodyRef?: React.MutableRefObject<HTMLElement | null>;
 }): React.ReactElement {
   const segments = useMemo(
@@ -245,20 +298,36 @@ function GazettePostBody({
             />
           );
         }
+        const resolution = resolveGazetteRef(seg.ref, root);
+        if (resolution.state !== "actionable") {
+          return <React.Fragment key={i}>{seg.text}</React.Fragment>;
+        }
+        if (seg.ref.kind === "commit") {
+          // The mention becomes the atom itself: an 8-character prefix chip
+          // standing where the prose spelled the sha, however long it spelled
+          // it. The full sha rides the value, the tooltip, and every copy
+          // path through the stamped payload.
+          return (
+            <span
+              key={i}
+              {...annotationProps(seg.ref, resolution)}
+              className={`${ANNOTATION_CLASS} gazette-body-atom`}
+            >
+              <TugAtomChip
+                className="tug-atom-chip"
+                type="commit"
+                label={seg.ref.target.slice(0, 8)}
+                value={seg.ref.target}
+              />
+            </span>
+          );
+        }
         return (
           <span
             key={i}
-            className="gazette-body-atom"
             data-tugx-wrapped=""
-            data-tug-annotation={
-              seg.ref.kind === "commit" ? "commit-sha" : "file-path"
-            }
-            data-gazette-ref-kind={seg.ref.kind}
-            data-gazette-ref-target={seg.ref.target}
-            // Opening a card must not move DOM focus with the press.
-            data-tug-focus="refuse"
-            data-no-activate=""
-            title={`${seg.ref.kind}: ${seg.ref.target}`}
+            {...annotationProps(seg.ref, resolution)}
+            className={`${ANNOTATION_CLASS} gazette-body-atom`}
           >
             {seg.text}
           </span>
@@ -334,11 +403,99 @@ function GazettePostZ1B({
   );
 }
 
+/**
+ * The workspace roots the visible posts resolve their refs under, plus the
+ * re-render tick their verdicts arrive on.
+ *
+ * Each distinct `projectDir` gets a browse hold ({@link acquireWorkspace} —
+ * refcount-free, cached for the app's life, the Open Quickly shape), and the
+ * returned lookup answers with the acquired `{workspaceKey, projectDir}`
+ * pair once the hold lands. [L02]: readiness and every resolver verdict
+ * enter React through one `useSyncExternalStore` whose snapshot is the sum
+ * of the stores' monotonic versions — a probe's answer bumps a version,
+ * the sum moves, the waiting atoms re-render.
+ */
+function useGazetteRefRoots(
+  posts: readonly GazettePostEntry[],
+): (projectDir: string | null) => GazetteRefRoot | null {
+  const dirs = useMemo(() => {
+    const set = new Set<string>();
+    for (const post of posts) {
+      if (post.projectDir !== null && post.refs.length > 0) {
+        set.add(post.projectDir);
+      }
+    }
+    return Array.from(set).sort();
+  }, [posts]);
+  const dirsKey = dirs.join("\n");
+
+  // [L03] — holds must be requested before the lookups that wait on them.
+  useLayoutEffect(() => {
+    for (const dir of dirs) acquireWorkspace(dir);
+    // dirsKey IS dirs, serialized for dependency identity.
+  }, [dirsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Which dirs have landed matters to the subscription itself: a workspace
+  // arriving mints that project's resolvers, and the subscription has to
+  // reach them — so readiness re-keys the subscribe and the store swap
+  // resubscribes.
+  const readyKey = dirs
+    .filter((dir) => getWorkspace(dir) !== null)
+    .join("\n");
+  const subscribe = useCallback(
+    (listener: () => void): (() => void) => {
+      const unsubs = [
+        subscribeWorkspaces(listener),
+        pathResolutionStore.subscribe(listener),
+      ];
+      for (const dir of dirs) {
+        const ws = getWorkspace(dir);
+        if (ws === null) continue;
+        const names = fileNameResolverFor(ws.projectDir, ws.workspaceKey);
+        if (names !== null) unsubs.push(names.subscribe(listener));
+        const commits = commitResolverFor(ws.projectDir, ws.workspaceKey);
+        if (commits !== null) unsubs.push(commits.subscribe(listener));
+      }
+      return () => {
+        for (const unsub of unsubs) unsub();
+      };
+    },
+    // Both keys are the arrays they serialize, which is the point: identity
+    // for the hook, content for the closure.
+    [dirsKey, readyKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const getSnapshot = useCallback((): number => {
+    let sum = pathResolutionStore.version();
+    for (const dir of dirs) {
+      const ws = getWorkspace(dir);
+      if (ws === null) continue;
+      sum += 1;
+      sum += fileNameResolverFor(ws.projectDir, ws.workspaceKey)?.version() ?? 0;
+      sum += commitResolverFor(ws.projectDir, ws.workspaceKey)?.version() ?? 0;
+    }
+    return sum;
+  }, [dirsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useSyncExternalStore(subscribe, getSnapshot);
+
+  return useCallback(
+    (projectDir: string | null): GazetteRefRoot | null => {
+      if (projectDir === null) return null;
+      const ws = getWorkspace(projectDir);
+      return ws === null
+        ? null
+        : { projectDir: ws.projectDir, workspaceKey: ws.workspaceKey };
+    },
+    [readyKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+}
+
 function GazettePostRow({
   post,
+  root,
   formats,
 }: {
   post: GazettePostEntry;
+  root: GazetteRefRoot | null;
   formats: ReturnType<typeof useTimeFormats>;
 }): React.ReactElement {
   const at = new Date(post.atMs);
@@ -384,13 +541,17 @@ function GazettePostRow({
               />
             ) : null
           }
-          body={<GazettePostBody post={post} bodyRef={bodyRef} />}
+          body={<GazettePostBody post={post} root={root} bodyRef={bodyRef} />}
           controls={
             <GazettePostZ1B post={post}>
               {chipRefs.length > 0 ? (
                 <div className="gazette-post-refs">
                   {chipRefs.map((r) => (
-                    <RefAtom key={`${r.kind}:${r.target}`} chipRef={r} />
+                    <RefAtom
+                      key={`${r.kind}:${r.target}`}
+                      chipRef={r}
+                      root={root}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -412,7 +573,7 @@ export function GazetteContent({
 }: GazetteContentProps): React.ReactElement {
   const { posts, status, pendingRequestId } = useGazette();
   const formats = useTimeFormats();
-  const store = useDeckManager();
+  const rootFor = useGazetteRefRoots(posts);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Whether the reader is at the bottom, sampled BEFORE the new post is laid
   // out — reading it afterwards would always say "no", since the arriving row
@@ -426,36 +587,36 @@ export function GazetteContent({
     el.scrollTop = el.scrollHeight;
   }, [posts]);
 
-  // The delegated gesture layer for the inline body atoms — one listener on
-  // the transcript root, the Session transcript's idiom. A click on an
-  // annotated mention resolves back to its ref and runs the same intent the
-  // chips run; the paired mousedown keeps an opening press from moving DOM
-  // focus. [L03] — live before any click it services.
+  // Annotation gestures — the Session transcript's own delegated layer,
+  // verbatim in shape: one listener on the transcript root, the registry
+  // deciding what a click on a given kind does, the mousedown guard keeping
+  // an opening press from moving DOM focus. The atoms are FULLY stamped
+  // (payload dataset, not just a kind), so `annotationFromEvent` reads a
+  // real payload back off whatever element the press lands on. No
+  // codeSessionStore in the context: the Gazette has no live session, and a
+  // kind that needs one declines on its own. [L03] — live before any click
+  // it services.
   useLayoutEffect(() => {
     const root = scrollRef.current;
     if (root === null) return;
-    const refFromEvent = (event: MouseEvent): GazetteRef | null => {
-      const target = event.target;
-      if (!(target instanceof Element)) return null;
-      const el = target.closest<HTMLElement>("[data-gazette-ref-kind]");
-      if (el === null) return null;
-      const kind = el.dataset.gazetteRefKind;
-      const refTarget = el.dataset.gazetteRefTarget;
-      if (kind === undefined || refTarget === undefined) return null;
-      return { kind, target: refTarget } as GazetteRef;
-    };
     const onClick = (event: MouseEvent): void => {
       if (event.button !== 0 || event.metaKey || event.shiftKey) return;
+      const hit = annotationFromEvent(event);
+      if (hit === null) return;
+      if (hit.element instanceof HTMLAnchorElement) return;
       // The tail of a drag-selection over the atom is not a click on it.
       const selection = window.getSelection();
       if (selection !== null && !selection.isCollapsed) return;
-      const ref = refFromEvent(event);
-      if (ref === null) return;
-      runGazetteRefIntent(gazetteRefIntent(ref), store);
+      annotationEntryFor(hit.payload.kind)?.primaryClick?.(hit.payload, {
+        // The opened card claims activation itself; the rail stays put.
+        activateCard: () => {},
+      });
     };
     const onMouseDown = (event: MouseEvent): void => {
       if (event.button !== 0 || event.metaKey || event.shiftKey) return;
-      if (refFromEvent(event) === null) return;
+      const hit = annotationFromEvent(event);
+      if (hit === null) return;
+      if (hit.element.dataset.noActivate === undefined) return;
       event.preventDefault();
     };
     root.addEventListener("click", onClick);
@@ -464,7 +625,7 @@ export function GazetteContent({
       root.removeEventListener("click", onClick);
       root.removeEventListener("mousedown", onMouseDown);
     };
-  }, [store]);
+  }, []);
 
   const onScroll = (): void => {
     const el = scrollRef.current;
@@ -495,7 +656,12 @@ export function GazetteContent({
           </div>
         ) : (
           posts.map((post) => (
-            <GazettePostRow key={post.key} post={post} formats={formats} />
+            <GazettePostRow
+              key={post.key}
+              post={post}
+              root={rootFor(post.projectDir)}
+              formats={formats}
+            />
           ))
         )}
         {pendingRequestId !== null ? (

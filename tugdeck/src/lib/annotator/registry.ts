@@ -69,8 +69,11 @@ export interface AnnotationMenuEntry {
 export interface AnnotationDispatchContext {
   /** Bring the annotation's own card forward before acting on it. */
   activateCard: () => void;
-  /** The composer/transcript store a command or snippet is seeded into. */
-  codeSessionStore: CodeSessionStore;
+  /** The composer/transcript store a command or snippet is seeded into.
+   *  Absent on a surface with no live session (the Gazette): such a surface
+   *  can't seed a composer, so a command's click is a no-op there — the same
+   *  rule its menu already follows by dropping Insert into Composer. */
+  codeSessionStore?: CodeSessionStore;
 }
 
 /** The behavior registered for one annotation kind. */
@@ -122,14 +125,16 @@ function seedCommand(
   payload: AnnotationPayload,
   ctx: AnnotationDispatchContext,
 ): void {
+  const store = ctx.codeSessionStore;
+  if (store === undefined) return;
   if (payload.kind === "slash-command") {
     ctx.activateCard();
-    ctx.codeSessionStore.insertCommandDraft(payload.name, payload.args);
+    store.insertCommandDraft(payload.name, payload.args);
     return;
   }
   if (payload.kind === "shell-command") {
     ctx.activateCard();
-    ctx.codeSessionStore.insertCommandDraft("shell", payload.command);
+    store.insertCommandDraft("shell", payload.command);
   }
 }
 

@@ -729,6 +729,15 @@ pub struct GazettePost {
     /// question) and on rows written before the column existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub elapsed_ms: Option<i64>,
+    /// The project directory the post's refs are spelled relative to — the
+    /// narrated session's for a Reporter post, the bootstrap workspace's for
+    /// an Operator answer (its verbs' own default repo). A ref target is a
+    /// verbatim quote from session activity, so this is the only root it can
+    /// honestly resolve against; the deck stats/indexes under it before a
+    /// chip becomes clickable. `None` on a user's question (no refs to
+    /// resolve) and on rows written before the column existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_dir: Option<String>,
     /// Correlation id, on an Operator post answering a question.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,

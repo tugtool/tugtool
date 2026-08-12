@@ -24,6 +24,12 @@
  *     live Reporter's would. Asserted: one row per post, in arrival order, each
  *     carrying its author's glyph, and a post's refs rendering in the Z1B as
  *     the app's own atom chips, labelled by the target's last segment.
+ *     The refs are REAL: the posts carry this repo as their `project_dir`, the
+ *     ref target is a file that exists, and the commit sha is this checkout's
+ *     own HEAD — so the assertions watch the production resolution chain
+ *     (workspace acquire → fs stat / git commit-files) confirm them and stamp
+ *     the full annotation payload onto the atoms. A commit mention in the
+ *     prose renders as the commit atom in place, showing its 8-char prefix.
  *  3. **The composer completes a round trip.** Typing a question and pressing
  *     the send button sends GAZETTE_INPUT; the Operator echoes the question as a user post
  *     and then answers. Under the app-test gate the agent pool answers nothing
@@ -50,13 +56,15 @@
  * @covers tugdeck/src/components/gazette/gazette-card-registration.tsx
  * @covers tugdeck/src/lib/gazette-measure.ts
  * @covers tugdeck/src/lib/gazette-store.ts
- * @covers tugdeck/src/lib/gazette-ref-action.ts
+ * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  */
 
 import { describe, expect, test } from "bun:test";
+import { execSync } from "node:child_process";
+import { resolve } from "node:path";
 
 import { launchTugApp, note, type App } from "./_harness";
 import {
@@ -90,7 +98,17 @@ interface WirePost {
   session_id?: string;
   wake_reason?: string;
   elapsed_ms?: number;
+  project_dir?: string;
 }
+
+/** This checkout — the posts' `project_dir`, so refs resolve against the
+ *  real repo through the real chain rather than a fixture tree. */
+const REPO_ROOT = resolve(import.meta.dir, "../..");
+
+/** This checkout's own HEAD — a sha `git show` genuinely answers for. */
+const HEAD_SHA = execSync("git rev-parse HEAD", { cwd: REPO_ROOT })
+  .toString()
+  .trim();
 
 async function publish(app: App, post: WirePost): Promise<boolean> {
   return app.evalJS<boolean>(
@@ -209,6 +227,7 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           // The turn that wrote it took this long — tugcast clocks the agent
           // run and the Z1B reads it, the way a session turn reports its time.
           elapsed_ms: 4_200,
+          project_dir: REPO_ROOT,
         };
         const operatorPost: WirePost = {
           id: 9002,
@@ -217,28 +236,43 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           body: "Two sessions touched that file today.",
           refs: [],
         };
+        // A commit spelled in the prose at 12 characters, backed by a ref
+        // whose sha this checkout genuinely holds — the mention becomes the
+        // commit atom in place once git confirms it.
+        const commitPost: WirePost = {
+          id: 9003,
+          at_ms: AT_MS + 120_000,
+          author: "reporter",
+          body: `Commit ${HEAD_SHA.slice(0, 12)} landed the sticky-header fixes.`,
+          refs: [{ kind: "commit", target: HEAD_SHA.slice(0, 12) }],
+          wake_reason: "turn-end",
+          project_dir: REPO_ROOT,
+        };
 
         expect(
           await publish(app, reporterPost),
           "the store is attached, so the frame was accepted",
         ).toBe(true);
         expect(await publish(app, operatorPost)).toBe(true);
+        expect(await publish(app, commitPost)).toBe(true);
 
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(POST)}).length >= 2`,
+          `document.querySelectorAll(${JSON.stringify(POST)}).length >= 3`,
           { timeoutMs: 10_000 },
         );
 
         const rows = await app.evalJS<Row[]>(ROWS_JS);
         note("rendered rows", JSON.stringify(rows));
 
-        expect(rows.length, "one row per published post").toBe(2);
+        expect(rows.length, "one row per published post").toBe(3);
 
         // Arrival order, oldest first — the channel is read as a running feed.
         expect(rows[0]!.author).toBe("reporter");
         expect(rows[0]!.body).toBe(reporterPost.body);
         expect(rows[1]!.author).toBe("operator");
         expect(rows[1]!.body).toBe(operatorPost.body);
+        expect(rows[2]!.author).toBe("reporter");
+        expect(rows[2]!.body).toContain("landed the sticky-header fixes");
 
         // Every row leads with its author's glyph — the only thing on the row
         // that says who is speaking.
@@ -270,14 +304,81 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           "s•",
         );
 
-        const chipTitle = await app.evalJS<string | null>(
+        // ── 2b. The refs RESOLVE — the chain is the production one. ────────
+        // The post's project_dir earns a browse workspace, the target stats
+        // through /api/fs/stat, and only then is the atom stamped with the
+        // full annotation payload (`data-path` carrying the canonical
+        // absolute path) that makes the registry's click and menu its
+        // gesture. A kind attribute alone would be the half-stamped bug this
+        // build fixed — so the payload dataset is exactly what is asserted.
+        await app.waitForCondition<boolean>(
           `(function () {
-            var chip = document.querySelector(${JSON.stringify(`${POST} .gazette-post-refs .tug-atom-chip`)});
-            var wrap = chip === null ? null : chip.closest("[data-gazette-ref-kind]");
-            return wrap === null ? null : wrap.getAttribute("title");
+            var wrap = document.querySelector('[data-gazette-ref-kind="file"]');
+            var path = wrap === null ? null : wrap.getAttribute("data-path");
+            return path !== null &&
+              path.indexOf("/") === 0 &&
+              path.indexOf("tugdeck/src/lib/layout-imposer.ts") !== -1;
+          })()`,
+          { timeoutMs: 15_000 },
+        );
+        const fileStamp = await app.evalJS<{
+          title: string | null;
+          annotation: string | null;
+          path: string | null;
+        } | null>(
+          `(function () {
+            var wrap = document.querySelector('[data-gazette-ref-kind="file"]');
+            if (wrap === null) return null;
+            return {
+              title: wrap.getAttribute("title"),
+              annotation: wrap.getAttribute("data-tug-annotation"),
+              path: wrap.getAttribute("data-path"),
+            };
           })()`,
         );
-        expect(chipTitle).toBe("file: tugdeck/src/lib/layout-imposer.ts");
+        note("resolved file ref", JSON.stringify(fileStamp));
+        expect(fileStamp?.title).toBe("file: tugdeck/src/lib/layout-imposer.ts");
+        expect(fileStamp?.annotation).toBe("file-path");
+
+        // And the commit: git confirms the sha (the same query that scopes
+        // the diff), the prose mention becomes the commit atom in place, and
+        // the chip reads the 8-char prefix however long the prose spelled it.
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var wrap = document.querySelector('[data-gazette-ref-kind="commit"]');
+            return wrap !== null && wrap.getAttribute("data-sha") !== null;
+          })()`,
+          { timeoutMs: 20_000 },
+        );
+        const commitStamp = await app.evalJS<{
+          sha: string | null;
+          root: string | null;
+          annotation: string | null;
+          inline: boolean;
+          chipLabel: string | null;
+        } | null>(
+          `(function () {
+            var wrap = document.querySelector('[data-gazette-ref-kind="commit"]');
+            if (wrap === null) return null;
+            var chip = wrap.querySelector(".tug-atom-chip");
+            return {
+              sha: wrap.getAttribute("data-sha"),
+              root: wrap.getAttribute("data-root"),
+              annotation: wrap.getAttribute("data-tug-annotation"),
+              inline: wrap.classList.contains("gazette-body-atom"),
+              chipLabel: chip === null ? null : chip.getAttribute("aria-label"),
+            };
+          })()`,
+        );
+        note("resolved commit ref", JSON.stringify(commitStamp));
+        expect(commitStamp?.sha).toBe(HEAD_SHA.slice(0, 12));
+        expect(commitStamp?.root?.startsWith("/")).toBe(true);
+        expect(commitStamp?.annotation).toBe("commit-sha");
+        expect(
+          commitStamp?.inline,
+          "the mention became the atom in the prose, not a trailing chip",
+        ).toBe(true);
+        expect(commitStamp?.chipLabel).toBe(HEAD_SHA.slice(0, 8));
 
         // ── 3. The composer round-trips through the Operator. ─────────────
         const question = "which sessions touched the imposer";

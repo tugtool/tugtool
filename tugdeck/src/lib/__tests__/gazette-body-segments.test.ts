@@ -66,4 +66,66 @@ describe("segmentGazetteBody", () => {
     const segs = segmentGazetteBody("Anything at all.", [file("")]);
     expect(segs).toEqual([{ text: "Anything at all.", ref: null }]);
   });
+
+  test("a basename mention claims its ref when the prose drops the dirs", () => {
+    const ref = file("tugrust/scripts/xcodebuild-quiet.sh");
+    const segs = segmentGazetteBody(
+      "Wrote xcodebuild-quiet.sh to tame the build.",
+      [ref],
+    );
+    expect(segs.map((s) => [s.text, s.ref?.target ?? null])).toEqual([
+      ["Wrote ", null],
+      ["xcodebuild-quiet.sh", "tugrust/scripts/xcodebuild-quiet.sh"],
+      [" to tame the build.", null],
+    ]);
+  });
+
+  test("a basename never claims the tail of a longer, different path", () => {
+    const ref = file("tugdeck/src/lib/foo.ts");
+    const segs = segmentGazetteBody("See other/place/foo.ts for the twin.", [
+      ref,
+    ]);
+    expect(inlineRefTargets(segs)).toEqual(new Set());
+  });
+
+  test("a mention followed by a sentence period still matches", () => {
+    const ref = file("tugdeck/src/lib/layout-imposer.ts");
+    const segs = segmentGazetteBody(
+      "Reworked tugdeck/src/lib/layout-imposer.ts.",
+      [ref],
+    );
+    expect(inlineRefTargets(segs)).toEqual(
+      new Set(["tugdeck/src/lib/layout-imposer.ts"]),
+    );
+  });
+
+  test("a mention inside a longer name never matches", () => {
+    const ref = file("foo.ts");
+    const segs = segmentGazetteBody("Renamed foo.ts.bak and data.ts today.", [
+      ref,
+      file("a.ts"),
+    ]);
+    expect(inlineRefTargets(segs)).toEqual(new Set());
+  });
+
+  test("a sha spelled longer or shorter than the ref still claims its run", () => {
+    const ref = commit("957d2350b");
+    const longer = segmentGazetteBody(
+      "Commit 957d2350b422 landed the fixes.",
+      [ref],
+    );
+    expect(longer.map((s) => [s.text, s.ref?.target ?? null])).toEqual([
+      ["Commit ", null],
+      ["957d2350b422", "957d2350b"],
+      [" landed the fixes.", null],
+    ]);
+    const shorter = segmentGazetteBody("Commit 957d2350 landed.", [ref]);
+    expect(inlineRefTargets(shorter)).toEqual(new Set(["957d2350b"]));
+  });
+
+  test("an unrelated hex run never claims a commit ref", () => {
+    const ref = commit("957d2350b");
+    const segs = segmentGazetteBody("Commit deadbeef1 landed.", [ref]);
+    expect(inlineRefTargets(segs)).toEqual(new Set());
+  });
 });
