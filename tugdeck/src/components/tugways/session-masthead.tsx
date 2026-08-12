@@ -70,7 +70,7 @@ import "./session-masthead.css";
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Summary } from "lucide-react";
+import { FolderOpenDot, Info } from "lucide-react";
 
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
@@ -100,6 +100,7 @@ import { useSessionPhase } from "@/lib/code-session-store/use-session-phase";
 import { SESSION_PHASE_LABELS } from "@/lib/code-session-store/session-phase-visual";
 import { useSessionCreatedAtMs } from "@/lib/session-created-at";
 import { writeSessionAtomToClipboard } from "@/lib/session-atom";
+import { openPathInOS } from "@/lib/os-open";
 import { TugSessionIdentity } from "@/components/tugways/tug-session-identity";
 import { SessionIdentityRow } from "@/components/tugways/session-identity-row";
 import { TUG_SESSION_ROW_STACK_DOT_SIZE } from "@/components/tugways/tug-session-row";
@@ -651,6 +652,30 @@ export function SessionMasthead({
         the same composition every control beside this one uses.
       */}
       {accessoryHost !== null && createPortal(
+      <>
+      {/*
+        Open the session's project directory in the Finder. The gesture used to
+        live on the Z4B project chip; the title-bar rework took that row away,
+        and this is where it returns — beside the summary, in the same control
+        cluster, wearing the same ghost icon button. Rendered only when the card
+        is bound to a project, since there is nothing to open otherwise.
+      */}
+      {projectDir.length > 0 && (
+        <TugTooltip content={`Open in Finder: ${projectDir}`}>
+          <TugButton
+            subtype="icon"
+            emphasis="ghost"
+            role="action"
+            size="sm"
+            icon={<FolderOpenDot />}
+            data-slot="session-masthead-reveal"
+            tabIndex={-1}
+            data-no-activate=""
+            aria-label="Open project folder in Finder"
+            onClick={() => openPathInOS(projectDir, "folder")}
+          />
+        </TugTooltip>
+      )}
       <TugTooltip content="Show this session's summary">
       <span className="tug-pane-title-bar-tooltip-anchor">
       <TugPopover dismissOnChainActivity={false}>
@@ -660,7 +685,7 @@ export function SessionMasthead({
             emphasis="ghost"
             role="action"
             size="sm"
-            icon={<Summary />}
+            icon={<Info />}
             data-slot="session-masthead-widget"
             // Chrome, like the close button — never a card-cycle focus stop.
             // `TugButton` already refuses first responder on click; opening the
@@ -758,7 +783,8 @@ export function SessionMasthead({
         </TugPopoverContent>
       </TugPopover>
       </span>
-      </TugTooltip>,
+      </TugTooltip>
+      </>,
       accessoryHost,
       )}
     </div>
