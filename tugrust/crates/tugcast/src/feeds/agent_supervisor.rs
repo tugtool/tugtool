@@ -659,6 +659,30 @@ impl LedgerSessionsRecorder {
             Err(err) => warn!(error = %err, "ledger sweep_expired failed"),
         }
     }
+
+    /// The handle a fact files a session under: its callsign when it has one,
+    /// else the session id. Read before the transition that prompted the fact,
+    /// since some of those transitions are the last moment the row is legible.
+    fn session_handle(&self, session_id: &str) -> String {
+        self.ledger
+            .get(session_id)
+            .ok()
+            .flatten()
+            .and_then(|row| row.tag)
+            .unwrap_or_else(|| session_id.to_owned())
+    }
+
+    /// Write one lifecycle fact, best-effort. A failed write warns; it never
+    /// gates the transition it describes.
+    fn record_lifecycle_fact(&self, fact: &crate::session_ledger::NewFact) {
+        if let Err(err) = self.ledger.record_fact(fact) {
+            warn!(
+                error = %err,
+                kind = %fact.kind,
+                "lifecycle fact write failed; the session row is unaffected"
+            );
+        }
+    }
 }
 
 impl SessionsRecorder for LedgerSessionsRecorder {
@@ -740,6 +764,7 @@ impl SessionsRecorder for LedgerSessionsRecorder {
     }
 
     fn mark_closed(&self, session_id: &str) {
+        let handle = self.session_handle(session_id);
         if let Err(err) = self.ledger.mark_closed(session_id) {
             warn!(error = %err, session_id, "ledger mark_closed failed");
             return;
@@ -749,10 +774,21 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.mark_closed",
             session_id,
         );
+        // The fact rides the durable transition rather than any one of the
+        // several `closed` publish sites, so every path that really ends a
+        // session records exactly once.
+        self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
+            crate::session_ledger::now_millis(),
+            session_id,
+            false,
+            &handle,
+            None,
+        ));
         self.broadcast_row(session_id);
     }
 
     fn mark_failed(&self, session_id: &str) {
+        let handle = self.session_handle(session_id);
         if let Err(err) = self.ledger.mark_failed(session_id) {
             warn!(error = %err, session_id, "ledger mark_failed failed");
             return;
@@ -762,6 +798,13 @@ impl SessionsRecorder for LedgerSessionsRecorder {
             event = "ledger.mark_failed",
             session_id,
         );
+        self.record_lifecycle_fact(&crate::feeds::facts_library::session_end_fact(
+            crate::session_ledger::now_millis(),
+            session_id,
+            true,
+            &handle,
+            None,
+        ));
         self.broadcast_row(session_id);
     }
 
@@ -849,6 +892,11 @@ pub fn build_session_updated_frame(
             "root_tag": row.root_tag,
             "tag_lineage": row.tag_lineage,
             "synopsis": row.synopsis,
+            // Privacy is a resting state, so it has to reach the deck: a chip
+            // that only showed the transition ack would go quiet on reload and
+            // leave a session silently un-narrated with nothing saying why
+            // ([P05]).
+            "private": row.private,
         },
     });
     Frame::new(
@@ -1277,6 +1325,9 @@ fn build_listed_union(
                     // The description is ledger state; a session with no
                     // `sessions` row has none until it is adopted.
                     synopsis: None,
+                    // So is the privacy flag, and an absent row reads as
+                    // public everywhere the flag is enforced.
+                    private: false,
                 },
                 origin: "external",
                 terminal_live,
@@ -1967,6 +2018,26 @@ fn parse_rename_session_payload(payload: &[u8]) -> Result<(String, Option<String
         .filter(|s| !s.is_empty())
         .map(str::to_string);
     Ok((id, name))
+}
+
+/// Parse a `set_session_private` CONTROL payload: `{ session_id, private }`.
+/// A missing or non-boolean `private` reads as `true` — the payload's only
+/// reason to exist is to mark a session, and defaulting the other way would
+/// silently do nothing to a session the user just asked to hide.
+fn parse_set_session_private_payload(payload: &[u8]) -> Result<(String, bool), ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let id = value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let private = value
+        .get("private")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    Ok((id, private))
 }
 
 /// Parse a CONTROL payload that carries `{ tug_session_id: "..." }` only.
@@ -2693,6 +2764,13 @@ impl AgentSupervisor {
             "rename_session" => match parse_rename_session_payload(payload) {
                 Ok((session_id, name)) => {
                     self.do_rename_session(&session_id, name.as_deref()).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "set_session_private" => match parse_set_session_private_payload(payload) {
+                Ok((session_id, private)) => {
+                    self.do_set_session_private(&session_id, private).await;
                     Ok(())
                 }
                 Err(e) => return ControlOutcome::Error(e),
@@ -3479,12 +3557,20 @@ impl AgentSupervisor {
         // spawn's row doesn't exist yet (the bridge writes it on
         // `session_init`) — `None`/`false` here, which the client seeds
         // non-clobberingly so it can't wipe the optimistic tag.
-        let (row_name, row_name_user_set, row_tag, row_synopsis) = self
+        let (row_name, row_name_user_set, row_tag, row_synopsis, row_private) = self
             .session_ledger
             .as_ref()
             .and_then(|ledger| ledger.get(tug_session_id.as_str()).ok().flatten())
-            .map(|row| (row.name, row.name_user_set, row.tag, row.synopsis))
-            .unwrap_or((None, false, None, None));
+            .map(|row| {
+                (
+                    row.name,
+                    row.name_user_set,
+                    row.tag,
+                    row.synopsis,
+                    row.private,
+                )
+            })
+            .unwrap_or((None, false, None, None, false));
         let ack = serde_json::json!({
             "action": "spawn_session_ok",
             "card_id": card_id,
@@ -3503,6 +3589,9 @@ impl AgentSupervisor {
             // does: a resumed card must not sit on an empty line waiting for
             // the next listing.
             "synopsis": row_synopsis,
+            // Gazette privacy rides the ack for the same reason: a resumed card
+            // must show the marker immediately, not wait for the next push.
+            "private": row_private,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
@@ -4173,6 +4262,25 @@ impl AgentSupervisor {
                         settled_at_ms: now,
                     }) {
                         warn!(error = %e, "failed to persist /commit to the shell ledger");
+                    }
+                }
+                // The commit as a fact ([P08]). This is the one durable moment
+                // that knows the sha, the message, and the file list together
+                // without re-running git — today the receipt is built here and
+                // thrown away after the broadcast.
+                if let Some(sessions) = self.session_ledger.as_ref() {
+                    let files: Vec<String> =
+                        receipt.files.iter().map(|f| f.path.clone()).collect();
+                    let fact = crate::feeds::facts_library::commit_fact(
+                        crate::session_ledger::now_millis(),
+                        request.session_id.as_deref().filter(|s| !s.is_empty()),
+                        &receipt.sha,
+                        &message,
+                        &files,
+                        Some(&receipt.numstat),
+                    );
+                    if let Err(e) = sessions.record_fact(&fact) {
+                        warn!(error = %e, "commit fact write failed");
                     }
                 }
                 let body = serde_json::json!({
@@ -5633,8 +5741,25 @@ impl AgentSupervisor {
             ));
             return;
         };
+        // Read the name being replaced before it is gone — a rename fact that
+        // said only the new name would be half the event.
+        let old_name = ledger
+            .get(session_id)
+            .ok()
+            .flatten()
+            .and_then(|row| row.name);
         match ledger.rename(session_id, name) {
             Ok(_) => {
+                if let Err(err) = ledger.record_fact(
+                    &crate::feeds::facts_library::session_renamed_fact(
+                        crate::session_ledger::now_millis(),
+                        session_id,
+                        old_name.as_deref(),
+                        name,
+                    ),
+                ) {
+                    warn!(error = %err, session_id, "rename fact write failed");
+                }
                 // Push the updated row so the chooser + chip reflect the rename
                 // without a re-fetch. A missing row here would be a TOCTOU race
                 // (renamed then trashed); the get is best-effort.
@@ -5677,6 +5802,62 @@ impl AgentSupervisor {
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
                     serde_json::to_vec(&body).expect("rename_session_err serializes"),
+                ));
+            }
+        }
+    }
+
+    /// Handle a `set_session_private` CONTROL request ([P05], [Q01]).
+    ///
+    /// Writes the flag, pushes the row so the chip shows the resting state, and
+    /// acks `set_session_private_ok` / `_err`. **No fact is recorded for the
+    /// toggle itself** — recording the act of hiding would leak the hiding.
+    async fn do_set_session_private(&self, session_id: &str, private: bool) {
+        let err = |reason: &str| {
+            serde_json::json!({
+                "action": "set_session_private_err",
+                "session_id": session_id,
+                "reason": reason,
+            })
+        };
+        let Some(ledger) = self.session_ledger.as_ref() else {
+            let _ = self.control_tx.send(Frame::new(
+                FeedId::CONTROL,
+                serde_json::to_vec(&err("no_ledger")).expect("set_session_private_err serializes"),
+            ));
+            return;
+        };
+        match ledger.set_session_private(session_id, private) {
+            Ok(()) => {
+                if let Ok(Some(row)) = ledger.get(session_id) {
+                    let metrics = ledger.scan_metrics_for(session_id).unwrap_or(None);
+                    let _ = self
+                        .control_tx
+                        .send(build_session_updated_frame(&row, metrics));
+                }
+                let body = serde_json::json!({
+                    "action": "set_session_private_ok",
+                    "session_id": session_id,
+                    "private": private,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("set_session_private_ok serializes"),
+                ));
+            }
+            Err(crate::session_ledger::LedgerError::NotFound(_)) => {
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&err("not_found"))
+                        .expect("set_session_private_err serializes"),
+                ));
+            }
+            Err(e) => {
+                warn!(error = %e, session_id, "set_session_private ledger error");
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&err("ledger_write_failed"))
+                        .expect("set_session_private_err serializes"),
                 ));
             }
         }
@@ -5781,11 +5962,16 @@ impl AgentSupervisor {
         // resurrect it. Bail out silently — the caller's reset is
         // meaningless for a dead session, and flipping back to `Idle`
         // would confuse any worker that later observed the stale Arc.
+        // Captured before the clear below: the reset fact names the session
+        // being discarded, and after this block there is no id left to name it
+        // by.
+        let mut cleared_claude_id: Option<String> = None;
         let resurrected = {
             let mut entry = entry_arc.lock().await;
             if entry.spawn_state == SpawnState::Closed {
                 false
             } else {
+                cleared_claude_id = entry.claude_session_id.clone();
                 entry.claude_session_id = None;
                 entry.session_mode = super::agent_bridge::SessionMode::New;
                 entry.cancel.cancel();
@@ -5805,6 +5991,26 @@ impl AgentSupervisor {
             card_id = card_id,
             tug_session_id = %tug_session_id,
         );
+
+        // One fact for the reset. The closed→pending pair published below is
+        // the card's state machine talking, not two more events — and the
+        // ledger row is not transitioned here, so no `session.closed` fact
+        // fires alongside it.
+        if let (Some(ledger), Some(claude_id)) = (self.session_ledger.as_ref(), &cleared_claude_id) {
+            let handle = ledger
+                .get(claude_id)
+                .ok()
+                .flatten()
+                .and_then(|row| row.tag)
+                .unwrap_or_else(|| claude_id.clone());
+            if let Err(err) = ledger.record_fact(&crate::feeds::facts_library::session_reset_fact(
+                crate::session_ledger::now_millis(),
+                claude_id,
+                &handle,
+            )) {
+                warn!(error = %err, "reset fact write failed");
+            }
+        }
 
         self.session_state.publish_tagged(build_session_state_frame(
             tug_session_id,
@@ -6987,6 +7193,7 @@ mod tests {
             tag: Some("azure-heron".to_owned()),
             root_tag: None,
             tag_lineage: None,
+            private: false,
             synopsis: Some("Repair ligature fallback in monospace".to_owned()),
         };
         let frame = build_session_updated_frame(&row, None);
@@ -7020,6 +7227,7 @@ mod tests {
             root_tag: None,
             tag_lineage: None,
             synopsis: None,
+            private: false,
         };
 
         // No scan-cache row: a null size, and the ledger's own count stands.
@@ -11203,6 +11411,68 @@ mod tests {
             }
         }
         panic!("CONTROL frame with action `{action}` not observed");
+    }
+
+    /// `set_session_private` writes the flag, acks, and pushes the row so the
+    /// chip can show a resting state ([P05], [Q01]). No fact is recorded for
+    /// the toggle — recording the act of hiding would leak the hiding.
+    #[tokio::test]
+    async fn set_session_private_acks_and_pushes_the_flag() {
+        let (sup, ledger, mut rx) = make_supervisor_with_ledger();
+        ledger
+            .record_spawn("sess", "ws-1", "/proj", "card-A", 1_000, None)
+            .unwrap();
+        let facts_before = ledger.facts_for_test().len();
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "set_session_private",
+            "session_id": "sess",
+            "private": true,
+        }))
+        .unwrap();
+        sup.handle_control("set_session_private", &payload, 10)
+            .await
+            .expect_handled();
+
+        let ack = drain_until_action(&mut rx, "set_session_private_ok");
+        assert_eq!(ack["session_id"], "sess");
+        assert_eq!(ack["private"], true);
+        assert!(ledger.is_session_private("sess").unwrap());
+        assert_eq!(
+            ledger.facts_for_test().len(),
+            facts_before,
+            "the toggle itself is not a fact"
+        );
+
+        // Turning it back off is the same verb; the push carries the new value.
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "set_session_private",
+            "session_id": "sess",
+            "private": false,
+        }))
+        .unwrap();
+        sup.handle_control("set_session_private", &payload, 10)
+            .await
+            .expect_handled();
+        let pushed = drain_until_action(&mut rx, "session_updated");
+        assert_eq!(pushed["fields"]["private"], false);
+        assert!(!ledger.is_session_private("sess").unwrap());
+    }
+
+    #[tokio::test]
+    async fn set_session_private_on_an_unknown_session_errs() {
+        let (sup, _ledger, mut rx) = make_supervisor_with_ledger();
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "set_session_private",
+            "session_id": "nope",
+            "private": true,
+        }))
+        .unwrap();
+        sup.handle_control("set_session_private", &payload, 10)
+            .await
+            .expect_handled();
+        let err = drain_until_action(&mut rx, "set_session_private_err");
+        assert_eq!(err["reason"], "not_found");
     }
 
     /// `list_card_bindings` returns every non-failed row carrying a

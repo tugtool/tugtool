@@ -14,6 +14,7 @@ pub mod claude_usage;
 pub mod code;
 pub mod defaults;
 pub mod draft_engine;
+pub mod facts_library;
 pub mod file_watcher;
 pub mod filesystem;
 pub mod filetree;

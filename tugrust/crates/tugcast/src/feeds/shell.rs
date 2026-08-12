@@ -822,6 +822,7 @@ async fn shell_session_task(
     mut rx: mpsc::Receiver<ShellCmd>,
     output: SessionScopedFeed,
     ledger: Option<Arc<ShellLedger>>,
+    sessions_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
     shared: Arc<Mutex<SessionShared>>,
     tug_session_id: String,
     spawn_cwd: PathBuf,
@@ -958,6 +959,40 @@ async fn shell_session_task(
             }
         }
 
+        // The same exchange as a fact. `shell_exchanges` is the verbatim
+        // record the card restores from; this is the durable, searchable one
+        // the Operator answers "what did I run" out of. Live-only, so no
+        // dedupe key: a `$` command settles once and is never replayed.
+        //
+        // The exit code informs the `shell` fact alone. A test run's verdict
+        // is read from its own summary ([P07]) — a failing suite exits
+        // non-zero from a perfectly well-formed command.
+        if let Some(sessions) = sessions_ledger.as_ref() {
+            use crate::feeds::facts_library;
+            let at_ms = settled_at as i64;
+            let exit = exit_code.map(i64::from);
+            let shell_fact = facts_library::shell_fact(
+                at_ms,
+                Some(&tug_session_id),
+                &command,
+                facts_library::ShellRoute::User,
+                exit.unwrap_or(0) == 0,
+                exit,
+                Some(&cwd),
+                None,
+            );
+            if let Err(e) = sessions.record_fact(&shell_fact) {
+                warn!(error = %e, %tug_session_id, "shell fact write failed");
+            }
+            if let Some(run) = facts_library::classify_test_run(&command, &out) {
+                if let Err(e) =
+                    sessions.record_fact(&facts_library::test_run_fact(at_ms, Some(&tug_session_id), &run, None))
+                {
+                    warn!(error = %e, %tug_session_id, "test_run fact write failed");
+                }
+            }
+        }
+
         // A command just finished running, which is when installs happen in
         // this UI — `brew install x` is typed into this very route. The
         // throttle makes the poke cheap enough to pay on every settle rather
@@ -1005,22 +1040,40 @@ fn emit(output: &SessionScopedFeed, tug_session_id: &str, payload: serde_json::V
 /// `exec` lazily spawns a session's task and enqueues the command; `kill`
 /// signals the session's shared pid out-of-band (a wedged task can't dequeue).
 /// One task per `tug_session_id`; the map lives for the dispatcher's lifetime.
+///
+/// `sessions` is the per-instance session ledger, present only so a settled
+/// exchange can record its facts ([P06]) — the `$` route is one of the two
+/// places a shell command becomes durable, and it had no handle to the facts
+/// library before. Optional for the same reason `ledger` is: tests that
+/// exercise the wire shape wire neither.
 pub async fn shell_dispatcher_task(
     input_rx: mpsc::Receiver<Frame>,
     output: SessionScopedFeed,
     ledger: Option<Arc<ShellLedger>>,
+    sessions: Option<Arc<crate::session_ledger::SessionLedger>>,
     agent: crate::shared_agent::SharedAgentHandle,
     cancel: CancellationToken,
 ) {
-    run_dispatcher(input_rx, output, ledger, agent, cancel, EXEC_TIMEOUT).await;
+    run_dispatcher(
+        input_rx,
+        output,
+        ledger,
+        sessions,
+        agent,
+        cancel,
+        EXEC_TIMEOUT,
+    )
+    .await;
 }
 
 /// Dispatcher core with an injectable per-exchange timeout (tests use a short
 /// one to exercise the reap-on-timeout path without waiting the full cap).
+#[allow(clippy::too_many_arguments)]
 async fn run_dispatcher(
     mut input_rx: mpsc::Receiver<Frame>,
     output: SessionScopedFeed,
     ledger: Option<Arc<ShellLedger>>,
+    sessions_ledger: Option<Arc<crate::session_ledger::SessionLedger>>,
     agent: crate::shared_agent::SharedAgentHandle,
     cancel: CancellationToken,
     exec_timeout: Duration,
@@ -1071,6 +1124,7 @@ async fn run_dispatcher(
                         rx,
                         output.clone(),
                         ledger.clone(),
+                        sessions_ledger.clone(),
                         Arc::clone(&shared),
                         tug_session_id.clone(),
                         spawn_cwd,
@@ -1229,6 +1283,7 @@ mod tests {
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
+            None,
             None,
             None,
             cancel.clone(),
@@ -1435,6 +1490,7 @@ mod tests {
             output.clone(),
             Some(Arc::clone(&ledger)),
             None,
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -1458,6 +1514,60 @@ mod tests {
         assert_eq!(rows[0].exit_code, Some(0));
     }
 
+    /// The `$` route is the second of the two places a shell command becomes
+    /// durable, and it had no handle on the facts library until the session
+    /// ledger was threaded here. A command that is a test run records both
+    /// facts; the verdict comes from the runner's own summary, never from the
+    /// exit code ([P07]).
+    #[tokio::test]
+    async fn a_settled_user_command_records_its_shell_and_test_run_facts() {
+        let sessions =
+            Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let output = SessionScopedFeed::new(FeedId::SHELL_OUTPUT, 256, LagPolicy::Warn);
+        let mut rx = output.subscribe();
+        let (tx, in_rx) = mpsc::channel(64);
+        let cancel = CancellationToken::new();
+        let handle = tokio::spawn(run_dispatcher(
+            in_rx,
+            output.clone(),
+            None,
+            Some(Arc::clone(&sessions)),
+            None,
+            cancel.clone(),
+            Duration::from_secs(10),
+        ));
+        // A real command whose real output carries a real nextest summary —
+        // `echo` is the honest way to put a known tail in front of the
+        // classifier without pretending to run a suite.
+        tx.send(exec_frame(
+            "s1",
+            "e1",
+            "echo '     Summary [ 1.0s] 3 tests run: 3 passed, 0 skipped' && cargo nextest run --help >/dev/null",
+            Some("/tmp"),
+        ))
+        .await
+        .unwrap();
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+        while let Ok(Ok(f)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+            if payload_json(&f)["type"] == "exchange_complete" {
+                break;
+            }
+        }
+        cancel.cancel();
+        drop(tx);
+        let _ = handle.await;
+
+        let facts = sessions.facts_for_test();
+        assert_eq!(facts.len(), 2, "a shell fact and its test_run: {facts:?}");
+        assert_eq!(facts[0].0, "shell");
+        assert!(facts[0].2.starts_with("$ echo"), "{}", facts[0].2);
+        assert_eq!(facts[1].0, "test_run");
+        assert_eq!(
+            facts[1].2,
+            "tests: cargo nextest — passed (3 passed, 0 failed)"
+        );
+    }
+
     #[tokio::test]
     async fn kill_reaps_a_long_runner() {
         // A long sleep wedges the shell; a kill frame reaps the group, and the
@@ -1469,6 +1579,7 @@ mod tests {
         let handle = tokio::spawn(shell_dispatcher_task(
             in_rx,
             output.clone(),
+            None,
             None,
             None,
             cancel.clone(),
@@ -1548,6 +1659,7 @@ mod tests {
             let handle = tokio::spawn(run_dispatcher(
                 in_rx,
                 output,
+                None,
                 None,
                 None,
                 cancel.clone(),
@@ -1731,6 +1843,7 @@ mod tests {
             output.clone(),
             None,
             None,
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -1900,6 +2013,7 @@ mod tests {
             output.clone(),
             None,
             None,
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -2010,6 +2124,7 @@ mod tests {
             in_rx,
             output.clone(),
             None,
+            None,
             Some(agent),
             cancel.clone(),
             Duration::from_secs(3),
@@ -2096,6 +2211,7 @@ mod tests {
             output.clone(),
             None,
             None,
+            None,
             cancel.clone(),
             Duration::from_secs(3),
         ));
@@ -2155,6 +2271,7 @@ mod tests {
         let handle = tokio::spawn(run_dispatcher(
             in_rx,
             output.clone(),
+            None,
             None,
             None,
             cancel.clone(),

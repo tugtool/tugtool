@@ -276,6 +276,44 @@ impl ShellLedger {
         Ok(moved_total)
     }
 
+    /// Exchanges matching a filter, newest-first — the read behind the
+    /// Operator's `shell.history` verb.
+    ///
+    /// `query` is a substring match on the command text, not full text: a `$`
+    /// command is a short line of shell, so "which invocation of `just` was
+    /// that" is a containment question rather than a relevance one. Session and
+    /// time bounds are all optional; with none of them this is the machine's
+    /// recent command history.
+    pub fn search_exchanges(
+        &self,
+        tug_session_id: Option<&str>,
+        query: Option<&str>,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<ShellExchangeRow>, ShellLedgerError> {
+        let like = query.map(|q| format!("%{q}%"));
+        let conn = self.db.lock().expect("shell ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, tug_session_id, seq, command, output, exit_code, cwd, cwd_after,
+                    started_at_ms, settled_at_ms
+             FROM shell_exchanges
+             WHERE (?1 IS NULL OR tug_session_id = ?1)
+               AND (?2 IS NULL OR command LIKE ?2)
+               AND (?3 IS NULL OR settled_at_ms >= ?3)
+               AND (?4 IS NULL OR settled_at_ms <= ?4)
+             ORDER BY settled_at_ms DESC, id DESC
+             LIMIT ?5",
+        )?;
+        let rows = stmt
+            .query_map(
+                params![tug_session_id, like, since_ms, until_ms, limit as i64],
+                exchange_from_row,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     /// List a session's exchanges oldest-first (the transcript's natural order).
     pub fn list_exchanges(
         &self,
@@ -288,23 +326,26 @@ impl ShellLedger {
              FROM shell_exchanges WHERE tug_session_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt
-            .query_map(params![tug_session_id], |row| {
-                Ok(ShellExchangeRow {
-                    id: row.get(0)?,
-                    tug_session_id: row.get(1)?,
-                    seq: row.get(2)?,
-                    command: row.get(3)?,
-                    output: row.get(4)?,
-                    exit_code: row.get(5)?,
-                    cwd: row.get(6)?,
-                    cwd_after: row.get(7)?,
-                    started_at_ms: row.get(8)?,
-                    settled_at_ms: row.get(9)?,
-                })
-            })?
+            .query_map(params![tug_session_id], exchange_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+}
+
+/// Decode one `shell_exchanges` row. The column order matches both reads.
+fn exchange_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ShellExchangeRow> {
+    Ok(ShellExchangeRow {
+        id: row.get(0)?,
+        tug_session_id: row.get(1)?,
+        seq: row.get(2)?,
+        command: row.get(3)?,
+        output: row.get(4)?,
+        exit_code: row.get(5)?,
+        cwd: row.get(6)?,
+        cwd_after: row.get(7)?,
+        started_at_ms: row.get(8)?,
+        settled_at_ms: row.get(9)?,
+    })
 }
 
 #[cfg(test)]

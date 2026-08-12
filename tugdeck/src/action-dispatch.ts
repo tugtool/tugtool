@@ -48,6 +48,7 @@ import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
 import { cardSessionBindingStore } from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
+import { sessionPrivateStore } from "./lib/session-private-store";
 import { sessionSynopsisStore } from "./lib/session-synopsis-store";
 import { sessionCitationStore } from "./lib/session-citation-store";
 import { applyAuthResultPayload, applyInstallResultPayload, applyLogoutResultPayload } from "./lib/auth-store";
@@ -922,6 +923,9 @@ export function initActionDispatch(
     // it seeds beside the name for the same reason (a resume binds via this
     // ack alone).
     sessionSynopsisStore.seedSynopsis(tugSessionId, ackSynopsis);
+    // Privacy is authoritative on the ack too: the row is read fresh, and a
+    // resumed card must show the marker without waiting for a later push.
+    sessionPrivateStore.setPrivate(tugSessionId, payload.private === true);
   });
 
   // session_updated: tugcast supervisor broadcasts these on every
@@ -948,6 +952,7 @@ export function initActionDispatch(
       sessionTagStore.setTag(decoded.session_id, null);
       sessionSynopsisStore.setSynopsis(decoded.session_id, null);
       sessionCitationStore.forgetSession(decoded.session_id);
+      sessionPrivateStore.forget(decoded.session_id);
     }
     if (decoded.fields !== undefined) {
       sessionNameStore.setName(
@@ -968,8 +973,31 @@ export function initActionDispatch(
         decoded.session_id,
         decoded.fields.synopsis,
       );
+      // Gazette privacy is authoritative on every push: the row is the only
+      // truth, and a push carrying `false` means the session really is public.
+      sessionPrivateStore.setPrivate(
+        decoded.session_id,
+        decoded.fields.private === true,
+      );
     }
     publishSessionUpdated(decoded);
+  });
+
+  // set_session_private_ok / _err: the ack for `/private`. The command writes
+  // the store optimistically so the atom's marker turns over with the gesture;
+  // these arms reconcile it with what the ledger actually did. The `_err` arm
+  // is why the optimistic write is safe — a refused toggle is put back rather
+  // than left showing a state the server never entered.
+  registerAction("set_session_private_ok", (payload) => {
+    const sessionId = payload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    sessionPrivateStore.setPrivate(sessionId, payload.private === true);
+  });
+  registerAction("set_session_private_err", (payload) => {
+    console.warn("set_session_private failed", payload);
+    const sessionId = payload.session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    sessionPrivateStore.setPrivate(sessionId, false);
   });
 
   // list_sessions_ok / _err: response to a `list_sessions` request. The

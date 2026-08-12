@@ -33,7 +33,8 @@ use serde_json::{Value, json};
 use tokio::process::Command;
 use tracing::warn;
 
-use crate::session_ledger::{GazetteSearchFilter, SessionLedger};
+use crate::session_ledger::{FactRow, FactSearchFilter, GazetteSearchFilter, SessionLedger};
+use crate::shell_ledger::ShellLedger;
 use tugcast_core::types::{GazetteAuthor, GazettePost};
 
 // MARK: - Caps
@@ -54,6 +55,11 @@ const GIT_LOG_DEFAULT_N: usize = 20;
 const GIT_SHOW_MAX_LINES: usize = 400;
 const GIT_SHOW_MAX_BYTES: usize = 16 * 1024;
 const GREP_MAX_MATCHES: usize = 100;
+const FACTS_SEARCH_LIMIT: usize = 30;
+const FACTS_WINDOW_MAX_N: usize = 20;
+const FACTS_PROMPT_LIMIT: usize = 200;
+const SHELL_HISTORY_LIMIT: usize = 50;
+const SHELL_OUTPUT_MAX_CHARS: usize = 240;
 
 /// Incipit length for a session's title/last-prompt in `sessions.list`. Long
 /// enough to recognize the session, short enough that fifty of them are a
@@ -66,17 +72,24 @@ const INCIPIT_CHARS: usize = 120;
 /// when a question names no session ([Q03]).
 pub struct OperatorContext {
     pub ledger: Arc<SessionLedger>,
+    /// The `$`-route command history, from the same handle the shell dispatcher
+    /// holds. Absent in a build with no shell ledger, which reads as "no
+    /// command history to search".
+    pub shell_ledger: Option<Arc<ShellLedger>>,
     /// The `--source-tree` dir `main.rs` resolves at startup — the repo a
     /// question means when it doesn't say.
     pub bootstrap_project_dir: PathBuf,
 }
 
 /// Every verb the Operator may name. The retrieval instructions list the same
-/// nine; a test pins the two lists against each other so a verb can never be
+/// twelve; a test pins the two lists against each other so a verb can never be
 /// offered to the model without an executor behind it.
 pub const VERB_NAMES: &[&str] = &[
     "gazette.search",
     "gazette.window",
+    "facts.search",
+    "facts.window",
+    "shell.history",
     "sessions.list",
     "session.prompts",
     "changes.for_session",
@@ -109,6 +122,9 @@ async fn dispatch(ctx: &OperatorContext, name: &str, args: &Value) -> Result<Val
     match name {
         "gazette.search" => gazette_search(ctx, args),
         "gazette.window" => gazette_window(ctx, args),
+        "facts.search" => facts_search(ctx, args),
+        "facts.window" => facts_window(ctx, args),
+        "shell.history" => shell_history(ctx, args),
         "sessions.list" => sessions_list(ctx, args),
         "session.prompts" => session_prompts(ctx, args),
         "changes.for_session" => changes_for_session(ctx, args),
@@ -295,6 +311,136 @@ fn gazette_window(ctx: &OperatorContext, args: &Value) -> Result<Value, String> 
     Ok(json!({ "posts": rows, "count": rows.len() }))
 }
 
+/// A named session the Operator may not read ([P05]).
+///
+/// The verbs that take a `session_id` and read through it answer as if the
+/// session were not in the ledger, which is what "excluded from the channel"
+/// means from the desk's side: `sessions.list` does not show it, so a question
+/// that names it anyway gets the same answer as one naming a stranger. The
+/// reads that scan across sessions need no gate here — their SQL carries the
+/// `NOT EXISTS` exclusion.
+fn refuse_if_private(ctx: &OperatorContext, verb: &str, session_id: &str) -> Result<(), String> {
+    match ctx.ledger.is_session_private(session_id) {
+        Ok(true) => Err(format!("no session {session_id:?} in the ledger")),
+        Ok(false) => Ok(()),
+        Err(err) => Err(format!("{verb}: {err}")),
+    }
+}
+
+// MARK: - The library desk
+
+/// One fact as the model reads it: the stored rendering, plus the handles a
+/// follow-up question would name.
+///
+/// The payload is deliberately absent. It is the recorder's structured form —
+/// a prompt's payload runs to kilobytes — while `text` is the rendering both
+/// FTS and the Reporter read, so returning it here keeps every surface
+/// describing a fact the same way ([P02]).
+fn fact_json(fact: &FactRow) -> Value {
+    json!({
+        "id": fact.id,
+        "at_ms": fact.at_ms,
+        "kind": fact.kind,
+        "session_id": fact.session_id,
+        "subject": fact.subject,
+        "text": fact.text,
+    })
+}
+
+fn facts_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let query = req_str(args, "query")?;
+    let filter = FactSearchFilter {
+        kind: opt_str(args, "kind")?.map(str::to_string),
+        session_id: opt_str(args, "session_id")?.map(str::to_string),
+        since_ms: opt_i64(args, "since_ms")?,
+        until_ms: opt_i64(args, "until_ms")?,
+    };
+    let hits = ctx
+        .ledger
+        .search_facts(query, &filter, FACTS_SEARCH_LIMIT)
+        // Same posture as `gazette.search`: FTS5 says what it disliked about
+        // the query, and the model reads its own mistake.
+        .map_err(|err| format!("facts.search: {err}"))?;
+    let rows: Vec<Value> = hits
+        .iter()
+        .map(|hit| {
+            let mut row = fact_json(&hit.fact);
+            row["excerpt"] = json!(truncate(&hit.excerpt, 240));
+            row
+        })
+        .collect();
+    Ok(json!({ "facts": rows, "count": rows.len() }))
+}
+
+fn facts_window(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let fact_id = opt_i64(args, "fact_id")?.ok_or("argument \"fact_id\" is required")?;
+    let n = opt_i64(args, "n")?
+        .unwrap_or(5)
+        .clamp(0, FACTS_WINDOW_MAX_N as i64) as usize;
+    let facts = ctx
+        .ledger
+        .facts_window(fact_id, n)
+        .map_err(|err| format!("facts.window: {err}"))?;
+    let rows: Vec<Value> = facts.iter().map(fact_json).collect();
+    Ok(json!({ "facts": rows, "count": rows.len() }))
+}
+
+/// The `$`-route command history, verbatim.
+///
+/// The one verb that reads output as well as command: a `$` exchange's output
+/// is already stored whole, and the excerpt is what makes "did that command
+/// work" answerable without re-running it.
+fn shell_history(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let Some(shell) = ctx.shell_ledger.as_deref() else {
+        return Err("shell.history: this instance keeps no shell command history".to_string());
+    };
+    if let Some(session_id) = opt_str(args, "session_id")? {
+        refuse_if_private(ctx, "shell.history", session_id)?;
+    }
+    let query = opt_str(args, "query")?;
+    if let Some(query) = query {
+        plain_arg(query, "query")?;
+    }
+    let rows = shell
+        .search_exchanges(
+            opt_str(args, "session_id")?,
+            query,
+            opt_i64(args, "since_ms")?,
+            opt_i64(args, "until_ms")?,
+            SHELL_HISTORY_LIMIT,
+        )
+        .map_err(|err| format!("shell.history: {err}"))?;
+    // The command history lives in its own database, so the privacy exclusion
+    // cannot ride the query the way it does for every session-ledger read: the
+    // sessions table is not there to join against. One lookup per distinct
+    // session in the result page is what that costs, and a session the ledger
+    // cannot answer for reads as public — the `NOT EXISTS` reading.
+    let mut privacy: std::collections::HashMap<&str, bool> = std::collections::HashMap::new();
+    let commands: Vec<Value> = rows
+        .iter()
+        .filter(|row| {
+            !*privacy
+                .entry(row.tug_session_id.as_str())
+                .or_insert_with(|| {
+                    ctx.ledger
+                        .is_session_private(&row.tug_session_id)
+                        .unwrap_or(false)
+                })
+        })
+        .map(|row| {
+            json!({
+                "command": row.command,
+                "output_excerpt": truncate(&row.output, SHELL_OUTPUT_MAX_CHARS),
+                "exit_code": row.exit_code,
+                "cwd": row.cwd,
+                "at_ms": row.settled_at_ms,
+                "session_id": row.tug_session_id,
+            })
+        })
+        .collect();
+    Ok(json!({ "commands": commands, "count": commands.len() }))
+}
+
 fn sessions_list(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let rows = ctx
         .ledger
@@ -331,20 +477,25 @@ fn sessions_list(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
 
 /// What the person asked in one session.
 ///
-/// The ledger's `turns` journal holds only *pending* submissions — a row is
-/// deleted the moment claude acknowledges it — so the durable record of a
-/// prompt is the session row's `last_user_prompt`. This verb returns both:
-/// anything still in flight, and the last prompt the session recorded. The
-/// full prompt history lives in claude's JSONL, which no read-only ledger
-/// verb reaches; an answer that needs it should say so rather than guess.
+/// The prompt history comes from the facts library — every prompt, in full,
+/// permanently — merged with the `turns` journal's still-pending submissions.
+/// A session that predates the library has no `prompt` facts, and for it the
+/// verb falls back to what the ledger alone can say (the session row's single
+/// `last_user_prompt` snippet) and carries a note saying so, so an answer
+/// built on one remembered prompt does not read as the whole history.
 fn session_prompts(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let session_id = req_str(args, "session_id")?;
+    refuse_if_private(ctx, "session.prompts", session_id)?;
     let query = opt_str(args, "query")?.map(str::to_lowercase);
     let row = ctx
         .ledger
         .get(session_id)
         .map_err(|err| format!("session.prompts: {err}"))?
         .ok_or_else(|| format!("no session {session_id:?} in the ledger"))?;
+    let facts = ctx
+        .ledger
+        .list_facts_for_session_since(session_id, Some("prompt"), None, FACTS_PROMPT_LIMIT)
+        .map_err(|err| format!("session.prompts: {err}"))?;
     let pending = ctx
         .ledger
         .list_pending_turns_for_session(session_id)
@@ -365,23 +516,42 @@ fn session_prompts(ctx: &OperatorContext, args: &Value) -> Result<Value, String>
             }));
         }
     };
-    if let Some(last) = row.last_user_prompt.as_deref() {
-        push(last, row.last_used_at, false);
+    if facts.is_empty() {
+        if let Some(last) = row.last_user_prompt.as_deref() {
+            push(last, row.last_used_at, false);
+        }
+    } else {
+        for fact in &facts {
+            // The full prompt lives in the payload; `text` is the one-line
+            // rendering, which is the wrong thing to answer this question with.
+            let text = serde_json::from_str::<Value>(&fact.payload)
+                .ok()
+                .and_then(|p| p.get("text").and_then(Value::as_str).map(str::to_string));
+            if let Some(text) = text {
+                push(&text, fact.at_ms, false);
+            }
+        }
     }
     for turn in &pending {
         push(&turn.user_text, turn.created_at, true);
     }
-    Ok(json!({
+    let mut out = json!({
         "session_id": session_id,
         "prompts": prompts,
         "turn_count": row.turn_count,
-        "note": "the ledger keeps the last prompt plus any still in flight; \
-                 earlier prompts are not stored",
-    }))
+    });
+    if facts.is_empty() {
+        out["note"] = json!(
+            "this session predates the facts library: only the last prompt \
+             plus anything still in flight is stored"
+        );
+    }
+    Ok(out)
 }
 
 fn changes_for_session(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let session_id = req_str(args, "session_id")?;
+    refuse_if_private(ctx, "changes.for_session", session_id)?;
     let events = ctx
         .ledger
         .list_file_events_for_session(session_id, CHANGES_LIMIT)
@@ -809,7 +979,7 @@ impl OperatorPipeline {
 
         match self.answer(&question).await {
             Ok((post, context)) => {
-                let validated = crate::feeds::reporter_wake::validate_refs(post.refs, &context);
+                let validated = crate::feeds::reporter_wake::validate_refs(post.refs, &[&context]);
                 if !validated.dropped.is_empty() {
                     tracing::warn!(
                         dropped = validated.dropped.len(),
@@ -966,6 +1136,7 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::feeds::facts_library;
     use crate::session_ledger::SessionLedger;
     use tugcast_core::types::{GazettePost, GazetteRef, GazetteRefKind};
 
@@ -1015,6 +1186,9 @@ mod tests {
         Fixture {
             ctx: OperatorContext {
                 ledger: ledger(),
+                shell_ledger: Some(Arc::new(
+                    ShellLedger::open_in_memory().expect("in-memory shell ledger"),
+                )),
                 bootstrap_project_dir: repo.path().to_path_buf(),
             },
             _dir: dir,
@@ -1143,6 +1317,214 @@ mod tests {
             text.chars().count(),
             PROMPT_MAX_CHARS + 1,
             "capped plus '…'"
+        );
+    }
+
+    /// Record a fact through the same builders the live recorders use, so a
+    /// verb test reads exactly the rows production writes.
+    fn seed_fact(ctx: &OperatorContext, fact: &crate::session_ledger::NewFact) -> i64 {
+        ctx.ledger
+            .record_fact(fact)
+            .expect("fact recorded")
+            .expect("a new row")
+    }
+
+    fn seed_exchange(ctx: &OperatorContext, session: &str, command: &str, at_ms: i64) {
+        ctx.shell_ledger
+            .as_deref()
+            .expect("the fixture has a shell ledger")
+            .record_exchange(&crate::shell_ledger::NewShellExchange {
+                tug_session_id: session.to_string(),
+                command: command.to_string(),
+                output: "o".repeat(SHELL_OUTPUT_MAX_CHARS * 3),
+                exit_code: Some(0),
+                cwd: "/proj".to_string(),
+                cwd_after: None,
+                started_at_ms: at_ms - 10,
+                settled_at_ms: at_ms,
+            })
+            .expect("exchange recorded");
+    }
+
+    #[tokio::test]
+    async fn facts_search_narrows_by_kind_and_caps_its_results() {
+        let f = fixture();
+        for i in 0..40 {
+            seed_fact(
+                &f.ctx,
+                &facts_library::shell_fact(
+                    1_000 + i,
+                    Some("sess-a"),
+                    &format!("cargo nextest run -p tugcast case{i}"),
+                    facts_library::ShellRoute::Claude,
+                    true,
+                    None,
+                    None,
+                    None,
+                ),
+            );
+        }
+        seed_fact(
+            &f.ctx,
+            &facts_library::prompt_fact(2_000, "sess-a", "run the nextest suite please"),
+        );
+
+        let all = run_verb(&f.ctx, "facts.search", &json!({"query": "nextest"}))
+            .await
+            .expect("search ran");
+        assert_eq!(
+            all["facts"].as_array().unwrap().len(),
+            FACTS_SEARCH_LIMIT,
+            "capped at the verb's limit"
+        );
+        assert!(all["facts"][0]["excerpt"].is_string());
+
+        let prompts = run_verb(
+            &f.ctx,
+            "facts.search",
+            &json!({"query": "nextest", "kind": "prompt"}),
+        )
+        .await
+        .expect("search ran");
+        let rows = prompts["facts"].as_array().unwrap();
+        assert_eq!(rows.len(), 1, "the kind filter narrows to the prompt fact");
+        assert_eq!(rows[0]["kind"], "prompt");
+    }
+
+    #[tokio::test]
+    async fn facts_search_reports_a_malformed_query_to_the_model() {
+        let f = fixture();
+        let err = run_verb(&f.ctx, "facts.search", &json!({"query": "\"unbalanced"}))
+            .await
+            .expect_err("FTS5 rejects the query");
+        assert!(err.starts_with("facts.search:"));
+    }
+
+    #[tokio::test]
+    async fn facts_window_clamps_n_to_twenty_each_side() {
+        let f = fixture();
+        let mut ids = Vec::new();
+        for i in 0..60 {
+            ids.push(seed_fact(
+                &f.ctx,
+                &facts_library::prompt_fact(1_000 + i, "sess-a", &format!("prompt {i}")),
+            ));
+        }
+        let out = run_verb(
+            &f.ctx,
+            "facts.window",
+            &json!({"fact_id": ids[30], "n": 500}),
+        )
+        .await
+        .expect("window ran");
+        assert_eq!(
+            out["facts"].as_array().unwrap().len(),
+            FACTS_WINDOW_MAX_N * 2 + 1,
+            "twenty either side plus the hit"
+        );
+    }
+
+    #[tokio::test]
+    async fn shell_history_filters_by_session_and_substring_and_excerpts_output() {
+        let f = fixture();
+        seed_exchange(&f.ctx, "sess-a", "just app-test at0287.test.ts", 5_000);
+        seed_exchange(&f.ctx, "sess-a", "git status", 6_000);
+        seed_exchange(&f.ctx, "sess-b", "just build-app", 7_000);
+
+        let mine = run_verb(&f.ctx, "shell.history", &json!({"session_id": "sess-a"}))
+            .await
+            .expect("history ran");
+        let rows = mine["commands"].as_array().unwrap();
+        assert_eq!(rows.len(), 2, "only this session's commands");
+        assert_eq!(rows[0]["command"], "git status", "newest first");
+        assert_eq!(
+            rows[0]["output_excerpt"].as_str().unwrap().chars().count(),
+            SHELL_OUTPUT_MAX_CHARS + 1,
+            "output is excerpted, not returned whole"
+        );
+
+        let just = run_verb(&f.ctx, "shell.history", &json!({"query": "just "}))
+            .await
+            .expect("history ran");
+        let rows = just["commands"].as_array().unwrap();
+        assert_eq!(rows.len(), 2, "the substring matches across sessions");
+    }
+
+    #[tokio::test]
+    async fn shell_history_without_a_shell_ledger_says_so() {
+        let mut f = fixture();
+        f.ctx.shell_ledger = None;
+        let err = run_verb(&f.ctx, "shell.history", &json!({}))
+            .await
+            .expect_err("no history to read");
+        assert!(err.contains("no shell command history"));
+    }
+
+    #[tokio::test]
+    async fn session_prompts_reads_the_whole_history_from_facts() {
+        let f = fixture();
+        f.ctx
+            .ledger
+            .record_spawn("sess-a", "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        // Three prompts recorded as facts; the session row remembers only the
+        // last of them, which is exactly the gap the library closes.
+        for (i, text) in ["first question", "second question", "third question"]
+            .iter()
+            .enumerate()
+        {
+            seed_fact(
+                &f.ctx,
+                &facts_library::prompt_fact(2_000 + i as i64, "sess-a", text),
+            );
+        }
+        f.ctx
+            .ledger
+            .record_user_prompt("sess-a", "third question")
+            .expect("prompt");
+
+        let out = run_verb(&f.ctx, "session.prompts", &json!({"session_id": "sess-a"}))
+            .await
+            .expect("prompts ran");
+        let rows = out["prompts"].as_array().unwrap();
+        assert_eq!(rows.len(), 3, "every prompt, oldest first");
+        assert_eq!(rows[0]["text"], "first question");
+        assert_eq!(rows[2]["text"], "third question");
+        assert!(
+            out.get("note").is_none(),
+            "there is nothing to apologize for once the facts are there"
+        );
+
+        let filtered = run_verb(
+            &f.ctx,
+            "session.prompts",
+            &json!({"session_id": "sess-a", "query": "second"}),
+        )
+        .await
+        .expect("prompts ran");
+        assert_eq!(filtered["prompts"].as_array().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn session_prompts_keeps_its_note_for_a_session_predating_the_library() {
+        let f = fixture();
+        f.ctx
+            .ledger
+            .record_spawn("sess-a", "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        f.ctx
+            .ledger
+            .record_user_prompt("sess-a", "the only prompt the row remembers")
+            .expect("prompt");
+        let out = run_verb(&f.ctx, "session.prompts", &json!({"session_id": "sess-a"}))
+            .await
+            .expect("prompts ran");
+        assert_eq!(out["prompts"].as_array().unwrap().len(), 1);
+        assert!(
+            out["note"]
+                .as_str()
+                .expect("the note is present")
+                .contains("predates the facts library")
         );
     }
 
@@ -1352,6 +1734,98 @@ mod tests {
         assert_eq!(out["count"], 0);
     }
 
+    // MARK: - Privacy ([P05])
+
+    fn seed_file_event(ctx: &OperatorContext, session: &str, path: &str) {
+        ctx.ledger
+            .record_file_event(&crate::session_ledger::FileEventRow {
+                tug_session_id: session.to_string(),
+                tool_use_id: format!("tu-{path}"),
+                file_path: path.to_string(),
+                tool_name: "Write".to_string(),
+                op: "write".to_string(),
+                origin: "exact".to_string(),
+                ambiguous: false,
+                parent_tool_use_id: None,
+                project_dir: "/proj".to_string(),
+                at: 4_000,
+            })
+            .expect("file event recorded");
+    }
+
+    #[tokio::test]
+    async fn a_private_session_disappears_from_every_verb_that_could_expose_it() {
+        let f = fixture();
+        f.ctx
+            .ledger
+            .record_spawn("sess-priv", "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        seed_fact(
+            &f.ctx,
+            &facts_library::prompt_fact(2_000, "sess-priv", "a question about the theme tokens"),
+        );
+        seed_file_event(&f.ctx, "sess-priv", "tugdeck/styles/themes/brio.css");
+        seed_exchange(&f.ctx, "sess-priv", "just app-test", 3_000);
+        f.ctx
+            .ledger
+            .set_session_private("sess-priv", true)
+            .expect("marked private");
+
+        let listed = run_verb(&f.ctx, "sessions.list", &json!({}))
+            .await
+            .expect("list ran");
+        assert_eq!(listed["count"], 0, "sessions.list drops it");
+
+        let found = run_verb(&f.ctx, "facts.search", &json!({"query": "theme"}))
+            .await
+            .expect("search ran");
+        assert_eq!(found["count"], 0, "facts.search drops its facts");
+
+        let path = run_verb(&f.ctx, "changes.for_path", &json!({"pattern": "%.css"}))
+            .await
+            .expect("changes ran");
+        assert_eq!(path["count"], 0, "changes.for_path drops its file events");
+
+        let history = run_verb(&f.ctx, "shell.history", &json!({}))
+            .await
+            .expect("history ran");
+        assert_eq!(history["count"], 0, "shell.history drops its commands");
+
+        for verb in ["session.prompts", "changes.for_session"] {
+            let err = run_verb(&f.ctx, verb, &json!({"session_id": "sess-priv"}))
+                .await
+                .unwrap_or_else(|err| json!({ "err": err }));
+            assert!(
+                err["err"].as_str().unwrap_or_default().contains("no session"),
+                "{verb} answers as if the session were not there: {err}"
+            );
+        }
+
+        // Public again: the same rows are readable, from that moment on.
+        f.ctx
+            .ledger
+            .set_session_private("sess-priv", false)
+            .expect("marked public");
+        let found = run_verb(&f.ctx, "facts.search", &json!({"query": "theme"}))
+            .await
+            .expect("search ran");
+        assert_eq!(found["count"], 1);
+    }
+
+    /// The `NOT EXISTS` formulation's reason to exist ([P05]): `changes.db` is
+    /// machine-global, so a file event can name a session with no row in *this*
+    /// instance's ledger. An `INNER JOIN sessions` would silently drop it.
+    #[tokio::test]
+    async fn changes_for_path_keeps_an_event_whose_session_has_no_local_row() {
+        let f = fixture();
+        seed_file_event(&f.ctx, "sess-from-another-instance", "tugdeck/x.css");
+        let out = run_verb(&f.ctx, "changes.for_path", &json!({"pattern": "%.css"}))
+            .await
+            .expect("changes ran");
+        assert_eq!(out["count"], 1, "an absent session row reads as not-private");
+        assert_eq!(out["changes"][0]["session_id"], "sess-from-another-instance");
+    }
+
     // MARK: - The pipeline
 
     use crate::shared_agent::test_support::FakeSpawner;
@@ -1400,6 +1874,7 @@ mod tests {
             pipeline: OperatorPipeline {
                 ctx: Arc::new(OperatorContext {
                     ledger: Arc::clone(&ledger),
+                    shell_ledger: None,
                     bootstrap_project_dir: repo.path().to_path_buf(),
                 }),
                 pool,

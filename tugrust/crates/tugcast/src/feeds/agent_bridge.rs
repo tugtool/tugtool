@@ -853,6 +853,156 @@ async fn ensure_repo_root(
     Some(cp)
 }
 
+// MARK: - Facts library recorders
+
+/// How many Bash calls may be in flight for the facts library before the
+/// oldest is dropped. The same order of magnitude as [`PENDING_CALLS_CAP`],
+/// and for the same reason: a relay that never saw a result must not grow a
+/// map forever.
+const PENDING_SHELL_FACTS_CAP: usize = 512;
+
+/// One Bash `tool_use` waiting for its result, so the command text and its
+/// outcome can be recorded together — the only moment both are in hand.
+#[derive(Debug, Clone)]
+struct PendingShellFact {
+    command: String,
+    at_ms: i64,
+}
+
+/// Every Bash call the relay has seen, unfiltered, keyed by `tool_use_id`.
+///
+/// **This is deliberately not `pending_cmds` or `open_bash`** ([P06]). Both of
+/// those are filtered in ways that exclude exactly the commands the facts
+/// library exists to capture: `pending_cmds` admits a call only when
+/// `declared_ops_for_command` parses it as a file operation (`cargo build`
+/// returns `None`), and `open_bash` opens only for a live, in-repo call. Every
+/// build, every test run, and every replayed command is absent from both — so
+/// hooking either would leave `test_run` facts essentially never firing, since
+/// a test run is never a file-operation command.
+///
+/// Never cleared on `turn_complete`, for the same reason `pending_calls` is
+/// not: a subagent's pair can straddle a turn boundary.
+#[derive(Debug)]
+struct PendingShellFacts {
+    map: HashMap<String, PendingShellFact>,
+    /// Insertion order of live keys, for oldest-first eviction. A taken key
+    /// stays as a tombstone; eviction skips ids already gone from `map`.
+    order: VecDeque<String>,
+}
+
+impl PendingShellFacts {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn insert(&mut self, tool_use_id: String, pending: PendingShellFact) {
+        if self.map.insert(tool_use_id.clone(), pending).is_none() {
+            self.order.push_back(tool_use_id);
+            while self.map.len() > PENDING_SHELL_FACTS_CAP {
+                match self.order.pop_front() {
+                    Some(oldest) => {
+                        self.map.remove(&oldest);
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+
+    fn take(&mut self, tool_use_id: &str) -> Option<PendingShellFact> {
+        self.map.remove(tool_use_id)
+    }
+}
+
+/// Write one fact, best-effort. A failed write warns and is forgotten — a
+/// recorder rides someone else's hot path and must never gate the forward.
+fn record_fact_best_effort(
+    ledger: &crate::session_ledger::SessionLedger,
+    tug_session_id: &TugSessionId,
+    fact: &crate::session_ledger::NewFact,
+) {
+    if let Err(err) = ledger.record_fact(fact) {
+        warn!(
+            session = %tug_session_id,
+            kind = %fact.kind,
+            error = %err,
+            "record_fact failed; the frame is unaffected"
+        );
+    }
+}
+
+/// Settle one Bash call into its `shell` fact, and into a `test_run` fact when
+/// the output says it was a test run.
+///
+/// `ok` comes from the tool call, and reaches the `shell` fact only. The
+/// `test_run` verdict is read from the runner's own summary ([P07]): a red
+/// suite is a perfectly successful Bash invocation, so a verdict taken from
+/// `is_error` would call every failing run a pass.
+fn record_shell_facts(
+    ledger: &crate::session_ledger::SessionLedger,
+    tug_session_id: &TugSessionId,
+    pending: PendingShellFact,
+    tool_use_id: &str,
+    output: &str,
+    is_error: bool,
+) {
+    use crate::feeds::facts_library;
+    let session = tug_session_id.as_str();
+    let key = facts_library::shell_key(session, tool_use_id);
+    record_fact_best_effort(
+        ledger,
+        tug_session_id,
+        &facts_library::shell_fact(
+            pending.at_ms,
+            Some(session),
+            &pending.command,
+            facts_library::ShellRoute::Claude,
+            !is_error,
+            None,
+            None,
+            Some(key.clone()),
+        ),
+    );
+    if let Some(run) = facts_library::classify_test_run(&pending.command, output) {
+        record_fact_best_effort(
+            ledger,
+            tug_session_id,
+            &facts_library::test_run_fact(
+                pending.at_ms,
+                Some(session),
+                &run,
+                Some(facts_library::test_run_key(&key)),
+            ),
+        );
+    }
+}
+
+/// A compaction boundary as the wire carries it. Every field is optional:
+/// claude reports `compact_metadata` when it has it, and often reports a
+/// pre-compaction count with no post-compaction one.
+fn record_compact_fact(
+    ledger: &crate::session_ledger::SessionLedger,
+    tug_session_id: &TugSessionId,
+    frame: &serde_json::Value,
+    at_ms: i64,
+) {
+    let int = |name: &str| frame.get(name).and_then(serde_json::Value::as_i64);
+    record_fact_best_effort(
+        ledger,
+        tug_session_id,
+        &crate::feeds::facts_library::compact_fact(
+            at_ms,
+            tug_session_id.as_str(),
+            frame.get("trigger").and_then(|v| v.as_str()),
+            int("pre_tokens"),
+            int("post_tokens"),
+        ),
+    );
+}
+
 /// Resolve and record one exact-tool row from a consumed [`PendingCall`]
 /// ([P03]/[P04]) — the single write path shared by the live `tool_result`
 /// intercept and the `replay_batch` unwrap, so the per-file repo-root rule
@@ -1236,6 +1386,10 @@ pub async fn relay_session_io(
     // call literally declared, keyed by `tool_use_id`. Populated on the
     // `tool_use` frame (live and replayed alike), consumed at its result.
     let mut pending_cmds = PendingCmds::new();
+    // The facts library's own Bash map ([P06]) — unfiltered, so a `cargo
+    // nextest run` (which names no file and so enters neither map above) still
+    // becomes a `shell` fact and a `test_run` fact.
+    let mut pending_shell_facts = PendingShellFacts::new();
     let mut turn_recorded_paths: std::collections::HashSet<String> =
         std::collections::HashSet::new();
 
@@ -1945,6 +2099,52 @@ pub async fn relay_session_io(
                         // unchanged; attribution must never gate wire
                         // delivery. (Bash bracketing is layered on in the
                         // next step.)
+                        // A compaction boundary, on the same line-inspection
+                        // fast path attribution uses. Inside a `replay_batch`
+                        // it arrives as an inner frame, so both shapes are
+                        // walked; the [P03] key is built from the frame's own
+                        // timestamp, which is what makes a resume's re-stream
+                        // land on the row it already wrote.
+                        if let Some(ledger) = session_ledger
+                            && line.contains("\"type\":\"compact_boundary\"")
+                            && let Ok(value) =
+                                serde_json::from_str::<serde_json::Value>(&line)
+                        {
+                            let frame_at = |frame: &serde_json::Value| {
+                                frame
+                                    .get("timestamp")
+                                    .and_then(serde_json::Value::as_i64)
+                                    .unwrap_or_else(crate::session_ledger::now_millis)
+                            };
+                            match value.get("frames").and_then(|f| f.as_array()) {
+                                Some(frames) => {
+                                    for frame in frames {
+                                        if frame.get("type").and_then(|t| t.as_str())
+                                            == Some("compact_boundary")
+                                        {
+                                            record_compact_fact(
+                                                ledger,
+                                                tug_session_id,
+                                                frame,
+                                                frame_at(frame),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {
+                                    if value.get("type").and_then(|t| t.as_str())
+                                        == Some("compact_boundary")
+                                    {
+                                        record_compact_fact(
+                                            ledger,
+                                            tug_session_id,
+                                            &value,
+                                            frame_at(&value),
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         if let Some(ledger) = session_ledger {
                             if line.contains("\"type\":\"replay_batch\"") {
                                 // Batched replay frames. tugcode's replay
@@ -1967,6 +2167,25 @@ pub async fn relay_session_io(
                                         for inner in &batch.frames {
                                             let bytes = inner.get().as_bytes();
                                             if let Some(tu) = InspectedToolUse::from_slice(bytes) {
+                                                // Every Bash call, before any
+                                                // attribution filter sees it
+                                                // ([P06]). Replayed history
+                                                // becomes facts too — that is
+                                                // the desirable back-fill the
+                                                // dedupe key makes safe.
+                                                if let Some(command) =
+                                                    bash_command_for_tool(&tu.tool_name, &tu.input)
+                                                {
+                                                    pending_shell_facts.insert(
+                                                        tu.tool_use_id.clone(),
+                                                        PendingShellFact {
+                                                            command,
+                                                            at_ms: tu.timestamp.unwrap_or_else(
+                                                                crate::session_ledger::now_millis,
+                                                            ),
+                                                        },
+                                                    );
+                                                }
                                                 if let (Some(op), Some(path)) = (
                                                     exact_op_for_tool(&tu.tool_name),
                                                     file_path_for_tool(&tu.tool_name, &tu.input),
@@ -2016,6 +2235,18 @@ pub async fn relay_session_io(
                                             } else if let Some(tr) =
                                                 InspectedToolResult::from_slice(bytes)
                                             {
+                                                if let Some(pending) =
+                                                    pending_shell_facts.take(&tr.tool_use_id)
+                                                {
+                                                    record_shell_facts(
+                                                        ledger,
+                                                        tug_session_id,
+                                                        pending,
+                                                        &tr.tool_use_id,
+                                                        &tr.output,
+                                                        tr.is_error,
+                                                    );
+                                                }
                                                 if let Some(cmd) =
                                                     pending_cmds.take(&tr.tool_use_id)
                                                 {
@@ -2100,6 +2331,24 @@ pub async fn relay_session_io(
                                 // but fails both parses is shape drift that
                                 // must be loud, not silent.
                                 if let Some(tu) = InspectedToolUse::from_slice(line.as_bytes()) {
+                                    // Every Bash call, ahead of every filter
+                                    // ([P06]) — the attribution maps below
+                                    // admit only file-operation commands in a
+                                    // live repo, which is precisely not what a
+                                    // build or a test run looks like.
+                                    if let Some(command) =
+                                        bash_command_for_tool(&tu.tool_name, &tu.input)
+                                    {
+                                        pending_shell_facts.insert(
+                                            tu.tool_use_id.clone(),
+                                            PendingShellFact {
+                                                command,
+                                                at_ms: tu.timestamp.unwrap_or_else(
+                                                    crate::session_ledger::now_millis,
+                                                ),
+                                            },
+                                        );
+                                    }
                                     if let (Some(op), Some(path)) = (
                                         exact_op_for_tool(&tu.tool_name),
                                         file_path_for_tool(&tu.tool_name, &tu.input),
@@ -2180,6 +2429,18 @@ pub async fn relay_session_io(
                                 } else if let Some(tr) =
                                     InspectedToolResult::from_slice(line.as_bytes())
                                 {
+                                    if let Some(pending) =
+                                        pending_shell_facts.take(&tr.tool_use_id)
+                                    {
+                                        record_shell_facts(
+                                            ledger,
+                                            tug_session_id,
+                                            pending,
+                                            &tr.tool_use_id,
+                                            &tr.output,
+                                            tr.is_error,
+                                        );
+                                    }
                                     if let Some(pending) = pending_calls.take(&tr.tool_use_id) {
                                         // Exact call. is_error → dropped
                                         // (already taken from the map): a
@@ -2451,6 +2712,25 @@ pub async fn relay_session_io(
                         if let Some(id) = claude_id {
                             let truncated = crate::session_ledger::truncate_user_prompt(text);
                             sessions_recorder.record_user_prompt(&id, &truncated);
+                        }
+                        // The same prompt, kept whole and kept forever. The
+                        // snippet above is one overwritten 256-char field the
+                        // picker reads; this is what the Operator answers
+                        // "what did I ask earlier" from. Keyed by the tug
+                        // session id, which is the id every other fact and
+                        // every verb uses.
+                        if let Some(ledger) = session_ledger
+                            && !crate::feeds::facts_library::is_local_command_bookkeeping(text)
+                        {
+                            record_fact_best_effort(
+                                ledger,
+                                tug_session_id,
+                                &crate::feeds::facts_library::prompt_fact(
+                                    crate::session_ledger::now_millis(),
+                                    tug_session_id.as_str(),
+                                    text,
+                                ),
+                            );
                         }
                     }
 
@@ -3155,6 +3435,120 @@ mod tests {
             });
         }
         out
+    }
+
+    // ---- the facts library, driven through the real relay ([P06], [P07]) ----
+
+    /// Every fact the relay recorded, as `(kind, subject, text)` in id order.
+    fn relay_facts(
+        ledger: &crate::session_ledger::SessionLedger,
+    ) -> Vec<(String, String, String)> {
+        ledger.facts_for_test()
+    }
+
+    /// The regression pin for [P06]. `cargo nextest run` names no file, so
+    /// `declared_ops_for_command` refuses it and it never enters `pending_cmds`
+    /// — and it opens no bracket outside a repo. A shell-fact recorder hooked
+    /// to either of those maps produces nothing here, which is exactly the
+    /// silent hole this test exists to catch: the entire `test_run` source is
+    /// commands of this shape.
+    #[tokio::test]
+    async fn a_test_run_command_no_attribution_map_admits_still_records_both_facts() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"cd tugrust && cargo nextest run"},"timestamp":1700000000000}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"     Summary [  12.5s] 1539 tests run: 1539 passed, 5 skipped","is_error":false}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let facts = relay_facts(&ledger);
+        assert_eq!(facts.len(), 2, "a shell fact and its test_run: {facts:?}");
+        assert_eq!(facts[0].0, "shell");
+        assert_eq!(facts[0].2, "$ cd tugrust && cargo nextest run → ok");
+        assert_eq!(facts[1].0, "test_run");
+        assert_eq!(
+            facts[1].2,
+            "tests: cargo nextest — passed (1539 passed, 0 failed)"
+        );
+        // No file event: the command names no file, which is the whole point.
+        assert!(ledger.file_events_for_session("tug-1").unwrap().is_empty());
+    }
+
+    /// The verdict is read from the runner's summary, never from the tool
+    /// call's success — a red suite is a perfectly successful Bash call.
+    #[tokio::test]
+    async fn a_failing_suite_records_a_failed_verdict_beside_a_successful_call() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"cargo nextest run"},"timestamp":1700000000000}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"     Summary [ 0.3s] 10 tests run: 8 passed, 2 failed, 0 skipped","is_error":false}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let facts = relay_facts(&ledger);
+        assert!(facts[0].2.ends_with("→ ok"), "the call itself succeeded");
+        assert_eq!(facts[1].2, "tests: cargo nextest — failed (8 passed, 2 failed)");
+    }
+
+    /// A recognized runner is a second fact; anything else is a shell fact
+    /// and nothing more.
+    #[tokio::test]
+    async fn a_build_records_a_shell_fact_and_no_test_run() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"cargo build"},"timestamp":1700000000000}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"    Finished in 3s","is_error":true}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let facts = relay_facts(&ledger);
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].0, "shell");
+        assert_eq!(facts[0].2, "$ cargo build → err", "is_error reached `ok`");
+    }
+
+    /// A `just app-test` run is read off the recipe's `VERDICT:` line.
+    #[tokio::test]
+    async fn an_app_test_verdict_line_records_a_test_run() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let tool_use = r#"{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-1","input":{"command":"just app-test at0287.test.ts"},"timestamp":1700000000000}"#;
+        let tool_result = r#"{"type":"tool_result","tool_use_id":"tu-1","output":"VERDICT: PASS  (1/1 files green; 7/7 tests passed)","is_error":false}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[tool_use, tool_result]).await;
+
+        let facts = relay_facts(&ledger);
+        assert_eq!(facts[1].0, "test_run");
+        assert_eq!(facts[1].2, "tests: just app-test — passed (7 passed, 0 failed)");
+    }
+
+    /// The relay re-streams replayed frames on every resume. Back-fill is
+    /// desirable — a resumed session's pre-tugcast history becomes facts —
+    /// and the dedupe key is what makes it safe to do twice.
+    #[tokio::test]
+    async fn a_replayed_bash_batch_driven_twice_records_one_shell_fact() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-r1","input":{"command":"cargo nextest run"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-r1","output":"     Summary [ 1.0s] 3 tests run: 3 passed, 0 skipped","is_error":false}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[batch]).await;
+        assert_eq!(relay_facts(&ledger).len(), 2, "shell + test_run");
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[batch]).await;
+        let facts = relay_facts(&ledger);
+        assert_eq!(facts.len(), 2, "the resume added nothing: {facts:?}");
+    }
+
+    /// A compaction boundary, live and inside a replay batch, and idempotent
+    /// across the resume that re-streams it.
+    #[tokio::test]
+    async fn a_compaction_boundary_records_once_however_often_it_is_replayed() {
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"compact_boundary","trigger":"auto","pre_tokens":140000,"timestamp":1753460000000}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[batch]).await;
+        drive_relay(ledger.clone(), "tug-1", "/proj", &[batch]).await;
+
+        let facts = relay_facts(&ledger);
+        assert_eq!(facts.len(), 1, "one row across two replays: {facts:?}");
+        assert_eq!(facts[0].0, "session.compacted");
+        // No `post_tokens` on the wire, so the rendering says what it has.
+        assert_eq!(facts[0].2, "context compacted (auto): from 140000 tokens");
     }
 
     #[tokio::test]

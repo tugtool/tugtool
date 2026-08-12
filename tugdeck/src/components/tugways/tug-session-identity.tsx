@@ -64,7 +64,8 @@
 
 import "./tug-session-identity.css";
 
-import React from "react";
+import React, { useSyncExternalStore } from "react";
+import { EyeOff } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
@@ -86,6 +87,7 @@ import {
   type SessionIdentity,
   type SessionIdentityContext,
 } from "@/lib/session-identity";
+import { sessionPrivateStore } from "@/lib/session-private-store";
 import { cn } from "@/lib/utils";
 
 /** Density tiers this component renders. Row and masthead compose these two. */
@@ -179,6 +181,40 @@ export interface TugSessionIdentityProps
    * @default true
    */
   tooltip?: boolean;
+}
+
+/**
+ * The Gazette-privacy marker: a leaf subscription, composed in beside the runs.
+ *
+ * A leaf for the same reason the phase dot is one — privacy is not identity, it
+ * is a mode the session is in, and folding it into the identity record would
+ * wake every identity surface in the app on any session's toggle. It renders
+ * nothing at all for a public session, which is every session by default.
+ *
+ * It has to exist because the state is a **resting** one: `/private`'s ack says
+ * the transition happened, and after a reload only a mark on the atom can say
+ * the session is still out of the channel.
+ */
+function SessionPrivacyMarker({
+  sessionId,
+}: {
+  sessionId: string;
+}): React.ReactElement | null {
+  const isPrivate = useSyncExternalStore(
+    sessionPrivateStore.subscribe,
+    React.useCallback(
+      () => sessionPrivateStore.isPrivate(sessionId),
+      [sessionId],
+    ),
+  );
+  if (!isPrivate) return null;
+  return (
+    <TugTooltip content="Private — kept out of the Gazette">
+      <span className="tug-session-identity-private" data-slot="session-private">
+        <EyeOff aria-label="Private session" />
+      </span>
+    </TugTooltip>
+  );
 }
 
 /**
@@ -314,6 +350,7 @@ export const TugSessionIdentity = React.forwardRef<
           </span>
         ) : null}
       </span>
+      {isMissing ? null : <SessionPrivacyMarker sessionId={identity.id} />}
     </span>
   );
 

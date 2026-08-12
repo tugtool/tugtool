@@ -47,11 +47,6 @@ use crate::shared_agent::{AgentSpec, JobSpec, SharedAgentPool};
 /// Gazette store, which reads `card_rows` off the DEFAULTS feed.
 pub const GAZETTE_DOMAIN: &str = "dev.tugtool.gazette";
 
-/// Kill switch (`Value::Bool`). Absent or unreadable reads as ENABLED, the
-/// same default-on posture PULSE takes: a channel is never accidentally dark
-/// because a value was never written.
-pub const ENABLED_KEY: &str = "enabled";
-
 /// Full model id or alias for all three jobs.
 pub const MODEL_KEY: &str = "model";
 
@@ -255,6 +250,8 @@ The post is the summary, never the content. Say what happened and stop — enoug
 
 Report the work; never your view of it. Do not classify what kind of work it was, and never define it by what it was not — no \"not code\", no \"off-topic\", no \"just a question\", no \"only an aside\". Every subject gets the same voice. Open on the specifics — what was asked, what came back, what changed — rather than on a label for the kind of work it was. You are not weighing whether this belonged in the session, and a post that starts by excusing itself has spent its first sentence on nothing.
 
+SETTLED FACTS SINCE YOUR LAST POST: is the durable record of what actually happened — prompts in full, the commands that ran, test verdicts and totals, commits with their SHAs, session lifecycle. It is ground truth, unlike the activity below it, which is whatever the wire happened to carry. Cite a fact's subjects verbatim: a sha, a path, a test count in the facts is exact, and it is the right thing to name. A fact you have already posted about is not news twice — the facts are what settled, not what is new, so a commit you announced last post stays in this section and must not be announced again.
+
 REFS are the clickable provenance on your post. Include one for each file, commit, plan, brief, or session that the post is genuinely about — not everything mentioned. Every ref target MUST be copied EXACTLY as it appears in the activity you were shown: a path spelled differently, or a commit sha you shortened or reconstructed, cannot be linked and will be discarded. If you cannot copy it exactly, leave it out.
 
 Spell a path the way the activity spells it. If the activity says roadmap/gazette-plan.md, the target is roadmap/gazette-plan.md — do not expand it to a full path from the root of the disk, and do not shorten a full path the activity gave you. Copy the characters you were shown. Ref kinds are: session, file, commit, plan, brief.
@@ -283,6 +280,9 @@ Available verbs and their arguments:
 
 - gazette.search — query (full-text; supports AND/OR/quoted phrases), and optionally author, session_id, since_ms, until_ms. Finds posts in the channel's whole history.
 - gazette.window — post_id, n. The posts either side of a hit, to read the narrative around it.
+- facts.search — query (full-text), and optionally kind, session_id, since_ms, until_ms. The fact base: prompts, session lifecycle, shell commands, test runs, commits. Kinds are prompt, session.spawned, session.resumed, session.closed, session.errored, session.reset, session.renamed, session.compacted, commit, shell, test_run.
+- facts.window — fact_id, n. What else was happening around a fact.
+- shell.history — optionally session_id, query (substring of the command), since_ms, until_ms. Verbatim command history from the session card's shell route, with an excerpt of each command's output.
 - sessions.list — optionally since_ms, until_ms, active. Sessions with their titles and times.
 - session.prompts — session_id, optionally query. What the person actually asked in that session.
 - changes.for_session — session_id. Files that session touched, with the operation and how it was proven.
@@ -292,6 +292,8 @@ Available verbs and their arguments:
 - repo.grep — pattern, optionally path_scope, session_id. The current state of the tree.
 
 Strategy that works: the channel's prose is good at locating WHEN something happened and WHICH session did it; the ledgers and git are what CONFIRM the specific fact. So narrow with gazette.search or changes.for_path, then confirm with git.show or repo.grep. Never rely on a post's wording as the final answer when a ledger can settle it.
+
+The facts are ground truth for what was asked, what ran, and what happened: prompts in full, every shell command, test-run verdicts and totals, commits, and session lifecycle. Reach for facts.search when the question is about any of those — it settles them directly, without going through prose. shell.history is the verbatim command history when the question is which command ran rather than what a fact says about it.
 
 Ask for at most 6 verbs. Prefer two or three well-chosen ones. If the question needs a fact you can only get after seeing these results, you will get one more chance to ask later — do not try to cover every branch now.
 
@@ -379,6 +381,15 @@ mod tests {
             !reporter.contains("nothing to do with their code"),
             "naming code as the baseline is what the Reporter then narrated",
         );
+        // The facts section: the header string the composer prints has to be the
+        // string the model was told about, or the paragraph explains a section
+        // it never sees under that name. The dedup clause is pinned too — the
+        // section carries facts that are settled rather than new, so without it
+        // a commit already posted about would be announced on every wake for as
+        // long as it stayed in the window.
+        assert!(reporter.contains(crate::feeds::reporter_wake::FACTS_SECTION_HEADER));
+        assert!(reporter.contains("It is ground truth"));
+        assert!(reporter.contains("is not news twice"));
         // Ref targets are validated verbatim against the buffered context, so
         // the instruction to copy exactly is what keeps the drop rate down.
         // The path clause is the specific fix for the one drop the offline

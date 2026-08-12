@@ -1421,23 +1421,6 @@ async fn main() {
             })
         }
     };
-    let gazette_enabled: Arc<dyn Fn() -> bool + Send + Sync> = {
-        let bank = bank_client.clone();
-        Arc::new(move || {
-            let Some(bank) = bank.as_ref() else {
-                return true;
-            };
-            match bank.get(
-                feeds::gazette_agent::GAZETTE_DOMAIN,
-                feeds::gazette_agent::ENABLED_KEY,
-            ) {
-                Ok(Some(tugbank_core::Value::Bool(enabled))) => enabled,
-                // Absent / other-typed / unreadable all read as the
-                // default-ON posture PULSE takes.
-                _ => true,
-            }
-        })
-    };
     let gazette_sitrep = gazette_knob(
         feeds::gazette_agent::SITREP_SECS_KEY,
         feeds::gazette_agent::DEFAULT_SITREP_SECS,
@@ -1461,7 +1444,6 @@ async fn main() {
             session_state_tx: session_state_feed.sender(),
             ledger: Some(Arc::clone(&ledger)),
             agent: Some(Arc::clone(&gazette_agent)),
-            enabled: gazette_enabled,
             sitrep_secs: gazette_sitrep,
             token_wake_tokens: gazette_token_wake,
             last_k_posts: Arc::new(move || gazette_last_k().max(0) as usize),
@@ -1524,6 +1506,9 @@ async fn main() {
     // settled exchange to the shell ledger for restore.
     let shell_dispatch_feed = shell_output_feed.clone();
     let shell_dispatch_ledger = shell_ledger.clone();
+    // The `$` route's handle on the facts library ([P06]) — the settle site
+    // records a `shell` fact, and a `test_run` fact when the command was one.
+    let shell_dispatch_sessions = Some(Arc::clone(&ledger));
     let shell_dispatch_agent = Some(Arc::clone(&haiku_agent));
     let shell_dispatch_cancel = cancel.clone();
     tokio::spawn(async move {
@@ -1531,6 +1516,7 @@ async fn main() {
             shell_input_rx,
             shell_dispatch_feed,
             shell_dispatch_ledger,
+            shell_dispatch_sessions,
             shell_dispatch_agent,
             shell_dispatch_cancel,
         )
@@ -1594,6 +1580,9 @@ async fn main() {
     let operator_pipeline = Arc::new(feeds::operator::OperatorPipeline {
         ctx: Arc::new(feeds::operator::OperatorContext {
             ledger: Arc::clone(&ledger),
+            // The same handle the shell dispatcher records exchanges through;
+            // `shell.history` reads them back.
+            shell_ledger: shell_ledger.clone(),
             bootstrap_project_dir: bootstrap.project_dir.clone(),
         }),
         pool: Arc::clone(&gazette_agent),

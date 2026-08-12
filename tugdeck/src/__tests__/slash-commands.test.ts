@@ -106,6 +106,16 @@ describe("matchLocalSlashCommand", () => {
     expect(matchLocalSlashCommand("/btw")).toEqual({ name: "btw", args: "" });
   });
 
+  test("/private is a bare toggle — trailing args fall through to claude", () => {
+    expect(matchLocalSlashCommand("/private")).toEqual({
+      name: "private",
+      args: "",
+    });
+    // No `takesArgs`: `/private on` is not a form this command has, and
+    // matching it would silently toggle on a word the user meant as a value.
+    expect(matchLocalSlashCommand("/private on")).toBeNull();
+  });
+
   test("neither composer route has a typeable name", () => {
     // A slash command is a one-shot verb; a route is a mode you stay in. The
     // route gestures are the Z4A tabs, ⌃⌘P / ⌃⌘C, and Escape.

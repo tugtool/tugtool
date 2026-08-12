@@ -141,6 +141,16 @@ pub struct GazetteReplayArgs {
     /// `--no-model` to inspect the material for free.
     #[arg(long)]
     pub show_input: bool,
+
+    /// Compose every wake with an empty facts section — the pre-facts diet.
+    ///
+    /// The instrument for the one comparison the facts section cannot be judged
+    /// without: the same transcript, the same segmentation, read once with the
+    /// settled facts and once without. Without this the baseline would have to
+    /// come from a differently-built binary, and then the diet would not be the
+    /// only thing that changed between the two runs.
+    #[arg(long)]
+    pub no_facts: bool,
 }
 
 impl Cli {

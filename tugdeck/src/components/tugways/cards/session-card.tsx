@@ -214,6 +214,8 @@ import {
   getSessionLedgerStore,
 } from "@/lib/session-ledger-store";
 import type { SessionRow } from "@/protocol";
+import { encodeSetSessionPrivate } from "@/protocol";
+import { sessionPrivateStore } from "@/lib/session-private-store";
 import type { TaggedValue } from "@/lib/tugbank-client";
 import {
   TugPaneBulletinProvider,
@@ -3653,6 +3655,26 @@ export function SessionCardBody({
         provisionSpawnTag(newSessionId),
       );
       sendCloseSessionKeepingBinding(connection, cardId, binding.tugSessionId);
+    },
+    // `/private` — toggle this session out of the Gazette ([P05], [Q01]).
+    // Deliberately a composer command and nothing else: no menu row, no chord.
+    // The store write is optimistic so the atom's marker turns over with the
+    // gesture; the `set_session_private_ok` / `_err` acks reconcile it. The
+    // bulletin confirms the TRANSITION — the marker is the record of the STATE,
+    // which is why both exist. Reads the binding live at invoke time ([L07]).
+    private: () => {
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      const connection = getConnection();
+      if (binding === undefined || connection === null) return;
+      const next = !sessionPrivateStore.isPrivate(binding.tugSessionId);
+      sessionPrivateStore.setPrivate(binding.tugSessionId, next);
+      const frame = encodeSetSessionPrivate(binding.tugSessionId, next);
+      connection.send(frame.feedId, frame.payload);
+      paneBulletinRef.current?.success(
+        next
+          ? "This session is now private — nothing new reaches the Gazette"
+          : "This session is public again — the Gazette resumes from here",
+      );
     },
     // `/compact [focus]` — native compaction over the stream-json bridge
     // ([P01]). Dispatch the literal `/compact` (plus focus args) as a normal,

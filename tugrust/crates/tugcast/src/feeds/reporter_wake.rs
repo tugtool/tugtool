@@ -65,10 +65,8 @@ pub const REPORTER_FORWARD_ALLOWLIST: &[&str] = &[
 /// Classify one CODE_OUTPUT frame for the tap.
 ///
 /// Returns the spliced session id when the frame belongs in that session's
-/// buffer. The mute set is maintained as brackets pass **even while the
-/// Gazette is disabled**, because mute state tracks the wire rather than the
-/// toggle — a session that entered replay while the channel was off must not
-/// have the tail of that replay narrated when it comes back on.
+/// buffer. The mute set tracks the wire: a session inside a replay bracket is
+/// muted so the tail of that replay is not narrated as if it were new work.
 ///
 /// Mirrors `feeds::pulse::forwardable_session`; the two taps are independent
 /// by construction, and neither can see the other's output.
@@ -298,6 +296,76 @@ pub struct PriorPost {
     pub body: String,
 }
 
+/// One settled fact, as the wake input renders it ([P10]).
+///
+/// The `text` is the ledger's stored rendering, not a re-derivation: the FTS
+/// index and this section read the same column, so search and narration can
+/// never describe the same fact differently (Risk R01).
+pub struct FactLine {
+    pub at_ms: i64,
+    pub text: String,
+}
+
+/// The header the facts section prints. Pinned by the instructions' contract
+/// test — the Reporter is told about this exact heading.
+pub const FACTS_SECTION_HEADER: &str = "SETTLED FACTS SINCE YOUR LAST POST:";
+
+/// What the facts section prints in place of facts it dropped — the frame
+/// buffer's `ELISION_MARKER` reasoning, applied to the other corpus.
+pub const FACTS_ELISION_MARKER: &str = "[earlier facts elided]";
+
+/// Facts per section, newest kept. A wake is one turn, and twenty facts is
+/// already more settled ground truth than a ~44-word post can cite.
+pub const FACTS_SECTION_MAX: usize = 20;
+
+/// Byte ceiling for the section, so one pathological rendering cannot displace
+/// the activity window it sits above.
+pub const FACTS_SECTION_MAX_BYTES: usize = 4 * 1024;
+
+/// Render the `SETTLED FACTS` section ([P10], Spec S04).
+///
+/// Oldest-first within the section, but the *drops* come off the front: the
+/// newest facts are the ones a post is most likely to be about. The rendered
+/// string is also a ref-validation corpus in its own right, which is why it is
+/// built once here and handed to `validate_refs` rather than reconstructed.
+pub fn render_facts_section(facts: &[FactLine]) -> String {
+    let mut out = String::new();
+    out.push_str(FACTS_SECTION_HEADER);
+    out.push('\n');
+    if facts.is_empty() {
+        out.push_str("(none)\n");
+        return out;
+    }
+    // Take from the tail: count first, then bytes, so a run of ordinary facts
+    // is bounded by the count and one enormous rendering is bounded by bytes.
+    let mut kept: Vec<&FactLine> = Vec::new();
+    let mut bytes = 0usize;
+    for fact in facts.iter().rev() {
+        if kept.len() >= FACTS_SECTION_MAX {
+            break;
+        }
+        let cost = fact.text.len() + 24;
+        if !kept.is_empty() && bytes + cost > FACTS_SECTION_MAX_BYTES {
+            break;
+        }
+        bytes += cost;
+        kept.push(fact);
+    }
+    kept.reverse();
+    if kept.len() < facts.len() {
+        out.push_str(FACTS_ELISION_MARKER);
+        out.push('\n');
+    }
+    for fact in kept {
+        out.push_str("- [");
+        out.push_str(&fact.at_ms.to_string());
+        out.push_str("] ");
+        out.push_str(&fact.text);
+        out.push('\n');
+    }
+    out
+}
+
 /// Build the self-contained turn for one wake.
 ///
 /// Every wake is independent: the reason, the session, the frames, and the
@@ -305,11 +373,18 @@ pub struct PriorPost {
 /// any turn can be a worker's first. The prior posts are the entire dedup
 /// mechanism — nothing compares text, the model simply sees what it already
 /// said and declines to repeat itself.
+///
+/// The facts section ([P10]) sits between the prior posts and the activity: the
+/// activity window is what the wire happened to carry, and the facts are what
+/// actually settled — SHAs, test totals, the prompt in full — which is what the
+/// rubric wants to cite. It is returned alongside the composed input because the
+/// caller needs its exact rendered text as a ref-validation corpus.
 pub fn compose_reporter_input(
     reason: WakeReason,
     session_id: &str,
     buffer: &FrameBuffer,
     prior_posts: &[PriorPost],
+    facts: &[FactLine],
 ) -> String {
     let mut out = String::new();
     out.push_str("WAKE REASON: ");
@@ -330,6 +405,9 @@ pub fn compose_reporter_input(
             out.push('\n');
         }
     }
+
+    out.push('\n');
+    out.push_str(&render_facts_section(facts));
 
     out.push_str("\nSESSION ACTIVITY SINCE THEN:\n");
     out.push_str(&buffer.rendered());
@@ -473,21 +551,29 @@ pub struct ValidatedRefs {
     pub dropped: Vec<GazetteRef>,
 }
 
-/// Keep only the refs whose targets appear verbatim in the buffered context.
+/// Keep only the refs whose targets appear verbatim in something the model was
+/// shown.
 ///
 /// A ref exists to be clicked. A path or sha the model reconstructed, shortened,
 /// or invented points nowhere, and a chip that goes nowhere is worse than an
 /// absent one — so it is dropped and the body stands on its own.
 ///
+/// **The corpora are a slice, not one concatenated string** ([P10]). The wake
+/// shows the model two surfaces — the activity window and the facts section —
+/// and a ref is kept when **any one** of them contains its target. Concatenating
+/// first would admit a target that spans the join between two corpora: absurd
+/// for a path or a sha, but a free class of false positive to eliminate, and
+/// separate corpora also let a caller say which surface a ref came from.
+///
 /// `Session` refs are exempt: the bridge stamps the session id itself from the
 /// wake, so it is ground truth rather than something the model recalled, and it
 /// legitimately may not appear in any frame's text.
-pub fn validate_refs(refs: Vec<GazetteRef>, buffered_context: &str) -> ValidatedRefs {
+pub fn validate_refs(refs: Vec<GazetteRef>, corpora: &[&str]) -> ValidatedRefs {
     let mut kept = Vec::new();
     let mut dropped = Vec::new();
     for r in refs {
         let ok = matches!(r.kind, GazetteRefKind::Session)
-            || (!r.target.is_empty() && buffered_context.contains(&r.target));
+            || (!r.target.is_empty() && corpora.iter().any(|c| c.contains(&r.target)));
         if ok {
             kept.push(r);
         } else {
@@ -673,7 +759,7 @@ mod tests {
             at_ms: 1_700_000_000_000,
             body: "Started on the bridge".to_string(),
         }];
-        let input = compose_reporter_input(WakeReason::SitrepTimer, "s1", &buffer, &priors);
+        let input = compose_reporter_input(WakeReason::SitrepTimer, "s1", &buffer, &priors, &[]);
 
         assert!(input.contains("WAKE REASON: sitrep-timer"));
         assert!(input.contains("SESSION: s1"));
@@ -691,8 +777,86 @@ mod tests {
     fn a_first_wake_says_there_are_no_prior_posts() {
         let mut buffer = FrameBuffer::default();
         buffer.push("something happened");
-        let input = compose_reporter_input(WakeReason::TurnEnd, "s1", &buffer, &[]);
+        let input = compose_reporter_input(WakeReason::TurnEnd, "s1", &buffer, &[], &[]);
         assert!(input.contains("(none"));
+    }
+
+    fn fact(at_ms: i64, text: &str) -> FactLine {
+        FactLine {
+            at_ms,
+            text: text.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_facts_section_renders_between_the_priors_and_the_activity() {
+        let mut buffer = FrameBuffer::default();
+        buffer.push(r#"{"type":"assistant_text","text":"ran the suite"}"#);
+        let facts = vec![
+            fact(1_700_000_000_000, "$ cargo nextest run -p tugcast → ok"),
+            fact(
+                1_700_000_001_000,
+                "tests: cargo nextest — passed (1574 passed, 0 failed)",
+            ),
+        ];
+        let input = compose_reporter_input(WakeReason::TurnEnd, "s1", &buffer, &[], &facts);
+
+        assert!(input.contains(FACTS_SECTION_HEADER));
+        assert!(input.contains("- [1700000000000] $ cargo nextest run -p tugcast → ok"));
+        assert!(input.contains("1574 passed"));
+        // Order matters: the facts are what settled, the activity is what the
+        // wire carried, and the model reads them in that order.
+        let facts_at = input.find(FACTS_SECTION_HEADER).expect("facts section");
+        let priors_at = input
+            .find("YOUR RECENT POSTS ABOUT THIS SESSION:")
+            .expect("priors section");
+        let activity_at = input
+            .find("SESSION ACTIVITY SINCE THEN:")
+            .expect("activity section");
+        assert!(priors_at < facts_at && facts_at < activity_at);
+    }
+
+    /// An empty section says so. A bare heading over nothing reads as a facts
+    /// base that failed rather than one with nothing new in it.
+    #[test]
+    fn an_empty_facts_section_says_none() {
+        let rendered = render_facts_section(&[]);
+        assert!(rendered.starts_with(FACTS_SECTION_HEADER));
+        assert!(rendered.contains("(none)"));
+        assert!(!rendered.contains(FACTS_ELISION_MARKER));
+    }
+
+    #[test]
+    fn the_facts_section_keeps_the_newest_and_marks_what_it_dropped() {
+        let facts: Vec<FactLine> = (0..FACTS_SECTION_MAX as i64 + 5)
+            .map(|i| fact(1_000 + i, &format!("fact number {i}")))
+            .collect();
+        let rendered = render_facts_section(&facts);
+        assert!(rendered.contains(FACTS_ELISION_MARKER));
+        assert_eq!(
+            rendered.lines().filter(|l| l.starts_with("- [")).count(),
+            FACTS_SECTION_MAX
+        );
+        // The newest survive — a post is about the end of a stretch, not its
+        // beginning.
+        assert!(rendered.contains(&format!("fact number {}", FACTS_SECTION_MAX + 4)));
+        assert!(!rendered.contains("fact number 0]"));
+    }
+
+    #[test]
+    fn one_enormous_fact_cannot_displace_the_window_below_it() {
+        let facts = vec![
+            fact(1_000, &"a".repeat(FACTS_SECTION_MAX_BYTES)),
+            fact(2_000, &"b".repeat(FACTS_SECTION_MAX_BYTES)),
+        ];
+        let rendered = render_facts_section(&facts);
+        assert!(rendered.len() < FACTS_SECTION_MAX_BYTES * 2);
+        assert!(rendered.contains(FACTS_ELISION_MARKER));
+        // A single fact over the ceiling still renders: something is better than
+        // a section that silently held nothing.
+        let one = render_facts_section(&[fact(1_000, &"a".repeat(FACTS_SECTION_MAX_BYTES * 2))]);
+        assert!(one.contains("- [1000]"));
+        assert!(!one.contains(FACTS_ELISION_MARKER));
     }
 
     #[test]
@@ -855,7 +1019,7 @@ mod tests {
                     target: "4fe4d3fcdaaaa".to_string(),
                 },
             ],
-            context,
+            &[context],
         );
         assert_eq!(result.kept.len(), 2);
         assert_eq!(result.dropped.len(), 2);
@@ -871,7 +1035,7 @@ mod tests {
                 kind: GazetteRefKind::Session,
                 target: "a-session-id-in-no-frame".to_string(),
             }],
-            "frames that never name the session",
+            &["frames that never name the session"],
         );
         assert_eq!(result.kept.len(), 1);
         assert!(result.dropped.is_empty());
@@ -884,9 +1048,52 @@ mod tests {
                 kind: GazetteRefKind::File,
                 target: String::new(),
             }],
-            "anything",
+            &["anything"],
         );
         assert!(result.kept.is_empty());
+    }
+
+    /// [P10]: a sha the frame window never carried but a `commit` fact did is
+    /// still provable, and this is the whole reason the corpora are a slice.
+    #[test]
+    fn a_target_present_only_in_the_facts_section_validates() {
+        let window = r#"{"type":"assistant_text","text":"landed the change"}"#;
+        let facts_section = render_facts_section(&[fact(
+            1_000,
+            "commit 03fcaa08712a \"private sessions\" — 14 file(s)",
+        )]);
+        let result = validate_refs(
+            vec![
+                GazetteRef {
+                    kind: GazetteRefKind::Commit,
+                    target: "03fcaa08712a".to_string(),
+                },
+                // In neither corpus: still dropped. The facts section widens
+                // what can be proved, it does not stop refs being checked.
+                GazetteRef {
+                    kind: GazetteRefKind::Commit,
+                    target: "deadbeefcafe".to_string(),
+                },
+            ],
+            &[window, &facts_section],
+        );
+        assert_eq!(result.kept.len(), 1);
+        assert_eq!(result.kept[0].target, "03fcaa08712a");
+        assert_eq!(result.dropped.len(), 1);
+    }
+
+    /// The corpora are separate for a reason: a target that exists only by
+    /// spanning the boundary between two of them was never shown to anybody.
+    #[test]
+    fn a_target_spanning_two_corpora_is_not_a_match() {
+        let result = validate_refs(
+            vec![GazetteRef {
+                kind: GazetteRefKind::File,
+                target: "tugdeck/styles".to_string(),
+            }],
+            &["...tugdeck/", "styles/themes/brio.css..."],
+        );
+        assert!(result.kept.is_empty(), "a concatenation would have kept it");
     }
 
     /// The end-to-end shape the bridge runs: parse what the model said, then
@@ -901,7 +1108,7 @@ mod tests {
         ]}}"#;
         let envelope = parse_envelope(raw).expect("parses");
         let post = envelope.post.expect("a post");
-        let validated = validate_refs(post.refs, &buffer.rendered());
+        let validated = validate_refs(post.refs, &[&buffer.rendered()]);
         assert_eq!(validated.kept.len(), 1);
         assert_eq!(validated.kept[0].target, "9a9051001");
         assert_eq!(validated.dropped.len(), 1);

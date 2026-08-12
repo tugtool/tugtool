@@ -54,8 +54,9 @@ use crate::cli::GazetteReplayArgs;
 
 use super::gazette_agent::{BUFFER_MAX_BYTES, DEFAULT_MODEL};
 use super::reporter_wake::{
-    FrameBuffer, PriorPost, WakeReason, compose_reporter_input, counts_as_assistant_activity,
-    forwardable_session, parse_envelope, validate_refs,
+    FactLine, FrameBuffer, PriorPost, WakeReason, compose_reporter_input,
+    counts_as_assistant_activity, forwardable_session, parse_envelope, render_facts_section,
+    validate_refs,
 };
 
 // MARK: - Options
@@ -83,6 +84,9 @@ pub struct ReplayOptions {
     /// Print the composed job input for each wake — the bytes the Reporter is
     /// actually shown. A silence is only diagnosable against its material.
     pub show_input: bool,
+    /// Compose with an empty facts section — the pre-facts diet, for reading a
+    /// run beside its facts-carrying twin ([Q02]).
+    pub no_facts: bool,
 }
 
 impl Default for ReplayOptions {
@@ -95,6 +99,7 @@ impl Default for ReplayOptions {
             model: DEFAULT_MODEL.to_string(),
             no_model: false,
             show_input: false,
+            no_facts: false,
         }
     }
 }
@@ -112,6 +117,7 @@ impl ReplayOptions {
             model: args.model.clone().unwrap_or(d.model),
             no_model: args.no_model,
             show_input: args.show_input,
+            no_facts: args.no_facts,
         }
     }
 }
@@ -154,8 +160,26 @@ struct TranscriptEntry {
     is_meta: bool,
     #[serde(rename = "isCompactSummary", default)]
     is_compact_summary: bool,
+    /// `"compact_boundary"` on the `system` record that marks a compaction.
+    #[serde(default)]
+    subtype: Option<String>,
+    /// Claude Code's compaction metadata, persisted camelCase in the JSONL.
+    #[serde(rename = "compactMetadata", default)]
+    compact_metadata: Option<CompactMetadata>,
     #[serde(default)]
     message: Option<TranscriptMessage>,
+}
+
+/// The compaction counts, when claude reported them. Both are optional at the
+/// source: `postTokens` in particular is often absent.
+#[derive(Debug, Deserialize)]
+struct CompactMetadata {
+    #[serde(default)]
+    trigger: Option<String>,
+    #[serde(rename = "preTokens", default)]
+    pre_tokens: Option<i64>,
+    #[serde(rename = "postTokens", default)]
+    post_tokens: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -295,6 +319,43 @@ pub fn translate_transcript(jsonl: &str) -> Vec<ReplayFrame> {
         let Some(kind) = entry.kind.as_deref() else {
             continue;
         };
+        // A compaction boundary is a `system` record, and `system` is dropped
+        // wholesale by the gate below — so it is intercepted first. Without
+        // this arm the harness could never synthesize a `session.compacted`
+        // fact, and the kind would have to move to the live-only column: no
+        // amount of work downstream can recover a record that was never
+        // emitted. (`is_compact_summary` above skips the compaction *summary*,
+        // which is a different record.)
+        if kind == "system" && entry.subtype.as_deref() == Some("compact_boundary") {
+            let Some(at_ms) = entry.timestamp.as_deref().and_then(parse_timestamp) else {
+                continue;
+            };
+            if let Some(id) = entry.session_id.as_deref()
+                && session_id.is_empty()
+            {
+                session_id = id.to_string();
+            }
+            // The JSONL persists this metadata camelCase; the live wire
+            // carries it snake_case. The frame below is the wire's shape,
+            // because that is what the recorders and the synthesis read.
+            let meta = entry.compact_metadata.as_ref();
+            out.push(ReplayFrame {
+                at_ms,
+                msg_type: "compact_boundary".to_string(),
+                payload: frame_payload(
+                    &session_id,
+                    "compact_boundary",
+                    serde_json::json!({
+                        "trigger": meta.and_then(|m| m.trigger.clone()),
+                        "pre_tokens": meta.and_then(|m| m.pre_tokens),
+                        "post_tokens": meta.and_then(|m| m.post_tokens),
+                    }),
+                ),
+                via_tap: true,
+                tokens: 0,
+            });
+            continue;
+        }
         if kind != "assistant" && kind != "user" {
             continue;
         }
@@ -643,6 +704,12 @@ pub async fn run(path: &Path, opts: &ReplayOptions) -> i32 {
     let end_ms = frames.last().map(|f| f.at_ms).unwrap_or_default();
 
     print_header(path, opts, &frames, &windows, start_ms, end_ms);
+    let synthesized = synthesize_facts(&frames);
+    if opts.no_facts {
+        println!("- facts: **withheld** (`--no-facts`) — every wake composes an empty section\n");
+    } else {
+        print_facts_note(&synthesized);
+    }
 
     if opts.no_model {
         for (n, window) in windows.iter().enumerate() {
@@ -655,6 +722,11 @@ pub async fn run(path: &Path, opts: &ReplayOptions) -> i32 {
                     &window.session_id,
                     &window_buffer(window),
                     &[],
+                    &if opts.no_facts {
+                        Vec::new()
+                    } else {
+                        facts_for_window(&synthesized.facts, None, window.at_ms)
+                    },
                 ));
             }
             println!("_(--no-model: segmentation only)_\n");
@@ -673,11 +745,22 @@ pub async fn run(path: &Path, opts: &ReplayOptions) -> i32 {
 
     for (n, window) in windows.iter().enumerate() {
         print_window_header(n + 1, window, start_ms);
+        let facts = if opts.no_facts {
+            Vec::new()
+        } else {
+            facts_for_window(
+                &synthesized.facts,
+                prior.last().map(|post| post.at_ms),
+                window.at_ms,
+            )
+        };
+        let facts_section = render_facts_section(&facts);
         let input = compose_reporter_input(
             window.reason,
             &window.session_id,
             &window_buffer(window),
             &prior,
+            &facts,
         );
         if opts.show_input {
             print_input(&input);
@@ -706,7 +789,7 @@ pub async fn run(path: &Path, opts: &ReplayOptions) -> i32 {
                     }
                     Some(post) => {
                         tally.posted += 1;
-                        print_post(&post.body, post.refs, &window.rendered);
+                        print_post(&post.body, post.refs, &window.rendered, &facts_section);
                         prior.push(PriorPost {
                             at_ms: window.at_ms,
                             body: post.body,
@@ -741,12 +824,20 @@ struct Tally {
 }
 
 /// Print one post as the channel would show it, with its provenance beneath.
-fn print_post(body: &str, refs: Vec<tugcast_core::GazetteRef>, buffered_context: &str) {
+fn print_post(
+    body: &str,
+    refs: Vec<tugcast_core::GazetteRef>,
+    buffered_context: &str,
+    facts_section: &str,
+) {
     for line in body.lines() {
         println!("> {line}");
     }
     println!();
-    let refs = validate_refs(refs, buffered_context);
+    // The same two corpora the bridge validates against ([P10]) — a harness
+    // that checked only the window would drop a fact-backed sha the live path
+    // would keep, and report the diet as worse than it is.
+    let refs = validate_refs(refs, &[buffered_context, facts_section]);
     let label = |list: &[tugcast_core::GazetteRef]| {
         list.iter()
             .map(|r| format!("{} `{}`", r.kind.as_str(), r.target))
@@ -802,6 +893,62 @@ fn print_header(
         opts.token_wake_tokens,
         opts.model,
         if opts.no_model { " (not called)" } else { "" }
+    );
+    println!();
+}
+
+/// Derive the facts a transcript can account for, through the very functions
+/// production records with ([P09]).
+pub fn synthesize_facts(frames: &[ReplayFrame]) -> crate::feeds::facts_library::SynthesizedFacts {
+    let refs: Vec<crate::feeds::facts_library::SynthFrame<'_>> = frames
+        .iter()
+        .map(|f| crate::feeds::facts_library::SynthFrame {
+            at_ms: f.at_ms,
+            msg_type: f.msg_type.as_str(),
+            payload: f.payload.as_str(),
+        })
+        .collect();
+    crate::feeds::facts_library::synthesize_facts_from_frames(&refs)
+}
+
+/// The facts one wake would have been shown, on production's rule ([P10]):
+/// everything newer than the newest prior post and no newer than the wake
+/// itself. `since` is `None` for a session with no priors, which is the whole
+/// library up to that point.
+///
+/// The upper bound is not decoration. A replay knows every fact the transcript
+/// will ever produce, and a wake shown facts from after its own moment would
+/// read as the Reporter citing the future — the one way a harness can flatter a
+/// diet the live bridge could never serve.
+fn facts_for_window(
+    facts: &[crate::session_ledger::NewFact],
+    since_ms: Option<i64>,
+    until_ms: i64,
+) -> Vec<FactLine> {
+    facts
+        .iter()
+        .filter(|f| f.at_ms <= until_ms && since_ms.is_none_or(|since| f.at_ms > since))
+        .map(|f| FactLine {
+            at_ms: f.at_ms,
+            text: f.text.clone(),
+        })
+        .collect()
+}
+
+/// Say which fact kinds this replay could produce and which it structurally
+/// cannot. The asymmetry is real — a transcript has never seen a commit or a
+/// session lifecycle transition — and printing it is the difference between a
+/// harness that is honestly partial and one that quietly looks complete.
+fn print_facts_note(synthesized: &crate::feeds::facts_library::SynthesizedFacts) {
+    let kinds = if synthesized.kinds.is_empty() {
+        "(none)".to_string()
+    } else {
+        synthesized.kinds.join(", ")
+    };
+    println!(
+        "- facts: {} synthesized ({kinds}); live-only kinds absent from any transcript: {}",
+        synthesized.facts.len(),
+        crate::feeds::facts_library::LIVE_ONLY_KINDS.join(", ")
     );
     println!();
 }
@@ -986,6 +1133,66 @@ mod tests {
                 .iter()
                 .all(|f| f.payload.contains(r#""tug_session_id":"s1""#))
         );
+    }
+
+    /// [P09]: compaction is a `system` record, and the translator's
+    /// assistant/user gate drops every one of those. Without the
+    /// `compact_boundary` arm the harness can never synthesize a
+    /// `session.compacted` fact — and every other synthesized kind would pass
+    /// while this one silently did not exist, which is why the pin is here.
+    #[test]
+    fn a_compact_boundary_record_survives_translation_and_becomes_a_fact() {
+        let jsonl = [
+            prompt("2026-08-07T13:00:00.000Z", "keep going"),
+            serde_json::json!({
+                "type": "system",
+                "subtype": "compact_boundary",
+                "sessionId": "s1",
+                "timestamp": "2026-08-07T13:00:05.000Z",
+                "compactMetadata": { "trigger": "auto", "preTokens": 172_000 },
+            })
+            .to_string(),
+        ]
+        .join("\n");
+
+        let frames = translate_transcript(&jsonl);
+        let boundary = frames
+            .iter()
+            .find(|f| f.msg_type == "compact_boundary")
+            .expect("the compact_boundary arm emits a frame");
+        assert!(boundary.payload.contains(r#""trigger":"auto""#));
+        assert!(boundary.payload.contains("172000"));
+
+        let synthesized = synthesize_facts(&frames);
+        let compacted = synthesized
+            .facts
+            .iter()
+            .find(|f| f.kind == "session.compacted")
+            .expect("synthesis derives the compaction fact");
+        assert!(compacted.text.contains("auto"));
+        assert!(compacted.text.contains("172000"));
+        // claude sent no post count, so none is rendered — never a stand-in 0.
+        assert!(!compacted.text.contains("→ 0"));
+        assert!(synthesized.kinds.contains(&"session.compacted"));
+    }
+
+    /// The facts a wake is shown come from the library up to that wake, never
+    /// past it: a replay knows the whole transcript, and a section carrying the
+    /// future would flatter a diet the live bridge could not serve.
+    #[test]
+    fn a_wakes_facts_stop_at_its_own_moment_and_start_after_the_last_post() {
+        let facts = [
+            crate::feeds::facts_library::prompt_fact(1_000, "s1", "the first ask"),
+            crate::feeds::facts_library::prompt_fact(2_000, "s1", "the second ask"),
+            crate::feeds::facts_library::prompt_fact(3_000, "s1", "the third ask"),
+        ];
+
+        let first = facts_for_window(&facts, None, 2_000);
+        assert_eq!(first.len(), 2, "no facts from after the wake");
+
+        let later = facts_for_window(&facts, Some(2_000), 3_000);
+        assert_eq!(later.len(), 1, "only what settled since the last post");
+        assert!(later[0].text.contains("the third ask"));
     }
 
     #[test]

@@ -123,6 +123,27 @@ use tugcast_core::{GazetteAuthor, GazettePost};
 use crate::ledger_integrity;
 use crate::path_resolver::resolve_to_claude_form;
 
+/// The privacy exclusion, spelled once and pasted into every read that could
+/// surface a private session's work ([P05]). The argument is the row's
+/// session-id column.
+///
+/// **`NOT EXISTS`, never a join** — a correctness requirement, not a style
+/// preference. `changes.file_events` lives in the machine-global shared
+/// `changes.db` while `sessions` is per-instance, so a file event belonging to
+/// *another instance's* session has no local `sessions` row at all. An
+/// `INNER JOIN sessions` would silently drop those legitimate rows and quietly
+/// shrink the Operator's answers. An absent row must read as not-private and
+/// stay in the results, which is exactly what `NOT EXISTS` does.
+macro_rules! not_private {
+    ($col:literal) => {
+        concat!(
+            " AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.session_id = ",
+            $col,
+            " AND s.private = 1)"
+        )
+    };
+}
+
 /// Maximum non-live rows per workspace before cap eviction kicks in on spawn.
 pub const DEV_LEDGER_MAX_PER_WORKSPACE: usize = 20;
 
@@ -340,6 +361,13 @@ pub struct SessionRow {
     /// lockstep with the TS `SessionRow.synopsis`.
     #[serde(default)]
     pub synopsis: Option<String>,
+    /// The Gazette privacy flag: `true` while this session is out of the fact
+    /// base and out of the channel. It rides the row to the deck because
+    /// privacy is a resting state — the chip shows the marker for as long as
+    /// the flag is set, so the mode survives a reload instead of living only
+    /// in the ack that set it. Keep in lockstep with the TS `SessionRow.private`.
+    #[serde(default)]
+    pub private: bool,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -1434,6 +1462,7 @@ impl SessionLedger {
         Self::migrate_sessions_add_tag(conn)?;
         Self::migrate_sessions_add_lineage(conn)?;
         Self::migrate_sessions_add_synopsis(conn)?;
+        Self::migrate_sessions_add_private(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
         conn.execute_batch(
@@ -1459,7 +1488,13 @@ impl SessionLedger {
                 -- The rolling generated description ([P07]). NULL until the
                 -- Summarize lane writes one; frozen (never written) once the
                 -- user has renamed the session.
-                synopsis          TEXT
+                synopsis          TEXT,
+                -- The Gazette privacy flag. `1` means this session is out of
+                -- the fact base and out of the channel: no facts recorded, no
+                -- Reporter post, and every Operator verb that reads sessions
+                -- skips it. From-now-on semantics — marking a session private
+                -- hides it going forward and scrubs nothing already written.
+                private           INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -1852,6 +1887,91 @@ impl SessionLedger {
                 VALUES (new.id, new.body, new.refs);
             END;
 
+            -- The facts-library: the durable, structured record of the work
+            -- done through Tug. Where `gazette_posts` holds the Reporter's
+            -- prose, this holds what the prose is about — prompts, session
+            -- lifecycle, commits, shell commands, test runs — recorded at the
+            -- sites that own each event and rendered once into `text`.
+            --
+            -- Same persistence posture as `gazette_posts`, for the same
+            -- reasons. Deliberately NO session cascade: a fact's whole value
+            -- is that it still says what happened after the `sessions` row it
+            -- names has been evicted by the 20-per-workspace cap or the 90-day
+            -- sweep. UNCAPPED: fact volume is tens to low hundreds of rows per
+            -- working day, and nothing prunes.
+            --
+            -- NEVER register this table with `rebuild_table_if_schema_drifted`.
+            -- That guard resolves a column-set change by DROPPING and
+            -- recreating, which is total data loss here. A future column is
+            -- added with an ALTER-based `migrate_facts_add_*` alongside the
+            -- other migrations. The FTS5 shadow tables below are the opposite
+            -- case: derived from this table, droppable and rebuildable freely.
+            --
+            -- `text` is the one rendering of the fact, written by
+            -- `facts_library::render_text`. Both the FTS index and the
+            -- Reporter's SETTLED FACTS wake section read this column, so
+            -- search and narration cannot describe one fact two ways.
+            --
+            -- `dedupe_key` is what makes a recorder idempotent. The agent
+            -- bridge re-streams replayed frames on resume, so a recorder on a
+            -- replayable path supplies a key and the INSERT OR IGNORE lands
+            -- the fact exactly once. Keys by kind:
+            --   shell   (claude route)  `shell:<session>:<tool_use_id>`
+            --   test_run               `test:<same suffix as its shell fact>`
+            --   session.compacted      `compact:<session>:<frame at_ms>`
+            --   commit                 `commit:<sha>`
+            -- Live-only paths (the `$` shell route, session lifecycle) pass
+            -- NULL, and NULLs are distinct in a SQLite unique index.
+            CREATE TABLE IF NOT EXISTS facts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_ms      INTEGER NOT NULL,
+                kind       TEXT NOT NULL,
+                session_id TEXT,
+                subject    TEXT,
+                text       TEXT NOT NULL,
+                payload    TEXT NOT NULL,
+                dedupe_key TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS facts_kind_at ON facts(kind, at_ms);
+            CREATE INDEX IF NOT EXISTS facts_session_at ON facts(session_id, at_ms);
+            CREATE UNIQUE INDEX IF NOT EXISTS facts_dedupe
+                ON facts(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+            -- External-content FTS5 over the searchable columns, the
+            -- `gazette_posts_fts` shape verbatim: the bytes live once in
+            -- `facts`, `bm25()` ranks a query's hits and `snippet()` cuts the
+            -- excerpts `facts.search` returns.
+            CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+                subject,
+                text,
+                content='facts',
+                content_rowid='id'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS facts_fts_insert
+            AFTER INSERT ON facts
+            BEGIN
+                INSERT INTO facts_fts (rowid, subject, text)
+                VALUES (new.id, new.subject, new.text);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS facts_fts_delete
+            AFTER DELETE ON facts
+            BEGIN
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
+                VALUES ('delete', old.id, old.subject, old.text);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS facts_fts_update
+            AFTER UPDATE ON facts
+            BEGIN
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
+                VALUES ('delete', old.id, old.subject, old.text);
+                INSERT INTO facts_fts (rowid, subject, text)
+                VALUES (new.id, new.subject, new.text);
+            END;
+
             -- Cache of external-session scan results — one row per
             -- on-disk JSONL the external scanner has parsed, keyed by
             -- session id and validated by (file_size, file_mtime).
@@ -2182,6 +2302,25 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.private` column — the Gazette
+    /// privacy flag. Pre-column rows default to `0` (public), which is the
+    /// right reading: a session recorded before the flag existed was never
+    /// marked private. No-op on a fresh DB (the CREATE TABLE defines it) or
+    /// when already migrated.
+    fn migrate_sessions_add_private(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "private") {
+            conn.execute(
+                "ALTER TABLE sessions ADD COLUMN private INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Self-healing add of the `sessions.tag` column — the mnemonic
     /// `adjective-noun` handle that fronts a session. Adds the plain column
     /// only; the `sessions_tag` unique index is created by the CREATE-batch
@@ -2358,7 +2497,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis
+                    root_tag, tag_lineage, synopsis, private
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -2381,7 +2520,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis
+                    root_tag, tag_lineage, synopsis, private
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -2413,7 +2552,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis
+                    root_tag, tag_lineage, synopsis, private
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -2443,11 +2582,15 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis
+                    root_tag, tag_lineage, synopsis, private
              FROM sessions
              WHERE (?1 IS NULL OR last_used_at >= ?1)
                AND (?2 IS NULL OR last_used_at <= ?2)
                AND (?3 = 0 OR state = 'live')
+               -- The Gazette's only reader of this list is the Operator, and a
+               -- private session is out of the channel ([P05]). The chooser and
+               -- the recents surface read their rows elsewhere and still see it.
+               AND private = 0
              ORDER BY last_used_at DESC
              LIMIT ?4",
         )?;
@@ -2478,7 +2621,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis
+                    root_tag, tag_lineage, synopsis, private
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -2536,7 +2679,7 @@ impl SessionLedger {
     ) -> Result<Vec<(String, SessionRow)>, LedgerError> {
         const COLUMNS: &str = "session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis";
+                    root_tag, tag_lineage, synopsis, private";
         // The scan cache's own columns, projected into the same row shape the
         // picker union synthesizes for an unadopted session.
         const SCAN_COLUMNS: &str = "session_id, project_dir, created_at, last_used_at,
@@ -2559,6 +2702,9 @@ impl SessionLedger {
                 root_tag: None,
                 tag_lineage: None,
                 synopsis: None,
+                // An unadopted scan row has no `sessions` row to carry a flag,
+                // and an absent row reads as public everywhere else too.
+                private: false,
             })
         }
         let conn = self.db.lock().expect("ledger mutex");
@@ -2800,6 +2946,35 @@ impl SessionLedger {
                 Err(e) => return Err(e.into()),
             }
         }
+        // The lifecycle fact, written inside this same transaction so the fact
+        // and the session row land together — and, decisively, **through the
+        // `_tx` form**: the ledger mutex is held for this whole body and is not
+        // reentrant, so the public `record_fact` here would deadlock tugcast on
+        // every spawn ([P11]).
+        //
+        // `existing_created_at` already answered spawned-vs-resumed before the
+        // UPSERT, so the disposition costs no extra query. A session the
+        // external scan discovered and this instance is adopting has no
+        // `sessions` row and therefore records `spawned` — first appearance in
+        // *this* ledger, which is the first moment this instance can say
+        // anything true about it. Its pre-Tug history is the transcript's to
+        // tell.
+        let start_fact = crate::feeds::facts_library::session_start_fact(
+            now,
+            session_id,
+            existing_created_at.is_some(),
+            candidate.as_deref().unwrap_or(session_id),
+            workspace_key,
+            project_dir,
+            seed_name.as_deref(),
+        );
+        if let Err(e) = Self::record_fact_tx(&tx, &start_fact) {
+            tracing::warn!(
+                session = %session_id,
+                error = %e,
+                "record_spawn fact write failed; the session row is unaffected"
+            );
+        }
         tx.commit()?;
         self.notify_sessions_changed();
         Ok(())
@@ -2845,6 +3020,41 @@ impl SessionLedger {
         }
         self.notify_sessions_changed();
         Ok(())
+    }
+
+    /// Mark a session in or out of the Gazette ([P05]).
+    ///
+    /// From-now-on semantics: turning it on stops new facts and new posts;
+    /// turning it off resumes recording from that moment. Nothing already
+    /// written is touched — a retroactive scrub is a separate act, and doing it
+    /// silently here would be the wrong kind of surprise.
+    pub fn set_session_private(&self, session_id: &str, private: bool) -> Result<(), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let affected = conn.execute(
+            "UPDATE sessions SET private = ?2 WHERE session_id = ?1",
+            params![session_id, i64::from(private)],
+        )?;
+        if affected == 0 {
+            return Err(LedgerError::NotFound(session_id.to_owned()));
+        }
+        drop(conn);
+        self.notify_sessions_changed();
+        Ok(())
+    }
+
+    /// Is this session currently private? A session with no row reads as
+    /// public — the same reading the write-time check takes, and the reason
+    /// the query-time exclusions are `NOT EXISTS` rather than joins.
+    pub fn is_session_private(&self, session_id: &str) -> Result<bool, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let private: Option<i64> = conn
+            .query_row(
+                "SELECT private FROM sessions WHERE session_id = ?1",
+                params![session_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(private.unwrap_or(0) != 0)
     }
 
     /// Allocate the fork's callsign from its parent's lineage ([P11]).
@@ -3343,12 +3553,43 @@ impl SessionLedger {
     /// subprocess. Returns the number of rows demoted.
     pub fn demote_live_to_closed(&self) -> Result<usize, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
+        // Read the doomed rows before the UPDATE erases which ones they were,
+        // so each demotion records its own fact. `startup-demote` is the
+        // detail because the distinction matters when reading history back:
+        // this session did not end, the process under it did.
+        let mut stmt = conn.prepare(
+            "SELECT session_id, tag FROM sessions WHERE state = 'live'",
+        )?;
+        let demoted: Vec<(String, Option<String>)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
         let count = conn.execute(
             "UPDATE sessions
              SET state = 'closed'
              WHERE state = 'live'",
             [],
         )?;
+        let now = now_millis();
+        for (session_id, tag) in &demoted {
+            let handle = tag.clone().unwrap_or_else(|| session_id.clone());
+            // The lock is held right here, so this is the `_tx` form ([P11]).
+            let fact = crate::feeds::facts_library::session_end_fact(
+                now,
+                session_id,
+                false,
+                &handle,
+                Some("startup-demote"),
+            );
+            if let Err(e) = Self::record_fact_tx(&conn, &fact) {
+                tracing::warn!(
+                    session = %session_id,
+                    error = %e,
+                    "startup-demote fact write failed"
+                );
+            }
+        }
+        drop(conn);
         if count > 0 {
             self.notify_sessions_changed();
         }
@@ -5464,6 +5705,187 @@ impl SessionLedger {
             .collect())
     }
 
+    // MARK: - Facts library
+
+    /// Append one fact, inside a transaction (or connection) the caller
+    /// already holds.
+    ///
+    /// **This is the form to call from anywhere that already holds the ledger
+    /// lock.** `SessionLedger.db` is a `std::sync::Mutex<Connection>`, which is
+    /// not reentrant: `record_spawn` holds it across an IMMEDIATE transaction
+    /// for its whole body, so calling the public `record_fact` from in there
+    /// would deadlock tugcast on every session spawn — a hang, not an error,
+    /// and one no unit test of either function alone would catch.
+    ///
+    /// Returns the new rowid, or `None` when nothing was written: either the
+    /// `dedupe_key` was already present (a replayed frame recorded twice) or
+    /// the fact names a private session. Both are ordinary outcomes, never
+    /// errors — a recorder is best-effort and rides someone else's hot path.
+    pub fn record_fact_tx(conn: &Connection, fact: &NewFact) -> Result<Option<i64>, LedgerError> {
+        // Write-time privacy ([P05]), inside the same connection acquisition so
+        // both the public and the `_tx` path enforce it. App-scoped facts (no
+        // session) always record; a session with no row reads as public.
+        if let Some(session_id) = fact.session_id.as_deref() {
+            let private: Option<i64> = conn
+                .query_row(
+                    "SELECT private FROM sessions WHERE session_id = ?1",
+                    params![session_id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if private.unwrap_or(0) != 0 {
+                return Ok(None);
+            }
+        }
+        let affected = conn.execute(
+            "INSERT OR IGNORE INTO facts
+                 (at_ms, kind, session_id, subject, text, payload, dedupe_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                fact.at_ms,
+                fact.kind,
+                fact.session_id,
+                fact.subject,
+                fact.text,
+                fact.payload,
+                fact.dedupe_key,
+            ],
+        )?;
+        if affected == 0 {
+            return Ok(None);
+        }
+        Ok(Some(conn.last_insert_rowid()))
+    }
+
+    /// Append one fact, acquiring the ledger lock. Callers that already hold
+    /// it must use [`SessionLedger::record_fact_tx`] instead.
+    pub fn record_fact(&self, fact: &NewFact) -> Result<Option<i64>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        Self::record_fact_tx(&conn, fact)
+    }
+
+    /// Facts about one session, optionally narrowed to a single kind and to
+    /// what is newer than a timestamp.
+    ///
+    /// Two callers share one shape: `session.prompts` asks for a session's
+    /// `prompt` facts, and a Reporter wake asks for every kind newer than its
+    /// own most recent post.
+    ///
+    /// Returns the **newest `limit`** rows, ordered OLDEST-first — the
+    /// `list_gazette_posts_tail` shape, and the ordering both callers want.
+    /// Truncating the other way would hand a long window's wake the start of
+    /// the stretch and drop the end, which is the half a post is about.
+    pub fn list_facts_for_session_since(
+        &self,
+        session_id: &str,
+        kind: Option<&str>,
+        since_ms: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<FactRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(concat!(
+            "SELECT id, at_ms, kind, session_id, subject, text, payload FROM (
+                 SELECT id, at_ms, kind, session_id, subject, text, payload
+                 FROM facts
+                 WHERE session_id = ?1
+                   AND (?2 IS NULL OR kind = ?2)
+                   AND (?3 IS NULL OR at_ms > ?3)",
+            not_private!("facts.session_id"),
+            "     ORDER BY at_ms DESC, id DESC
+                 LIMIT ?4
+             ) ORDER BY at_ms ASC, id ASC"
+        ))?;
+        let rows = stmt.query_map(
+            params![session_id, kind, since_ms, limit as i64],
+            fact_from_row,
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// The `n` facts on either side of `id`, inclusive of `id` itself — what
+    /// else was going on around a search hit.
+    pub fn facts_window(&self, id: i64, n: usize) -> Result<Vec<FactRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(concat!(
+            "SELECT id, at_ms, kind, session_id, subject, text, payload
+             FROM facts
+             WHERE id BETWEEN ?1 - ?2 AND ?1 + ?2",
+            not_private!("facts.session_id"),
+            " ORDER BY id ASC"
+        ))?;
+        let rows = stmt.query_map(params![id, n as i64], fact_from_row)?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Full-text search over fact subjects and renderings, best-match first.
+    ///
+    /// The `search_gazette_posts` shape: an FTS5 MATCH ranked by `bm25`, with
+    /// the content-table filters narrowing alongside it, and a malformed query
+    /// coming back as `Err` for the Operator to read rather than as a panic.
+    pub fn search_facts(
+        &self,
+        query: &str,
+        filter: &FactSearchFilter,
+        limit: usize,
+    ) -> Result<Vec<FactSearchHit>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(concat!(
+            "SELECT f.id, f.at_ms, f.kind, f.session_id, f.subject, f.text, f.payload,
+                    snippet(facts_fts, -1, '', '', '…', 32)
+             FROM facts_fts x
+             JOIN facts f ON f.id = x.rowid
+             WHERE facts_fts MATCH ?1
+               AND (?2 IS NULL OR f.kind = ?2)
+               AND (?3 IS NULL OR f.session_id = ?3)
+               AND (?4 IS NULL OR f.at_ms >= ?4)
+               AND (?5 IS NULL OR f.at_ms <= ?5)",
+            not_private!("f.session_id"),
+            " ORDER BY bm25(facts_fts) ASC
+             LIMIT ?6"
+        ))?;
+        let rows = stmt.query_map(
+            params![
+                query,
+                filter.kind.as_deref(),
+                filter.session_id.as_deref(),
+                filter.since_ms,
+                filter.until_ms,
+                limit as i64,
+            ],
+            |row| {
+                let excerpt: String = row.get(7)?;
+                Ok(FactSearchHit {
+                    fact: fact_from_row(row)?,
+                    excerpt,
+                })
+            },
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Every recorded fact as `(kind, subject, text)`, oldest-first, for tests
+    /// in other modules that drive a recorder and need to see what it wrote.
+    /// The typed read verbs land with the Operator that consumes them.
+    #[cfg(test)]
+    pub fn facts_for_test(&self) -> Vec<(String, String, String)> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn
+            .prepare("SELECT kind, subject, text FROM facts ORDER BY id ASC")
+            .expect("prepare");
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("rows");
+        rows
+    }
+
     // MARK: - File events, read side
 
     /// Every file event one session recorded, oldest-first. Backs the
@@ -5474,14 +5896,15 @@ impl SessionLedger {
         limit: usize,
     ) -> Result<Vec<FileEventRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(concat!(
             "SELECT tug_session_id, tool_use_id, file_path, tool_name, op, origin,
                     ambiguous, parent_tool_use_id, project_dir, at
              FROM changes.file_events
-             WHERE tug_session_id = ?1
-             ORDER BY at ASC, rowid ASC
-             LIMIT ?2",
-        )?;
+             WHERE tug_session_id = ?1",
+            not_private!("changes.file_events.tug_session_id"),
+            " ORDER BY at ASC, rowid ASC
+             LIMIT ?2"
+        ))?;
         let rows = stmt.query_map(params![session_id, limit as i64], file_event_read_row)?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -5501,16 +5924,17 @@ impl SessionLedger {
         limit: usize,
     ) -> Result<Vec<FileEventRow>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare(concat!(
             "SELECT tug_session_id, tool_use_id, file_path, tool_name, op, origin,
                     ambiguous, parent_tool_use_id, project_dir, at
              FROM changes.file_events
              WHERE file_path LIKE ?1
                AND (?2 IS NULL OR at >= ?2)
-               AND (?3 IS NULL OR at <= ?3)
-             ORDER BY at DESC, rowid DESC
-             LIMIT ?4",
-        )?;
+               AND (?3 IS NULL OR at <= ?3)",
+            not_private!("changes.file_events.tug_session_id"),
+            " ORDER BY at DESC, rowid DESC
+             LIMIT ?4"
+        ))?;
         let rows = stmt.query_map(
             params![pattern, since_ms, until_ms, limit as i64],
             file_event_read_row,
@@ -5533,6 +5957,68 @@ pub struct GazetteSearchFilter {
 pub struct GazetteSearchHit {
     pub post: GazettePost,
     pub excerpt: String,
+}
+
+/// One fact on its way into the library. Every field is composed by
+/// `feeds::facts_library` — the ledger computes nothing, so the rendering the
+/// FTS index holds is the same rendering the Reporter reads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewFact {
+    pub at_ms: i64,
+    /// The fact kind, as `facts_library::FactKind` spells it — `prompt`,
+    /// `session.spawned`, `shell`, `test_run`, `commit`, …
+    pub kind: String,
+    /// The session this fact is about, or `None` for an app-scoped fact.
+    pub session_id: Option<String>,
+    /// The headline handle: a sha, a command incipit, a name.
+    pub subject: Option<String>,
+    /// The one-line rendering ([P02]).
+    pub text: String,
+    /// Small structured JSON. Never outputs, never file bodies.
+    pub payload: String,
+    /// The idempotency key for replayable paths; `None` on live-only ones.
+    pub dedupe_key: Option<String>,
+}
+
+/// One fact read back out of the library.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FactRow {
+    pub id: i64,
+    pub at_ms: i64,
+    pub kind: String,
+    pub session_id: Option<String>,
+    pub subject: Option<String>,
+    pub text: String,
+    pub payload: String,
+}
+
+/// Optional narrowing applied alongside a facts full-text MATCH.
+#[derive(Debug, Clone, Default)]
+pub struct FactSearchFilter {
+    pub kind: Option<String>,
+    pub session_id: Option<String>,
+    pub since_ms: Option<i64>,
+    pub until_ms: Option<i64>,
+}
+
+/// One search result: the fact, plus the FTS5-cut excerpt around the match.
+#[derive(Debug, Clone)]
+pub struct FactSearchHit {
+    pub fact: FactRow,
+    pub excerpt: String,
+}
+
+/// Decode one `facts` row. The column order matches every read above.
+fn fact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FactRow> {
+    Ok(FactRow {
+        id: row.get(0)?,
+        at_ms: row.get(1)?,
+        kind: row.get(2)?,
+        session_id: row.get(3)?,
+        subject: row.get(4)?,
+        text: row.get(5)?,
+        payload: row.get(6)?,
+    })
 }
 
 /// Decode one `gazette_posts` row.
@@ -5623,6 +6109,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let root_tag: Option<String> = row.get(12)?;
     let tag_lineage: Option<String> = row.get(13)?;
     let synopsis: Option<String> = row.get(14)?;
+    let private: bool = row.get::<_, i64>(15)? != 0;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -5643,6 +6130,7 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         root_tag,
         tag_lineage,
         synopsis,
+        private,
     }))
 }
 
@@ -7702,6 +8190,314 @@ mod tests {
                 .is_empty(),
             "the index dropped the row with its content"
         );
+    }
+
+    // ── the facts library ────────────────────────────────────────────────────
+
+    /// A fact with everything filled in but the fields a caller varies.
+    fn fact(at_ms: i64, kind: &str, subject: &str, text: &str) -> NewFact {
+        NewFact {
+            at_ms,
+            kind: kind.to_string(),
+            session_id: None,
+            subject: Some(subject.to_string()),
+            text: text.to_string(),
+            payload: "{}".to_string(),
+            dedupe_key: None,
+        }
+    }
+
+    /// Every stored fact as `(kind, subject, text, payload)`, oldest-first.
+    /// Read straight off the table: the typed read verbs land with the
+    /// Operator that consumes them, and the write path is what is under test
+    /// here.
+    fn stored_facts(ledger: &SessionLedger) -> Vec<(String, Option<String>, String, String)> {
+        let conn = ledger.db.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT kind, subject, text, payload FROM facts ORDER BY id ASC")
+            .expect("prepare");
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .expect("query")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("rows");
+        rows
+    }
+
+    /// What the FTS index answers for a query — the shadow tables are part of
+    /// the schema under test even before a verb reads them.
+    fn fts_hits(ledger: &SessionLedger, query: &str) -> usize {
+        let conn = ledger.db.lock().unwrap();
+        conn.query_row(
+            "SELECT COUNT(*) FROM facts_fts WHERE facts_fts MATCH ?1",
+            params![query],
+            |row| row.get::<_, i64>(0),
+        )
+        .expect("match") as usize
+    }
+
+    #[test]
+    fn facts_round_trip_every_kind_with_payload_and_subject_intact() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        let kinds = [
+            ("prompt", "make the chip legible"),
+            ("session.spawned", "brisk-otter"),
+            ("session.compacted", "auto"),
+            ("commit", "a1b2c3d4e5f6"),
+            ("shell", "cargo nextest run"),
+            ("test_run", "cargo nextest"),
+        ];
+        for (i, (kind, subject)) in kinds.iter().enumerate() {
+            let mut f = fact(1_000 + i as i64, kind, subject, &format!("rendered {kind}"));
+            f.session_id = Some("s1".to_string());
+            f.payload = format!(r#"{{"n":{i}}}"#);
+            assert!(
+                ledger.record_fact(&f).expect("record").is_some(),
+                "{kind} recorded"
+            );
+        }
+
+        // The seeded spawn wrote its own lifecycle fact first; everything
+        // recorded above follows it in id order.
+        let rows = stored_facts(&ledger);
+        assert_eq!(rows.len(), kinds.len() + 1);
+        assert_eq!(rows[0].0, "session.spawned");
+        assert_eq!(rows[1].0, "prompt");
+        assert_eq!(rows[1].1.as_deref(), Some("make the chip legible"));
+        assert_eq!(rows[1].2, "rendered prompt");
+        assert_eq!(rows[1].3, r#"{"n":0}"#);
+        assert_eq!(rows[6].0, "test_run");
+        assert_eq!(rows[6].2, "rendered test_run");
+
+        // Both indexed columns are searchable — the subject carries the
+        // handle a question asks by, the text carries the wording.
+        assert_eq!(fts_hits(&ledger, "legible"), 1);
+        assert_eq!(fts_hits(&ledger, "rendered"), kinds.len());
+    }
+
+    #[test]
+    fn a_dedupe_key_lands_the_fact_once_however_often_it_is_replayed() {
+        let ledger = fresh();
+        let mut f = fact(1_000, "shell", "cargo build", "$ cargo build → ok");
+        f.dedupe_key = Some("shell:s1:toolu_1".to_string());
+
+        assert!(ledger.record_fact(&f).expect("first").is_some());
+        // The relay re-streams replayed frames on every resume; the second and
+        // third pass must be silent no-ops, not errors and not new rows.
+        assert_eq!(ledger.record_fact(&f).expect("second"), None);
+        assert_eq!(ledger.record_fact(&f).expect("third"), None);
+
+        assert_eq!(stored_facts(&ledger).len(), 1);
+        assert_eq!(fts_hits(&ledger, "cargo"), 1);
+    }
+
+    #[test]
+    fn a_null_dedupe_key_never_collides_with_another_null() {
+        // NULLs are distinct in a SQLite unique index, which is what lets the
+        // live-only paths (the `$` shell route, session lifecycle) pass none.
+        let ledger = fresh();
+        for i in 0..3 {
+            assert!(
+                ledger
+                    .record_fact(&fact(1_000 + i, "session.closed", "s1", "session closed"))
+                    .expect("record")
+                    .is_some()
+            );
+        }
+        assert_eq!(stored_facts(&ledger).len(), 3);
+    }
+
+    #[test]
+    fn facts_survive_deletion_of_the_session_they_name() {
+        // Permanence is the whole point: the 20-per-workspace cap and the
+        // 90-day sweep hard-DELETE `sessions` rows, and a fact must still say
+        // what happened afterwards.
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        let mut f = fact(1_000, "commit", "a1b2c3d4", "commit a1b2c3d4 \"land it\" — 3 file(s)");
+        f.session_id = Some("s1".to_string());
+        ledger.record_fact(&f).expect("record");
+
+        {
+            let conn = ledger.db.lock().unwrap();
+            conn.execute("DELETE FROM sessions WHERE session_id = 's1'", [])
+                .expect("delete session row");
+        }
+
+        let rows = stored_facts(&ledger);
+        assert_eq!(rows.len(), 2, "the facts outlive their session row");
+        assert_eq!(rows[1].1.as_deref(), Some("a1b2c3d4"));
+    }
+
+    #[test]
+    fn record_spawn_records_spawned_then_resumed() {
+        // Written with `record_fact_tx` inside `record_spawn`'s own
+        // transaction: the mutex is not reentrant, so the public form there
+        // would deadlock every spawn rather than fail one.
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(2));
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(1));
+        let kinds: Vec<String> = stored_facts(&ledger).into_iter().map(|f| f.0).collect();
+        assert_eq!(kinds, vec!["session.spawned", "session.resumed"]);
+    }
+
+    #[test]
+    fn an_adopted_scan_session_records_spawned_not_resumed() {
+        // A session the scan discovered has no `sessions` row but real prior
+        // history. It records `spawned` — first appearance in *this* ledger,
+        // which is the first moment this instance can say anything true about
+        // it. Its pre-Tug history is the transcript's to tell, and a `resumed`
+        // fact with no prior `spawned` beside it would read as a gap.
+        let ledger = fresh();
+        let id = "adopted-session";
+        ledger
+            .upsert_scan_cache(&ScanCacheRow {
+                session_id: id.into(),
+                project_dir: "/proj/alpha".into(),
+                file_size: 1_000,
+                file_mtime: millis(5),
+                excluded: false,
+                turn_count: 42,
+                last_user_prompt: Some("the last prompt".into()),
+                name: Some("Scanned title".into()),
+                created_at: millis(1),
+                last_used_at: millis(5),
+                parse_offset: 0,
+                tail_hash: 0,
+                cwd_checked: false,
+                created_at_found: false,
+                frontier_open: false,
+                frontier_pending_close: false,
+                frontier_pending_close_msg_id: None,
+                frontier_leaf_uuid: None,
+                effective_uuids: None,
+                lineage_ancestors: None,
+                tag: Some("azure-heron".into()),
+            })
+            .expect("seed the scan cache");
+        seed_live(&ledger, id, WS_A, "card-1", millis(0));
+        let rows = stored_facts(&ledger);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "session.spawned");
+    }
+
+    /// Set the flag the way the CONTROL verb will once it lands, so the
+    /// write-time refusal can be pinned before its toggle exists.
+    fn mark_private(ledger: &SessionLedger, session_id: &str, private: bool) {
+        let conn = ledger.db.lock().unwrap();
+        conn.execute(
+            "UPDATE sessions SET private = ?2 WHERE session_id = ?1",
+            params![session_id, i64::from(private)],
+        )
+        .expect("set private");
+    }
+
+    #[test]
+    fn a_private_session_records_no_facts_while_the_flag_is_set() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+
+        let mut before = fact(1_000, "prompt", "public work", "prompt: \"public work\"");
+        before.session_id = Some("s1".to_string());
+        ledger.record_fact(&before).expect("record");
+
+        mark_private(&ledger, "s1", true);
+        let mut during = fact(2_000, "prompt", "private work", "prompt: \"private work\"");
+        during.session_id = Some("s1".to_string());
+        assert_eq!(
+            ledger.record_fact(&during).expect("refused"),
+            None,
+            "the write-time check refuses silently rather than erroring"
+        );
+        // The spawn fact and the public prompt, and nothing from while the
+        // flag was set.
+        assert_eq!(stored_facts(&ledger).len(), 2);
+
+        // From-now-on: marking it public again resumes recording from that
+        // moment, and scrubs nothing either way.
+        mark_private(&ledger, "s1", false);
+        assert!(ledger.record_fact(&during).expect("record").is_some());
+        assert_eq!(stored_facts(&ledger).len(), 3);
+    }
+
+    #[test]
+    fn an_app_scoped_fact_records_even_while_some_session_is_private() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        mark_private(&ledger, "s1", true);
+        // No session named, so no session's flag can hide it.
+        assert!(
+            ledger
+                .record_fact(&fact(1_000, "shell", "just build-app", "$ just build-app → ok"))
+                .expect("record")
+                .is_some()
+        );
+        // The seeded spawn plus the app-scoped fact.
+        assert_eq!(stored_facts(&ledger).len(), 2);
+    }
+
+    #[test]
+    fn a_fact_naming_an_unknown_session_still_records() {
+        // An absent `sessions` row reads as public — the machine-global
+        // `changes.db` case, where another instance's session has no local row.
+        let ledger = fresh();
+        let mut f = fact(1_000, "shell", "git log", "$ git log → ok");
+        f.session_id = Some("some-other-instances-session".to_string());
+        assert!(ledger.record_fact(&f).expect("record").is_some());
+        assert_eq!(stored_facts(&ledger).len(), 1);
+    }
+
+    #[test]
+    fn a_ledger_predating_the_private_column_migrates_in_place() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE sessions (
+                 session_id        TEXT PRIMARY KEY,
+                 workspace_key     TEXT NOT NULL,
+                 project_dir       TEXT NOT NULL,
+                 created_at        INTEGER NOT NULL,
+                 last_used_at      INTEGER NOT NULL,
+                 turn_count        INTEGER NOT NULL DEFAULT 0,
+                 last_user_prompt  TEXT,
+                 state             TEXT NOT NULL,
+                 card_id           TEXT,
+                 name              TEXT,
+                 name_user_set     INTEGER NOT NULL DEFAULT 0,
+                 tag               TEXT,
+                 root_tag          TEXT,
+                 tag_lineage       TEXT,
+                 synopsis          TEXT
+             );
+             INSERT INTO sessions
+                 (session_id, workspace_key, project_dir, created_at,
+                  last_used_at, state)
+             VALUES ('legacy', 'ws', '/proj', 0, 0, 'closed');",
+        )
+        .expect("legacy schema");
+
+        let has_private = |conn: &Connection| {
+            SessionLedger::table_columns(conn, "sessions")
+                .expect("columns")
+                .iter()
+                .any(|(n, _)| n == "private")
+        };
+        assert!(!has_private(&conn));
+        SessionLedger::migrate_sessions_add_private(&conn).expect("migrate");
+        assert!(has_private(&conn));
+        SessionLedger::migrate_sessions_add_private(&conn).expect("re-migrate");
+
+        // A row written before the flag existed was never marked private.
+        let existing: i64 = conn
+            .query_row(
+                "SELECT private FROM sessions WHERE session_id = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read");
+        assert_eq!(existing, 0);
     }
 
     #[test]

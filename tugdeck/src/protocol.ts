@@ -87,6 +87,7 @@ export const CONTROL_ACTION_LIST_CARD_BINDINGS = "list_card_bindings";
 export const CONTROL_ACTION_RESOLVE_SESSIONS = "resolve_sessions";
 export const CONTROL_ACTION_TRASH_SESSION = "trash_session";
 export const CONTROL_ACTION_RENAME_SESSION = "rename_session";
+export const CONTROL_ACTION_SET_SESSION_PRIVATE = "set_session_private";
 export const CONTROL_ACTION_TRASH_PROJECT_DIR_SESSIONS = "trash_project_dir_sessions";
 export const CONTROL_ACTION_REQUEST_REPLAY = "request_replay";
 /**
@@ -180,6 +181,15 @@ export interface SessionRow {
    * session the scanner has never seen, and absent from an older tugcast.
    */
   file_size?: number | null;
+  /**
+   * Whether this session is out of the Gazette: no facts recorded, no posts
+   * written, excluded from the Operator's answers. Toggled by `/private`.
+   *
+   * It rides the row because privacy is a **resting** state — the atom's marker
+   * has to survive a reload, which an ack alone cannot do. Defaults to `false`
+   * for an older tugcast. Keep in lockstep with the Rust `SessionRow.private`.
+   */
+  private?: boolean;
 }
 
 /** Busy/idle detail of a terminal-live session. */
@@ -227,6 +237,7 @@ export function normalizeSessionRow(
     root_tag: row.root_tag ?? null,
     tag_lineage: row.tag_lineage ?? null,
     synopsis: row.synopsis ?? null,
+    private: row.private ?? false,
   };
 }
 
@@ -699,6 +710,22 @@ export function encodeRenameSession(sessionId: string, name: string): Frame {
   return controlFrame(CONTROL_ACTION_RENAME_SESSION, {
     session_id: sessionId,
     name,
+  });
+}
+
+/**
+ * Mark a session in or out of the Gazette ([P05], [Q01]).
+ *
+ * From-now-on semantics: tugcast stops recording facts and writing posts for a
+ * private session and excludes it from the Operator's reads; marking it public
+ * again resumes from that moment, and nothing already written is scrubbed. The
+ * ledger write broadcasts `session_updated` so the atom's marker shows the
+ * resting state, and `set_session_private_ok` acks the transition.
+ */
+export function encodeSetSessionPrivate(sessionId: string, isPrivate: boolean): Frame {
+  return controlFrame(CONTROL_ACTION_SET_SESSION_PRIVATE, {
+    session_id: sessionId,
+    private: isPrivate,
   });
 }
 

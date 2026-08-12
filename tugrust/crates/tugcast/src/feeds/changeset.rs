@@ -1895,6 +1895,7 @@ mod tests {
             root_tag: None,
             tag_lineage: None,
             synopsis: None,
+            private: false,
         }
     }
 

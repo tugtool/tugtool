@@ -51,8 +51,9 @@ use crate::shared_agent::SharedAgentPool;
 use super::gazette_agent::DEFAULT_CARD_ROWS;
 use super::payload_inspector::InspectedPayload;
 use super::reporter_wake::{
-    FrameBuffer, PriorPost, WakeReason, compose_reporter_input, counts_as_assistant_activity,
-    forwardable_session, parse_envelope, validate_refs,
+    FactLine, FrameBuffer, PriorPost, WakeReason, compose_reporter_input,
+    counts_as_assistant_activity, forwardable_session, parse_envelope, render_facts_section,
+    validate_refs,
 };
 
 /// How many posts the card's CONTROL tail read answers with. Matches the
@@ -67,6 +68,12 @@ const REPORTER_POST_JOB: &str = "reporter-post";
 /// Enough to see what shape the model produced, short enough not to dump a
 /// whole digest into tracing on every failure.
 const RAW_LOG_CHARS: usize = 400;
+
+/// How many facts a wake reads before the section's own caps narrow them.
+/// A little wider than [`render_facts_section`]'s ceiling so the section is
+/// choosing among the newest facts rather than among whatever the read happened
+/// to return first.
+const FACTS_FETCH_LIMIT: usize = 64;
 
 // MARK: - Configuration
 
@@ -90,7 +97,6 @@ pub struct ReporterBridgeConfig {
     pub ledger: Option<Arc<SessionLedger>>,
     /// The Gazette's Sonnet pool. Absent means no model, and no wake ever runs.
     pub agent: Option<Arc<SharedAgentPool>>,
-    pub enabled: Arc<dyn Fn() -> bool + Send + Sync>,
     pub sitrep_secs: Arc<dyn Fn() -> i64 + Send + Sync>,
     pub last_k_posts: Arc<dyn Fn() -> usize + Send + Sync>,
     pub token_wake_tokens: Arc<dyn Fn() -> i64 + Send + Sync>,
@@ -157,6 +163,13 @@ struct SessionWindow {
     /// wake while one is in flight would race two posts about overlapping work
     /// into the channel in either order.
     in_flight: Option<FrameBuffer>,
+    /// The facts section the in-flight wake was shown, verbatim — the second
+    /// ref-validation corpus ([P10]). Kept beside the window because a sha the
+    /// post cites may appear only here: a `commit` fact carries it, while the
+    /// frame that mentioned it may have aged out of the buffer or never rode
+    /// the wire at all. Rebuilding it at settle time would be a second
+    /// rendering of the same facts, which is the drift this plan forbids.
+    in_flight_facts: Option<String>,
 }
 
 impl SessionWindow {
@@ -167,6 +180,7 @@ impl SessionWindow {
             tokens: 0,
             assistant_activity: false,
             in_flight: None,
+            in_flight_facts: None,
         }
     }
 }
@@ -191,8 +205,8 @@ async fn reporter_bridge_task(
     let (outcome_tx, mut outcome_rx) = mpsc::channel::<WakeOutcome>(16);
 
     let mut sessions: HashMap<String, SessionWindow> = HashMap::new();
-    // Sessions inside a replay bracket. Maintained even while the channel is
-    // disabled, because mute state tracks the wire rather than the toggle.
+    // Sessions inside a replay bracket. Mute state tracks the wire: a
+    // session that entered replay does not get that replay narrated.
     let mut muted: HashSet<String> = HashSet::new();
 
     loop {
@@ -304,13 +318,6 @@ fn handle_code_frame(
     let Some(session_id) = forwardable_session(&frame.payload, muted) else {
         return;
     };
-    if !(config.enabled)() {
-        // Disabled drops frames on the floor and wakes nothing. The mute set
-        // above is still maintained, so a session that entered replay while
-        // the channel was off does not get the tail of that replay narrated
-        // when it comes back on.
-        return;
-    }
     let msg_type = InspectedPayload::from_slice(&frame.payload)
         .and_then(|p| p.msg_type)
         .unwrap_or_default();
@@ -362,9 +369,6 @@ fn handle_submission_frame(
     sessions: &mut HashMap<String, SessionWindow>,
     frame: &Frame,
 ) {
-    if !(config.enabled)() {
-        return;
-    }
     let Some(inspected) = InspectedPayload::from_slice(&frame.payload) else {
         return;
     };
@@ -454,9 +458,6 @@ fn wake(
     reason: WakeReason,
     outcome_tx: &mpsc::Sender<WakeOutcome>,
 ) {
-    if !(config.enabled)() {
-        return;
-    }
     let Some(agent) = config.agent.clone() else {
         return;
     };
@@ -471,6 +472,32 @@ fn wake(
     // declines.
     if window.buffer.is_empty() {
         window.armed_at = None;
+        return;
+    }
+
+    // Wake-time privacy ([P05]). Read once per wake — wakes are rare, and the
+    // alternative is a DB read on the frame path. The window is taken and
+    // dropped rather than left standing: a session made public again narrates
+    // from that moment on, not from everything that accumulated while it was
+    // hidden.
+    let private = config
+        .ledger
+        .as_ref()
+        .map(|ledger| {
+            ledger.is_session_private(session_id).unwrap_or_else(|err| {
+                // An unreadable flag is not a licence to narrate: a failed read
+                // reads as private, because the cost of being wrong the other
+                // way is publishing what the user asked to keep out.
+                warn!(error = %err, "gazette reporter: privacy read failed; treating as private");
+                true
+            })
+        })
+        .unwrap_or(false);
+    if private {
+        window.buffer.take();
+        window.armed_at = None;
+        window.tokens = 0;
+        window.assistant_activity = false;
         return;
     }
 
@@ -498,8 +525,33 @@ fn wake(
         })
         .collect::<Vec<_>>();
 
-    let input = compose_reporter_input(reason, session_id, &taken, &priors);
+    // Facts newer than the newest prior post — everything the library holds
+    // when there are no priors. A failed read warns and composes `(none)`: a
+    // facts read must never cost a wake.
+    let facts = config
+        .ledger
+        .as_ref()
+        .map(|ledger| {
+            let since = priors.last().map(|post| post.at_ms);
+            ledger
+                .list_facts_for_session_since(session_id, None, since, FACTS_FETCH_LIMIT)
+                .unwrap_or_else(|err| {
+                    warn!(error = %err, "gazette reporter: facts read failed");
+                    Vec::new()
+                })
+        })
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| FactLine {
+            at_ms: row.at_ms,
+            text: row.text,
+        })
+        .collect::<Vec<_>>();
+    let facts_section = render_facts_section(&facts);
+
+    let input = compose_reporter_input(reason, session_id, &taken, &priors, &facts);
     window.in_flight = Some(taken);
+    window.in_flight_facts = Some(facts_section);
 
     let outcome_tx = outcome_tx.clone();
     let session_id = session_id.to_string();
@@ -533,6 +585,9 @@ fn settle(
     let Some(sent) = window.in_flight.take() else {
         return;
     };
+    // The facts the job was shown. Taken with the window: the two are one
+    // wake's input, and the second corpus for its refs.
+    let facts_shown = window.in_flight_facts.take().unwrap_or_default();
 
     let raw = match result {
         Ok(raw) => raw,
@@ -575,13 +630,16 @@ fn settle(
         return;
     };
 
-    let validated = validate_refs(post.refs, &sent.rendered());
+    // Two corpora, never concatenated ([P10]): a sha the post cites may live
+    // only in the facts section, and a path only in the activity window.
+    let rendered = sent.rendered();
+    let validated = validate_refs(post.refs, &[&rendered, facts_shown.as_str()]);
     if !validated.dropped.is_empty() {
         warn!(
             session_id,
             dropped = validated.dropped.len(),
             targets = ?validated.dropped.iter().map(|r| r.target.as_str()).collect::<Vec<_>>(),
-            "gazette reporter: refs dropped — target not in the window verbatim",
+            "gazette reporter: refs dropped — target in neither the window nor the facts verbatim",
         );
     }
 
@@ -661,7 +719,6 @@ mod tests {
 
     async fn start(
         spawner: Arc<dyn AgentWorkerSpawner>,
-        enabled: bool,
         sitrep_secs: i64,
     ) -> Harness {
         let (code_tx, keep_code) = broadcast::channel(64);
@@ -678,7 +735,6 @@ mod tests {
             session_state_tx: state_tx.clone(),
             ledger: Some(Arc::clone(&ledger)),
             agent: Some(pool(spawner)),
-            enabled: Arc::new(move || enabled),
             sitrep_secs: {
                 let sitrep = Arc::clone(&sitrep);
                 Arc::new(move || sitrep.load(Ordering::SeqCst))
@@ -753,7 +809,7 @@ mod tests {
     #[tokio::test]
     async fn a_turn_end_wake_posts_persists_and_broadcasts() {
         let spawner = FakeSpawner::always(Ok(envelope("Vendored the light faces.")));
-        let mut h = start(spawner, true, 90).await;
+        let mut h = start(spawner, 90).await;
 
         h.code_tx
             .send(assistant_text("s1", "wiring the bridge"))
@@ -780,7 +836,7 @@ mod tests {
     #[tokio::test]
     async fn an_editorial_no_post_writes_nothing() {
         let spawner = FakeSpawner::always(Ok(r#"{"post": null}"#.to_string()));
-        let mut h = start(spawner, true, 90).await;
+        let mut h = start(spawner, 90).await;
 
         h.code_tx.send(assistant_text("s1", "some work")).unwrap();
         h.code_tx.send(turn_complete("s1")).unwrap();
@@ -796,7 +852,7 @@ mod tests {
     async fn the_sitrep_timer_wakes_a_session_that_never_finishes_a_turn() {
         let spawner = FakeSpawner::always(Ok(envelope("Still cooking.")));
         // One second, so the test waits about as long as it takes to notice.
-        let mut h = start(spawner, true, 1).await;
+        let mut h = start(spawner, 1).await;
 
         h.code_tx
             .send(assistant_text("s1", "a long tool loop"))
@@ -812,7 +868,7 @@ mod tests {
     #[tokio::test]
     async fn an_idle_session_never_wakes() {
         let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
-        let mut h = start(spawner, true, 1).await;
+        let mut h = start(spawner, 1).await;
 
         // Nothing narratable ever arrives — only a frame type the tap drops.
         h.code_tx
@@ -832,7 +888,7 @@ mod tests {
     async fn a_turn_holding_no_assistant_activity_does_not_wake() {
         let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
         // Timer off: only the turn end could wake.
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         h.submission_tx
             .send(Frame::new(
@@ -863,13 +919,93 @@ mod tests {
         h.cancel.cancel();
     }
 
+    /// [P10]: the wake reads the facts library and hands the Reporter the facts
+    /// recorded since its newest prior post — and a sha carried only by a fact
+    /// survives ref validation, which is the whole point of the second corpus.
+    #[tokio::test]
+    async fn a_wake_carries_the_facts_recorded_since_the_last_post() {
+        let spawner = FakeSpawner::always(Ok(
+            r#"{"post": {"body": "A commit landed.", "refs": [
+                {"kind": "commit", "target": "03fcaa087"}
+            ]}}"#
+                .to_string(),
+        ));
+        let fake = Arc::clone(&spawner);
+        let mut h = start(spawner, 0).await;
+        h.ledger
+            .record_spawn("s1", "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        h.ledger
+            .record_fact(&crate::feeds::facts_library::commit_fact(
+                2_000,
+                Some("s1"),
+                "03fcaa087",
+                "private sessions",
+                &["tugdeck/src/protocol.ts".to_string()],
+                None,
+            ))
+            .expect("fact recorded");
+
+        h.code_tx.send(assistant_text("s1", "landed it")).unwrap();
+        h.code_tx.send(turn_complete("s1")).unwrap();
+        let post = next_post(&mut h.gazette_rx).await;
+
+        let input = fake
+            .turns_seen()
+            .last()
+            .cloned()
+            .expect("the pool saw a turn");
+        assert!(input.contains(
+            crate::feeds::reporter_wake::FACTS_SECTION_HEADER
+        ));
+        assert!(
+            input.contains("03fcaa087"),
+            "the commit fact reached the wake input: {input}"
+        );
+        // The sha appears in no frame — only in the fact — and is kept anyway.
+        assert_eq!(post.refs.len(), 1);
+        assert_eq!(post.refs[0].target, "03fcaa087");
+        h.cancel.cancel();
+    }
+
+    /// [P05]: a private session is out of the channel. The wake takes its
+    /// window and drops it — no job, no post — and the frames it holds do not
+    /// come back when the session is public again: narration resumes from that
+    /// moment, which is what from-now-on privacy means.
+    #[tokio::test]
+    async fn a_private_sessions_wake_takes_its_window_and_posts_nothing() {
+        let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
+        let mut h = start(spawner, 0).await;
+        h.ledger
+            .record_spawn("s1", "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        h.ledger
+            .set_session_private("s1", true)
+            .expect("marked private");
+
+        h.code_tx.send(assistant_text("s1", "private work")).unwrap();
+        h.code_tx.send(turn_complete("s1")).unwrap();
+        expect_no_post(&mut h.gazette_rx).await;
+        assert!(h.ledger.list_gazette_posts_tail(10).unwrap().is_empty());
+
+        // Public again: the dropped window is gone, but the next turn narrates.
+        h.ledger
+            .set_session_private("s1", false)
+            .expect("marked public");
+        h.code_tx.send(assistant_text("s1", "public work")).unwrap();
+        h.code_tx.send(turn_complete("s1")).unwrap();
+        let post = next_post(&mut h.gazette_rx).await;
+        assert_eq!(post.session_id.as_deref(), Some("s1"));
+        h.cancel.cancel();
+    }
+
     /// A reconnect replays a session's whole history onto CODE_OUTPUT. None of
     /// it is news, and narrating it would post a week of work as if it had
     /// just happened.
     #[tokio::test]
     async fn replay_bracketed_frames_produce_nothing() {
         let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         h.code_tx
             .send(code_frame(serde_json::json!({
@@ -890,7 +1026,7 @@ mod tests {
     #[tokio::test]
     async fn a_gazette_frame_never_enters_the_buffer() {
         let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         // Even smuggled onto the tapped wire, a GAZETTE-shaped payload is not
         // an allowlisted frame type and cannot reach a buffer.
@@ -903,21 +1039,6 @@ mod tests {
             .unwrap();
         h.code_tx.send(turn_complete("s1")).unwrap();
         expect_no_post(&mut h.gazette_rx).await;
-        h.cancel.cancel();
-    }
-
-    /// The kill switch drops frames on the floor: no buffer, no wake, no
-    /// model call.
-    #[tokio::test]
-    async fn the_disabled_knob_wakes_nothing() {
-        let spawner = FakeSpawner::always(Ok(envelope("should never be asked for")));
-        let mut h = start(spawner, false, 1).await;
-
-        h.code_tx.send(assistant_text("s1", "real work")).unwrap();
-        h.code_tx.send(turn_complete("s1")).unwrap();
-        tokio::time::sleep(Duration::from_millis(1_200)).await;
-        expect_no_post(&mut h.gazette_rx).await;
-        assert!(h.ledger.list_gazette_posts_tail(10).unwrap().is_empty());
         h.cancel.cancel();
     }
 
@@ -969,7 +1090,7 @@ mod tests {
             turns: Arc::new(AtomicI64::new(0)),
             seen: Arc::clone(&seen),
         });
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         h.code_tx
             .send(assistant_text("s1", "the work the failed job never read"))
@@ -1022,7 +1143,7 @@ mod tests {
         })
         .to_string();
         let spawner = FakeSpawner::always(Ok(answer));
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         h.code_tx
             .send(assistant_text("s1", "HEAD is now 9a9051001"))
@@ -1040,7 +1161,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_ending_wakes_with_its_own_reason() {
         let spawner = FakeSpawner::always(Ok(envelope("That session is done.")));
-        let mut h = start(spawner, true, 0).await;
+        let mut h = start(spawner, 0).await;
 
         h.code_tx
             .send(assistant_text("s1", "the last thing it did"))
@@ -1070,7 +1191,7 @@ mod tests {
     async fn the_cadence_knob_is_read_live() {
         let spawner = FakeSpawner::always(Ok(envelope("Progress.")));
         // Start effectively never-firing, then turn it down mid-run.
-        let mut h = start(spawner, true, 86_400).await;
+        let mut h = start(spawner, 86_400).await;
 
         h.code_tx.send(assistant_text("s1", "some work")).unwrap();
         tokio::time::sleep(Duration::from_millis(200)).await;

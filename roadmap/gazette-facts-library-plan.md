@@ -103,7 +103,7 @@ The only permanent records today are `gazette_posts` (lossy prose), `minted_tags
 
 **[L30] posture, stated so it is not rediscovered as a suspected violation.** `command-registry.ts` carries a `SLASH_BRIDGES` table that mints one `CommandEntry` per bridged slash command — its own title, its own `menuItemId`, a native Swift menu row, optionally a chord — all dispatching the single `RUN_SLASH_COMMAND` action with a different `name`. **`/private` deliberately gets no `SLASH_BRIDGES` row**, because the user chose a composer command specifically *over* a menu row. That is not a law bypass: the law is satisfied by `RUN_SLASH_COMMAND` already being a registry entry invoked through the funnel, and the precedent is direct — `btw`, `join`, `shell`, `model`, and `logout` all live in `LOCAL_SLASH_COMMANDS` with no bridge row. Do not add one; a bridge would put back the menu item the decision declined.
 
-#### [Q02] Does the facts section change what the Reporter says? (OPEN — resolved by #step-9) {#q02-diet-recalibration}
+#### [Q02] Does the facts section change what the Reporter says? (DECIDED) {#q02-diet-recalibration}
 
 **Question:** The rubric was tuned against a facts-free diet; the `SETTLED FACTS` section hands the Reporter SHAs and test totals it previously only saw if they survived the 256 KB buffer. Does it now cite more and summarize less, or does the section distract it?
 
@@ -111,7 +111,17 @@ The only permanent records today are `gazette_posts` (lossy prose), `minted_tags
 
 **Plan to resolve:** #step-9 runs `just gazette-replay` on a real transcript with facts synthesis on, at the shipped 90s cadence, and a human reads it against the same transcript's facts-free run. Rubric wording adjustments land there if the reading demands them.
 
-**Resolution:** OPEN until the #step-9 read.
+**Resolution:** DECIDED 2026-08-12 by the #step-9 read. **The section earns its place, the rubric needed no wording change, and the read found one defect worth fixing.**
+
+The read: `ae5483a7-6664-486f-8da9-25560722973a.jsonl` (5h03m, 380 frames, a real Changes/Project-Diff feature session), replayed twice at the shipped 90s cadence — once with facts, once with `--no-facts`. Segmentation is identical by construction (19 wakes: 5 turn-end, 14 sitrep), so the diet is the only variable. **`--no-facts` is new**, added for this read: the baseline had to come from the same binary, or the diet would not have been the only thing that changed between the two runs.
+
+- **It cites more, and more exactly.** Facts-run posts name test totals off the settled counts (`bun test (6019 passed, 0 failed)`, `6032 unit tests pass`) and the app-test files by name. The facts-free run cites numbers too — this session ran its suites inside the window — but takes them from tool output the byte cap can drop, and it produced one near-miss (`6019 unit tests all pass` over a window that also held a later count). The facts column cannot drift that way: the number in the section is the number the classifier parsed.
+- **It does not crowd — it tightens.** Posts got *shorter*: 781 words over 16 posts (≈49 each) with facts, 1067 over 18 (≈59) without, against a 60-word budget. The section hands the model the specifics, so it spends fewer words reconstructing them from tool output.
+- **Dedup improved, as [P10] predicted.** 16 posted / 2 silent with facts, 18 posted / 1 silent without. The extra silence is a wake whose facts were all things the previous post had already announced — the "not news twice" clause working.
+- **One unparseable envelope** in the facts run (a doubled `{"post": {"post": …}}` nesting, wake 2, over a small section). One in 19, no analogue in the facts-free run, and not a failure mode the section plausibly causes — the answer was well-formed prose inside a wrongly-nested wrapper. Recorded rather than acted on; the harness already separates it from editorial silence, which is what makes a rising rate visible.
+- **The defect the read found:** Claude Code spells a local slash command as a *user message* (`<command-name>/model</command-name>`, `<command-args>…`) and echoes its result back as `<local-command-stdout>…`. Both were landing as `prompt` facts, so every wake carried two lines of machinery in place of what the person asked, and `session.prompts` would have answered "what did I ask" with `/model` and its own confirmation. Fixed as a pure predicate — `facts_library::is_local_command_bookkeeping` — gated at both the live recorder in `agent_bridge.rs` and the harness synthesis, so the refusal is one rule rather than two spellings of one. Re-read after the fix: the sections carry prompts only.
+
+**No `REPORTER_POST_INSTRUCTIONS` wording changed.** The facts paragraph as written produced the intended behavior on first reading — cited subjects verbatim, did not re-announce, did not lead with the section — and cadence knobs stay untouched by this plan.
 
 ---
 
@@ -440,18 +450,28 @@ No new deck store and no new persistent preference; nothing touches Web storage.
 
 #### Step Status Ledger {#step-status-ledger}
 
+> **A build-order constraint the plan did not anticipate, recorded so the remaining steps expect it.** `tugcast` is a **bin-only crate** with `-D warnings`, so `dead_code` is a hard error: a `pub` API with no consumer in the binary fails `cargo build` *and* `cargo nextest run` (which builds the bin target too). The bottom-up steps therefore cannot each be independently green — #step-1's write path has no caller until #step-3, and its read side has none until #step-6/#step-8. Two consequences, both applied:
+>
+> - **Each ledger API lands with its first consumer**, not all at once in #step-1. `record_fact`/`record_fact_tx`/`NewFact` shipped with the recorders; `search_facts`, `facts_window`, `list_facts_for_session_since`, `FactRow`, `FactSearchFilter`, `FactSearchHit` belong to #step-6/#step-8; `set_session_private`/`is_session_private` to #step-7. The DDL, the migration, and `SessionRow.private` shipped in the first commit as planned.
+> - **#step-1 through #step-4 landed as one commit**, with the [P09] half of #step-8 (the `compact_boundary` translator arm and `synthesize_facts_from_frames`' harness call) folded in — it was the last unconsumed surface, and the tree could not build without it.
+>
+> Two other deliberate departures, both improvements on the sites the plan named:
+>
+> - **Lifecycle facts ride the durable transition, not the publish.** `session.closed` / `session.errored` record inside `LedgerSessionsRecorder::mark_closed` / `mark_failed` rather than beside each `build_session_state_frame(..., "closed"/"errored", …)` publish. There are seven such publish sites and exactly one durable transition apiece, so this records once per real event instead of once per broadcast. `do_reset_session` still records its own fact (it transitions no ledger row, so no `closed` fact fires beside it), and `demote_live_to_closed` records per demoted row with `detail: "startup-demote"`.
+> - **`facts_for_test`** (a `#[cfg(test)]` reader on `SessionLedger`) is what the recorder tests in other modules assert through, since the typed read verbs land later. It compiles out of the production binary.
+
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Ledger: facts table, FTS, private column | pending | — |
-| #step-2 | The pure facts_library module | pending | — |
-| #step-3 | Recorders: prompt, lifecycle, compact | pending | — |
-| #step-4 | Recorders: shell both routes, test_run, commit | pending | — |
-| #step-5 | Always-on: retire the enabled knob | pending | — |
-| #step-6 | Operator: facts.search, facts.window, shell.history | pending | — |
-| #step-7 | Privacy: CONTROL verb, exclusions, /private | pending | — |
-| #step-8 | Reporter diet: facts section + two-corpus refs + harness | pending | — |
-| #step-9 | Calibration re-read (human gate) | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | Ledger: facts table, FTS, private column | done | `f339f57e0` (with #step-2–#step-4) |
+| #step-2 | The pure facts_library module | done | `f339f57e0` |
+| #step-3 | Recorders: prompt, lifecycle, compact | done | `f339f57e0` |
+| #step-4 | Recorders: shell both routes, test_run, commit | done | `f339f57e0` |
+| #step-5 | Always-on: retire the enabled knob | done | `a7d6001f7` |
+| #step-6 | Operator: facts.search, facts.window, shell.history | done | `a7e30f7cc` |
+| #step-7 | Privacy: CONTROL verb, exclusions, /private | done | `03fcaa087` |
+| #step-8 | Reporter diet: facts section + two-corpus refs + harness | done | `f339f57e0` ([P09] half) + `5b7c6a8d3` |
+| #step-9 | Calibration re-read (human gate) | done | see [Q02]; `--no-facts` + the bookkeeping-prompt fix |
+| #step-10 | Integration checkpoint | done — automated gates green; live acceptance is the vetting pass on the `(debug, tugdash/gazette-facts-library)` instance | — |
 
 #### Step 1: Ledger — facts table, FTS, private column {#step-1}
 

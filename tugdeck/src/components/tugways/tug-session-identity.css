@@ -49,6 +49,25 @@
   margin-block: -4px;
 }
 
+/* The privacy marker: informational ink, not a second color channel. It trails
+   the runs so the title's truncation rule is unaffected — a squeeze elides
+   inside the run and the mark keeps its own box (`flex: none`), because a mark
+   that disappeared under pressure would make the state invisible exactly when
+   the reader had least room to notice. Sized off the surrounding text so it
+   reads at both registers without a per-tier number. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity-private {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-session-identity-private > svg {
+  width: 1em;
+  height: 1em;
+}
+
 /* The two title runs share a baseline, so the quieter callsign sits on the
    name's line rather than beside it. */
 .tug-session-identity-run {

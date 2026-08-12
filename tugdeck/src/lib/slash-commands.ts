@@ -173,6 +173,10 @@ export const LOCAL_SLASH_COMMANDS = [
     takesArgs: true,
   },
   {
+    name: "private",
+    description: "Keep this session out of the Gazette (toggle; from now on)",
+  },
+  {
     name: "compact",
     description: "Compact the conversation in place to free up context",
     takesArgs: true,
