@@ -272,7 +272,18 @@ export function TugEditorContextMenu({
   // view (which never lost focus). Registering `onEscapeDismiss` lets the engine's
   // ladder own Escape; the local Escape keydown branch is deleted below. ⌘. stays
   // handled in the window keydown listener.
-  useFocusTrap({ active: open, onEscapeDismiss: requestClose });
+  //
+  // `kbf: false` keeps that contract whole. An engaging trap flips
+  // `kbfEngaged()`, and the settle that follows RE-LANDS the keyboard for the
+  // current key view — which grants the caret back onto the editor. That grant
+  // collapses the document selection, so a right-click that WebKit had just
+  // smart-selected a word for came back with nothing selected, and every menu
+  // item scoped to the selection acted on an empty one. This menu has no engine
+  // stops to ring (its highlight is `data-highlighted`, written imperatively),
+  // and it is opened by a pointer — the gesture the mode's own rule says leaves
+  // keyboard navigation. So it takes the same opt-out the completion popup
+  // takes: stack presence without engagement.
+  useFocusTrap({ active: open, onEscapeDismiss: requestClose, kbf: false });
 
   // Reset all transient state whenever the menu closes so the next
   // open starts fresh.
