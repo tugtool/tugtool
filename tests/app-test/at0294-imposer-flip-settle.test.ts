@@ -80,7 +80,13 @@ const TEST_TIMEOUT_MS = 90_000;
 
 /** The imposition gaps (`lib/layout-imposer.ts`). */
 const GAP = 5;
-const LENS_WIDTH = 300;
+/** The Lens's hard floor (`MIN_LENS_WIDTH_PX`). The fixture stands the Lens
+ *  here AND seeds it as the durable chosen width, which pins the allocator
+ *  ([D136]) out of the picture: on this deliberately untileable deck the
+ *  graded licence has nothing to give (the rail is at its floor) and nothing
+ *  to give back (it is at its chosen width), so a settle here is pure motion
+ *  and the transform-only census below stays a claim about the settle. */
+const LENS_WIDTH = 320;
 const PANE_WIDTH = 420;
 /** The settle window (`IMPOSITION_SETTLE_MS`), with room for the tween to land. */
 const SETTLE_MS = 300;
@@ -303,6 +309,14 @@ async function frameLeft(app: App, paneId: string): Promise<number> {
 const wait = (ms: number): Promise<void> =>
   new Promise<void>((r) => setTimeout(r, ms));
 
+/** Seed the Lens's durable chosen width to the fixture's standing width — see
+ *  the `LENS_WIDTH` note. */
+async function seedLensPreferred(app: App): Promise<void> {
+  await app.evalJS<null>(
+    `(window.__tug.setTugbankValue("dev.tugtool.lens", "widthPx", { kind: "i64", value: ${LENS_WIDTH} }), null)`,
+  );
+}
+
 describe.skipIf(!SHOULD_RUN)(
   "at0294 — the imposer settles by transform-only FLIP and leaves no residue",
   () => {
@@ -313,6 +327,7 @@ describe.skipIf(!SHOULD_RUN)(
           testName: "at0294-imposer-flip-settle",
         });
         try {
+          await seedLensPreferred(app);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
@@ -423,6 +438,7 @@ describe.skipIf(!SHOULD_RUN)(
         try {
           // Focus B, so p2 is the frame on top and a raise of p1 is
           // observable: without one, A crosses to p2's slot underneath it.
+          await seedLensPreferred(app);
           await app.seedDeckState({ state: deckShape(), focusCardId: "B" });
           await app.waitForCondition<boolean>(
             `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
@@ -495,6 +511,7 @@ describe.skipIf(!SHOULD_RUN)(
           testName: "at0294-imposer-flip-width",
         });
         try {
+          await seedLensPreferred(app);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,
@@ -607,6 +624,7 @@ describe.skipIf(!SHOULD_RUN)(
           testName: "at0294-imposer-flip-retarget",
         });
         try {
+          await seedLensPreferred(app);
           await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
           await app.waitForCondition<boolean>(
             `document.querySelectorAll(${JSON.stringify(FRAMES)}).length === 3`,

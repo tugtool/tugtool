@@ -84,14 +84,18 @@
  * the value that puts every seam in the chain on one imposition gap: a
  * closed-form least-squares fit, since each seam is linear in the band.
  *
- * **Two moments, and one licence.** The deck re-solves when the user clicks in
- * the Layouts section, and when the canvas comes to rest at a new size. Those
- * are the two gestures that ask the deck to arrange itself; everything else —
- * slotting a card, dragging one out, closing one — leaves the Lens alone, since
- * the user was moving a card and did not ask for their rail to be resized. And
- * at either moment the Lens moves only if standing at the new width actually
- * tiles the chain. A resize that closes no gap is the deck taking the user's
- * width for nothing.
+ * **The moments, and a graded licence.** The deck re-solves when the user asks
+ * it to arrange itself: a click in the Layouts section, a card assigned to a
+ * slot (the imposer's own verb, whichever door dispatched it — the Lens's slot
+ * picker or a ⌘N chord), and a canvas that comes to rest at a new size.
+ * Everything else — dragging a card out of the chain, closing one — leaves the
+ * rails alone, since the user was moving a card and did not ask for their rail
+ * to be resized. At any moment the licence is graded by what the picture
+ * suffers: a solve that tiles is taken whole; a chain still crowded at the
+ * soft allowance may take the rails down to their hard floors; and when even
+ * that cannot tile, the rails still move as far as visibly helps — never
+ * into new overlap, and in the slack direction never past the width the user
+ * chose. See {@link allocateSidebarWidths}.
  *
  * Pure module: no DOM, store, or React runtime imports — the same discipline as
  * `snap.ts`. (`React.CSSProperties` below is a type-only import.)
@@ -934,18 +938,22 @@ export function imposeStyle(
  * ---------------------------------------------------------------------------*/
 
 /**
- * How far the allocator may shrink a rail under the width the user chose, as a
- * fraction of it.
+ * How far the allocator may shrink a rail under the width the user chose
+ * before the shrink needs a harder justification, as a fraction of it.
  *
  * The two directions are deliberately not symmetric, because they are not the
  * same gesture. Growing a rail spends slack the deck had lying between the
  * cards, so its ceiling is generous: a rail may stand as wide as a SLIM
  * content card, carried in as {@link AllocatorInput.maxRailWidth}. Shrinking
  * takes room away from a surface the user sized to hold content, which is
- * felt much sooner, so the low end stays a fifth under the chosen width.
+ * felt much sooner, so the low end of the ordinary allowance stays a fifth
+ * under the chosen width.
  *
- * {@link RailPolicy.minWidth} clips the low end independently, so a rail is
- * never shrunk under its floor.
+ * This is a SOFT floor. A chain still crowded when the rail stands at it —
+ * cards closer than the rhythm, at worst occluding one another — deepens the
+ * licence to {@link RailPolicy.minWidth}, the hard floor under which the rail
+ * cannot paint at all: a rail holding its chosen width while the cards under
+ * it overlap is hoarding. See {@link allocateSidebarWidths}.
  */
 export const LENS_FLEX_SHRINK_FRACTION = 0.2;
 
@@ -976,12 +984,24 @@ export const ALLOCATOR_RESIDUAL_TOLERANCE_PX = 2;
  * rail is one width, so a floor binding on either card binds the rail.
  */
 export interface RailPolicy {
-  /** The width the user chose. The allocator may not shrink the rail more
-   *  than {@link LENS_FLEX_SHRINK_FRACTION} under it; growth is bounded by
-   *  {@link AllocatorInput.maxRailWidth} instead, which every rail shares. */
+  /** The width the user chose. The ordinary allowance shrinks the rail no
+   *  more than {@link LENS_FLEX_SHRINK_FRACTION} under it; growth is bounded
+   *  by {@link AllocatorInput.maxRailWidth} instead, which every rail shares. */
   preferredWidth: number;
   /** The hard floor this rail may not go below. */
   minWidth: number;
+  /**
+   * The width the rail is standing at right now — the live pane width, which
+   * is where the allocator's own past answers land. Absent reads as
+   * `preferredWidth`.
+   *
+   * This is what an imperfect answer is judged against: a move the solve
+   * cannot perfect is still made when it visibly beats the standing picture,
+   * and refused when it does not. It is never the anchor the flex range hangs
+   * under — that stays `preferredWidth`, precisely so the allocator does not
+   * read its own output back as the user's choice.
+   */
+  currentWidth?: number;
 }
 
 /** A width per occupied side — the allocator's answer, and the shape a rail's
@@ -1082,36 +1102,43 @@ function railsOf(widths: RailWidths): readonly SidebarRail[] {
  * fit spreads the error rather than removing it, and the answer is that there
  * is no answer.
  *
- * ## `null` — the rails do not move
+ * ## The graded licence — how far the rails may move
  *
  * **A rail's width is the user's**, and it is taken from them for exactly one
- * reason: to close the gaps. So the whole of the decision is one question asked
- * of the RESULT — *standing there, does the chain tile?* — and the three steps
- * are:
+ * reason: to repair the picture. The decision is always asked of the RESULT —
+ * *standing there, what does the chain look like?* — and the licence widens
+ * with what the picture suffers:
  *
- *   1. solve for the total the seams want,
- *   2. share it out as one width, clamped between the tightest shrink floor
- *      and the slim-width ceiling,
- *   3. keep it only if every seam at that width lands within
- *      {@link ALLOCATOR_RESIDUAL_TOLERANCE_PX} of the gap; otherwise `null`.
+ *   1. **The classic solve.** Share the total out as one width, clamped
+ *      between the tightest SOFT floor ({@link LENS_FLEX_SHRINK_FRACTION}
+ *      under each chosen width) and the slim-width ceiling. If every seam at
+ *      that width lands within {@link ALLOCATOR_RESIDUAL_TOLERANCE_PX} of the
+ *      gap, take it — done.
+ *   2. **Crowding deepens the floor.** When the soft floor is what refused —
+ *      the fit wants the rails narrower still — the licence deepens to each
+ *      rail's hard `minWidth`: cards crowding or occluding one another is the
+ *      deck failing to show the user's cards, and that outranks holding a
+ *      rail's chosen width. A fit reachable inside the deepened range tiles
+ *      exactly and is taken.
+ *   3. **Improvement, not perfection.** When even the widest licence cannot
+ *      tile, the rails still move to the best width they may stand at — IF
+ *      that visibly beats the picture as it stands (worst seam better by more
+ *      than the tolerance) and introduces no new overlap. A refused perfect
+ *      answer must not mean a preserved bad picture. In the slack direction
+ *      the fallback is capped at the widest CHOSEN width: an untileable
+ *      arrangement never conscripts width past the user's preference — it only
+ *      gives back what past allocations took.
  *
- * `null` means *leave every rail exactly where it is*. There is no fallback
- * width. Answering with the preferred widths when the solve is unusable reads
- * like a safe default but is a MOVE: it drags a rail the user sized by hand
- * back to a remembered number and closes no gap doing it. The move is all-or-
+ * `null` still means *leave every rail exactly where it is*, and it is still
+ * the answer whenever moving buys nothing the eye can see. The move is all-or-
  * nothing across the rails too — half a gesture is not a picture anyone asked
  * for.
  *
- * Step 3 is asked of every answer, not only clamped ones, because a solve can
- * sit comfortably inside the allowance and still not tile — the least-squares
- * fit always returns its best band, and on an arrangement with no tiling band
- * its best is still ragged. Moving the rails there would spend the user's width
- * on nothing.
- *
- * And it is asked of the picture, never of how far the solve missed by. A hard
- * cap on the NUMBER makes the deck refuse arrangements that tile perfectly well
- * a few pixels past it, and a seam left sitting at 50px because the correction
- * overshot its allowance by 0.7% is not something the user can be told.
+ * Every acceptance is asked of the picture, never of how far the solve missed
+ * by. A hard cap on the NUMBER makes the deck refuse arrangements that tile
+ * perfectly well a few pixels past it, and a seam left sitting at 50px because
+ * the correction overshot its allowance by 0.7% is not something the user can
+ * be told.
  *
  * Total by construction: never throws.
  */
@@ -1125,34 +1152,73 @@ export function allocateSidebarWidths(input: AllocatorInput): RailWidths | null 
   if (total === null) return null;
 
   // ONE width, shared. Every rail stands at the same number, so each rail's
-  // shrink floor becomes a bound on that one number and the interval the width
-  // must land in is the intersection of them all. Clamping the rails
+  // floors and preference become bounds on that one number and the interval
+  // the width must land in is the intersection of them all. Clamping the rails
   // independently would satisfy every floor and still break the rule: it hands
   // out unequal widths, which is the per-card solve this rule exists to refuse.
-  let low = 0;
+  let softLow = 0;
+  let hardLow = 0;
+  let prefCap = 0;
   for (const side of sides) {
     const rail = input.rails[side] as RailPolicy;
     const { preferredWidth, minWidth } = rail;
-    low = Math.max(
-      low,
+    softLow = Math.max(
+      softLow,
       minWidth,
       Math.round(preferredWidth * (1 - LENS_FLEX_SHRINK_FRACTION)),
     );
+    hardLow = Math.max(hardLow, minWidth);
+    prefCap = Math.max(prefCap, Math.round(preferredWidth));
+  }
+  const ceiling = Math.round(input.maxRailWidth);
+  const wanted = total / sides.length;
+
+  const answer = (width: number): RailWidths => {
+    const widths: RailWidths = {};
+    for (const side of sides) widths[side] = width;
+    return widths;
+  };
+
+  // Grade 1 — the classic solve inside the soft allowance. A ceiling under
+  // the floor means a floor above the slim width — a rail that cannot paint
+  // its contents at any width the ceiling permits. The floor wins: it is a
+  // width below which the rail cannot paint at all, while the ceiling is only
+  // a policy about how wide the deck may stand a rail.
+  const soft = Math.round(
+    Math.min(Math.max(softLow, ceiling), Math.max(softLow, wanted)),
+  );
+  const softPicture = seamPicture(input, answer(soft));
+  if (softPicture.worstError <= ALLOCATOR_RESIDUAL_TOLERANCE_PX) {
+    return answer(soft);
   }
 
-  // A ceiling under the floor means a floor above the slim width — a rail
-  // that cannot paint its contents at any width the ceiling permits. The
-  // floor wins: it is a width below which the rail cannot paint at all,
-  // while the ceiling is only a policy about how wide the deck may stand a
-  // rail.
-  const high = Math.max(low, Math.round(input.maxRailWidth));
-  const wanted = total / sides.length;
-  const width = Math.round(Math.min(high, Math.max(low, wanted)));
+  // Grades 2 and 3 — the picture cannot be perfected inside the soft
+  // allowance. The fallback stands as close to the fit as the hard floors and
+  // the users' chosen widths allow: down to `minWidth` against crowding, back
+  // up to (never past) the widest chosen width against slack.
+  const fallbackHigh = Math.max(hardLow, Math.min(ceiling, prefCap));
+  const fallback = Math.round(
+    Math.min(fallbackHigh, Math.max(hardLow, wanted)),
+  );
+  const fallbackPicture = seamPicture(input, answer(fallback));
+  if (fallbackPicture.worstError <= ALLOCATOR_RESIDUAL_TOLERANCE_PX) {
+    return answer(fallback);
+  }
 
-  const widths: RailWidths = {};
-  for (const side of sides) widths[side] = width;
-  return worstSeamError(input, widths) <= ALLOCATOR_RESIDUAL_TOLERANCE_PX
-    ? widths
+  const standing: RailWidths = {};
+  for (const side of sides) {
+    const rail = input.rails[side] as RailPolicy;
+    const current = rail.currentWidth;
+    standing[side] =
+      typeof current === "number" && Number.isFinite(current) && current > 0
+        ? current
+        : rail.preferredWidth;
+  }
+  const standingPicture = seamPicture(input, standing);
+  return fallbackPicture.worstOverlap <= standingPicture.worstOverlap &&
+    standingPicture.worstError - fallbackPicture.worstError >
+      ALLOCATOR_RESIDUAL_TOLERANCE_PX
+    ? answer(fallback)
     : null;
 }
 
@@ -1233,20 +1299,27 @@ function chainOf(
 }
 
 /**
- * The widest any seam misses {@link IMPOSITION_GAP_PX} by when the rails stand
- * at `widths` — how ragged the chain reads, in pixels, at those widths.
+ * How the chain reads when the rails stand at `widths`: the widest any seam
+ * misses {@link IMPOSITION_GAP_PX} by (`worstError` — how ragged), and the
+ * deepest any pair of neighbours occlude one another (`worstOverlap` — zero
+ * when nothing overlaps). Two readings of the same seams, because the licence
+ * asks two different questions of them: raggedness is what a move must
+ * visibly improve, and overlap is what a move may never introduce.
  *
  * Measured from {@link imposeRect}'s actual rule rather than from the linear
  * form the fit is built on. The two agree while every pane still has travel
  * left, and part company exactly when a pane is wider than the band: the real
  * rule clamps its travel at zero and the line does not, so on a crowded deck
  * the linear form describes a picture the browser never paints. Since this is
- * the test that decides whether the Lens is allowed to move at all, it has to
- * be asked of the picture that will actually be on screen.
+ * the test that decides whether the rails are allowed to move at all, it has
+ * to be asked of the picture that will actually be on screen.
  */
-function worstSeamError(input: AllocatorInput, widths: RailWidths): number {
+function seamPicture(
+  input: AllocatorInput,
+  widths: RailWidths,
+): { worstError: number; worstOverlap: number } {
   const chain = chainOf(input);
-  if (chain === null) return 0;
+  if (chain === null) return { worstError: 0, worstOverlap: 0 };
   // The span comes from `resolveSpan`, not from an inline single-rail
   // expression: with rails on both edges the band is inset twice, and a span
   // built for one of them describes a picture the browser never paints — which
@@ -1256,7 +1329,8 @@ function worstSeamError(input: AllocatorInput, widths: RailWidths): number {
     railsOf(widths),
   );
   const count = slotCount(input.kind);
-  let worst = 0;
+  let worstError = 0;
+  let worstOverlap = 0;
   for (let j = 0; j < chain.length - 1; j += 1) {
     const near = chain[j];
     const far = chain[j + 1];
@@ -1264,9 +1338,10 @@ function worstSeamError(input: AllocatorInput, widths: RailWidths): number {
     const farRect = imposeRect({ slot: far.slot, count }, far.width, span);
     const seam =
       farRect.position.x - (nearRect.position.x + nearRect.size.width);
-    worst = Math.max(worst, Math.abs(seam - IMPOSITION_GAP_PX));
+    worstError = Math.max(worstError, Math.abs(seam - IMPOSITION_GAP_PX));
+    worstOverlap = Math.max(worstOverlap, -seam);
   }
-  return worst;
+  return { worstError, worstOverlap };
 }
 
 /**

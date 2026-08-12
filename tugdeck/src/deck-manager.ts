@@ -1467,6 +1467,7 @@ export class DeckManager implements IDeckManagerStore {
       const policy: RailPolicy = {
         preferredWidth: this._sidebarPreferredWidth(componentId),
         minWidth: getSizePolicy(componentId).min.width,
+        currentWidth: pane.size.width,
       };
       const standing = rails[side];
       rails[side] =
@@ -1478,6 +1479,10 @@ export class DeckManager implements IDeckManagerStore {
                 policy.preferredWidth,
               ),
               minWidth: Math.max(standing.minWidth, policy.minWidth),
+              currentWidth: Math.max(
+                standing.currentWidth ?? 0,
+                policy.currentWidth ?? 0,
+              ),
             };
     }
     return { rails, panesBySide };
@@ -1634,14 +1639,16 @@ export class DeckManager implements IDeckManagerStore {
    * stands, and commit if any of them changed. A no-op when the allocator does
    * not apply or its answer is the widths already showing.
    *
-   * THE TWO MOMENTS. A rail's width belongs to the user, and the deck may spend
-   * it only when the user has just asked the deck to arrange itself: a click in
-   * the Layouts section, and a canvas that came to rest at a new size
+   * THE MOMENTS. A rail's width belongs to the user, and the deck may spend
+   * it only when the user has just asked the deck to arrange itself: a click
+   * in the Layouts section, a card assigned to a slot (`assignCardToSlot` —
+   * the imposer's own verb, whether the Lens's slot picker or a ⌘N chord
+   * dispatched it), and a canvas that came to rest at a new size
    * (`deck-canvas.tsx`'s settled-resize observer — the window edge, a display
-   * change, a space move). Nothing else re-solves. Slotting a card, dragging
-   * one out of the chain, closing one: all of those change what the chain is,
-   * and all of them leave the rails exactly where they stand, because the user
-   * was moving a CARD and did not ask for their rail to be resized.
+   * change, a space move). Nothing else re-solves. Dragging a card out of the
+   * chain or closing one changes what the chain is and leaves the rails
+   * exactly where they stand, because the user was removing a CARD and did
+   * not ask for their rail to be resized.
    *
    * This is that second moment; the first commits through
    * {@link _commitImposition} directly. A pick that does not change the kind
@@ -2305,7 +2312,10 @@ export class DeckManager implements IDeckManagerStore {
    *
    * Because the chain packs tight, a card joining it moves every pane after it
    * as well — the lifecycle ledger below covers the whole chain, not just the
-   * card that was clicked.
+   * card that was clicked. And because the assign changes what the chain IS,
+   * it is one of the moments the space allocator re-solves the rails for
+   * (see `retuneSidebarAllocation`): the deck was just asked to arrange
+   * itself, and it makes room for what it was asked to arrange.
    */
   assignCardToSlot(cardId: string, slot: number): void {
     const kind = this.deckState.imposition.kind;
@@ -2380,18 +2390,12 @@ export class DeckManager implements IDeckManagerStore {
     );
     // Everything in the chain moves, including the panes that kept their
     // slots: this card's width is now part of what precedes them. Committed
-    // here rather than through `_commitImposition`, deliberately: that path
-    // runs the space allocator, and slotting a card is not one of the two
-    // moments the Lens's width is the deck's to spend (see
-    // `retuneLensAllocation`).
-    const moved = panes
-      .filter((p) => p.slot !== undefined)
-      .map((p) => p.activeCardId);
-    for (const id of moved) this.cardLifecycle.notifyCardWillMove(id);
-    this.deckState = { ...this.deckState, panes };
-    this.notify();
-    for (const id of moved) this.cardLifecycle.notifyCardDidMove(id);
-    this.scheduleSave();
+    // through `_commitImposition`, so the space allocator re-solves for the
+    // chain the assign just changed: assigning a slot is the imposer's own
+    // verb — the user asked the deck to arrange itself, whichever door
+    // dispatched it — and it is one of the moments the rails' width is the
+    // deck's to spend (see `retuneSidebarAllocation`).
+    this._commitImposition(this.deckState.imposition, panes);
   }
 
   /** Per-pane position/size deltas between two pane arrays of the same shape,

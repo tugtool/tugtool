@@ -8,9 +8,12 @@
  * slightly and the same arrangement overlaps. The **space allocator** treats the
  * pinned Lens's width as the one flexible quantity — it is the band's other end
  * — and picks the width that puts every seam on one imposition gap. The
- * allowance: a rail may grow to the slim content width (675) — whatever Card
- * Width the deck is set to, a rail is a reading surface and never sprawls —
- * and shrink a fifth under the width the user chose.
+ * licence is graded: a rail may grow to the slim content width (675) —
+ * whatever Card Width the deck is set to, a rail is a reading surface and
+ * never sprawls — and shrink a fifth under the width the user chose; crowding
+ * the soft allowance cannot absorb deepens the shrink to the rail's hard
+ * floor; and a solve that cannot tile at all still moves the rails as far as
+ * visibly helps, never into new overlap and never past the chosen width.
  *
  * What has to hold:
  *
@@ -22,20 +25,19 @@
  *     width the user CHOSE is what the Lens reopens at, and no number of
  *     re-tunes may touch it. Read through the production path — close the Lens,
  *     open it again, and it must come back at the preferred width.
- *  3. It declines by NOT MOVING. A solve it cannot make good is not applied at
- *     all and not applied partway — and "not applied" means the Lens stays
- *     exactly where it stood, never snapping to the remembered preference. The
- *     Lens's width is the user's; it is only ever taken from them to close a
- *     gap, so a re-tune that closes none must cost them nothing.
+ *  3. An untileable solve gives back, and gives back no further than the
+ *     chosen width. A Lens standing under its preference (only past
+ *     allocations put it there) returns to the width the user chose when the
+ *     deck has slack no width can tile — and not one pixel past it toward the
+ *     untileable fit. The chosen width is the cap on what slack may buy.
  *  4. Re-asserting the layout re-tunes. Re-clicking the already-active Cards
  *     option used to be a total no-op; it now drives the same entry the
  *     settled-resize observer calls. The harness cannot resize the app's
  *     window, so this gesture is what covers that entry end to end.
- *  5. Joining the chain does NOT re-tune. The occupied slots are the
- *     allocator's input, but slotting a card is not one of the two moments the
- *     Lens's width is the deck's to spend: the user moved a CARD and did not
- *     ask for their rail to be resized. The seams go ragged and stay that way
- *     until a Layouts click or a window resize asks for them back.
+ *  5. Joining the chain RE-TUNES. Assigning a card to a slot is the imposer's
+ *     own verb — the user asked the deck to arrange itself, whichever door
+ *     dispatched it — so the assign itself re-solves the rails for the chain
+ *     it just completed, with no separate Layouts click needed.
  *  6. Two rails take ONE width. With sidebars on both edges, the allocator's
  *     answer is a single width every standing rail lands on — whatever each
  *     card's chosen width was. Sidebars are a uniform class; the deck never
@@ -265,28 +267,28 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "a solve it cannot make good leaves the Lens exactly where it stood",
+      "an untileable solve gives back to the chosen width, and never past it",
       async () => {
         const app = await launchTugApp({
-          testName: "at0303-imposer-allocator-revert",
+          testName: "at0303-imposer-allocator-giveback",
         });
         try {
           await seedPreferredWidth(app, PREFERRED);
           await seedFixture(app, 400, PREFERRED);
 
-          // A rail may grow to the slim width (675), so the refusal fixture
-          // has to want MORE than that ceiling. The exact solve sits 320px
-          // above the preferred 420 — 65 past the ceiling, where the widest
-          // width the allocator may have still leaves the chain visibly
-          // ragged.
+          // A rail may grow to the slim width (675), so the untileable
+          // fixture has to want MORE than that ceiling. The exact solve sits
+          // 320px above the preferred 420 — 65 past the ceiling, where the
+          // widest width the allocator may have still leaves the chain
+          // visibly ragged: no width tiles this deck.
           const canvas = await canvasWidth(app);
           const paneWidth = paneWidthFor(canvas, 320);
           expect(paneWidth).toBeGreaterThan(200);
 
-          // The Lens stands somewhere the user put it, NOT at the remembered
-          // preference — which is the whole point of the assertion below. A
-          // fixture resting at the preferred width could not tell "left alone"
-          // apart from "reset to the preference".
+          // The Lens stands UNDER its preference — the state only a past
+          // allocation leaves behind, since a hand-drag writes the durable
+          // preference as it goes. The give-back rule owes the user this
+          // width back the moment holding it buys nothing.
           const standing = PREFERRED - 60;
           await seedFixture(app, paneWidth, standing);
           await wait(AFTER_LAND_MS);
@@ -295,15 +297,22 @@ describe.skipIf(!SHOULD_RUN)(
           await app.nativeClickAtElement(FIVE_UP_TILE);
           await wait(AFTER_LAND_MS);
 
-          // Not the solve, not a step toward it, and not the preference
-          // either: the Lens's width is the user's, and choosing a layout is
-          // not a licence to take it back for nothing.
-          expect(await frameWidth(app, "pLens")).toBeCloseTo(standing, 0);
-          // The seams are what the classic rule produces: the cards stand
-          // apart, because the deck really is wider than the chain wants.
+          // The Lens returns to the CHOSEN width — closer to the fit than
+          // where it stood — and not one pixel past it: an untileable
+          // arrangement never conscripts width beyond the preference.
+          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
+          // The seams are still what the classic rule produces: the cards
+          // stand apart, because the deck really is wider than any width
+          // the rails may stand at can absorb.
           for (const seam of await seams(app)) {
             expect(seam).toBeGreaterThan(GAP + 10);
           }
+
+          // Re-clicking is now a no-op: the Lens already stands at the cap,
+          // so the same unusable solve has nothing left to give back.
+          await app.nativeClickAtElement(FIVE_UP_TILE);
+          await wait(AFTER_LAND_MS);
+          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
         } finally {
           await app.close();
         }
@@ -374,7 +383,7 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "a card joining the chain does not move the Lens",
+      "a card joining the chain re-tunes the rails in the same gesture",
       async () => {
         const app = await launchTugApp({
           testName: "at0303-imposer-allocator-assign",
@@ -386,7 +395,7 @@ describe.skipIf(!SHOULD_RUN)(
           // Sized so the THREE-card chain's exact solve sits 30px above the
           // preferred width — in range. The two-card chain it starts as is
           // never solved at all: seeding a deck is not one of the moments,
-          // so the Lens rests at the preferred width until a click asks.
+          // so the Lens rests at the preferred width until a gesture asks.
           const canvas = await canvasWidth(app);
           const paneWidth = paneWidthFor(canvas, 30);
           expect(paneWidth).toBeGreaterThan(200);
@@ -411,20 +420,13 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
 
           // ── Put the loose card in slot 3 — the assign the Lens row's slot
-          // picker dispatches. This completes a chain the allocator COULD
-          // tile, which is what makes the assertion mean something. ────────
+          // picker dispatches (a ⌘N chord lands on the same verb). The assign
+          // completes a chain the allocator can tile, and the assign ITSELF
+          // is the moment: the user just asked the deck to arrange itself,
+          // and the deck makes room for what it was asked to arrange. ──────
           await app.evalJS<null>(
             `(window.__tug.dispatchControlAction("assign-slot", { cardId: "B", slot: 2 }), null)`,
           );
-          await wait(AFTER_LAND_MS);
-
-          // The Lens has not moved. Slotting a card is the user moving a card.
-          expect(await frameWidth(app, "pLens")).toBeCloseTo(PREFERRED, 0);
-
-          // ── And now ask for the seams, the only way there is to ask: click
-          // the layout. The chain the assign completed tiles, so this lands
-          // it. ─────────────────────────────────────────────────────────────
-          await app.nativeClickAtElement(FIVE_UP_TILE);
           await wait(AFTER_LAND_MS);
 
           expect(await frameWidth(app, "pLens")).toBeCloseTo(

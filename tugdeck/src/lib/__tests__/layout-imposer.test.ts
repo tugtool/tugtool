@@ -51,6 +51,7 @@ function allocateOneRail(input: {
   occupied: readonly { slot: number; width: number }[];
   preferredWidth: number;
   minWidth: number;
+  currentWidth?: number;
   maxRailWidth?: number;
 }): number | null {
   const widths = allocateSidebarWidths({
@@ -58,7 +59,11 @@ function allocateOneRail(input: {
     kind: input.kind,
     occupied: input.occupied,
     rails: {
-      right: { preferredWidth: input.preferredWidth, minWidth: input.minWidth },
+      right: {
+        preferredWidth: input.preferredWidth,
+        minWidth: input.minWidth,
+        currentWidth: input.currentWidth,
+      },
     },
     maxRailWidth: input.maxRailWidth ?? CONTENT_WIDTH_SLIM_PX,
   });
@@ -1172,9 +1177,11 @@ describe("the space allocator", () => {
     expect(solve(canvasFor(maxRailWidth + 5))).toBeNull();
   });
 
-  test("shrinkage keeps its allowance: a fifth under the chosen width", () => {
+  test("shrinkage holds its soft allowance while standing there tiles", () => {
     // Shrinking takes room from a surface the user sized to hold content, so
-    // the low end stays anchored to their choice rather than to the preset.
+    // the ordinary low end stays anchored to their choice rather than to the
+    // preset: as long as standing AT the soft floor tiles within tolerance,
+    // the rail gives no more than the fifth.
     const preferredWidth = 420;
     const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
 
@@ -1190,14 +1197,77 @@ describe("the space allocator", () => {
       });
 
     // At the low end, taken whole; just past it the clamp still tiles within
-    // tolerance; far enough past, the move buys nothing and is not made.
+    // tolerance and the soft floor holds.
     expect(solve(canvasFor(preferredWidth - down))).toBe(preferredWidth - down);
     for (const over of [1, 4]) {
       expect(solve(canvasFor(preferredWidth - down - over))).toBe(
         preferredWidth - down,
       );
     }
-    expect(solve(canvasFor(preferredWidth - down - 5))).toBeNull();
+  });
+
+  test("crowding the soft floor cannot absorb deepens the licence to the hard floor", () => {
+    // Far enough under the soft floor that standing there leaves the cards
+    // visibly crowded, the licence deepens: the fit is inside the hard floor,
+    // so the rail gives past the fifth and the chain tiles EXACTLY. The old
+    // answer — refuse, and preserve the crowding — is the timidity this
+    // grade exists to remove.
+    const preferredWidth = 420;
+    const down = Math.round(preferredWidth * LENS_FLEX_SHRINK_FRACTION);
+    const canvasFor = (lensWidth: number): number =>
+      lensWidth + GAP * 3 + EXACT_BAND;
+    const wanted = preferredWidth - down - 5;
+    expect(
+      allocateOneRail({
+        canvasWidth: canvasFor(wanted),
+        kind: "five-up",
+        occupied: FIVE_UP_THIRDS,
+        preferredWidth,
+        minWidth: 320,
+      }),
+    ).toBe(wanted);
+  });
+
+  test("below the hard floor the rail gives all it has — when that visibly helps", () => {
+    // The fit wants 300, under the 320 floor. The floor is the nearest the
+    // rail may stand, and standing there still leaves the seams 10px under
+    // the gap — not tiled. But the rail as it stands (at its chosen 420)
+    // leaves the cards overlapping by 55, so the move visibly repairs the
+    // picture and is made: improvement, not perfection.
+    const canvasFor = (lensWidth: number): number =>
+      lensWidth + GAP * 3 + EXACT_BAND;
+    const input = {
+      canvasWidth: canvasFor(300),
+      kind: "five-up" as const,
+      occupied: FIVE_UP_THIRDS,
+      preferredWidth: 420,
+      minWidth: 320,
+    };
+    expect(allocateOneRail(input)).toBe(320);
+    // Idempotent: standing at the floor already, the same solve has nothing
+    // left to improve and the rail is left alone.
+    expect(allocateOneRail({ ...input, currentWidth: 320 })).toBeNull();
+  });
+
+  test("an untileable slack gives back to the chosen width, and never past it", () => {
+    // A rail the allocator crushed to 320 stands on a deck whose fit now
+    // wants far more rail than even the slim ceiling permits: no width tiles.
+    // The rail returns to the width the user chose — giving back what past
+    // allocations took — and not one pixel further toward the untileable fit.
+    const canvasFor = (lensWidth: number): number =>
+      lensWidth + GAP * 3 + EXACT_BAND;
+    const input = {
+      canvasWidth: canvasFor(1000),
+      kind: "five-up" as const,
+      occupied: FIVE_UP_THIRDS,
+      preferredWidth: 420,
+      minWidth: 320,
+    };
+    expect(allocateOneRail({ ...input, currentWidth: 320 })).toBe(420);
+    // Already standing at the chosen width, there is nothing to give back:
+    // an untileable arrangement never conscripts width past the preference.
+    expect(allocateOneRail({ ...input, currentWidth: 420 })).toBeNull();
+    expect(allocateOneRail(input)).toBeNull();
   });
 
   test("a solve past the ceiling leaves the Lens alone", () => {
@@ -1217,9 +1287,10 @@ describe("the space allocator", () => {
 
   test("the floor clips the low end of the range", () => {
     // 20% below 340 is 272, but the Lens may not go under 320 — so a solve of
-    // 310 is out of range even though it is within the flex fraction. The floor
-    // is the nearest the Lens may stand, and standing there still leaves the
-    // seams 5px off, so it does not move at all.
+    // 310 is clipped to the floor. Standing there still leaves the seams 5px
+    // off — not tiled — but it beats the standing picture (15px off, with the
+    // cards 10 deep into one another), so the floor is where the Lens lands:
+    // the nearest it may stand to the fit.
     expect(
       allocateOneRail({
         canvasWidth: 2735,
@@ -1228,8 +1299,8 @@ describe("the space allocator", () => {
         preferredWidth: 340,
         minWidth: 320,
       }),
-    ).toBeNull();
-    // 330 clears the floor and is taken.
+    ).toBe(320);
+    // 330 clears the floor and is taken exactly.
     expect(
       allocateOneRail({
         canvasWidth: 2755,
@@ -1374,7 +1445,9 @@ describe("every standing rail takes one shared width", () => {
     // The right rail's floor of 480 is a bound on the ONE shared width, so the
     // left rail cannot be taken below it either. A deck wanting 940 of rail —
     // 470 each — is refused outright: standing both rails at the bound 480
-    // leaves the seams visibly off, and half a gesture is not made.
+    // does not tile, and it would push the cards 5px INTO one another where
+    // they now stand apart — a move may never introduce overlap the standing
+    // picture does not have.
     expect(
       solve(
         canvasFor(940),

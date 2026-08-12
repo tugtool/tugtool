@@ -12,11 +12,13 @@
  *     ([P04]): a width click re-solves the rails (it is a Layouts click, and it
  *     moves every seam), but what a rail may get is the allocator's answer
  *     under its licence — never the content preset written in as if the rail
- *     were a card. The fixture makes the licence refuse (four slotted cards
- *     overfill the band at any plausible window, so no rail width tiles the
- *     chain), which is what lets a plain "unchanged" assertion pin the
- *     distinction: a stamped rail would move to the preset even when the
- *     allocator declines.
+ *     were a card. The fixture overfills the band (four slotted cards want
+ *     more than any plausible window holds, so no rail width tiles the
+ *     chain), and the graded licence ([D136]) answers with the one width it
+ *     may: the Lens's hard floor, the deepest the rail can give against a
+ *     chain that overlaps. THAT is the assertion — the rail lands on the
+ *     floor, not on the preset a stamp would have written, and a second
+ *     width click finds nothing left to give and moves it no further.
  *  3. It is what a NEW card opens at. The registrations no longer carry a
  *     literal opening width; a Session, Text, File, Diff, or DevTools card
  *     resolves one from this record at `addCard` time, so the first card of a
@@ -53,6 +55,11 @@ const COMFY = 800;
 /** The seeded Lens rail width — a number no preset resolves to, so a rail that
  *  moved would be unmistakable. */
 const LENS_WIDTH = 412;
+
+/** The Lens's hard floor (`MIN_LENS_WIDTH_PX`) — the allocator's whole answer
+ *  on this overfilled deck: the deepest the rail may give against a chain
+ *  that overlaps, and visibly not a preset. */
+const LENS_MIN = 320;
 
 const WIDTH_TILE = (preset: string): string =>
   `[data-testid="lens-layouts-width"] [data-choice-value="${preset}"]`;
@@ -155,9 +162,11 @@ describe.skipIf(!SHOULD_RUN)(
           expect(await paneWidth(app, "p2")).toBe(SLIM);
           expect(await paneWidth(app, "p3")).toBe(SLIM);
           expect(await paneWidth(app, "p4")).toBe(SLIM);
-          // The rail did not come with them: the click's retune refused (no
-          // rail width tiles this chain), and the preset was never stamped.
-          expect(await paneWidth(app, "pLens")).toBe(LENS_WIDTH);
+          // The rail did not take the preset. The click's retune ran — no
+          // rail width tiles this chain, so the graded licence gave the rail
+          // to its hard floor against the overlap — and the floor is where it
+          // stands: the allocator's answer, never the stamp's.
+          expect(await paneWidth(app, "pLens")).toBe(LENS_MIN);
 
           // ── A card opened now arrives at the deck's width. ──
           await app.dispatchControlAction("show-devtools");
@@ -186,7 +195,10 @@ describe.skipIf(!SHOULD_RUN)(
           );
           expect(await paneWidth(app, "p1")).toBe(COMFY);
           expect(await paneWidth(app, "p2")).toBe(COMFY);
-          expect(await paneWidth(app, "pLens")).toBe(LENS_WIDTH);
+          // Standing at the floor already, the comfy click's retune has
+          // nothing left to give and moves the rail no further — and still
+          // does not stamp it.
+          expect(await paneWidth(app, "pLens")).toBe(LENS_MIN);
           expect(
             await app.evalJS<number[]>(
               `Array.from(document.querySelectorAll('.tug-pane'))
