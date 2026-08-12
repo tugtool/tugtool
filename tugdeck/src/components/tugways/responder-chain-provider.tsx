@@ -22,7 +22,11 @@
 
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ResponderChainContext, ResponderChainManager } from "./responder-chain";
+import {
+  DEFAULT_BUTTON_PRESS_MS,
+  ResponderChainContext,
+  ResponderChainManager,
+} from "./responder-chain";
 import { FocusManager, FocusManagerContext, TAB_CONSUME_ATTRIBUTE, TAB_RELEASE_ATTRIBUTE, ATTACHED_LIST_ATTRIBUTE, KEY_SINK_ATTRIBUTE, BASE_FOCUS_MODE, registerFocusManager, advanceKeyViewFocus } from "./focus-manager";
 import { resolveFocusAct } from "./focus-act";
 import { arrowDirection, type SpatialDirection } from "./spatial-order";
@@ -119,16 +123,6 @@ function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose:
     </div>
   );
 }
-
-// ---- Default-button press-visual duration ----
-
-/**
- * How long the `data-pressing="true"` attribute stays on a button
- * after it's activated by Return through the default-button stack.
- * Long enough to read as a "click" without lingering. CSS treats
- * `[data-pressing="true"]` as a stand-in for `:active`.
- */
-const DEFAULT_BUTTON_PRESS_MS = 120;
 
 /**
  * Whether DOM focus currently sits on an interactive control — a button, link,

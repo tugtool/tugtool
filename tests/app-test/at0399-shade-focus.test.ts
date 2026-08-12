@@ -29,6 +29,15 @@
  * declares itself the entry default with its Shift+Return chord
  * ([#chord-ring]) exactly as the prompt route's submit does.
  *
+ * **And the History ring promised a key it never got.** The stand-down above
+ * settled who WEARS the default ring while History is up — Done — but only in
+ * paint. The shade's carve-out leaves the composer live beneath it, and the
+ * composer's shipped Return action is `newline`: the editor's default-button
+ * defer ran on the `submit` branch alone, so a Return with the caret back in
+ * the composer broke a line while the only ring on screen promised dismissal.
+ * The yield now carries the key as well as the mark — a plain Return presses
+ * the chordless default, and takes its newline back the moment the shade goes.
+ *
  * Not asserted here: the commit button's ring RESOLVING dashed→solid. That
  * needs a landable changeset, which an app-test's transient workspace cannot
  * hold still; the button is disabled without one and a disabled default rightly
@@ -40,6 +49,8 @@
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.css
+ * @covers tugdeck/src/components/tugways/tug-text-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor/keymap.ts
  */
 
 import { describe, expect, test } from "bun:test";
@@ -117,6 +128,18 @@ function keyView(app: App): Promise<{ name: string; ringed: boolean }> {
       }
       return { name: ident(el), ringed: ringed };
     })()`,
+  );
+}
+
+/**
+ * How many lines the composer's document holds. Counted rather than read as
+ * text: an empty CM6 document renders its placeholder INSIDE the one line, so
+ * text is "" for nobody and the line count is the only thing that says whether
+ * a Return broke the line.
+ */
+function lineCount(app: App): Promise<number> {
+  return app.evalJS<number>(
+    `document.querySelectorAll(${JSON.stringify(`${EDITOR} .cm-line`)}).length`,
   );
 }
 
@@ -217,8 +240,49 @@ describe.skipIf(!SHOULD_RUN)(
             ]);
           }
 
-          await app.nativeKey("Escape", []);
+          // ---- The ring's promise holds from the composer too ----
+          //
+          // The shade's modal carve-out leaves the prompt entry live, so the
+          // caret can go back to it while Done still wears the only default
+          // ring on screen. A ring that says "Return lands here" has to be
+          // true from wherever the keyboard is: the composer's own Return is
+          // the `newline` setting, and a newline written under a promise of
+          // dismissal is the promise broken.
+          await app.nativeClickAtElement(EDITOR);
+          await settle(300);
+          expect(
+            await ringWearers(app),
+            "the composer's own default stands down — Done is still the only ring",
+          ).toEqual(["session-history-done"]);
+
+          await app.nativeKey("Return", []);
+          await settle(500);
+
+          expect(
+            await lineCount(app),
+            "Return went to Done, not into the document",
+          ).toBe(1);
+          expect(
+            await app.evalJS<boolean>(
+              `document.querySelector(${JSON.stringify(DONE)}) === null`,
+            ),
+            "and the shade it promised to dismiss is gone",
+          ).toBe(true);
+
           await settle(400);
+
+          // With no shade above it the composer's Return is its own again —
+          // the yield is the shade's, and it leaves with the shade.
+          await app.nativeClickAtElement(EDITOR);
+          await settle(250);
+          await app.nativeKey("Return", []);
+          await settle(300);
+          expect(
+            await lineCount(app),
+            "a shade-less Return is the editor's newline, exactly as the setting says",
+          ).toBe(2);
+          await app.nativeKey("Backspace", []);
+          await settle(200);
 
           // ---- Changes: no ghost stops, and a default that exists ----
           await app.nativeClickAtElement(EDITOR);

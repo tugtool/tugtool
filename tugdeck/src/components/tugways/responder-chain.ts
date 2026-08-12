@@ -86,6 +86,18 @@ export type { TugAction, GalleryAction } from "./action-vocabulary";
  */
 export type ActionPhase = "discrete" | "begin" | "change" | "commit" | "cancel";
 
+/**
+ * How long `data-pressing="true"` stays on a button activated by Return
+ * through the default-button stack. Long enough to read as a "click" without
+ * lingering; CSS treats `[data-pressing="true"]` as a stand-in for `:active`.
+ *
+ * It lives beside the stack rather than beside either presser because there
+ * are two — the chain's own bubble-phase activation and the text substrate's
+ * Return, which must look identical — and a press visual that differs by
+ * which one fired is a difference the user can see.
+ */
+export const DEFAULT_BUTTON_PRESS_MS = 120;
+
 // ---- ResponderKind ----
 
 /**

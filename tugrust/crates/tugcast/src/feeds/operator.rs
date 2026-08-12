@@ -969,12 +969,17 @@ impl OperatorPipeline {
                 wake_reason: None,
                 body: question.clone(),
                 refs: Vec::new(),
+                // A question costs no agent turn; it is typed, not run.
+                elapsed_ms: None,
                 request_id: request_id.clone(),
                 transient: false,
             },
             true,
         );
 
+        // The answer's own cost, clocked around the whole round — every verb
+        // round trip the Operator needed, not just the last turn's tokens.
+        let started = std::time::Instant::now();
         match self.answer(&question).await {
             Ok((post, context)) => {
                 let validated = crate::feeds::reporter_wake::validate_refs(post.refs, &[&context]);
@@ -993,6 +998,7 @@ impl OperatorPipeline {
                         wake_reason: None,
                         body: post.body,
                         refs: validated.kept,
+                        elapsed_ms: Some(started.elapsed().as_millis() as i64),
                         request_id: request_id.clone(),
                         transient: false,
                     },
@@ -1010,6 +1016,7 @@ impl OperatorPipeline {
                         wake_reason: None,
                         body: format!("Couldn't answer that: {err}"),
                         refs: Vec::new(),
+                        elapsed_ms: Some(started.elapsed().as_millis() as i64),
                         request_id,
                         transient: true,
                     },
@@ -1207,6 +1214,7 @@ mod tests {
                     kind: GazetteRefKind::File,
                     target: "tugdeck/styles/themes/brio.css".to_string(),
                 }],
+                elapsed_ms: None,
                 request_id: None,
                 transient: false,
             })

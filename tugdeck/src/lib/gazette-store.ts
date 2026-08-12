@@ -58,6 +58,9 @@ export interface GazettePostEntry {
   wakeReason: string | null;
   body: string;
   refs: readonly GazetteRef[];
+  /** How long the agent turn that wrote this post took, or null when nobody
+   *  clocked it (a user question; a row older than the column). */
+  elapsedMs: number | null;
   requestId: string | null;
   transient: boolean;
 }
@@ -298,6 +301,7 @@ export class GazetteStore {
       wakeReason: post.wake_reason ?? null,
       body: post.body,
       refs: Object.freeze([...post.refs]) as readonly GazetteRef[],
+      elapsedMs: post.elapsed_ms ?? null,
       requestId: post.request_id ?? null,
       transient: post.transient,
     });

@@ -89,6 +89,7 @@ interface WirePost {
   refs: { kind: string; target: string }[];
   session_id?: string;
   wake_reason?: string;
+  elapsed_ms?: number;
 }
 
 async function publish(app: App, post: WirePost): Promise<boolean> {
@@ -205,6 +206,9 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           body: "Reworked the layout imposer's sidebar pin.",
           refs: [{ kind: "file", target: "tugdeck/src/lib/layout-imposer.ts" }],
           wake_reason: "sitrep",
+          // The turn that wrote it took this long — tugcast clocks the agent
+          // run and the Z1B reads it, the way a session turn reports its time.
+          elapsed_ms: 4_200,
         };
         const operatorPost: WirePost = {
           id: 9002,
@@ -251,11 +255,20 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
 
         // Every post carries the transcript's own end-state row under its
         // body: the OK badge and the text+icon COPY, in the Session card's
-        // vocabulary. A post that answers no question shows no elapsed.
+        // vocabulary.
         for (const row of rows) {
           expect(row.z1b, `${row.author}'s row carries a Z1B`).toContain("OK");
           expect(row.z1b, `${row.author}'s COPY is text+icon`).toContain("Copy");
         }
+        // And a post whose agent turn was clocked reports that time, formatted
+        // by the transcript's own duration formatter. A post carrying none
+        // shows no elapsed segment at all rather than a fabricated zero.
+        expect(rows[0]!.z1b, "the clocked post reports its elapsed").toContain(
+          "4.2s",
+        );
+        expect(rows[1]!.z1b, "an unclocked post reports no elapsed").not.toContain(
+          "s•",
+        );
 
         const chipTitle = await app.evalJS<string | null>(
           `(function () {

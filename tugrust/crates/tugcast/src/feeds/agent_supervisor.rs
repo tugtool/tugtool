@@ -11828,6 +11828,7 @@ mod tests {
                     wake_reason: Some("turn-end".to_string()),
                     body: body.to_string(),
                     refs: Vec::new(),
+                    elapsed_ms: None,
                     request_id: None,
                     transient: false,
                 })

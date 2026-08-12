@@ -2,8 +2,7 @@
  * `SessionHistoryView` — the History view-route's transcript-slot view
  * ([P01]/[P10]). On the `↺` route this replaces the transcript with the
  * card's own project git log rendered as a {@link TugHistoryList} — one
- * compact commit row per commit; submitting a question on this route sends
- * an on-record `/tugplug:history` turn (wired in the prompt entry).
+ * compact commit row per commit.
  *
  * Data rides the shared `gitLogStore()` (`GIT_LOG` feed) — the card knows
  * its own `projectDir` from the binding, so the Lens-follow indirection is

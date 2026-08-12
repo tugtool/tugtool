@@ -1465,6 +1465,7 @@ impl SessionLedger {
         Self::migrate_sessions_add_private(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
+        Self::migrate_gazette_posts_add_elapsed_ms(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1840,7 +1841,11 @@ impl SessionLedger {
                 session_id  TEXT,
                 wake_reason TEXT,
                 body        TEXT NOT NULL,
-                refs        TEXT NOT NULL
+                refs        TEXT NOT NULL,
+                -- How long the agent turn that wrote the post took. NULL on a
+                -- user question and on every row written before the column
+                -- existed (`migrate_gazette_posts_add_elapsed_ms`).
+                elapsed_ms  INTEGER
             );
 
             CREATE INDEX IF NOT EXISTS gazette_posts_session
@@ -2402,6 +2407,23 @@ impl SessionLedger {
         }
         if !cols.iter().any(|(n, _)| n == "intent") {
             conn.execute("ALTER TABLE pulse_lines ADD COLUMN intent TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    /// Self-healing add of `gazette_posts.elapsed_ms` — how long the agent
+    /// turn that wrote a post took. ALTER-based, never a rebuild: the table
+    /// is permanent history and the drop-and-recreate guard would be total
+    /// data loss on it (see the CREATE). Pre-column rows read `NULL`, which
+    /// is honest — nobody clocked them. No-op on a fresh DB (the CREATE
+    /// defines the column) or when already migrated.
+    fn migrate_gazette_posts_add_elapsed_ms(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "gazette_posts")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "elapsed_ms") {
+            conn.execute("ALTER TABLE gazette_posts ADD COLUMN elapsed_ms INTEGER", [])?;
         }
         Ok(())
     }
@@ -5609,8 +5631,8 @@ impl SessionLedger {
         let refs_json = serde_json::to_string(&post.refs).unwrap_or_else(|_| "[]".to_string());
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
-            "INSERT INTO gazette_posts (at_ms, author, session_id, wake_reason, body, refs)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO gazette_posts (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 post.at_ms,
                 post.author.as_str(),
@@ -5618,6 +5640,7 @@ impl SessionLedger {
                 post.wake_reason,
                 post.body,
                 refs_json,
+                post.elapsed_ms,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -5628,8 +5651,8 @@ impl SessionLedger {
     pub fn list_gazette_posts_tail(&self, limit: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
                  FROM gazette_posts ORDER BY id DESC LIMIT ?1
              ) ORDER BY id ASC",
         )?;
@@ -5651,8 +5674,8 @@ impl SessionLedger {
     ) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
                  FROM gazette_posts
                  WHERE session_id = ?1 AND author = 'reporter'
                  ORDER BY id DESC LIMIT ?2
@@ -5671,7 +5694,7 @@ impl SessionLedger {
     pub fn gazette_posts_window(&self, id: i64, n: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms
              FROM gazette_posts
              WHERE id BETWEEN ?1 - ?2 AND ?1 + ?2
              ORDER BY id ASC",
@@ -5700,6 +5723,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT p.id, p.at_ms, p.author, p.session_id, p.wake_reason, p.body, p.refs,
+                    p.elapsed_ms,
                     snippet(gazette_posts_fts, 0, '', '', '…', 32)
              FROM gazette_posts_fts f
              JOIN gazette_posts p ON p.id = f.rowid
@@ -5721,7 +5745,9 @@ impl SessionLedger {
                 limit as i64,
             ],
             |row| {
-                let excerpt: String = row.get(7)?;
+                // Index 8: the hit columns are `gazette_post_from_row`'s own
+                // seven plus `elapsed_ms`, and the excerpt trails them.
+                let excerpt: String = row.get(8)?;
                 Ok(gazette_post_from_row(row)?.map(|post| GazetteSearchHit { post, excerpt }))
             },
         )?;
@@ -6068,6 +6094,7 @@ fn gazette_post_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Gaz
         wake_reason: row.get(4)?,
         body: row.get(5)?,
         refs: serde_json::from_str(&refs_json).unwrap_or_default(),
+        elapsed_ms: row.get(7)?,
         request_id: None,
         transient: false,
     }))
@@ -7951,6 +7978,7 @@ mod tests {
             wake_reason: None,
             body: body.to_string(),
             refs: vec![],
+            elapsed_ms: None,
             request_id: None,
             transient: false,
         }

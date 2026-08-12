@@ -4827,6 +4827,13 @@ export function SessionCardBody({
               highlightActiveLineGutter={editorSettings.highlightActiveLineGutter}
               returnAction={editorSettings.returnKeyAction}
               numpadEnterAction={editorSettings.numpadEnterAction}
+              // The other half of the History stand-down above ([P17]/[P14]).
+              // The same state that takes the composer's default ring away and
+              // gives it to the shade's Done has to take the KEY too: the
+              // carve-out leaves the composer live under the shade, so a
+              // Return there was writing a newline while the only ring on
+              // screen promised dismissal. One state, one owner, both halves.
+              defaultButtonOwnsReturn={shadeView === "history"}
               placeholder={SESSION_PROMPT_PLACEHOLDER}
             />
             </cycle.CycleScope>

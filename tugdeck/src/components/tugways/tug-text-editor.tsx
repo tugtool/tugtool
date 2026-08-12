@@ -613,6 +613,20 @@ export interface TugTextEditorProps
    */
   deferToDefaultButton?: boolean;
   /**
+   * Whether a surface above this editor has taken Return for its own ([P14]).
+   * When `true`, a plain Return defers to the pane's default button even under
+   * `returnAction: "newline"` — the case the `submit` defer above cannot cover.
+   *
+   * Set it wherever a host paints another surface's control as the one default
+   * ring on screen while this editor stays live beneath it: the Session card's
+   * History shade owns Return through its Done, and the composer's Return would
+   * otherwise break a line under a ring promising dismissal. The button's own
+   * chord still governs ([#chord-ring]) — a plain Return only presses a button
+   * that declares none.
+   * @default false
+   */
+  defaultButtonOwnsReturn?: boolean;
+  /**
    * History provider for Up / Down + Opt-Up / Opt-Down navigation. The substrate
    * captures the current editing state on each `back()` call so the
    * provider can stash it as the in-progress draft and restore it
@@ -1275,6 +1289,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       numpadEnterAction = DEFAULT_NUMPAD_ENTER_ACTION,
       onSubmit,
       deferToDefaultButton = true,
+      defaultButtonOwnsReturn = false,
       historyProvider,
       completionProviders,
       argumentHintResolver,
@@ -1831,12 +1846,20 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         ? manager.peekDefaultButtonInScope(pane)
         : manager.peekDefaultButton();
     }, [responderChainManager, deferToDefaultButton]);
+    // Whether a surface above this editor holds Return ([P14]). A thunk over
+    // the live prop, read at keystroke time through the config ref below, so a
+    // shade that opens after this editor mounted is seen by the very next key.
+    const ownsReturn = useCallback(
+      (): boolean => defaultButtonOwnsReturn,
+      [defaultButtonOwnsReturn],
+    );
     const keymapConfigRef = useRef<TugTextEditorKeymapConfig>({
       returnAction,
       numpadEnterAction,
       onSubmit: noopSubmit,
       historyProvider: null,
       peekDefaultButton,
+      defaultButtonOwnsReturn: ownsReturn,
     });
 
     // Mirror the live policy props into the keymap config ref. Runs
@@ -1849,6 +1872,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         onSubmit: onSubmit ?? noopSubmit,
         historyProvider: historyProvider ?? null,
         peekDefaultButton,
+        defaultButtonOwnsReturn: ownsReturn,
       };
     }, [
       returnAction,
@@ -1856,6 +1880,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       onSubmit,
       historyProvider,
       peekDefaultButton,
+      ownsReturn,
     ]);
 
     // Expose the imperative delegate. The closure reads `viewRef.current`

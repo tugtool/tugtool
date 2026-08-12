@@ -190,6 +190,8 @@ struct WakeOutcome {
     session_id: String,
     reason: WakeReason,
     result: Result<String, String>,
+    /// How long the wake job ran, clocked around the agent turn itself.
+    elapsed_ms: i64,
 }
 
 // MARK: - The loop
@@ -556,12 +558,14 @@ fn wake(
     let outcome_tx = outcome_tx.clone();
     let session_id = session_id.to_string();
     tokio::spawn(async move {
+        let started = Instant::now();
         let result = agent.run(REPORTER_POST_JOB, input).await;
         let _ = outcome_tx
             .send(WakeOutcome {
                 session_id,
                 reason,
                 result,
+                elapsed_ms: started.elapsed().as_millis() as i64,
             })
             .await;
     });
@@ -578,6 +582,7 @@ fn settle(
         session_id,
         reason,
         result,
+        elapsed_ms,
     } = outcome;
     let Some(window) = sessions.get_mut(&session_id) else {
         return;
@@ -665,6 +670,7 @@ fn settle(
         wake_reason: Some(reason.as_str().to_string()),
         body,
         refs: validated.kept,
+        elapsed_ms: Some(elapsed_ms),
         request_id: None,
         transient: false,
     };

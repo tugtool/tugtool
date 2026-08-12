@@ -874,6 +874,15 @@ export interface TugPromptEntryProps {
    */
   numpadEnterAction?: "submit" | "newline";
   /**
+   * Whether a surface above the entry has taken Return for its own ([P14]),
+   * forwarded to `TugTextEditor`. The host sets it when it paints another
+   * control as the deck's one default ring while leaving this entry live
+   * beneath it — the Session card's History shade and its Done. A plain
+   * Return then presses that control instead of writing a line here, so the
+   * ring's promise holds from the composer too.
+   */
+  defaultButtonOwnsReturn?: boolean;
+  /**
    * Placeholder text for the embedded editor, forwarded to
    * `TugTextEditor`. The session card supplies the Code prompt copy; the
    * gallery prompt-entry omits it (no placeholder).
@@ -1067,6 +1076,7 @@ export const TugPromptEntry = React.forwardRef<
     highlightActiveLineGutter,
     returnAction: returnActionOverride,
     numpadEnterAction,
+    defaultButtonOwnsReturn = false,
     placeholder,
     deactivated: deactivatedProp = false,
     disabled = false,
@@ -3740,6 +3750,9 @@ export const TugPromptEntry = React.forwardRef<
               // (or the Z5 button) submits. A host override wins when supplied.
               returnAction={returnActionOverride ?? "newline"}
               numpadEnterAction={numpadEnterAction}
+              // …unless a surface above the entry holds Return ([P14]) — then
+              // a plain Return goes where the one ring on screen says it does.
+              defaultButtonOwnsReturn={defaultButtonOwnsReturn}
               lineWrap={lineWrap}
               lineNumbers={lineNumbers}
               highlightActiveLineGutter={highlightActiveLineGutter}

@@ -960,6 +960,9 @@ export interface GazettePostWire {
   wake_reason?: string;
   body: string;
   refs: GazetteRef[];
+  /** How long the agent turn that wrote the post took; absent on a user
+   *  question and on rows written before tugcast recorded it. */
+  elapsed_ms?: number;
   request_id?: string;
   transient: boolean;
 }
@@ -1028,6 +1031,9 @@ export function parseGazettePost(value: unknown): GazettePostWire | null {
       : {}),
     body: p.body,
     refs,
+    ...(typeof p.elapsed_ms === "number" && p.elapsed_ms >= 0
+      ? { elapsed_ms: p.elapsed_ms }
+      : {}),
     ...(typeof p.request_id === "string" ? { request_id: p.request_id } : {}),
     transient: p.transient === true,
   };

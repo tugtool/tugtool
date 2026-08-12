@@ -93,6 +93,7 @@ import type {
   TugTextEditingState,
 } from "@/lib/tug-text-types";
 import type { AtomSegment } from "@/lib/tug-atom-img";
+import { DEFAULT_BUTTON_PRESS_MS } from "@/components/tugways/responder-chain";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -131,6 +132,25 @@ export interface TugTextEditorKeymapConfig {
    * omit to keep the original "Enter always submits" behavior.
    */
   peekDefaultButton?: () => HTMLButtonElement | null;
+  /**
+   * Whether a surface above this editor has taken Return for its own
+   * ([P14] "Return's home"). When this returns `true`, a plain Return
+   * consults {@link peekDefaultButton} even on the `"newline"` action and
+   * presses that button instead of breaking the line.
+   *
+   * The `"submit"` action already defers, so without this the yield is
+   * only half honored: the Session card's History shade paints its Done
+   * as the deck's one default ring and stands the composer's own default
+   * down — and then a Return in the composer, whose shipped action is
+   * `"newline"`, wrote a newline under a ring promising dismissal.
+   *
+   * The button's declared chord is honored exactly as the chain's
+   * bubble-phase activation honors it ([#chord-ring]): a plain Return
+   * presses a chordless button and nothing else, so an entry's own
+   * Shift+Return submit can never be fired by the key that writes a line.
+   * Optional; omit for an editor no surface yields to.
+   */
+  defaultButtonOwnsReturn?: () => boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,21 +435,42 @@ function handleEnter(
     // a default button registered, the editor's own submit runs.
     const defaultButton = config.peekDefaultButton?.() ?? null;
     if (defaultButton !== null) {
-      // Mirror the press-visual the chain provider applies for
-      // direct (non-editor) default-button activations, so the
-      // two paths look identical.
-      defaultButton.setAttribute("data-pressing", "true");
-      window.setTimeout(() => {
-        defaultButton.removeAttribute("data-pressing");
-      }, 120);
-      defaultButton.click();
+      pressDefaultButton(defaultButton);
       return true;
     }
     config.onSubmit();
     return true;
   }
-  // Newline: fall through to `defaultKeymap`'s `insertNewlineAndIndent`.
+  // Newline — unless a surface above this editor holds Return
+  // ([P14]): a ring saying "Return lands here" has to be true from
+  // wherever the keyboard is, and the composer under the History shade is
+  // one of the places it can be. Shift is spent flipping the action, so
+  // only a plain Return yields, and only to a button claiming no chord of
+  // its own.
+  if (!event.shiftKey && (config.defaultButtonOwnsReturn?.() ?? false)) {
+    const yielded = config.peekDefaultButton?.() ?? null;
+    if (yielded !== null && !yielded.hasAttribute("data-default-chord")) {
+      event.preventDefault();
+      event.stopPropagation();
+      pressDefaultButton(yielded);
+      return true;
+    }
+  }
+  // Fall through to `defaultKeymap`'s `insertNewlineAndIndent`.
   return false;
+}
+
+/**
+ * Click a default button the way the responder chain's own bubble-phase
+ * activation does — with the press visual, so a Return from inside an editor
+ * looks and behaves like a real mouse click on that button.
+ */
+function pressDefaultButton(button: HTMLButtonElement): void {
+  button.setAttribute("data-pressing", "true");
+  window.setTimeout(() => {
+    button.removeAttribute("data-pressing");
+  }, DEFAULT_BUTTON_PRESS_MS);
+  button.click();
 }
 
 // ---------------------------------------------------------------------------
