@@ -212,10 +212,17 @@ describe("The ⌥⇥ gesture (Spec S04)", () => {
     chain.register({ id: "editor", parentId: null, actions: {}, focus: () => {} });
     fm.place(null, { kind: "responder", responderId: "editor" });
     expect(fm.keyboardRoute()).toBe("dom-granted");
-    // Twice: a caret never toggles the mode off, so the second press is the
-    // same request as the first — return the keyboard to the ring.
+    // A caret never toggles the mode OFF: the press is a request to return to
+    // the ring, so the bit goes up whatever it was.
     expect(fm.toggleKbfManual()).toBe(true);
-    expect(fm.toggleKbfManual()).toBe(true);
+    // And the gesture PARKS the stop it landed on, which is what makes the ring
+    // appear where the keyboard already is. The park moves the route, so the
+    // caret is gone — and the second press is therefore the ordinary toggle's
+    // other half, not the same request again. Without the park the route would
+    // stay granted and every later press would be forced back to `true`: a bit
+    // that can never come down, wearing a ring that never appears.
+    expect(fm.keyboardRoute()).toBe("engine-routed");
+    expect(fm.toggleKbfManual()).toBe(false);
   });
 
   test("inside a forced mode, ⌥⇥ never turns the mode off ([P09])", () => {

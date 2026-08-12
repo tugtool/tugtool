@@ -589,6 +589,46 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       );
     }
 
+    /**
+     * A LIVE caret owns its caret keys, in either mode — [P07]'s structural
+     * split applied to the arrow plane.
+     *
+     * The mode gate below answers "does a ring exist", which is not the same
+     * question as "is the engine steering". They come apart in exactly the
+     * state {@link FocusManager.kbfPainting} was written for: the mode is
+     * engaged (a trapped sheet, a Class-B card) and a caret is nonetheless
+     * granted, so the paint stands down and the keyboard belongs to the text
+     * surface. Without this test the engine kept steering through that state —
+     * a ↓ in the question dialog's answer field carried the ring off to a
+     * button and took the caret with it, and the ↑ back left the stop PARKED,
+     * so a user mid-sentence could not type. Nothing painted at the moment of
+     * the theft, which is what made it invisible.
+     *
+     * Structural, by the KIND of surface — never by its content, and never by
+     * the mode:
+     *
+     *  - **Horizontal** arrows belong to any caret. A text surface has a left
+     *    and a right; that is what a caret moves along. (The same sentence the
+     *    attached-list contract already makes for its own reason.)
+     *  - **Vertical** arrows belong to a MULTI-LINE surface (contentEditable /
+     *    `TEXTAREA`), which has lines to move between — including a surface
+     *    that is multi-line for wrapping rather than for indenting, since a
+     *    wrapped line is still a line. A single-line `INPUT` has no second
+     *    line, so its ↑/↓ stay with the plane, exactly as its `Tab` does.
+     *
+     * `data-tug-tab-release` has no counterpart here on purpose: it exists
+     * because `Tab` is ambiguous on a multi-line surface (indent, or leave?).
+     * A vertical arrow is not — it is the caret's own key.
+     */
+    function caretOwnsArrow(direction: SpatialDirection): boolean {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return false;
+      const multiLine = active.isContentEditable || active.tagName === "TEXTAREA";
+      if (!multiLine && active.tagName !== "INPUT") return false;
+      if (direction === "left" || direction === "right") return true;
+      return multiLine;
+    }
+
     function arrowNavListener(event: KeyboardEvent): void {
       const direction = arrowDirection(event.key);
       if (direction === null) return;
@@ -601,9 +641,6 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       // invisibly, which is worse than either endpoint.
       if (!focusManager.kbfEngaged()) return;
       if (insideAttachedList(direction)) return;
-      // Past the gate above, the mode is ON — the keyboard is on a ring rather
-      // than in a caret — so the plane is simply the plane. A text surface owns
-      // its arrows in mode OFF, which the gate already answered.
       const focusKey = {
         key: event.key,
         altKey: event.altKey,
@@ -622,6 +659,10 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
         }
         return;
       }
+      // Sited after the capture branch so a control that declares an arrow its
+      // own (a value input stepping on ←/→) keeps it, and before the plane so a
+      // granted caret is never steered out from under.
+      if (caretOwnsArrow(direction)) return;
       if (focusManager.moveKeyViewSpatial(direction)) {
         event.preventDefault();
         event.stopImmediatePropagation();

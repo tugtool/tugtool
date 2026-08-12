@@ -509,8 +509,8 @@ The two failures above are the whole predicted blast radius made concrete, and b
 | #step-7 | The deletions | done | `c1aa0c408` |
 | #step-8 | Menu item | done | `a0d1d357e` |
 | #step-9 | Doctrine surgery | done | `007e57f4f` |
-| #step-10 | Test rework + new suites | **partial** | `43ba9c2eb`, `02c6437cb`, `705041e07` (see below) |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-10 | Test rework + new suites | done | `43ba9c2eb`, `02c6437cb`, `705041e07`, then the follow-on suites (see #close) |
+| #step-11 | Integration checkpoint | done | see #close |
 
 > **The per-step hashes above are dead references.** They were commits on the `tugdash/kbf-mode` worktree, which `/join` squashed into a single commit on `main` — **`5d6991087`** — and then removed. They are kept because the round-by-round summaries in the dash log (`tug log`) are still readable by them, and because the ordering tells you what landed with what. To read the shipped state, read `main`.
 
@@ -814,6 +814,31 @@ The two failures above are the whole predicted blast radius made concrete, and b
 - [ ] `arrow-release.ts` and the boundary latch no longer exist; grep for the deletion inventory returns empty.
 - [ ] `tuglaws/focus-language.md` describes the shipped model; the old axiom survives only as a history note.
 - [ ] Step Status Ledger fully `done` with commit hashes.
+
+#### Phase close — #step-10 finished, #step-11 run {#close}
+
+*2026-08-11, from the KBF audit. This section supersedes the "not written" rows in the #step-status-ledger note and the checkpoint table below it; both are left standing because they record what was true at handoff.*
+
+**One real defect found, and it is the one the handoff could not have found by reading.** The paint moved onto the keyboard route when [the paint-route division](../tuglaws/focus-language.md#kbf-paint-route) landed; the **movement** stages did not follow. `arrowNavListener` still gated on `kbfEngaged()`, so in the one state the division exists to describe — mode engaged, caret granted, marks standing down — the engine kept steering wherever a surface declared a spatial order. Measured on the question dialog: typing in the free-text answer field, ↓ carried the ring off to a button and took the caret with it, and the ↑ back left the stop *parked*, so a user mid-sentence could not type. Nothing painted at the moment of the theft.
+
+The fix is [P07]'s split applied to the arrow plane — horizontal arrows belong to any caret, vertical arrows belong to a multi-line surface — and it is structural, by the kind of surface, not by the mode and not by the content. Doctrine updated at "Arrow ownership"; pinned by **at0402**, which was watched red before it was watched green (a reverse-patch probe of the fix reproduces the theft exactly).
+
+**The proof surface had to be rebuilt before it could be run.** at0397 (paint route), at0398 (chord ring), and at0399 (shade focus) were deleted within days of landing — at0397/at0398 graded as pixel cosmetics, which reads their instrument rather than their subject — while `tuglaws/focus-language.md` went on citing all three as "Pinned by". All three are restored and pass unmodified; `ACCEPTED_FANOUT` for `focus-manager.ts` went 26 → 29 to carry them and at0402. The reasoning is in [app-test-audit.md](app-test-audit.md#correction-kbf). Four suites whose deletion stands (at0202, at0203, at0204, at0251) are now named **unpinned** in the doctrine instead of cited as cover.
+
+**`bun test` was red on `main` for a day.** `kbf-derivation.test.ts`'s ⌥⇥-over-a-caret case still encoded pre-`parkAtKeyView` semantics: it asserted the second press returns `true`, when the whole point of the park is that it flips the route and makes the second press the toggle's other half. The code was right, the test was stale, and no commit in that window ran the suite the plan requires on every commit.
+
+**The transitions inventory dropped its line numbers.** Half of them had drifted six to seventy-five lines within a day. Sites are now named by file and symbol, which is what the inventory's own audit `grep` matches on anyway.
+
+**#step-11, run 2026-08-11.** The selection derived from the phase's source diff is **90 files** — the selector refuses a scoped run over 20, so it was run as three explicit batches. Result: **88 green, 2 red, neither from this work** — both reproduce identically with the KBF change reverse-patched out, and neither is a focus suite:
+
+| suite | state |
+|---|---|
+| `at0210-text-card-options` (1/2) | the options menu never mounts. Recorded known-red in the continued brief before this work, so this one is genuinely pre-existing |
+| `at0357-content-width-default` (1/2) | a pane content-width assertion (412 vs 320). **Not attributed further:** uncommitted `layout-imposer.ts` / `deck-manager.ts` work by another writer was live in the tree during the run, which is exactly this assertion's subject. It is not KBF's, and whether it is `main`'s or that work's is for whoever owns those bytes to settle — the reverse-patch probe only clears this phase |
+
+Green alongside them: every focus suite the phase touches, including the drift set (at0248 / at0277 / at0282 unmodified), the two that were red at the continued brief's writing (at0223, at0224), at0339, and the whole harness smoke tier. `bun test` 6416 pass / 0 fail, `tsc --noEmit` clean, `vite build` clean, `app-test-covers-check` green.
+
+**What is still owed, and is deliberately not blocking:** the two manual passes the plan named as residual risks — the IME first-character check with a non-Latin input source ([R01]), and an accessibility-keyboard-access pass confirming every text stop still takes a caret ([P12] Class C). Neither is automatable in the harness; Class C remains the least-covered carve-out in the model.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

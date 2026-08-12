@@ -141,7 +141,16 @@ const ACCEPTED_FANOUT: Record<string, number> = {
     // It was 68 while the suite carried a test per widget for the same ring
     // contract; retiring those clones took it to 26 without giving up a single
     // behavior the engine actually owns.
-    "tugdeck/src/components/tugways/focus-manager.ts": 26,
+    //
+    // 26 → 29, deliberately, for three suites that pin KBF-mode invariants no
+    // other file drives: at0397 (the paint keys on the ROUTE — a granted caret
+    // stands the marks down while the mode stays engaged), at0399 (a covered
+    // stop leaves the walk; a shade signal carries its name), and at0402 (a
+    // live caret owns its caret keys). The first two were graded deletable as
+    // pixel cosmetics and restored when that grading was found wrong: they read
+    // computed style, but what they assert is an engine rule, and the phase's
+    // recorded failure mode is exactly an attribute-green/pixel-dark ring.
+    "tugdeck/src/components/tugways/focus-manager.ts": 29,
 };
 
 interface TestCoverage {
