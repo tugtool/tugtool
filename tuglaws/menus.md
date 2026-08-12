@@ -196,6 +196,7 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌘= | `zoom-in` | Zoom In | JS, global |
 | ⌘A | `select-all` | Select All | menu bar (AppKit's own) |
 | ⌘C | `copy` | Copy | menu bar (AppKit's own) |
+| ⌘E | `find-selection` | Use Selection for Find | JS, global |
 | ⌘F | `find` | Find… | JS, global |
 | ⌘G | `find-next` | Find Next | JS, global |
 | ⌘H | `hide-application` | Hide Tug | menu bar (AppKit's own) |
@@ -269,6 +270,7 @@ Every command has several doors: a chord, a menu item, the palette, a control fr
 | `edit.redo` | `redo` | first responder | host tier |
 | `edit.selectAll` | `select-all` | AppKit performs it | registry gate |
 | `edit.undo` | `undo` | first responder | host tier |
+| `edit.useSelectionForFind` | `find-selection` | first responder | registry gate |
 | `file.closeAllCardTabs` | `close-all` | first responder | registry gate |
 | `file.closeCard` | `close` | first responder | registry gate |
 | `file.exportTranscript` | `run-slash-command:export` | key card | registry gate |
