@@ -762,13 +762,14 @@ That condition *is* "the regime that already works". Every failing case is exclu
 
 ### Phase 2 Success Criteria (Measurable) {#phase-2-success-criteria}
 
-- For the Table T03 fixture, the answer takes **at least 8 distinct values** as the canvas sweeps 1400 → 3400 in 100px steps (today: two). Direct pin on symptom 4 — unit-asserted in the solutions sweep.
+- For the Table T03 fixture, the answer takes **at least 5 distinct values** as the canvas sweeps 1400 → 3400 in 100px steps (today: three), and **at least 15 distinct values** across 3150 → 3350 in 10px steps — the band where zero-overlap totals are reachable and the answer must track the canvas pixel-for-pixel. Direct pin on symptom 4 — unit-asserted in the solutions sweep. (The 320/512 plateau from ~1700 to ~3100 is *correct*: three 800px cards genuinely cannot tile there, so comfort is rightly held. A simulation of Spec S04 against the landed module confirms exactly five values on the coarse sweep — a criterion demanding eight would fail against the repaired solver.)
 - At canvas 3200 for the Table T03 fixture, the answer is `left 320 / right 450`, worst overlap 0, worst seam error 0. Direct pin on symptoms 1 and 2.
 - **The no-overlap invariant:** for every enumerated configuration, if any rail total in `[Σ hardFloor, Σ ceiling]` yields zero overlap, the answer has zero overlap. This assertion **fails against `931665ecc`** — that failure is the proof the net has teeth ([P14]).
 - **The rhythm invariant:** among totals with zero overlap, no seam is under `IMPOSITION_GAP_PX` unless no reachable total avoids it. Direct pin on symptom 3.
 - **The comfort invariant:** a rail is below its comfort floor only when no total at or above `Σ comfortFloor` yields zero overlap *and* some total below it does. Pins that comfort is spent for a reason and never gratuitously.
 - The user can drag the Gazette rail down to `MIN_GAZETTE_WIDTH_PX` by hand (at0365 or at0303 gesture assertion) — the Phase 1 512 trap is gone.
-- Phase 1's surviving guarantees hold unchanged: totality, bounds, greed soundness, canvas monotonicity, stacking folds, tie fairness (List L02), and the no-ratchet property (`RailPolicy` still cannot see a standing width).
+- A preference dragged below the comfort floor stays honored on a crowded deck: with the Gazette's stored width at 450, no crowded-regime answer stands the Gazette above 450 ([P17], List L03 item 7). The comfort floor never re-inflates a drag.
+- Phase 1's surviving guarantees hold: totality, bounds, greed soundness, stacking folds, tie fairness (List L02), and the no-ratchet property (`RailPolicy` still cannot see a standing width). Canvas monotonicity is **restated per-regime** ([P16]) — the comfort rule's binary spend makes the global form impossible, and the sweep's assertion moves with it.
 - `cd tugdeck && bunx tsc --noEmit && bunx vite build` clean; `bun test src` green; the derived app-test selection green.
 - The golden table is regenerated in its own commit, so the behavioral diff is reviewable as the repair rather than buried in the solver commit.
 
@@ -849,6 +850,12 @@ That condition *is* "the regime that already works". Every failing case is exclu
 - **Mitigation:** That is the point — Phase 1 trapped them at 512 and [L23] says a width the user chose is theirs. The comfort floor keeps the *allocator* off that range.
 - **Residual risk:** None beyond the user choosing a narrow rail deliberately.
 
+**Risk R05: the comfort boundary pop is visible** {#r05-boundary-pop}
+
+- **Risk:** At the first canvas width where a zero-overlap total becomes reachable, the answer jumps discontinuously (Table T03 fixture, measured: Gazette 512 → 400, a 112px move for a ~2px window change at canvas ~3138 → 3140; and 420/580 → 320/512 at 1650 → 1660 where the flat-picture tie releases).
+- **Mitigation:** The jump happens only at the three moments ([P08]) and rails animate by the same FLIP settle as every imposed move (at0294). It is the solve made visible: the deck spends comfort at exactly the width where spending it buys a clean picture. [P16] restates the monotonicity invariant so the net expects the jump instead of forbidding it.
+- **Residual risk:** A user dragging the window slowly across the boundary sees a pronounced snap. Accepted — the continuous alternative is a graded spend, which is the licence this plan deleted for good reason.
+
 ---
 
 ### Phase 2 Design Decisions {#phase-2-design-decisions}
@@ -880,6 +887,7 @@ That condition *is* "the regime that already works". Every failing case is exclu
 - Gazette: `MIN_GAZETTE_WIDTH_PX` becomes 400 ([Q04]); the 56ch derivation becomes `COMFORT_GAZETTE_WIDTH_PX = 512`.
 - `comfortWidth` folds across a rail's stacked members by `Math.max`, exactly as `minWidth` does — a rail must satisfy its most demanding member.
 - Cards that register no comfort width take `comfortWidth = minWidth`, which is today's behavior ([Q06]).
+- At solve time the comfort floor is clamped under the rail's preference ([P17]) — a rail the user dragged below its comfort measure keeps the drag as its effective comfort floor; comfort constrains the allocator, never the user.
 
 #### [P12] Greed-ordered distribution is unchanged, but drains in two tiers (DECIDED) {#p12-two-tier-drain}
 
@@ -919,6 +927,31 @@ That condition *is* "the regime that already works". Every failing case is exclu
 **Rationale:** Phase 1's automated checkpoints were all green while the feature was unusable. Every symptom was visible in seconds of real use. An automated suite is a regression net, not evidence that a thing is good.
 
 **Implications:** The step's checkpoint is a written observation, not only a green command. It is falsifiable by the specific claims it must make (see #step-11).
+
+#### [P16] Canvas monotonicity is per-regime; the comfort boundary pops (DECIDED) {#p16-per-regime-monotonicity}
+
+**Decision:** List L02 item 5 ("each rail's width is non-decreasing in canvas width") is restated per-regime: within a run of canvases where the comfort rule takes the same branch (comfort-domain answer, hard-domain answer, or comfort-held), each rail is monotone non-decreasing; across a branch change the widths may jump in either direction, and the sweep asserts nothing at the crossing. The solutions sweep's global assertion (`layout-imposer-solutions.test.ts`, "never narrows as the canvas grows") is rewritten to match.
+
+**Rationale:**
+- The comfort rule is a binary spend ([P11]), and a binary spend has a boundary. Simulated against the landed module (Table T03 fixture, 1px canvas steps): at canvas ~3138 → 3140 the Gazette drops 512 → 400 — the first width at which a zero-overlap total becomes reachable, bought by spending comfort; and at 1650 → 1660 both rails drop from preferences (420/580) to comfort floors (320/512) as the flat-picture tie releases. Both jumps are the design working as decided, and no assertion that forbids them can pass against Spec S04. A plan that kept the global invariant would strand Step 9 red with no legal fix.
+- The alternative — grading the spend so widths move continuously — is the licence Phase 1 deleted for good reason; a rule with a yes/no answer stays testable.
+
+**Implications:**
+- The sweep recomputes the branch per canvas (cheap: two oracle evaluations — see List L03's oracle note) and asserts monotonicity only within a run of one branch.
+- The pop is user-visible once per crossing and is FLIP-animated like every rail move (at0294); it happens only at the three moments ([P08]). Risk R05 records it.
+
+#### [P17] Comfort never outranks the user's drag: the comfort floor clamps under the preference (DECIDED) {#p17-comfort-under-preference}
+
+**Decision:** A rail's effective comfort floor is `comfortFloor_i = max(floor_i, min(comfort_i, pref_i))` — the registered comfort width, clamped from above by the rail's preference (which is the user's durable drag whenever one exists).
+
+**Rationale:**
+- Phase 2 clamps preferences only to the *hard* floor, so a user can stand the Gazette at 450, below its 512 comfort measure. Without this clamp, a crowded deck's target is `comfortBest ≥ Σ comfortFloor`, which exceeds the user's preferred total — the distribution then *grows* the dragged rail back to 512, widening it against the user's explicit choice and increasing the overlap by the same pixels. That is the "stubbornly wide" complaint resurfacing for exactly the user who tried to fix it by hand, and it is the [L23] violation this phase exists to delete.
+- The clamp also makes the two-tier drain structurally safe: with `comfortFloor_i ≤ pref_i`, every comfort-tier capacity (`standing − comfortFloor_i`) is non-negative. Without it, Phase 1's capacity arithmetic (which Spec S05 reuses) goes negative on a below-comfort preference and inflates `need` instead of draining it.
+
+**Implications:**
+- A user who never dragged the rail sees no difference: the registered preference (580) is above comfort (512), so `min(comfort, pref)` is the comfort width, and every prototype and Table T03/T04 number stands unchanged.
+- List L03 gains item 7: in the crowded regime the target never exceeds `Σ pref` — comfort never re-inflates a drag.
+- The dragged-below-comfort shape (Gazette preferred 450) joins the enumeration fixtures.
 
 ---
 
@@ -962,7 +995,7 @@ Replaces Spec S01 step 3. Signature and module unchanged; this is internal to `a
 
 Given the per-rail bounds from Spec S01 step 2, extended per Spec S06:
 
-1. **Domains.** `hardTotal = Σ floor_i`, `comfortTotal = Σ max(floor_i, min(comfort_i, ceil_i))`, `ceilTotal = Σ ceil_i`, `prefTotal = Σ pref_i`. Clamp `comfortTotal` into `[hardTotal, ceilTotal]`.
+1. **Domains.** For each rail, `comfortFloor_i = max(floor_i, min(comfort_i, pref_i))` — the comfort width clamped from above by the rail's own preference ([P17]), so a rail the user dragged below its comfort measure is never re-inflated past their choice. `pref_i` is already inside `[floor_i, ceil_i]` (Spec S01 step 2), so `comfortFloor_i` is too. Then `hardTotal = Σ floor_i`, `comfortTotal = Σ comfortFloor_i`, `ceilTotal = Σ ceil_i`, `prefTotal = Σ pref_i`; by construction `hardTotal ≤ comfortTotal ≤ prefTotal ≤ ceilTotal`.
 2. **Score.** For a candidate total `T`, build a `RailWidths` carrying **the same sides the answer will carry**, summing to `T` (any split — the picture depends only on the total; see #phase-2-assumptions), and read `seamPicture`. The score is the lexicographic key:
 
    ```
@@ -989,7 +1022,7 @@ Replaces Spec S01 step 4's deficit branch; the surplus branch is unchanged.
 
 Start every rail at `pref_i`. Let `need = Σ pref_i − target`.
 
-1. **Deficit, comfort tier.** Visit rails in reverse greed order (largest `greedRank` first). Shrink each toward `comfortFloor_i = max(floor_i, min(comfort_i, ceil_i))` until `need` is met. Equal ranks split their tier's delta evenly with one-pass remainder redistribution, exactly as today.
+1. **Deficit, comfort tier.** Visit rails in reverse greed order (largest `greedRank` first). Shrink each toward `comfortFloor_i` (Spec S04 step 1 — comfort clamped under the preference, [P17]) until `need` is met. Equal ranks split their tier's delta evenly with one-pass remainder redistribution, exactly as today. Because `comfortFloor_i ≤ pref_i` by construction, every comfort-tier capacity (`standing − comfortFloor_i`) is non-negative — without the [P17] clamp, Phase 1's capacity arithmetic would go negative on a below-comfort preference and inflate `need` instead of draining it.
 2. **Deficit, hard tier.** If `need` remains, visit rails again in reverse greed order, shrinking each from its comfort floor toward `floor_i`.
 3. **Surplus** — unchanged from Spec S01 step 4: greed order, growth bounded by `target` then `ceil_i`, preference is not a cap.
 4. **Rounding** — unchanged: round each width; the ≤R px residual stays with the band's travel.
@@ -1040,9 +1073,12 @@ Added to `layout-imposer-solutions.test.ts` alongside List L02, which is kept in
 1. **No avoidable overlap.** If any `T ∈ [Σ floor, Σ ceiling]` yields `worstOverlap == 0`, the answer's `worstOverlap` is 0.
 2. **No avoidable crowding.** Among totals with `worstOverlap == 0`, if any yields `worstShortfall == 0`, the answer's `worstShortfall` is 0.
 3. **Comfort is spent for a reason.** A rail is below its comfort floor only if no `T ≥ Σ comfort` yields zero overlap *and* some `T ≥ Σ hard` does.
-4. **The answer tracks the canvas.** For the Table T03 fixture across 1400 → 3400 in 100px steps, the answers take ≥ 8 distinct values.
+4. **The answer tracks the canvas.** For the Table T03 fixture across 1400 → 3400 in 100px steps, the answers take ≥ 5 distinct values (the 320/512 plateau from ~1700 to ~3100 is correct — nothing tiles there and comfort is rightly held), and across 3150 → 3350 in 10px steps ≥ 15 distinct values — the band where zero-overlap totals are reachable and the answer must track pixel-for-pixel.
 5. **The scan finds the true optimum.** On a representative subset, the coarse-to-fine result equals a full 1px exhaustive search ([P13]).
-6. **Everything in List L02 still holds** — totality, bounds, greed soundness (restated per tier, [P12]), tiling where exactly achievable, canvas monotonicity, stacking folds, tie fairness.
+6. **Everything in List L02 still holds** — totality, bounds, greed soundness (restated per tier, [P12]), tiling where exactly achievable, canvas monotonicity per regime ([P16] — asserted within a run of one comfort-rule branch, nothing asserted at a crossing), stacking folds, tie fairness.
+7. **Comfort never re-inflates a drag.** When no reachable total removes overlap, the target never exceeds `Σ pref` — a rail the user dragged below its comfort measure is never grown back by the comfort floor ([P17]). Asserted on the dragged-below-comfort fixture (Gazette preferred 450).
+
+**The oracle note — items 1–3 do not scan.** Every seam is non-increasing in the rails' total (`imposeRect`'s `max(0, …)` clamp only flattens the relationship, never reverses it), so `worstOverlap` and `worstShortfall` are monotone non-decreasing in the total and their minima over any `[lo, hi]` sit at `lo`. "Does any reachable total yield zero overlap" is therefore ONE `seamPicture` evaluation at `Σ hardFloor`, not a 1px scan — which is what keeps List L03 inside the sweep's ~5s budget (#phase-2-constraints). The same two evaluations (at `Σ hardFloor` and `Σ comfortFloor`) tell the sweep which comfort-rule branch fired, which is all [P16]'s per-regime assertion needs.
 
 #### Phase 2 State Zone Mapping {#phase-2-state-zone-mapping}
 
@@ -1085,7 +1121,7 @@ No new runtime state. No React, DOM or store surface is touched by this addendum
 **Tasks:**
 - [ ] Add the field, accessor and fold with doc comments stating the two-floor semantics: the hard floor is where the card stops being paintable *and* is what the user's resize drag clamps to (`tug-pane.tsx`); the comfort floor is what the allocator respects unless surrendering it removes overlap.
 - [ ] Split the Gazette's floor. Keep the 56ch derivation intact and rename its result to `COMFORT_GAZETTE_WIDTH_PX`; author `MIN_GAZETTE_WIDTH_PX = 400` beside it with a comment recording that at the landed `GAZETTE_BODY_CH_PX = 8.4` / `GAZETTE_ROW_CHROME_PX = 42` that is a measure of roughly 42 characters.
-- [ ] **Keep this step behavior-neutral in the solver:** `allocateSidebarWidths` continues to use a single effective floor of `max(minWidth, comfortWidth)`, so the answer is byte-identical to `931665ecc` and the golden table does not move. The relaxation is Step 9's.
+- [ ] **Keep this step behavior-neutral in the solver:** `allocateSidebarWidths` continues to use a single effective floor of `max(minWidth, comfortWidth)`, so the answer is byte-identical to `931665ecc` and the golden table does not move. The relaxation is Step 9's. **Scope the neutrality claim honestly:** lowering the Gazette's `sizePolicy.min.width` to 400 changes the user-facing drag floor in *this* step (`tug-pane.tsx` clamps the resize commit to it) — that is intended ([Q04], Risk R04) and the commit body says so, rather than claiming full neutrality.
 - [ ] Update at0365's measure pin: it asserts the *derived width formula*, which now produces `COMFORT_GAZETTE_WIDTH_PX`. Keep the formula assertion pointed at the comfort constant.
 
 **Tests:**
@@ -1120,7 +1156,10 @@ No new runtime state. No React, DOM or store surface is touched by this addendum
 - [ ] Implement Spec S05's two-tier deficit drain; leave the surplus branch and the tie-splitting exactly as they are.
 - [ ] Port the #phase-2-prototype table as one named unit test — canvases 1400 / 2000 / 3000 / 3200 / 3400 with their expected totals, comfort-spent flags, overlaps and errors — so the plan and the suite share an oracle, exactly as Phase 1's worked example does.
 - [ ] Add the specific repair case as its own test: the Table T04 fixture at canvas 3200 answers `{ left: 320, right: 450 }` with zero overlap and zero seam error.
-- [ ] Add the anti-flatness test (List L03 item 4) and the exhaustive cross-check (item 5).
+- [ ] Add the anti-flatness test (List L03 item 4, both granularities) and the exhaustive cross-check (item 5).
+- [ ] Implement List L03 items 1–3 with the monotone oracle, not a scan (the oracle note): one `seamPicture` evaluation at `Σ hardFloor` answers "was zero overlap reachable", one at `Σ comfortFloor` answers it for the comfort domain.
+- [ ] Restate the sweep's canvas-monotonicity assertion per [P16]: recompute the comfort-rule branch per canvas from the same two oracle evaluations and assert non-decreasing widths only within a run of one branch — nothing at a crossing.
+- [ ] Add the dragged-below-comfort fixture (Gazette preferred 450, below its 512 comfort) to the enumeration fixtures and assert List L03 item 7 on it.
 - [ ] Re-check Phase 1's `layout-imposer.test.ts` cases against the new objective and update the ones whose expected numbers legitimately move; each change gets a comment saying why the new number is right. Do not "fix" a test by loosening an assertion.
 
 **Tests:**
@@ -1207,7 +1246,8 @@ No new runtime state. No React, DOM or store surface is touched by this addendum
 |------------|--------------|
 | The repair itself | the Table T04 case: canvas 3200 → 320/450, zero overlap |
 | No avoidable overlap or crowding | List L03 items 1–3 over the full enumeration |
-| Resize is visibly alive | List L03 item 4 (≥ 8 distinct answers across the sweep) |
+| Resize is visibly alive | List L03 item 4 (≥ 5 across the coarse sweep; ≥ 15 across the 10px tracking band) |
+| A drag below comfort is honored | List L03 item 7 on the Gazette-450 fixture |
 | Search correctness | List L03 item 5 (scan vs exhaustive) |
 | Behavior drift | golden JSON diff, read and summarised (#step-10) |
 | It is actually good | the observed live-deck pass ([P15]) |
