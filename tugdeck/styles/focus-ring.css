@@ -111,7 +111,7 @@
      Paired width knob, because a dash at the ring's hairline 1.5px may not
      read: it defaults to the solid ring's width and exists so the chord ring
      can be thickened WITHOUT thickening every ring in the deck. */
-  --tugx-focus-ring-chord-style: dashed;
+  --tugx-focus-ring-chord-style: dotted;
   --tugx-focus-ring-chord-width: var(--tugx-focus-ring-width);
   /* Drag-and-drop accent ring thickness — one knob for every drop affordance
      (editor, composer input area, attachment zone, tab-bar drop targets). */
