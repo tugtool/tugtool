@@ -203,10 +203,19 @@
 
    Full-bleed, like `.session-card-entry-region`: the composer spans the
    card's whole width with no inset of its own. An entry inset here would be
-   a second composer geometry. */
+   a second composer geometry.
+
+   The top border is the separator between the transcript and the entry, the
+   Session card's rule restated: there it is the Z2 status bar's `border-top`
+   (`session-card.css`), here the composer's own, since the Gazette has no
+   status strip between the two. Same token, same 1px, so the two cards divide
+   reading from writing with one line. */
+/* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-composer-slot {
   min-block-size: 0;
   inline-size: 100%;
+  border-block-start: 1px solid
+    var(--tug7-element-global-border-normal-default-rest);
   --tugx-gazette-editor-base: var(--tug-font-size-editor, 14px);
 }
 
