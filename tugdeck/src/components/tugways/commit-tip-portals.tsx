@@ -11,9 +11,14 @@
  * out: an OS-drawn box in the system font, light in a dark theme.
  *
  * Portals bridge the two, exactly as {@link useSessionCitationPortals} does
- * for citation chips. The span keeps the words it always showed; what it
- * gains is a {@link TugTooltip} wrapped around them, carrying
- * {@link commitTip} — the same content every other commit surface shows.
+ * for citation chips. The portal renders the commit's **mention label** —
+ * `Commit <8ch>`, the same spelling every atom surface shows — wrapped in a
+ * {@link TugTooltip} carrying {@link commitTip}. The spelling the prose used
+ * is machine output, not authorship (git's short form lengthens with the
+ * repository, so raw shas drift between 7 and 12 characters post to post);
+ * it is preserved on {@link COMMIT_TEXT_ATTRIBUTE} for re-scan and unwrap,
+ * and the reader sees one uniform, worded form. See
+ * `tuglaws/entity-presentation.md`.
  *
  * **Emptying the host is safe here.** `dropStaleWraps` re-checks only the
  * kinds whose truth can change; a commit that resolved once stays resolved,
@@ -34,6 +39,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 
+import { SHA_DISPLAY_LEN } from "@/components/tugways/commit-sha-text";
 import { commitTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import type { CommitFacts } from "@/lib/annotator/commit-resolution";
@@ -53,8 +59,27 @@ interface CommitTipMount {
   host: HTMLElement;
   /** The sha as the payload recorded it — what the tip describes. */
   sha: string;
-  /** The spelling the prose used, which is what the span shows. */
+  /** The spelling the prose used — preserved for re-scan, not displayed. */
   text: string;
+  /**
+   * The prose immediately before the run already says "commit", so the
+   * label's word would double it: `Commit Commit 86af912c`. The sentence
+   * supplied the word; the label yields it and shows the hash alone.
+   */
+  worded: boolean;
+}
+
+/**
+ * Prose that ends by saying the word itself — `Commit `, `commit: `,
+ * `Commit #` — right where the run begins.
+ */
+const WORDED_BEFORE = /commit[:#]?\s*$/i;
+
+/** Whether the text just before `host` already supplies the word. */
+function wordedByProse(host: HTMLElement): boolean {
+  const before = host.previousSibling;
+  if (before === null || before.nodeType !== Node.TEXT_NODE) return false;
+  return WORDED_BEFORE.test((before as Text).data);
 }
 
 /**
@@ -90,7 +115,7 @@ export function useCommitTipPortals(
         host.setAttribute(COMMIT_TEXT_ATTRIBUTE, text);
         host.textContent = "";
       }
-      next.push({ host, sha, text });
+      next.push({ host, sha, text, worded: wordedByProse(host) });
     }
     // Rebuild rather than merge, and only publish a change: a pass that finds
     // the same spans it found last time must not re-render every tip, and a
@@ -98,15 +123,19 @@ export function useCommitTipPortals(
     setMounts((prev) => (sameMounts(prev, next) ? prev : next));
   }, []);
 
-  const portals = mounts.map(({ host, sha, text }) => {
+  const portals = mounts.map(({ host, sha, worded }, index) => {
     const verdict = resolveCommit?.(sha) ?? { state: "unknown" as const };
     const facts: CommitFacts | null =
       verdict.state === "confirmed" ? verdict.facts : null;
-    // A span the pass marked but the resolver can no longer describe still
-    // shows its words — it just has nothing to say on hover.
+    // The mention label, not the prose spelling: `Commit <8ch>`, the same
+    // worded form every atom surface shows — unless the sentence already
+    // said the word, in which case the hash alone completes it. The
+    // as-written characters stay on the host attribute; what the reader
+    // sees is uniform.
     // A plain span, because the tooltip's trigger has to be an element and
     // the mark's own appearance is already on the host it portals into.
-    const run = <span>{text}</span>;
+    const short = sha.slice(0, SHA_DISPLAY_LEN);
+    const run = <span>{worded ? short : `Commit ${short}`}</span>;
     return createPortal(
       facts === null ? (
         run
@@ -126,7 +155,9 @@ export function useCommitTipPortals(
         </TugTooltip>
       ),
       host,
-      `commit-tip:${sha}:${text}`,
+      // Indexed, because one post can cite the same sha twice — two hosts,
+      // one sha, and a sha-only key would collide.
+      `commit-tip:${index}:${sha}`,
     );
   });
 
@@ -139,5 +170,10 @@ function sameMounts(
   b: readonly CommitTipMount[],
 ): boolean {
   if (a.length !== b.length) return false;
-  return a.every((mount, i) => mount.host === b[i]!.host && mount.sha === b[i]!.sha);
+  return a.every(
+    (mount, i) =>
+      mount.host === b[i]!.host &&
+      mount.sha === b[i]!.sha &&
+      mount.worded === b[i]!.worded,
+  );
 }

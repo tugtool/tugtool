@@ -29,7 +29,7 @@ Four words, used precisely. A change that renames them is fine; a change that bl
 - **Atom** — the rendering of a *placed* value. Shows a **name**, never the raw value. Two skins, never more.
 - **Editable skin** — the boxed chip (`TugAtomChip`, and the CM6 `createAtomImgElement`). Only where the object can be selected, deleted, or dragged **in place**: the composer, and its echo in the submitted message.
 - **Read-only skin** — glyph plus label, transparent, no border (`TugAtomRef`). Everywhere else a placed value appears: tool-call headers, pulse beats, Gazette trailing refs, commit receipts, History rows.
-- **Mention** — the rendering of a *written* value: the characters exactly as written, plus the resting rule when a resolver confirms them.
+- **Mention** — the rendering of a *written* value: the characters exactly as written, plus the resting rule when a resolver confirms them. One kind is normalized rather than as-written: a confirmed commit sha displays as `Commit <8ch>` (see below), because a sha's spelling is git's output, not the author's prose.
 
 There is no third form. "Chip", "ref", and "citation" are legacy words for one of the two skins and are not separate concepts.
 
@@ -95,9 +95,13 @@ An inline `<code>` span with no annotation matches nothing and looks exactly as 
 
 An atom's label is a **name**, never the raw value. A file atom shows its basename. A commit atom shows `Commit 227a8eb9`.
 
-The word is part of the label because an atom stands with no sentence around it. Eight bare hex characters name nothing a reader can act on, and a small glyph does not rescue them. A sha *written in prose* needs no help, because the sentence supplies the word — and adding one would be the same fidelity violation as replacing the characters with a box.
+The word is part of the label because an atom stands with no sentence around it. Eight bare hex characters name nothing a reader can act on, and a small glyph does not rescue them.
 
-One consequence worth stating: because the label is what the DOM holds, and plain copy writes the selection's own text, the label is also the clipboard spelling. One string, not two.
+**A confirmed commit mention takes the same label.** The as-written rule protects authorship, and a sha's spelling has none to protect: the author pasted whatever short form git happened to emit, and git's short form lengthens with the repository, so raw shas drift between 7 and 12 characters from one post to the next. That variance is machine noise wearing the costume of prose. So a commit sha the resolver confirms displays as `Commit <8ch>` wherever it was written — Gazette posts, session transcripts — via the tip portal that already owns the span (`useCommitTipPortals`), with the written characters preserved on `data-tugx-commit-text` for re-scan and for the unwrap path. When the prose immediately before the run already ends with the word — `Commit abc123def`, `commit: abc123def` — the label yields it and shows the hash alone, so the sentence never reads `Commit Commit`. An *unconfirmed* hex run stays exactly as written: normalization is earned by the verdict, and prose that merely looks sha-shaped is never rewritten.
+
+This is deliberately narrower than it looks. File paths, commands, and session refs stay as-written — their spelling *is* authorship (a relative vs. absolute path, a flag order, a nickname). The commit sha is the one entity whose written form carries zero authorial intent, which is why it is the one entity that normalizes.
+
+One consequence worth stating: because the label is what the DOM holds, and plain copy writes the selection's own text, the label is also the clipboard spelling. One string, not two — and for a commit mention that string is `Commit <8ch>`, the same one the atom's right-click Copy writes.
 
 ## Why prose mentions are not atoms
 

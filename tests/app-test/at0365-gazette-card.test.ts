@@ -275,7 +275,7 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           id: 9003,
           at_ms: AT_MS + 120_000,
           author: "reporter",
-          body: `Commit ${HEAD_SHA.slice(0, 12)} landed the sticky-header fixes.`,
+          body: `Commit ${HEAD_SHA.slice(0, 12)} landed the sticky-header fixes; verified against ${HEAD_SHA.slice(0, 12)}.`,
           refs: [],
           wake_reason: "turn-end",
           project_dir: REPO_ROOT,
@@ -403,31 +403,44 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           `document.querySelector(${JSON.stringify(INLINE_COMMIT)}) !== null`,
           { timeoutMs: 25_000 },
         );
-        const inlineCommit = await app.evalJS<{
-          text: string;
-          sha: string | null;
-          root: string | null;
-          title: string | null;
-        } | null>(
+        const inlineCommits = await app.evalJS<
+          {
+            text: string;
+            sha: string | null;
+            root: string | null;
+            title: string | null;
+          }[]
+        >(
           `(function () {
-            var el = document.querySelector(${JSON.stringify(INLINE_COMMIT)});
-            if (el === null) return null;
-            return {
-              text: (el.textContent || "").trim(),
-              sha: el.getAttribute("data-sha"),
-              root: el.getAttribute("data-root"),
-              title: el.getAttribute("title"),
-            };
+            var els = document.querySelectorAll(${JSON.stringify(INLINE_COMMIT)});
+            return Array.prototype.map.call(els, function (el) {
+              return {
+                text: (el.textContent || "").trim(),
+                sha: el.getAttribute("data-sha"),
+                root: el.getAttribute("data-root"),
+                title: el.getAttribute("title"),
+              };
+            });
           })()`,
         );
-        note("inline commit mention", JSON.stringify(inlineCommit));
-        expect(inlineCommit?.text).toBe(HEAD_SHA.slice(0, 12));
-        expect(inlineCommit?.sha).toBe(HEAD_SHA.slice(0, 12));
-        expect(inlineCommit?.root?.startsWith("/")).toBe(true);
-        // The hover is the app's own bubble, not the OS's: the mark carries no
-        // native title at all, and what a reader sees is a TugTooltip mounted
-        // onto it by the annotator's portal layer.
-        expect(inlineCommit?.title).toBeNull();
+        note("inline commit mentions", JSON.stringify(inlineCommits));
+        expect(inlineCommits.length, "the body cites the sha twice").toBe(2);
+        // The reader sees the mention label — `Commit <8ch>`, the worded,
+        // uniform form — while the payload keeps the sha as the prose spelled
+        // it (12 characters here), which is what the resolver was asked about.
+        // The first citation follows the word "Commit" in the sentence
+        // itself, so the label yields the word and shows the hash alone; the
+        // second stands wordless in its clause and the label supplies it.
+        expect(inlineCommits[0]?.text).toBe(HEAD_SHA.slice(0, 8));
+        expect(inlineCommits[1]?.text).toBe(`Commit ${HEAD_SHA.slice(0, 8)}`);
+        for (const mention of inlineCommits) {
+          expect(mention.sha).toBe(HEAD_SHA.slice(0, 12));
+          expect(mention.root?.startsWith("/")).toBe(true);
+          // The hover is the app's own bubble, not the OS's: the mark carries
+          // no native title at all, and what a reader sees is a TugTooltip
+          // mounted onto it by the annotator's portal layer.
+          expect(mention.title).toBeNull();
+        }
 
         // Hover it and read the tip: the commit's own subject, its shape, and
         // the whole hash — read off this checkout's real HEAD, so a wrong
