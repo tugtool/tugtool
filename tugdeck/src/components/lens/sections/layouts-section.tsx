@@ -33,7 +33,11 @@
  * diff them; here the options are words and numerals, and the *plan* is where
  * an option shows what it would do — resting a pointer on a segment, or
  * standing the movement cursor on it, swaps the plan for that option's
- * arrangement, drawn tentative (tinted blocks) rather than committed (filled).
+ * arrangement, drawn tentative (hollow blocks) rather than committed (filled).
+ *
+ * The plan is a readout, and takes no pointer at all (`pointer-events: none`):
+ * it is drawn in chrome neutrals rather than the control palette, and the hand
+ * that tries it finds nothing to press.
  *
  * The previews are pre-rendered: React renders one hidden plan layer per
  * offerable option from the same store read as the committed layer, and the
@@ -541,7 +545,7 @@ function LayoutsSectionBody({
               rails={rails}
               railModes={railModes}
               width={contentWidth}
-              selected
+              committed
             />
           </div>
           {layers.map((layer) => (

@@ -17,11 +17,17 @@
    one layer shows at a time — the committed layer at rest, or the layer whose
    `data-plan-preview-id` the hover/cursor handlers marked `data-plan-active`.
    Every layer has the same structure, so swapping layers never moves the
-   section's height. */
+   section's height.
+
+   The plan takes no pointer. It is a statement of what the deck is doing, and
+   the rows below it are where that statement is changed — so hovering it gives
+   no cursor, selects no text and reacts in no way, and a hover crossing it on
+   the way to a control is not a hover the section has to answer. */
 .layouts-plan {
   display: flex;
   flex-direction: column;
   align-items: center;
+  pointer-events: none;
 }
 
 /* The summary stands OFF the drawing rather than sitting on it: two lines of

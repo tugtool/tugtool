@@ -101,8 +101,13 @@ export interface LayoutMiniatureProps {
    * rail's. Omitted, the cards are drawn at the widest preset.
    */
   width?: ContentWidth;
-  /** Draw the arrangement as the chosen one. */
-  selected?: boolean;
+  /**
+   * Draw the arrangement as the one the deck is standing under — solid blocks.
+   * Omitted, the drawing is a proposal and its blocks are hollow: the plan
+   * layer a hovered or cursored segment shows is an arrangement being
+   * auditioned, not one in force.
+   */
+  committed?: boolean;
 }
 
 /** The air between two members of a divided rail, in percent of the drawing's
@@ -186,7 +191,7 @@ export function LayoutMiniature({
   railModes,
   cards = true,
   width,
-  selected = false,
+  committed = false,
 }: LayoutMiniatureProps): React.ReactElement {
   const left = rails.left ?? 0;
   const right = rails.right ?? 0;
@@ -217,7 +222,7 @@ export function LayoutMiniature({
   return (
     <span
       className="layout-mini"
-      data-selected={selected ? "true" : undefined}
+      data-committed={committed ? "true" : undefined}
       aria-hidden="true"
     >
       {left > 0 ? (
