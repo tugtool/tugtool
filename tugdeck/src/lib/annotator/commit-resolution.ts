@@ -30,7 +30,10 @@ import { FeedStore } from "../feed-store";
 import { FeedId } from "../../protocol";
 import { getConnection } from "../connection-singleton";
 import type { TugConnection } from "../../connection";
-import { parseGitCommitFilesPayload } from "../git-commit-files-store";
+import {
+  parseGitCommitFilesPayload,
+  type GitCommitFile,
+} from "../git-commit-files-store";
 
 /** How long one query may go unanswered before it is re-queued. */
 const QUERY_TIMEOUT_MS = 8000;
@@ -42,14 +45,30 @@ const QUERY_TIMEOUT_MS = 8000;
  */
 const MAX_QUERY_ATTEMPTS = 3;
 
+/** What a confirmed commit turned out to be — the hover's whole substance. */
+export interface CommitFacts {
+  /** The subject line. Empty on a payload older than the field. */
+  subject: string;
+  /** Author name; empty for the same reason. */
+  author: string;
+  /** Author date, `YYYY-MM-DD`. */
+  date: string;
+  /** Every file the commit touched, with its status and ± counts. */
+  files: GitCommitFile[];
+}
+
 /** What is known about a commit-sha candidate. */
 export type CommitVerdict =
   /** Never asked, or asked and the answer was lost. Not actionable. */
   | { state: "unknown" }
   /** A query is in flight. Not actionable yet. */
   | { state: "pending" }
-  /** A real commit. Actionable, and these are the files it touched. */
-  | { state: "confirmed"; paths: string[] }
+  /**
+   * A real commit. Actionable: `paths` scopes the diff a click opens, and
+   * `facts` is what a hover says this sha IS — a bare hash names nothing on
+   * its own, so the answer that verifies it also has to describe it.
+   */
+  | { state: "confirmed"; paths: string[]; facts: CommitFacts }
   /** Not a commit in this repository. Never actionable. */
   | { state: "missing" };
 
@@ -175,7 +194,16 @@ export class CommitResolutionStore {
         pending.sha,
         parsed.files.length === 0
           ? MISSING
-          : { state: "confirmed", paths: parsed.files.map((f) => f.path) },
+          : {
+              state: "confirmed",
+              paths: parsed.files.map((f) => f.path),
+              facts: {
+                subject: parsed.subject,
+                author: parsed.author,
+                date: parsed.date,
+                files: parsed.files,
+              },
+            },
       );
       this.notify();
     }

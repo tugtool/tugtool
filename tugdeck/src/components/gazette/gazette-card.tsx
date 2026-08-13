@@ -17,15 +17,28 @@
  * selectable prose; ⌘C and the right-click menu work per row through the
  * shared transcript cell wiring.
  *
- * A body that mentions one of its own refs — a path by full spelling or
- * basename, a sha at any length — renders that mention as an inline atom;
- * refs the prose does not mention ride the Z1B as {@link TugAtomChip}s — the
- * app's one atom, not a Gazette look-alike. A ref becomes actionable only
- * once the annotator's resolvers confirm it against the post's own
- * `projectDir` ({@link resolveGazetteRef}); a confirmed atom is stamped with
- * the full annotation payload, so the registry's click and context menu are
- * its gesture, and an unconfirmed one is inert with the reason on its
- * tooltip.
+ * **The prose is annotated, not matched.** A post body goes through the
+ * app's own content annotator (`useAnnotatedElement`, the opt-in a Bash
+ * tool header takes), which scans the text and marks every path and every
+ * sha it finds, against resolvers pointed at that post's own `projectDir`.
+ * So a file named in a sentence is clickable because it is in the sentence.
+ * The refs the model listed alongside its prose are a SEPARATE list, written
+ * independently and overlapping only by accident; they are used for one
+ * thing, the trailing provenance strip, and only for the entries the prose
+ * never named ({@link unmentionedRefs}).
+ *
+ * That split is the correction to what this did before: a bespoke matcher
+ * placed atoms by looking for the ref list's targets inside the body, so a
+ * mention the model had not also listed stayed dead text while an unrelated
+ * listed ref was appended as a chip — the prose and the atoms describing
+ * two different things. The annotator has no such blind spot.
+ *
+ * A trailing chip is the app's own {@link TugAtomChip}, resolved through
+ * {@link resolveGazetteRef} and stamped with the full annotation payload so
+ * the registry's click and context menu are its gesture; an unconfirmed ref
+ * is inert with the reason on its tooltip. A commit chip names itself —
+ * `Commit: <8ch>` — because unlike an inline mention it has no sentence
+ * around it, and its hover carries the commit's subject, author and files.
  *
  * The composer is the session prompt-entry's core: a {@link TugEntryShell}
  * holding the CM6 {@link TugTextEditor} substrate (with `@` file-atom
@@ -73,13 +86,23 @@ import {
   TugTranscriptEntry,
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
-import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import {
+  AnnotationScope,
+  useAnnotatedElement,
+} from "@/components/tugways/annotation-scope";
+import { ANNOTATION_CLASS, type AnnotationContext } from "@/lib/annotator/types";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
-import { commitResolverFor } from "@/lib/annotator/commit-resolution";
+import {
+  commitResolverFor,
+  NO_COMMIT_VERDICT,
+} from "@/lib/annotator/commit-resolution";
+import { COMMIT_LABEL_LENGTH } from "@/lib/annotator/commit-summary";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
 import { annotationEntryFor } from "@/lib/annotator/registry";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
 import { dataAttributesForPayload } from "@/lib/annotator/payloads";
+import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { VerdictBatcher } from "@/lib/annotator/verdict-batching";
 import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
 import {
   acquireWorkspace,
@@ -90,10 +113,7 @@ import { EditorSettingsStore } from "@/lib/editor-settings-store";
 import { FeedStore } from "@/lib/feed-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
-import {
-  inlineRefTargets,
-  segmentGazetteBody,
-} from "@/lib/gazette-body-segments";
+import { unmentionedRefs } from "@/lib/gazette-body-segments";
 import {
   resolveGazetteRef,
   type GazetteRefResolution,
@@ -189,7 +209,10 @@ function annotationProps(
       // Opening a card must not move DOM focus with the press.
       "data-tug-focus": "refuse",
       "data-no-activate": "",
-      title: `${ref.kind}: ${ref.target}`,
+      // A commit's hover is the summary the verdict carried — subject,
+      // author, and what it touched. Everything else is named by its label
+      // already, so the path is all its hover needs to add.
+      title: resolution.title ?? `${ref.kind}: ${ref.target}`,
     };
   }
   return {
@@ -228,9 +251,12 @@ function RefAtom({
     return <TugSessionCitation citedId={chipRef.target} />;
   }
   const resolution = resolveGazetteRef(chipRef, root);
+  // A chip stands alone with no sentence around it, so a bare hash names
+  // nothing a reader can use. The word is part of the label for that reason
+  // — an inline mention needs none, because the prose supplies it.
   const label =
     chipRef.kind === "commit"
-      ? chipRef.target.slice(0, 8)
+      ? `Commit: ${chipRef.target.slice(0, COMMIT_LABEL_LENGTH)}`
       : (chipRef.target.split("/").pop() ?? chipRef.target);
   const isDir =
     resolution.state === "actionable" &&
@@ -254,85 +280,95 @@ function RefAtom({
 }
 
 /**
- * A post body with its ref mentions rendered as inline atoms. Plain runs stay
- * plain (and selectable); a run that mentions a session ref mounts the live
- * {@link TugSessionCitation}; a run that spells a resolved commit becomes the
- * commit atom in place, showing its 8-character prefix; and a file-shaped
- * mention becomes an annotated span wearing the annotator's
- * `data-tugx-wrapped` contract — resting-plain, hover reveals the affordance,
- * exactly as detected entities read in the Session transcript. A mention
- * whose ref has not been confirmed stays plain prose: text promises nothing,
- * so it never has to break a promise. The click is serviced by the
- * transcript root's delegated listener, not per-span handlers.
+ * The annotator's inputs for one post, bound to that post's OWN repository.
+ *
+ * The Session transcript's {@link useAnnotationContext} reads its project
+ * from the card's session binding, which the Gazette has none of: the card
+ * is app-wide and each post narrates a different session. So the root is the
+ * post's, acquired from its `projectDir`, and every post gets a context
+ * pointing at the repo its prose was written about — which is what lets a
+ * post from a closed session, read days later, still resolve.
+ *
+ * No command catalog: with no live session there is no authoritative list,
+ * and an unconfirmable command stays plain text, which is the right answer
+ * rather than a missing one.
+ */
+function useGazetteAnnotation(root: GazetteRefRoot | null): AnnotationContext {
+  const projectDir = root?.projectDir ?? null;
+  const workspaceKey = root?.workspaceKey ?? null;
+  const names = fileNameResolverFor(projectDir, workspaceKey);
+  const commits = commitResolverFor(projectDir, workspaceKey);
+  const resolvePath = useMemo(
+    () =>
+      makeReferenceResolver({
+        paths: pathResolutionStore,
+        names,
+        // Relative paths in the prose are relative to the narrated session's
+        // project, the same root its refs were spelled under.
+        cwd: projectDir,
+      }),
+    [names, projectDir],
+  );
+  const resolveCommit = useMemo(
+    () => (sha: string) => commits?.lookup(sha) ?? NO_COMMIT_VERDICT,
+    [commits],
+  );
+  const subscribe = useMemo(() => {
+    const sources = [pathResolutionStore, names, commits].filter(
+      (source): source is NonNullable<typeof source> => source !== null,
+    );
+    return new VerdictBatcher(sources).subscribe;
+  }, [names, commits]);
+  return useMemo(
+    () => ({
+      isKnownSlashCommand: () => false,
+      resolvePath,
+      resolveCommit,
+      commitRoot: projectDir,
+      // A Reporter post is a digest of file work; a path-shaped token in one
+      // of its sentences is pointing at that file. See the field's own note.
+      proseCitesPaths: true,
+      subscribe,
+    }),
+    [resolvePath, resolveCommit, projectDir, subscribe],
+  );
+}
+
+/**
+ * A post body, annotated by the app's own content annotator.
+ *
+ * The body is plain text — the model's prose, newlines and all — and the
+ * annotator walks it the way it walks every other non-markdown surface
+ * (`useAnnotatedElement`, the same opt-in a Bash tool header takes). It
+ * finds the paths and the shas itself, by scanning, and marks each one that
+ * its resolvers confirm: a file that stats, a commit git can show. So a
+ * mention becomes clickable because it is IN the sentence, not because the
+ * model happened to list it — which is the whole difference from what this
+ * did before, when a bespoke matcher could only ever find targets the ref
+ * list already named and left everything else as dead text.
+ *
+ * Nothing here places anything: the marks land in the prose where the prose
+ * put them. The click and the context menu are serviced by the transcript
+ * root's delegated listener, reading the same dataset every annotated
+ * element in the app carries.
  */
 function GazettePostBody({
   post,
-  root,
   bodyRef,
 }: {
   post: GazettePostEntry;
-  root: GazetteRefRoot | null;
   bodyRef?: React.MutableRefObject<HTMLElement | null>;
 }): React.ReactElement {
-  const segments = useMemo(
-    () => segmentGazetteBody(post.body, post.refs),
-    [post],
-  );
+  const annotatedRef = useAnnotatedElement<HTMLParagraphElement>([post.body]);
   return (
     <p
       className="gazette-post-body"
       ref={(el) => {
+        annotatedRef.current = el;
         if (bodyRef !== undefined) bodyRef.current = el;
       }}
     >
-      {segments.map((seg, i) => {
-        if (seg.ref === null) {
-          return <React.Fragment key={i}>{seg.text}</React.Fragment>;
-        }
-        if (seg.ref.kind === "session") {
-          return (
-            <TugSessionCitation
-              key={i}
-              citedId={seg.ref.target}
-              className="gazette-body-atom"
-            />
-          );
-        }
-        const resolution = resolveGazetteRef(seg.ref, root);
-        if (resolution.state !== "actionable") {
-          return <React.Fragment key={i}>{seg.text}</React.Fragment>;
-        }
-        if (seg.ref.kind === "commit") {
-          // The mention becomes the atom itself: an 8-character prefix chip
-          // standing where the prose spelled the sha, however long it spelled
-          // it. The full sha rides the value, the tooltip, and every copy
-          // path through the stamped payload.
-          return (
-            <span
-              key={i}
-              {...annotationProps(seg.ref, resolution)}
-              className={`${ANNOTATION_CLASS} gazette-body-atom`}
-            >
-              <TugAtomChip
-                className="tug-atom-chip"
-                type="commit"
-                label={seg.ref.target.slice(0, 8)}
-                value={seg.ref.target}
-              />
-            </span>
-          );
-        }
-        return (
-          <span
-            key={i}
-            data-tugx-wrapped=""
-            {...annotationProps(seg.ref, resolution)}
-            className={`${ANNOTATION_CLASS} gazette-body-atom`}
-          >
-            {seg.text}
-          </span>
-        );
-      })}
+      {post.body}
     </p>
   );
 }
@@ -510,20 +546,23 @@ function GazettePostRow({
     post.wakeReason !== null
       ? `${authorLabel} — ${post.wakeReason}`
       : undefined;
-  const inlined = useMemo(
-    () => inlineRefTargets(segmentGazetteBody(post.body, post.refs)),
+  const annotation = useGazetteAnnotation(root);
+  // A ref the prose already names is already clickable where the reader is
+  // reading — the annotator marked it in the sentence — so a chip for it
+  // would be the same thing twice. What is left is provenance the sentence
+  // never got to. The narrated session's citation rides the header, so its
+  // chip is redundant for the same reason.
+  const chipRefs = useMemo(
+    () =>
+      unmentionedRefs(post.body, post.refs).filter(
+        (r) => !(r.kind === "session" && r.target === post.sessionId),
+      ),
     [post],
-  );
-  // Refs the prose already carries inline need no chip; the narrated
-  // session's citation rides the header, so its chip is redundant too.
-  const chipRefs = post.refs.filter(
-    (r) =>
-      !inlined.has(r.target) &&
-      !(r.kind === "session" && r.target === post.sessionId),
   );
   return (
     <ResponderScope>
       <div className="gazette-cell" data-author={post.author} {...cellProps}>
+        <AnnotationScope value={annotation}>
         <TugTranscriptEntry
           className="gazette-post"
           participant={AUTHOR_PARTICIPANT[post.author]}
@@ -541,10 +580,18 @@ function GazettePostRow({
               />
             ) : null
           }
-          body={<GazettePostBody post={post} root={root} bodyRef={bodyRef} />}
+          body={<GazettePostBody post={post} bodyRef={bodyRef} />}
           controls={
-            <GazettePostZ1B post={post}>
+            <>
+              <GazettePostZ1B post={post} />
               {chipRefs.length > 0 ? (
+                // Its OWN row, beneath the control line rather than inside
+                // it. Sharing the Z1B's flex meant the atoms queued after
+                // OK / elapsed / COPY and wrapped wherever the width ran
+                // out, so where a chip landed said nothing about what it
+                // was — the "spewed out at random positions" reading. On a
+                // row of their own they are a provenance strip: same place
+                // every time, however many there are.
                 <div className="gazette-post-refs">
                   {chipRefs.map((r) => (
                     <RefAtom
@@ -555,9 +602,10 @@ function GazettePostRow({
                   ))}
                 </div>
               ) : null}
-            </GazettePostZ1B>
+            </>
           }
         />
+        </AnnotationScope>
         {menu}
       </div>
     </ResponderScope>

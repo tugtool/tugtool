@@ -22,14 +22,17 @@
  *     `publishGazettePost`, which hands the bytes to the production parser and
  *     the production fold, so what lands on screen came off the same code path a
  *     live Reporter's would. Asserted: one row per post, in arrival order, each
- *     carrying its author's glyph, and a post's refs rendering in the Z1B as
- *     the app's own atom chips, labelled by the target's last segment.
- *     The refs are REAL: the posts carry this repo as their `project_dir`, the
- *     ref target is a file that exists, and the commit sha is this checkout's
- *     own HEAD — so the assertions watch the production resolution chain
- *     (workspace acquire → fs stat / git commit-files) confirm them and stamp
- *     the full annotation payload onto the atoms. A commit mention in the
- *     prose renders as the commit atom in place, showing its 8-char prefix.
+ *     carrying its author's glyph, and a post's unmentioned refs rendering
+ *     as the app's own atom chips, labelled by the target's last segment.
+ *     Everything is REAL: the posts carry this repo as their
+ *     `project_dir`, the paths exist, and the sha is this checkout's own
+ *     HEAD, so the assertions watch the production chain (workspace acquire
+ *     → fs stat / git commit-files) confirm them. The load-bearing claim is
+ *     that the PROSE is annotated: a file and a sha named in a sentence but
+ *     absent from the post's ref list still become clickable, because the
+ *     content annotator scans the text rather than matching the ref list.
+ *     The ref list feeds only the trailing provenance strip, and only for
+ *     entries the prose never named.
  *  3. **The composer completes a round trip.** Typing a question and pressing
  *     the send button sends GAZETTE_INPUT; the Operator echoes the question as a user post
  *     and then answers. Under the app-test gate the agent pool answers nothing
@@ -58,6 +61,7 @@
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
+ * @covers tugdeck/src/lib/annotator/commit-summary.ts
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  */
@@ -107,6 +111,11 @@ const REPO_ROOT = resolve(import.meta.dir, "../..");
 
 /** This checkout's own HEAD — a sha `git show` genuinely answers for. */
 const HEAD_SHA = execSync("git rev-parse HEAD", { cwd: REPO_ROOT })
+  .toString()
+  .trim();
+
+/** Its subject line — what a hover over that sha has to be able to say. */
+const HEAD_SUBJECT = execSync("git log -1 --format=%s HEAD", { cwd: REPO_ROOT })
   .toString()
   .trim();
 
@@ -217,11 +226,17 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           { timeoutMs: 10_000 },
         );
 
+        // The post shape that exposed the old matcher: the prose names one
+        // real file, and the ref list names a DIFFERENT one. The mention has
+        // to atomize because it is in the sentence — no ref backs it — and
+        // the unmentioned ref has to ride the trailing strip. Under the old
+        // ref-matching placement the sentence stayed dead text and only the
+        // unrelated chip appeared.
         const reporterPost: WirePost = {
           id: 9001,
           at_ms: AT_MS,
           author: "reporter",
-          body: "Reworked the layout imposer's sidebar pin.",
+          body: "Reworked gazette-ref-resolve.ts and left the imposer alone.",
           refs: [{ kind: "file", target: "tugdeck/src/lib/layout-imposer.ts" }],
           wake_reason: "sitrep",
           // The turn that wrote it took this long — tugcast clocks the agent
@@ -236,15 +251,16 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           body: "Two sessions touched that file today.",
           refs: [],
         };
-        // A commit spelled in the prose at 12 characters, backed by a ref
-        // whose sha this checkout genuinely holds — the mention becomes the
-        // commit atom in place once git confirms it.
+        // The commit half of the same shape: a sha spelled in the prose with
+        // NO commit ref at all behind it. Git confirms it, so it annotates —
+        // the case where the model cited one sha in the sentence and listed
+        // another in its refs, and the sentence's went unmarked.
         const commitPost: WirePost = {
           id: 9003,
           at_ms: AT_MS + 120_000,
           author: "reporter",
           body: `Commit ${HEAD_SHA.slice(0, 12)} landed the sticky-header fixes.`,
-          refs: [{ kind: "commit", target: HEAD_SHA.slice(0, 12) }],
+          refs: [],
           wake_reason: "turn-end",
           project_dir: REPO_ROOT,
         };
@@ -280,12 +296,16 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           expect(row.glyph, `${row.author}'s row carries a glyph`).toBe(true);
         }
 
-        // A ref the prose did not spell out rides the Z1B as an ATOM — the
-        // app's own `TugAtomChip`, labelled by the target's last segment, with
-        // the whole path on the wrapper's tooltip because the rail is too
-        // narrow to spell a path twice.
+        // A ref the prose did not name rides the trailing strip as an ATOM —
+        // the app's own `TugAtomChip`, labelled by the target's last segment,
+        // with the whole path on the wrapper's tooltip because the rail is
+        // too narrow to spell a path twice.
         expect(rows[0]!.chips).toEqual(["layout-imposer.ts"]);
         expect(rows[1]!.chips, "a post with no refs shows no atoms").toEqual([]);
+        expect(
+          rows[2]!.chips,
+          "the sha is in the sentence, so it needs no chip repeating it",
+        ).toEqual([]);
 
         // Every post carries the transcript's own end-state row under its
         // body: the OK badge and the text+icon COPY, in the Session card's
@@ -304,24 +324,82 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           "s•",
         );
 
-        // ── 2b. The refs RESOLVE — the chain is the production one. ────────
-        // The post's project_dir earns a browse workspace, the target stats
-        // through /api/fs/stat, and only then is the atom stamped with the
-        // full annotation payload (`data-path` carrying the canonical
-        // absolute path) that makes the registry's click and menu its
-        // gesture. A kind attribute alone would be the half-stamped bug this
-        // build fixed — so the payload dataset is exactly what is asserted.
+        // ── 2b. The PROSE is annotated, by the app's own annotator. ───────
+        // This is the claim the card exists to keep: a file named in a
+        // sentence becomes clickable because it is in the sentence. Post 1's
+        // body names `gazette-ref-resolve.ts` and its ref list does NOT —
+        // under the ref-matching placement this replaced, that mention could
+        // never be found, because the matcher only ever looked for targets
+        // the model had already listed. The mark is the annotator's own
+        // (`data-tugx-wrapped` + the payload dataset), so the click, the
+        // menu and the hover are the same ones every annotated surface has.
+        const INLINE_FILE = `${POST} .gazette-post-body [data-tugx-wrapped][data-tug-annotation="file-path"]`;
         await app.waitForCondition<boolean>(
           `(function () {
-            var wrap = document.querySelector('[data-gazette-ref-kind="file"]');
-            var path = wrap === null ? null : wrap.getAttribute("data-path");
-            return path !== null &&
-              path.indexOf("/") === 0 &&
-              path.indexOf("tugdeck/src/lib/layout-imposer.ts") !== -1;
+            var el = document.querySelector(${JSON.stringify(INLINE_FILE)});
+            var path = el === null ? null : el.getAttribute("data-path");
+            return path !== null && path.indexOf("gazette-ref-resolve.ts") !== -1;
           })()`,
-          { timeoutMs: 15_000 },
+          { timeoutMs: 20_000 },
         );
-        const fileStamp = await app.evalJS<{
+        const inlineFile = await app.evalJS<{
+          text: string;
+          path: string | null;
+        } | null>(
+          `(function () {
+            var el = document.querySelector(${JSON.stringify(INLINE_FILE)});
+            if (el === null) return null;
+            return {
+              text: (el.textContent || "").trim(),
+              path: el.getAttribute("data-path"),
+            };
+          })()`,
+        );
+        note("inline file mention", JSON.stringify(inlineFile));
+        // Marked in place: the run is the words the model wrote, and the
+        // payload is the absolute path the resolver confirmed.
+        expect(inlineFile?.text).toBe("gazette-ref-resolve.ts");
+        expect(inlineFile?.path?.startsWith("/")).toBe(true);
+
+        // The commit half, same claim: a sha spelled in the prose with no ref
+        // behind it at all. Git confirms it, and the answer that verifies it
+        // also describes it — the hover carries the subject and the file
+        // count, because eight characters of hex name nothing on their own.
+        const INLINE_COMMIT = `${POST} .gazette-post-body [data-tugx-wrapped][data-tug-annotation="commit-sha"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(INLINE_COMMIT)}) !== null`,
+          { timeoutMs: 25_000 },
+        );
+        const inlineCommit = await app.evalJS<{
+          text: string;
+          sha: string | null;
+          root: string | null;
+          title: string | null;
+        } | null>(
+          `(function () {
+            var el = document.querySelector(${JSON.stringify(INLINE_COMMIT)});
+            if (el === null) return null;
+            return {
+              text: (el.textContent || "").trim(),
+              sha: el.getAttribute("data-sha"),
+              root: el.getAttribute("data-root"),
+              title: el.getAttribute("title"),
+            };
+          })()`,
+        );
+        note("inline commit mention", JSON.stringify(inlineCommit));
+        expect(inlineCommit?.text).toBe(HEAD_SHA.slice(0, 12));
+        expect(inlineCommit?.sha).toBe(HEAD_SHA.slice(0, 12));
+        expect(inlineCommit?.root?.startsWith("/")).toBe(true);
+        // The hover is the commit's own subject, then its shape — read off
+        // this checkout's real HEAD, so a wrong commit fails loudly.
+        expect(inlineCommit?.title).toContain(HEAD_SUBJECT);
+        expect(inlineCommit?.title).toContain("file");
+        expect(inlineCommit?.title).toContain(HEAD_SHA.slice(0, 12));
+
+        // The trailing chip — the ref the prose never named — is stamped the
+        // same way, so its click and menu are the registry's too.
+        const fileChip = await app.evalJS<{
           title: string | null;
           annotation: string | null;
           path: string | null;
@@ -336,49 +414,10 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
             };
           })()`,
         );
-        note("resolved file ref", JSON.stringify(fileStamp));
-        expect(fileStamp?.title).toBe("file: tugdeck/src/lib/layout-imposer.ts");
-        expect(fileStamp?.annotation).toBe("file-path");
-
-        // And the commit: git confirms the sha (the same query that scopes
-        // the diff), the prose mention becomes the commit atom in place, and
-        // the chip reads the 8-char prefix however long the prose spelled it.
-        await app.waitForCondition<boolean>(
-          `(function () {
-            var wrap = document.querySelector('[data-gazette-ref-kind="commit"]');
-            return wrap !== null && wrap.getAttribute("data-sha") !== null;
-          })()`,
-          { timeoutMs: 20_000 },
-        );
-        const commitStamp = await app.evalJS<{
-          sha: string | null;
-          root: string | null;
-          annotation: string | null;
-          inline: boolean;
-          chipLabel: string | null;
-        } | null>(
-          `(function () {
-            var wrap = document.querySelector('[data-gazette-ref-kind="commit"]');
-            if (wrap === null) return null;
-            var chip = wrap.querySelector(".tug-atom-chip");
-            return {
-              sha: wrap.getAttribute("data-sha"),
-              root: wrap.getAttribute("data-root"),
-              annotation: wrap.getAttribute("data-tug-annotation"),
-              inline: wrap.classList.contains("gazette-body-atom"),
-              chipLabel: chip === null ? null : chip.getAttribute("aria-label"),
-            };
-          })()`,
-        );
-        note("resolved commit ref", JSON.stringify(commitStamp));
-        expect(commitStamp?.sha).toBe(HEAD_SHA.slice(0, 12));
-        expect(commitStamp?.root?.startsWith("/")).toBe(true);
-        expect(commitStamp?.annotation).toBe("commit-sha");
-        expect(
-          commitStamp?.inline,
-          "the mention became the atom in the prose, not a trailing chip",
-        ).toBe(true);
-        expect(commitStamp?.chipLabel).toBe(HEAD_SHA.slice(0, 8));
+        note("trailing file chip", JSON.stringify(fileChip));
+        expect(fileChip?.title).toBe("file: tugdeck/src/lib/layout-imposer.ts");
+        expect(fileChip?.annotation).toBe("file-path");
+        expect(fileChip?.path?.startsWith("/")).toBe(true);
 
         // ── 3. The composer round-trips through the Operator. ─────────────
         const question = "which sessions touched the imposer";

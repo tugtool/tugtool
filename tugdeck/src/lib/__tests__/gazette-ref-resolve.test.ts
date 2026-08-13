@@ -138,19 +138,34 @@ describe("resolveGazetteRef", () => {
         lookupCommit: (root, sha): CommitVerdict => {
           expect(root).toEqual(ROOT);
           expect(sha).toBe("957d2350b422");
-          return { state: "confirmed", paths: ["a.ts", "b.css"] };
+          return {
+            state: "confirmed",
+            paths: ["a.ts", "b.css"],
+            facts: {
+              subject: "fix the thing",
+              author: "Ken Kocienda",
+              date: "2026-08-12",
+              files: [
+                { path: "a.ts", status: "modified", added: 4, removed: 1 },
+                { path: "b.css", status: "created", added: 9, removed: 0 },
+              ],
+            },
+          };
         },
       }),
     );
-    expect(r).toEqual({
-      state: "actionable",
-      payload: {
-        kind: "commit-sha",
-        sha: "957d2350b422",
-        root: "/repo",
-        paths: ["a.ts", "b.css"],
-      },
+    expect(r.state).toBe("actionable");
+    if (r.state !== "actionable") return;
+    expect(r.payload).toEqual({
+      kind: "commit-sha",
+      sha: "957d2350b422",
+      root: "/repo",
+      paths: ["a.ts", "b.css"],
     });
+    // The chip stands with no sentence around it, so its hover has to say
+    // which change this is: subject first, then the shape of the diff.
+    expect(r.title).toContain("fix the thing");
+    expect(r.title).toContain("2 files changed");
   });
 
   test("a sha git cannot show is inert with the repo named", () => {

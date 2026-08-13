@@ -174,13 +174,35 @@
   opacity: 0;
 }
 
-/* The atom row itself — atoms sit closer to each other than to the copy
-   button, the same way the Z1B's end-state segments group. */
+/* The controls slot holds TWO stacked rows here, not one: the Z1B, and
+   under it the provenance strip. The primitive lays its controls out in a
+   row (`tug-transcript-entry.css`), which is right for a card whose Z1B is
+   the whole slot; per [D12] a consumer that needs otherwise says so in its
+   own sheet. */
+.gazette-transcript .tug-transcript-entry__controls {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+/* The provenance strip — refs the prose never named.
+
+   Its OWN row, beneath the Z1B rather than inside it. Sharing the Z1B's
+   flex put the atoms in line after OK / elapsed / COPY, where they wrapped
+   at whatever point the rail ran out: one post showed a chip snug against
+   COPY and the next showed one stranded on a line of its own, so the
+   position carried no meaning. Given a row, they start at the same place
+   every time and the count is the only thing that varies.
+
+   Refs the prose DID name never arrive here at all — the annotator already
+   marked those in the sentence (`unmentionedRefs`), so this strip is the
+   remainder rather than a second copy of the post. */
 .gazette-post-refs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--tug-space-xs);
+  margin-block-start: var(--tug-space-xs);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */

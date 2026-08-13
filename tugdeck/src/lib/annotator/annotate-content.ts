@@ -102,6 +102,7 @@ import {
   recordElementPass,
 } from "./annotate-counters";
 import { scanCommitShas } from "./detect-commit-sha";
+import { commitSummary } from "./commit-summary";
 import {
   classifyInlineCode,
   payloadForReference,
@@ -192,16 +193,28 @@ function annotatePathsInText(
     if (text.trim() === "") continue;
     const matches: TextRunMatch[] = [];
     for (const reference of scanPathReferences(text)) {
-      if (!inCode && !isUnambiguousInProse(reference)) continue;
+      // Code says "this is a path" by being code; a surface that cites
+      // paths in its prose says it for the whole surface. Everywhere else
+      // only an unmistakable shape qualifies.
+      const licensed =
+        inCode ||
+        context.proseCitesPaths === true ||
+        isUnambiguousInProse(reference);
+      if (!licensed) continue;
       const verdict = context.resolvePath(reference);
       const payload = payloadForReference(reference, verdict);
       if (payload === null) continue;
       matches.push({ start: reference.start, end: reference.end, payload });
     }
     for (const found of scanCommitShas(text)) {
-      const payload = payloadForCommit(found.sha, context);
-      if (payload === null) continue;
-      matches.push({ start: found.start, end: found.end, payload });
+      const marked = payloadForCommit(found.sha, context);
+      if (marked === null) continue;
+      matches.push({
+        start: found.start,
+        end: found.end,
+        payload: marked.payload,
+        title: marked.title,
+      });
     }
     // One text node, two scans: the wrapper takes them in order and drops
     // any that overlaps a run already taken.
@@ -212,21 +225,25 @@ function annotatePathsInText(
 }
 
 /**
- * The commit-sha payload for a verified sha, or `null` when it is not a
- * commit here — or not yet known to be one.
+ * The commit-sha payload for a verified sha — and the hover that says what
+ * the sha IS, which the same verdict carries. `null` when it is not a
+ * commit here, or not yet known to be one.
  */
 function payloadForCommit(
   sha: string,
   context: AnnotationContext,
-): AnnotationPayload | null {
+): { payload: AnnotationPayload; title: string } | null {
   if (context.commitRoot === null) return null;
   const verdict = context.resolveCommit(sha);
   if (verdict.state !== "confirmed") return null;
   return {
-    kind: "commit-sha",
-    sha,
-    root: context.commitRoot,
-    paths: verdict.paths,
+    payload: {
+      kind: "commit-sha",
+      sha,
+      root: context.commitRoot,
+      paths: verdict.paths,
+    },
+    title: commitSummary(sha, verdict.facts),
   };
 }
 

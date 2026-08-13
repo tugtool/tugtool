@@ -288,6 +288,9 @@ pub async fn build_commit_files_snapshot(
             workspace_key: workspace_key.to_string(),
             sha: sha.to_string(),
             no_repo: true,
+            subject: String::new(),
+            author: String::new(),
+            date: String::new(),
             files: Vec::new(),
         };
     }
@@ -326,11 +329,36 @@ pub async fn build_commit_files_snapshot(
             removed: f.deleted.unwrap_or(0),
         })
         .collect();
+    // The commit's own identity, for a reader that has to say what this sha
+    // IS — a hover over a bare hash in prose. `-s` suppresses the diff, and
+    // the unit separator cannot appear in a name or in `%s` (which strips
+    // newlines), so the split is unambiguous. A sha that resolves to nothing
+    // yields an empty capture and therefore empty fields, matching the empty
+    // `files` the same sha produces above.
+    let header = run_git_capture(
+        repo_dir,
+        &[
+            "show",
+            "-s",
+            &format!("--format=%s{LOG_FIELD_SEP}%an{LOG_FIELD_SEP}%ad"),
+            "--date=short",
+            sha,
+        ],
+    )
+    .await
+    .unwrap_or_default();
+    let mut header_fields = header.trim_end_matches('\n').split(LOG_FIELD_SEP);
+    let subject = header_fields.next().unwrap_or_default().to_string();
+    let author = header_fields.next().unwrap_or_default().to_string();
+    let date = header_fields.next().unwrap_or_default().to_string();
     GitCommitFilesSnapshot {
         request_id,
         workspace_key: workspace_key.to_string(),
         sha: sha.to_string(),
         no_repo: false,
+        subject,
+        author,
+        date,
         files,
     }
 }

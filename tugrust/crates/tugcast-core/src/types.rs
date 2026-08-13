@@ -304,6 +304,17 @@ pub struct GitCommitFilesSnapshot {
     /// True when the project dir is **not** inside a git working tree.
     #[serde(default)]
     pub no_repo: bool,
+    /// The commit's subject line (`%s`). Empty when the sha resolves to
+    /// nothing, and on payloads written before the field existed — a reader
+    /// shows what it has rather than asserting an empty commit message.
+    #[serde(default)]
+    pub subject: String,
+    /// Author name (`%an`), for the same reason and with the same default.
+    #[serde(default)]
+    pub author: String,
+    /// Author date, `--date=short` (`YYYY-MM-DD`).
+    #[serde(default)]
+    pub date: String,
     /// One entry per changed file, in git's output order.
     pub files: Vec<GitCommitFile>,
 }
