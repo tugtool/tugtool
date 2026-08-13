@@ -243,8 +243,9 @@ export function useAiConfigSheet({
         icon: "Sparkles",
         iconRole: "agent",
         // Accordion rows that pair a model name with its scope note and
-        // controls — a single column, but a wide one.
-        displayWidth: "md",
+        // controls — a single column, and a narrow one: nothing inside asks for
+        // more than the decision width.
+        displayWidth: "sm",
         onCommitDisposition: commitDisposition,
         presentation: "rise",
         bottomAnchorSelector: PICKER_SHEET_ANCHOR,
