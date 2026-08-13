@@ -67,30 +67,22 @@
   );
 }
 
-/* The description's band starts a hair under the controls' bottom edge, so a
-   long description running the extended box would end pressed against the close
-   box. It stops where the cluster starts; only the activity line beneath runs
-   the full width.
+/* The description clears the TAPE and nothing else.
 
-   And the tape is LIFTED into this band — that is the whole point of the lift,
-   so it reads centered on rows two and three together rather than seated on row
-   three alone — which means the description has a second thing to stop short
-   of. `max()` because which one intrudes further is a live question: the
-   cluster's width is measured at runtime and grows with a stack badge, and the
-   tape's advance is the instrument's. Reserving only the cluster left a long
-   description ending under the graph.
+   The tape is LIFTED into this band — that is the whole point of the lift, so
+   it reads centered on rows two and three together rather than seated on row
+   three alone — so the graph is the one thing standing on this line.
 
-   The cluster's term is less the trailing inset, for the reason the title
-   line's is; the tape's is not, because the reserve is measured from the
-   column's own trailing edge and the tape now sits on it. */
+   The control cluster is not. It sits in the first chrome band, a 28px box
+   centered in 36px; the description's ink starts a full band below that, with
+   daylight between them. Reserving the cluster's width here charged the line
+   for a collision that cannot happen, and the charge grew with the cluster:
+   with the badge, the telemetry dot, the folder, the info, the width control
+   and the close box in the row, a description ended some 375px short of an
+   edge it had every right to reach. The title line above shares the band and
+   reserves the cluster for itself; this one does not share it. */
 .session-masthead-row .tug-session-row-description {
-  padding-inline-end: max(
-    calc(
-      var(--tugx-pane-controls-width, 0px) + var(--tug-space-xs) -
-        var(--tugx-session-row-trailing-inset)
-    ),
-    var(--tugx-session-row-spark-reserve, 0px)
-  );
+  padding-inline-end: var(--tugx-session-row-spark-reserve, 0px);
 }
 
 /* The title run inherits the pane's title color, exactly as every other card's
