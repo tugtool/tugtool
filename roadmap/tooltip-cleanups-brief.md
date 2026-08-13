@@ -50,6 +50,14 @@ So every unthemed tooltip in the app is unthemed because it is **native OS chrom
 
 **[T08] One token block, one clock.** The duplicate `--tugx-tooltip-*` declaration in `tug-menu.css:80–82` is deleted; `tug-tooltip.css` owns the aliases. Date formatting converges on one module serving both the Gazette's Intl formats and the commit stamp grains, so the same instant never renders two dialects.
 
+**[T09] A chord chip must be true, in a menu as much as in a tooltip.** The reason an action tooltip is worth having is that it teaches a key that works. The same chip in a context menu makes the same promise, and three sites were breaking it on entities the reader had merely pointed at:
+
+- `session-identity-menu.tsx` advertised `Copy as Atom ⌘C` while dispatching `COPY_SESSION_ATOM`. The chord was borrowed from a *different* command — `commandShortcut(TUG_ACTIONS.COPY)` — which is the one thing `commandShortcut` exists to prevent ([P11]), and the only cross-action borrow in the codebase. It was borrowed because `COPY_SESSION_ATOM` sits in `ACTIONS_OUTSIDE_THE_TABLE` and has no binding of its own to render. An action with no chord shows no chip.
+- The same hook *claimed* the generic `COPY` verb (`[TUG_ACTIONS.COPY]: copyAtom`) for any session row or chip that had been clicked, with no selection required. `COPY` is `routing: "native"` — AppKit sends `copy:` to WebKit, and the JS chord pipeline bails before the chain — so the claim could never run `copyAtom`. What it did do is light up **Edit ▸ Copy** in the menu bar over a chip (`host-menu-state.ts` reads `chain.validateAction(COPY)`), where pressing it copies nothing.
+- `use-copyable-text.tsx` put `⌘C` on Copy, plus decorative `⌘X`/`⌘V`/`⌘A` on three permanently-disabled rows — inherited by every `TugLabel`, `TugBadge`, and `CommitShaText`. This text is `user-select: none` by design, so the chord it advertised cannot reach it.
+
+All three chip sets are removed and the `COPY` hijack with them; the menu items themselves are untouched, so `Copy as Atom` still writes the atom. The annotator's own entity menus (`lib/annotator/registry.ts`) were already correct — they carry `action` + `label` and nothing else — and are the model. Left open: the enablement lie, since a responder claiming `COPY` with no `validateAction` still enables Edit ▸ Copy over unselectable chrome.
+
 ## Work
 
 W1–W5 have landed; W6–W8 are open. What shipped:
@@ -71,6 +79,8 @@ W1–W5 have landed; W6–W8 are open. What shipped:
 | W6 | session + file surfaces adopt their tips | `tug-session-row.tsx`, `cards/session-card.tsx`, `session-picker-cells.tsx`, `tug-changes-list.tsx`, `tool-file-ref.tsx`, `file-block.tsx`, `diff-block.tsx`, `open-quickly-overlay.tsx` |
 | W7 | [T06] `tooltip`/`action` props on the three passthrough components; migrate bare-title buttons; chip upgrades | `tug-icon-button.tsx`, `tug-option-group.tsx`, `tug-status-cell.tsx`, `chrome/tug-pane.tsx`, `session-masthead.tsx`, `jots-card.tsx`, telemetry popovers, side-question overlay, … |
 | W8 | [T02]+[T07] guard test + remaining truncation-reveal migrations; tuglaws entry | new scan test, `tuglaws/component-authoring.md`, sheets/settings/lens call sites |
+| W9 | [T09] chord chips off entity menus; drop the `COPY` hijack — **landed** | `session-identity-menu.tsx`, `use-copyable-text.tsx` |
+| W10 | [T09] follow-up: `validateAction` so a chip claiming `COPY` stops enabling Edit ▸ Copy over unselectable chrome; correct the stale "dispatched as the COPY action" comments in `tug-attachment-preview.tsx` / `terminal-block.tsx` | `use-copyable-text.tsx`, `host-menu-state.ts`, the two comments |
 
 W1 was independent bookkeeping. W2–W5 were the commit spine and the highest-visibility win — and the whole *color* story, since a migrated tooltip is a themed tooltip by construction: the screenshot's gray OS box is now a themed card that tracks brio/nocturne/bravura dark and harmony/aria/vivace light. W6–W8 are breadth, and the honest reason they are the long pole: the remaining native `title=` sites are ~30 buttons, ~15 path reveals, and a scattering of overflow reveals, most reachable through the three passthrough props rather than one at a time.
 

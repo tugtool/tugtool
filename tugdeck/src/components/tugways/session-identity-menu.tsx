@@ -18,7 +18,7 @@
  *
  *   Show Session / Resume Session   go to the session, however it must be reached
  *   ─────
- *   Copy as Atom           ⌘C   the citation + the atom sidecar — pastes as the chip
+ *   Copy as Atom                the citation + the atom sidecar — pastes as the chip
  *   Copy as Citation            the flat string, for outside Tug
  *   Copy Session ID             the full UUID, which nothing on screen shows
  *   ─────
@@ -60,7 +60,7 @@ import React from "react";
 import { getRegistryHandler } from "@/action-dispatch";
 import { dispatchCommand } from "@/command-dispatch";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
-import { commandShortcut, keymapRegistry } from "@/components/tugways/keymap-registry";
+
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import {
   TugEditorContextMenu,
@@ -220,10 +220,11 @@ export function useSessionIdentityMenu({
   const { responderRef, ResponderScope } = useOptionalResponder({
     id: responderId,
     actions: {
-      // A bare COPY — the ⌘C a reader reaches for with the row under the key
-      // view — means the atom. It is the richest form and the one every other
-      // Tug surface hands back as a chip.
-      [TUG_ACTIONS.COPY]: copyAtom,
+      // No bare COPY. ⌘C is the app's Copy, and what it copies is what the
+      // reader SELECTED — a row that redefines it because the pointer is
+      // resting on one takes a core chord away from the surface underneath
+      // and gives back something nobody asked for. The atom stays available
+      // where it was always unambiguous: the row's own menu item.
       [TUG_ACTIONS.SHOW_SESSION]: showSession,
       [TUG_ACTIONS.RESUME_SESSION]: resumeSession,
       [TUG_ACTIONS.COPY_SESSION_ATOM]: copyAtom,
@@ -255,9 +256,6 @@ export function useSessionIdentityMenu({
     [enabled, manager],
   );
 
-  // Every shortcut hint comes from the command's live binding ([P11]), so the
-  // registry is a subscription ([L02]) and a rebind repaints the menu.
-  useSyncKeymap();
   const items = React.useMemo<TugEditorContextMenuEntry[]>(() => {
     const entries: TugEditorContextMenuEntry[] = [];
     // Go to the session — a raise when a card holds it, a resume when none
@@ -281,7 +279,6 @@ export function useSessionIdentityMenu({
       {
         action: TUG_ACTIONS.COPY_SESSION_ATOM,
         label: "Copy as Atom",
-        shortcut: commandShortcut(TUG_ACTIONS.COPY),
         disabled: !identity.resolved,
       },
       { action: TUG_ACTIONS.COPY_SESSION_CITATION, label: "Copy as Citation" },
@@ -315,8 +312,6 @@ export function useSessionIdentityMenu({
     activity,
     descriptionText,
     activityText,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    keymapRegistry.getSnapshot(),
   ]);
 
   // Inside this hook's own ResponderScope, so the menu's targeted dispatch
@@ -337,11 +332,3 @@ export function useSessionIdentityMenu({
   return { ref, onContextMenu, contextMenu };
 }
 
-/** The keymap as a subscription, so a live rebind repaints the hints. */
-function useSyncKeymap(): void {
-  React.useSyncExternalStore(
-    keymapRegistry.subscribe,
-    keymapRegistry.getSnapshot,
-    () => 0,
-  );
-}

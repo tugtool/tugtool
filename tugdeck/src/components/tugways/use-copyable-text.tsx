@@ -183,47 +183,24 @@ export function useCopyableText({
 
   // Read-only text: Copy is live, the editing verbs are shown dimmed so the
   // menu reads as the familiar one rather than as a mystery with three rows
-  // missing. Every hint comes from the command's binding ([P11]), so the
-  // registry is a subscription ([L02]) and a live rebind repaints the hints.
-  useSyncExternalStore(keymapRegistry.subscribe, keymapRegistry.getSnapshot, () => 0);
+  // missing.
+  //
+  // No chord hints. This text is deliberately unselectable, and ⌘C is routed
+  // natively to WebKit's copy of the DOM SELECTION — so the chord cannot
+  // reach these items, and a chip promising it would be advertising a key
+  // that does nothing here. The menu is the whole affordance.
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(
     () =>
       copyMenu
-        ? [
-            {
-              action: TUG_ACTIONS.COPY,
-              label: "Copy",
-              shortcut: commandShortcut(TUG_ACTIONS.COPY),
-            },
-          ]
+        ? [{ action: TUG_ACTIONS.COPY, label: "Copy" }]
         : [
-            {
-              action: TUG_ACTIONS.CUT,
-              label: "Cut",
-              shortcut: commandShortcut(TUG_ACTIONS.CUT),
-              disabled: true,
-            },
-            {
-              action: TUG_ACTIONS.COPY,
-              label: "Copy",
-              shortcut: commandShortcut(TUG_ACTIONS.COPY),
-            },
-            {
-              action: TUG_ACTIONS.PASTE,
-              label: "Paste",
-              shortcut: commandShortcut(TUG_ACTIONS.PASTE),
-              disabled: true,
-            },
+            { action: TUG_ACTIONS.CUT, label: "Cut", disabled: true },
+            { action: TUG_ACTIONS.COPY, label: "Copy" },
+            { action: TUG_ACTIONS.PASTE, label: "Paste", disabled: true },
             { type: "separator" },
-            {
-              action: TUG_ACTIONS.SELECT_ALL,
-              label: "Select All",
-              shortcut: commandShortcut(TUG_ACTIONS.SELECT_ALL),
-              disabled: true,
-            },
+            { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", disabled: true },
           ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [copyMenu, keymapRegistry.getSnapshot()],
+    [copyMenu],
   );
 
   // Wrap the menu in this hook's ResponderScope so TugEditorContextMenu's
