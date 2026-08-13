@@ -25,6 +25,18 @@
   --tugx-gazette-transcript-end-space: var(--tug-space-2xl);
 }
 
+/* The transcript's region — the card's `1fr` track, and the positioned
+   ancestor the floating jump-to-latest button is placed against. A grid of
+   one, so the scroller fills the track exactly; `min-block-size: 0` is what
+   lets it be shorter than its content and actually scroll. The button is an
+   absolute sibling of the scroller rather than a child of it, so it stays put
+   while the column moves under it. */
+.gazette-transcript-region {
+  position: relative;
+  display: grid;
+  min-block-size: 0;
+}
+
 .gazette-transcript {
   overflow-y: auto;
   overflow-x: hidden;

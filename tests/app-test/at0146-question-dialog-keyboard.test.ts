@@ -21,7 +21,7 @@
  * @foreground
  *
  * @covers tugdeck/src/components/tugways/chrome/session-question-dialog.tsx
- * @covers tugdeck/src/components/tugways/cards/session-jump-to-bottom-button.tsx
+ * @covers tugdeck/src/components/tugways/tug-jump-to-bottom-button.tsx
  * @covers tugdeck/src/components/tugways/internal/tug-button.tsx
  * @covers tugdeck/src/components/tugways/focus-manager.ts
  * @covers tugdeck/src/components/tugways/question-summary-list.tsx

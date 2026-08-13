@@ -74,7 +74,7 @@ const FEED_CODE_OUTPUT = 0x40;
 const SID = "at0335-A";
 const TURNS = 60;
 const SCROLLER = '[data-tug-scroll-key="session-card-transcript"]';
-const JUMP_BUTTON = ".session-jump-to-bottom-button";
+const JUMP_BUTTON = ".tug-jump-to-bottom-button";
 
 /** SmartScroll's at-bottom jitter band. */
 const AT_BOTTOM_PX = 60;

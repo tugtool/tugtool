@@ -1258,7 +1258,7 @@
    dialog is pending it's both off-topic and part of the scrimmed surround, and a
    tall inline dialog spuriously disengages follow-bottom and pops it up. Hide it
    for the duration (wins over its own `[data-visible="true"]` reveal). */
-.session-card[data-inline-dialog-pending="true"] .session-jump-to-bottom-button {
+.session-card[data-inline-dialog-pending="true"] .tug-jump-to-bottom-button {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;

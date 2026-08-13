@@ -172,7 +172,7 @@ import {
   type AnnotationDispatchContext,
 } from "@/lib/annotator/registry";
 import { attachSelectionExtension } from "@/components/tugways/selection-extension";
-import { SessionJumpToBottomButton } from "@/components/tugways/cards/session-jump-to-bottom-button";
+import { TugJumpToBottomButton } from "@/components/tugways/tug-jump-to-bottom-button";
 import {
   SessionTranscriptTopRow,
   SessionLoadOverlay,
@@ -2645,7 +2645,7 @@ export const SessionTranscriptHost = forwardRef<
             />
             </FindTargetRegistryContext.Provider>
           </ToolBlockExpansionContext.Provider>
-          <SessionJumpToBottomButton
+          <TugJumpToBottomButton
             ref={jumpButtonRef}
             onClick={handleJumpToBottom}
           />

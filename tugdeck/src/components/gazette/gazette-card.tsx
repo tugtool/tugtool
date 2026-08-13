@@ -55,6 +55,15 @@
  * `PREVIOUS_TURN` / `NEXT_TURN` on its `card-content` responder, which is what
  * makes the gesture work from anywhere focus sits in the rail.
  *
+ * The column follows its live edge while the reader is at it, and says so: the
+ * shared {@link TugJumpToBottomButton} floats over the column whenever they
+ * are not, and clicking it jumps back and re-engages. Follow-state has one
+ * writer (`setFollowing`), which moves the ref and the button's `data-visible`
+ * in the same statement, and one geometric reading (`atBottom`). The pin is
+ * driven by a `ResizeObserver` as well as by the render, because a
+ * transcript's height moves for reasons no render reports — markdown settling,
+ * an annotator verdict landing, the composer growing a row under the typing.
+ *
  * Laws: [L02] the channel enters through `useGazette`'s
  * `useSyncExternalStore`; [L06] the follow-the-bottom scroll and the
  * composer's `data-empty` bridge are DOM writes, never React state; [L12] the
@@ -98,6 +107,7 @@ import {
   TugTranscriptEntry,
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
+import { TugJumpToBottomButton } from "@/components/tugways/tug-jump-to-bottom-button";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
 import { computePageNavigation } from "@/components/tugways/internal/list-view-page-navigation";
@@ -738,16 +748,94 @@ export function GazetteContent({
   // Whether the reader is at the bottom, sampled BEFORE the new post is laid
   // out — reading it afterwards would always say "no", since the arriving row
   // is exactly what pushed the bottom away.
+  //
+  // POSITION, not intent. The Session transcript's `SmartScroll` follows a
+  // reader's INTENT: a wheel-up disengages the moment it happens, wherever it
+  // lands, and only a gesture that ends at the bottom re-engages. This column
+  // asks the simpler question — "is the live edge under the eye right now" —
+  // because a rail has no gesture vocabulary to disambiguate and no restore
+  // target to defend. The two models agree everywhere except the flick that
+  // starts and ends inside the slack, which here does not disengage. That is
+  // the whole of the difference and it is deliberate; anything more is
+  // `SmartScroll`, which belongs to the list view it drives.
   const followingRef = useRef(true);
+  // The affordance that follow-state drives: shown exactly when the reader is
+  // NOT at the live edge. Held as a DOM ref because the state it reflects is
+  // appearance, not data ([L06]) — see `setFollowing`.
+  const jumpButtonRef = useRef<HTMLButtonElement | null>(null);
   // The transcript's height as of the PREVIOUS committed render, and the key
   // of the post that led it. Written at the end of every layout pass, read at
   // the top of the next: together they say "older rows were prepended, and
   // this much taller", which is exactly what the scroll compensation needs.
   // Deliberately not written from the scroll handler — a prepend fires no
   // scroll event, so a ref written there would hold whatever the last human
-  // scroll saw.
+  // scroll saw. It IS written from the resize observer below, because a row
+  // that grows after its layout pass moves the same height the compensation
+  // measures against; leaving it stale there would have the next prepend
+  // count that growth a second time.
   const prevScrollHeightRef = useRef(0);
   const prevFirstKeyRef = useRef<string | null>(null);
+
+  /**
+   * The one writer of follow-state. Every place that decides the reader is or
+   * is not at the live edge goes through here, so the intent and the
+   * affordance can never disagree — the button's `data-visible` is written in
+   * the same statement that moves the ref, straight onto the DOM node ([L06]).
+   */
+  const setFollowing = useCallback((next: boolean): void => {
+    followingRef.current = next;
+    const btn = jumpButtonRef.current;
+    if (btn !== null) btn.dataset.visible = String(!next);
+  }, []);
+
+  /** Is the live edge under the eye? The one geometric reading, spelled once. */
+  const atBottom = useCallback(
+    (el: HTMLDivElement): boolean =>
+      el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX,
+    [],
+  );
+
+  // Height changes that no render tells us about.
+  //
+  // The pin below runs on the posts array, which is the ONLY thing a
+  // render-driven effect can see — and a transcript's height moves for
+  // reasons that are not a new post. A post's markdown settles a beat after
+  // it mounts; an annotator verdict lands and a ref becomes an atom; the
+  // narrated session's citation resolves and a chip appears in a header
+  // (`at0368` watches exactly that arrive); the composer grows a row under
+  // the user's typing and takes that row out of this track; the allocator
+  // widens the rail and every paragraph rewraps. Each of those moves the live
+  // edge away from a reader who is following it, with no render to notice —
+  // so the observer notices instead, and re-pins on the real geometry.
+  //
+  // The scroller is observed for its own box (the viewport) and every cell
+  // for theirs (the content), which together are every way this column's
+  // scroll height can change. [L03] — live before the first post can settle.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const observer = new ResizeObserver(() => {
+      if (followingRef.current) el.scrollTop = el.scrollHeight;
+      prevScrollHeightRef.current = el.scrollHeight;
+    });
+    observer.observe(el);
+    // The cells are re-observed as the column changes, from the same effect
+    // that owns the observer — one place that decides what is watched.
+    const sync = (): void => {
+      for (const cell of el.querySelectorAll<HTMLElement>(
+        ":scope > .gazette-cell",
+      )) {
+        observer.observe(cell);
+      }
+    };
+    sync();
+    const mutations = new MutationObserver(sync);
+    mutations.observe(el, { childList: true });
+    return () => {
+      mutations.disconnect();
+      observer.disconnect();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -771,7 +859,11 @@ export function GazetteContent({
     }
     prevScrollHeightRef.current = el.scrollHeight;
     prevFirstKeyRef.current = firstKey;
-  }, [posts]);
+    // `pendingRequestId` is a dependency because the in-flight wave is a ROW:
+    // it mounts under the last post and pushes the live edge down exactly as
+    // an arriving post does. Without it the placeholder for the answer the
+    // reader just asked for could appear below the fold.
+  }, [posts, pendingRequestId]);
 
   // Annotation gestures — the Session transcript's own delegated layer,
   // verbatim in shape: one listener on the transcript root, the registry
@@ -816,13 +908,29 @@ export function GazetteContent({
   const onScroll = (): void => {
     const el = scrollRef.current;
     if (el === null) return;
-    followingRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+    setFollowing(atBottom(el));
     // Near the top, ask for the page before this one. The store owns every
     // guard — nothing to ask for, nothing to anchor on, a request already
     // out — because this fires many times per scroll gesture.
     if (el.scrollTop < LOAD_OLDER_PX) getGazetteStore()?.loadOlder();
   };
+
+  /**
+   * The affordance's own gesture: back to the live edge, and following again.
+   *
+   * `setFollowing` FIRST, so the write below is already the act of a
+   * following column rather than a jump that the next arriving post has to
+   * re-decide. The scroll then fires `onScroll`, which reads the landing
+   * position and confirms it — a jump that somehow lands short corrects
+   * itself rather than leaving the button hidden over a column that is not at
+   * its edge.
+   */
+  const jumpToBottom = useCallback((): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    setFollowing(true);
+    el.scrollTop = el.scrollHeight;
+  }, [setFollowing]);
 
   /**
    * Step the column one POST — the Session transcript's ⌥⌘↑ / ⌥⌘↓, read here.
@@ -910,59 +1018,71 @@ export function GazetteContent({
         // target to land the ring on when the card is focused.
         tabIndex={-1}
       >
-        <div
-          className="gazette-transcript"
-          data-testid="gazette-transcript"
-          ref={scrollRef}
-          onScroll={onScroll}
-        >
-          {posts.length === 0 ? (
-            <div className="gazette-empty" role="status">
-              {status === "ready" ? "Nothing reported yet." : "Loading…"}
-            </div>
-          ) : (
-            posts.map((post) => (
-              <GazettePostRow
-                key={post.key}
-                post={post}
-                root={rootFor(post.projectDir)}
-                formats={formats}
-              />
-            ))
-          )}
-          {pendingRequestId !== null ? (
-            // [L26]: keyed exactly as the answer will be, so the placeholder
-            // becomes the answer in place rather than being torn down and a new
-            // row built where it stood.
-            <div
-              key={`req:operator:${pendingRequestId}`}
-              className="gazette-cell"
-              data-author="operator"
-              data-pending=""
-              data-testid="gazette-pending-row"
-            >
-              <TugTranscriptEntry
-                className="gazette-post"
-                participant="operator"
-                identifier={AUTHOR_LABEL.operator}
-                // The transcript's in-flight wave, not a sentence: "working" is
-                // said in the Session card's language, the same three bars its
-                // own Z1C paints while a turn runs.
-                body={
-                  <div className="gazette-post-pending">
-                    <TugProgressIndicator
-                      variant="wave"
-                      state="running"
-                      role="inherit"
-                      aria-label="Working…"
-                      aria-live="polite"
-                      data-testid="gazette-pending-wave"
-                    />
-                  </div>
-                }
-              />
-            </div>
-          ) : null}
+        {/* The transcript's REGION, not the scroller: the jump affordance
+            floats over the column, so it needs a positioned ancestor that
+            does not scroll with what it floats over. The session card's
+            `.tug-control-bar-region` plays the same part for the same
+            reason. */}
+        <div className="gazette-transcript-region">
+          <div
+            className="gazette-transcript"
+            data-testid="gazette-transcript"
+            ref={scrollRef}
+            onScroll={onScroll}
+          >
+            {posts.length === 0 ? (
+              <div className="gazette-empty" role="status">
+                {status === "ready" ? "Nothing reported yet." : "Loading…"}
+              </div>
+            ) : (
+              posts.map((post) => (
+                <GazettePostRow
+                  key={post.key}
+                  post={post}
+                  root={rootFor(post.projectDir)}
+                  formats={formats}
+                />
+              ))
+            )}
+            {pendingRequestId !== null ? (
+              // [L26]: keyed exactly as the answer will be, so the placeholder
+              // becomes the answer in place rather than being torn down and a new
+              // row built where it stood.
+              <div
+                key={`req:operator:${pendingRequestId}`}
+                className="gazette-cell"
+                data-author="operator"
+                data-pending=""
+                data-testid="gazette-pending-row"
+              >
+                <TugTranscriptEntry
+                  className="gazette-post"
+                  participant="operator"
+                  identifier={AUTHOR_LABEL.operator}
+                  // The transcript's in-flight wave, not a sentence: "working" is
+                  // said in the Session card's language, the same three bars its
+                  // own Z1C paints while a turn runs.
+                  body={
+                    <div className="gazette-post-pending">
+                      <TugProgressIndicator
+                        variant="wave"
+                        state="running"
+                        role="inherit"
+                        aria-label="Working…"
+                        aria-live="polite"
+                        data-testid="gazette-pending-wave"
+                      />
+                    </div>
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+          {/* Mounted unconditionally ([L26]) — the show / hide is the CSS fade
+            on `data-visible`, which `setFollowing` writes. Mounting it behind
+            the condition would make every arrival at and departure from the
+            live edge a React reconciliation. */}
+          <TugJumpToBottomButton ref={jumpButtonRef} onClick={jumpToBottom} />
         </div>
         <div
           className="gazette-composer-slot"

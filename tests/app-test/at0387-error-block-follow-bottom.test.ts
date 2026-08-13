@@ -36,7 +36,7 @@ const FEED_CODE_OUTPUT = 0x40;
 const SID = "at0387-A";
 const TURNS = 60;
 const SCROLLER = '[data-tug-scroll-key="session-card-transcript"]';
-const JUMP_BUTTON = ".session-jump-to-bottom-button";
+const JUMP_BUTTON = ".tug-jump-to-bottom-button";
 
 function deckShape(): Record<string, unknown> {
   return {
