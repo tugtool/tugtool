@@ -593,6 +593,27 @@ pub fn validate_refs(refs: Vec<GazetteRef>, corpora: &[&str]) -> ValidatedRefs {
 /// excluded from the count, so precision is never what the clamp squeezes out.
 pub const REPORTER_PROSE_LIMIT: usize = 200;
 
+/// How far past the budget a sentence already underway may run to finish.
+///
+/// A model composes tokens; it cannot count the characters it is about to emit,
+/// so it cannot land a sentence on a number the way the instructions ask. The
+/// budget still shapes the post — it is why these are two short sentences and
+/// not a paragraph — but the last sentence routinely closes a little past it,
+/// and cutting backward to 200 then throws away a whole finished thought to
+/// save forty characters. The grace lets that sentence end.
+///
+/// It is +20%, not the ten or twenty characters that would look tidier: a
+/// Reporter sentence runs 60–100 characters of prose, so a fragment in flight
+/// at the budget typically needs 30–60 more to close, and a grace too small to
+/// close it buys a backward cut anyway. It only ever extends to a **sentence
+/// end** — never to more room. Prose that simply runs on is still cut at
+/// [`REPORTER_PROSE_LIMIT`].
+///
+/// The instructions do not state this number and must not: a limit the model is
+/// told about is the limit it composes toward, and a stated 240 would overshoot
+/// to 280. The model aims at 200 and this catches where it lands.
+pub const REPORTER_PROSE_GRACE: usize = 240;
+
 /// Characters of prose in `body` — every character except those of tokens that
 /// read as exact names rather than prose.
 ///
@@ -615,19 +636,31 @@ pub fn prose_len(body: &str) -> usize {
 }
 
 /// `body` unchanged when it is within the prose budget; otherwise cut at the
-/// last SENTENCE boundary inside the budget when there is one, and at the last
-/// token boundary — with an ellipsis marking the cut — when there is not.
+/// last SENTENCE boundary inside `grace` when there is one, and at the last
+/// token boundary inside `limit` — with an ellipsis marking the cut — when
+/// there is not.
 ///
 /// The instructions ask for complete sentences that fit the budget, so this is
 /// the backstop for a model that ignored them; cutting at a sentence end is the
 /// same principle applied to the failure, and it is why a clamped post can end
 /// on a period rather than mid-clause. The ellipsis stays on the token-boundary
 /// cut, where something really was dropped mid-thought.
-pub fn clamp_post_body(body: &str, limit: usize) -> String {
+///
+/// The two budgets are what makes the sentence cut usually available. The walk
+/// runs to `grace`, so a sentence that was underway at `limit` and closed
+/// shortly after is found and kept whole; a search stopping at `limit` would
+/// only ever find sentence ends *before* the overshoot and would drop the last
+/// finished thought to reach one. Prose with no sentence end in the grace zone
+/// gets no benefit from it: the fallback cut is at `limit`, because the grace
+/// exists to finish a sentence, not to hand out more room.
+pub fn clamp_post_body(body: &str, limit: usize, grace: usize) -> String {
     if prose_len(body) <= limit {
         return body.to_string();
     }
+    // Walk to `grace`, remembering the prefix as it stood at `limit` — that
+    // shorter prefix is what the ellipsis fallback cuts back to.
     let mut out = String::new();
+    let mut at_limit: Option<usize> = None;
     let mut prose = 0usize;
     for (piece, is_ws) in pieces(body) {
         let cost = if !is_ws && token_is_exempt(piece) {
@@ -635,8 +668,11 @@ pub fn clamp_post_body(body: &str, limit: usize) -> String {
         } else {
             piece.chars().count()
         };
-        if !is_ws && prose + cost > limit {
+        if !is_ws && prose + cost > grace {
             break;
+        }
+        if !is_ws && at_limit.is_none() && prose + cost > limit {
+            at_limit = Some(out.len());
         }
         prose += cost;
         out.push_str(piece);
@@ -644,7 +680,7 @@ pub fn clamp_post_body(body: &str, limit: usize) -> String {
     if let Some(end) = last_sentence_end(&out) {
         return out[..end].trim_end().to_string();
     }
-    let trimmed = out.trim_end();
+    let trimmed = out[..at_limit.unwrap_or(out.len())].trim_end();
     format!("{trimmed}…")
 }
 
@@ -790,16 +826,22 @@ mod tests {
         assert_eq!(prose_len("(tugdeck/src/main.tsx)."), 0);
     }
 
+    /// `clamp_post_body` under the shipping budgets.
+    fn clamp(body: &str) -> String {
+        clamp_post_body(body, REPORTER_PROSE_LIMIT, REPORTER_PROSE_GRACE)
+    }
+
     #[test]
     fn clamp_post_body_passes_short_bodies_and_cuts_long_ones() {
         let short = "Fixed the flaky test in tugrust/crates/tugcast/src/feeds/reporter.rs.";
-        assert_eq!(clamp_post_body(short, REPORTER_PROSE_LIMIT), short);
+        assert_eq!(clamp(short), short);
 
         // A body whose prose is long, and holds no sentence end to fall back
         // to, gets cut at a token boundary — marked, because something really
-        // was dropped mid-thought.
+        // was dropped mid-thought. The grace does not extend this cut: it
+        // exists to finish a sentence, and there is no sentence here.
         let long = "word ".repeat(80);
-        let clamped = clamp_post_body(&long, REPORTER_PROSE_LIMIT);
+        let clamped = clamp(&long);
         assert!(
             clamped.ends_with("word…"),
             "cut lands between tokens, not inside one"
@@ -812,21 +854,66 @@ mod tests {
             "tugdeck/styles/themes/a-very-long-theme-file-name-indeed.css".repeat(2),
             "tugdeck/styles/themes/another-name.css",
         );
-        assert_eq!(
-            clamp_post_body(&path_heavy, REPORTER_PROSE_LIMIT),
-            path_heavy
-        );
+        assert_eq!(clamp(&path_heavy), path_heavy);
     }
 
     #[test]
     fn clamp_post_body_prefers_a_sentence_boundary_and_drops_the_ellipsis() {
-        // Two sentences: the first fits the budget, the second runs past it.
-        // The cut takes the first whole and ends on its period — no ellipsis,
-        // because nothing was left hanging.
+        // Two sentences: the first fits the budget, the second runs past both
+        // budgets without ending. The cut takes the first whole and ends on
+        // its period — no ellipsis, because nothing was left hanging.
         let body = format!("All the tests pass now. {}", "word ".repeat(80));
-        let clamped = clamp_post_body(&body, REPORTER_PROSE_LIMIT);
+        let clamped = clamp(&body);
         assert_eq!(clamped, "All the tests pass now.");
         assert!(!clamped.ends_with('…'));
+    }
+
+    #[test]
+    fn clamp_post_body_lets_a_sentence_underway_at_the_budget_finish() {
+        // The shape this is for: two sentences, the second still going at the
+        // budget and closing a little past it. Cutting back to the budget
+        // would throw the whole second sentence away to save a few dozen
+        // characters; the grace keeps it, and the post still ends on a period.
+        let second = format!("Then {} closed the loop.", "a fix ".repeat(26));
+        let body = format!("The suite is green again. {second}");
+        assert!(prose_len(&body) > REPORTER_PROSE_LIMIT);
+        assert!(prose_len(&body) <= REPORTER_PROSE_GRACE);
+
+        let clamped = clamp(&body);
+        assert_eq!(clamped, body.trim_end());
+        assert!(!clamped.ends_with('…'));
+    }
+
+    #[test]
+    fn clamp_post_body_keeps_the_tally_sentence_a_real_post_lost() {
+        // A real Reporter post, cut mid-clause at "6 skipped;" — the tally is
+        // the most useful thing in it and the budget landed inside it. The
+        // first sentence ends at ~180 characters of prose, so a cut back to
+        // the budget would have kept only that; the grace keeps both.
+        let body = "`just ci` is green: refactored shell_fact into a ShellFact struct to clear \
+             clippy's too-many-arguments, fixed two let-and-return warnings in session_ledger.rs, \
+             and ran cargo fmt. Full suite now 2310 passed, 6 skipped; clippy clean.";
+        assert!(prose_len(body) > REPORTER_PROSE_LIMIT, "over the budget");
+        let clamped = clamp(body);
+        assert!(
+            clamped.ends_with("6 skipped; clippy clean."),
+            "the tally sentence closed inside the grace: {clamped}"
+        );
+    }
+
+    #[test]
+    fn clamp_post_body_gives_the_grace_only_to_a_sentence_that_closes_in_it() {
+        // A sentence still unfinished at the far edge of the grace gets no
+        // benefit from it: the fallback cuts at the budget, not at the grace,
+        // so an unclosed thought never buys itself extra room.
+        let body = format!("The suite is green again. {}", "word ".repeat(80));
+        let clamped = clamp(&body);
+        assert_eq!(clamped, "The suite is green again.");
+
+        // Same body with no earlier sentence to fall back to: the ellipsis cut
+        // still lands at the budget rather than the grace.
+        let runs_on = "word ".repeat(80);
+        assert!(prose_len(&clamp(&runs_on)) <= REPORTER_PROSE_LIMIT + 1);
     }
 
     #[test]
@@ -834,19 +921,16 @@ mod tests {
         // `main.rs.` ends a sentence: the LAST `.` is followed by whitespace,
         // the one inside `main.rs` is not. Nothing may cut inside the name.
         let body = format!("Rewrote the parser in main.rs. {}", "word ".repeat(80));
-        assert_eq!(
-            clamp_post_body(&body, REPORTER_PROSE_LIMIT),
-            "Rewrote the parser in main.rs.",
-        );
+        assert_eq!(clamp(&body), "Rewrote the parser in main.rs.");
     }
 
     #[test]
     fn clamp_post_body_does_not_mistake_an_abbreviation_for_a_sentence_end() {
-        // Every `.` in the in-budget prefix belongs to `e.g.` / `i.e.`, so
-        // there is no sentence to cut at and the token-boundary behavior with
-        // its ellipsis stands.
+        // Every `.` in the walked prefix belongs to `e.g.` / `i.e.`, so there
+        // is no sentence to cut at and the token-boundary behavior with its
+        // ellipsis stands.
         let body = format!("Touched a few surfaces e.g. i.e. {}", "word ".repeat(80));
-        let clamped = clamp_post_body(&body, REPORTER_PROSE_LIMIT);
+        let clamped = clamp(&body);
         assert!(
             clamped.ends_with('…'),
             "an abbreviation is not a sentence end: {clamped}"

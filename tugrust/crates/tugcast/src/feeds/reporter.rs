@@ -51,9 +51,10 @@ use crate::shared_agent::SharedAgentPool;
 use super::gazette_agent::DEFAULT_CARD_ROWS;
 use super::payload_inspector::InspectedPayload;
 use super::reporter_wake::{
-    FactLine, FrameBuffer, PriorPost, REPORTER_PROSE_LIMIT, WakeReason, clamp_post_body,
+    FactLine, FrameBuffer, PriorPost, REPORTER_PROSE_GRACE, REPORTER_PROSE_LIMIT, WakeReason,
+    clamp_post_body,
     compose_reporter_input, counts_as_assistant_activity, forwardable_session, parse_envelope,
-    render_facts_section, validate_refs,
+    prose_len, render_facts_section, validate_refs,
 };
 
 /// How many posts the card's CONTROL tail read answers with when it asks for
@@ -652,14 +653,23 @@ fn settle(
     // The prose budget's backstop: the instructions state the limit, and a
     // body that ignored it is cut here so what persists and what broadcasts
     // are the same clamped text. Logged because a rising clamp rate means the
-    // prompt has stopped binding.
-    let body = clamp_post_body(&post.body, REPORTER_PROSE_LIMIT);
+    // prompt has stopped binding — and an overshoot the grace absorbed says
+    // that too, so it is logged rather than passing silently.
+    let body = clamp_post_body(&post.body, REPORTER_PROSE_LIMIT, REPORTER_PROSE_GRACE);
     if body != post.body {
         warn!(
             session_id,
             reason = reason.as_str(),
             chars = post.body.chars().count(),
+            prose = prose_len(&post.body),
             "gazette reporter: body over the prose budget; clamped",
+        );
+    } else if prose_len(&body) > REPORTER_PROSE_LIMIT {
+        debug!(
+            session_id,
+            reason = reason.as_str(),
+            prose = prose_len(&body),
+            "gazette reporter: body over the prose budget; within grace, kept whole",
         );
     }
 

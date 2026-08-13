@@ -231,6 +231,14 @@ pub fn build_pool(
 /// `clamp_post_body` follows the same principle when it does fire, cutting at a
 /// sentence boundary so a clamped post still ends on a period.
 ///
+/// The wording asks for what the wording can get, which is a shape: two short
+/// sentences, ending sooner as the budget nears. What it cannot get is the last
+/// sentence landing exactly on 200, because a model emits tokens and cannot
+/// count the characters in them as it composes. That residual overshoot is
+/// answered Rust-side by `REPORTER_PROSE_GRACE`, not by more insistent wording
+/// — and the grace is deliberately absent from these instructions, since a
+/// number the model is told is a number it composes toward.
+///
 /// Backticks are asked for rather than hoped for. The body renders as markdown,
 /// where a backticked name is a code span the annotator resolves — clickable by
 /// being backticked — and the model was already emitting them by habit, which
