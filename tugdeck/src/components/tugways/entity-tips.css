@@ -1,0 +1,130 @@
+/* @tug-pairings {
+  --tugx-tip-mono-fg | --tugx-tooltip-bg | informational
+  --tugx-tip-add-fg | --tugx-tooltip-bg | informational
+  --tugx-tip-del-fg | --tugx-tooltip-bg | informational
+  --tugx-tip-mark-added | --tugx-tooltip-bg | informational
+  --tugx-tip-mark-deleted | --tugx-tooltip-bg | informational
+  --tugx-tip-mark-modified | --tugx-tooltip-bg | informational
+  --tugx-tip-mark-renamed | --tugx-tooltip-bg | informational
+} */
+
+/**
+ * Entity tips — the shared skeleton every entity hover is built from.
+ *
+ * Rendered inside TugTooltip's bubble (`[data-variant="entity"]`), so the
+ * ground is the tooltip's `screen` surface and nothing here paints its own
+ * background. What this file owns is the ORDER's typography: a title that
+ * leads, meta rows a step back from it, flat-text runs in mono, and a roster
+ * whose columns line up.
+ *
+ * @tug-pairings
+ * | Element                   | Surface            | Role          | Context                          |
+ * |---------------------------|--------------------|---------------|----------------------------------|
+ * | --tugx-tip-mono-fg        | --tugx-tooltip-bg  | informational | .tugx-tip-mono (color)           |
+ * | --tugx-tip-add-fg         | --tugx-tooltip-bg  | informational | .tugx-tip-add (color)            |
+ * | --tugx-tip-del-fg         | --tugx-tooltip-bg  | informational | .tugx-tip-del (color)            |
+ * | --tugx-tip-mark-added     | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
+ * | --tugx-tip-mark-deleted   | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
+ * | --tugx-tip-mark-modified  | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
+ * | --tugx-tip-mark-renamed   | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
+ */
+
+body {
+  --tugx-tip-mono-fg: var(--tug7-element-global-text-normal-muted-rest);
+  /* The ± pair and the status marks take the same tones the diff document
+     gives them, so a file reads the same wherever its change is stated. */
+  --tugx-tip-add-fg: var(--tug7-element-tone-text-normal-success-rest);
+  --tugx-tip-del-fg: var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-tip-mark-added: var(--tug7-element-tone-text-normal-success-rest);
+  --tugx-tip-mark-deleted: var(--tug7-element-tone-text-normal-danger-rest);
+  --tugx-tip-mark-modified: var(--tug7-element-tone-text-normal-caution-rest);
+  --tugx-tip-mark-renamed: var(--tug7-element-tone-text-normal-accent-rest);
+}
+
+.tugx-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The entity's own name for itself — a commit subject, a session identity
+   line, a file path. Always the first row, always the heaviest. */
+.tugx-tip-title {
+  font-weight: var(--tug-font-weight-semibold);
+}
+
+/* Attribution, description, lineage — true of the entity, but not its name. */
+.tugx-tip-meta {
+  opacity: 0.85;
+}
+
+/* Flat text — a full sha, a citation, a path. Monospace belongs where the
+   run is meant to be read character by character or pasted elsewhere. */
+.tugx-tip-mono {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tugx-tip-mono-fg);
+  overflow-wrap: anywhere;
+}
+
+/* The shape line and the roster form one block, set off from the identity
+   rows above by space rather than a rule — the bubble is small enough that a
+   rule would read as division rather than grouping. */
+.tugx-tip-shape {
+  margin-top: 0.375rem;
+}
+
+.tugx-tip-roster {
+  display: grid;
+  /* mark · path · counts — the path takes the slack so the counts column
+     stays flush right and the marks stay flush left. */
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.5rem;
+  row-gap: 1px;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tugx-tip-roster-mark {
+  font-weight: var(--tug-font-weight-semibold);
+  text-align: center;
+  color: var(--tugx-tip-mono-fg);
+}
+
+.tugx-tip-roster-mark[data-mark="A"] {
+  color: var(--tugx-tip-mark-added);
+}
+.tugx-tip-roster-mark[data-mark="D"] {
+  color: var(--tugx-tip-mark-deleted);
+}
+.tugx-tip-roster-mark[data-mark="M"] {
+  color: var(--tugx-tip-mark-modified);
+}
+.tugx-tip-roster-mark[data-mark="R"] {
+  color: var(--tugx-tip-mark-renamed);
+}
+
+.tugx-tip-roster-path {
+  overflow-wrap: anywhere;
+}
+
+.tugx-tip-roster-counts {
+  white-space: nowrap;
+}
+
+.tugx-tip-add {
+  color: var(--tugx-tip-add-fg);
+}
+
+.tugx-tip-del {
+  color: var(--tugx-tip-del-fg);
+}
+
+/* What the cap left out. Set apart from the roster's own rows so it reads as
+   a statement about the list rather than another entry in it. */
+.tugx-tip-more {
+  margin-top: 1px;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tugx-tip-mono-fg);
+}

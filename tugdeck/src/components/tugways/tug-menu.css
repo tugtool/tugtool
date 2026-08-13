@@ -61,7 +61,7 @@
 
 
 body {
-  /* --- Menu / Popover / Tooltip --- */
+  /* --- Menu / Popover --- (tooltip aliases live in tug-tooltip.css) */
   --tugx-menu-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
   --tugx-menu-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-menu-border: var(--tug7-element-global-border-normal-default-rest);
@@ -77,10 +77,6 @@ body {
   --tugx-popover-bg: var(--tug7-surface-global-primary-normal-overlay-rest);
   --tugx-popover-fg: var(--tug7-element-global-text-normal-default-rest);
   --tugx-popover-border: var(--tug7-element-global-border-normal-default-rest);
-  --tugx-tooltip-bg: var(--tug7-surface-global-primary-normal-screen-rest);
-  --tugx-tooltip-fg: var(--tug7-element-global-text-normal-default-rest);
-  --tugx-tooltip-border: var(--tug7-element-global-border-normal-default-rest);
-
 }
 
 /* ============================================================================

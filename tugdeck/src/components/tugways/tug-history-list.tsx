@@ -420,6 +420,8 @@ function CommitRow({
           <CommitIdentityLine
             sha={commit.sha}
             subject={commit.subject}
+            author={commit.committer ?? commit.author}
+            dateIso={commit.committer_date}
             shaContent={renderFilterHighlight(
               shortSha,
               scopedQuery(filterQuery, filterScope, "hash"),

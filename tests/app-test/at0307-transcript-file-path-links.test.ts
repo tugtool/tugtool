@@ -69,6 +69,8 @@
  * @covers tugdeck/src/lib/open-file-in-card.ts
  * @covers tugdeck/src/components/tugways/tug-editor-context-menu.tsx
  * @covers tugdeck/src/components/tugways/annotation-scope.tsx
+ * @covers tugdeck/src/components/tugways/annotation-portals.tsx
+ * @covers tugdeck/src/components/tugways/commit-tip-portals.tsx
  * @covers tugdeck/src/components/tugways/cards/blocks/bash-tool-block.tsx
  * @covers tugdeck/src/components/tugways/blocks/tool-file-ref.tsx
  * @covers tugdeck/src/components/tugways/body-kinds/path-list-block.tsx

@@ -27,9 +27,9 @@
 
 import {
   commitResolverFor,
+  type CommitFacts,
   type CommitVerdict,
 } from "./annotator/commit-resolution";
-import { commitSummary } from "./annotator/commit-summary";
 import { fileNameResolverFor } from "./annotator/file-name-resolution";
 import {
   pathResolutionStore,
@@ -50,9 +50,10 @@ export interface GazetteRefRoot {
 export type GazetteRefResolution =
   /** Confirmed. The payload is the annotation contract's own — stamped on
    *  the atom, it makes the registry's click and menu the atom's gesture.
-   *  `title` is the hover for a chip that cannot describe itself (a commit
-   *  hash); absent when the label already says what the thing is. */
-  | { state: "actionable"; payload: AnnotationPayload; title?: string }
+   *  `facts` is what a chip that cannot describe itself (a commit hash) says
+   *  on hover; the card builds the tip from it. Absent when the label
+   *  already says what the thing is. */
+  | { state: "actionable"; payload: AnnotationPayload; facts?: CommitFacts }
   /** A probe is in flight; the stores notify when it lands. */
   | { state: "pending" }
   /** Never actionable, and this is why — the atom's tooltip carries it. */
@@ -133,7 +134,7 @@ export function resolveGazetteRef(
           },
           // A trailing chip stands with no sentence around it, so the hover
           // is the only thing that can say which change this is.
-          title: commitSummary(target, verdict.facts),
+          facts: verdict.facts,
         };
       case "pending":
         return PENDING;

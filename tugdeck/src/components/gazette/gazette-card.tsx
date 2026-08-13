@@ -91,14 +91,16 @@ import {
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
 import { AnnotationScope } from "@/components/tugways/annotation-scope";
-import { useSessionCitationPortals } from "@/components/tugways/session-citation-portals";
+import { useAnnotationPortals } from "@/components/tugways/annotation-portals";
 import { ANNOTATION_CLASS, type AnnotationContext } from "@/lib/annotator/types";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
 import {
   commitResolverFor,
   NO_COMMIT_VERDICT,
 } from "@/lib/annotator/commit-resolution";
-import { COMMIT_LABEL_LENGTH } from "@/lib/annotator/commit-summary";
+import { commitTip } from "@/components/tugways/entity-tips";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { COMMIT_LABEL_LENGTH } from "@/lib/commit-format";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
 import { annotationEntryFor } from "@/lib/annotator/registry";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
@@ -222,10 +224,12 @@ function annotationProps(
       // Opening a card must not move DOM focus with the press.
       "data-tug-focus": "refuse",
       "data-no-activate": "",
-      // A commit's hover is the summary the verdict carried — subject,
-      // author, and what it touched. Everything else is named by its label
-      // already, so the path is all its hover needs to add.
-      title: resolution.title ?? `${ref.kind}: ${ref.target}`,
+      // A commit's hover is the entity tip, mounted by {@link RefAtom} — the
+      // same bubble the transcript shows for the same sha. Everything else is
+      // named by its label already, so the target is all its hover adds.
+      ...(resolution.facts === undefined
+        ? { title: `${ref.kind}: ${ref.target}` }
+        : {}),
     };
   }
   return {
@@ -289,11 +293,31 @@ function RefAtom({
       value={chipRef.target}
     />
   );
-  return (
+  const marked = (
     // No `data-tugx-wrapped` — that mark is for a run the annotator split
     // out of prose, whose affordance has to be painted onto the text. A chip
     // has its own shape and its own hover, exactly as in a transcript body.
     <span {...annotationProps(chipRef, resolution)}>{chip}</span>
+  );
+  // A confirmed commit describes itself in the app's own bubble, not the
+  // OS's — the same tip the transcript shows for the same sha.
+  if (resolution.state !== "actionable" || resolution.facts === undefined) {
+    return marked;
+  }
+  return (
+    <TugTooltip
+      variant="entity"
+      align="start"
+      content={commitTip({
+        sha: chipRef.target,
+        subject: resolution.facts.subject,
+        author: resolution.facts.author,
+        date: resolution.facts.date,
+        files: resolution.facts.files,
+      })}
+    >
+      {marked}
+    </TugTooltip>
   );
 }
 
@@ -404,11 +428,11 @@ function GazettePostBody({
   post: GazettePostEntry;
   bodyRef?: React.MutableRefObject<HTMLElement | null>;
 }): React.ReactElement {
-  // A session named in the prose becomes the live citation chip, portaled
-  // into the run the annotator marked. Driven by the block's own
-  // `onAnnotated`, so collection cannot run before the pass that creates the
-  // spans ([P06]).
-  const { onAnnotated, portals } = useSessionCitationPortals();
+  // A session named in the prose becomes the live citation chip, and a
+  // confirmed sha gets the app's own commit hover — both portaled into the
+  // runs the annotator marked. Driven by the block's own `onAnnotated`, so
+  // collection cannot run before the pass that creates the spans ([P06]).
+  const { onAnnotated, portals } = useAnnotationPortals();
   return (
     <div
       className="gazette-post-body"

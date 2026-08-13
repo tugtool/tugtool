@@ -47,6 +47,8 @@
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/components/tugways/tug-action-tooltip.tsx
+ * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
+ * @covers tugdeck/src/components/tugways/tug-tooltip.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -333,7 +335,7 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             await hoverPhrase(app, MENU_BUTTON),
             "the overflow names what it holds, not the press",
-          ).toBe("Session commands");
+          ).toBe("Assorted commands");
           expect(
             await chipText(app, MENU_BUTTON),
             "no single command stands behind it, so no chip",

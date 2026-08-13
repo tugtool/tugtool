@@ -163,14 +163,14 @@ elevation doctrine in [theme-engine.md](theme-engine.md).)
 | `sunken` | a recessed well cut into a surface | terminals, code / table headers, troughs, gutters, image placeholders |
 | `default` | the standard component surface — the generic surface most controls rest on, a hair recessed from the card body | the workhorse; the large majority of component backgrounds |
 | `content` | the **body of a card / pane** — the primary surface its content sits on | pane body, transcript, prompt entry |
-| `overlay` | a layer floating above the whole UI (co-located with `content` today; may lift forward later) | sheets, dialogs, popovers, menus, completion, tooltips |
+| `overlay` | a layer floating above the whole UI (co-located with `content` today; may lift forward later) | sheets, dialogs, popovers, menus, completion (tooltips sit on `screen`) |
 
 These five are strictly monotonic in both modes: `canvas` < `sunken` < `default` < `content` ≤ `overlay`.
 
 **Not elevation rungs** (special-purpose; they sit off the strict ladder):
 
 - `raised` — a subtle accent lifted a step from `default` (table stripes, hover rows, chips, inline-dialog / banner backgrounds). A *relative* lift used within content, not a fixed forward position; its tone is not monotonic across modes, by design.
-- `screen` — the always-light tier: stays light even in light themes so tooltip / dev-panel text needs no inverse treatment.
+- `screen` — the explanatory tier (tooltips, dev panel). It tracks the mode like every other surface — dark in dark themes, light in light ones, so its text is the default neutral and never needs inverse treatment. What makes it special is that it sits one rung *off* `overlay` rather than on the ladder: an explanatory surface reads a step apart from an interactive one. In light themes that means it stays light rather than dropping into a `sunken`-style recessed well.
 - `grid` — decorative deck grid lines (often semi-transparent); not a content surface.
 - `control` — a passthrough to the outlined-control surface (usually `transparent`); it shows whatever rung sits behind it rather than introducing one.
 

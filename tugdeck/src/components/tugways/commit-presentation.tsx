@@ -29,9 +29,16 @@ import "./commit-presentation.css";
 import type React from "react";
 
 import { CommitShaText } from "@/components/tugways/commit-sha-text";
+import { commitTip } from "@/components/tugways/entity-tips";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugMarkdownText } from "@/components/tugways/tug-markdown-text";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
+import {
+  commitRoster,
+  statLine,
+  type CommitFileShape,
+} from "@/lib/commit-format";
 
 /** How much of the clock a stamp states. */
 export type CommitStampGrain =
@@ -149,6 +156,9 @@ export function CommitMetaCell({
 export function CommitIdentityLine({
   sha,
   subject,
+  author,
+  dateIso,
+  files,
   shaContent,
   subjectContent,
   badge,
@@ -156,6 +166,15 @@ export function CommitIdentityLine({
 }: {
   sha: string;
   subject: string;
+  /**
+   * What the hover adds to the words on the line. The line shows an
+   * abbreviated sha and a subject that may be clipped; the tip states the
+   * whole hash, who landed it and when, and — where the surface knows them —
+   * the files it touched. Omitted parts are simply absent from the tip.
+   */
+  author?: string;
+  dateIso?: string;
+  files?: readonly CommitFileShape[];
   /**
    * The two `*Content` slots let a host paint the same text differently — the
    * History filter wraps its matched spans in `<mark>`. They are decoration
@@ -169,18 +188,29 @@ export function CommitIdentityLine({
   className?: string;
 }): React.ReactElement {
   return (
-    <span
-      className={
-        className !== undefined ? `tugx-commit-identity ${className}` : "tugx-commit-identity"
-      }
-      data-slot="commit-identity"
-      title={subject}
+    <TugTooltip
+      variant="entity"
+      align="start"
+      content={commitTip({
+        sha,
+        subject,
+        author,
+        date: dateIso !== undefined ? formatCommitStamp(dateIso, "datetime") : undefined,
+        files,
+      })}
     >
-      <CommitShaText sha={sha} content={shaContent} />
-      {" "}
-      {subjectContent ?? subject}
-      {badge}
-    </span>
+      <span
+        className={
+          className !== undefined ? `tugx-commit-identity ${className}` : "tugx-commit-identity"
+        }
+        data-slot="commit-identity"
+      >
+        <CommitShaText sha={sha} content={shaContent} />
+        {" "}
+        {subjectContent ?? subject}
+        {badge}
+      </span>
+    </TugTooltip>
   );
 }
 
@@ -274,9 +304,12 @@ export function commitCopyText(facts: CommitCopyFacts): string {
   if (body.length > 0) lines.push("", body.replace(/\s+$/, ""));
   const files = facts.files ?? [];
   if (files.length > 0) {
-    lines.push("");
-    for (const f of files) {
-      lines.push(`  ${f.status.padEnd(9)} ${f.path}  +${f.added} −${f.removed}`);
+    // The whole roster, uncapped — a copy is a record, not a glance, so the
+    // hover's cap does not apply. The vocabulary is still the shared one.
+    lines.push("", statLine(files));
+    for (const entry of commitRoster(files, files.length).entries) {
+      const counts = entry.counts === "" ? "" : `  ${entry.counts}`;
+      lines.push(`  ${entry.mark}  ${entry.path}${counts}`);
     }
   }
   return `${lines.join("\n")}\n`;

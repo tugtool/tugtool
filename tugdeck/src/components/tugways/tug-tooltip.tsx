@@ -111,6 +111,17 @@ export interface TugTooltipProps {
    */
   shortcut?: string;
   /**
+   * What kind of thing the bubble is saying, which decides its measure and
+   * flow. `label` is the default — a phrase, optionally with a chord chip,
+   * laid out as one centered row. `entity` is a block of facts about a
+   * commit, a session, or a file (see `entity-tips.tsx`): it flows as a
+   * block and takes a wider cap, because a file roster in a 300px column
+   * wraps every path.
+   * @selector [data-variant="label"] | [data-variant="entity"]
+   * @default "label"
+   */
+  variant?: "label" | "entity";
+  /**
    * Which side of the trigger to place the tooltip.
    * @selector [data-side="top"] | [data-side="bottom"] | [data-side="left"] | [data-side="right"]
    * @default "top"
@@ -200,6 +211,7 @@ function isClipped(el: Element): boolean {
 export function TugTooltip({
   content,
   shortcut,
+  variant = "label",
   side = "top",
   align = "center",
   sideOffset = 6,
@@ -311,6 +323,7 @@ export function TugTooltip({
       <Tooltip.Portal container={overlayRoot}>
         <Tooltip.Content
           data-slot="tug-tooltip"
+          data-variant={variant}
           className={cn("tug-tooltip-content")}
           side={side}
           align={align}

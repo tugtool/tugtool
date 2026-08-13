@@ -23,6 +23,10 @@
  * @covers tugdeck/src/components/tugways/cards/session-history/session-history-view.tsx
  * @covers tugdeck/src/components/tugways/tug-changes-list.tsx
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
+ * @covers tugdeck/src/components/tugways/commit-presentation.tsx
+ * @covers tugdeck/src/lib/commit-format.ts
+ * @covers tugdeck/src/components/tugways/entity-tips.tsx
+ * @covers tugdeck/src/components/tugways/entity-tips.css
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.css
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  */

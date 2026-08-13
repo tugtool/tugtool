@@ -1,0 +1,188 @@
+/**
+ * Entity tips — what hovering a commit, a session, or a file says.
+ *
+ * An entity can be pointed at from many places: a sha appears in transcript
+ * prose, in a History row, on a receipt, in a Gazette ref. Before this module
+ * each of those surfaces answered the hover its own way, so the same commit
+ * described itself five different ways depending on which one you happened to
+ * be looking at — and four of those answers were the OS `title` attribute,
+ * which is not a surface we can theme, delay, or dismiss.
+ *
+ * The rule this module exists to hold: **one hover answer per entity kind,
+ * wherever it is pointed at.** A builder here returns the `content` for a
+ * {@link TugTooltip} with `variant="entity"`; the skeleton it fills is in
+ * `entity-tips.css`, and the words it uses for a commit's shape come from
+ * `lib/commit-format` so the hover and the badges beside it agree.
+ *
+ * The shape is the same for all three, because it is the order a reader
+ * needs: **what it is** (the title row), **what is true of it** (meta rows),
+ * then **what it touched** (the shape line and roster, commits only).
+ *
+ * Pure presentation: the builders take facts and return nodes. Resolving a
+ * sha or an id to those facts is the caller's job.
+ *
+ * @module components/tugways/entity-tips
+ */
+
+import "./entity-tips.css";
+
+import React from "react";
+
+import {
+  commitRoster,
+  statLine,
+  type CommitFileShape,
+} from "@/lib/commit-format";
+
+/** What a commit hover states. Any surface holding these can build the tip. */
+export interface CommitTipFacts {
+  /** The full hash — the hover is where the whole thing belongs, since the
+   *  ink that triggered it only ever shows the first eight. */
+  sha: string;
+  /** The subject line; empty for a commit whose message is empty. */
+  subject: string;
+  /** Author (or committer) display name; empty when unknown. */
+  author?: string;
+  /** Author date, already formatted for reading. Empty when unknown. */
+  date?: string;
+  /** The files it touched, when the surface knows them. */
+  files?: readonly CommitFileShape[];
+}
+
+/**
+ * The commit hover: subject, attribution, hash, then what it touched.
+ *
+ * A sha is the least self-describing thing in transcript ink — eight
+ * characters of hex that name a specific, knowable change and tell you
+ * nothing about it. So the tip leads with the subject, because that is the
+ * commit's own name for itself, then attributes it, then states its shape.
+ * The roster is capped ({@link commitRoster}) and says how many files it
+ * dropped: a hover is a glance, not a diff, but a glance should still tell
+ * you the size of what it is not showing.
+ */
+export function commitTip(facts: CommitTipFacts): React.ReactNode {
+  const attribution = [facts.author ?? "", facts.date ?? ""].filter(
+    (part) => part !== "",
+  );
+  const files = facts.files ?? [];
+  const roster = commitRoster(files);
+  return (
+    <span className="tugx-tip">
+      <span className="tugx-tip-title">
+        {facts.subject === "" ? facts.sha : facts.subject}
+      </span>
+      {attribution.length > 0 ? (
+        <span className="tugx-tip-meta">{attribution.join(" · ")}</span>
+      ) : null}
+      <span className="tugx-tip-mono">{facts.sha}</span>
+      {files.length > 0 ? (
+        <>
+          <span className="tugx-tip-shape">{statLine(files)}</span>
+          <span className="tugx-tip-roster">
+            {roster.entries.map((entry) => (
+              <React.Fragment key={entry.path}>
+                <span className="tugx-tip-roster-mark" data-mark={entry.mark}>
+                  {entry.mark}
+                </span>
+                <span className="tugx-tip-roster-path">{entry.path}</span>
+                <span className="tugx-tip-roster-counts">
+                  {renderCounts(entry.counts)}
+                </span>
+              </React.Fragment>
+            ))}
+          </span>
+          {roster.hidden > 0 ? (
+            <span className="tugx-tip-more">{`… and ${roster.hidden} more`}</span>
+          ) : null}
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * `+12 −3` with each side taking its own tone. Split rather than styled
+ * whole, because the two numbers say opposite things and the diff surfaces
+ * already colour them apart.
+ */
+function renderCounts(counts: string): React.ReactNode {
+  if (counts === "") return null;
+  return counts.split(" ").map((part, index) => (
+    <span
+      // The parts of one file's counts are positional and never reorder.
+      // eslint-disable-next-line react/no-array-index-key
+      key={index}
+      className={part.startsWith("+") ? "tugx-tip-add" : "tugx-tip-del"}
+    >
+      {index > 0 ? " " : null}
+      {part}
+    </span>
+  ));
+}
+
+/** What a session hover states. */
+export interface SessionTipFacts {
+  /** `project/callsign` — the session's identity as a reader says it. */
+  identityLine: string;
+  /** The session's description, when it has one. */
+  description?: string | null;
+  /** Ancestors this session forked through, oldest first. */
+  lineage?: readonly string[];
+  /** The flat-text citation — the form a reader would paste elsewhere. */
+  citation: string;
+}
+
+/**
+ * The session hover: what the run cannot show — the description, the
+ * lineage, and the citation.
+ */
+export function sessionTip(facts: SessionTipFacts): React.ReactNode {
+  const lineage = facts.lineage ?? [];
+  return (
+    <span className="tugx-tip">
+      <span className="tugx-tip-title">{facts.identityLine}</span>
+      {facts.description !== null && facts.description !== undefined ? (
+        <span className="tugx-tip-meta">{facts.description}</span>
+      ) : null}
+      {lineage.length > 0 ? (
+        <span className="tugx-tip-meta">
+          {`forked at ${lineage.join(" → ")}`}
+        </span>
+      ) : null}
+      <span className="tugx-tip-mono">{facts.citation}</span>
+    </span>
+  );
+}
+
+/** What a file hover states. */
+export interface FileTipFacts {
+  /** Path relative to the repo root, or absolute when that is what is known. */
+  path: string;
+  /** Where a rename came from, when the surface knows it. */
+  renamedFrom?: string;
+  /** A status word (`modified`), when the surface knows it. */
+  status?: string;
+}
+
+/**
+ * The file hover: the whole path, and what happened to it.
+ *
+ * Ink naming a file is nearly always elided — a basename in a tool header, a
+ * middle-ellipsized path in a row — so the path leads, in mono, whole. A
+ * rename states both ends, because the old name is the fact the new one
+ * cannot carry.
+ */
+export function fileTip(facts: FileTipFacts): React.ReactNode {
+  return (
+    <span className="tugx-tip">
+      <span className="tugx-tip-mono">
+        {facts.renamedFrom !== undefined && facts.renamedFrom !== ""
+          ? `${facts.renamedFrom} → ${facts.path}`
+          : facts.path}
+      </span>
+      {facts.status !== undefined && facts.status !== "" ? (
+        <span className="tugx-tip-meta">{facts.status}</span>
+      ) : null}
+    </span>
+  );
+}

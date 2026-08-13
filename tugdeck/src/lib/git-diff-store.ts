@@ -23,6 +23,7 @@
  * @module lib/git-diff-store
  */
 
+import { statLineFrom } from "./commit-format";
 import type { FeedStore } from "./feed-store";
 import type { FeedIdValue } from "../protocol";
 import { FeedId } from "../protocol";
@@ -137,9 +138,13 @@ export function fileStatLabel(file: GitDiffFile): string {
 }
 
 /**
- * The summary line for the sheet header, mirroring Claude Code's
- * "N files changed +X −Y". Pluralizes "file", and omits the stat tail
- * entirely when nothing changed.
+ * The summary line for the sheet header: `N files changed, +X −Y`.
+ *
+ * The sentence is {@link statLineFrom}'s — the same words a commit hover and
+ * a receipt state, because a reader comparing the header above a diff with
+ * the tip over the sha that landed it should not have to notice they are
+ * spelled differently. What is local is the empty case: a sheet with nothing
+ * in it says so, where a commit with no files simply has no line.
  */
 export function diffSummaryLine(
   fileCount: number,
@@ -147,8 +152,7 @@ export function diffSummaryLine(
   totalRemoved: number,
 ): string {
   if (fileCount === 0) return "No uncommitted changes";
-  const noun = fileCount === 1 ? "file" : "files";
-  return `${fileCount} ${noun} changed ${formatDiffStat(totalAdded, totalRemoved)}`;
+  return statLineFrom(fileCount, totalAdded, totalRemoved);
 }
 
 /** Parse a GIT_DIFF feed payload into a `GitDiffPayload`, or `null`. */

@@ -117,7 +117,6 @@ import {
 } from "./annotate-counters";
 import { scanCommitShas } from "./detect-commit-sha";
 import { scanSessionRefs } from "./detect-session-ref";
-import { commitSummary } from "./commit-summary";
 import {
   classifyInlineCode,
   payloadForReference,
@@ -231,14 +230,9 @@ function annotatePathsInText(
       matches.push({ start: reference.start, end: reference.end, payload });
     }
     for (const found of scanCommitShas(text)) {
-      const marked = payloadForCommit(found.sha, context);
-      if (marked === null) continue;
-      matches.push({
-        start: found.start,
-        end: found.end,
-        payload: marked.payload,
-        title: marked.title,
-      });
+      const payload = payloadForCommit(found.sha, context);
+      if (payload === null) continue;
+      matches.push({ start: found.start, end: found.end, payload });
     }
     // One text node, two scans: the wrapper takes them in order and drops
     // any that overlaps a run already taken.
@@ -294,25 +288,26 @@ function sessionMatch(
 }
 
 /**
- * The commit-sha payload for a verified sha — and the hover that says what
- * the sha IS, which the same verdict carries. `null` when it is not a
- * commit here, or not yet known to be one.
+ * The commit-sha payload for a verified sha. `null` when it is not a commit
+ * here, or not yet known to be one.
+ *
+ * What the sha IS — the subject, the attribution, the shape — is said by the
+ * hover, which is a real tooltip mounted onto this mark by
+ * {@link useCommitTipPortals} rather than a `title` string stamped here. The
+ * facts it shows come from the same verdict, asked again at mount.
  */
 function payloadForCommit(
   sha: string,
   context: AnnotationContext,
-): { payload: AnnotationPayload; title: string } | null {
+): AnnotationPayload | null {
   if (context.commitRoot === null) return null;
   const verdict = context.resolveCommit(sha);
   if (verdict.state !== "confirmed") return null;
   return {
-    payload: {
-      kind: "commit-sha",
-      sha,
-      root: context.commitRoot,
-      paths: verdict.paths,
-    },
-    title: commitSummary(sha, verdict.facts),
+    kind: "commit-sha",
+    sha,
+    root: context.commitRoot,
+    paths: verdict.paths,
   };
 }
 

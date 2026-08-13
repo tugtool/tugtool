@@ -67,7 +67,7 @@
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
- * @covers tugdeck/src/lib/annotator/commit-summary.ts
+ * @covers tugdeck/src/components/tugways/entity-tips.tsx
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
@@ -398,11 +398,49 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         expect(inlineCommit?.text).toBe(HEAD_SHA.slice(0, 12));
         expect(inlineCommit?.sha).toBe(HEAD_SHA.slice(0, 12));
         expect(inlineCommit?.root?.startsWith("/")).toBe(true);
-        // The hover is the commit's own subject, then its shape — read off
-        // this checkout's real HEAD, so a wrong commit fails loudly.
-        expect(inlineCommit?.title).toContain(HEAD_SUBJECT);
-        expect(inlineCommit?.title).toContain("file");
-        expect(inlineCommit?.title).toContain(HEAD_SHA.slice(0, 12));
+        // The hover is the app's own bubble, not the OS's: the mark carries no
+        // native title at all, and what a reader sees is a TugTooltip mounted
+        // onto it by the annotator's portal layer.
+        expect(inlineCommit?.title).toBeNull();
+
+        // Hover it and read the tip: the commit's own subject, its shape, and
+        // the whole hash — read off this checkout's real HEAD, so a wrong
+        // commit fails loudly.
+        await app.evalJS<null>(
+          `(function () {
+            var el = document.querySelector(${JSON.stringify(INLINE_COMMIT)});
+            var anchor = el === null ? null : el.firstElementChild;
+            if (anchor === null) return null;
+            anchor.dispatchEvent(new PointerEvent("pointerenter", { bubbles: false }));
+            anchor.dispatchEvent(new PointerEvent("pointermove", { bubbles: true }));
+            return null;
+          })()`,
+        );
+        const TIP = '[data-slot="tug-tooltip"][data-variant="entity"]';
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(TIP)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        const tip = await app.evalJS<string>(
+          `(function () {
+            var bubble = document.querySelector(${JSON.stringify(TIP)});
+            if (bubble === null) return "";
+            // Radix renders the content twice — once to be seen, once in a
+            // visually-hidden node a screen reader announces. Take the
+            // visible children only, or every phrase reads doubled.
+            return Array.prototype.filter
+              .call(bubble.childNodes, function (n) {
+                return !(n.nodeType === 1 && n.getAttribute("role") === "tooltip");
+              })
+              .map(function (n) { return n.textContent || ""; })
+              .join(" ")
+              .trim();
+          })()`,
+        );
+        note("inline commit tip", tip);
+        expect(tip).toContain(HEAD_SUBJECT);
+        expect(tip).toContain("file");
+        expect(tip).toContain(HEAD_SHA.slice(0, 12));
 
         // The trailing chip — the ref the prose never named — is stamped the
         // same way, so its click and menu are the registry's too.

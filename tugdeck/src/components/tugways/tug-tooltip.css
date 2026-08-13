@@ -74,6 +74,14 @@ body {
   transform-origin: var(--radix-tooltip-content-transform-origin);
 }
 
+/* An entity tip is a block of facts, not a phrase: it flows as a block (its
+   own rows decide their layout) and takes a wider cap, because a file roster
+   in a 300px column wraps every path it lists. */
+.tug-tooltip-content[data-variant="entity"] {
+  display: block;
+  max-width: 27rem;
+}
+
 /* Enter animation — delayed-open and instant-open states */
 .tug-tooltip-content[data-state="delayed-open"],
 .tug-tooltip-content[data-state="instant-open"] {

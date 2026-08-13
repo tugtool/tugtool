@@ -163,9 +163,10 @@ describe("resolveGazetteRef", () => {
       paths: ["a.ts", "b.css"],
     });
     // The chip stands with no sentence around it, so its hover has to say
-    // which change this is: subject first, then the shape of the diff.
-    expect(r.title).toContain("fix the thing");
-    expect(r.title).toContain("2 files changed");
+    // which change this is. The resolution carries the facts; the card builds
+    // the tip from them.
+    expect(r.facts?.subject).toBe("fix the thing");
+    expect(r.facts?.files).toHaveLength(2);
   });
 
   test("a sha git cannot show is inert with the repo named", () => {

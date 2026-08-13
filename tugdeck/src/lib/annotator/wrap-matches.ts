@@ -35,13 +35,6 @@ export interface TextRunMatch {
   /** What the run is. */
   payload: AnnotationPayload;
   /**
-   * Hover text for the wrapper, when the run cannot describe itself. A path
-   * reads as what it is and wants none; a commit sha is eight characters of
-   * hex that name a change and say nothing about it, so the detector passes
-   * the summary the verdict already carried.
-   */
-  title?: string;
-  /**
    * A HOLD on the run rather than a mark of it: the wrapper consumes the
    * range and emits no element, leaving the text exactly as it was.
    *
@@ -144,7 +137,6 @@ export function wrapMatchesInTextNode(
     span.setAttribute(WRAPPED_ATTRIBUTE, "");
     span.textContent = text.slice(match.start, match.end);
     stampAnnotation(span, match.payload);
-    if (match.title !== undefined) span.title = match.title;
     fragment.appendChild(span);
     emitted = match.end;
   }

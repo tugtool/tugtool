@@ -66,11 +66,13 @@ describe("fileStatLabel", () => {
 });
 
 describe("diffSummaryLine", () => {
+  // The sentence is the shared one (`lib/commit-format`), so the header over
+  // a diff and the tip over the sha that landed it read identically.
   test("pluralizes and appends the totals", () => {
-    expect(diffSummaryLine(3, 12, 5)).toBe("3 files changed +12 −5");
+    expect(diffSummaryLine(3, 12, 5)).toBe("3 files changed, +12 −5");
   });
   test("singular for one file", () => {
-    expect(diffSummaryLine(1, 10, 2)).toBe("1 file changed +10 −2");
+    expect(diffSummaryLine(1, 10, 2)).toBe("1 file changed, +10 −2");
   });
   test("empty tree", () => {
     expect(diffSummaryLine(0, 0, 0)).toBe("No uncommitted changes");
