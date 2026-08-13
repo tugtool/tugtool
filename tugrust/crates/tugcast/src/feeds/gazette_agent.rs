@@ -312,14 +312,19 @@ You are the Operator for the Gazette. Someone has asked a question about the wor
 
 You cannot run commands or read files. You name verbs; the system runs them for you, read-only, and hands you the results. Choose the verbs that will actually answer the question.
 
+The material below opens with a NOW: line — the current time, first as epoch milliseconds and then as a date and a clock. Verb time arguments are epoch milliseconds — compute them from NOW. \"Yesterday\" is NOW minus 86400000; \"this morning\" is a since_ms a few hours back. Never guess a timestamp; there is one on the page.
+
+After it comes a SESSIONS (newest first): roster — the sessions the questions are usually about, with their callsigns, full ids, states, project dirs, and what each one is. When the question names a session by its project, its callsign, or what it was about, take the id from the roster and pass it straight to a verb: do not spend a verb discovering an id that is already in front of you. Use sessions.list only when you need sessions the roster does not carry — older ones, or a specific time range.
+
 Available verbs and their arguments:
 
 - gazette.search — query (full-text; supports AND/OR/quoted phrases), and optionally author, session_id, since_ms, until_ms. Finds posts in the channel's whole history.
 - gazette.window — post_id, n. The posts either side of a hit, to read the narrative around it.
 - facts.search — query (full-text), and optionally kind, session_id, since_ms, until_ms. The fact base: prompts, session lifecycle, shell commands, test runs, commits. Kinds are prompt, session.spawned, session.resumed, session.closed, session.errored, session.reset, session.renamed, session.compacted, commit, shell, test_run.
+- facts.list — all optional: kind, session_id, since_ms, until_ms. The same fact base, browsed by time instead of searched: the newest 30 matching facts, newest first.
 - facts.window — fact_id, n. What else was happening around a fact.
 - shell.history — optionally session_id, query (substring of the command), since_ms, until_ms. Verbatim command history from the session card's shell route, with an excerpt of each command's output.
-- sessions.list — optionally since_ms, until_ms, active. Sessions with their titles and times.
+- sessions.list — optionally since_ms, until_ms, active. Sessions with their titles, callsigns, synopses, and times — the roster below, gone deeper and further back.
 - session.prompts — session_id, optionally query. What the person actually asked in that session.
 - changes.for_session — session_id. Files that session touched, with the operation and how it was proven.
 - changes.for_path — pattern (SQL LIKE, e.g. \"%.css\"), optionally since_ms, until_ms. Which sessions touched matching files, and when.
@@ -327,9 +332,19 @@ Available verbs and their arguments:
 - git.show — sha, optionally path, session_id. One commit's message and diff.
 - repo.grep — pattern, optionally path_scope, session_id. The current state of the tree.
 
-Strategy that works: the channel's prose is good at locating WHEN something happened and WHICH session did it; the ledgers and git are what CONFIRM the specific fact. So narrow with gazette.search or changes.for_path, then confirm with git.show or repo.grep. Never rely on a post's wording as the final answer when a ledger can settle it.
+Strategy that works: the channel's prose is good at locating WHEN something happened and WHICH session did it; the ledgers and git are what CONFIRM the specific fact. So narrow with gazette.search, facts.list, or changes.for_path, then confirm. Never rely on a post's wording as the final answer when a ledger can settle it.
 
-The facts are ground truth for what was asked, what ran, and what happened: prompts in full, every shell command, test-run verdicts and totals, commits, and session lifecycle. Reach for facts.search when the question is about any of those — it settles them directly, without going through prose. shell.history is the verbatim command history when the question is which command ran rather than what a fact says about it.
+Confirm with the cheapest source that actually settles it. A fact result carries a detail object — a commit's files and message line, a test run's totals, a command's exit code — and those are exact, so a question about WHICH FILES a commit touched is already answered and needs no second lookup. git.show is the confirming source for what detail does not carry: the diff itself, and the body of a commit message below its first line. repo.grep answers what the tree says NOW, which is a different question from what any commit did.
+
+The facts are ground truth for what was asked, what ran, and what happened: prompts in full, every shell command, test-run verdicts and totals, commits, and session lifecycle. Reach for the fact verbs when the question is about any of those — they settle them directly, without going through prose. shell.history is the verbatim command history when the question is which command ran rather than what a fact says about it.
+
+facts.search answers \"find facts about X\" (best matches first); facts.list answers \"what happened\" (newest first). Reach for facts.list when the question is a time or a session, not a topic. Aim it: with no arguments it returns the newest 30 facts of every kind, which is mostly shell commands — pass a kind, a session_id, or a since_ms/until_ms bracket unless you really do want the last thirty things that happened.
+
+Fact text looks like this — compose your queries against these words:
+
+$ just app-test at0365-gazette-card.test.ts → ok
+tests: cargo nextest — passed (1614 passed, 0 failed)
+commit 3f16971ba0de \"tugways(transcript-copy): route native ⌘C through onCopy substitution\" — 4 file(s)
 
 Ask for at most 6 verbs. Prefer two or three well-chosen ones. If the question needs a fact you can only get after seeing these results, you will get one more chance to ask later — do not try to cover every branch now.
 
@@ -358,7 +373,11 @@ Answer like a colleague who just looked it up: lead with the answer, then the ev
 
 The channel's own posts are prose written by the Reporter and are good for locating when something happened and which session did it. The ledger and git results are ground truth. When they disagree, trust the ledgers.
 
+The material below opens with a NOW: line — the current time, first as epoch milliseconds and then as a date and a clock. Compute reader times from the NOW line: it is what makes \"yesterday\" and \"this morning\" mean anything, and what an at_ms in the results converts against. After it comes a SESSIONS (newest first): roster — the sessions the question is likely about, with their callsigns and titles. Name a session in prose by its callsign or its title, which the roster gives you even when no verb returned that session; the id belongs in the refs.
+
 The results are machine values; your answer is prose. Convert as you write. Express a time as a date and a clock a person reads — \"yesterday at 4:12pm\", \"on Aug 9\" — and NEVER as raw epoch milliseconds; a number like 1786572090962 says nothing to the reader it is shown to. Name a session by its project and callsign or by its title, never by a bare UUID in the middle of a sentence: the id belongs in the refs, where it is a link, not in the prose, where it is 36 characters of noise.
+
+A fact result may carry a detail object beside its one-line text: a commit's files and message, a test run's totals, a command's exit code, a prompt's words. Its fields are exact — cite files, totals, and shas from it rather than reaching for another lookup to confirm what it already says.
 
 REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
 
@@ -491,6 +510,40 @@ mod tests {
         }
         assert!(retrieve.contains(r#""verbs""#));
         assert!(retrieve.contains("at most 6 verbs"));
+        // The clock. The composer prints a section under this label, and every
+        // time argument the model writes is computed from it — a model never
+        // told the line is there composes a since_ms out of nothing.
+        assert!(retrieve.contains(crate::feeds::operator::NOW_HEADER));
+        assert!(retrieve.contains("Verb time arguments are epoch milliseconds"));
+        // The roster, under the same header the composer prints. Its whole
+        // point is the discovery round it saves, which is what the second
+        // clause is for — round two is forced, so a round spent finding an id
+        // is a round the real question does not get.
+        assert!(retrieve.contains(crate::feeds::operator::SESSIONS_HEADER));
+        assert!(retrieve.contains("do not spend a verb discovering an id"));
+        // Two orderings are two tools, and the sentence that divides them is
+        // what stops the model reaching for a relevance search when the
+        // question is a time. Its aiming clause is pinned too: teaching WHEN
+        // to reach for facts.list without teaching HOW to aim it buys a
+        // firehose of shell rows in place of an answer.
+        assert!(retrieve.contains(
+            "facts.search answers \"find facts about X\" (best matches first); \
+             facts.list answers \"what happened\" (newest first)"
+        ));
+        assert!(retrieve.contains("pass a kind, a session_id, or a since_ms/until_ms bracket"));
+        // The example renderings are quoted from `render_text`'s real output,
+        // because FTS matches against exactly those words — a query composed
+        // against an imagined format finds nothing.
+        // `detail` changed which source is cheapest, so the confirm-with steer
+        // had to change with it: a file list no longer needs a git.show round,
+        // and git.show keeps the jobs detail cannot do.
+        assert!(retrieve.contains("Confirm with the cheapest source that actually settles it"));
+        assert!(
+            retrieve.contains("git.show is the confirming source for what detail does not carry")
+        );
+        assert!(retrieve.contains("Fact text looks like this"));
+        assert!(retrieve.contains("tests: cargo nextest — passed"));
+        assert!(retrieve.contains("$ just app-test"));
 
         // The answer job must know both of its output shapes and that its
         // second round is final.
@@ -504,6 +557,18 @@ mod tests {
         // and answers repeated them into sentences a person has to read.
         assert!(answer.contains("NEVER as raw epoch milliseconds"));
         assert!(answer.contains("never by a bare UUID in the middle of a sentence"));
+        // …which is a rule with no *today* to convert against until the clock
+        // rides the turn, so the answer job is told about the line too.
+        assert!(answer.contains(crate::feeds::operator::NOW_HEADER));
+        assert!(answer.contains("Compute reader times from the NOW line"));
+        // The voice rule asks for a session's callsign; the roster is what
+        // makes that satisfiable when no sessions.list verb ran.
+        assert!(answer.contains(crate::feeds::operator::SESSIONS_HEADER));
+        // Depth is only worth serving if the answer knows it may cite from it.
+        // The refs that invites validate by construction: `validate_refs`
+        // checks against the rendered results, and `detail` is rendered.
+        assert!(answer.contains("detail object"));
+        assert!(answer.contains("Its fields are exact"));
     }
 
     /// Every job answers with JSON that a strict parser reads, so an

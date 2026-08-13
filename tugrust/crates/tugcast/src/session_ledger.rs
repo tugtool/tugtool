@@ -5921,6 +5921,44 @@ impl SessionLedger {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Facts by any combination of kind, session, and time — or none at all.
+    ///
+    /// The browse read beside the search one: `search_facts` answers "find
+    /// facts about X" ranked by relevance, this answers "what happened"
+    /// ordered by time, newest-first. Every filter is optional, including the
+    /// session — which is the whole difference from
+    /// [`SessionLedger::list_facts_for_session_since`], along with an
+    /// `until_ms` bound and an ordering that is not re-sorted ascending for a
+    /// wake composer. That function keeps its shape because the Reporter wake
+    /// depends on it; generalizing it in place would risk every wake for a
+    /// verb's convenience.
+    pub fn list_facts(
+        &self,
+        kind: Option<&str>,
+        session_id: Option<&str>,
+        since_ms: Option<i64>,
+        until_ms: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<FactRow>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(concat!(
+            "SELECT id, at_ms, kind, session_id, subject, text, payload
+             FROM facts
+             WHERE (?1 IS NULL OR kind = ?1)
+               AND (?2 IS NULL OR session_id = ?2)
+               AND (?3 IS NULL OR at_ms >= ?3)
+               AND (?4 IS NULL OR at_ms <= ?4)",
+            not_private!("facts.session_id"),
+            " ORDER BY at_ms DESC, id DESC
+             LIMIT ?5"
+        ))?;
+        let rows = stmt.query_map(
+            params![kind, session_id, since_ms, until_ms, limit as i64],
+            fact_from_row,
+        )?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
     /// The `n` facts on either side of `id`, inclusive of `id` itself — what
     /// else was going on around a search hit.
     pub fn facts_window(&self, id: i64, n: usize) -> Result<Vec<FactRow>, LedgerError> {
@@ -8547,6 +8585,137 @@ mod tests {
             );
         }
         assert_eq!(stored_facts(&ledger).len(), 3);
+    }
+
+    /// One fact through the production builders, so the browse read is tested
+    /// against the rows the live recorders actually write.
+    fn seed_shell(ledger: &SessionLedger, at_ms: i64, session_id: &str, command: &str) {
+        ledger
+            .record_fact(&crate::feeds::facts_library::shell_fact(
+                at_ms,
+                Some(session_id),
+                &crate::feeds::facts_library::ShellFact {
+                    command,
+                    route: crate::feeds::facts_library::ShellRoute::Claude,
+                    ok: true,
+                    exit_code: None,
+                    cwd: None,
+                },
+                None,
+            ))
+            .expect("record");
+    }
+
+    #[test]
+    fn list_facts_with_no_filters_returns_the_newest_limit_newest_first() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        // After the spawn's own lifecycle fact, so the cap's far end is a
+        // known row rather than whatever the seeding happened to write.
+        let base = millis(0) + 1_000;
+        for i in 0..40 {
+            seed_shell(&ledger, base + i, "s1", &format!("cargo build case{i}"));
+        }
+        let rows = ledger.list_facts(None, None, None, None, 30).expect("list");
+        assert_eq!(rows.len(), 30, "capped at the limit asked for");
+        assert_eq!(rows[0].at_ms, base + 39, "the newest fact leads");
+        assert!(
+            rows.windows(2).all(|w| w[0].at_ms >= w[1].at_ms),
+            "newest-first, with no ascending re-sort for a wake composer"
+        );
+        // The oldest rows are what fell off — the browse verb answers "what
+        // happened", so the truncation must take the far end. The spawn fact,
+        // oldest of all, is the first thing over the side.
+        assert_eq!(rows[29].at_ms, base + 10);
+        assert!(rows.iter().all(|r| r.kind == "shell"));
+    }
+
+    #[test]
+    fn each_list_facts_filter_narrows_independently() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        seed_live(&ledger, "s2", WS_A, "card-2", millis(0));
+        let base = millis(0) + 1_000;
+        seed_shell(&ledger, base, "s1", "cargo build one");
+        seed_shell(&ledger, base + 1_000, "s2", "cargo build two");
+        ledger
+            .record_fact(&crate::feeds::facts_library::prompt_fact(
+                base + 2_000,
+                "s1",
+                "why is the wash so pale",
+            ))
+            .expect("record");
+
+        let by_kind = ledger
+            .list_facts(Some("prompt"), None, None, None, 30)
+            .expect("list");
+        assert_eq!(by_kind.len(), 1);
+        assert_eq!(by_kind[0].kind, "prompt");
+
+        let by_session = ledger
+            .list_facts(None, Some("s2"), None, None, 30)
+            .expect("list");
+        assert!(
+            by_session
+                .iter()
+                .all(|r| r.session_id.as_deref() == Some("s2")),
+            "the session filter admits nothing from anywhere else"
+        );
+        assert!(
+            by_session
+                .iter()
+                .any(|r| r.text.contains("cargo build two"))
+        );
+        assert!(
+            !by_session
+                .iter()
+                .any(|r| r.text.contains("cargo build one"))
+        );
+
+        // The bounds are inclusive on both ends, which is what makes a
+        // since/until pair a window rather than a fencepost puzzle.
+        let since = ledger
+            .list_facts(None, None, Some(base + 1_000), None, 30)
+            .expect("list");
+        assert_eq!(since.len(), 2, "the since bound admits the row it names");
+        let until = ledger
+            .list_facts(None, None, Some(base), Some(base + 1_000), 30)
+            .expect("list");
+        assert_eq!(until.len(), 2, "and so does the until bound");
+        let bracket = ledger
+            .list_facts(None, None, Some(base + 1_000), Some(base + 1_000), 30)
+            .expect("list");
+        assert_eq!(bracket.len(), 1);
+        assert_eq!(bracket[0].at_ms, base + 1_000);
+
+        // A kind nothing was recorded under is an empty answer, not an error:
+        // it is a filter value, not a schema key.
+        assert!(
+            ledger
+                .list_facts(Some("no.such.kind"), None, None, None, 30)
+                .expect("list")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn list_facts_excludes_a_private_sessions_facts() {
+        let ledger = fresh();
+        seed_live(&ledger, "s1", WS_A, "card-1", millis(0));
+        seed_live(&ledger, "s2", WS_A, "card-2", millis(0));
+        let base = millis(0) + 1_000;
+        seed_shell(&ledger, base, "s1", "cargo build public");
+        seed_shell(&ledger, base + 1_000, "s2", "cargo build secret");
+        ledger
+            .set_session_private("s2", true)
+            .expect("marked private");
+
+        let rows = ledger.list_facts(None, None, None, None, 30).expect("list");
+        assert!(
+            rows.iter().all(|r| r.session_id.as_deref() != Some("s2")),
+            "the new read carries the same in-SQL exclusion as every other"
+        );
+        assert!(rows.iter().any(|r| r.text.contains("public")));
     }
 
     #[test]

@@ -52,9 +52,8 @@ use super::gazette_agent::DEFAULT_CARD_ROWS;
 use super::payload_inspector::InspectedPayload;
 use super::reporter_wake::{
     FactLine, FrameBuffer, PriorPost, REPORTER_PROSE_GRACE, REPORTER_PROSE_LIMIT, WakeReason,
-    clamp_post_body,
-    compose_reporter_input, counts_as_assistant_activity, forwardable_session, parse_envelope,
-    prose_len, render_facts_section, validate_refs,
+    clamp_post_body, compose_reporter_input, counts_as_assistant_activity, forwardable_session,
+    parse_envelope, prose_len, render_facts_section, validate_refs,
 };
 
 /// How many posts the card's CONTROL tail read answers with when it asks for

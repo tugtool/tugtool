@@ -427,13 +427,13 @@ None — every change lands in existing modules.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The clock | pending | — |
-| #step-2 | The session roster | pending | — |
-| #step-3 | The `list_facts` ledger read | pending | — |
-| #step-4 | The `facts.list` verb | pending | — |
-| #step-5 | The `detail` projection | pending | — |
-| #step-6 | `sessions.list` gains tag + synopsis; answer instructions learn `detail` | pending | — |
-| #step-7 | Integration checkpoint | pending | — |
+| #step-1 | The clock | done | `3b311407c` |
+| #step-2 | The session roster | done | `049827a9e` |
+| #step-3 | The `list_facts` ledger read | done | `3461aaec8` (folded with #step-4) |
+| #step-4 | The `facts.list` verb | done | `3461aaec8` |
+| #step-5 | The `detail` projection | done | `f10b03ace` |
+| #step-6 | `sessions.list` gains tag + synopsis; answer instructions learn `detail` | done | `4ff98ac02` |
+| #step-7 | Integration checkpoint | done | `eadf1fed4` |
 
 ---
 

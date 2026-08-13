@@ -44,6 +44,20 @@ pub const PROMPT_PAYLOAD_CAP: usize = 16 * 1024;
 /// Marks where a cap cut, so a truncated value never reads as a complete one.
 pub const ELISION: &str = "…";
 
+/// How much of a prompt is enough to recognize it.
+///
+/// Two callers by deliberate agreement, not by accident: the Operator's
+/// `session.prompts` verb, whose whole product is prompt text, and the
+/// `prompt` fact's `detail.text`, where the prompt is one field on a row. They
+/// share a number and a subject, not a purpose — so the constant is named for
+/// the subject. If the two ever want different numbers, that is a split to
+/// make on purpose, never a drift to discover ([Q04]).
+pub const PROMPT_TEXT_CAP: usize = 500;
+
+/// How many of a commit's paths ride its `detail`. Past this the projection
+/// says how many it dropped rather than dropping them quietly.
+pub const DETAIL_FILES_CAP: usize = 40;
+
 /// Longest command echoed into a `shell` fact's rendering.
 const COMMAND_RENDER_CAP: usize = 200;
 
@@ -71,6 +85,28 @@ pub enum FactKind {
 }
 
 impl FactKind {
+    /// The exact inverse of [`FactKind::as_str`] — what turns a `FactRow`'s
+    /// stored `kind` string back into the variant a projection dispatches on.
+    /// An unrecognized string is `None`: a row written by a newer build is a
+    /// row this one renders without depth, never an error.
+    pub fn parse(s: &str) -> Option<FactKind> {
+        let kind = match s {
+            "prompt" => FactKind::Prompt,
+            "session.spawned" => FactKind::SessionSpawned,
+            "session.resumed" => FactKind::SessionResumed,
+            "session.closed" => FactKind::SessionClosed,
+            "session.errored" => FactKind::SessionErrored,
+            "session.reset" => FactKind::SessionReset,
+            "session.renamed" => FactKind::SessionRenamed,
+            "session.compacted" => FactKind::SessionCompacted,
+            "commit" => FactKind::Commit,
+            "shell" => FactKind::Shell,
+            "test_run" => FactKind::TestRun,
+            _ => return None,
+        };
+        Some(kind)
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             FactKind::Prompt => "prompt",
@@ -195,6 +231,94 @@ pub fn render_text(kind: FactKind, payload: &serde_json::Value) -> String {
         }
     };
     truncate(rendered.as_str(), TEXT_CAP)
+}
+
+/// The depth behind a fact's one-line rendering — a curated per-kind
+/// projection of the payload, never the payload itself.
+///
+/// [`render_text`] stays the one canonical rendering; this is a handful of
+/// named, capped fields beside it, so a question like "which files were in
+/// that commit" is answered by the fact that recorded them rather than by a
+/// `git.show` round re-fetching what was already on disk. The payload is not
+/// passed through: it is the recorder's structured form, a prompt's runs to
+/// kilobytes, and only what a question would actually ask for crosses the
+/// wire.
+///
+/// A field the payload does not carry is absent here too — the `render_text`
+/// rule, for the same reason: a stand-in default is a lie with a number on it.
+/// A kind with nothing worth projecting, or a payload that carries none of the
+/// fields, yields `None` rather than an empty object.
+pub fn render_detail(kind: FactKind, payload: &serde_json::Value) -> Option<serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    let mut copy = |name: &str| {
+        if let Some(value) = payload.get(name)
+            && !value.is_null()
+        {
+            out.insert(name.to_string(), value.clone());
+        }
+    };
+    match kind {
+        FactKind::Commit => {
+            copy("sha");
+            copy("branch");
+            // The subject line whole. `text` already carries it collapsed and
+            // inside TEXT_CAP alongside everything else on the line; this is
+            // the field a citation quotes.
+            if let Some(message) = payload.get("message").and_then(|v| v.as_str())
+                && let Some(first) = message.lines().next()
+            {
+                out.insert("message_first_line".to_string(), json!(first));
+            }
+            if let Some(files) = payload.get("files").and_then(|v| v.as_array()) {
+                let kept: Vec<&serde_json::Value> = files.iter().take(DETAIL_FILES_CAP).collect();
+                out.insert("files".to_string(), json!(kept));
+                if files.len() > kept.len() {
+                    // Visible, never silent: a shortened list that does not say
+                    // it was shortened reads as the whole commit.
+                    out.insert("files_elided".to_string(), json!(files.len() - kept.len()));
+                }
+            }
+        }
+        FactKind::TestRun => {
+            copy("runner");
+            copy("verdict");
+            copy("passed");
+            copy("failed");
+            copy("skipped");
+            // No `command`: a `test_run` payload has never carried one. The
+            // command lives on the paired `shell` fact, which is where a
+            // question about it should go.
+        }
+        FactKind::Shell => {
+            copy("command");
+            copy("route");
+            copy("ok");
+            copy("exit_code");
+            copy("cwd");
+        }
+        FactKind::Prompt => {
+            if let Some(text) = payload.get("text").and_then(|v| v.as_str()) {
+                out.insert("text".to_string(), json!(truncate(text, PROMPT_TEXT_CAP)));
+            }
+        }
+        FactKind::SessionCompacted => {
+            copy("trigger");
+            copy("pre_tokens");
+            copy("post_tokens");
+        }
+        FactKind::SessionSpawned | FactKind::SessionResumed => copy("project_dir"),
+        FactKind::SessionClosed | FactKind::SessionErrored => copy("detail"),
+        FactKind::SessionRenamed => {
+            copy("old");
+            copy("new");
+        }
+        // Nothing to add: the rendering already says the whole fact.
+        FactKind::SessionReset => {}
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some(serde_json::Value::Object(out))
 }
 
 /// Cut to `cap` characters, marking the cut. Counts characters rather than
@@ -952,6 +1076,168 @@ mod tests {
         for (fact, expected) in cases {
             assert_eq!(fact.text, expected, "rendering of {}", fact.kind);
         }
+    }
+
+    /// The projection of a fact built by the production builder — the shape
+    /// `fact_json` will serve.
+    fn detail_of(fact: &NewFact) -> serde_json::Value {
+        let kind = FactKind::parse(&fact.kind).expect("a kind we wrote ourselves");
+        render_detail(kind, &payload_of(fact)).expect("a projection")
+    }
+
+    #[test]
+    fn parse_round_trips_every_kind_and_refuses_everything_else() {
+        for kind in [
+            FactKind::Prompt,
+            FactKind::SessionSpawned,
+            FactKind::SessionResumed,
+            FactKind::SessionClosed,
+            FactKind::SessionErrored,
+            FactKind::SessionReset,
+            FactKind::SessionRenamed,
+            FactKind::SessionCompacted,
+            FactKind::Commit,
+            FactKind::Shell,
+            FactKind::TestRun,
+        ] {
+            assert_eq!(FactKind::parse(kind.as_str()), Some(kind));
+        }
+        // A row a newer build wrote is a row without depth, never an error.
+        assert_eq!(FactKind::parse("session.teleported"), None);
+        assert_eq!(FactKind::parse(""), None);
+    }
+
+    #[test]
+    fn a_commits_detail_carries_the_files_the_rendering_could_only_count() {
+        let files: Vec<String> = (0..5).map(|i| format!("crates/x/src/f{i}.rs")).collect();
+        let fact = commit_fact(
+            1,
+            Some("s1"),
+            "a1b2c3d4e5f6a7b8",
+            "tugcast(facts): land it\n\nthe body, which is not the subject line",
+            &files,
+            None,
+        );
+        let detail = detail_of(&fact);
+        assert_eq!(detail["sha"], "a1b2c3d4e5f6a7b8");
+        assert_eq!(detail["message_first_line"], "tugcast(facts): land it");
+        assert_eq!(detail["files"].as_array().unwrap().len(), 5);
+        assert_eq!(detail["files"][0], "crates/x/src/f0.rs");
+        assert!(
+            detail.get("files_elided").is_none(),
+            "nothing was elided, so nothing says it was"
+        );
+        // The one-line rendering still only counts them — `text` is unchanged
+        // by any of this.
+        assert!(fact.text.ends_with("— 5 file(s)"));
+    }
+
+    #[test]
+    fn an_elided_file_list_says_how_many_it_dropped() {
+        let files: Vec<String> = (0..DETAIL_FILES_CAP + 7)
+            .map(|i| format!("f{i}.rs"))
+            .collect();
+        let fact = commit_fact(1, Some("s1"), "abc123", "big one", &files, None);
+        let detail = detail_of(&fact);
+        assert_eq!(detail["files"].as_array().unwrap().len(), DETAIL_FILES_CAP);
+        assert_eq!(detail["files_elided"], 7);
+    }
+
+    #[test]
+    fn each_kinds_detail_projects_what_a_question_would_ask_for() {
+        let run = test_run_fact(
+            1,
+            Some("s1"),
+            &TestRunFact::from_counts("cargo nextest", 1538, 1, Some(5)),
+            None,
+        );
+        let detail = detail_of(&run);
+        assert_eq!(detail["runner"], "cargo nextest");
+        assert_eq!(detail["verdict"], "failed");
+        assert_eq!(detail["passed"], 1538);
+        assert_eq!(detail["failed"], 1);
+        assert_eq!(detail["skipped"], 5);
+        assert!(
+            detail.get("command").is_none(),
+            "a test_run payload has never carried one; it lives on the paired shell fact"
+        );
+
+        let shell = shell_fact(
+            1,
+            Some("s1"),
+            &ShellFact {
+                command: "just app-test at0365-gazette-card.test.ts",
+                route: ShellRoute::User,
+                ok: false,
+                exit_code: Some(2),
+                cwd: Some("/proj"),
+            },
+            None,
+        );
+        let detail = detail_of(&shell);
+        assert_eq!(
+            detail["command"],
+            "just app-test at0365-gazette-card.test.ts"
+        );
+        assert_eq!(detail["route"], "user");
+        assert_eq!(detail["ok"], false);
+        assert_eq!(detail["exit_code"], 2);
+        assert_eq!(detail["cwd"], "/proj");
+
+        let compacted = compact_fact(1, "s1", Some("auto"), Some(140_000), Some(22_000));
+        let detail = detail_of(&compacted);
+        assert_eq!(detail["trigger"], "auto");
+        assert_eq!(detail["pre_tokens"], 140_000);
+        assert_eq!(detail["post_tokens"], 22_000);
+
+        let spawned = session_start_fact(1, "s1", false, "brisk-otter", "ws", "/proj", None);
+        assert_eq!(detail_of(&spawned)["project_dir"], "/proj");
+
+        let renamed = session_renamed_fact(1, "s1", Some("old name"), Some("new name"));
+        let detail = detail_of(&renamed);
+        assert_eq!(detail["old"], "old name");
+        assert_eq!(detail["new"], "new name");
+
+        let errored = session_end_fact(1, "s1", true, "brisk-otter", Some("bridge exited"));
+        assert_eq!(detail_of(&errored)["detail"], "bridge exited");
+    }
+
+    #[test]
+    fn a_prompts_detail_is_capped_at_the_shared_prompt_cap() {
+        let long = "x".repeat(PROMPT_TEXT_CAP * 3);
+        let fact = prompt_fact(1, "s1", &long);
+        let text = detail_of(&fact)["text"].as_str().unwrap().to_string();
+        assert_eq!(text.chars().count(), PROMPT_TEXT_CAP + 1, "capped plus '…'");
+        assert!(text.ends_with(ELISION));
+
+        // A short one crosses whole — the cap is a ceiling, not a shape.
+        let short = prompt_fact(1, "s1", "why is the brio wash so pale");
+        assert_eq!(detail_of(&short)["text"], "why is the brio wash so pale");
+    }
+
+    #[test]
+    fn an_absent_field_is_absent_and_a_bare_kind_has_no_detail_at_all() {
+        // tugcode omits `post_tokens` when claude did not supply it, and the
+        // projection follows `render_text`'s rule: no stand-in zero.
+        let fact = compact_fact(1, "s1", Some("manual"), Some(140_000), None);
+        let detail = detail_of(&fact);
+        assert_eq!(detail["pre_tokens"], 140_000);
+        assert!(detail.get("post_tokens").is_none());
+
+        // A close with nothing to say about it projects nothing rather than an
+        // object with a null in it.
+        let bare = session_end_fact(1, "s1", false, "brisk-otter", None);
+        assert_eq!(
+            render_detail(FactKind::SessionClosed, &payload_of(&bare)),
+            None
+        );
+
+        // And a reset says its whole self in one line.
+        let reset = session_reset_fact(1, "s1", "brisk-otter");
+        assert_eq!(
+            render_detail(FactKind::SessionReset, &payload_of(&reset)),
+            None
+        );
     }
 
     #[test]
