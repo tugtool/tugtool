@@ -39,6 +39,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+// The anchor's shape is the matcher's business, so it is built beside the
+// matcher in tugchanges-core — the relay only decides which edits get one.
+use tugchanges_core::anchors::edit_anchor;
+
 use serde::Deserialize;
 use tugchanges_core::shell_ops::{DeclaredKind, DeclaredOp, ParseOutcome, parse_shell_ops};
 
@@ -199,13 +203,6 @@ pub fn file_path_for_tool(tool_name: &str, input: &serde_json::Value) -> Option<
         .map(|s| s.to_owned())
 }
 
-/// Bytes of an anchor's written text kept as the `new_head` excerpt. Long
-/// enough that a head is distinctive against a file's other insertions,
-/// short enough that a large `Write` does not put its whole body in the
-/// ledger — the hash carries exactness, the head carries matchability
-/// against a hunk that only *contains* the insertion.
-pub const SPAN_HEAD_CAP: usize = 200;
-
 /// Anchors one tool call may record. Beyond it the call records a single
 /// `whole` span instead: an edit touching more than this many regions is
 /// effectively a rewrite, and widening to the whole file ([P12]) is both
@@ -224,25 +221,14 @@ pub fn whole_span() -> crate::session_ledger::FileEventSpan {
     }
 }
 
-/// Truncate `text` to at most [`SPAN_HEAD_CAP`] bytes on a character
-/// boundary — a byte-sliced excerpt of multi-byte text would not be a
-/// string at all.
-fn head_excerpt(text: &str) -> &str {
-    if text.len() <= SPAN_HEAD_CAP {
-        return text;
-    }
-    let mut end = SPAN_HEAD_CAP;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    &text[..end]
-}
-
 /// The content anchors an exact tool's input yields ([P11], Spec S04).
 ///
-/// What the call *wrote*, never where it wrote it: line numbers die the
-/// moment another edit lands above them, while written text still matches
-/// against the current diff at read time. `Write` and `NotebookEdit` replace
+/// What the call *added*, never where it added it: line numbers die the
+/// moment another edit lands above them, while added lines still match
+/// against the current diff at read time. The anchor body itself is
+/// [`edit_anchor`]'s business — an `Edit`'s strings carry unchanged context
+/// lines the diff will render as context, so the evidence recorded is the
+/// lines the edit actually added. `Write` and `NotebookEdit` replace
 /// the file wholesale and so carry a single `whole` anchor; `Edit` and
 /// `MultiEdit` carry one anchor per edit — `replace` when it named an
 /// `old_string`, `insert` when it did not.
@@ -278,20 +264,10 @@ fn edit_spans(edits: &[serde_json::Value]) -> Vec<crate::session_ledger::FileEve
         };
         let old_string = edit.get("old_string").and_then(|v| v.as_str());
         let replaced = old_string.is_some_and(|s| !s.is_empty());
-        let mut anchor = serde_json::json!({
-            "new_hash": tugchanges_core::hunks::content_hash(new_string),
-            "new_head": head_excerpt(new_string),
-            "new_len": new_string.len(),
-        });
-        if replaced {
-            anchor["old_hash"] = serde_json::Value::String(tugchanges_core::hunks::content_hash(
-                old_string.unwrap(),
-            ));
-        }
         spans.push(crate::session_ledger::FileEventSpan {
             seq: spans.len() as i64,
             kind: if replaced { "replace" } else { "insert" }.to_owned(),
-            anchor: anchor.to_string(),
+            anchor: edit_anchor(old_string, new_string).to_string(),
         });
     }
     spans
@@ -944,6 +920,7 @@ pub(crate) fn parse_worktree_states(output: &str) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tugchanges_core::anchors::{ANCHOR_LINE_HASH_CAP, SPAN_HEAD_CAP};
 
     #[test]
     fn parses_write_tool_use_and_resolves_file_path() {
@@ -1436,7 +1413,7 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_anchors_on_what_it_wrote_not_where() {
+    fn an_edit_anchors_on_what_it_added_not_where() {
         let input = serde_json::json!({
             "file_path": "/p/a.rs",
             "old_string": "let x = 1;",
@@ -1448,17 +1425,34 @@ mod tests {
         assert_eq!(spans[0].seq, 0);
         let anchor = anchor_of(&spans[0]);
         assert_eq!(
-            anchor["new_hash"],
-            tugchanges_core::hunks::content_hash("let x = 2;")
+            anchor["line_hashes"],
+            serde_json::json!([tugchanges_core::hunks::content_hash("let x = 2;")])
         );
-        assert_eq!(anchor["new_head"], "let x = 2;");
-        assert_eq!(anchor["new_len"], 10);
-        assert_eq!(
-            anchor["old_hash"],
-            tugchanges_core::hunks::content_hash("let x = 1;")
-        );
+        assert_eq!(anchor["added_lines"], 1);
+        assert_eq!(anchor["added_head"], "let x = 2;");
         // Nothing in the anchor is a line number — that is the whole point.
         assert!(anchor.get("line").is_none() && anchor.get("offset").is_none());
+    }
+
+    #[test]
+    fn context_lines_stay_out_of_the_recorded_anchor() {
+        // The shape the field actually produces: an Edit quoting a neighbour
+        // line for uniqueness. That line is context in the diff, so an anchor
+        // carrying it could never match the hunk it belongs to.
+        let input = serde_json::json!({
+            "file_path": "/p/a.tsx",
+            "old_string": "            glyphPosition=\"both\"\n            size={12}",
+            "new_string": "            glyphPosition=\"both\"\n            size={14}",
+        });
+        let anchor = anchor_of(&spans_for_tool_input("Edit", &input)[0]);
+        assert_eq!(
+            anchor["line_hashes"],
+            serde_json::json!([tugchanges_core::hunks::content_hash(
+                "            size={14}"
+            )]),
+            "only the changed line is evidence"
+        );
+        assert_eq!(anchor["added_head"], "            size={14}");
     }
 
     #[test]
@@ -1466,11 +1460,20 @@ mod tests {
         let input = serde_json::json!({
             "file_path": "/p/a.rs",
             "old_string": "",
-            "new_string": "added\n",
+            "new_string": "added line one\nadded line two\n",
         });
         let spans = spans_for_tool_input("Edit", &input);
         assert_eq!(spans[0].kind, "insert");
-        assert!(anchor_of(&spans[0]).get("old_hash").is_none());
+        let anchor = anchor_of(&spans[0]);
+        assert_eq!(
+            anchor["line_hashes"],
+            serde_json::json!([
+                tugchanges_core::hunks::content_hash("added line one"),
+                tugchanges_core::hunks::content_hash("added line two"),
+            ]),
+            "with nothing replaced, every distinctive line is added"
+        );
+        assert!(anchor.get("old_hash").is_none());
     }
 
     #[test]
@@ -1486,6 +1489,12 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!((spans[0].seq, spans[0].kind.as_str()), (0, "replace"));
         assert_eq!((spans[1].seq, spans[1].kind.as_str()), (1, "insert"));
+        for span in &spans {
+            assert!(
+                anchor_of(span).get("line_hashes").is_some(),
+                "every edit records the added-lines shape"
+            );
+        }
     }
 
     #[test]
@@ -1500,30 +1509,27 @@ mod tests {
     }
 
     #[test]
-    fn a_long_insertion_keeps_a_capped_head_and_a_full_hash() {
-        let long = "x".repeat(SPAN_HEAD_CAP * 3);
+    fn a_long_insertion_keeps_a_capped_head_and_full_line_hashes() {
+        let long: String = (0..40)
+            .map(|n| format!("inserted line {n} of a long block\n"))
+            .collect();
         let input = serde_json::json!({
             "file_path": "/p/a.rs",
             "old_string": "",
             "new_string": long,
         });
         let anchor = anchor_of(&spans_for_tool_input("Edit", &input)[0]);
-        assert_eq!(anchor["new_head"].as_str().unwrap().len(), SPAN_HEAD_CAP);
-        assert_eq!(anchor["new_len"], long.len());
+        assert!(anchor["added_head"].as_str().unwrap().len() <= SPAN_HEAD_CAP);
+        assert_eq!(anchor["added_lines"], 40, "the count is not capped");
         assert_eq!(
-            anchor["new_hash"],
-            tugchanges_core::hunks::content_hash(&long)
+            anchor["line_hashes"].as_array().unwrap().len(),
+            ANCHOR_LINE_HASH_CAP,
+            "the hashes are"
         );
-    }
-
-    #[test]
-    fn a_head_excerpt_never_splits_a_character() {
-        // Three-byte characters do not divide the cap evenly, so a naive byte
-        // slice would panic here.
-        let text = "é".repeat(SPAN_HEAD_CAP);
-        let head = head_excerpt(&text);
-        assert!(head.len() <= SPAN_HEAD_CAP);
-        assert!(text.starts_with(head));
+        assert_eq!(
+            anchor["line_hashes"][0],
+            tugchanges_core::hunks::content_hash("inserted line 0 of a long block")
+        );
     }
 
     #[test]

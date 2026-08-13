@@ -663,8 +663,9 @@ fn pieces(body: &str) -> impl Iterator<Item = (&str, bool)> {
 
 /// Whether one whitespace-delimited token names something exactly.
 fn token_is_exempt(token: &str) -> bool {
-    let core = token
-        .trim_matches(|c: char| !(c.is_alphanumeric() || c == '/' || c == '.' || c == '_' || c == '-'));
+    let core = token.trim_matches(|c: char| {
+        !(c.is_alphanumeric() || c == '/' || c == '.' || c == '_' || c == '-')
+    });
     if core.is_empty() {
         return false;
     }
@@ -673,7 +674,9 @@ fn token_is_exempt(token: &str) -> bool {
     }
     let len = core.chars().count();
     if len >= 7
-        && core.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+        && core
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
         && core.chars().any(|c| c.is_ascii_digit())
     {
         return true;
@@ -709,10 +712,16 @@ mod tests {
         // Plain prose counts every character, whitespace included.
         assert_eq!(prose_len("hello there"), 11);
         // A path costs nothing; the words and spaces around it still count.
-        assert_eq!(prose_len("touched tugdeck/src/main.tsx today"), prose_len("touched  today"));
+        assert_eq!(
+            prose_len("touched tugdeck/src/main.tsx today"),
+            prose_len("touched  today")
+        );
         // A sha costs nothing — but only with a digit in it, so ordinary
         // all-hex words stay prose.
-        assert_eq!(prose_len("commit a1b2c3d4e landed"), prose_len("commit  landed"));
+        assert_eq!(
+            prose_len("commit a1b2c3d4e landed"),
+            prose_len("commit  landed")
+        );
         assert_eq!(prose_len("defaced facade"), 14);
         // A UUID costs nothing.
         assert_eq!(
@@ -720,7 +729,10 @@ mod tests {
             prose_len("session  ended"),
         );
         // A bare file name costs nothing; "e.g." is prose.
-        assert_eq!(prose_len("edited main.rs e.g. twice"), prose_len("edited  e.g. twice"));
+        assert_eq!(
+            prose_len("edited main.rs e.g. twice"),
+            prose_len("edited  e.g. twice")
+        );
         // Punctuation stuck to a name rides along with it.
         assert_eq!(prose_len("(tugdeck/src/main.tsx)."), 0);
     }
@@ -733,7 +745,10 @@ mod tests {
         // A body whose prose is long gets cut at a token boundary, marked.
         let long = "word ".repeat(80);
         let clamped = clamp_post_body(&long, REPORTER_PROSE_LIMIT);
-        assert!(clamped.ends_with("word…"), "cut lands between tokens, not inside one");
+        assert!(
+            clamped.ends_with("word…"),
+            "cut lands between tokens, not inside one"
+        );
         assert!(prose_len(&clamped) <= REPORTER_PROSE_LIMIT + 1);
 
         // A body long only because of its paths is not cut at all.
@@ -742,7 +757,10 @@ mod tests {
             "tugdeck/styles/themes/a-very-long-theme-file-name-indeed.css".repeat(2),
             "tugdeck/styles/themes/another-name.css",
         );
-        assert_eq!(clamp_post_body(&path_heavy, REPORTER_PROSE_LIMIT), path_heavy);
+        assert_eq!(
+            clamp_post_body(&path_heavy, REPORTER_PROSE_LIMIT),
+            path_heavy
+        );
     }
 
     fn frame(session: &str, msg_type: &str, extra: &str) -> String {

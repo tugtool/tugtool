@@ -1004,7 +1004,10 @@ impl OperatorPipeline {
                         // The verbs' own default repo ([Q03]): the root an
                         // answer's refs are most likely spelled under.
                         project_dir: Some(
-                            self.ctx.bootstrap_project_dir.to_string_lossy().into_owned(),
+                            self.ctx
+                                .bootstrap_project_dir
+                                .to_string_lossy()
+                                .into_owned(),
                         ),
                         request_id: request_id.clone(),
                         transient: false,

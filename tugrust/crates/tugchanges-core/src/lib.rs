@@ -6,6 +6,7 @@
 //! its duplicate commit/parse code. All real logic lives here; the binary only
 //! parses args, calls the library, and formats output.
 
+pub mod anchors;
 pub mod changes;
 pub mod commit;
 pub mod contention;
@@ -16,6 +17,10 @@ pub mod preflight;
 pub mod shell_ops;
 pub mod trailer;
 
+pub use anchors::{
+    ANCHOR_LINE_HASH_CAP, ANCHOR_MIN_LINE_BYTES, SPAN_HEAD_CAP, containment_probes,
+    edit_added_lines, edit_anchor, head_excerpt, head_was_truncated, line_is_distinctive,
+};
 pub use changes::{Change, ChangesError, ChangesOptions, ChangesReport, ForeignChange, changes};
 pub use commit::{Aggregate, CommitError, CommitOptions, CommitReceipt, LeftBehind, commit};
 pub use contention::{Anchor, Claim, ContentionVerdict, OwnerAnchors, classify_contention};

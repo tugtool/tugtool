@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (dash `partial-file-claim-fixup`) |
 | Target branch | main |
 | Last updated | 2026-08-12 |
 
@@ -368,11 +368,11 @@ The load-bearing convention change: contention fixtures for content anchors are 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | anchors module in tugchanges-core | pending | — |
-| #step-2 | contention: AddedLines matching + split widening | pending | — |
-| #step-3 | attribution: relay writes added-line anchors | pending | — |
-| #step-4 | end-to-end regression gate over relay-shaped spans | pending | — |
-| #step-5 | Integration checkpoint | pending | — |
+| #step-1 | anchors module in tugchanges-core | done | `d107a8238` |
+| #step-2 | contention: AddedLines matching + split widening | done | `9b08eb11b` |
+| #step-3 | attribution: relay writes added-line anchors | done | `bc88fd4f4` |
+| #step-4 | end-to-end regression gate over relay-shaped spans | done | `4d5b5b090` |
+| #step-5 | Integration checkpoint | done | verification only |
 
 #### Step 1: anchors module in tugchanges-core {#step-1}
 

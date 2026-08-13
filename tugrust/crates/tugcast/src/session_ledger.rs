@@ -2428,7 +2428,10 @@ impl SessionLedger {
             return Ok(());
         }
         if !cols.iter().any(|(n, _)| n == "elapsed_ms") {
-            conn.execute("ALTER TABLE gazette_posts ADD COLUMN elapsed_ms INTEGER", [])?;
+            conn.execute(
+                "ALTER TABLE gazette_posts ADD COLUMN elapsed_ms INTEGER",
+                [],
+            )?;
         }
         Ok(())
     }

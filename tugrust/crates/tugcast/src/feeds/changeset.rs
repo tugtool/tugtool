@@ -1271,11 +1271,34 @@ mod tests {
         }
     }
 
+    /// Spans as the relay actually writes them: from an `Edit`'s own
+    /// `old_string`/`new_string`, context lines and all. A fixture that mints
+    /// an anchor from the *added* text instead tests a shape production never
+    /// produces — which is how hunk-aware SHARED shipped green and placed
+    /// nothing in the field.
+    fn edit_spans_for(
+        path: &Path,
+        old_string: &str,
+        new_string: &str,
+    ) -> Vec<crate::session_ledger::FileEventSpan> {
+        super::super::attribution::spans_for_tool_input(
+            "Edit",
+            &serde_json::json!({
+                "file_path": path.to_string_lossy(),
+                "old_string": old_string,
+                "new_string": new_string,
+            }),
+        )
+    }
+
     /// The feed's half of M03: two sessions in one file, each with anchors
     /// placing it in a different hunk, compose as co-owners without SHARED —
     /// and each carries its own hunks on the wire for the picker's default
     /// election. The verdict and its ids come from the async diff spelling,
     /// so this also exercises Spec S06's agreement from the feed side.
+    ///
+    /// The spans come through `spans_for_tool_input`, so an `own_hunks` that
+    /// is a strict subset here is the same shape the badge renders from.
     #[tokio::test]
     async fn compose_reads_disjoint_regions_of_one_file_as_uncontended() {
         let (_dir, root) = init_repo();
@@ -1289,9 +1312,20 @@ mod tests {
         std::fs::write(root.join("both.txt"), &edited).unwrap();
 
         let ledger = SessionLedger::open_in_memory().unwrap();
-        for (i, (session, written)) in [("sess-alpha", "TOP-EDIT"), ("sess-beta", "BOTTOM-EDIT")]
-            .into_iter()
-            .enumerate()
+        for (i, (session, old, new)) in [
+            (
+                "sess-alpha",
+                "line004\nline005\nline006",
+                "line004\nTOP-EDIT\nline006",
+            ),
+            (
+                "sess-beta",
+                "line049\nline050\nline051",
+                "line049\nBOTTOM-EDIT\nline051",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
         {
             ledger
                 .record_spawn(session, "ws", &root.to_string_lossy(), "card", 0, None)
@@ -1299,17 +1333,7 @@ mod tests {
             let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
             // The file is tracked, so the row must post-date its commit.
             row.at = 9_000_000_000_000;
-            let anchor = serde_json::json!({
-                "new_hash": tugchanges_core::content_hash(written),
-                "new_head": written,
-                "new_len": written.len(),
-            })
-            .to_string();
-            let spans = vec![crate::session_ledger::FileEventSpan {
-                seq: 0,
-                kind: "insert".to_owned(),
-                anchor,
-            }];
+            let spans = edit_spans_for(&root.join("both.txt"), old, new);
             ledger.record_file_event_with_spans(&row, &spans).unwrap();
         }
 
@@ -1357,22 +1381,12 @@ mod tests {
                 .unwrap();
             let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
             row.at = 9_000_000_000_000;
-            let anchor = serde_json::json!({
-                "new_hash": tugchanges_core::content_hash("TOP-EDIT"),
-                "new_head": "TOP-EDIT",
-                "new_len": 8,
-            })
-            .to_string();
-            ledger
-                .record_file_event_with_spans(
-                    &row,
-                    &[crate::session_ledger::FileEventSpan {
-                        seq: 0,
-                        kind: "insert".to_owned(),
-                        anchor,
-                    }],
-                )
-                .unwrap();
+            let spans = edit_spans_for(
+                &root.join("both.txt"),
+                "line004\nline005\nline006",
+                "line004\nTOP-EDIT\nline006",
+            );
+            ledger.record_file_event_with_spans(&row, &spans).unwrap();
         }
 
         let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
@@ -1383,6 +1397,79 @@ mod tests {
             assert!(files[0].shared, "one region, two owners");
             assert_eq!(files[0].contested_hunks, files[0].own_hunks);
         }
+    }
+
+    /// One session's evidence half places and half does not — the common
+    /// field case. The badge widens (SHARED for both owners) while the
+    /// election stays narrow: the half-placed owner carries only the hunk it
+    /// can prove, so landing it cannot sweep up the co-owner's region.
+    #[tokio::test]
+    async fn compose_widens_shared_without_widening_the_election() {
+        let (_dir, root) = init_repo();
+        let original: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+        std::fs::write(root.join("both.txt"), &original).unwrap();
+        git(&root, &["add", "both.txt"]);
+        git(&root, &["commit", "-q", "-m", "long file"]);
+        let edited = original
+            .replace("line005\n", "TOP-EDIT\n")
+            .replace("line050\n", "BOTTOM-EDIT\n");
+        std::fs::write(root.join("both.txt"), &edited).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for (i, (session, old, new)) in [
+            (
+                "sess-alpha",
+                "line004\nline005\nline006",
+                "line004\nTOP-EDIT\nline006",
+            ),
+            (
+                "sess-beta",
+                "line049\nline050\nline051",
+                "line049\nBOTTOM-EDIT\nline051",
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ledger
+                .record_spawn(session, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+            let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
+            row.at = 9_000_000_000_000;
+            let mut spans = edit_spans_for(&root.join("both.txt"), old, new);
+            if session == "sess-alpha" {
+                // A second edit whose text a later write overwrote — nothing
+                // in the current diff carries it, so it places nowhere.
+                let mut gone = edit_spans_for(
+                    &root.join("both.txt"),
+                    "line029\nline030\nline031",
+                    "line029\nSINCE-OVERWRITTEN\nline031",
+                );
+                gone[0].seq = 1;
+                spans.append(&mut gone);
+            }
+            ledger.record_file_event_with_spans(&row, &spans).unwrap();
+        }
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let mut seen = 0;
+        for entry in &snapshot.changesets {
+            let ChangesetEntry::Session {
+                owner_id, files, ..
+            } = entry
+            else {
+                continue;
+            };
+            let file = &files[0];
+            assert!(file.shared, "{owner_id}: unplaceable evidence still warns");
+            assert_eq!(
+                file.own_hunks.len(),
+                1,
+                "{owner_id}: elects only what its evidence reached"
+            );
+            seen += 1;
+        }
+        assert_eq!(seen, 2, "both sessions own the file");
     }
 
     /// Risk R09's bound, structurally: a dirty set nobody contends spends no
