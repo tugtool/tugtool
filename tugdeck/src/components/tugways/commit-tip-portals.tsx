@@ -75,11 +75,29 @@ interface CommitTipMount {
  */
 const WORDED_BEFORE = /commit[:#]?\s*$/i;
 
-/** Whether the text just before `host` already supplies the word. */
+/**
+ * Whether the text just before `host` already supplies the word.
+ *
+ * The word and the sha are routinely split by markup — the agents write
+ * ``commit `6077d7d6` `` and the sha's wrapper lands *inside* the `<code>`
+ * element while the word sits outside it — so the check climbs out of any
+ * element the host opens (a couple of hops covers code-in-paragraph) and
+ * reads back through whitespace-only siblings until it finds prose.
+ */
 function wordedByProse(host: HTMLElement): boolean {
-  const before = host.previousSibling;
-  if (before === null || before.nodeType !== Node.TEXT_NODE) return false;
-  return WORDED_BEFORE.test((before as Text).data);
+  let node: Node = host;
+  for (let hops = 0; node.previousSibling === null && hops < 3; hops += 1) {
+    const parent = node.parentNode;
+    if (parent === null) return false;
+    node = parent;
+  }
+  let before = "";
+  let prev = node.previousSibling;
+  while (prev !== null && before.trim() === "") {
+    before = (prev.textContent ?? "") + before;
+    prev = prev.previousSibling;
+  }
+  return WORDED_BEFORE.test(before);
 }
 
 /**
