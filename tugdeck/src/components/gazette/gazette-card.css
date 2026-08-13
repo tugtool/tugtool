@@ -302,15 +302,18 @@
   --tug-font-size-editor: calc(
     var(--tugx-gazette-editor-base) - var(--tugx-gazette-composer-font-delta)
   );
-  /* The field opens at two lines rather than one. A question to the Operator
+  /* The field opens at three lines rather than one. A question to the Operator
      is a sentence, not a search term, and an empty one-line slot reads as a
-     box to fill with a phrase. The floor is the same arithmetic the ceiling
-     uses (`tug-text-editor.css`: rows × 1lh + the field's vertical padding),
-     so the two agree on what a row costs; growth past it is the editor's own,
-     up to the `maxRows` the composer passes. TUNE HERE — the row count. */
-  --tugx-gazette-composer-min-rows: 2;
+     box to fill with a phrase. A row costs what the editor measured a row to
+     cost (`--tug-text-editor-row-height`, written from CM6's
+     `defaultLineHeight`), plus `.cm-content`'s 8px/8px padding — so the third
+     line lands inside the field the composer opened, and the fourth is what
+     grows it. Growth past the floor is the editor's own, up to the `maxRows`
+     the composer passes. TUNE HERE — the row count. */
+  --tugx-gazette-composer-min-rows: 3;
   --tug-text-editor-min-height: calc(
-    var(--tugx-gazette-composer-min-rows) * 1lh + 16px
+    var(--tugx-gazette-composer-min-rows) *
+      var(--tug-text-editor-row-height, 1lh) + 16px
   );
 }
 

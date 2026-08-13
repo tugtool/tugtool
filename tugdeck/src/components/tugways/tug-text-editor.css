@@ -225,7 +225,14 @@ body {
  * - `min-height` from `--tug-text-editor-min-height` — the optional *default*
  *   height: the editor opens at least this tall even when its content is
  *   shorter (the Session card sets 200px). Defaults to 0 — no floor — so other
- *   hosts keep the pure auto-grow-from-one-row behavior. */
+ *   hosts keep the pure auto-grow-from-one-row behavior.
+ *
+ * A floor stated in ROWS reads `--tug-text-editor-row-height` rather than
+ * `1lh`: the React shell writes CM6's measured `defaultLineHeight` there
+ * (`tug-text-editor.tsx`), which is the height a `.cm-line` genuinely occupies
+ * — `line-height` plus the leading the baseline-aligned `.cm-line::before`
+ * ghost adds under it. `1lh` is smaller than that, so a field floored at
+ * `rows × 1lh` grows one line before it should. */
 .tug-text-editor > .cm-editor > .cm-scroller {
   max-height: calc(var(--tug-text-editor-max-rows, 8) * 1lh + 16px);
   min-height: var(--tug-text-editor-min-height, 0);

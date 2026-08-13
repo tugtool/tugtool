@@ -831,8 +831,13 @@ export function GazetteContent({
         // believes they are away from it — so the button hovers over the
         // newest post offering to take them where they already are, and the
         // next post does not follow. Re-read the geometry instead of
-        // remembering it.
-        setFollowing(atBottom(el));
+        // remembering it — and where the read says the edge is back under the
+        // eye, close the slack the same way the following branch does, so
+        // "following" always means resting ON the edge rather than within
+        // 24px of it.
+        const back = atBottom(el);
+        setFollowing(back);
+        if (back) el.scrollTop = el.scrollHeight;
       }
       prevScrollHeightRef.current = el.scrollHeight;
     });

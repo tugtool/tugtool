@@ -50,7 +50,7 @@ const JUMP = `${CARD} .tug-jump-to-bottom-button`;
 const COMPOSER = '[data-testid="gazette-composer-field"]';
 
 /** The composer's floor and ceiling, in rows — `gazette-card.css` / `.tsx`. */
-const COMPOSER_MIN_ROWS = 2;
+const COMPOSER_MIN_ROWS = 3;
 const COMPOSER_MAX_ROWS = 8;
 
 const AT_MS = 1_754_600_000_000;
@@ -109,15 +109,29 @@ async function viewport(app: App): Promise<number> {
 }
 
 /**
- * The composer's height in rows, measured against the field's own line box —
- * the 16 is the `cm-content` 8px top + 8px bottom padding, which both the
- * two-row floor and the `maxRows` ceiling account for.
+ * The composer's height in rows, measured against the field's own ROW —
+ * `--tug-text-editor-row-height`, the height CM6 measured a `.cm-line` to
+ * occupy. The 16 is the `cm-content` 8px top + 8px bottom padding, which the
+ * three-row floor accounts for.
  */
 const COMPOSER_ROWS_JS = `(function () {
-  var s = document.querySelector(${JSON.stringify(`${COMPOSER} .cm-scroller`)});
+  var field = document.querySelector(${JSON.stringify(COMPOSER)});
+  if (field === null) return -1;
+  var s = field.querySelector(".cm-scroller");
   if (s === null) return -1;
-  var lh = parseFloat(getComputedStyle(s).lineHeight);
-  return Math.round((s.getBoundingClientRect().height - 16) / lh);
+  var row = parseFloat(
+    getComputedStyle(field).getPropertyValue("--tug-text-editor-row-height"),
+  );
+  return Math.round((s.getBoundingClientRect().height - 16) / row);
+})()`;
+
+/** The composer standing at its `maxRows` ceiling — the scroller clamped to the
+ *  `max-height` the cap sets, with content past it. */
+const COMPOSER_AT_CAP_JS = `(function () {
+  var s = document.querySelector(${JSON.stringify(`${COMPOSER} .cm-scroller`)});
+  if (s === null) return false;
+  var cap = parseFloat(getComputedStyle(s).maxHeight);
+  return Math.abs(s.getBoundingClientRect().height - cap) < 1;
 })()`;
 
 /**
@@ -128,10 +142,9 @@ const COMPOSER_ROWS_JS = `(function () {
  */
 async function fillComposer(app: App): Promise<void> {
   for (let i = 0; i < COMPOSER_MAX_ROWS; i++) await app.nativeKey("Enter");
-  await app.waitForCondition<boolean>(
-    `${COMPOSER_ROWS_JS} === ${COMPOSER_MAX_ROWS}`,
-    { timeoutMs: 10_000 },
-  );
+  await app.waitForCondition<boolean>(COMPOSER_AT_CAP_JS, {
+    timeoutMs: 10_000,
+  });
 }
 
 /**

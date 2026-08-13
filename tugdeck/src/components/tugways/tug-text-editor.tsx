@@ -1035,6 +1035,43 @@ const scrollbarAtCap: Extension = EditorView.updateListener.of((update) => {
   });
 });
 
+/**
+ * The CSS variable carrying one rendered row's height, written by
+ * {@link rowHeightVar} and consumed by hosts that want a height in rows (see
+ * `tug-text-editor.css`).
+ */
+const ROW_HEIGHT_VARIABLE = "--tug-text-editor-row-height";
+
+/**
+ * Publish the height of one rendered row as a CSS variable on the host wrapper.
+ *
+ * A row is not `1lh`. The line box a `.cm-line` actually occupies is its
+ * `line-height` plus the leading the baseline-aligned `.cm-line::before` ghost
+ * contributes under it, so a field sized at `rows × 1lh` is short of `rows`
+ * real rows and grows one line early. CM6 measures the true figure —
+ * `view.defaultLineHeight` — so that is what goes out.
+ *
+ * It lands on the HOST, not on `.cm-editor`: a host states its floor as
+ * `--tug-text-editor-min-height` on itself, and the `var()`s inside a custom
+ * property's value are substituted at the element that DECLARES it. Published
+ * any deeper, the row height would be invisible to the one declaration that
+ * wants it.
+ *
+ * [L06] appearance-zone DOM write, never React state.
+ */
+function writeRowHeight(view: EditorView): void {
+  const target = view.dom.parentElement ?? view.dom;
+  const next = `${view.defaultLineHeight}px`;
+  if (target.style.getPropertyValue(ROW_HEIGHT_VARIABLE) === next) return;
+  target.style.setProperty(ROW_HEIGHT_VARIABLE, next);
+}
+
+const rowHeightVar: Extension = EditorView.updateListener.of((update) => {
+  if (!update.docChanged && !update.geometryChanged && !update.viewportChanged)
+    return;
+  writeRowHeight(update.view);
+});
+
 function buildExtensions(
   host: HTMLElement,
   getKeymapConfig: () => TugTextEditorKeymapConfig,
@@ -1233,6 +1270,7 @@ function buildExtensions(
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
     scrollbarAtCap,
+    rowHeightVar,
     undoMenuStatePlugin,
     // `tabMovesFocus` fields swap the "Tab is mine" marker for its opposite:
     // the walk's yield test is structural (any contentEditable owns Tab), so
@@ -2562,6 +2600,16 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
         parent: host,
       });
       viewRef.current = view;
+      // Seed the row-height variable from the first measure. `rowHeightVar`
+      // keeps it current from there, but a field with a min-height in rows
+      // needs the figure at mount — before any update has run — or it opens
+      // against the CSS fallback.
+      view.requestMeasure({
+        read: (v) => v,
+        write: (_measured, v) => {
+          writeRowHeight(v);
+        },
+      });
       // Promote the view to React state so the sibling
       // <CompletionOverlay /> can mount and subscribe. The state
       // change runs in the same commit as the mount effect; the

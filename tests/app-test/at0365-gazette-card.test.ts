@@ -72,6 +72,7 @@
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-editor.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -610,22 +611,28 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         expect(markdown?.anchorKind).toBe("url");
 
         // ── 3. The composer round-trips through the Operator. ─────────────
-        // It opens at TWO lines, empty. A question to the Operator is a
+        // It opens at THREE lines, empty. A question to the Operator is a
         // sentence, and a one-line slot reads as a box to fill with a phrase.
-        // Measured against the field's own line box rather than a pixel
+        // Measured against the field's own ROW — `--tug-text-editor-row-height`,
+        // the height CM6 measured a `.cm-line` to occupy — rather than a pixel
         // constant, so the user's editor font-size setting moves both sides
-        // together; the row count is the claim.
+        // together; the row count is the claim. A row is not `1lh`: the
+        // baseline-aligned `.cm-line::before` ghost leaves leading under the
+        // line box, which is why a floor stated in `1lh` grew a line early.
         const openingRows = await app.evalJS<number>(
           `(function () {
-            var scroller = document.querySelector(${JSON.stringify(`${FIELD} .cm-scroller`)});
-            var lh = parseFloat(getComputedStyle(scroller).lineHeight);
+            var field = document.querySelector(${JSON.stringify(FIELD)});
+            var scroller = field.querySelector(".cm-scroller");
+            var row = parseFloat(
+              getComputedStyle(field).getPropertyValue("--tug-text-editor-row-height"),
+            );
             // The +16 is the cm-content 8px top + 8px bottom padding, which
             // both the floor and the maxRows ceiling account for.
-            return Math.round((scroller.getBoundingClientRect().height - 16) / lh);
+            return Math.round((scroller.getBoundingClientRect().height - 16) / row);
           })()`,
         );
         note("composer opening rows", String(openingRows));
-        expect(openingRows, "the empty composer opens two lines tall").toBe(2);
+        expect(openingRows, "the empty composer opens three lines tall").toBe(3);
 
         const question = "which sessions touched the imposer";
         await app.nativeClickAtElement(`${FIELD} .cm-content`);
@@ -634,6 +641,50 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
             && document.activeElement.closest(${JSON.stringify(FIELD)}) !== null`,
           { timeoutMs: 8_000 },
         );
+
+        // Three lines are what the opening height PROMISES, so three lines are
+        // what it has to hold: the field stands still through them and grows on
+        // the fourth. At the shipped `newline` setting ⏎ is a line break, which
+        // is what makes this typeable at all.
+        const fieldHeight = `document.querySelector(${JSON.stringify(
+          `${FIELD} .cm-scroller`,
+        )}).getBoundingClientRect().height`;
+        const openHeight = await app.evalJS<number>(fieldHeight);
+        for (let line = 2; line <= 3; line += 1) {
+          await app.nativeKey("Return");
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(`${FIELD} .cm-line`)}).length === ${line}`,
+            { timeoutMs: 8_000 },
+          );
+        }
+        const threeLineHeight = await app.evalJS<number>(fieldHeight);
+        await app.nativeKey("Return");
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(`${FIELD} .cm-line`)}).length === 4`,
+          { timeoutMs: 8_000 },
+        );
+        const fourLineHeight = await app.evalJS<number>(fieldHeight);
+        note(
+          "composer growth",
+          JSON.stringify({ openHeight, threeLineHeight, fourLineHeight }),
+        );
+        expect(
+          threeLineHeight,
+          "three lines fit the height the composer opened at",
+        ).toBe(openHeight);
+        expect(
+          fourLineHeight,
+          "the fourth line is what grows the composer",
+        ).toBeGreaterThan(threeLineHeight);
+
+        // Back to empty for the round trip — one Backspace per line break.
+        for (let line = 3; line >= 1; line -= 1) {
+          await app.nativeKey("Backspace");
+          await app.waitForCondition<boolean>(
+            `document.querySelectorAll(${JSON.stringify(`${FIELD} .cm-line`)}).length === ${line}`,
+            { timeoutMs: 8_000 },
+          );
+        }
         await app.nativeType(question);
         await app.waitForCondition<boolean>(
           `(function () {
