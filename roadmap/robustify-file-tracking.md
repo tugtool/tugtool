@@ -32,7 +32,7 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 - **Layer 3 — no more evidence-free proof rows.** `cmd`-promoted rows mint `hunk`-kind spans from the path's working diff at bracket close; `Write`/`NotebookEdit` `whole` spans gain the written content's hash and line hashes ([P04], Spec S02). Every *new* proof row becomes falsifiable.
 - **Layer 4 — retirement by falsification.** In contention, a **dead** owner participates only through evidence that places into the current diff; dead-and-nothing-places is a ghost and drops out of `shared`/`contested` entirely. Live owners keep today's exact semantics — the conservative widening stays where a session could be mid-work ([P03], Spec S03).
 - **Decoder before writer**, as in the fixup plan: the contention reader learns the new anchor shapes and the retirement rule before any writer produces them (Risk R03).
-- **Visibility last.** The SHARED badge learns to name its co-owners (wire field `shared_with`), and shared rows whose co-owners are all dead grow the existing Claim gesture as a manual release ([P06]).
+- **Visibility, and the only remedy the ledger's existing rows have.** The SHARED badge learns to name its co-owners (wire field `shared_with`), and shared rows whose co-owners are all dead grow the existing Claim gesture as a manual release ([P06]). Layers 1–4 govern rows minted *from here on*; the four span-less `cmd` rows the incident already wrote are dead-owner-with-no-anchors, which Spec S03 reads as `Claim::Whole` forever. [P06]'s release gesture is what retires them — Step 7 is load-bearing, not cosmetic.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -62,6 +62,8 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 - **No retroactive falsifiability for legacy rows.** Existing span-less `cmd` rows and bare `{}` `whole` anchors keep today's unfalsifiable `Claim::Whole` behavior — the honest floor, self-draining via the commit cut (same [P05] posture as the fixup plan).
 - **No spans for replay-minted `cmd` rows.** `mint_replayed_cmd_rows` (`agent_bridge.rs`) runs where no pre-command tree state survives; the current tree may not match the historical command. They stay span-less (accepted residual, drains via commits).
 - **No change to the `foreign` bucket or orphan lift.** A dead session's sole-owned dirty file is the orphan story, already handled; retirement here only affects *contention* (≥2 proof owners).
+- **No proof for a restore that puts a non-HEAD rev's bytes in the tree.** `git checkout <old-sha> -- <file>` leaves the file dirty against HEAD, and that dirtiness exists because the session chose those bytes — yet [P01] records it as a `bash` hint, so the file lands unattributed and needs one CLAIM. Accepted cost, resolved at [Q03].
+- **No retirement for untracked files.** Both readers bail before contention when the path has no readable hunks — compose's `contention_verdict` returns `None` (file-level `shared = true`), and `paths_contend` returns `Ok(true)` when `file_hunks` is empty. A ghost claim on a session-*created* file is therefore outside Layer 4 entirely, and Layer 3 mints it no spans either: [P05] uses `fetch_git_diff` (tracked-only), not `fetch_git_diff_with_untracked`. That is deliberate — ids minted from a synthesized untracked diff would be unreproducible by either read side, both of which use the tracked spelling, so evidence written there could never place. Drains via the commit cut like every other unfalsifiable row.
 - **No content fallback for drifted `hunk`-kind anchors** (still the fixup plan's out-of-scope); drift → unplaced → dead-owner retirement handles the ghost case, which is what matters here.
 - **No new CONTROL verbs.** The Layer-4 release gesture reuses `changeset_claim` (already severs co-owners per [D120]); no protocol addition beyond the `shared_with` field on the existing snapshot.
 
@@ -70,7 +72,7 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 - `roadmap/archive/partial-file-claim-fixup.md` shipped (`d107a8238`…`4d5b5b090`): `tugchanges-core::anchors` exists, `Claim::Hunks { placed, unplaced }` exists, `contention.rs` fixtures build via the production constructor.
 - `hunk_spans(ids)` exists in `attribution.rs` (writes `hunk`-kind spans; used by `tugutil file` receipts) — Layer 3 reuses it for promoted rows.
 - `record_file_event_with_spans` exists on `SessionLedger` (`session_ledger.rs:4192`).
-- `tugcore::instance::resolve_sessions_db_path()` honors `TUG_INSTANCE_ID`/`TUG_SESSIONS_DB` — the sync engine already opens it for the "known session" test (`changes.rs:204`).
+- `ledger::resolve_sessions_db_path()` (tugchanges-core; honors `TUG_INSTANCE_ID`/`TUG_SESSIONS_DB`) — the sync engine already opens it for the "known session" test and drops the connection immediately (`changes.rs:206-209`).
 
 #### Constraints {#constraints}
 
@@ -83,7 +85,7 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 
 #### Assumptions {#assumptions}
 
-- Session liveness truth is the per-instance `sessions.db` `sessions.state` column (`'live'` vs anything else); `changes.db` is machine-global but `file_events_for_project` already resolves `owner_live` by `LEFT JOIN sessions` with a missing row reading as not-live (`session_ledger.rs:5139`). This plan adopts the same reading in the sync engine: no `sessions` row in this instance's `sessions.db` = dead. Cross-instance liveness is Risk R02.
+- Session liveness truth is the per-instance `sessions.db` `sessions.state` column (`'live'` vs anything else); `changes.db` is machine-global but `file_events_for_project` already resolves `owner_live` by `LEFT JOIN sessions` with a missing row reading as not-live (`session_ledger.rs:5139`). This plan adopts the same reading in the sync engine: no `sessions` row in this instance's `sessions.db` = dead. Cross-instance liveness is Risk R02. Distinguish this from *failing to consult the source at all* (no sessions.db, an id the caller never resolved), which reads live — see [P03]'s failure-direction clause.
 - A dead session cannot be "mid-edit": its evidence failing to place means the content is gone (reverted, superseded, or restored), not merely in flux. This is what licenses clearing the `unplaced` widening for dead owners ([P03]).
 - `contention_verdict` runs only for paths with ≥2 live-cut-passing proof owners (bounded by contention, not the dirty set — Risk R09 of changes-rework), so the added per-path work in this plan (one `std::fs::read` for the file hash, one diff per promoted path at bracket close) stays bounded.
 
@@ -104,6 +106,14 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 **Question:** CLAIM ALL mints `origin: "claim"` rows with no content evidence; should they verify?
 
 **Resolution:** DECIDED — no. A claim row is the *user's* testimony, deliberately made without content evidence (it exists to repair attribution the machine could not prove). It stays `Anchor::Whole`/`Claim::Whole`, contends even when dead, and retires only via commit/disclaim/sever. Same reasoning shields bare `{}` legacy `whole` anchors ([P05] posture).
+
+#### [Q03] Should a restore from a non-HEAD rev still mint proof? (DECIDED) {#q03-restore-from-old-rev}
+
+**Question:** [P01] exiles every restore from proof on the grounds that restored bytes are the repository's. That is airtight when the command converges the tree *toward* HEAD — `git restore <p>`, `git checkout -- <p>`, `git checkout HEAD -- <p>` — where the change made is the *removal* of change, and a fully-converged file is not dirty at all. It is not airtight for `git checkout <old-sha> -- <path>`: those bytes differ from HEAD, so the file *is* dirty, and it is dirty because this session chose that content. Should the grammar split the two — proof for the arbitrary-rev form (exact-path only, per [P02]), never proof for the converge form?
+
+**Why it matters:** Under the blanket rule, a deliberate `git checkout <sha> -- src/x.ts` used to bring old code back for real lands in `UNATTRIBUTED — NO SESSION CLAIMS THESE`.
+
+**Resolution:** DECIDED — no split; `Restore` stays blanket. The distinction is syntactically decidable (rev absent / literal `HEAD` vs anything else) but it buys back a narrow case at the cost of a grammar branch whose *proof* arm is the exact shape that caused the incident, differing only in operand arity. And the residual is cheap and visible: the bracket hint still names the command, so the file surfaces in unattributed with `modified`/`bash` provenance saying this session touched it — one CLAIM away from correct, which is precisely the population [Q02] argues user testimony should resolve. Note the incident itself is killed twice over regardless: `tugdeck` was a directory operand, which [P02] excludes from edit-class promotion independently of [P01]. Revisit trigger: restoring from an old rev becomes a routine authoring idiom rather than a probe idiom, and unattributed rows from it show up repeatedly.
 
 ---
 
@@ -156,7 +166,7 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 **Decision:** `shell_ops` classifies `git restore <paths>` and `git checkout … -- <paths>` as a new `DeclaredKind::Restore`. The gate still sees the command as file-mutating (parse succeeds, ops are declared, `ParseOutcome::Ops` — the gate's allow/deny logic is untouched since it keys on `Unparseable` only). But: `into_delta_rows` never promotes a Restore-declared path to `cmd` (rows stay `bash` bracket hints), and `mint_replayed_cmd_rows` skips Restore ops entirely (no replay `cmd` rows).
 
 **Rationale:**
-- A restore writes the *repository's recorded bytes*; authorship of those bytes belongs to whoever committed them, which the commit history already records. Minting session authorship over restored content is a category error — the root cause of the 2026-08-13 incident.
+- A restore writes the *repository's recorded bytes*; authorship of those bytes belongs to whoever committed them, which the commit history already records. Minting session authorship over restored content is a category error — the root cause of the 2026-08-13 incident. The rule is blanket rather than split by rev; [Q03] states what that costs and why the cost is taken.
 - The bracket hint is still correct and still wanted: the session *did* run a command that changed these files, and the hint surfaces on unattributed rows as `hinted_by` provenance.
 - The rename-takeoff synthesis in `agent_bridge.rs` (the `DeclaredKind::Move` match at Bash close) is unaffected — Restore never renames.
 
@@ -188,6 +198,7 @@ The conceptual gap, stated once: **a claim is a hypothesis about the bytes curre
 **Implications:**
 - `classify_contention(hunks, owners)` gains a third parameter: `current_file_hash: Option<&str>` (`content_hash` of the working file's full bytes), needed by the `WholeFile` verification; `None` (unreadable file) makes `WholeFile` unfalsifiable — widening, the blessed failure direction.
 - Both callers construct `OwnerAnchors { live }`: compose from `OwnerAgg.live` (already resolved via the `sessions` join), the sync engine from a new per-session state read (#step-6).
+- **An owner whose liveness cannot be resolved reads as live.** Absence must not mean death: dead is the retirement-eligible state, and every other unresolvable input in this plan widens (`current_file_hash: None` widens, an unreadable diff widens, a missing sessions.db keeps every owner live). Compose's `live_ids` is built from the same `owners` map the contended paths were derived from, so a proof id missing from it is a bug rather than a dead session — the lookup takes the live default and the invariant is asserted in #step-5. This is *not* in tension with the Assumption that a missing `sessions` row reads as dead: that is a resolved answer from the liveness source, this is the failure to reach the source at all.
 - The `contention.rs` module doc's conservative-direction section gains the death clause.
 
 #### [P04] `whole` anchors carry the written content's identity (DECIDED) {#p04-wholefile-anchor}
@@ -245,6 +256,8 @@ Live Bash call: `tool_use` arrives → `declared_ops_for_command` parses via `sh
 #### The incident, replayed under this plan {#incident-replay}
 
 `git checkout 69ed16ce2 -- tugdeck` parses to `DeclaredKind::Restore` on `tugdeck` → contributes to neither promotion set → the four files' delta rows record as `origin: "bash"` hints → no proof, no contention; the files never show SHARED (Layer 1 alone suffices). Had the rows somehow been minted anyway: they'd carry hunk spans ([P05]) whose ids die at `git checkout HEAD -- tugdeck`; the session closes; on the next compose the owner is dead with nothing placing → retired ([P03]; Layers 3+4 suffice independently). Today's session f90e6740 shows four solo files either way.
+
+That is the replay of the *incident*, not of the ledger. The four rows already written are span-less, so their dead owner decodes to zero anchors, which Spec S03's first row reads as `Claim::Whole` for live and dead owners alike ([P05]'s no-retroactive-falsifiability posture, stated once more where it bites): Layers 3 and 4 never touch them. Those rows retire on a commit cut, a Disclaim, a Sever — or on [P06]'s release gesture, which is the only one of the five that costs a click instead of a database excavation. #step-7 is therefore the fix for the state on disk today, and #step-1/#step-2 are the fix for tomorrow's.
 
 ---
 
@@ -334,7 +347,8 @@ Filled only when `shared == true`, listing each *other* proof owner whose claim 
 | `paths_contend` | fn | `tugchanges-core/src/changes.rs:294` | supply `live` + file hash; needs session states |
 | `ledger::session_states(conn, ids) -> HashMap<String, bool>` | fn | `tugchanges-core/src/ledger.rs` | new: `SELECT session_id, state FROM sessions WHERE session_id IN (…)` against the **sessions.db** connection; missing id ⇒ dead |
 | `resolve_changes` / `compute_changes` | fn | `changes.rs` | thread the sessions.db connection down to `paths_contend` |
-| SHARED badge + co-owner display | tsx | `tugdeck/src/components/tugways/tug-changes-list.tsx:693` | render `shared_with` ([P06]) |
+| `sharedWithTitle` / `sharedIsReleasable` | fn | `tugdeck/src/components/tugways/tug-changes-list.tsx` | new exported pure helpers — the step's whole logic surface ([P06]) |
+| SHARED badge + co-owner display | tsx | `tugdeck/src/components/tugways/tug-changes-list.tsx:694` | render `shared_with` via those helpers ([P06]) |
 
 ---
 
@@ -358,7 +372,9 @@ No new React state anywhere; no new effects.
 | **Integration** | Bracket close over a real `git checkout <rev> -- <dir>`; span minting on promoted rows; compose retirement + `shared_with`; sync-engine retirement with seeded session states | `agent_bridge.rs`, `changeset.rs` (tokio), `changes.rs` |
 | **Drift prevention** | Existing contention/compose/changes tests updated: constructors gain `live: true` (behavior-identical), then dedicated dead-owner cases assert the delta | all three |
 
-Conventions carried from the fixup: contention fixtures build anchors via production constructors (`edit_anchor` / new `whole_anchor` / `spans_for_tool_input`), never hand-minted JSON, except where a test deliberately models the legacy shape. The seeded-`sessions.db` helpers in `changes.rs` tests already write `sessions` rows — extend the helper with a `state` column value. No app-test is added for the badge (deck change is presentational over an existing feed; `just app-test-changed` decides the selection).
+Conventions carried from the fixup: contention fixtures build anchors via production constructors (`edit_anchor` / new `whole_anchor` / `spans_for_tool_input`), never hand-minted JSON, except where a test deliberately models the legacy shape. The seeded-`sessions.db` helpers in `changes.rs` tests already write `sessions` rows — extend the helper with a `state` column value.
+
+Deck-side, the rule that decides the shape: `tug-changes-list.test.ts` is pure-logic `bun:test` over *exported helpers* with typed fixtures and no DOM anywhere, so anything #step-7 wants to assert has to live in a helper first (`sharedWithTitle`, `sharedIsReleasable`). No render test, no app-test for the badge — the JSX left over is a `title` attribute and an already-wired affordance, and `just app-test-changed` decides the selection.
 
 ---
 
@@ -457,6 +473,8 @@ Conventions carried from the fixup: contention fixtures build anchors via produc
 - [ ] `spans_for_tool_input("Write", {file_path, content})` → one `whole` span whose anchor carries `file_hash == content_hash(content)` and the content's distinctive line hashes; content-less `Write` input → bare `{}`.
 - [ ] `MultiEdit` past `SPANS_PER_EVENT_CAP` still collapses to bare `whole`.
 - [ ] Bash-close integration (existing bracket-test harness in `agent_bridge.rs` tests, e.g. around line 3677): a promoted row lands with `hunk` spans naming the path's diff hunks; a `bash` row lands span-less.
+- [ ] **Cross-spelling id agreement**, the assumption Layer 3's whole payoff rests on: ids minted through the async spelling (`fetch_git_diff` + `parse_hunks`) place against ids the sync engine reads through `hunks::file_hunks` (`std::process::Command`) over the same file. Both carry `HUNK_DIFF_FLAGS` by Spec S06's contract, but this is the first *writer* to depend on it, so pin it rather than cite it.
+- [ ] A promoted row on an untracked (created) file records span-less — `fetch_git_diff` yields nothing there, by the reasoning in #non-goals.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast -p tugchanges-core`
@@ -470,7 +488,7 @@ Conventions carried from the fixup: contention fixtures build anchors via produc
 **References:** [P03], [P06] shared_with, Spec S03, Spec S04, [Q01], Risk R02, (#liveness-topology, #incident-replay)
 
 **Tasks:**
-- [ ] `compose_snapshot`: build `live_ids: HashSet<String>` from `owners` (`OwnerAgg.live`); pass into `contention_verdict`, which constructs `OwnerAnchors { live: live_ids.contains(id), .. }` and computes `current_file_hash` (`std::fs::read(repo_root.join(path))` → `content_hash`; unreadable → `None`).
+- [ ] `compose_snapshot`: build `live_ids: HashSet<String>` from `owners` (`OwnerAgg.live`), plus `dead_ids` for the ids resolved as not-live; pass both into `contention_verdict`, which constructs `OwnerAnchors { live: !dead_ids.contains(id), .. }` — **an id in neither set reads as live** per [P03]'s failure direction, so the resolution gap can only over-warn. `proof_ids ⊆ owners.keys()` holds by construction (a path becomes contended through the very rows the owner aggregation was built from); assert it with a `debug_assert!` at the verdict call so a future change to either side surfaces there rather than as a silent retirement. `contention_verdict` also computes `current_file_hash` (`std::fs::read(repo_root.join(path))` → `content_hash`; unreadable → `None`).
 - [ ] `ChangesetFile` gains `shared_with: Option<Vec<SharedOwner>>` (`SharedOwner { id, name, live }`, serde as Spec S04); the contended-path fill loop populates it for each owner from the verdict's surviving co-owners, using `OwnerAgg.display_name`/`live`; `None` elsewhere.
 - [ ] Existing serde tests / snapshot expectations in `changeset.rs` updated for the new optional field.
 
@@ -478,6 +496,7 @@ Conventions carried from the fixup: contention fixtures build anchors via produc
 - [ ] Tokio compose: live session A places in hunk 1; dead session B's spans place nowhere (fixture overwrites B's content) → A's file `shared == false`, no `shared_with`.
 - [ ] Same with B live → `shared == true`, A's `shared_with == [B]` with `live: false→true` respectively.
 - [ ] Dead B placing (content intact) → still `shared == true` (orphan-consistent), `shared_with == [{B, live:false}]`.
+- [ ] An owner id absent from both liveness sets reads as live: same fixture as the headline with B withheld from `dead_ids` → `shared == true` (the over-warning direction, never retirement).
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
@@ -512,12 +531,15 @@ Conventions carried from the fixup: contention fixtures build anchors via produc
 
 **Tasks:**
 - [ ] `changeset-types.ts`: add optional `shared_with` to `ChangesetFile` + guard (absent-tolerant).
-- [ ] `tug-changes-list.tsx` (`:693`): the shared badge gains a `title` naming co-owners (`shared with <name>[, …]`, dead ones suffixed `(closed)`); the expanded file block renders the same line as a provenance row, styled like the existing orphan citation chip (reuse its classes/pattern at `:539`).
+- [ ] The two decisions this step adds are **pure functions exported from `tug-changes-list.tsx`**, alongside `diffablePathsOf` / `entryDiffDescriptor` / `fileExpandKey`: `sharedWithTitle(file): string | null` (the co-owner sentence, `null` when there is nothing to say) and `sharedIsReleasable(file): boolean` (every `shared_with` entry `live: false`). The JSX consumes them and holds no logic of its own — which is what makes the step testable in this file's established `bun:test` style (no DOM, typed fixtures, exported helpers).
+- [ ] `tug-changes-list.tsx` (`:694`): the shared badge gains a `title` naming co-owners (`shared with <name>[, …]`, dead ones suffixed `(closed)`); the expanded file block renders the same line as a provenance row, styled like the existing orphan citation chip (reuse its classes/pattern at `:539`).
 - [ ] When every `shared_with` entry has `live: false`, surface the existing per-file Claim affordance (the [D120] wiring already present for orphan rows at `:1040`) on the shared row, labeled for release; action dispatches the existing `changeset_claim` through `changeset-verb-store`.
 - [ ] `cd tugdeck && bunx vite build` before declaring done (prod-bundle rule).
 
 **Tests:**
-- [ ] Extend the existing changes-list unit coverage (`changeset-verb-store-claim.test.ts` pattern) with a `shared_with` fixture: badge title text, dead-only Claim affordance present, live co-owner → absent.
+- [ ] `tug-changes-list.test.ts` (pure-logic `bun:test` over exported helpers, the file's existing shape): `sharedWithTitle` over a `shared_with` fixture — one co-owner, several, a dead one suffixed `(closed)`, absent field → `null`; `sharedIsReleasable` true for all-dead, false with any live entry and false when the field is absent.
+- [ ] `changeset-types.test.ts`: the guard accepts a file with no `shared_with` (pre-plan server) and one carrying it.
+- [ ] No render test and no app-test for the badge: the logic is in the helpers above, and the JSX is a `title` attribute plus an already-wired affordance. `just app-test-changed` decides whether the deck edit pulls anything in.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build` green; `just app-test-changed` selection green
