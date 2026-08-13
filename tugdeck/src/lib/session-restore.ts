@@ -918,12 +918,14 @@ function isCardBinding(value: unknown): value is CardBinding {
 }
 
 /**
- * Spawn a fresh (JSONL-less) claude session under an existing
- * card→session binding. Used by `restoreSessions` for zero-turn rows:
- * the previous session never had any Claude turns (so there's no JSONL
- * to resume), but the card was bound to a session whose id keys durable
- * non-JSONL content — the shell ledger, the `/btw` history, the
- * staged-context queue.
+ * Spawn a fresh (JSONL-less) claude session on a card. Used by
+ * `restoreSessions` for zero-turn rows: the previous session never had
+ * any Claude turns (so there's no JSONL to resume), but the card was
+ * bound to a session whose id keys durable non-JSONL content — the
+ * shell ledger, the `/btw` history, the staged-context queue. Also used
+ * by ConfigureTug's "Open a Session card", which hands the wizard's
+ * projects folder straight to a freshly-added card (a minted session id)
+ * rather than dropping the user into the picker to say it again.
  *
  * PRESERVES the original `session_id` (passed in, not minted): a
  * `new`-mode spawn re-uses the id so that content re-keys to the same
@@ -944,7 +946,7 @@ function isCardBinding(value: unknown): value is CardBinding {
  * milliseconds, below the placeholder's panel-reveal budget, so a
  * healthy fresh spawn shows only the quiet backdrop.
  */
-function fireFreshSpawn(
+export function fireFreshSpawn(
   cardId: string,
   tugSessionId: string,
   projectDir: string,

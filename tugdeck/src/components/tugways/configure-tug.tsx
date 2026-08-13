@@ -63,6 +63,7 @@ import { authStore, useAuth } from "@/lib/auth-store";
 import { useVersionGateOpen, deriveConfigureTugOpen } from "@/lib/macos-support";
 import { useAppTransportState } from "@/lib/transport-state-store";
 import { getConnection } from "@/lib/connection-singleton";
+import { fireFreshSpawn } from "@/lib/session-restore";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import {
   readSetupSeen,
@@ -369,8 +370,20 @@ export function ConfigureTug(): ReactElement {
         setProjectDirConfirmed(true);
       });
   };
+  // The wizard already has the answer the picker would ask for — the projects
+  // folder confirmed one row above — so the session starts here rather than in
+  // a "Choose Session" sheet that would make the user say it a second time.
+  // `fireFreshSpawn` sends the `new`-mode frame and holds the card on the quiet
+  // restoring backdrop for the bind round-trip, so the picker never flashes.
+  // Without a path or a connection there is nothing to spawn with; the card
+  // still opens and presents its picker, which is the honest fallback.
   const handleOpenSession = (): void => {
-    deck.addCard("session");
+    const cardId = deck.addCard("session");
+    const projectDir = projectPathValue.trim();
+    const connection = getConnection();
+    if (cardId !== null && connection !== null && projectDir !== "") {
+      fireFreshSpawn(cardId, crypto.randomUUID(), projectDir, connection);
+    }
     setOpenedFirstSession(true);
   };
 
