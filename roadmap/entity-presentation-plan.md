@@ -248,6 +248,7 @@ Today a Session-card assistant paragraph marks a path only if it is backticked (
 In `styles/tug-annotation.css` (split-out runs — Mentions):
 
 ```css
+/* @tug-renders-on: the surrounding surface's own background */
 [data-tugx-wrapped][data-tug-annotation="file-path"],
 [data-tugx-wrapped][data-tug-annotation="directory"],
 [data-tugx-wrapped][data-tug-annotation="commit-sha"] {
@@ -259,7 +260,11 @@ In `styles/tug-annotation.css` (split-out runs — Mentions):
 }
 ```
 
-In `tugdeck/src/components/tugways/tug-markdown-view.css` (annotated inline `<code>` — code tone *plus* the rule, brief [P04]): the same declaration block for `.tugx-md-block code[data-tug-annotation="slash-command"]`, `...="shell-command"`, `...="file-path"`, `...="directory"`, `...="commit-sha"`.
+In `tugdeck/src/components/tugways/tug-markdown-view.css` (annotated inline `<code>` — code tone *plus* the rule, brief [P04]): the same declaration block for `.tugx-md-block code[data-tug-annotation="slash-command"]`, `...="shell-command"`, `...="file-path"`, `...="directory"`.
+
+There is deliberately **no** `code[data-tug-annotation="commit-sha"]` selector: `classifyInlineCode` (`payloads.ts`) can only stamp `slash-command` / `shell-command` / `file-path` / `directory` on a whole `<code>` span. A backticked sha reaches the DOM as a *wrapped run inside* the code element (the text scan descends into unannotated `<code>`), so the `[data-tugx-wrapped]` block above already covers it.
+
+Per [L16], every new color-setting rule carries an `@tug-renders-on` comment naming its rendering surface, matching each sheet's existing convention (the wrapped-run hover rule in `tug-annotation.css` shows the format).
 
 Exclusions, by construction: `session` wraps (portal hosts, chip carries the affordance), `url`/`email` (anchors, already links), atoms (`.tug-atom-ref`, `.tug-atom-chip-host` — hover-only, unchanged). Hover rules in both files stay exactly as shipped. An inline `<code>` span with **no** `data-tug-annotation` (a resolver refusal or an identifier) matches nothing and keeps today's look — that is success criterion 2.
 
@@ -287,7 +292,27 @@ export interface TugAtomRefProps {
 export function fileRefBasename(path: string): string; // kept, re-exported
 ```
 
-CSS (`tug-atom-ref.css`): today's `tool-file-ref` rules with class names renamed to `tug-atom-ref` / `tug-atom-ref-icon` / `tug-atom-ref--link`, plus the [Q01] font pin `font-family: var(--tugx-block-code-font, var(--tug-font-family-mono))` replacing `font-family: inherit` (`font-size`/`color: inherit` stay — consumers size it; the Gazette row sets its own size, see #step-4). The `@tug-pairings` header comment is updated for the new consumers.
+CSS (`tug-atom-ref.css`): today's `tool-file-ref` rules with class names renamed to `tug-atom-ref` / `tug-atom-ref-icon`, plus the [Q01] font pin `font-family: var(--tugx-block-code-font, var(--tug-font-family-mono))` replacing `font-family: inherit` (`font-size`/`color: inherit` stay — consumers size it; the Gazette row sets its own size, see #step-4). The `@tug-pairings` header comment is updated for the new consumers.
+
+**Link affordance follows the annotation contract, not a class.** The `tool-file-ref--link` class is retired. Cursor + hover underline key off the presence of `data-tug-annotation` — on the skin itself (annotate mode, tool headers) or on its immediate wrapper (presentational mode, the Gazette's `annotationProps` span):
+
+```css
+/* Affordance rides the annotation contract: an annotated skin (or a skin
+   inside an annotated wrapper) is clickable; an unresolvable ref carries
+   no annotation and invites nothing. Same move tug-atom-markdown-body.css
+   makes for chips — "annotated" and "actionable" are the same fact. */
+.tug-atom-ref[data-tug-annotation],
+[data-tug-annotation] > .tug-atom-ref {
+  cursor: pointer;
+}
+.tug-atom-ref[data-tug-annotation]:hover,
+[data-tug-annotation] > .tug-atom-ref:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+```
+
+This is what keeps a dead Gazette ref honest for free: `annotationProps` stamps the wrapper only when `resolution.state === "actionable"`, so a pending or unresolvable ref renders the skin with no cursor, no hover, and only the reason tooltip — no prop threading, no per-consumer decision ([L06]). `CommitShaText` in presentational mode keeps its own cursor treatment (it is a copy target, not a link) exactly as today.
 
 #### State Zone Mapping (tugdeck/tugways plans) {#state-zone-mapping}
 
@@ -417,7 +442,7 @@ New assertions belong with the surface they cover, not in a new file per work it
 - `tugdeck/src/components/tugways/tug-markdown-view.css`: Spec S01 block for annotated inline `<code>`; the "resting appearance is the ordinary inline-code chip" comments updated.
 
 **Tasks:**
-- [ ] Apply Spec S01 exactly — kinds enumerated, `session` excluded, no color/tint change, no layout-affecting property.
+- [ ] Apply Spec S01 exactly — kinds enumerated, `session` excluded, no `code[…="commit-sha"]` selector, no color/tint change, no layout-affecting property; every new color-setting rule carries its `@tug-renders-on` comment ([L16]).
 - [ ] Visual pass on the live app (HMR): Session card and Gazette, dark + light theme — six-mention density reads as a referenced document, not a link field.
 
 **Tests:**
@@ -439,7 +464,7 @@ New assertions belong with the surface they cover, not in a new file per work it
 
 **Artifacts:**
 - New `tug-atom-ref.tsx` + `.css` per Spec S02; `blocks/tool-file-ref.tsx` + `.css` deleted.
-- Call sites updated: `read-tool-block.tsx`, `write-tool-block.tsx`, `edit-tool-block.tsx`, `notebook-edit-tool-block.tsx`, `pulse-beat-text.tsx`, bench (compile-only patch). Tool headers keep byte-identical behavior (self-stamped annotation, findable, focus-refuse, full-path title).
+- Call sites updated: `read-tool-block.tsx`, `write-tool-block.tsx`, `edit-tool-block.tsx`, `notebook-edit-tool-block.tsx`, `pulse-beat-text.tsx`, bench (compile-only patch). Tool headers keep byte-identical behavior (self-stamped annotation, findable, focus-refuse, full-path title); their cursor/hover affordance now arrives via the `data-tug-annotation` selector (Spec S02) instead of the retired `--link` class — same pixels, different key.
 - `at0307` `@covers` path updated from `blocks/tool-file-ref.tsx` to `tug-atom-ref.tsx`.
 
 **Tasks:**
@@ -466,7 +491,7 @@ New assertions belong with the surface they cover, not in a new file per work it
 **References:** [P03], [P04], brief [P06]/[P08], call-site inventory rows W4, (#current-behavior-map)
 
 **Artifacts:**
-- `gazette-card.tsx` `RefAtom`: `TugAtomChip` replaced by `TugAtomRef` (`annotate` false — the existing `annotationProps` wrapper span keeps owning the contract and the pending/unresolvable tooltips); file/directory refs label by basename; commit ref becomes `entity: { kind: "commit" }` with the `Commit <8>` default label; `GAZETTE_CHIP_FONT_SIZE` and the `TugAtomChip` import removed. Session refs untouched (`TugSessionCitation`, brief [P08]).
+- `gazette-card.tsx` `RefAtom`: `TugAtomChip` replaced by `TugAtomRef` (`annotate` false — the existing `annotationProps` wrapper span keeps owning the contract and the pending/unresolvable tooltips); file/directory refs label by basename; commit ref becomes `entity: { kind: "commit" }` with the `Commit <8>` default label; `GAZETTE_CHIP_FONT_SIZE` and the `TugAtomChip` import removed. Session refs untouched (`TugSessionCitation`, brief [P08]). Link affordance needs no code here: Spec S02's `[data-tug-annotation] > .tug-atom-ref` rule lights up actionable refs through the wrapper and leaves pending/unresolvable ones inert.
 - `gazette-card.css` `.gazette-post-refs`: sized for the skin — mirror the bench's settled row (`font-size: 0.9em` relative to the 13px post body, muted color, `--tug-space-md` gap); mono comes from the component ([Q01]).
 
 **Tasks:**
