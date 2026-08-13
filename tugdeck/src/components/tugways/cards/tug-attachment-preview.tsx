@@ -692,6 +692,10 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
 // spatial ring; the pager is a delegating selection group whose interior
 // cursor roves the dots. Delete is conditional — its slot is simply
 // absent when the sheet isn't deletable.
+/** A responder that exists for identity alone handles nothing. Hoisted so
+ *  the registration is not a fresh object on every render. */
+const EMPTY_PREVIEW_ACTIONS = {};
+
 const PREVIEW_COPY_ORDER = 0;
 const PREVIEW_DELETE_ORDER = 1;
 const PREVIEW_PAGER_ORDER = 2;
@@ -771,26 +775,24 @@ function AttachmentPreviewSheet({
   );
   const dataUrl = React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  // Cmd-C copies the current image. The chord is matched in the
-  // capture-phase keybinding pipeline and dispatched as the `COPY` action
-  // to the first responder, so a local `onKeyDown` never sees it. We
-  // register this preview as a responder with a `COPY` handler instead;
-  // the sheet's trapped focus resting inside this root makes the preview
-  // the first responder. The handler clicks the Copy button so Cmd-C and a
-  // pointer-click share ONE path — including the "Copied" flash ([L23]).
+  // The node exists for identity — the sheet's trapped focus rests inside
+  // this root — and handles nothing.
+  //
+  // It used to register `COPY`, on the belief that the chord is matched in
+  // the capture-phase keybinding pipeline and dispatched to the first
+  // responder. It is not: `COPY` is `routing: "native"`, so the pipeline
+  // passes ⌘C through untouched and AppKit performs Edit ▸ Copy as
+  // `NSText.copy(_:)` against the document selection. The handler never
+  // ran. What the claim did do was terminate the Edit-menu validation walk
+  // with no `validateAction` to answer for it, so Edit ▸ Copy read as
+  // available over an image preview that could not serve it. Copying the
+  // image is the sheet's Copy button, which works and carries the flash.
   const rootRef = React.useRef<HTMLDivElement | null>(null);
   const responderId = React.useId();
   const chainManager = React.useContext(ResponderChainContext);
   const { ResponderScope, responderRef } = useOptionalResponder({
     id: responderId,
-    actions: {
-      [TUG_ACTIONS.COPY]: () => {
-        const button = rootRef.current?.querySelector<HTMLElement>(
-          '[data-slot="tug-attachment-preview-sheet__copy"]',
-        );
-        button?.click();
-      },
-    },
+    actions: EMPTY_PREVIEW_ACTIONS,
   });
   const setRoot = React.useCallback(
     (el: HTMLDivElement | null): void => {

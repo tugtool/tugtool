@@ -568,6 +568,10 @@ function composeCopyText(data: TerminalData): string {
 
 const EMPTY_TERMINAL: TerminalData = { stdout: "", stderr: "" };
 
+/** A responder that exists for identity alone handles nothing. Hoisted so
+ *  the registration is not a fresh object on every render. */
+const EMPTY_ACTIONS: Partial<Record<TugAction, ActionHandler>> = {};
+
 export const TerminalBlock: React.FC<TerminalBlockProps> = ({
   data,
   streamingStore,
@@ -800,27 +804,19 @@ export const TerminalBlock: React.FC<TerminalBlockProps> = ({
 
   // ---- Responder registration ([L11]) ---------------------------------
   //
-  // TerminalBlock registers a single `COPY` handler — Cmd-C copies the
-  // current terminal output when the block is first-responder.
-  const terminalBlockActions = React.useMemo<
-    Partial<Record<TugAction, ActionHandler>>
-  >(
-    () => ({
-      [TUG_ACTIONS.COPY]: () => {
-        const writeText = navigator.clipboard?.writeText.bind(
-          navigator.clipboard,
-        );
-        if (writeText === undefined) return;
-        const text = composeCopyText(latestDataRef.current);
-        if (text.length === 0) return;
-        void writeText(text).catch(() => undefined);
-      },
-    }),
-    [],
-  );
+  // The node exists for IDENTITY — collapsing the block makes it first
+  // responder — and handles nothing. It used to register `COPY`, on the
+  // belief that ⌘C over the block would copy the output. It never could:
+  // ⌘C and Edit ▸ Copy are Edit ▸ Copy's key equivalent, performed by
+  // AppKit as `NSText.copy(_:)` against the document selection, and the
+  // chord pipeline bails on natively-routed commands before the chain. So
+  // the handler never ran, and the only thing the claim achieved was to
+  // terminate the Edit-menu validation walk and report Copy as available
+  // over a block that would not answer it. Copying the output is the
+  // `BlockCopyButton` above, which works and says so.
   const terminalBlockResponder = useOptionalResponder({
     id: terminalBlockResponderId,
-    actions: terminalBlockActions,
+    actions: EMPTY_ACTIONS,
   });
 
   // ---- Position-stable click infrastructure ---------------------------

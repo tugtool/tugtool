@@ -149,12 +149,20 @@ export const TUG_ACTIONS = {
   //              the chip an `@` mention mints rather than as its path
   //              characters, so it reads as one object and travels as one;
   //              every other kind arrives as its text.
+  // COPY_COPYABLE: payload — none. Copy the text of the copyable the
+  //              right-click landed on — a label, a badge, a timestamp, a
+  //              sha. Menu-only, and menu-only for a structural reason: a
+  //              copyable is `user-select: none`, so it can never be the
+  //              document selection, and Edit ▸ Copy / ⌘C are performed by
+  //              AppKit against that selection without entering this chain
+  //              at all. A responder registering plain COPY here would
+  //              therefore not gain a keyboard copy — it would only
+  //              terminate the Edit-menu validation walk and light up a
+  //              Copy item that copies nothing. See {@link useCopyableText}.
   // COPY_SESSION_ATOM: payload — none. Copy the session the right-click
   //              landed on as its atom: the citation as `text/plain` with the
   //              private atom sidecar beside it, so a paste back into any Tug
-  //              editor returns the chip rather than the string. Also what a
-  //              bare COPY over a session row means, so the ⌘C a reader
-  //              reaches for first is the richest form.
+  //              editor returns the chip rather than the string.
   // COPY_SESSION_CITATION: payload — none. The same session as the flat
   //              sanctioned string — `<project>/<callsign> (<short id>)` —
   //              for anywhere outside Tug, where the sidecar means nothing.
@@ -174,6 +182,7 @@ export const TUG_ACTIONS = {
   COPY_COMMAND:        "copy-command",
   COPY_COMMAND_AS_PLAIN_TEXT: "copy-command-as-plain-text",
   COPY_ANNOTATION_VALUE: "copy-annotation-value",
+  COPY_COPYABLE:       "copy-copyable",
   COPY_SESSION_ATOM:   "copy-session-atom",
   COPY_SESSION_CITATION: "copy-session-citation",
   COPY_SESSION_ID:     "copy-session-id",

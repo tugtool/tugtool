@@ -31,13 +31,12 @@
  * Laws: [L11] controls emit actions; responders handle actions
  */
 
-import React, { useCallback, useId, useMemo, useState, useSyncExternalStore } from "react";
+import React, { useCallback, useId, useMemo, useState } from "react";
 import { TugEditorContextMenu, type TugEditorContextMenuEntry } from "./tug-editor-context-menu";
 import { useOptionalResponder } from "./use-responder";
 import { useResponderChain } from "./responder-chain-provider";
 import type { ActionHandlerResult } from "./responder-chain";
 import { TUG_ACTIONS } from "./action-vocabulary";
-import { commandShortcut, keymapRegistry } from "./keymap-registry";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,10 +140,19 @@ export function useCopyableText({
 
   const responderId = useId();
 
+  // COPY_COPYABLE, not COPY. A copyable is `user-select: none`, so it can
+  // never BE the document selection — and Edit ▸ Copy / ⌘C are performed by
+  // AppKit against that selection (`NSText.copy(_:)`) without entering this
+  // chain. Registering plain COPY here bought no keyboard copy; it only
+  // terminated the Edit-menu validation walk (`findValidationResponder`
+  // stops at the first node holding a handler) and, with no `validateAction`
+  // to say otherwise, reported Copy as ENABLED over a chip that has nothing
+  // to give it. Standing aside lets the walk reach the text surface behind
+  // the chip, which validates against a real selection.
   const { responderRef, ResponderScope } = useOptionalResponder({
     id: responderId,
     actions: {
-      [TUG_ACTIONS.COPY]: handleCopy,
+      [TUG_ACTIONS.COPY_COPYABLE]: handleCopy,
     },
   });
 
@@ -192,10 +200,10 @@ export function useCopyableText({
   const menuItems = useMemo<TugEditorContextMenuEntry[]>(
     () =>
       copyMenu
-        ? [{ action: TUG_ACTIONS.COPY, label: "Copy" }]
+        ? [{ action: TUG_ACTIONS.COPY_COPYABLE, label: "Copy" }]
         : [
             { action: TUG_ACTIONS.CUT, label: "Cut", disabled: true },
-            { action: TUG_ACTIONS.COPY, label: "Copy" },
+            { action: TUG_ACTIONS.COPY_COPYABLE, label: "Copy" },
             { action: TUG_ACTIONS.PASTE, label: "Paste", disabled: true },
             { type: "separator" },
             { action: TUG_ACTIONS.SELECT_ALL, label: "Select All", disabled: true },
