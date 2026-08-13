@@ -1,0 +1,333 @@
+/**
+ * gallery-entity-presentation.css — scaffolding + the PROTOTYPE rules
+ * `roadmap/entity-presentation.md` turns on.
+ *
+ * Two registers, kept apart the way `gallery-session-identity.css` keeps
+ * them:
+ *
+ * 1. Scaffolding (`.gep-*`) — frames, columns, captions. Ships nowhere.
+ * 2. Prototype (`.gep-proposed`, `.gep-weight-*`) — [P05]'s resting
+ *    underline at three candidate weights, scoped so the columns can be
+ *    compared in one glance. When W2 lands, the winning weight moves to
+ *    `styles/tug-annotation.css` + `tug-markdown-view.css` and the scope
+ *    classes die with the card.
+ *
+ * **What replaced the tint, and why it is recorded here.** The first round
+ * of this card proposed a resting *colour* step for a resolved entity. It
+ * failed on contact: colour is not an affordance. A hue shift says "this
+ * token is a different CATEGORY of thing" — which is exactly what the code
+ * tone already says — so a second, subtler hue on top asked the reader to
+ * read two levels of one channel and infer *clickable* from the difference.
+ * Nobody learns that, and the actual signal stayed hidden until hover. The
+ * underline below says one thing, it is already learned, and it changes no
+ * layout metric — which matters because resolver verdicts land after the ink
+ * is painted and must never reflow a streaming transcript. Do not re-propose
+ * the tint.
+ *
+ * Tuglaw cross-check: [L16] every colour-only rule names its surface;
+ * [L17] tokens resolve to a `--tug7-*` base in one hop. Nothing here is a
+ * precedent the app inherits.
+ */
+
+.gep-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-lg);
+  padding: var(--tug-space-md);
+}
+
+.gep-blurb,
+.gep-note {
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  max-width: 74ch;
+  margin: 0;
+}
+
+.gep-blurb code,
+.gep-note code {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.9em;
+}
+
+/* --- project root row ---------------------------------------------------- */
+
+.gep-root-row {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+}
+
+.gep-root-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
+}
+
+/* @tug-renders-on: the card's own content background */
+.gep-root-state {
+  flex: 0 0 auto;
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gep-root-state[data-ready] {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+/* --- sections + the two-column pair -------------------------------------- */
+
+.gep-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-sm);
+}
+
+.gep-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--tug-space-md);
+  align-items: start;
+}
+
+.gep-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+.gep-column-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+}
+
+.gep-column-caption {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The reading surface. Framed like a transcript body so the samples are
+   judged against a real background rather than the gallery's own.
+   @tug-renders-on: --tugx-block-chrome-bg */
+.gep-frame {
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  padding: var(--tug-space-md);
+  font-size: var(--tug-font-size-sm);
+  min-width: 0;
+}
+
+/* --- trailing ref rows --------------------------------------------------- */
+
+.gep-refs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-xs);
+  margin-top: var(--tug-space-sm);
+}
+
+/* [P06]'s row: the read-only atom skin wants the code font a tool header
+   gives it by inheritance, which a prose body does not. Naming it here is
+   how the question reaches W4 rather than being decided by accident. */
+.gep-refs-unboxed {
+  font-family: var(--tug-font-family-mono);
+  font-size: 0.9em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  gap: var(--tug-space-md);
+}
+
+/* A drawing, not a component: the commit atom W5 would produce. Inert on
+   purpose — no annotation dataset, no pointer — so it cannot be mistaken
+   for shipped behavior. */
+.gep-ref-drawing {
+  cursor: default;
+  white-space: nowrap;
+}
+
+/* --- the two forms ------------------------------------------------------- */
+
+.gep-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--tug-space-md);
+  align-items: start;
+}
+
+.gep-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  min-width: 0;
+}
+
+/* @tug-renders-on: --tugx-block-chrome-bg */
+.gep-form-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tug-space-md);
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  padding: var(--tug-space-md);
+  min-height: 3rem;
+  font-size: var(--tug-font-size-sm);
+}
+
+.gep-form-mono {
+  font-family: var(--tug-font-family-mono);
+}
+
+.gep-form-note {
+  font-size: var(--tug-font-size-xs);
+  line-height: var(--tug-line-height-md);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.gep-form-note code {
+  font-family: var(--tug-font-family-mono);
+}
+
+.gep-mention-demo {
+  line-height: var(--tug-line-height-md);
+}
+
+/* --- the two-channel matrix ---------------------------------------------- */
+
+.gep-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--tug-space-sm);
+}
+
+.gep-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+.gep-cell-label {
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* @tug-renders-on: --tugx-block-chrome-bg */
+.gep-cell-body {
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  padding: var(--tug-space-sm) var(--tug-space-md);
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+}
+
+/* The markdown code tone, reached directly rather than by nesting a whole
+   `.tugx-md-block` around four words. Same token the real rule resolves to
+   (`--tugx-md-inline-code-color` → this base), so the cell cannot drift from
+   the prose above it.
+   @tug-renders-on: --tugx-block-chrome-bg */
+.gep-cell-code {
+  font-family: var(--tugx-block-code-font);
+  font-size: 0.95em;
+  color: var(--tug7-element-tone-text-normal-code-rest);
+}
+
+/* --- the underline calibration bench ------------------------------------- */
+
+.gep-weights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-md);
+}
+
+.gep-weight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+}
+
+/* The stress paragraph. Sized and led like transcript prose so six marks in
+   one paragraph are judged at the density they will really appear at.
+   @tug-renders-on: --tugx-block-chrome-bg */
+.gep-stress {
+  background: var(--tugx-block-chrome-bg);
+  border: 1px solid var(--tugx-block-border);
+  border-radius: var(--tugx-block-radius);
+  padding: var(--tug-space-md);
+  font-size: var(--tug-font-size-sm);
+  line-height: var(--tug-line-height-md);
+  max-width: 74ch;
+}
+
+/* =========================================================================
+   PROTOTYPE — [P05], the resting underline
+   ========================================================================= */
+
+/**
+ * A resolved entity carries its affordance at rest — whether it is a
+ * backticked `<code>` span or a run the annotator split out of running
+ * prose. Both selectors are here because [P04] says the two are the same
+ * thing: what earns the mark is RESOLVING, never the backticks.
+ *
+ * Only the underline is declared. Colour is deliberately untouched, so an
+ * inline `<code>` keeps the code tone it always had and a prose run keeps
+ * the body colour — the mark adds a signal rather than recolouring the
+ * sentence. The hover rules already in `tug-markdown-view.css` and
+ * `styles/tug-annotation.css` still own the full link treatment.
+ *
+ * `text-decoration-skip-ink` stays at its default so descenders break the
+ * rule cleanly under a `p`, `g`, or `y` — at 1px and reduced opacity a
+ * solid rule through a descender reads as a strikethrough.
+ *
+ * @tug-renders-on: --tugx-block-chrome-bg
+ */
+.gep-proposed .tugx-md-block code[data-tug-annotation],
+.gep-proposed [data-tugx-wrapped][data-tug-annotation],
+.gep-proposed .gep-mention-demo[data-tug-annotation] {
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--gep-rule-color);
+  text-decoration-style: var(--gep-rule-style, solid);
+}
+
+/**
+ * The settled weight: 1px solid, `currentColor` at 45%. It is the default on
+ * `.gep-proposed`, so every column that names no weight shows the decision.
+ * The two alternates below are kept as the record of what it was chosen
+ * against — they are not live options.
+ */
+.gep-proposed {
+  --gep-rule-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+/** Faint — the least a signal can be and still be a signal. Not chosen. */
+.gep-weight-faint {
+  --gep-rule-color: color-mix(in srgb, currentColor 28%, transparent);
+}
+
+/** Medium — APPROVED. Same value as the `.gep-proposed` default. */
+.gep-weight-medium {
+  --gep-rule-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+
+/**
+ * Dotted — the classic "actionable but not a navigation link" convention.
+ * Carried at a higher alpha because a dotted rule loses roughly half its
+ * ink to the gaps and reads lighter than a solid rule of the same colour.
+ * Not chosen.
+ */
+.gep-weight-dotted {
+  --gep-rule-color: color-mix(in srgb, currentColor 70%, transparent);
+  --gep-rule-style: dotted;
+}
