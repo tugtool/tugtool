@@ -472,29 +472,34 @@ impl ShellRoute {
     }
 }
 
+/// One shell command and how it went.
+pub struct ShellFact<'a> {
+    pub command: &'a str,
+    pub route: ShellRoute,
+    pub ok: bool,
+    pub exit_code: Option<i64>,
+    pub cwd: Option<&'a str>,
+}
+
 /// One shell command and how it went. Never its output — `shell_exchanges.db`
 /// and the transcript own that, and a fact is about the work, not its bytes.
 pub fn shell_fact(
     at_ms: i64,
     session_id: Option<&str>,
-    command: &str,
-    route: ShellRoute,
-    ok: bool,
-    exit_code: Option<i64>,
-    cwd: Option<&str>,
+    shell: &ShellFact<'_>,
     dedupe_key: Option<String>,
 ) -> NewFact {
     compose(
         at_ms,
         FactKind::Shell,
         session_id,
-        subject_of(command),
+        subject_of(shell.command),
         json!({
-            "command": command,
-            "route": route.as_str(),
-            "ok": ok,
-            "exit_code": exit_code,
-            "cwd": cwd,
+            "command": shell.command,
+            "route": shell.route.as_str(),
+            "ok": shell.ok,
+            "exit_code": shell.exit_code,
+            "cwd": shell.cwd,
         }),
         dedupe_key,
     )
@@ -805,11 +810,13 @@ pub fn synthesize_facts_from_frames(frames: &[SynthFrame<'_>]) -> SynthesizedFac
                 facts.push(shell_fact(
                     at_ms,
                     Some(session_id),
-                    &command,
-                    ShellRoute::Claude,
-                    !is_error,
-                    None,
-                    None,
+                    &ShellFact {
+                        command: &command,
+                        route: ShellRoute::Claude,
+                        ok: !is_error,
+                        exit_code: None,
+                        cwd: None,
+                    },
                     Some(key.clone()),
                 ));
                 note(FactKind::Shell.as_str(), &mut kinds);
@@ -906,11 +913,13 @@ mod tests {
                 shell_fact(
                     1,
                     Some("s1"),
-                    "cargo nextest run",
-                    ShellRoute::Claude,
-                    true,
-                    None,
-                    None,
+                    &ShellFact {
+                        command: "cargo nextest run",
+                        route: ShellRoute::Claude,
+                        ok: true,
+                        exit_code: None,
+                        cwd: None,
+                    },
                     None,
                 ),
                 "$ cargo nextest run → ok",
@@ -919,11 +928,13 @@ mod tests {
                 shell_fact(
                     1,
                     Some("s1"),
-                    "git push",
-                    ShellRoute::User,
-                    false,
-                    Some(1),
-                    Some("/proj"),
+                    &ShellFact {
+                        command: "git push",
+                        route: ShellRoute::User,
+                        ok: false,
+                        exit_code: Some(1),
+                        cwd: Some("/proj"),
+                    },
                     None,
                 ),
                 "$ git push → err",
@@ -1016,11 +1027,13 @@ mod tests {
         let fact = shell_fact(
             1,
             Some("s1"),
-            "cd tugrust &&\n  cargo nextest run",
-            ShellRoute::Claude,
-            true,
-            None,
-            None,
+            &ShellFact {
+                command: "cd tugrust &&\n  cargo nextest run",
+                route: ShellRoute::Claude,
+                ok: true,
+                exit_code: None,
+                cwd: None,
+            },
             None,
         );
         assert_eq!(fact.text, "$ cd tugrust && cargo nextest run → ok");
@@ -1148,11 +1161,13 @@ VERDICT: PASS  (20/20 files green; 137/137 tests passed)";
         let shell = shell_fact(
             1,
             Some("s1"),
-            "cargo nextest run",
-            ShellRoute::Claude,
-            true,
-            None,
-            None,
+            &ShellFact {
+                command: "cargo nextest run",
+                route: ShellRoute::Claude,
+                ok: true,
+                exit_code: None,
+                cwd: None,
+            },
             None,
         );
         assert!(shell.text.ends_with("→ ok"));
@@ -1202,11 +1217,13 @@ VERDICT: PASS  (20/20 files green; 137/137 tests passed)";
                 shell_fact(
                     1_100,
                     Some("s1"),
-                    "cargo nextest run",
-                    ShellRoute::Claude,
-                    true,
-                    None,
-                    None,
+                    &ShellFact {
+                        command: "cargo nextest run",
+                        route: ShellRoute::Claude,
+                        ok: true,
+                        exit_code: None,
+                        cwd: None,
+                    },
                     Some(shell_key("s1", "toolu_01")),
                 ),
                 test_run_fact(

@@ -974,11 +974,13 @@ async fn shell_session_task(
             let shell_fact = facts_library::shell_fact(
                 at_ms,
                 Some(&tug_session_id),
-                &command,
-                facts_library::ShellRoute::User,
-                exit.unwrap_or(0) == 0,
-                exit,
-                Some(&cwd),
+                &facts_library::ShellFact {
+                    command: &command,
+                    route: facts_library::ShellRoute::User,
+                    ok: exit.unwrap_or(0) == 0,
+                    exit_code: exit,
+                    cwd: Some(&cwd),
+                },
                 None,
             );
             if let Err(e) = sessions.record_fact(&shell_fact) {

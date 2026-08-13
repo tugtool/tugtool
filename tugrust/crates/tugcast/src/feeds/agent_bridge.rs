@@ -972,11 +972,13 @@ fn record_shell_facts(
         &facts_library::shell_fact(
             pending.at_ms,
             Some(session),
-            &pending.command,
-            facts_library::ShellRoute::Claude,
-            !is_error,
-            None,
-            None,
+            &facts_library::ShellFact {
+                command: &pending.command,
+                route: facts_library::ShellRoute::Claude,
+                ok: !is_error,
+                exit_code: None,
+                cwd: None,
+            },
             Some(key.clone()),
         ),
     );

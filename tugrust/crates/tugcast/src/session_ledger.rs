@@ -5991,18 +5991,16 @@ impl SessionLedger {
         let mut stmt = conn
             .prepare("SELECT kind, subject, text FROM facts ORDER BY id ASC")
             .expect("prepare");
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .expect("query")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("rows");
-        rows
+        stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                row.get::<_, String>(2)?,
+            ))
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("rows")
     }
 
     // MARK: - File events, read side
@@ -8156,7 +8154,9 @@ mod tests {
         // The next page is the ten immediately older, still oldest-first,
         // and it neither repeats nor skips a row at the seam.
         let oldest_held = tail.first().unwrap().id.unwrap();
-        let (page, more) = ledger.list_gazette_posts_page(Some(oldest_held), 10).unwrap();
+        let (page, more) = ledger
+            .list_gazette_posts_page(Some(oldest_held), 10)
+            .unwrap();
         assert_eq!(page.first().unwrap().body, "post 6");
         assert_eq!(page.last().unwrap().body, "post 15");
         assert!(more, "five older posts remain");
@@ -8170,9 +8170,7 @@ mod tests {
         assert!(!more, "the walk has reached the beginning");
 
         // Past the beginning is empty rather than an error.
-        let (none, more) = ledger
-            .list_gazette_posts_page(Some(ids[0]), 10)
-            .unwrap();
+        let (none, more) = ledger.list_gazette_posts_page(Some(ids[0]), 10).unwrap();
         assert!(none.is_empty());
         assert!(!more);
     }
@@ -8459,14 +8457,12 @@ mod tests {
         let mut stmt = conn
             .prepare("SELECT kind, subject, text, payload FROM facts ORDER BY id ASC")
             .expect("prepare");
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
-            })
-            .expect("query")
-            .collect::<Result<Vec<_>, _>>()
-            .expect("rows");
-        rows
+        stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .expect("query")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("rows")
     }
 
     /// What the FTS index answers for a query — the shadow tables are part of

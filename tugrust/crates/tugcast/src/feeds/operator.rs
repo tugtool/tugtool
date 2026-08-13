@@ -1436,11 +1436,13 @@ mod tests {
                 &facts_library::shell_fact(
                     1_000 + i,
                     Some("sess-a"),
-                    &format!("cargo nextest run -p tugcast case{i}"),
-                    facts_library::ShellRoute::Claude,
-                    true,
-                    None,
-                    None,
+                    &facts_library::ShellFact {
+                        command: &format!("cargo nextest run -p tugcast case{i}"),
+                        route: facts_library::ShellRoute::Claude,
+                        ok: true,
+                        exit_code: None,
+                        cwd: None,
+                    },
                     None,
                 ),
             );
