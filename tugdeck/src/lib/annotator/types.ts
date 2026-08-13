@@ -91,25 +91,6 @@ export interface AnnotationContext {
    */
   resolveSession?: (target: string) => SessionVerdict;
   /**
-   * Whether running prose on this surface should be read as *citing* paths.
-   *
-   * Off by default, and off for the transcript, where the caution is
-   * earned: assistant prose is long-form English, a filename-shaped word in
-   * it is often just a word, and marking every one turns a paragraph into a
-   * field of speculative links. There, only a shape no sentence produces by
-   * accident qualifies ({@link isUnambiguousInProse} — an absolute path, or
-   * a line citation).
-   *
-   * A surface whose prose is *about* file work sets this. The Gazette is
-   * the case: a Reporter post is a machine-written operational digest whose
-   * whole subject is which files moved, so `settings-api.ts` in one of its
-   * sentences is a reference to that file and nothing else — and leaving it
-   * plain was the surface's most visible failure. Detection stays
-   * permissive either way and {@link resolvePath} is still the gate, so the
-   * cost of a wrong guess is one cached lookup and text that stays text.
-   */
-  proseCitesPaths?: boolean;
-  /**
    * Verdict arrivals, batched. A consumer whose container met a `pending`
    * verdict subscribes here and re-runs the pass per batch — only over
    * containers still awaiting an answer, which is what keeps one answer

@@ -1,0 +1,71 @@
+/* @tug-pairings:
+   - (currentColor) | --tugx-block-strip-bg   (tool-call header: glyph + label inherit the header detail's muted code tone)
+   - (currentColor) | --tug7-surface-1        (Gazette trailing refs row)
+   - (currentColor) | --tug7-surface-1        (commit receipt header, History rows)
+   `TugAtomRef` paints no surface of its own — it inherits its host's size
+   and colour and contributes the code font, the leading glyph's size, and
+   an optical baseline nudge.
+*/
+
+/**
+ * tug-atom-ref.css — the read-only atom skin.
+ *
+ * No box, no fill, no border: the box is the *editable* skin's, and it
+ * means "manipulable in place", which read-only ink never is. What is left
+ * is a glyph and a name, seated in its host's own tone.
+ *
+ * **The code font is the component's, not the consumer's.** Size and colour
+ * inherit — a tool header sizes this like a command, the Gazette's refs row
+ * sizes it to the post body — but the family is pinned here. Inheriting it
+ * landed as mono in a tool header (that slot is already mono) and as prose
+ * font in the Gazette's trailing row, which made the same atom read as two
+ * different things depending on who rendered it. Decided once, here.
+ *
+ * Laws: [L06] appearance via CSS + inheritance; [L19] file pair, module
+ *       docstring, `data-slot`.
+ */
+
+.tug-atom-ref {
+  font-family: var(--tugx-block-code-font, var(--tug-font-family-mono));
+  font-size: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+
+/* Link affordance rides the annotation contract, not a modifier class: a
+ * skin that stamped its own annotation, or one sitting inside a wrapper
+ * that stamped one, is clickable — and a ref nothing could resolve carries
+ * no annotation anywhere and so invites nothing. "Annotated" and
+ * "actionable" are the same fact, which is the move
+ * `tug-atom-markdown-body.css` already makes for chips; keying off it means
+ * no consumer has to thread a prop to stay honest.
+ *
+ * The resting treatment stays indistinguishable from its host's text —
+ * hover reveals the link — so a header stays quiet until the user reaches
+ * for it. The label is a name, not prose, so it needs no resting rule of
+ * its own: the glyph beside it already says an object is here. */
+.tug-atom-ref[data-tug-annotation],
+[data-tug-annotation] > .tug-atom-ref {
+  cursor: pointer;
+}
+
+/* @tug-renders-on: the host surface's own background */
+.tug-atom-ref[data-tug-annotation]:hover,
+[data-tug-annotation] > .tug-atom-ref:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* Leading glyph — sized to the surrounding text (1em) and nudged so its
+ * optical center sits on the lowercase text rather than the baseline. */
+.tug-atom-ref-icon {
+  display: inline-flex;
+  margin-inline-end: var(--tug-space-2xs);
+  vertical-align: -0.15em;
+  color: inherit;
+}
+
+.tug-atom-ref-icon svg {
+  width: 1em;
+  height: 1em;
+}

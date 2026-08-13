@@ -45,8 +45,3 @@
   padding-block: var(--tug-space-sm);
 }
 
-/* Same override for the sha, which would otherwise inherit the header's muted
-   command tone instead of the shared code tint. */
-.commit-receipt-header .commit-sha-text {
-  color: var(--tug-syntax-code);
-}

@@ -7,7 +7,7 @@
  * Spelling that path out is an ineffective use of a one-line strip: the head
  * of the string is all separators and the file name the reader wants is the
  * part a truncation eats. So every surface that shows a beat renders the
- * target as the transcript's file reference — `ToolFileRef`, glyph + basename,
+ * target as the transcript's file reference — the read-only atom skin,
  * full path as the hover tooltip, the same click-to-open annotation a path in
  * assistant prose gets — and the beat's verb and line count stay plain text
  * around it.
@@ -18,7 +18,7 @@
  * line with math still typesets and a tool beat never pays for a parse.
  *
  * Laws: [L06] appearance via CSS; [L19] file pair, `data-slot`;
- *       [L20] the file reference is `ToolFileRef`'s own, tokens and all.
+ *       [L20] the file reference is `TugAtomRef`'s own, tokens and all.
  *
  * @module components/tugways/pulse-beat-text
  */
@@ -27,7 +27,7 @@ import "./pulse-beat-text.css";
 
 import React from "react";
 
-import { ToolFileRef } from "@/components/tugways/blocks/tool-file-ref";
+import { TugAtomRef } from "@/components/tugways/tug-atom-ref";
 import { parseBeatFileTarget } from "@/lib/pulse-line/beat-file-target";
 
 export interface PulseBeatTextProps {
@@ -51,7 +51,10 @@ export function PulseBeatText({
   return (
     <span className={className} data-slot="pulse-beat-text">
       {target.head}
-      <ToolFileRef path={target.path} className="pulse-beat-file-ref" />
+      <TugAtomRef
+        entity={{ kind: "file", path: target.path }}
+        className="pulse-beat-file-ref"
+      />
       {target.tail}
     </span>
   );

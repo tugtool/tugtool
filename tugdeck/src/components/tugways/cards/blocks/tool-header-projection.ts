@@ -17,7 +17,7 @@
  *     ShareOnboardingGuide) and Bash's commit receipt compose their own,
  *     which this module reproduces through the SAME exported helpers.
  *  2. **The target** — the identity element each wrapper marks: the Bash
- *     command, the Grep/Glob pattern, a `ToolFileRef`'s basename, the
+ *     command, the Grep/Glob pattern, a `TugAtomRef`'s basename, the
  *     fetched URL, the skill name. Wrappers with no target (Default,
  *     AskUserQuestion) project one unit.
  *
@@ -43,7 +43,7 @@
  */
 
 import type { ToolUseMessage } from "@/lib/code-session-store/types";
-import { fileRefBasename } from "@/components/tugways/blocks/tool-file-ref";
+import { fileRefBasename } from "@/components/tugways/tug-atom-ref";
 import {
   NullToolBlock,
   extractTextOutput,
@@ -167,7 +167,7 @@ function agentHeader(message: ToolUseMessage): HeaderProjection {
   };
 }
 
-/** A file tool's header identity — `ToolFileRef` displays the basename. */
+/** A file tool's header identity — `TugAtomRef` displays the basename. */
 function fileRefHeader(
   message: ToolUseMessage,
   path: string | undefined,

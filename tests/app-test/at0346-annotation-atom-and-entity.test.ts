@@ -19,10 +19,18 @@
  *     runs and paints a sub-word. Same DOM shape, same gesture, different
  *     verdict — which is what proves the suppression is the registry's doing
  *     and not the surface refusing selection wholesale.
+ *  3. **A mention says so at rest** — the same claim seen from the surface
+ *     rather than from the menu. A run the resolver confirmed carries the
+ *     resting rule whether it was backticked or bare, and an inline-code
+ *     span the resolver refused carries none: code tone and actionability
+ *     are separate channels, and only the second is the resolver's to speak
+ *     for.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/lib/annotator/registry.ts
+ * @covers tugdeck/styles/tug-annotation.css
+ * @covers tugdeck/src/components/tugways/tug-markdown-view.css
  * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
  * @covers tugdeck/src/components/tugways/use-text-surface-context-menu.tsx
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
@@ -33,7 +41,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { launchTugApp } from "./_harness";
+import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -361,6 +369,116 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
         );
         expect(standardCopy).toBe(false);
         await app.nativeKey("Escape");
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0346] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a confirmed mention rules itself at rest; an unresolved code span does not",
+    async () => {
+      const app = await launchTugApp({
+        testName: "at0346-annotation-resting-rule",
+      });
+      const ingest = (decoded: unknown) =>
+        app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: CODE_OUTPUT_FEED,
+          decoded,
+        });
+      // Read the un-animated longhands. A colour read mid-transition comes
+      // back as an interpolated `oklab(...)`, and the rule's colour is
+      // `currentColor`-derived by construction anyway — the falsifiable
+      // claim is that the line is there, not what hue it is.
+      const decoration = (selector: string) =>
+        app.evalJS<string>(`JSON.stringify((function(){
+          var el = document.querySelector(${JSON.stringify(selector)});
+          if (el === null) return null;
+          var s = getComputedStyle(el);
+          return {
+            line: s.textDecorationLine,
+            thickness: s.textDecorationThickness,
+            style: s.textDecorationStyle,
+          };
+        })())`);
+
+      try {
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          { timeoutMs: 30_000 },
+        );
+        await app.bindSession("A", { tugSessionId: SID, sessionMode: "resume" });
+
+        // One sentence carrying all three cases: the same real file
+        // backticked and bare, plus an identifier in backticks that names
+        // nothing. An absolute path needs no project binding — `fs/stat`
+        // answers it.
+        await ingest(replayStarted());
+        await ingest(userMsg("where is it"));
+        await ingest(
+          asstText(
+            "m1",
+            `It is at \`${realPath}\`, or ${realPath} — see \`AnnotationContext\`.`,
+            1,
+          ),
+        );
+        await ingest(turnDone("m1"));
+        await ingest(replayComplete());
+
+        const CODE_MARK = `[data-card-id="A"] code[data-tug-annotation="file-path"]`;
+        const RUN_MARK = `[data-card-id="A"] span[data-tugx-wrapped][data-tug-annotation="file-path"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CODE_MARK)}) !== null && document.querySelector(${JSON.stringify(RUN_MARK)}) !== null`,
+          { timeoutMs: 12_000 },
+        );
+
+        // Backticked and bare wear the same rule — the whole point of one
+        // gate is that the two look alike once the resolver agrees.
+        const codeRule = JSON.parse(await decoration(CODE_MARK)) as {
+          line: string;
+          thickness: string;
+          style: string;
+        };
+        const runRule = JSON.parse(await decoration(RUN_MARK)) as {
+          line: string;
+          thickness: string;
+          style: string;
+        };
+        note("backticked mention", codeRule);
+        note("bare mention", runRule);
+        expect(codeRule.line).toBe("underline");
+        expect(runRule.line).toBe("underline");
+        expect(codeRule.thickness).toBe("1px");
+        expect(runRule.thickness).toBe("1px");
+        expect(codeRule.style).toBe("solid");
+        expect(runRule.style).toBe("solid");
+
+        // The control: an inline-code span the resolver refused carries no
+        // annotation, so it matches no rule and looks exactly as it always
+        // has. Code tone and the rule are separate channels.
+        const PLAIN = `[data-card-id="A"] .session-card-transcript-code-body code:not([data-tug-annotation])`;
+        const plainIsTheIdentifier = await app.evalJS<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(PLAIN)});
+            return el !== null && (el.textContent || '') === 'AnnotationContext';
+          })()`,
+        );
+        expect(plainIsTheIdentifier).toBe(true);
+        const plainRule = JSON.parse(await decoration(PLAIN)) as {
+          line: string;
+        };
+        note("unresolved code span", plainRule);
+        expect(plainRule.line).toBe("none");
 
         process.stdout.write("VERDICT: PASS\n");
       } catch (err) {

@@ -18,7 +18,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   detectPathReference,
-  isUnambiguousInProse,
   scanPathReferences,
 } from "../detect-path-reference";
 
@@ -177,43 +176,28 @@ describe("scanPathReferences — paths found inside longer text", () => {
   });
 });
 
-describe("isUnambiguousInProse — what running prose is trusted to name", () => {
+describe("prose and code produce the same candidates", () => {
   const found = (text: string) => scanPathReferences(text)[0];
 
-  test("an absolute path is unmistakable, so prose keeps it", () => {
-    // The shape a subagent writes in a "File: …" line.
-    expect(
-      isUnambiguousInProse(found("/Users/k/src/tugtool/tugdeck/a.tsx")),
-    ).toBe(true);
-  });
-
-  test("a bare filename in prose is usually just a word", () => {
-    expect(isUnambiguousInProse(found("I changed tug-button.css today"))).toBe(
-      false,
+  test("a bare filename mid-sentence is a candidate like any other", () => {
+    // No prose license to earn: the resolver is the only gate, so the
+    // shape a sentence writes is read exactly as the shape backticks do.
+    expect(found("I changed tug-button.css today").path).toBe(
+      "tug-button.css",
     );
+    expect(found("look in tugdeck/src for it").path).toBe("tugdeck/src");
   });
 
-  test("but a line citation settles it, whatever the shape", () => {
-    // Nobody writes these by accident: the citation *is* the pointing.
-    expect(isUnambiguousInProse(found("see lens-content.tsx:166 there"))).toBe(
-      true,
-    );
-    expect(
-      isUnambiguousInProse(found("the docstring (block-reorder.ts:1-33)")),
-    ).toBe(true);
-  });
-
-  test("a relative path in prose is not trusted either", () => {
-    expect(isUnambiguousInProse(found("look in tugdeck/src for it"))).toBe(
-      false,
-    );
-  });
-
-  test("the restriction is about prose, not about the shapes themselves", () => {
-    // Both still parse — code context resolves them; this predicate only
-    // decides whether *running text* gets to ask.
-    expect(found("tug-button.css").shape).toBe("name");
-    expect(found("tugdeck/src").shape).toBe("path");
+  test("a line citation is carried through from running text", () => {
+    expect(found("see lens-content.tsx:166 there")).toMatchObject({
+      path: "lens-content.tsx",
+      line: 166,
+    });
+    expect(found("the docstring (block-reorder.ts:1-33)")).toMatchObject({
+      path: "block-reorder.ts",
+      line: 1,
+      endLine: 33,
+    });
   });
 });
 

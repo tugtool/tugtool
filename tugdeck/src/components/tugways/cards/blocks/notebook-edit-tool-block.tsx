@@ -11,7 +11,7 @@
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
  *  - **Header** — a `Notebook` icon + tool name + an atom-chip showing
- *    the notebook's basename as an inline `<ToolFileRef>` (a muted
+ *    the notebook's basename as an inline `<TugAtomRef>` (a muted
  *    notebook glyph + basename in the header's code font, no box — the
  *    display form that replaced the boxed atom chip) + a `· cell {cellId}`
  *    segment when a cell id is known + a small `edit_mode` chip
@@ -78,7 +78,7 @@ import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { FileBlock } from "@/components/tugways/body-kinds/file-block";
 
 import { BlockChrome } from "../../blocks/block-chrome";
-import { ToolFileRef } from "../../blocks/tool-file-ref";
+import { TugAtomRef } from "../../tug-atom-ref";
 import type { ToolResultSummary } from "../../blocks/tool-result-summary";
 import type { ToolBlockProps } from "../../blocks/types";
 
@@ -215,8 +215,8 @@ export const NotebookEditToolBlock: React.FC<ToolBlockProps> = ({
   // computed above as `resultSummary`.
   const identity =
     notebookPath !== undefined && notebookPath.length > 0 ? (
-      <ToolFileRef
-        path={notebookPath}
+      <TugAtomRef
+        entity={{ kind: "file", path: notebookPath }}
         icon={<NotebookPen />}
         data-slot="notebook-edit-tool-block-path"
       />

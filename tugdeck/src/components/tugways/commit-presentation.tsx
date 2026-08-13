@@ -146,9 +146,9 @@ export function CommitMetaCell({
 }
 
 /**
- * `<sha> <subject>` — the commit's identity line, the two parted by a single
- * space (the sha's own tint is what separates them; a heavier delimiter only
- * spent width). The sha is a
+ * `Commit <sha> <subject>` — the commit's identity line, the two parted by a
+ * single space (the atom's glyph and its word are what separate them; a
+ * heavier delimiter only spent width). The sha is a
  * {@link CommitShaText} (right-click → copy the full hash); a trailing
  * `badge` slot carries surface-specific marks (the History shade's dash-join
  * badge, say) inside the same text flow so it wraps with the subject.

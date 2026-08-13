@@ -409,33 +409,46 @@ body {
   border-radius: var(--tugx-md-inline-code-radius);
 }
 
-/* Clickable command — an inline `<code>` span the annotator marked as a
-   *known* slash command or a project shell command. The transcript's
-   delegated click listener turns a click into a ready-to-run draft, and a
-   right-click offers Copy / Copy as Plain Text. Resting appearance is the
-   ordinary inline-code chip; only hover reveals interactivity (pointer +
-   link-colored underline). */
-.tugx-md-block code[data-tug-annotation="slash-command"],
-.tugx-md-block code[data-tug-annotation="shell-command"] {
-  cursor: pointer;
-}
-.tugx-md-block code[data-tug-annotation="slash-command"]:hover,
-.tugx-md-block code[data-tug-annotation="shell-command"]:hover {
-  color: var(--tugx-md-link-color-hover);
-  text-decoration: var(--tugx-md-link-decoration);
-}
+/* An inline `<code>` span the annotator confirmed — a *known* slash
+   command, a project shell command, or a path that points at something
+   real. A click runs the draft or opens the file; a right-click offers
+   Copy / Copy as Plain Text.
 
-/* Verified file path — an inline `<code>` span the annotator confirmed
-   points at a file that exists. A click opens it in a Text card. Same
-   resting-plain / hover-reveals-interactivity rule the commands follow, so
-   the transcript reads as prose until the pointer says otherwise. An
-   unverified path carries no annotation at all and never matches here.
-   Paths the annotator split out of running prose are not `<code>` spans
-   and take their appearance from `styles/tug-annotation.css`. */
-.tugx-md-block code[data-tug-annotation="file-path"] {
+   Two channels meet on these spans and stay independent. The **code tone**
+   above (mono + `--tugx-md-inline-code-*`) says *the author formatted this
+   as code* — it is markdown's own emphasis, driven by the backticks
+   exactly as `*` drives italic. The **rule** below says *this responds to
+   a click* — driven by the resolver's verdict and nothing else. They
+   compose four ways and every combination is legible; in particular an
+   inline `<code>` span that resolves to nothing keeps the tone, takes no
+   rule, and looks exactly as it always has. Stripping the tone from a
+   confirmed path would override what the author wrote. See
+   `tuglaws/entity-presentation.md`.
+
+   The rule's declaration is the same one `styles/tug-annotation.css`
+   applies to split-out runs, so a path reads identically backticked or
+   bare. There is deliberately no `commit-sha` selector here:
+   `classifyInlineCode` can only stamp these four kinds on a whole span,
+   and a backticked sha arrives as a wrapped run *inside* the code element,
+   which the other sheet already covers.
+
+   @tug-renders-on: --tugx-md-inline-code-bg */
+.tugx-md-block code[data-tug-annotation="slash-command"],
+.tugx-md-block code[data-tug-annotation="shell-command"],
+.tugx-md-block code[data-tug-annotation="file-path"],
+.tugx-md-block code[data-tug-annotation="directory"] {
   cursor: pointer;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.2em;
 }
-.tugx-md-block code[data-tug-annotation="file-path"]:hover {
+/* @tug-renders-on: --tugx-md-inline-code-bg */
+.tugx-md-block code[data-tug-annotation="slash-command"]:hover,
+.tugx-md-block code[data-tug-annotation="shell-command"]:hover,
+.tugx-md-block code[data-tug-annotation="file-path"]:hover,
+.tugx-md-block code[data-tug-annotation="directory"]:hover {
   color: var(--tugx-md-link-color-hover);
   text-decoration: var(--tugx-md-link-decoration);
 }

@@ -105,7 +105,6 @@ import { GalleryTugProgressIndicator } from "./gallery-tug-progress-indicator";
 import { GalleryMotionBench } from "./gallery-motion-bench";
 import { GalleryPulseDisplay } from "./gallery-pulse-display";
 import { GallerySessionIdentity } from "./gallery-session-identity";
-import { GalleryEntityPresentation } from "./gallery-entity-presentation";
 import { GalleryConfigureTug } from "./gallery-configure-tug";
 import { GalleryModalHeaders } from "./gallery-modal-headers";
 import { GalleryBlockHeader } from "./gallery-tool-call-header";
@@ -1161,19 +1160,6 @@ export function registerGalleryCards(): void {
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPLEX_SIZE,
     category: CATEGORIES.feedback,
-  });
-
-  // TEMPORARY — the before/after bench for `roadmap/entity-presentation.md`.
-  // Retire it with the brief: either the proposal ships and the card has
-  // nothing left to compare, or it is rejected and the card goes with it.
-  registerCard({
-    componentId: "gallery-entity-presentation",
-    contentFactory: (_cardId) => <GalleryEntityPresentation />,
-    defaultMeta: { title: "Entity Presentation", icon: "Link2", closable: true },
-    family: "maker",
-    acceptsFamilies: ["maker"],
-    sizePolicy: GALLERY_COMPLEX_SIZE,
-    category: CATEGORIES.blockRenderers,
   });
 
   registerCard({

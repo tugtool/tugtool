@@ -223,12 +223,24 @@
    Refs the prose DID name never arrive here at all — the annotator already
    marked those in the sentence (`unmentionedRefs`), so this strip is the
    remainder rather than a second copy of the post. */
+/* The trailing provenance strip — read-only atoms, so no boxes. The row
+   sizes and tones them; the code font is the skin's own
+   (`tug-atom-ref.css`), decided once rather than per consumer.
+
+   A step under the post body's 13px, so a ref sits inside the reading size
+   rather than over it, and muted, because provenance is the quietest thing
+   in the post. The gap is wider than a boxed row's would be: with no
+   borders to separate them, whitespace is what tells two atoms apart.
+
+   @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-post-refs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--tug-space-xs);
+  gap: var(--tug-space-md);
   margin-block-start: var(--tug-space-xs);
+  font-size: 0.9em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */

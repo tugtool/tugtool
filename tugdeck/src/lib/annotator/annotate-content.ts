@@ -54,10 +54,15 @@
  * runs first, so a span that is entirely one entity is never also scanned
  * as text.
  *
- * Detection is permissive by design; {@link AnnotationContext.resolvePath}
- * is the gate. Nothing becomes a link until a resolver confirms a real
- * file, so prose that merely looks path-shaped costs one cached lookup and
- * stays plain text.
+ * **One gate, every surface.** Detection is permissive by design;
+ * {@link AnnotationContext.resolvePath} is the gate, and it is the only
+ * one. Nothing becomes a link until a resolver confirms a real file, so
+ * prose that merely looks path-shaped costs one cached lookup and stays
+ * plain text. Markup does not gate: a path is scanned the same whether it
+ * arrived inside backticks or bare in a sentence, and the surface it is
+ * painted on gets no vote either. Backticks still decide how the run is
+ * *painted* — the code tone is the author's emphasis — but painting and
+ * marking are separate channels. See `tuglaws/entity-presentation.md`.
  *
  * **Every refusal is silent.** A path the endpoint probed and found
  * absent, one nobody ever asked about, one still being asked about — all
@@ -108,7 +113,6 @@ import {
 } from "./annotation-element";
 import {
   detectPathReference,
-  isUnambiguousInProse,
   scanPathReferences,
 } from "./detect-path-reference";
 import {
@@ -201,8 +205,8 @@ function annotatePathsInText(
   container: HTMLElement,
   context: AnnotationContext,
 ): number {
-  const sites = collectTextNodes(container);
-  for (const { node, inCode } of sites) {
+  const nodes = collectTextNodes(container);
+  for (const node of nodes) {
     const text = node.data;
     if (text.trim() === "") continue;
     const matches: TextRunMatch[] = [];
@@ -216,14 +220,6 @@ function annotatePathsInText(
       if (match !== null) matches.push(match);
     }
     for (const reference of scanPathReferences(text)) {
-      // Code says "this is a path" by being code; a surface that cites
-      // paths in its prose says it for the whole surface. Everywhere else
-      // only an unmistakable shape qualifies.
-      const licensed =
-        inCode ||
-        context.proseCitesPaths === true ||
-        isUnambiguousInProse(reference);
-      if (!licensed) continue;
       const verdict = context.resolvePath(reference);
       const payload = payloadForReference(reference, verdict);
       if (payload === null) continue;
@@ -239,7 +235,7 @@ function annotatePathsInText(
     matches.sort((a, b) => a.start - b.start);
     wrapMatchesInTextNode(node, matches);
   }
-  return sites.length;
+  return nodes.length;
 }
 
 /**

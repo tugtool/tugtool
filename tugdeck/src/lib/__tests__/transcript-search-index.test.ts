@@ -256,7 +256,7 @@ describe("buildTranscriptSearchRows — DOM-free projections", () => {
     );
     expect(segments[0]).toEqual([
       { kind: "dom", text: "Read" },
-      // The header identity is a `ToolFileRef`, which displays the basename.
+      // The header identity is a `TugAtomRef`, which displays the basename.
       { kind: "dom", text: "x.ts" },
       { kind: "editor", key: "tu1", text: "const x = 1;\nconst y = 2;" },
     ]);

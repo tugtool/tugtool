@@ -52,18 +52,6 @@ export interface TextRunMatch {
   reserved?: true;
 }
 
-/** A text node to scan, and how much license the scan has over it. */
-export interface TextNodeSite {
-  node: Text;
-  /**
-   * Whether the text is code — an inline `<code>` span, or an element a
-   * component handed the annotator directly (a tool-call header). Code is
-   * where a reference is a reference; running prose is where a word that
-   * looks like a filename is usually just a word.
-   */
-  inCode: boolean;
-}
-
 /**
  * Every text node under `root` that entity detection should look at.
  *
@@ -76,27 +64,28 @@ export interface TextNodeSite {
  *    made. (Inline `<code>` is *not* skipped: that is where paths live.)
  *  - anything already annotated — including this pass's own wrappers, so
  *    re-running never nests a wrapper inside a wrapper.
+ *
+ * Every collected node is scanned the same way. Whether the text sits
+ * inside a `<code>` span decides how it is *painted*, never whether it is
+ * *read*: the resolver is the gate, so detection has nothing to gain from
+ * knowing which markup a candidate arrived in.
  */
-export function collectTextNodes(root: HTMLElement): TextNodeSite[] {
-  const found: TextNodeSite[] = [];
-  // A component that hands its own `<code>` to the annotator is asking
-  // for the whole of it to be read as code, so the root counts too.
-  const rootInCode =
-    root.tagName === "CODE" || root.closest?.("code") !== null;
-  const visit = (node: Node, inCode: boolean): void => {
+export function collectTextNodes(root: HTMLElement): Text[] {
+  const found: Text[] = [];
+  const visit = (node: Node): void => {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === Node.TEXT_NODE) {
-        found.push({ node: child as Text, inCode });
+        found.push(child as Text);
         continue;
       }
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const element = child as HTMLElement;
       if (element.tagName === "A" || element.tagName === "PRE") continue;
       if (element.classList.contains(ANNOTATION_CLASS)) continue;
-      visit(element, inCode || element.tagName === "CODE");
+      visit(element);
     }
   };
-  visit(root, rootInCode);
+  visit(root);
   return found;
 }
 

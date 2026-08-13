@@ -5,7 +5,7 @@
  * `FileBlock` body kind. Per [Spec S03] / [Table T02]:
  *
  *   - **Header:** tool name "Read" + the path's basename shown as an
- *     inline `<ToolFileRef>` (a muted file glyph + basename in the
+ *     inline `<TugAtomRef>` (a muted file glyph + basename in the
  *     header's code font, no box — the display form that replaced the
  *     boxed atom chip). Hovering shows the full path via the ref's
  *     `title` tooltip. When `input.offset` / `input.limit` set, an
@@ -75,7 +75,7 @@ import {
 } from "@/components/tugways/body-kinds/file-block";
 
 import { BlockChrome } from "../../blocks/block-chrome";
-import { ToolFileRef } from "../../blocks/tool-file-ref";
+import { TugAtomRef } from "../../tug-atom-ref";
 import type { ToolResultSummary } from "../../blocks/tool-result-summary";
 import type { ToolBlockProps } from "../../blocks/types";
 
@@ -213,9 +213,8 @@ export const ReadToolBlock: React.FC<ToolBlockProps> = ({
   // is computed below as `resultSummary`.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef
-        path={filePath}
-        line={readInput.offset}
+      <TugAtomRef
+        entity={{ kind: "file", path: filePath, line: readInput.offset }}
         data-slot="read-tool-block-path"
       />
     ) : undefined;

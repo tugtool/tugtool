@@ -16,10 +16,13 @@
  * `tug-atom-markdown-body.css`) keep those; this sheet governs the
  * split-out runs, which have no element of their own to inherit from.
  *
- * **Resting-plain.** An annotated run inside prose shows no underline at
- * rest. Transcript paragraphs are dense with filenames, and painting each
- * one as a link turns a paragraph into a field of links — the affordance
- * appears under the pointer instead, which is where it is needed.
+ * **The resting rule.** A run a resolver confirmed carries a 1px underline
+ * at rest, and the full link treatment on hover. Density is answered by
+ * weight rather than by absence: quiet enough that six in a paragraph read
+ * as a referenced document, present enough that the reader knows there is
+ * something to hover. The doctrine — placed atoms, written mentions, and
+ * why the rule is an underline rather than a tint — is
+ * `tuglaws/entity-presentation.md`.
  *
  * Tuglaw cross-check:
  *  - [L06] appearance lives in CSS keyed off DOM attributes; no React
@@ -29,9 +32,42 @@
  */
 
 /* A run the annotator split out of surrounding text and marked as
-   actionable. Resting appearance is exactly the prose around it. */
+   actionable. Its characters are exactly the prose around it — somebody
+   wrote them, so they are what shows. */
 [data-tugx-wrapped][data-tug-annotation] {
   cursor: pointer;
+}
+
+/* The resting rule, on the kinds that are Mentions — a written value the
+   resolver confirmed. The colour is derived from the ink it underlines
+   rather than from a token, so it cannot drift across the six themes and
+   needs no contrast budget of its own.
+
+   The list is explicit, and adding a kind to it is the registration point
+   for a new Mention kind. What is deliberately absent:
+     - `session` — a confirmed session run is the mount point for a live
+       citation chip, which carries its own affordance and empties the span
+       it mounts into. The chip is the atom; the run is a host.
+     - `url` / `email` — anchors, already links.
+   Atom skins (`.tug-atom-ref`, `.tug-atom-chip-host`) are elements of
+   their own and never carry `data-tugx-wrapped`, so they match nothing
+   here.
+
+   Only `text-decoration` is set, and that is load-bearing rather than
+   minimal: a verdict lands after the ink is painted, and decoration is the
+   one channel that adds a signal without moving a layout metric. A border,
+   a padding, or a font change here would reflow a streaming transcript
+   every time an answer arrived.
+
+   @tug-renders-on: the surrounding surface's own background */
+[data-tugx-wrapped][data-tug-annotation="file-path"],
+[data-tugx-wrapped][data-tug-annotation="directory"],
+[data-tugx-wrapped][data-tug-annotation="commit-sha"] {
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 0.2em;
 }
 
 /* @tug-renders-on: the surrounding surface's own background */

@@ -5,7 +5,7 @@
  * `DiffBlock` body kind. Per [Spec S03] / [Table T02] / [D05]:
  *
  *   - **Header:** file-pen icon + tool name + an atom-chip showing
- *     the file's basename as an inline `<ToolFileRef>` (a muted file
+ *     the file's basename as an inline `<TugAtomRef>` (a muted file
  *     glyph + basename in the header's code font, no box — the display
  *     form that replaced the boxed atom chip) + an inline `+N −M`
  *     change-count badge computed from the diff. `MultiEdit` resolves
@@ -91,7 +91,7 @@ import {
 } from "@/lib/diff/types";
 
 import { BlockChrome } from "../../blocks/block-chrome";
-import { ToolFileRef } from "../../blocks/tool-file-ref";
+import { TugAtomRef } from "../../tug-atom-ref";
 import type { ToolResultSummary } from "../../blocks/tool-result-summary";
 import type { ToolBlockProps } from "../../blocks/types";
 
@@ -390,9 +390,8 @@ export const EditToolBlock: React.FC<ToolBlockProps> = ({
   // gone.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef
-        path={filePath}
-        range={firstHunkRange}
+      <TugAtomRef
+        entity={{ kind: "file", path: filePath, range: firstHunkRange }}
         data-slot="edit-tool-block-path"
       />
     ) : undefined;

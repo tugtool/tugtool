@@ -1,10 +1,17 @@
-/* @tug-pairings: none — a text atom; carries the code tint only [L20] */
+/* @tug-pairings: none — the atom inherits its host's tone; this file sets no
+   colour of its own [L20] */
 
-/* The commit sha wears the syntax `code` tint wherever it names a commit (the
-   History shade's rows, the `/commit` receipt header). Not a click target —
-   the copy gesture is the context menu. */
+/* The gesture scope around a commit atom. The hand-rolled inline-code look
+   this used to paint is gone with the `<code>` element that carried it: the
+   sha in a receipt header is a placed value, not something an author
+   formatted as code, and the code tint is the channel that says the latter.
+   Appearance is `tug-atom-ref.css`'s now — one read-only skin, so a commit
+   cannot drift from a file ref again.
+
+   What survives here is the cursor. A commit atom is a copy target, not a
+   link: it carries no annotation, so the skin's own pointer rule never fires,
+   and this states the intent rather than relying on that absence. */
 .commit-sha-text {
-  color: var(--tug-syntax-code);
   cursor: default;
 }
 

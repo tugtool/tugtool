@@ -23,7 +23,8 @@
  *     the production fold, so what lands on screen came off the same code path a
  *     live Reporter's would. Asserted: one row per post, in arrival order, each
  *     carrying its author's glyph, and a post's unmentioned refs rendering
- *     as the app's own atom chips, labelled by the target's last segment.
+ *     as the app's own read-only atom skin, labelled by the target's last
+ *     segment.
  *     Everything is REAL: the posts carry this repo as their
  *     `project_dir`, the paths exist, and the sha is this checkout's own
  *     HEAD, so the assertions watch the production chain (workspace acquire
@@ -140,8 +141,8 @@ const ROWS_JS = `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
     return {
       author: el.getAttribute("data-author"),
       body: (body === null ? "" : body.textContent || "").trim(),
-      chips: Array.from(el.querySelectorAll(".gazette-post-refs .tug-atom-chip"))
-        .map(function (c) { return (c.getAttribute("aria-label") || "").trim(); }),
+      chips: Array.from(el.querySelectorAll(".gazette-post-refs .tug-atom-ref"))
+        .map(function (c) { return (c.textContent || "").trim(); }),
       glyph: el.querySelector(".tug-transcript-entry__icon svg") !== null,
       z1b: (function () {
         var z = el.querySelector(".gazette-post-z1b");
@@ -304,9 +305,11 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         }
 
         // A ref the prose did not name rides the trailing strip as an ATOM —
-        // the app's own `TugAtomChip`, labelled by the target's last segment,
-        // with the whole path on the wrapper's tooltip because the rail is
-        // too narrow to spell a path twice.
+        // the app's own `TugAtomRef`, the read-only skin, labelled by the
+        // target's last segment, with the whole path on the wrapper's tooltip
+        // because the rail is too narrow to spell a path twice. No box: the
+        // box is the editable skin's, and nothing in this row is manipulable
+        // where it sits.
         expect(rows[0]!.chips).toEqual(["layout-imposer.ts"]);
         expect(rows[1]!.chips, "a post with no refs shows no atoms").toEqual([]);
         expect(

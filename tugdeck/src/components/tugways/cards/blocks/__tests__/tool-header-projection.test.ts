@@ -67,7 +67,7 @@ describe("toolHeaderParts — per-wrapper header text", () => {
     ).toEqual(["Git Commit"]);
   });
 
-  test("file tools project the basename their ToolFileRef displays", () => {
+  test("file tools project the basename their TugAtomRef displays", () => {
     expect(
       toolHeaderParts(
         call({ toolName: "Read", input: { file_path: "/u/src/tug/main.rs" } }),

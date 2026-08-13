@@ -17,6 +17,13 @@
  * two-flavor `ClipboardItem` write. The clipboard itself is captured by
  * replacing `write`/`writeText` in the page, which is at0188's technique.
  *
+ * A second test covers the other half of the same claim, on a **placed**
+ * value rather than written prose: a commit in a post's `refs` array renders
+ * as the read-only atom labelled `Commit <8>`, and plain copy — which reads
+ * the DOM's text with no annotation awareness — has to yield that same one
+ * spelling. Two spellings of one atom on the clipboard is the arbitrariness
+ * this presentation work retires, resurfacing in paste.
+ *
  * ⌘C is deliberately NOT the vehicle. Its chord is Edit ▸ Copy's key
  * equivalent, resolved by AppKit against the main menu and delivered to the
  * first responder — and at rest in the Gazette that is the composer's editor,
@@ -25,14 +32,26 @@
  *
  * @covers tugdeck/src/components/gazette/gazette-card.tsx
  * @covers tugdeck/src/lib/markdown/serialize-selection.ts
+ * @covers tugdeck/src/lib/copy-as-plain-text.ts
+ * @covers tugdeck/src/components/tugways/tug-atom-ref.tsx
  * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
  */
 
 import { describe, expect, test } from "bun:test";
+import { execSync } from "node:child_process";
+import { resolve } from "node:path";
 
 import { launchTugApp, note } from "./_harness";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+
+/** This checkout — the post's `project_dir`, so the ref resolves for real. */
+const REPO_ROOT = resolve(import.meta.dir, "../..");
+
+/** Its HEAD — a sha `git show` genuinely answers for. */
+const HEAD_SHA = execSync("git rev-parse HEAD", { cwd: REPO_ROOT })
+  .toString()
+  .trim();
 const TEST_TIMEOUT_MS = 90_000;
 
 const CARD = '[data-testid="gazette-card"]';
@@ -184,6 +203,74 @@ describe.skipIf(!SHOULD_RUN)("at0366 — the Gazette copies markdown", () => {
         expect(whole.html).not.toBeNull();
         expect(whole.html!).toContain("<strong>imposer</strong>");
         expect(whole.html!).toContain("<code>layout-imposer.ts</code>");
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a placed commit has one spelling — what the row shows is what a selection carries",
+    async () => {
+      const app = await launchTugApp({ testName: "at0366-gazette-copy-commit" });
+      try {
+        await app.nativeKey("g", ["cmd", "ctrl"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CARD)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // A post whose prose never names the sha, so the ref survives
+        // `unmentionedRefs` and rides the trailing strip as a placed atom.
+        const post = {
+          id: 9102,
+          at_ms: 1_754_600_000_000,
+          author: "reporter",
+          body: "Landed the sticky-header fixes.",
+          refs: [{ kind: "commit", target: HEAD_SHA }],
+          project_dir: REPO_ROOT,
+        };
+        expect(
+          await app.evalJS<boolean>(
+            `window.__tug.publishGazettePost(${JSON.stringify(JSON.stringify(post))})`,
+          ),
+        ).toBe(true);
+
+        const REF = `${CARD} .gazette-post-refs .tug-atom-ref`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(REF)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // What the row SHOWS. The word is in the label because an atom has no
+        // sentence around it to supply one.
+        const shown = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(REF)}).textContent || "").trim()`,
+        );
+        note("commit atom label", shown);
+        expect(shown).toBe(`Commit ${HEAD_SHA.slice(0, 8)}`);
+        // Not the old colon spelling — that is the drift this retires.
+        expect(shown).not.toContain("Commit:");
+
+        // What the CLIPBOARD gets, asserted at the range rather than through
+        // the cell menu. `copy-as-plain-text` has no annotation awareness — it
+        // writes the selection's own text — so a range's `toString()` over the
+        // refs row IS the plain flavor, and asserting it here pins the
+        // convergence without also dragging in the cell menu, which is the
+        // *prose* row's gesture and is covered by the test above.
+        const selected = await app.evalJS<string>(
+          `(function(){
+            var row = document.querySelector(${JSON.stringify(`${CARD} .gazette-post-refs`)});
+            if (row === null) return "__NO_ROW__";
+            var range = document.createRange();
+            range.selectNodeContents(row);
+            return range.toString();
+          })()`,
+        );
+        note("refs row selection text", selected);
+        expect(selected).toContain(`Commit ${HEAD_SHA.slice(0, 8)}`);
+        expect(selected).not.toContain("Commit:");
       } finally {
         await app.close();
       }

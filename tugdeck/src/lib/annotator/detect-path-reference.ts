@@ -193,32 +193,6 @@ export function scanPathReferences(text: string): PathReferenceMatch[] {
 }
 
 /**
- * Whether a reference found in *running prose* is worth resolving.
- *
- * Inside code — an inline `<code>` span, a tool-call header — a
- * path-shaped token is a path; that is what the backticks and the header
- * are saying. Running prose says no such thing, and the corpus barely
- * needs the license anyway: a file reference in a transcript is nearly
- * always either in a tool-call header or marked as code. So prose keeps
- * only the shape that cannot be mistaken for anything else — an absolute
- * path, which no sentence produces by accident. A bare filename or a
- * relative path in running text is left alone.
- *
- * This deliberately narrows an earlier, hungrier pass. Resolution catches
- * tokens that name nothing, but it cannot catch a real path mentioned in
- * a sentence that was not pointing at a file, and that residue is not
- * worth turning a paragraph into a field of speculative links.
- */
-export function isUnambiguousInProse(reference: PathReference): boolean {
-  // A line citation settles it on its own. `lens-content.tsx:180` and
-  // `block-reorder.ts:1-33` are not shapes running text produces by
-  // accident — writing one *is* pointing at a file, and at a place in it,
-  // so the bare-name rule below does not apply.
-  if (reference.line !== undefined) return true;
-  return reference.shape === "path" && reference.path.startsWith("/");
-}
-
-/**
  * Parse `text` as a whole path reference, or return `null` when it is not
  * exactly one. This is the inline-`<code>` case, where the span's own
  * boundaries say "this is a path" and the whole span becomes the

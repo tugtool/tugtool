@@ -10,7 +10,7 @@
  * Composition (per [Spec S03] / [Table T02] / [#bk-conformance]):
  *
  *  - **Header:** tool name + the file's basename shown as an inline
- *    `<ToolFileRef>` (a muted file glyph + basename in the header's
+ *    `<TugAtomRef>` (a muted file glyph + basename in the header's
  *    code font, no box — the display form that replaced the boxed
  *    atom chip) + an inline `{N} lines` /
  *    `{B} bytes` size hint computed from the content, and a small
@@ -76,7 +76,7 @@ import {
   type FileData,
 } from "@/components/tugways/body-kinds/file-block";
 
-import { ToolFileRef } from "../../blocks/tool-file-ref";
+import { TugAtomRef } from "../../tug-atom-ref";
 import { BlockChrome } from "../../blocks/block-chrome";
 import type { ToolResultSummary } from "../../blocks/tool-result-summary";
 import type { ToolBlockProps } from "../../blocks/types";
@@ -189,7 +189,10 @@ export const WriteToolBlock: React.FC<ToolBlockProps> = ({
   // lands at the top (line 1) and zooms it — the file's first passage.
   const identity =
     filePath !== undefined && filePath.length > 0 ? (
-      <ToolFileRef path={filePath} line={1} data-slot="write-tool-block-path" />
+      <TugAtomRef
+        entity={{ kind: "file", path: filePath, line: 1 }}
+        data-slot="write-tool-block-path"
+      />
     ) : undefined;
   let body: React.ReactNode;
   if (status === "streaming") {

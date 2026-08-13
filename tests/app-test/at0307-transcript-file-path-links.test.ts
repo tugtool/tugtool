@@ -72,7 +72,7 @@
  * @covers tugdeck/src/components/tugways/annotation-portals.tsx
  * @covers tugdeck/src/components/tugways/commit-tip-portals.tsx
  * @covers tugdeck/src/components/tugways/cards/blocks/bash-tool-block.tsx
- * @covers tugdeck/src/components/tugways/blocks/tool-file-ref.tsx
+ * @covers tugdeck/src/components/tugways/tug-atom-ref.tsx
  * @covers tugdeck/src/components/tugways/body-kinds/path-list-block.tsx
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card-transcript.tsx
@@ -664,6 +664,80 @@ describe.skipIf(!SHOULD_RUN)(
           expect(mark.path).toBe(
             `${REPO_ROOT}/tugdeck/src/components/tugways/internal/${INDEXED_NAME}`,
           );
+
+          process.stdout.write("VERDICT: PASS\n");
+        } catch (err) {
+          process.stdout.write("VERDICT: FAIL\n");
+          const tail = app.tailLog(200);
+          if (tail !== "") process.stderr.write(`\n[at0307] log tail:\n${tail}\n`);
+          throw err;
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "the same bare filename marks unbackticked, split out of the sentence",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0307-transcript-file-path-links-bare",
+        });
+        const ingest = (decoded: unknown) =>
+          app.driveSession("A", {
+            op: "ingestFrame",
+            feedId: CODE_OUTPUT_FEED,
+            decoded,
+          });
+
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 30_000 },
+          );
+          await app.bindSession("A", {
+            tugSessionId: SID,
+            sessionMode: "resume",
+            projectDir: REPO_ROOT,
+            workspaceKey: REPO_ROOT,
+          });
+
+          // The same name as the case above, with the backticks taken
+          // off. Whether the model reached for backticks decides the code
+          // TONE and nothing else; the resolver is the only gate on the
+          // mark, so this run has to come back marked exactly like its
+          // backticked twin — split out of the sentence, since it is a run
+          // inside a longer text node rather than its own element.
+          await ingest(replayStarted());
+          await ingest(userMsg("which file"));
+          await ingest(asstText("m1", `I changed ${INDEXED_NAME} to match.`, 1));
+          await ingest(turnDone("m1"));
+          await ingest(replayComplete());
+
+          const MARK = `[data-card-id="A"] span[data-tugx-wrapped][data-tug-annotation="file-path"]`;
+          await app.waitForCondition<boolean>(
+            `document.querySelector('${MARK}') !== null`,
+            { timeoutMs: 20_000 },
+          );
+          const mark = JSON.parse(
+            await app.evalJS<string>(`JSON.stringify((function(){
+              var el = document.querySelector('${MARK}');
+              return {
+                text: el.textContent,
+                path: el.getAttribute('data-path'),
+                inCode: el.closest('code') !== null,
+              };
+            })())`),
+          ) as { text: string; path: string | null; inCode: boolean };
+          expect(mark.text).toBe(INDEXED_NAME);
+          expect(mark.path).toBe(
+            `${REPO_ROOT}/tugdeck/src/components/tugways/internal/${INDEXED_NAME}`,
+          );
+          // Running prose, not a code span — this is the run the old
+          // license refused.
+          expect(mark.inCode).toBe(false);
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

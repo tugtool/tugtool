@@ -389,14 +389,14 @@ New assertions belong with the surface they cover, not in a new file per work it
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | One detection gate (W1) | pending | — |
-| #step-2 | Resting underline (W2/W3) | pending | — |
-| #step-3 | `TugAtomRef` rename + widen | pending | — |
-| #step-4 | Gazette refs adopt the skin (W4) | pending | — |
-| #step-5 | Commit surfaces adopt the skin (W5) | pending | — |
-| #step-6 | Doctrine into tuglaws (W6) | pending | — |
-| #step-7 | Bench retirement | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | One detection gate (W1) | done | `820f5aebe` |
+| #step-2 | Resting underline (W2/W3) | done | `fa1c52bd5` |
+| #step-3 | `TugAtomRef` rename + widen | done | `1fe6935f1` |
+| #step-4 | Gazette refs adopt the skin (W4) | done | `86af912cf` |
+| #step-5 | Commit surfaces adopt the skin (W5) | done | `d8490c8ab` |
+| #step-6 | Doctrine into tuglaws (W6) | done | `517986bdc` |
+| #step-7 | Bench retirement | done | `2e7141c78` |
+| #step-8 | Integration checkpoint | done | N/A (verification only) |
 
 #### Step 1: One detection gate (W1) {#step-1}
 

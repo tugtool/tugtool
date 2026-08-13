@@ -35,12 +35,13 @@
  * listed ref was appended as a chip — the prose and the atoms describing
  * two different things. The annotator has no such blind spot.
  *
- * A trailing chip is the app's own {@link TugAtomChip}, resolved through
- * {@link resolveGazetteRef} and stamped with the full annotation payload so
- * the registry's click and context menu are its gesture; an unconfirmed ref
- * is inert with the reason on its tooltip. A commit chip names itself —
- * `Commit: <8ch>` — because unlike an inline mention it has no sentence
- * around it, and its hover carries the commit's subject, author and files.
+ * A trailing ref is the app's own {@link TugAtomRef} — the read-only atom
+ * skin, glyph plus a name — resolved through {@link resolveGazetteRef} and
+ * wrapped in the full annotation payload so the registry's click and context
+ * menu are its gesture; an unconfirmed ref is inert with the reason on its
+ * tooltip. A commit ref names itself — `Commit <8ch>` — because unlike an
+ * inline mention it has no sentence around it, and its hover carries the
+ * commit's subject, author and files.
  *
  * The composer is the session prompt-entry's core: a {@link TugEntryShell}
  * holding the CM6 {@link TugTextEditor} substrate (with `@` file-atom
@@ -66,7 +67,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { EditorView } from "@codemirror/view";
-import { ArrowUp, Check } from "lucide-react";
+import { ArrowUp, Check, Folder } from "lucide-react";
 
 import { BlockCopyButton } from "@/components/tugways/body-kinds/affordances/block-copy-button";
 import { formatDurationMs } from "@/components/tugways/cards/session-card-telemetry-renderers";
@@ -81,6 +82,7 @@ import { TugLabel } from "@/components/tugways/tug-label";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugAtomRef } from "@/components/tugways/tug-atom-ref";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
 import {
   TugTextEditor,
@@ -100,7 +102,6 @@ import {
 } from "@/lib/annotator/commit-resolution";
 import { commitTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import { COMMIT_LABEL_LENGTH } from "@/lib/commit-format";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
 import { annotationEntryFor } from "@/lib/annotator/registry";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
@@ -133,7 +134,6 @@ import {
 } from "@/lib/gazette-store";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { buildSlashCommandLine } from "@/lib/slash-commands";
-import { TugAtomChip } from "@/lib/tug-atom-chip";
 import type { CompletionProvider } from "@/lib/tug-text-types";
 import { FeedId, type GazetteAuthor, type GazetteRef } from "@/protocol";
 import "./gazette-card.css";
@@ -161,13 +161,6 @@ const AUTHOR_LABEL: Record<GazetteAuthor, string> = {
   operator: "Operator",
   user: "You",
 };
-
-/**
- * The pixel size a ref atom bakes its label at — TUNE HERE. One step under
- * the post body's 13px, so a chip sits inside the reading size rather than
- * over it.
- */
-const GAZETTE_CHIP_FONT_SIZE = 12;
 
 /** The transcript participant each Gazette voice renders as. */
 const AUTHOR_PARTICIPANT: Record<GazetteAuthor, Participant> = {
@@ -244,15 +237,27 @@ function annotationProps(
 /**
  * One trailing ref atom — provenance the prose did not spell out.
  *
- * It is the SAME atom every other surface paints: {@link TugAtomChip}, the
- * baked SVG chip the transcript, the composer and the tool-call headers all
- * use, wrapped in the annotation contract so the card's delegated layer gives
- * it its gesture — but only once the resolvers confirm the target
- * ({@link resolveGazetteRef}): a path that stats, a sha git can show. A
- * session — which is not a file-shaped thing at all — renders as the live
+ * A post's `refs` is a **placed array**, so every entry in it is an atom, and
+ * an atom has two skins. This row is read-only ink — nothing here can be
+ * selected, deleted or dragged where it sits — so it wears the read-only
+ * skin, {@link TugAtomRef}: glyph plus a name, no box. The box is the
+ * *editable* skin's and means "manipulable in place", which is why the same
+ * value still arrives boxed in a composer. The row was never the defect; the
+ * prose beside it was, for looking like nothing. See
+ * `tuglaws/entity-presentation.md`.
+ *
+ * The skin renders **presentationally** here: the wrapper span below already
+ * carries the full annotation contract and the pending/unresolvable tooltip
+ * states, so a skin that also stamped its own would duplicate the contract
+ * and nest a mark inside a mark. The affordance still arrives for free —
+ * `tug-atom-ref.css` keys cursor and hover off an annotated wrapper, and
+ * {@link annotationProps} stamps one only for an `actionable` resolution, so
+ * a pending or unresolvable ref renders inert with its reason on the tooltip
+ * and no prop had to be threaded to say so.
+ *
+ * A session — not a file-shaped thing at all — renders as the live
  * {@link TugSessionCitation}, exactly as a session atom does in a transcript
- * body. A ref that cannot be confirmed wears no annotation and carries the
- * reason on its tooltip.
+ * body: the dot is information no other form carries.
  */
 function RefAtom({
   chipRef,
@@ -268,36 +273,30 @@ function RefAtom({
     return <TugSessionCitation citedId={chipRef.target} />;
   }
   const resolution = resolveGazetteRef(chipRef, root);
-  // A chip stands alone with no sentence around it, so a bare hash names
-  // nothing a reader can use. The word is part of the label for that reason
-  // — an inline mention needs none, because the prose supplies it.
-  const label =
-    chipRef.kind === "commit"
-      ? `Commit: ${chipRef.target.slice(0, COMMIT_LABEL_LENGTH)}`
-      : (chipRef.target.split("/").pop() ?? chipRef.target);
   const isDir =
     resolution.state === "actionable" &&
     resolution.payload.kind === "directory";
-  const chip = (
-    <TugAtomChip
-      className="tug-atom-chip"
-      // Sized to this card's prose rather than to the transcript's. The chip's
-      // default is the Session transcript's 14px body; the Gazette reads at
-      // 13px (`.gazette-post-body`), so an unsized chip stands a full step
-      // above the sentence that named the file.
-      fontSize={GAZETTE_CHIP_FONT_SIZE}
-      // The chip's icon families are the atom vocabulary's own: a commit is
-      // a point on a line, a folder a folder, everything else a file.
-      type={chipRef.kind === "commit" ? "commit" : isDir ? "directory" : "file"}
-      label={label}
-      value={chipRef.target}
+  // The label is the skin's own: a basename for a file, `Commit <8>` for a
+  // commit. An atom stands with no sentence around it, so a bare hash names
+  // nothing a reader can use and the word belongs in the label — which is
+  // also the spelling copy already uses, so selection and menu agree.
+  const skin = (
+    <TugAtomRef
+      entity={
+        chipRef.kind === "commit"
+          ? { kind: "commit", sha: chipRef.target }
+          : { kind: "file", path: chipRef.target, annotate: false }
+      }
+      // The glyph families are the atom vocabulary's own: a commit is a point
+      // on a line, a folder a folder, everything else a file.
+      icon={isDir ? <Folder /> : undefined}
     />
   );
   const marked = (
     // No `data-tugx-wrapped` — that mark is for a run the annotator split
-    // out of prose, whose affordance has to be painted onto the text. A chip
+    // out of prose, whose affordance has to be painted onto the text. An atom
     // has its own shape and its own hover, exactly as in a transcript body.
-    <span {...annotationProps(chipRef, resolution)}>{chip}</span>
+    <span {...annotationProps(chipRef, resolution)}>{skin}</span>
   );
   // A confirmed commit describes itself in the app's own bubble, not the
   // OS's — the same tip the transcript shows for the same sha.
@@ -378,9 +377,6 @@ function useGazetteAnnotation(root: GazetteRefRoot | null): AnnotationContext {
       // subject is which session did what — so it scans for them.
       resolveSession: resolveSessionRef,
       commitRoot: projectDir,
-      // A Reporter post is a digest of file work; a path-shaped token in one
-      // of its sentences is pointing at that file. See the field's own note.
-      proseCitesPaths: true,
       subscribe,
     }),
     // `resolveSessionRef` is a module function, not a closure over anything

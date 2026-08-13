@@ -10,8 +10,9 @@
  *
  * Scenario:
  *   1. Bind a card to the repo, open the History shade.
- *   2. Each commit row leads with its 8-char short sha as `code`-colored text
- *      (the lifecycle dot is gone) and NO row carries the old full-40-char hash.
+ *   2. Each commit row leads with the commit atom — the read-only skin,
+ *      labelled `Commit <8-char sha>` (the lifecycle dot is gone) — and NO row
+ *      carries the old full-40-char hash.
  *   3. Expand the top commit → the committer's identity (name + email), the
  *      message body, and the commit's changed files (a `TugChangesList`, served
  *      by the new GIT_COMMIT_FILES path) render.
@@ -25,6 +26,8 @@
  * @covers tugdeck/src/components/tugways/tug-history-list.tsx
  * @covers tugdeck/src/components/tugways/commit-presentation.tsx
  * @covers tugdeck/src/lib/commit-format.ts
+ * @covers tugdeck/src/components/tugways/commit-sha-text.tsx
+ * @covers tugdeck/src/components/tugways/commit-sha-text.css
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
  * @covers tugdeck/src/components/tugways/entity-tips.css
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.css
@@ -217,16 +220,20 @@ describe.skipIf(!SHOULD_RUN)(
             );
             expect(hasGrabber).toBe(false);
 
-            // The top row leads with the 8-char short sha as code-colored text
-            // (the lifecycle dot is gone; the leading slot is collapsed away).
+            // The top row leads with the commit atom: the read-only skin,
+            // labelled `Commit <8-char sha>` (the lifecycle dot is gone; the
+            // leading slot is collapsed away). The word is part of the label
+            // because an atom stands with no sentence around it — and it is
+            // the same string right-click → Copy writes, so what the eye reads
+            // and what the clipboard gets cannot disagree.
             const topShaText = await app.evalJS<string>(
               `(function(){
                 var row = document.querySelector(${JSON.stringify(ROW)});
-                var sha = row.querySelector('code.commit-sha-text');
+                var sha = row.querySelector('.commit-sha-text');
                 return sha ? sha.textContent.trim() : "";
               })()`,
             );
-            expect(topShaText).toBe(head8);
+            expect(topShaText).toBe(`Commit ${head8}`);
 
             // The old duplicated full-40-char hash <pre> is gone: no row's
             // collapsed content shows the full sha.
