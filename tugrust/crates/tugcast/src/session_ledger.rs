@@ -5689,6 +5689,47 @@ impl SessionLedger {
             .collect())
     }
 
+    /// One page of history, newest-first by keyset, returned OLDEST-first —
+    /// the read behind the card's scrollback.
+    ///
+    /// `before_id` is exclusive: absent it is the tail (identical to
+    /// [`Self::list_gazette_posts_tail`]), present it is the `limit` posts
+    /// immediately older than that row. Keyset rather than offset because
+    /// posts keep arriving while a reader pages backwards, and an offset would
+    /// slide under them — the same page would return rows it already returned.
+    ///
+    /// The second half of the answer is whether there is more: the query asks
+    /// for `limit + 1` rows and reports `has_more` from whether it got them,
+    /// which costs one row and saves a `COUNT(*)` over the whole table.
+    pub fn list_gazette_posts_page(
+        &self,
+        before_id: Option<i64>,
+        limit: usize,
+    ) -> Result<(Vec<GazettePost>, bool), LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
+                 FROM gazette_posts
+                 WHERE (?1 IS NULL OR id < ?1)
+                 ORDER BY id DESC LIMIT ?2
+             ) ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map(params![before_id, limit as i64 + 1], gazette_post_from_row)?;
+        let fetched = rows.collect::<Result<Vec<_>, _>>()?;
+        // `has_more` is read off how many ROWS came back, before any
+        // unreadable one is dropped: the probe row's job is to say whether
+        // older history exists, and it says so by existing.
+        let has_more = fetched.len() > limit;
+        let mut posts: Vec<GazettePost> = fetched.into_iter().flatten().collect();
+        // The probe is the OLDEST of the page, since the page came back
+        // oldest-first — so it comes off the front.
+        if has_more && !posts.is_empty() {
+            posts.remove(0);
+        }
+        Ok((posts, has_more))
+    }
+
     /// The newest `limit` posts for one session, oldest-first — what a wake
     /// hands the Reporter as "what you already said about this session", and
     /// therefore the whole dedup mechanism.
@@ -8076,6 +8117,126 @@ mod tests {
         // A stored row is never transient and carries no request id.
         assert!(!restored.transient);
         assert_eq!(restored.request_id, None);
+    }
+
+    /// Paging backwards through history: each page is the rows immediately
+    /// older than the one the reader has, and `has_more` says whether to
+    /// offer another.
+    #[test]
+    fn gazette_paging_walks_backwards_by_keyset_and_reports_more() {
+        let ledger = fresh();
+        let mut ids = Vec::new();
+        for i in 1..=25_i64 {
+            ids.push(
+                ledger
+                    .record_gazette_post(&gazette_post(
+                        1_000 + i,
+                        GazetteAuthor::Reporter,
+                        &format!("post {i}"),
+                    ))
+                    .expect("record"),
+            );
+        }
+
+        // No `before_id` is the tail, and it is the tail read verbatim.
+        let (tail, more) = ledger.list_gazette_posts_page(None, 10).unwrap();
+        assert_eq!(
+            tail.iter().map(|p| p.body.clone()).collect::<Vec<_>>(),
+            ledger
+                .list_gazette_posts_tail(10)
+                .unwrap()
+                .iter()
+                .map(|p| p.body.clone())
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(tail.first().unwrap().body, "post 16");
+        assert_eq!(tail.last().unwrap().body, "post 25");
+        assert!(more, "fifteen older posts remain");
+
+        // The next page is the ten immediately older, still oldest-first,
+        // and it neither repeats nor skips a row at the seam.
+        let oldest_held = tail.first().unwrap().id.unwrap();
+        let (page, more) = ledger.list_gazette_posts_page(Some(oldest_held), 10).unwrap();
+        assert_eq!(page.first().unwrap().body, "post 6");
+        assert_eq!(page.last().unwrap().body, "post 15");
+        assert!(more, "five older posts remain");
+
+        // The last page comes up short and says so — nothing older exists.
+        let (last, more) = ledger
+            .list_gazette_posts_page(Some(page.first().unwrap().id.unwrap()), 10)
+            .unwrap();
+        assert_eq!(last.len(), 5);
+        assert_eq!(last.first().unwrap().body, "post 1");
+        assert!(!more, "the walk has reached the beginning");
+
+        // Past the beginning is empty rather than an error.
+        let (none, more) = ledger
+            .list_gazette_posts_page(Some(ids[0]), 10)
+            .unwrap();
+        assert!(none.is_empty());
+        assert!(!more);
+    }
+
+    /// `has_more` at exactly the limit is the boundary that decides whether a
+    /// reader is offered a page that turns out to be empty.
+    #[test]
+    fn gazette_paging_reports_no_more_when_the_page_exactly_empties_history() {
+        let ledger = fresh();
+        for i in 1..=10_i64 {
+            ledger
+                .record_gazette_post(&gazette_post(
+                    1_000 + i,
+                    GazetteAuthor::Reporter,
+                    &format!("post {i}"),
+                ))
+                .expect("record");
+        }
+        let (page, more) = ledger.list_gazette_posts_page(None, 10).unwrap();
+        assert_eq!(page.len(), 10);
+        assert!(!more, "ten of ten is the whole history, not a full page");
+
+        let (page, more) = ledger.list_gazette_posts_page(None, 9).unwrap();
+        assert_eq!(page.len(), 9);
+        assert!(more);
+    }
+
+    /// The keyset's whole reason for being: posts keep arriving while the
+    /// reader pages backwards, and the page must not slide under them the way
+    /// an OFFSET would.
+    #[test]
+    fn gazette_paging_is_stable_while_newer_posts_arrive() {
+        let ledger = fresh();
+        for i in 1..=20_i64 {
+            ledger
+                .record_gazette_post(&gazette_post(
+                    1_000 + i,
+                    GazetteAuthor::Reporter,
+                    &format!("post {i}"),
+                ))
+                .expect("record");
+        }
+        let (tail, _) = ledger.list_gazette_posts_page(None, 5).unwrap();
+        let anchor = tail.first().unwrap().id.unwrap();
+
+        // Five more posts land while the reader is reading.
+        for i in 21..=25_i64 {
+            ledger
+                .record_gazette_post(&gazette_post(
+                    1_000 + i,
+                    GazetteAuthor::Reporter,
+                    &format!("post {i}"),
+                ))
+                .expect("record");
+        }
+
+        // The page is still the five immediately older than the anchor. An
+        // offset-based read would have returned "post 16".."post 20" again,
+        // shifted by exactly the five arrivals.
+        let (page, _) = ledger.list_gazette_posts_page(Some(anchor), 5).unwrap();
+        assert_eq!(
+            page.iter().map(|p| p.body.as_str()).collect::<Vec<_>>(),
+            ["post 11", "post 12", "post 13", "post 14", "post 15"],
+        );
     }
 
     /// The channel outlives the sessions it narrates: evicting a session row

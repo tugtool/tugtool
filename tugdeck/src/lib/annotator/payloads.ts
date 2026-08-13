@@ -98,6 +98,19 @@ export interface CommitShaPayload {
   paths: string[];
 }
 
+/**
+ * A session the ledger holds, named in prose.
+ *
+ * The target is the FULL session id however the prose spelled it — a
+ * `project/callsign` pair resolves through its callsign half and comes back
+ * with the id, which is what a citation chip and a raise both need.
+ */
+export interface SessionPayload {
+  kind: "session";
+  /** The full session id the ledger answered with. */
+  target: string;
+}
+
 /** The payload of any annotation, discriminated by kind. */
 export type AnnotationPayload =
   | UrlPayload
@@ -107,7 +120,8 @@ export type AnnotationPayload =
   | FilePathPayload
   | DirectoryPayload
   | ImagePayload
-  | CommitShaPayload;
+  | CommitShaPayload
+  | SessionPayload;
 
 /** The fields of an atom this needs to decide what it is. */
 export interface AtomLike {
@@ -161,6 +175,9 @@ export function payloadForAtom(atom: AtomLike): AnnotationPayload | null {
  * caret goes with it.
  */
 export function annotationOpensSurface(kind: AnnotationKind): boolean {
+  // Not `session`: the citation chip owns its whole gesture, including
+  // whether to offer one, so the press needs none of the card-opening focus
+  // discipline from this layer.
   return (
     kind === "file-path" ||
     kind === "directory" ||
@@ -195,6 +212,7 @@ export const ANNOTATION_DATASET_KEYS = [
   "sha",
   "root",
   "commitPaths",
+  "target",
 ] as const;
 
 /** Compose the dataset that carries `payload` through the DOM. */
@@ -228,6 +246,8 @@ export function datasetForPayload(payload: AnnotationPayload): AnnotationDataset
         root: payload.root,
         commitPaths: payload.paths.join("\n"),
       };
+    case "session":
+      return { target: payload.target };
   }
 }
 
@@ -317,6 +337,10 @@ export function payloadFromDataset(
       const raw = record.commitPaths ?? "";
       return { kind, sha, root, paths: raw === "" ? [] : raw.split("\n") };
     }
+    case "session": {
+      const target = record.target;
+      return target === undefined || target === "" ? null : { kind, target };
+    }
   }
 }
 
@@ -356,6 +380,11 @@ export function annotationValue(payload: AnnotationPayload): string {
       return payload.label;
     case "commit-sha":
       return payload.sha;
+    case "session":
+      // The full id, not the `project/callsign` spelling the prose used: a
+      // paste of this has to name the session anywhere it is pasted, and the
+      // sentence already carries the readable form.
+      return payload.target;
   }
 }
 

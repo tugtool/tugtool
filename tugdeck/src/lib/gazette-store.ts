@@ -13,6 +13,12 @@
  * ends the wait with a locally-authored transient post rather than a spinner
  * nobody will ever take away.
  *
+ * **Scrollback.** {@link GazetteStore.loadOlder} asks for the page immediately
+ * older than the oldest post held (keyset by ledger rowid — posts keep
+ * arriving while a reader pages backwards, and an offset would slide under
+ * them). `card_rows` sizes the OPENING request rather than a render window,
+ * and {@link GAZETTE_MAX_ROWS} is what bounds the accumulated list.
+ *
  * **Laws.** [L02] — wire frames, the CONTROL response, and the `card_rows`
  * tugbank default all enter React through {@link useGazette}'s
  * `useSyncExternalStore`; snapshots are referentially stable between folds.
@@ -40,12 +46,38 @@ import {
 } from "@/protocol";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 
-/** Tugbank default holding the card's render window (rows). */
+/**
+ * Tugbank default holding how much history the card OPENS WITH, in rows.
+ *
+ * Read as the `limit` on the mount-time tail request, not as a render window:
+ * the card used to truncate its list to this number, and it no longer does,
+ * because the reader can now page backwards past it. What bounds the list is
+ * {@link GAZETTE_MAX_ROWS}. The knob's name outlives the change, so its
+ * meaning is stated here rather than inferred from it.
+ */
 export const GAZETTE_DOMAIN = "dev.tugtool.gazette";
 export const GAZETTE_CARD_ROWS_KEY = "card_rows";
 
-/** Mirror of tugcast's tail length — the window when the knob is unset. */
+/** Mirror of tugcast's tail length — the opening request when the knob is unset. */
 export const DEFAULT_GAZETTE_CARD_ROWS = 50;
+
+/**
+ * The ceiling on the accumulated list.
+ *
+ * Paging with no bound would make the Gazette an unbounded column of live
+ * markdown blocks, each with its own annotation subscriptions and portal
+ * hosts, under a memo that walks every post on every change — the shape the
+ * transcript has a whole DOM-eviction project for. The Gazette must not
+ * acquire that problem while importing none of the remedy, so the walk stops
+ * here: ten times the default opening tail.
+ *
+ * Reaching it ends paging. A reader 500 posts deep wants search, not another
+ * page, and the card says nothing about it.
+ */
+export const GAZETTE_MAX_ROWS = 500;
+
+/** How close to the top starts loading older history, in px. */
+export const LOAD_OLDER_PX = 200;
 
 /** One displayable post. `key` is stable identity for React and for dedupe. */
 export interface GazettePostEntry {
@@ -71,10 +103,20 @@ export interface GazettePostEntry {
 export interface GazetteSnapshot {
   /** Ledger-tail load state; live folds work in any state. */
   status: "idle" | "pending" | "ready";
-  /** The channel, oldest-first, capped at {@link GazetteSnapshot.cardRows}. */
+  /** The channel, oldest-first, capped at {@link GAZETTE_MAX_ROWS}. */
   posts: readonly GazettePostEntry[];
-  /** The live `card_rows` window. */
+  /** The live `card_rows` default — how much history the card opened with. */
   cardRows: number;
+  /**
+   * Whether the ledger holds history older than the oldest post here. False
+   * once the walk reaches the beginning, and also once the list reaches
+   * {@link GAZETTE_MAX_ROWS} — a page the store would only throw away is a
+   * page it does not ask for.
+   */
+  hasMore: boolean;
+  /** Whether a page request is in flight; the card's guard against firing
+   *  another on every scroll event while the first is out. */
+  loadingOlder: boolean;
   /**
    * The request id of a question awaiting its answer, or null. One at a time:
    * the composer is a single field and a second question while the first is
@@ -99,6 +141,8 @@ const IDLE_SNAPSHOT: GazetteSnapshot = Object.freeze({
   status: "idle" as const,
   posts: EMPTY_POSTS,
   cardRows: DEFAULT_GAZETTE_CARD_ROWS,
+  hasMore: false,
+  loadingOlder: false,
   pendingRequestId: null,
 });
 
@@ -137,6 +181,14 @@ export class GazetteStore {
    * three, and the only one whose lifetime is shorter than the store's.
    */
   private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The `before_id` of the page this store is waiting on, or null. The whole
+   * of the response correlation — see {@link onTail} for why one field is
+   * enough and why it is needed at all.
+   */
+  private pendingBefore: number | null = null;
+  /** Whether the ledger reported history older than what is held. */
+  private hasMore = false;
 
   constructor(conn: TugConnection) {
     this.conn = conn;
@@ -228,12 +280,15 @@ export class GazetteStore {
   getSnapshot = (): GazetteSnapshot => {
     if (!this.tailRequested) {
       this.tailRequested = true;
+      const cardRows = readCardRows();
       this.snapshot = Object.freeze({
         ...this.snapshot,
         status: "pending" as const,
-        cardRows: readCardRows(),
+        cardRows,
       });
-      const frame = encodeListGazettePosts();
+      // `card_rows` sizes the OPENING request now — how much history the card
+      // opens with, rather than how many rows it will ever show.
+      const frame = encodeListGazettePosts({ limit: cardRows });
       this.conn.send(frame.feedId, frame.payload);
     }
     return this.snapshot;
@@ -253,31 +308,59 @@ export class GazetteStore {
     this.fold([this.entry(post)]);
   }
 
+  /**
+   * A `list_gazette_posts_ok` response — a tail or a page, told apart by the
+   * echoed `before_id`.
+   *
+   * The response is a CONTROL **broadcast**, not a reply: every subscriber
+   * sees every response, and nothing on the wire says whose request it
+   * answers. That cost nothing while the only read was the tail, which is
+   * idempotent — applied twice it replaced the list with itself. A page is
+   * not: applied twice it prepends twice. So a page is honored only when its
+   * echoed `before_id` is the one this store has outstanding, and any other is
+   * dropped. One field, one comparison, and a stale page crossing a
+   * reconnect-driven tail becomes a no-op instead of a double prepend.
+   */
   private onTail(payload: ListGazettePostsOk): void {
-    const tail: GazettePostEntry[] = [];
+    const incoming: GazettePostEntry[] = [];
     for (const raw of payload.posts) {
       const post = parseGazettePost(raw);
       if (post === null) continue;
-      tail.push(this.entry(post));
+      incoming.push(this.entry(post));
     }
+    const beforeId = payload.before_id;
+    if (beforeId !== undefined) {
+      // Somebody else's page, or one this store gave up on.
+      if (beforeId !== this.pendingBefore) return;
+      this.pendingBefore = null;
+      this.hasMore = payload.has_more ?? false;
+      // Older history goes in FRONT, behind the same dedupe the tail uses.
+      this.commit(
+        dedupe([...incoming, ...this.snapshot.posts]),
+        "ready",
+        this.snapshot.pendingRequestId,
+        // Paging: the reader is at the top, so the ceiling drops from the
+        // bottom.
+        { keepOldest: true },
+      );
+      return;
+    }
+
+    // A tail supersedes any page in flight — it is a fresh view of the
+    // channel's newest end, and a page prepended onto it would be history the
+    // reader never scrolled to.
+    this.pendingBefore = null;
+    this.hasMore = payload.has_more ?? false;
     // Tail (history) first, then any live posts that landed while the load was
     // in flight. Dedupe on ledger id where there is one and on key otherwise:
     // the ledger does not persist a request id, so the same post arrives keyed
     // one way live and another way from the tail, and only its rowid is the
     // same on both wires.
-    const merged = [...tail];
-    const seenKeys = new Set(tail.map((p) => p.key));
-    const seenIds = new Set(
-      tail.flatMap((p) => (p.id !== null ? [p.id] : [])),
+    this.commit(
+      dedupe([...incoming, ...this.snapshot.posts]),
+      "ready",
+      this.snapshot.pendingRequestId,
     );
-    for (const post of this.snapshot.posts) {
-      if (seenKeys.has(post.key)) continue;
-      if (post.id !== null && seenIds.has(post.id)) continue;
-      seenKeys.add(post.key);
-      if (post.id !== null) seenIds.add(post.id);
-      merged.push(post);
-    }
-    this.commit(merged, "ready", this.snapshot.pendingRequestId);
   }
 
   private entry(post: GazettePostWire): GazettePostEntry {
@@ -340,21 +423,78 @@ export class GazetteStore {
     posts: readonly GazettePostEntry[],
     status: GazetteSnapshot["status"],
     pendingRequestId: string | null,
+    opts?: { keepOldest?: boolean },
   ): void {
-    const cardRows = readCardRows();
-    const capped = posts.length > cardRows ? posts.slice(-cardRows) : posts;
+    // The ceiling drops from whichever end the reader is NOT at. Following the
+    // bottom, the oldest rows go, exactly as they always did; paging backwards,
+    // the newest go, because those are the ones the reader has scrolled away
+    // from and the page just arrived is what they are reading.
+    const capped =
+      posts.length > GAZETTE_MAX_ROWS
+        ? opts?.keepOldest === true
+          ? posts.slice(0, GAZETTE_MAX_ROWS)
+          : posts.slice(-GAZETTE_MAX_ROWS)
+        : posts;
     this.snapshot = Object.freeze({
       status,
       posts: Object.freeze([...capped]) as readonly GazettePostEntry[],
-      cardRows,
+      cardRows: readCardRows(),
+      // A list at the ceiling stops asking, whatever the ledger still holds.
+      hasMore: this.hasMore && capped.length < GAZETTE_MAX_ROWS,
+      loadingOlder: this.pendingBefore !== null,
       pendingRequestId,
     });
     this.tick();
   }
 
+  /**
+   * Ask for the page immediately older than the oldest post held.
+   *
+   * A no-op unless there is history to ask for, a post to anchor on, and no
+   * request already out — the card fires this from a scroll handler, which
+   * runs many times per gesture.
+   */
+  loadOlder(): void {
+    const snap = this.snapshot;
+    if (snap.status !== "ready" || !snap.hasMore) return;
+    if (this.pendingBefore !== null) return;
+    if (snap.posts.length >= GAZETTE_MAX_ROWS) return;
+    const oldest = snap.posts.find((p) => p.id !== null);
+    if (oldest === undefined || oldest.id === null) return;
+    this.pendingBefore = oldest.id;
+    const frame = encodeListGazettePosts({
+      beforeId: oldest.id,
+      limit: snap.cardRows,
+    });
+    this.conn.send(frame.feedId, frame.payload);
+    this.commit(snap.posts, snap.status, snap.pendingRequestId);
+  }
+
   private tick(): void {
     for (const listener of [...this.listeners]) listener();
   }
+}
+
+/**
+ * `posts` with every duplicate after the first dropped, order preserved.
+ *
+ * Two identities, because a post can arrive under either: its `key`, and its
+ * ledger `id`. The ledger does not persist a request id, so an Operator answer
+ * arrives keyed by that id live and by its rowid from history — and only the
+ * rowid is the same on both wires.
+ */
+function dedupe(posts: readonly GazettePostEntry[]): GazettePostEntry[] {
+  const keys = new Set<string>();
+  const ids = new Set<number>();
+  const out: GazettePostEntry[] = [];
+  for (const post of posts) {
+    if (keys.has(post.key)) continue;
+    if (post.id !== null && ids.has(post.id)) continue;
+    keys.add(post.key);
+    if (post.id !== null) ids.add(post.id);
+    out.push(post);
+  }
+  return out;
 }
 
 /**
@@ -417,6 +557,32 @@ export function _ingestGazetteFrameForTest(body: unknown): void {
   (
     _activeStore as unknown as { _onGazette(p: Uint8Array): void }
   )._onGazette(bytes);
+}
+
+/**
+ * Test-only: deliver a `list_gazette_posts_ok` body through the production
+ * response bus, arming the page correlation first when the body is a page.
+ *
+ * Not a mock — {@link publishListGazettePostsOk} is the same function
+ * `action-dispatch` calls with a wire response, so the branch, the dedupe, the
+ * prepend, and the ceiling are all production.
+ *
+ * The arming is the one thing a test cannot get for free. A page is honored
+ * only when its echoed `before_id` matches an outstanding request, which is
+ * the whole defense against a broadcast page prepending twice — so a page
+ * published out of nowhere is correctly dropped. Calling the real
+ * {@link GazetteStore.loadOlder} instead would put a request on the wire and
+ * race tugcast's own answer for it. This arms exactly what `loadOlder` arms,
+ * and leaves the correlation logic itself to the store's unit tests.
+ */
+export function _ingestGazettePageForTest(payload: ListGazettePostsOk): void {
+  const store = _activeStore;
+  if (store === null) return;
+  if (payload.before_id !== undefined) {
+    (store as unknown as { pendingBefore: number | null }).pendingBefore =
+      payload.before_id;
+  }
+  publishListGazettePostsOk(payload);
 }
 
 /**

@@ -48,6 +48,7 @@ import { getFocusManager } from "./components/tugways/focus-manager";
 import { currentGesture } from "./gesture-interpreter";
 import {
   _ingestGazetteFrameForTest,
+  _ingestGazettePageForTest,
   getGazetteStore,
 } from "./lib/gazette-store";
 import { _ingestPulseFrameForTest, getPulseStore } from "./lib/pulse-store";
@@ -73,7 +74,7 @@ import { writeSessionAtomToClipboard } from "./lib/session-atom";
 import { resolveSessionIdentity } from "./lib/session-identity";
 import { readClipboardViaNative } from "./lib/tug-native-clipboard";
 import { parseClipboardSidecar } from "./components/tugways/tug-text-editor/clipboard-filters";
-import type { RateLimitInfo } from "./protocol";
+import type { ListGazettePostsOk, RateLimitInfo } from "./protocol";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import type { TaggedValue } from "./lib/tugbank-client";
 import type {
@@ -285,8 +286,18 @@ import {
  * `font-metrics` pair, so a width constant derived from a type size can be
  * pinned against the real render instead of against a fallback. Additive;
  * major stays `2`.
+ *
+ * `2.7.0`: adds {@link TugTestSurface.publishGazettePostsPage} — hands a
+ * `list_gazette_posts_ok` body to the production CONTROL-response bus, the
+ * page sibling of `publishGazettePost`'s feed frame. It exists because
+ * `publishGazettePost` cannot reach paging at all: it routes to the client
+ * store's fold and never touches the wire, so nothing it publishes is ever
+ * persisted and no amount of it seeds a ledger to page through. This enters
+ * the production chain one function later than a wire response does, and
+ * drives the real correlation, dedupe, prepend, and scroll compensation.
+ * Additive; major stays `2`.
  */
-export const SURFACE_VERSION = "2.6.0" as const;
+export const SURFACE_VERSION = "2.7.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -849,6 +860,30 @@ export interface TugTestSurface {
    * a malformed post silently, so assert on what rendered, never on this alone.
    */
   publishGazettePost(payloadJson: string): boolean;
+
+  /**
+   * Deliver a `list_gazette_posts_ok` response as if tugcast had broadcast it
+   * (SURFACE_VERSION 2.7.0).
+   *
+   * `payloadJson` is the response body —
+   * `{"posts":[…],"has_more":true,"before_id":123}`. A body with a
+   * `before_id` is a PAGE and prepends; one without is a tail and replaces.
+   * The bytes go through `publishListGazettePostsOk`, the same bus
+   * `action-dispatch` publishes a wire response on, so the store's branch,
+   * its dedupe, and the card's prepend compensation are all the production
+   * ones. A page body additionally arms the store's page correlation, the way
+   * `loadOlder` does — without that a page is correctly dropped as nobody's,
+   * and calling the real `loadOlder` instead would put a request on the wire
+   * and race tugcast's own answer for it.
+   *
+   * The sibling of {@link TugTestSurface.publishGazettePost}, and necessary
+   * for the same reason it is insufficient: that verb routes to the client
+   * store's fold and never reaches tugcast, so nothing it publishes is
+   * persisted and no amount of it builds a ledger to page through.
+   *
+   * Returns `false` when the JSON does not parse or carries no `posts` array.
+   */
+  publishGazettePostsPage(payloadJson: string): boolean;
 
   /**
    * Deliver a `session_updated` ledger row as if it had arrived over the wire
@@ -1967,6 +2002,25 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
       } catch {
         return false;
       }
+      return true;
+    },
+
+    publishGazettePostsPage(payloadJson: string): boolean {
+      if (getGazetteStore() === null) return false;
+      let body: unknown;
+      try {
+        body = JSON.parse(payloadJson);
+      } catch {
+        return false;
+      }
+      if (
+        body === null ||
+        typeof body !== "object" ||
+        !Array.isArray((body as ListGazettePostsOk).posts)
+      ) {
+        return false;
+      }
+      _ingestGazettePageForTest(body as ListGazettePostsOk);
       return true;
     },
 

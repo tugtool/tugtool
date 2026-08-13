@@ -966,6 +966,9 @@ mod tests {
             workspace_key: "/work/repo".to_string(),
             sha: "0123456789abcdef0123456789abcdef01234567".to_string(),
             no_repo: false,
+            subject: "gazette(ref-annotation): summarize commits on hover".to_string(),
+            author: "Ken Kocienda".to_string(),
+            date: "2026-08-12".to_string(),
             files: vec![
                 GitCommitFile {
                     path: "src/lib.rs".to_string(),

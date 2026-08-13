@@ -56,9 +56,10 @@ use super::reporter_wake::{
     render_facts_section, validate_refs,
 };
 
-/// How many posts the card's CONTROL tail read answers with. Matches the
-/// starting render window, so a deck that has not yet read `card_rows` off the
-/// DEFAULTS feed still fills its first screen exactly once.
+/// How many posts the card's CONTROL tail read answers with when it asks for
+/// no particular number. Matches the opening request `card_rows` sizes, so a
+/// deck that has not yet read that default off the DEFAULTS feed still fills
+/// its first screen exactly once.
 pub const GAZETTE_TAIL_LEN: usize = DEFAULT_CARD_ROWS;
 
 /// The job the Reporter's wake runs.

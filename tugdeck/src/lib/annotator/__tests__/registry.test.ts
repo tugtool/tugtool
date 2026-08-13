@@ -145,6 +145,10 @@ describe("every kind offers to send its value back into the conversation", () =>
           root: "/repo",
           paths: ["a.ts"],
         },
+        session: {
+          kind: "session",
+          target: "123e4567-e89b-42d3-a456-426614174000",
+        },
       }[kind] as Parameters<
         NonNullable<ReturnType<typeof annotationEntryFor>>["menuEntries"]
       >[0];

@@ -615,7 +615,14 @@ pub fn prose_len(body: &str) -> usize {
 }
 
 /// `body` unchanged when it is within the prose budget; otherwise cut at the
-/// last token boundary inside the budget, with an ellipsis marking the cut.
+/// last SENTENCE boundary inside the budget when there is one, and at the last
+/// token boundary — with an ellipsis marking the cut — when there is not.
+///
+/// The instructions ask for complete sentences that fit the budget, so this is
+/// the backstop for a model that ignored them; cutting at a sentence end is the
+/// same principle applied to the failure, and it is why a clamped post can end
+/// on a period rather than mid-clause. The ellipsis stays on the token-boundary
+/// cut, where something really was dropped mid-thought.
 pub fn clamp_post_body(body: &str, limit: usize) -> String {
     if prose_len(body) <= limit {
         return body.to_string();
@@ -634,8 +641,54 @@ pub fn clamp_post_body(body: &str, limit: usize) -> String {
         prose += cost;
         out.push_str(piece);
     }
+    if let Some(end) = last_sentence_end(&out) {
+        return out[..end].trim_end().to_string();
+    }
     let trimmed = out.trim_end();
     format!("{trimmed}…")
+}
+
+/// Tokens whose trailing `.` ends an abbreviation rather than a sentence.
+///
+/// A deny-list because the alternative — inferring it from the token's shape —
+/// cannot tell `e.g.` from `main.rs.`, and those are exactly the two cases that
+/// matter here. `prose_len`'s own exemption rule already names these two
+/// explicitly, so this is the same judgment stated in the same place twice.
+const ABBREVIATIONS: &[&str] = &["e.g.", "i.e.", "etc.", "cf.", "vs.", "approx."];
+
+/// The byte offset just past the last sentence-ending punctuation in `text`, or
+/// `None` when it holds no sentence end.
+///
+/// A sentence ends at `.`, `!`, or `?` followed by whitespace or the end of the
+/// text — so the `.` inside `main.rs` is not one, while the `.` closing
+/// `…edited main.rs.` is. An abbreviation's trailing dot is not one either,
+/// however well it fits that rule.
+fn last_sentence_end(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut found = None;
+    for (i, ch) in text.char_indices() {
+        if ch != '.' && ch != '!' && ch != '?' {
+            continue;
+        }
+        let after = i + ch.len_utf8();
+        let ends_run = after >= bytes.len()
+            || text[after..]
+                .chars()
+                .next()
+                .is_some_and(char::is_whitespace);
+        if !ends_run {
+            continue;
+        }
+        let start = text[..after]
+            .rfind(char::is_whitespace)
+            .map_or(0, |ws| ws + 1);
+        let token = text[start..after].to_ascii_lowercase();
+        if ABBREVIATIONS.contains(&token.as_str()) {
+            continue;
+        }
+        found = Some(after);
+    }
+    found
 }
 
 /// `body` as alternating whitespace / non-whitespace runs, each flagged.
@@ -742,7 +795,9 @@ mod tests {
         let short = "Fixed the flaky test in tugrust/crates/tugcast/src/feeds/reporter.rs.";
         assert_eq!(clamp_post_body(short, REPORTER_PROSE_LIMIT), short);
 
-        // A body whose prose is long gets cut at a token boundary, marked.
+        // A body whose prose is long, and holds no sentence end to fall back
+        // to, gets cut at a token boundary — marked, because something really
+        // was dropped mid-thought.
         let long = "word ".repeat(80);
         let clamped = clamp_post_body(&long, REPORTER_PROSE_LIMIT);
         assert!(
@@ -761,6 +816,42 @@ mod tests {
             clamp_post_body(&path_heavy, REPORTER_PROSE_LIMIT),
             path_heavy
         );
+    }
+
+    #[test]
+    fn clamp_post_body_prefers_a_sentence_boundary_and_drops_the_ellipsis() {
+        // Two sentences: the first fits the budget, the second runs past it.
+        // The cut takes the first whole and ends on its period — no ellipsis,
+        // because nothing was left hanging.
+        let body = format!("All the tests pass now. {}", "word ".repeat(80));
+        let clamped = clamp_post_body(&body, REPORTER_PROSE_LIMIT);
+        assert_eq!(clamped, "All the tests pass now.");
+        assert!(!clamped.ends_with('…'));
+    }
+
+    #[test]
+    fn clamp_post_body_reads_a_trailing_file_name_as_a_sentence_end() {
+        // `main.rs.` ends a sentence: the LAST `.` is followed by whitespace,
+        // the one inside `main.rs` is not. Nothing may cut inside the name.
+        let body = format!("Rewrote the parser in main.rs. {}", "word ".repeat(80));
+        assert_eq!(
+            clamp_post_body(&body, REPORTER_PROSE_LIMIT),
+            "Rewrote the parser in main.rs.",
+        );
+    }
+
+    #[test]
+    fn clamp_post_body_does_not_mistake_an_abbreviation_for_a_sentence_end() {
+        // Every `.` in the in-budget prefix belongs to `e.g.` / `i.e.`, so
+        // there is no sentence to cut at and the token-boundary behavior with
+        // its ellipsis stands.
+        let body = format!("Touched a few surfaces e.g. i.e. {}", "word ".repeat(80));
+        let clamped = clamp_post_body(&body, REPORTER_PROSE_LIMIT);
+        assert!(
+            clamped.ends_with('…'),
+            "an abbreviation is not a sentence end: {clamped}"
+        );
+        assert!(prose_len(&clamped) <= REPORTER_PROSE_LIMIT + 1);
     }
 
     fn frame(session: &str, msg_type: &str, extra: &str) -> String {

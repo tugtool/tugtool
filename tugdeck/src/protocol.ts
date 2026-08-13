@@ -975,15 +975,40 @@ export interface GazettePostWire {
 /** Decoded `list_gazette_posts_ok` response payload (app-scoped). */
 export interface ListGazettePostsOk {
   posts: GazettePostWire[];
+  /** Whether history continues past the oldest post in `posts`. */
+  has_more?: boolean;
+  /**
+   * The request's own `before_id`, echoed verbatim — absent for a tail.
+   *
+   * This response is a CONTROL **broadcast** with no request correlation of
+   * its own, which cost nothing while the only read was an idempotent tail.
+   * A page is not idempotent: applied twice it prepends twice. So the echo
+   * is how a client tells a tail from a page, and its own page from anyone
+   * else's — see `GazetteStore`'s `pendingBefore`.
+   */
+  before_id?: number;
 }
 
 /**
- * Request the Gazette ledger tail. App-scoped — no session id. The response
- * is `list_gazette_posts_ok { posts }`, oldest-first; the gazette-store sends
- * this once on mount, then stays live off the GAZETTE feed.
+ * Request a page of Gazette history. App-scoped — no session id.
+ *
+ * No `beforeId` is the TAIL: the newest posts, which is what the store asks
+ * for on mount and after a reconnect. A `beforeId` is the page immediately
+ * older than that ledger rowid — keyset rather than offset, because posts
+ * keep arriving while a reader pages backwards and an offset would slide
+ * under them. `limit` defaults server-side to the standard tail length.
+ *
+ * The response is `list_gazette_posts_ok { posts, has_more, before_id }`,
+ * posts oldest-first within the page.
  */
-export function encodeListGazettePosts(): Frame {
-  return controlFrame("list_gazette_posts", {});
+export function encodeListGazettePosts(opts?: {
+  beforeId?: number;
+  limit?: number;
+}): Frame {
+  const params: Record<string, number> = {};
+  if (opts?.beforeId !== undefined) params.before_id = opts.beforeId;
+  if (opts?.limit !== undefined) params.limit = opts.limit;
+  return controlFrame("list_gazette_posts", params);
 }
 
 /**

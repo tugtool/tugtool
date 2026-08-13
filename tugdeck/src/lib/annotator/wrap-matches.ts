@@ -41,6 +41,22 @@ export interface TextRunMatch {
    * the summary the verdict already carried.
    */
   title?: string;
+  /**
+   * A HOLD on the run rather than a mark of it: the wrapper consumes the
+   * range and emits no element, leaving the text exactly as it was.
+   *
+   * This exists because two scans can want the same characters while the
+   * answer that decides between them is asynchronous. `tugtool/kind-floor` is
+   * shaped like a relative path and like a session callsign at once; the
+   * session verdict arrives a batch later, and whichever scan claims the run
+   * first blocks the other permanently (overlaps are dropped, and
+   * `dropStaleWraps` would never revisit a still-valid path wrap). Deciding
+   * before the answer is deciding wrong whenever the token is also a real
+   * directory. So a pending session candidate reserves its run for one
+   * verdict batch: a moment of plain text bought in exchange for a correct
+   * answer. `payload` is ignored for a reserved entry.
+   */
+  reserved?: true;
 }
 
 /** A text node to scan, and how much license the scan has over it. */
@@ -98,6 +114,12 @@ export function collectTextNodes(root: HTMLElement): TextNodeSite[] {
  * Matches must be sorted by `start`; any that overlaps one already taken
  * is skipped, so a caller that produces two readings of the same run gets
  * the first rather than a corrupted node.
+ *
+ * A `reserved` match takes its run out of contention without marking it — the
+ * node's text comes out byte-identical, and no later match may claim those
+ * characters on this pass. Two cursors is what that costs: `taken` is how far
+ * the overlap check has consumed, `emitted` is how much text has been written
+ * out. They differ exactly across a reservation.
  */
 export function wrapMatchesInTextNode(
   node: Text,
@@ -108,11 +130,15 @@ export function wrapMatchesInTextNode(
   const document = node.ownerDocument;
   const text = node.data;
   const fragment = document.createDocumentFragment();
-  let cursor = 0;
+  let emitted = 0;
+  let taken = 0;
   for (const match of matches) {
-    if (match.start < cursor || match.end > text.length) continue;
-    if (match.start > cursor) {
-      fragment.appendChild(document.createTextNode(text.slice(cursor, match.start)));
+    if (match.start < taken || match.end > text.length) continue;
+    taken = match.end;
+    // A hold, not a mark: the run stays prose, and stays unavailable.
+    if (match.reserved === true) continue;
+    if (match.start > emitted) {
+      fragment.appendChild(document.createTextNode(text.slice(emitted, match.start)));
     }
     const span = document.createElement("span");
     span.setAttribute(WRAPPED_ATTRIBUTE, "");
@@ -120,11 +146,12 @@ export function wrapMatchesInTextNode(
     stampAnnotation(span, match.payload);
     if (match.title !== undefined) span.title = match.title;
     fragment.appendChild(span);
-    cursor = match.end;
+    emitted = match.end;
   }
-  if (cursor === 0) return;
-  if (cursor < text.length) {
-    fragment.appendChild(document.createTextNode(text.slice(cursor)));
+  // Nothing was wrapped — a node of pure reservations is a node untouched.
+  if (emitted === 0) return;
+  if (emitted < text.length) {
+    fragment.appendChild(document.createTextNode(text.slice(emitted)));
   }
   parent.replaceChild(fragment, node);
 }

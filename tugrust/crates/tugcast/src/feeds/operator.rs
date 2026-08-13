@@ -35,7 +35,7 @@ use tracing::warn;
 
 use crate::session_ledger::{FactRow, FactSearchFilter, GazetteSearchFilter, SessionLedger};
 use crate::shell_ledger::ShellLedger;
-use tugcast_core::types::{GazetteAuthor, GazettePost};
+use tugcast_core::types::{GazetteAuthor, GazettePost, GazetteRef, GazetteRefKind};
 
 // MARK: - Caps
 
@@ -940,6 +940,54 @@ fn compose_answer_input(question: &str, scrollback: &str, results: &str, forced:
     out
 }
 
+/// The session an answer is *about*, when its refs name exactly one and the
+/// ledger holds it — otherwise `None`.
+///
+/// Two gates, and both are load-bearing:
+///
+///  - **Shape.** A full session uuid, nothing else. This rejects the
+///    `project/callsign` spelling a model might write into a ref target,
+///    which is not a session key anywhere: the ledger resolves a uuid, a
+///    unique 8-char prefix, or a bare callsign, and a pair matches none of
+///    them.
+///  - **The ledger.** `get` answers whether the session exists at all. This
+///    is the gate that makes the header honest, because nothing upstream
+///    checked: `validate_refs` exempts Session refs from its corpus check.
+///
+/// Zero session refs, two or more, or one the ledger cannot answer for all
+/// leave the post unattributed. A ref that fails these gates is still KEPT —
+/// it renders in the provenance strip, inert if it resolves to nothing. This
+/// governs only what is promoted to the row's identity.
+fn sole_ledger_session(ctx: &OperatorContext, refs: &[GazetteRef]) -> Option<String> {
+    let mut sessions = refs
+        .iter()
+        .filter(|r| matches!(r.kind, GazetteRefKind::Session));
+    let only = sessions.next()?;
+    if sessions.next().is_some() {
+        return None;
+    }
+    if !is_session_uuid(&only.target) {
+        return None;
+    }
+    match ctx.ledger.get(&only.target) {
+        Ok(Some(_)) => Some(only.target.clone()),
+        Ok(None) => None,
+        Err(err) => {
+            tracing::warn!(error = %err, "gazette operator: session lookup failed; not stamping");
+            None
+        }
+    }
+}
+
+/// True when `id` is a full session uuid — 8-4-4-4-12 lowercase hex.
+fn is_session_uuid(id: &str) -> bool {
+    id.len() == 36
+        && id.char_indices().all(|(i, c)| match i {
+            8 | 13 | 18 | 23 => c == '-',
+            _ => c.is_ascii_hexdigit() && !c.is_ascii_uppercase(),
+        })
+}
+
 /// The Operator side of the Gazette: a question in, a post out.
 pub struct OperatorPipeline {
     pub ctx: Arc<OperatorContext>,
@@ -991,12 +1039,27 @@ impl OperatorPipeline {
                         "gazette operator: refs dropped — target not in the results verbatim",
                     );
                 }
+                // An answer that rests on exactly one session IS about that
+                // session, and the row says so: the id becomes the post's
+                // identity, which the card renders as the header-trailing
+                // citation and filters out of the provenance strip.
+                //
+                // Gated, because `validate_refs` vets nothing here.  It
+                // exempts Session refs from its verbatim-corpus check
+                // outright — sound where it was written, since the
+                // Reporter's session id is stamped by the bridge from the
+                // wake and legitimately appears in no frame's text, but the
+                // Operator's session refs are model-recalled from verb
+                // results and reach this point entirely unchecked. Promoting
+                // one to the row's identity unchecked would make a
+                // hallucinated id a header citation and a raise target.
+                let session_id = sole_ledger_session(&self.ctx, &validated.kept);
                 self.publish(
                     GazettePost {
                         id: None,
                         at_ms: now_ms(),
                         author: GazetteAuthor::Operator,
-                        session_id: None,
+                        session_id,
                         wake_reason: None,
                         body: post.body,
                         refs: validated.kept,
@@ -2188,5 +2251,106 @@ mod tests {
                 "verb {verb} has an executor but is never offered to the model"
             );
         }
+    }
+
+    // MARK: - The answer's session stamp
+
+    const HELD: &str = "123e4567-e89b-42d3-a456-426614174000";
+    const UNHELD: &str = "99999999-9999-4999-a999-999999999999";
+
+    fn session_ref(target: &str) -> GazetteRef {
+        GazetteRef {
+            kind: GazetteRefKind::Session,
+            target: target.to_string(),
+        }
+    }
+
+    fn file_ref() -> GazetteRef {
+        GazetteRef {
+            kind: GazetteRefKind::File,
+            target: "tugdeck/src/main.tsx".to_string(),
+        }
+    }
+
+    /// A fixture whose ledger holds exactly one session, `HELD`.
+    fn fixture_with_session() -> Fixture {
+        let f = fixture();
+        f.ctx
+            .ledger
+            .record_spawn(HELD, "ws", "/proj", "card-1", 1_000, None)
+            .expect("spawn");
+        f
+    }
+
+    #[test]
+    fn a_sole_session_ref_the_ledger_holds_becomes_the_answers_session() {
+        let f = fixture_with_session();
+        assert_eq!(
+            sole_ledger_session(&f.ctx, &[file_ref(), session_ref(HELD)]),
+            Some(HELD.to_string()),
+        );
+    }
+
+    #[test]
+    fn a_session_ref_the_ledger_cannot_answer_for_stamps_nothing() {
+        let f = fixture_with_session();
+        // Well-shaped and entirely unchecked upstream — this is the case the
+        // ledger gate exists for, since a model can recall an id that never
+        // existed.
+        assert_eq!(sole_ledger_session(&f.ctx, &[session_ref(UNHELD)]), None);
+    }
+
+    #[test]
+    fn a_project_callsign_spelling_stamps_nothing() {
+        let f = fixture_with_session();
+        // Not a session key anywhere: the ledger resolves a uuid, a unique
+        // 8-char prefix, or a bare callsign, and a pair matches none.
+        assert_eq!(
+            sole_ledger_session(&f.ctx, &[session_ref("tugtool/kind-floor")]),
+            None,
+        );
+    }
+
+    #[test]
+    fn two_session_refs_or_none_stamp_nothing() {
+        let f = fixture_with_session();
+        f.ctx
+            .ledger
+            .record_spawn(UNHELD, "ws", "/proj", "card-2", 2_000, None)
+            .expect("spawn");
+        // Two the ledger holds is still ambiguous — the row has one identity.
+        assert_eq!(
+            sole_ledger_session(&f.ctx, &[session_ref(HELD), session_ref(UNHELD)]),
+            None,
+        );
+        assert_eq!(sole_ledger_session(&f.ctx, &[file_ref()]), None);
+        assert_eq!(sole_ledger_session(&f.ctx, &[]), None);
+    }
+
+    #[test]
+    fn an_unstampable_session_ref_is_still_kept_as_a_ref() {
+        // The gate governs the row's IDENTITY, not its provenance strip: a
+        // session ref the ledger cannot answer for still rides the post and
+        // renders inert. `validate_refs` is what decides that, and it exempts
+        // Session refs from the corpus check outright — which is exactly why
+        // the stamp needs its own gate.
+        let validated = crate::feeds::reporter_wake::validate_refs(
+            vec![session_ref(UNHELD)],
+            &["no mention of any session here"],
+        );
+        assert_eq!(validated.kept.len(), 1);
+        assert_eq!(validated.kept[0].target, UNHELD);
+        assert!(validated.dropped.is_empty());
+    }
+
+    #[test]
+    fn the_uuid_shape_check_takes_only_full_lowercase_uuids() {
+        assert!(is_session_uuid(HELD));
+        assert!(!is_session_uuid(&HELD.to_uppercase()));
+        // A unique 8-char prefix IS a ledger key, but it is not what a
+        // citation can carry: the chip needs the full id.
+        assert!(!is_session_uuid(&HELD[..8]));
+        assert!(!is_session_uuid(""));
+        assert!(!is_session_uuid("123e4567-e89b-42d3-a456-42661417400z"));
     }
 }

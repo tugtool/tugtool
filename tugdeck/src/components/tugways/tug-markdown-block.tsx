@@ -166,6 +166,26 @@ export interface TugMarkdownBlockProps {
    * finalized blocks) and at every streaming delta.
    */
   annotation?: AnnotationContext;
+
+  /**
+   * Called after every annotation pass this block performs, with the
+   * container that was just marked — the mount render, the context-identity
+   * re-mark, and each gated verdict re-mark.
+   *
+   * The seam exists because a consumer that has to act on what a pass
+   * produced (collecting `[data-tug-annotation="session"]` spans to portal
+   * live chips into, say) has **no ordering guarantee** without it. A sibling
+   * hook subscribing to the same `VerdictBatcher` would appear to work — child
+   * effects subscribe before parent effects, so this block's listener happens
+   * to run first — and that is an accident of tree shape, not a contract: one
+   * refactor moving the hook up a level starts collecting spans before they
+   * exist. This fires exactly once per pass, from inside the pass's own
+   * effect, where the ordering is not a coincidence.
+   *
+   * Identity-stable is not required; the callback is read from a ref, so a
+   * fresh closure per render costs nothing and never re-runs an effect.
+   */
+  onAnnotated?: (container: HTMLElement) => void;
 }
 
 export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
@@ -175,8 +195,13 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
   className,
   findable = false,
   annotation: annotationProp,
+  onAnnotated,
 }) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  // Live-ref'd so a consumer may pass a fresh closure every render without
+  // re-running the annotation effect below ([L07]).
+  const onAnnotatedRef = React.useRef(onAnnotated);
+  onAnnotatedRef.current = onAnnotated;
 
   // A markdown block inside an annotation scope is annotated whether or
   // not whoever rendered it passed the context down. That fallback is the
@@ -330,12 +355,14 @@ export const TugMarkdownBlock: React.FC<TugMarkdownBlockProps> = ({
     const el = containerRef.current;
     if (el === null || annotation === undefined) return;
     annotateElement(el, annotation);
+    onAnnotatedRef.current?.(el);
     const subscribe = annotation.subscribe;
     if (subscribe === undefined) return;
     return subscribe(() => {
       const target = containerRef.current;
       if (target === null || !containerAwaitsVerdicts(target)) return;
       annotateElement(target, annotation);
+      onAnnotatedRef.current?.(target);
     });
   }, [annotation]);
 

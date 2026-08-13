@@ -42,7 +42,9 @@ import {
   NO_COMMIT_VERDICT,
 } from "@/lib/annotator/commit-resolution";
 import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { resolveSessionRef } from "@/lib/annotator/session-resolution";
 import { VerdictBatcher } from "@/lib/annotator/verdict-batching";
+import { sessionCitationStore } from "@/lib/session-citation-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
 import { annotationEntryFor } from "@/lib/annotator/registry";
@@ -176,9 +178,15 @@ export function useAnnotationContext(
   // needs no effect-cleanup of its own — the last consumer's unsubscribe
   // detaches it.
   const subscribe = useMemo(() => {
-    const sources = [pathResolutionStore, names, commits].filter(
-      (source): source is NonNullable<typeof source> => source !== null,
-    );
+    // The citation store joins the batcher for the same reason the path store
+    // does: a session verdict arriving is what turns a reserved run into a
+    // citation, and without it here the run would stay reserved forever.
+    const sources = [
+      pathResolutionStore,
+      sessionCitationStore,
+      names,
+      commits,
+    ].filter((source): source is NonNullable<typeof source> => source !== null);
     return new VerdictBatcher(sources).subscribe;
   }, [names, commits]);
   return useMemo(
@@ -186,6 +194,9 @@ export function useAnnotationContext(
       isKnownSlashCommand,
       resolvePath,
       resolveCommit,
+      // Parity cuts both ways: a session spelled in assistant prose is the
+      // same reference it is in a Gazette post, and gets the same chip.
+      resolveSession: resolveSessionRef,
       commitRoot: projectDir,
       subscribe,
     }),

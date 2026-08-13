@@ -179,6 +179,7 @@ import {
 } from "@/components/tugways/cards/session-load-control-bar";
 import { deriveColdRestoreActive } from "@/components/tugways/cards/session-card-restore-gate";
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
+import { useSessionCitationPortals } from "@/components/tugways/session-citation-portals";
 import { TugQuietLine } from "@/components/tugways/tug-quiet-line";
 import { SessionCompactionEntry } from "@/components/tugways/cards/session-compaction-entry";
 import { TugTranscriptEntry } from "@/components/tugways/tug-transcript-entry";
@@ -857,6 +858,36 @@ const StreamedTextGate: React.FC<StreamedTextGateProps> = ({
   return <>{children}</>;
 };
 
+/**
+ * The assistant's prose — the streaming markdown block, plus the live session
+ * citations its annotation pass earns.
+ *
+ * A component rather than three lines in `CodeRowBody`'s builder because
+ * `useSessionCitationPortals` is a hook and the builder is a loop. The hook
+ * drives off the block's own `onAnnotated`, which is what guarantees the
+ * confirmed session spans exist before anything goes looking for them.
+ */
+const AssistantTextBody: React.FC<{
+  streamingStore: PropertyStore;
+  streamingPath: string;
+  annotation: AnnotationContext | undefined;
+}> = ({ streamingStore, streamingPath, annotation }) => {
+  const { onAnnotated, portals } = useSessionCitationPortals();
+  return (
+    <>
+      <TugMarkdownBlock
+        streamingStore={streamingStore}
+        streamingPath={streamingPath}
+        className="session-card-transcript-code-body"
+        findable
+        annotation={annotation}
+        onAnnotated={onAnnotated}
+      />
+      {portals}
+    </>
+  );
+};
+
 // ---------------------------------------------------------------------------
 // `CodeRowBody` — iterate the turn's Message sequence ([D07]).
 //
@@ -1081,11 +1112,9 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
           streamingPath={path}
           alwaysMount={message === lastMessage}
         >
-          <TugMarkdownBlock
+          <AssistantTextBody
             streamingStore={streamingStore}
             streamingPath={path}
-            className="session-card-transcript-code-body"
-            findable
             annotation={annotation}
           />
         </StreamedTextGate>,

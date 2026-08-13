@@ -17,6 +17,7 @@
 import type { CommitVerdict } from "./commit-resolution";
 import type { PathReference } from "./detect-path-reference";
 import type { PathVerdict } from "./path-resolution";
+import type { SessionVerdict } from "./session-resolution";
 
 /** The entity types the annotator recognizes. */
 export type AnnotationKind =
@@ -27,7 +28,8 @@ export type AnnotationKind =
   | "file-path"
   | "directory"
   | "image"
-  | "commit-sha";
+  | "commit-sha"
+  | "session";
 
 /**
  * The class every annotated element carries, whatever its kind and
@@ -76,6 +78,18 @@ export interface AnnotationContext {
    * bound to no project — then no sha resolves, and the field is unused.
    */
   commitRoot: string | null;
+  /**
+   * Does this candidate name a real session? Optional, and its absence means
+   * "do not scan for sessions at all" — the gallery and non-transcript hosts
+   * never mark a session candidate and never reserve a run for one.
+   *
+   * Unlike the other resolvers, a `pending` answer here does more than
+   * withhold a mark: it RESERVES the run, so the path scan cannot claim a
+   * `project/callsign` token while the ledger's answer is still out. See
+   * `annotate-content.ts` and `session-resolution.ts` for why the two scans
+   * cannot simply be ordered.
+   */
+  resolveSession?: (target: string) => SessionVerdict;
   /**
    * Whether running prose on this surface should be read as *citing* paths.
    *

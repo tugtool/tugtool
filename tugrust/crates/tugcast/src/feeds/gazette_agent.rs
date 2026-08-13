@@ -67,8 +67,14 @@ pub const TOKEN_WAKE_TOKENS_KEY: &str = "token_wake_tokens";
 /// Per-session buffer cap, in frames.
 pub const BUFFER_MAX_FRAMES_KEY: &str = "buffer_max_frames";
 
-/// How many rows the card renders. A render window, never a deletion — the
-/// ledger keeps everything and the Operator searches all of it.
+/// How much history the card OPENS WITH, in rows — the `limit` on its
+/// mount-time read, and on each older page it asks for afterwards.
+///
+/// It was a render window until the card learned to scroll back; now the
+/// reader can page past it, and what bounds the list is the deck's own
+/// `GAZETTE_MAX_ROWS` ceiling. Never a deletion in either reading — the
+/// ledger keeps everything and the Operator searches all of it. The name
+/// outlives the change, which is why the meaning is written down here.
 pub const CARD_ROWS_KEY: &str = "card_rows";
 
 /// The model both personas run on.
@@ -219,6 +225,19 @@ pub fn build_pool(
 /// the same measure Rust-side (`clamp_post_body`), so a model that ignores the
 /// budget still cannot put a long post in the channel.
 ///
+/// The budget's size was never the problem with truncation; nothing told the
+/// model to compose sentences that FIT it. So the wording now demands complete
+/// sentences within the budget — end sooner rather than write past it — and
+/// `clamp_post_body` follows the same principle when it does fire, cutting at a
+/// sentence boundary so a clamped post still ends on a period.
+///
+/// Backticks are asked for rather than hoped for. The body renders as markdown,
+/// where a backticked name is a code span the annotator resolves — clickable by
+/// being backticked — and the model was already emitting them by habit, which
+/// made the payoff an accident. One sentence makes it a contract. Nothing more
+/// of markdown is invited: lists and headings would only change how a
+/// 200-character notice looks in a narrow rail.
+///
 /// Two things here are load-bearing downstream and must not drift. The output
 /// is strict JSON with `{"post": null}` as a first-class answer — silence is
 /// the safe failure mode, and a repaired or partial post is worse than none.
@@ -250,6 +269,10 @@ The WAKE REASON tells you why you are being asked now. Use it:
 - token-threshold — the session has spent a lot. Say what it has been spending on.
 
 Write like a person telling a colleague what happened. One or two sentences, 200 characters of prose at the outside — this is a notice in a narrow rail, not a transcript. The budget counts prose only: file paths, commit shas, and session names you must spell exactly are free, so never vague-up a name to save characters. Concrete and specific: name what was built, what was found, what broke, what was asked and what the answer was. Never narrate your own process.
+
+Every sentence you write must be COMPLETE within that budget. The budget is not a place to be cut off at — it is the room you have, and a sentence that will not fit in what is left is a sentence to shorten or to not begin. As you near the limit, end the sentence sooner; never write past it trusting something to trim the tail, because what that leaves the reader is a half-clause with no end.
+
+Wrap exact names in backticks — paths, commit shas, symbols, commands. The post is rendered as markdown, so `tugdeck/src/main.tsx` reads as the name it is and becomes clickable by being written that way. Nothing else about markdown: no lists, no headings, no emphasis.
 
 The post is the summary, never the content. Say what happened and stop — enough that the reader knows where the session got to and can decide whether to look in, never so much that reading the post replaces opening it. If you are explaining how something works, listing every file touched, walking through the reasoning, or reproducing the answer the session already gave, you have written the content instead of the summary. The session itself is one click away; your job is to get them there knowing what they will find.
 
@@ -313,12 +336,21 @@ Answer only from the material below.";
 /// The two-round cap lives in Rust, but the model is told about it, because a
 /// model that knows this is its last chance answers with what it has instead
 /// of asking for a lookup it will never receive.
+///
+/// Prose hygiene is stated because the observed failures were both
+/// serialization artifacts rather than judgment: answers said "at
+/// 1786572090962" and spelled full UUIDs mid-sentence, because that is how the
+/// verb results carry a time and a session. The results are machine values and
+/// the answer is prose, so the conversion is the model's to make. Display-side
+/// session annotation is a backstop for the ids that slip through, not the fix.
 const OPERATOR_ANSWER_INSTRUCTIONS: &str = "\
 You are the Operator for the Gazette. Someone asked a question about the work in their coding sessions, verbs were run on your behalf, and their results are below. Answer the question.
 
 Answer like a colleague who just looked it up: lead with the answer, then the evidence for it. Be specific — name the file, the commit, the session, the date. If the results settle the question, say so plainly. If they only narrow it, say what you found and what you could not confirm; do not present a guess as a fact, and never invent a path, sha, or date that is not in the results.
 
 The channel's own posts are prose written by the Reporter and are good for locating when something happened and which session did it. The ledger and git results are ground truth. When they disagree, trust the ledgers.
+
+The results are machine values; your answer is prose. Convert as you write. Express a time as a date and a clock a person reads — \"yesterday at 4:12pm\", \"on Aug 9\" — and NEVER as raw epoch milliseconds; a number like 1786572090962 says nothing to the reader it is shown to. Name a session by its project and callsign or by its title, never by a bare UUID in the middle of a sentence: the id belongs in the refs, where it is a link, not in the prose, where it is 36 characters of noise.
 
 REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
 
@@ -386,6 +418,18 @@ mod tests {
             !reporter.contains("nothing to do with their code"),
             "naming code as the baseline is what the Reporter then narrated",
         );
+        // The budget's size was never what truncated posts mid-clause —
+        // nothing asked for sentences that FIT it. `clamp_post_body` is the
+        // backstop for a model that ignores this, not a substitute for it.
+        assert!(reporter.contains("Every sentence you write must be COMPLETE"));
+        assert!(reporter.contains("end the sentence sooner"));
+        // Backticks are asked for, not hoped for: the body renders as
+        // markdown, and a backticked name is a code span the annotator
+        // resolves — clickable BECAUSE it was written that way. Bounded
+        // deliberately; the rest of markdown would only decorate a notice in
+        // a narrow rail.
+        assert!(reporter.contains("Wrap exact names in backticks"));
+        assert!(reporter.contains("no lists, no headings, no emphasis"));
         // The facts section: the header string the composer prints has to be the
         // string the model was told about, or the paragraph explains a section
         // it never sees under that name. The dedup clause is pinned too — the
@@ -447,6 +491,11 @@ mod tests {
         assert!(answer.contains(r#""verbs""#));
         assert!(answer.contains("ONLY ONCE"));
         assert!(answer.contains("EXACTLY"));
+        // Prose hygiene: both observed leaks are serialization artifacts —
+        // the verb results carry a time as epoch ms and a session as a UUID,
+        // and answers repeated them into sentences a person has to read.
+        assert!(answer.contains("NEVER as raw epoch milliseconds"));
+        assert!(answer.contains("never by a bare UUID in the middle of a sentence"));
     }
 
     /// Every job answers with JSON that a strict parser reads, so an

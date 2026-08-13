@@ -14,14 +14,16 @@
  * identifier, its stamp, its header surface, overridden nowhere. The narrated
  * session's citation rides the header's trailing edge; copy sits in the Z1B
  * footer under the body, where the Session card puts copy. Post bodies are
- * selectable prose; ⌘C and the right-click menu work per row through the
- * shared transcript cell wiring.
+ * markdown, rendered by the transcript's own {@link TugMarkdownBlock}; ⌘C and
+ * the right-click menu work per row through the shared transcript cell wiring
+ * and reconstruct markdown from the rendered DOM.
  *
  * **The prose is annotated, not matched.** A post body goes through the
- * app's own content annotator (`useAnnotatedElement`, the opt-in a Bash
- * tool header takes), which scans the text and marks every path and every
- * sha it finds, against resolvers pointed at that post's own `projectDir`.
- * So a file named in a sentence is clickable because it is in the sentence.
+ * markdown pipeline, whose enhancer chain runs the app's own content
+ * annotator over every block: it scans the text and marks every path and
+ * every sha it finds, against resolvers pointed at that post's own
+ * `projectDir`. So a file named in a sentence is clickable because it is in
+ * the sentence, and a backticked one is clickable because it is backticked.
  * The refs the model listed alongside its prose are a SEPARATE list, written
  * independently and overlapping only by accident; they are used for one
  * thing, the trailing provenance strip, and only for the entries the prose
@@ -71,10 +73,12 @@ import { formatDurationMs } from "@/components/tugways/cards/session-card-teleme
 import {
   formatTranscriptTimestamp,
   useTranscriptCellMenu,
+  type CopyMarkdownResolver,
 } from "@/components/tugways/cards/transcript-host-helpers";
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugEntryShell } from "@/components/tugways/tug-entry-shell";
 import { TugLabel } from "@/components/tugways/tug-label";
+import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
@@ -86,10 +90,8 @@ import {
   TugTranscriptEntry,
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
-import {
-  AnnotationScope,
-  useAnnotatedElement,
-} from "@/components/tugways/annotation-scope";
+import { AnnotationScope } from "@/components/tugways/annotation-scope";
+import { useSessionCitationPortals } from "@/components/tugways/session-citation-portals";
 import { ANNOTATION_CLASS, type AnnotationContext } from "@/lib/annotator/types";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
 import {
@@ -102,7 +104,9 @@ import { annotationEntryFor } from "@/lib/annotator/registry";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
 import { dataAttributesForPayload } from "@/lib/annotator/payloads";
 import { makeReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { resolveSessionRef } from "@/lib/annotator/session-resolution";
 import { VerdictBatcher } from "@/lib/annotator/verdict-batching";
+import { sessionCitationStore } from "@/lib/session-citation-store";
 import { endStateBadgeFor } from "@/lib/code-session-store/end-state";
 import {
   acquireWorkspace,
@@ -122,8 +126,10 @@ import {
 import {
   getGazetteStore,
   useGazette,
+  LOAD_OLDER_PX,
   type GazettePostEntry,
 } from "@/lib/gazette-store";
+import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { buildSlashCommandLine } from "@/lib/slash-commands";
 import { TugAtomChip } from "@/lib/tug-atom-chip";
 import type { CompletionProvider } from "@/lib/tug-text-types";
@@ -314,9 +320,17 @@ function useGazetteAnnotation(root: GazetteRefRoot | null): AnnotationContext {
     [commits],
   );
   const subscribe = useMemo(() => {
-    const sources = [pathResolutionStore, names, commits].filter(
-      (source): source is NonNullable<typeof source> => source !== null,
-    );
+    // The citation store joins the batcher unconditionally: it is a singleton
+    // with no per-project identity, and a session verdict arriving is exactly
+    // as much a reason to re-mark as a path verdict is. Without it here, a
+    // session run reserved on the first pass would stay reserved — the mark
+    // waits on a batch that never comes.
+    const sources = [
+      pathResolutionStore,
+      sessionCitationStore,
+      names,
+      commits,
+    ].filter((source): source is NonNullable<typeof source> => source !== null);
     return new VerdictBatcher(sources).subscribe;
   }, [names, commits]);
   return useMemo(
@@ -324,28 +338,47 @@ function useGazetteAnnotation(root: GazetteRefRoot | null): AnnotationContext {
       isKnownSlashCommand: () => false,
       resolvePath,
       resolveCommit,
+      // The Gazette is where sessions are named in prose — a post's whole
+      // subject is which session did what — so it scans for them.
+      resolveSession: resolveSessionRef,
       commitRoot: projectDir,
       // A Reporter post is a digest of file work; a path-shaped token in one
       // of its sentences is pointing at that file. See the field's own note.
       proseCitesPaths: true,
       subscribe,
     }),
+    // `resolveSessionRef` is a module function, not a closure over anything
+    // here — the citation store is a singleton keyed by callsign, and a
+    // session's identity is app-wide rather than per-post.
     [resolvePath, resolveCommit, projectDir, subscribe],
   );
 }
 
 /**
- * A post body, annotated by the app's own content annotator.
+ * A post body, rendered as markdown and annotated by the app's own content
+ * annotator.
  *
- * The body is plain text — the model's prose, newlines and all — and the
- * annotator walks it the way it walks every other non-markdown surface
- * (`useAnnotatedElement`, the same opt-in a Bash tool header takes). It
- * finds the paths and the shas itself, by scanning, and marks each one that
- * its resolvers confirm: a file that stats, a commit git can show. So a
- * mention becomes clickable because it is IN the sentence, not because the
- * model happened to list it — which is the whole difference from what this
- * did before, when a bespoke matcher could only ever find targets the ref
- * list already named and left everything else as dead text.
+ * The body is markdown — the Session transcript's markdown, through the
+ * transcript's own primitive ({@link TugMarkdownBlock} in static
+ * `initialText` mode): the same pulldown-cmark parse, the same DOMPurify
+ * sanitize, the same enhancer chain. So a backticked name is a code span
+ * rather than three literal characters, a bare URL is an anchor, and a
+ * fence is a fence.
+ *
+ * The annotation comes with it. `renderIncremental`'s enhancer chain runs
+ * `annotateContent` over every block it builds, so paths and shas are found
+ * by scanning the prose and marked where each resolver confirms them: a file
+ * that stats, a commit git can show. A mention is clickable because it is IN
+ * the sentence, not because the model also listed it — the difference from
+ * the bespoke matcher this replaced, which could only ever find targets the
+ * ref list already named. Inline `<code>` gets the same treatment through
+ * `classifyInlineCode`, which is what makes a backticked path clickable by
+ * being backticked.
+ *
+ * The block reads its {@link AnnotationContext} off the {@link AnnotationScope}
+ * the row already mounts — no prop to thread. Static mode is correct: a post
+ * never changes after it is written, and the pending→answer swap is a React
+ * key change ([L26]) that remounts the block outright.
  *
  * Nothing here places anything: the marks land in the prose where the prose
  * put them. The click and the context menu are serviced by the transcript
@@ -359,17 +392,25 @@ function GazettePostBody({
   post: GazettePostEntry;
   bodyRef?: React.MutableRefObject<HTMLElement | null>;
 }): React.ReactElement {
-  const annotatedRef = useAnnotatedElement<HTMLParagraphElement>([post.body]);
+  // A session named in the prose becomes the live citation chip, portaled
+  // into the run the annotator marked. Driven by the block's own
+  // `onAnnotated`, so collection cannot run before the pass that creates the
+  // spans ([P06]).
+  const { onAnnotated, portals } = useSessionCitationPortals();
   return (
-    <p
+    <div
       className="gazette-post-body"
       ref={(el) => {
-        annotatedRef.current = el;
         if (bodyRef !== undefined) bodyRef.current = el;
       }}
     >
-      {post.body}
-    </p>
+      <TugMarkdownBlock
+        key={post.key}
+        initialText={post.body}
+        onAnnotated={onAnnotated}
+      />
+      {portals}
+    </div>
   );
 }
 
@@ -537,9 +578,18 @@ function GazettePostRow({
   const at = new Date(post.atMs);
   const authorLabel = AUTHOR_LABEL[post.author];
   // Per-row ⌘C / right-click Copy — the same cell wiring the Session
-  // transcript's rows use. No markdown resolver: a post is plain prose, so
-  // copy is the selection verbatim.
-  const { ResponderScope, cellProps, bodyRef, menu } = useTranscriptCellMenu();
+  // transcript's rows use, resolver included. A selection across rendered
+  // bold or code has to come back as the markdown that produced it, which
+  // means reconstructing it from the DOM: `selectionToTranscriptMarkdown`
+  // is the transcript's own walk, and the hook writes both clipboard
+  // flavors off it ([P03]/[P05] in `transcript-host-helpers.ts`).
+  const resolveCopyMarkdown = useCallback<CopyMarkdownResolver>(
+    (bodyEl, selection) => selectionToTranscriptMarkdown(selection, bodyEl),
+    [],
+  );
+  const { ResponderScope, cellProps, bodyRef, menu } = useTranscriptCellMenu({
+    resolveCopyMarkdown,
+  });
   // The wake reason explains why this post exists at all — background to the
   // sentence, so it rides the identifier's tooltip rather than the row.
   const identifierTitle =
@@ -583,15 +633,18 @@ function GazettePostRow({
           body={<GazettePostBody post={post} bodyRef={bodyRef} />}
           controls={
             <>
-              <GazettePostZ1B post={post} />
               {chipRefs.length > 0 ? (
-                // Its OWN row, beneath the control line rather than inside
-                // it. Sharing the Z1B's flex meant the atoms queued after
-                // OK / elapsed / COPY and wrapped wherever the width ran
-                // out, so where a chip landed said nothing about what it
-                // was — the "spewed out at random positions" reading. On a
-                // row of their own they are a provenance strip: same place
-                // every time, however many there are.
+                // Its OWN row, and ABOVE the Z1B: these atoms are the end of
+                // the CONTENT — the rest of what the post rests on, which the
+                // prose ran out of room to name — and the Z1B is the row's
+                // footer, under everything the post says. Below the footer
+                // they read as debris after the end; above it they read as
+                // the last thing the post tells you.
+                //
+                // A row of their own for the reason they are not in the Z1B's
+                // flex: sharing it queued the atoms after OK / elapsed / COPY
+                // and wrapped them wherever the width ran out, so where a chip
+                // landed said nothing about what it was.
                 <div className="gazette-post-refs">
                   {chipRefs.map((r) => (
                     <RefAtom
@@ -602,6 +655,7 @@ function GazettePostRow({
                   ))}
                 </div>
               ) : null}
+              <GazettePostZ1B post={post} />
             </>
           }
         />
@@ -627,12 +681,38 @@ export function GazetteContent({
   // out — reading it afterwards would always say "no", since the arriving row
   // is exactly what pushed the bottom away.
   const followingRef = useRef(true);
+  // The transcript's height as of the PREVIOUS committed render, and the key
+  // of the post that led it. Written at the end of every layout pass, read at
+  // the top of the next: together they say "older rows were prepended, and
+  // this much taller", which is exactly what the scroll compensation needs.
+  // Deliberately not written from the scroll handler — a prepend fires no
+  // scroll event, so a ref written there would hold whatever the last human
+  // scroll saw.
+  const prevScrollHeightRef = useRef(0);
+  const prevFirstKeyRef = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el === null || !followingRef.current) return;
-    // [L06]: following the newest post is a scroll write, not React state.
-    el.scrollTop = el.scrollHeight;
+    if (el === null) return;
+    const firstKey = posts.length > 0 ? posts[0]!.key : null;
+    const prepended =
+      prevFirstKeyRef.current !== null &&
+      firstKey !== null &&
+      firstKey !== prevFirstKeyRef.current;
+    if (followingRef.current) {
+      // [L06]: following the newest post is a scroll write, not React state.
+      el.scrollTop = el.scrollHeight;
+    } else if (prepended) {
+      // Older history arrived above the reader. Push the viewport down by
+      // exactly what was inserted, so the line being read stays under the
+      // eye. Guarded on `followingRef` because the follow effect above owns
+      // `scrollTop` in the other case, and one property cannot have two
+      // owners — in practice a reader up in history is never following, so
+      // the guard states that invariant rather than adding a condition.
+      el.scrollTop += el.scrollHeight - prevScrollHeightRef.current;
+    }
+    prevScrollHeightRef.current = el.scrollHeight;
+    prevFirstKeyRef.current = firstKey;
   }, [posts]);
 
   // Annotation gestures — the Session transcript's own delegated layer,
@@ -680,6 +760,10 @@ export function GazetteContent({
     if (el === null) return;
     followingRef.current =
       el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK_PX;
+    // Near the top, ask for the page before this one. The store owns every
+    // guard — nothing to ask for, nothing to anchor on, a request already
+    // out — because this fires many times per scroll gesture.
+    if (el.scrollTop < LOAD_OLDER_PX) getGazetteStore()?.loadOlder();
   };
 
   return (

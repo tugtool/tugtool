@@ -32,7 +32,13 @@
  *     absent from the post's ref list still become clickable, because the
  *     content annotator scans the text rather than matching the ref list.
  *     The ref list feeds only the trailing provenance strip, and only for
- *     entries the prose never named.
+ *     entries the prose never named — and the strip sits at the END of the
+ *     content, above the Z1B, where "the rest of what this post rests on"
+ *     belongs.
+ *     The body is MARKDOWN, through the Session transcript's own
+ *     `TugMarkdownBlock`: a backticked name renders as a code span with no
+ *     literal backticks left in the reader's text, and the span is annotated
+ *     because it is a code span; a bare URL renders as a real anchor.
  *  3. **The composer completes a round trip.** Typing a question and pressing
  *     the send button sends GAZETTE_INPUT; the Operator echoes the question as a user post
  *     and then answers. Under the app-test gate the agent pool answers nothing
@@ -64,6 +70,7 @@
  * @covers tugdeck/src/lib/annotator/commit-summary.ts
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
+ * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  */
 
 import { describe, expect, test } from "bun:test";
@@ -415,9 +422,111 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           })()`,
         );
         note("trailing file chip", JSON.stringify(fileChip));
+        // …and it sits at the END OF THE CONTENT, above the Z1B — the rest
+        // of what the post rests on, not debris after the footer. Asserted
+        // as DOM order within the controls slot, which is what the reading
+        // order follows (the slot stacks; see `gazette-card.css`).
+        const stripOrder = await app.evalJS<{
+          strip: number;
+          z1b: number;
+        } | null>(
+          `(function () {
+            var cell = document.querySelector(${JSON.stringify(POST)});
+            if (cell === null) return null;
+            var controls = cell.querySelector(".tug-transcript-entry__controls");
+            if (controls === null) return null;
+            var kids = Array.from(controls.children);
+            return {
+              strip: kids.findIndex(function (k) {
+                return k.classList.contains("gazette-post-refs");
+              }),
+              z1b: kids.findIndex(function (k) {
+                return k.classList.contains("gazette-post-z1b");
+              }),
+            };
+          })()`,
+        );
+        note("controls order", JSON.stringify(stripOrder));
+        expect(stripOrder?.strip, "the strip is in the controls slot").toBeGreaterThanOrEqual(0);
+        expect(stripOrder?.z1b, "so is the Z1B").toBeGreaterThanOrEqual(0);
+        expect(
+          stripOrder!.strip < stripOrder!.z1b,
+          "the strip precedes the Z1B",
+        ).toBe(true);
         expect(fileChip?.title).toBe("file: tugdeck/src/lib/layout-imposer.ts");
         expect(fileChip?.annotation).toBe("file-path");
         expect(fileChip?.path?.startsWith("/")).toBe(true);
+
+        // ── 2c. The body is MARKDOWN, rendered by the transcript's own
+        // primitive. A backticked name is a code span rather than three
+        // literal characters, and being a code span is what makes it
+        // clickable — `classifyInlineCode` runs the path resolver over every
+        // inline `<code>`. A bare URL is an anchor for the same reason: the
+        // markdown pipeline's enhancer chain does link detection, which the
+        // old plain-text `<p>` never reached.
+        const markdownPost: WirePost = {
+          id: 9004,
+          at_ms: AT_MS + 180_000,
+          author: "reporter",
+          body: "Touched `gazette-body-segments.ts` while reading https://example.com/gazette for context.",
+          refs: [],
+          wake_reason: "turn-end",
+          project_dir: REPO_ROOT,
+        };
+        expect(await publish(app, markdownPost)).toBe(true);
+
+        // Located by its own words rather than by position: the row order is
+        // claim 2's business, and a positional selector here would fail for
+        // that reason instead of this one.
+        const MD_BODY = `(function () {
+          return Array.from(document.querySelectorAll(${JSON.stringify(BODY)}))
+            .find(function (el) {
+              return (el.textContent || "").indexOf("for context") !== -1;
+            }) || null;
+        })()`;
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var el = ${MD_BODY};
+            if (el === null) return false;
+            var code = el.querySelector("code");
+            return code !== null
+              && code.getAttribute("data-tug-annotation") === "file-path";
+          })()`,
+          { timeoutMs: 25_000 },
+        );
+        const markdown = await app.evalJS<{
+          text: string;
+          code: string | null;
+          codePath: string | null;
+          href: string | null;
+          anchorKind: string | null;
+        } | null>(
+          `(function () {
+            var el = ${MD_BODY};
+            if (el === null) return null;
+            var code = el.querySelector("code");
+            var anchor = el.querySelector("a[href]");
+            return {
+              text: (el.textContent || "").trim(),
+              code: code === null ? null : (code.textContent || "").trim(),
+              codePath: code === null ? null : code.getAttribute("data-path"),
+              href: anchor === null ? null : anchor.getAttribute("href"),
+              anchorKind:
+                anchor === null ? null : anchor.getAttribute("data-tug-annotation"),
+            };
+          })()`,
+        );
+        note("markdown body", JSON.stringify(markdown));
+        // The backticks are gone from the reader's text — they were syntax,
+        // and syntax is what a renderer consumes.
+        expect(markdown?.text).not.toContain("`");
+        expect(markdown?.code).toBe("gazette-body-segments.ts");
+        // And the span the backticks made is annotated, against this repo.
+        expect(markdown?.codePath?.startsWith("/")).toBe(true);
+        expect(markdown?.codePath).toContain("gazette-body-segments.ts");
+        // The bare URL is a real anchor, marked as one.
+        expect(markdown?.href).toBe("https://example.com/gazette");
+        expect(markdown?.anchorKind).toBe("url");
 
         // ── 3. The composer round-trips through the Operator. ─────────────
         const question = "which sessions touched the imposer";
@@ -490,7 +599,10 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
             .some(function (el) {
               var body = el.querySelector(".gazette-post-body");
               return el.getAttribute("data-author") === "operator"
-                && (body === null ? "" : body.textContent || "").indexOf("Couldn't answer") !== -1;
+                // Matched from the apostrophe onward: the body renders as
+                // markdown, and pulldown-cmark's smart punctuation turns the
+                // typed "Couldn't" into a curly one on the way to the reader.
+                && (body === null ? "" : body.textContent || "").indexOf("t answer that") !== -1;
             })`,
           { timeoutMs: 30_000 },
         );

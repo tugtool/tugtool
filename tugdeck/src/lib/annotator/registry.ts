@@ -285,6 +285,25 @@ registerAnnotationKind("commit-sha", {
   suppressStandardItems: false,
 });
 
+const SESSION_MENU_ENTRIES: AnnotationMenuEntry[] = [
+  { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Session Id" },
+  INSERT_ENTRY,
+];
+
+registerAnnotationKind("session", {
+  // **No `primaryClick`, deliberately.** A confirmed session run is where the
+  // live `TugSessionCitation` chip is portaled, and the chip owns its whole
+  // gesture — the press, the hover, whether to offer one at all. A click
+  // handler here would fire alongside it.
+  //
+  // The entry exists anyway so `annotationFromEvent` and the cell menu's
+  // sampling see a HIT rather than a miss: a right-click on the run still
+  // offers the session's own items, and an unregistered kind would offer
+  // nothing while looking annotated.
+  menuEntries: () => SESSION_MENU_ENTRIES,
+  suppressStandardItems: false,
+});
+
 registerAnnotationKind("image", {
   // A pasted image is bytes under an id, with no file to open — the strip
   // that holds those bytes owns the only full-size view of it.

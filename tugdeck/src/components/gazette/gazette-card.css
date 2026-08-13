@@ -105,10 +105,20 @@
      preference keeps a comfortable line rather than stretching it to the
      ceiling. */
   max-inline-size: 64ch;
-  /* Posts arrive as prose with hard newlines the model chose; honor them
-     rather than collapsing a two-beat digest into one run-on line. */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+}
+
+/* The body renders through `TugMarkdownBlock`, which ships a 1rem horizontal
+   padding as a soft default for stand-alone consumers. The transcript entry's
+   icon column already provides the gutter here, so cancel it — the [L20]
+   cascade-override pattern, the same cancel `.session-card-transcript-code-body`
+   makes. The block's own blocks anchor their type to the wrapper's 13px. */
+.gazette-post-body .tug-markdown-block {
+  --tugx-md-block-padding-x: 0;
+  width: 100%;
+}
+
+.gazette-post-body .tugx-md-block {
+  font-size: 1em;
 }
 
 /* The narrated session's citation in the header: SHRINK-ONLY truncation.
@@ -174,8 +184,8 @@
   opacity: 0;
 }
 
-/* The controls slot holds TWO stacked rows here, not one: the Z1B, and
-   under it the provenance strip. The primitive lays its controls out in a
+/* The controls slot holds TWO stacked rows here, not one: the provenance
+   strip, and under it the Z1B. The primitive lays its controls out in a
    row (`tug-transcript-entry.css`), which is right for a card whose Z1B is
    the whole slot; per [D12] a consumer that needs otherwise says so in its
    own sheet. */
@@ -187,12 +197,21 @@
 
 /* The provenance strip — refs the prose never named.
 
-   Its OWN row, beneath the Z1B rather than inside it. Sharing the Z1B's
-   flex put the atoms in line after OK / elapsed / COPY, where they wrapped
-   at whatever point the rail ran out: one post showed a chip snug against
+   Its OWN row, at the END OF THE CONTENT: under the body, above the Z1B.
+   These atoms are the rest of what the post rests on, so they belong with
+   what the post says rather than after the footer that closes it — below
+   the Z1B they read as debris trailing the end of the row.
+
+   A row of its own rather than a place in the Z1B's flex. Sharing that flex
+   put the atoms in line after OK / elapsed / COPY, where they wrapped at
+   whatever point the rail ran out: one post showed a chip snug against
    COPY and the next showed one stranded on a line of its own, so the
    position carried no meaning. Given a row, they start at the same place
    every time and the count is the only thing that varies.
+
+   The margins are a pair: the strip takes the gap off the body, and the
+   Z1B's own `margin-top` then spaces it off the strip — or off the body
+   directly, for a post with nothing unnamed to show.
 
    Refs the prose DID name never arrive here at all — the annotator already
    marked those in the sentence (`unmentionedRefs`), so this strip is the

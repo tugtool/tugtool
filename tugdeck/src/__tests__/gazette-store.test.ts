@@ -5,7 +5,14 @@
  *     request and returns pending.
  *   - `list_gazette_posts_ok` settles to ready, oldest-first.
  *   - Live GAZETTE frames fold (including while pending), dedupe against
- *     the tail by ledger id, and the channel caps at the render window.
+ *     the tail by ledger id, and the channel caps at `GAZETTE_MAX_ROWS` —
+ *     from whichever end the reader is not at.
+ *   - Scrollback: `loadOlder` asks for the page before the oldest post held;
+ *     a page prepends behind the dedupe; a page whose echoed `before_id` is
+ *     not the one outstanding is DROPPED (the response bus is a broadcast,
+ *     and a page applied twice prepends twice); a tail supersedes a page in
+ *     flight; and `hasMore` goes false both at the beginning of history and
+ *     at the ceiling.
  *   - A transient post is its own occurrence — it has no rowid to dedupe on.
  *   - Snapshots are referentially stable between folds.
  *   - The write path: `submitQuestion` sends `GAZETTE_INPUT` and holds a
@@ -21,6 +28,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 
 import {
   DEFAULT_GAZETTE_CARD_ROWS,
+  GAZETTE_MAX_ROWS,
   GazetteStore,
   publishListGazettePostsOk,
 } from "@/lib/gazette-store";
@@ -180,18 +188,33 @@ describe("GazetteStore", () => {
     expect(snap.posts[0].key).toBe("req:operator:req-1");
   });
 
-  it("the channel caps at the render window, oldest-out", () => {
+  it("card_rows sizes the opening request rather than the list", () => {
     const { store, conn } = makeStore();
     stores.push(store);
     store.getSnapshot();
+    // The knob is what the card ASKS for now — it no longer truncates what
+    // the card holds, because the reader can page past it.
+    const decoded = JSON.parse(new TextDecoder().decode(conn.frames[0].payload));
+    expect(decoded.limit).toBe(DEFAULT_GAZETTE_CARD_ROWS);
     for (let id = 1; id <= DEFAULT_GAZETTE_CARD_ROWS + 5; id++) {
       conn.pushGazetteFrame(post(id, `post ${id}`));
     }
-    const snap = store.getSnapshot();
-    expect(snap.posts.length).toBe(DEFAULT_GAZETTE_CARD_ROWS);
-    expect(snap.posts[0].body).toBe("post 6");
-    expect(snap.posts[snap.posts.length - 1].body).toBe(
-      `post ${DEFAULT_GAZETTE_CARD_ROWS + 5}`,
+    expect(store.getSnapshot().posts.length).toBe(DEFAULT_GAZETTE_CARD_ROWS + 5);
+  });
+
+  it("the accumulated list stops at the ceiling, dropping the end the reader left", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // Following the bottom: the OLDEST rows go, exactly as they always did.
+    for (let id = 1; id <= GAZETTE_MAX_ROWS + 5; id++) {
+      conn.pushGazetteFrame(post(id, `post ${id}`));
+    }
+    const followed = store.getSnapshot();
+    expect(followed.posts.length).toBe(GAZETTE_MAX_ROWS);
+    expect(followed.posts[0].body).toBe("post 6");
+    expect(followed.posts[followed.posts.length - 1].body).toBe(
+      `post ${GAZETTE_MAX_ROWS + 5}`,
     );
   });
 
@@ -431,5 +454,171 @@ describe("GazetteStore", () => {
       globalThis.setTimeout = realSetTimeout;
       globalThis.clearTimeout = realClearTimeout;
     }
+  });
+
+  // ---- Scrollback ----------------------------------------------------
+
+  /** A store holding posts 11..20 with older history behind them. */
+  function paged(): { store: GazetteStore; conn: FakeConnection } {
+    const made = makeStore();
+    stores.push(made.store);
+    made.store.getSnapshot();
+    publishListGazettePostsOk({
+      posts: Array.from({ length: 10 }, (_, i) =>
+        post(11 + i, `post ${11 + i}`),
+      ) as unknown as GazettePostWire[],
+      has_more: true,
+    });
+    return made;
+  }
+
+  /** The `list_gazette_posts` request bodies the store has sent. */
+  function requests(conn: FakeConnection): Array<Record<string, unknown>> {
+    return conn.frames
+      .map(
+        (f) =>
+          JSON.parse(new TextDecoder().decode(f.payload)) as Record<
+            string,
+            unknown
+          >,
+      )
+      .filter((body) => body.action === "list_gazette_posts");
+  }
+
+  it("loadOlder asks for the page before the oldest post held", () => {
+    const { store, conn } = paged();
+    expect(store.getSnapshot().hasMore).toBe(true);
+    store.loadOlder();
+    const sent = requests(conn);
+    expect(sent.length).toBe(2);
+    expect(sent[1].before_id).toBe(11);
+    expect(sent[1].limit).toBe(DEFAULT_GAZETTE_CARD_ROWS);
+    // And says so, so the card's scroll handler stops asking.
+    expect(store.getSnapshot().loadingOlder).toBe(true);
+  });
+
+  it("a page prepends behind the same dedupe, oldest-first", () => {
+    const { store } = paged();
+    store.loadOlder();
+    publishListGazettePostsOk({
+      posts: [
+        // The seam row repeats what is already held — a page whose boundary
+        // moved under it, which the dedupe absorbs rather than duplicating.
+        post(9, "post 9"),
+        post(10, "post 10"),
+        post(11, "post 11"),
+      ] as unknown as GazettePostWire[],
+      has_more: true,
+      before_id: 11,
+    });
+    const snap = store.getSnapshot();
+    expect(snap.posts.map((p) => p.body).slice(0, 3)).toEqual([
+      "post 9",
+      "post 10",
+      "post 11",
+    ]);
+    expect(snap.posts.length).toBe(12);
+    expect(snap.loadingOlder).toBe(false);
+    expect(snap.hasMore).toBe(true);
+  });
+
+  it("a page whose before_id is not the one outstanding is dropped", () => {
+    const { store } = paged();
+    store.loadOlder();
+    // Somebody else's page — the response bus is a broadcast, and applying
+    // this one would prepend history the store never asked for.
+    publishListGazettePostsOk({
+      posts: [post(500, "not mine")] as unknown as GazettePostWire[],
+      has_more: true,
+      before_id: 999,
+    });
+    const snap = store.getSnapshot();
+    expect(snap.posts.map((p) => p.body)).not.toContain("not mine");
+    // And the real request is still outstanding, not cleared by the impostor.
+    expect(snap.loadingOlder).toBe(true);
+  });
+
+  it("a tail supersedes a page in flight rather than stacking with it", () => {
+    const { store } = paged();
+    store.loadOlder();
+    // A reconnect re-reads the tail while the page is out.
+    publishListGazettePostsOk({
+      posts: [post(21, "post 21")] as unknown as GazettePostWire[],
+      has_more: true,
+    });
+    expect(store.getSnapshot().loadingOlder).toBe(false);
+    // The page that arrives afterwards is now nobody's, and is dropped.
+    publishListGazettePostsOk({
+      posts: [post(10, "post 10")] as unknown as GazettePostWire[],
+      has_more: true,
+      before_id: 11,
+    });
+    expect(store.getSnapshot().posts.map((p) => p.body)).not.toContain(
+      "post 10",
+    );
+  });
+
+  it("loadOlder no-ops with nothing to ask for, and while one is in flight", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // Still pending: nothing to anchor on.
+    store.loadOlder();
+    expect(requests(conn).length).toBe(1);
+
+    publishListGazettePostsOk({
+      posts: [post(1, "only")] as unknown as GazettePostWire[],
+      has_more: false,
+    });
+    // Ready, but the ledger says this is the beginning.
+    expect(store.getSnapshot().hasMore).toBe(false);
+    store.loadOlder();
+    expect(requests(conn).length).toBe(1);
+  });
+
+  it("a second loadOlder while one is out sends nothing", () => {
+    const { store, conn } = paged();
+    store.loadOlder();
+    store.loadOlder();
+    store.loadOlder();
+    expect(requests(conn).length).toBe(2);
+  });
+
+  it("hasMore goes false at the beginning of history and stays there", () => {
+    const { store } = paged();
+    store.loadOlder();
+    publishListGazettePostsOk({
+      posts: [post(10, "post 10")] as unknown as GazettePostWire[],
+      has_more: false,
+      before_id: 11,
+    });
+    expect(store.getSnapshot().hasMore).toBe(false);
+  });
+
+  it("at the ceiling the store stops asking, and paging drops the newest", () => {
+    const { store, conn } = paged();
+    // Fill to the ceiling with one enormous page.
+    store.loadOlder();
+    publishListGazettePostsOk({
+      posts: Array.from({ length: GAZETTE_MAX_ROWS }, (_, i) =>
+        post(i + 1, `old ${i + 1}`),
+      ) as unknown as GazettePostWire[],
+      has_more: true,
+      before_id: 11,
+    });
+    const snap = store.getSnapshot();
+    expect(snap.posts.length).toBe(GAZETTE_MAX_ROWS);
+    // Paging keeps what the reader is reading — the OLD end — and drops the
+    // newest rows, the opposite of what following does.
+    expect(snap.posts[0].body).toBe("old 1");
+    expect(snap.posts[snap.posts.length - 1].body).toBe(
+      `old ${GAZETTE_MAX_ROWS}`,
+    );
+    // The ledger still holds more, but a page the store would only throw
+    // away is a page it does not ask for.
+    expect(snap.hasMore).toBe(false);
+    const before = requests(conn).length;
+    store.loadOlder();
+    expect(requests(conn).length).toBe(before);
   });
 });

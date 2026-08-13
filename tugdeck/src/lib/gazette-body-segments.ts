@@ -20,6 +20,12 @@
  * The annotator finds them all, so the placing is gone and only the
  * suppression is left.)
  *
+ * **The match runs against the markdown SOURCE**, which is what a post's
+ * `body` is and what this is handed. Rendering does not enter into it: a
+ * path the model backticked is `` `tugdeck/src/x.ts` `` in the source and a
+ * `<code>` span on screen, and this sees the source, so the backticks
+ * around a target no more hide it than the sentence around it does.
+ *
  * Matching is deliberately generous, because a near-miss here costs a
  * duplicate chip rather than a lost link: a file ref counts as mentioned
  * when the body contains its full target *or* its basename, and a commit

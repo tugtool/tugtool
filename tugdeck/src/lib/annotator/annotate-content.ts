@@ -63,6 +63,20 @@
  * absent, one nobody ever asked about, one still being asked about — all
  * of them leave the text exactly as written, with no mark and no hover.
  *
+ * **A pass can do three things to a run, not two: mark it, clear it, or
+ * HOLD it.** The hold is a reservation, and it is silent in exactly the way
+ * a refusal is — no mark, no hover, the text byte-identical — but it is not
+ * a refusal, because the run is also unavailable to every other scan for
+ * that pass. It exists for one contention this annotator cannot order its
+ * way out of: a `project/callsign` token is shaped exactly like a relative
+ * path, and the verdict that tells them apart is asynchronous. Every scan's
+ * matches land in one array sorted by offset and overlaps are dropped, so
+ * whichever scan claims the run first blocks the other permanently — and
+ * deciding before the answer arrives decides wrong whenever the token is
+ * also a real directory. Holding the run for one verdict batch costs a
+ * moment of plain text and buys a right answer. See `sessionMatch` and
+ * `TextRunMatch.reserved`.
+ *
  * **Scope guards.** `<a>` subtrees are skipped by linkify itself (no
  * double-wrapping a markdown-authored link); `CODE`/`PRE` subtrees are
  * skipped for links (a URL inside code is content, not a link to
@@ -102,6 +116,7 @@ import {
   recordElementPass,
 } from "./annotate-counters";
 import { scanCommitShas } from "./detect-commit-sha";
+import { scanSessionRefs } from "./detect-session-ref";
 import { commitSummary } from "./commit-summary";
 import {
   classifyInlineCode,
@@ -192,6 +207,15 @@ function annotatePathsInText(
     const text = node.data;
     if (text.trim() === "") continue;
     const matches: TextRunMatch[] = [];
+    // Sessions first, and the ORDER IS NOT WHAT SETTLES CONTENTION — the
+    // reservation is (see {@link sessionMatch}). Every scan's matches land in
+    // one array sorted by `start`, and running first wins only ties at an
+    // identical offset, by sort stability. That is an accident, not a
+    // mechanism.
+    for (const found of scanSessionRefs(text)) {
+      const match = sessionMatch(found, context);
+      if (match !== null) matches.push(match);
+    }
     for (const reference of scanPathReferences(text)) {
       // Code says "this is a path" by being code; a surface that cites
       // paths in its prose says it for the whole surface. Everywhere else
@@ -222,6 +246,51 @@ function annotatePathsInText(
     wrapMatchesInTextNode(node, matches);
   }
   return sites.length;
+}
+
+/**
+ * What one session candidate contributes to the match list, in three arms —
+ * or `null` when this surface does not scan for sessions at all.
+ *
+ * | verdict | contribution |
+ * |---|---|
+ * | `pending` | a RESERVATION: the run is held, nothing is marked, and the awaiting flag brings the pass back with an answer |
+ * | `confirmed` | the mark, carrying the full session id |
+ * | `refuted` | nothing; the run goes back to the prose, and any stale wrap is dropped by {@link dropStaleWraps} |
+ *
+ * The reservation is the mitigation for the one contention this annotator has
+ * that ordering cannot settle: a `project/callsign` token is shaped exactly
+ * like a relative path, and the answer that tells them apart is asynchronous.
+ * Whichever scan claims the run first blocks the other for good — overlaps are
+ * dropped, and `dropStaleWraps` keeps a path wrap that still resolves — so
+ * deciding before the verdict lands decides wrong every time the token is also
+ * a real directory. Holding the run for one verdict batch (about 100ms, the
+ * `VerdictBatcher` window) costs a moment of plain text and buys a right
+ * answer.
+ */
+function sessionMatch(
+  found: { target: string; start: number; end: number },
+  context: AnnotationContext,
+): TextRunMatch | null {
+  const resolve = context.resolveSession;
+  if (resolve === undefined) return null;
+  const verdict = resolve(found.target);
+  if (verdict.state === "refuted") return null;
+  if (verdict.state === "pending") {
+    return {
+      start: found.start,
+      end: found.end,
+      // Never read for a reserved entry; the field is not optional, and a
+      // payload naming the run as written is the honest placeholder.
+      payload: { kind: "session", target: found.target },
+      reserved: true,
+    };
+  }
+  return {
+    start: found.start,
+    end: found.end,
+    payload: { kind: "session", target: verdict.sessionId },
+  };
 }
 
 /**
@@ -265,7 +334,38 @@ function dropStaleWraps(
   );
   for (const element of wrapped) {
     const annotation = readAnnotation(element);
-    // Only path wraps are re-checked here; a kind whose truth cannot
+    // A session wrap is re-checked for the same reason a path wrap is: the
+    // ledger is allowed to forget, and a reconnect drops every cached answer.
+    // Without this arm a mark made once would never clear — and the run would
+    // never return to the prose for the path scan to reconsider, since
+    // `unwrapMatch`'s `normalize()` is what makes it one run again.
+    if (annotation?.kind === "session") {
+      // Re-derived from the spelling the PROSE used, the way the path arm
+      // re-derives its reference — the dataset holds the resolved id, which
+      // is not what has to be re-asked.
+      //
+      // `textContent` is not that spelling once a citation chip has been
+      // portaled in: the portal host empties the span, so reading it back
+      // would ask about "" and refute every chip on the next pass. The
+      // emptied text is preserved on {@link SESSION_TEXT_ATTRIBUTE} for
+      // exactly this, and restored below so an unwrap folds the words back
+      // rather than a hole.
+      const saved = element.getAttribute(SESSION_TEXT_ATTRIBUTE);
+      const target = saved ?? element.textContent ?? "";
+      const verdict = context.resolveSession?.(target);
+      if (verdict?.state === "confirmed") continue;
+      // A `pending` verdict is not evidence of anything — a reconnect just
+      // dropped the answer, and the next batch will bring it back. Unwrapping
+      // on pending would blink every citation on every reconnect.
+      if (verdict?.state === "pending") continue;
+      if (saved !== null) {
+        element.textContent = saved;
+        element.removeAttribute(SESSION_TEXT_ATTRIBUTE);
+      }
+      unwrapMatch(element);
+      continue;
+    }
+    // Only path wraps are re-checked beyond that; a kind whose truth cannot
     // change (a commit) has nothing to re-check.
     if (annotation?.kind !== "file-path" && annotation?.kind !== "directory") {
       continue;
@@ -299,6 +399,18 @@ function annotateAnchors(container: HTMLElement): void {
  * batches re-annotate only containers that carry it.
  */
 export const AWAITING_ATTRIBUTE = "data-tugx-awaiting";
+
+/**
+ * Where a session wrap keeps the words it used to show.
+ *
+ * A confirmed session run becomes the mount point for a live citation chip
+ * (`useSessionCitationPortals`), and hosting one means emptying the span. The
+ * spelling the prose used is still needed twice afterwards: to re-ask the
+ * ledger about it on a later pass, and to put back if the mark is ever
+ * dropped — an unwrap folds the wrapper's text into its neighbours, and an
+ * emptied wrapper would fold a hole into the sentence.
+ */
+export const SESSION_TEXT_ATTRIBUTE = "data-tugx-session-text";
 
 /**
  * Whether `container` (or any annotated child block inside it) is still
@@ -337,6 +449,19 @@ function trackAwaits(context: AnnotationContext): {
       return verdict;
     },
   };
+  // Without this arm the container never gets `data-tugx-awaiting`, so no
+  // verdict batch ever re-marks it — and every session in the post stays
+  // reserved-but-unmarked forever, silently. The wrapper is rebuilt rather
+  // than spread-assigned so an absent `resolveSession` stays absent (the
+  // signal that this surface does not scan for sessions).
+  const resolveSession = context.resolveSession;
+  if (resolveSession !== undefined) {
+    tracked.resolveSession = (target) => {
+      const verdict = resolveSession(target);
+      if (verdict.state === "pending") count += 1;
+      return verdict;
+    };
+  }
   return { context: tracked, waits: () => count };
 }
 

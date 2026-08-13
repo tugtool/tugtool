@@ -2855,8 +2855,22 @@ impl AgentSupervisor {
                 Ok(())
             }
             "list_gazette_posts" => {
-                // App-scoped read — the Gazette card's mount-time tail.
-                self.do_list_gazette_posts().await;
+                // App-scoped read — the Gazette card's tail on mount, and
+                // each older page as the reader scrolls back. Both arguments
+                // are optional, and absent means "the tail", so a client that
+                // sends neither is the pre-paging client and is served
+                // identically.
+                let args = serde_json::from_slice::<serde_json::Value>(payload).ok();
+                let before_id = args
+                    .as_ref()
+                    .and_then(|v| v.get("before_id"))
+                    .and_then(serde_json::Value::as_i64);
+                let limit = args
+                    .as_ref()
+                    .and_then(|v| v.get("limit"))
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as usize);
+                self.do_list_gazette_posts(before_id, limit).await;
                 Ok(())
             }
             "list_shell_exchanges" => {
@@ -5533,29 +5547,46 @@ impl AgentSupervisor {
     }
 
     /// Handle a `list_gazette_posts` CONTROL request — the Gazette card's
-    /// mount-time tail read, after which it stays live off the GAZETTE feed.
-    /// App-scoped: the channel belongs to the app, not to a session, even
-    /// though a Reporter post names the session it narrates.
+    /// history read, both the mount-time tail and each older page the reader
+    /// scrolls back for. App-scoped: the channel belongs to the app, not to a
+    /// session, even though a Reporter post names the session it narrates.
     ///
-    /// Broadcasts `list_gazette_posts_ok { posts: GazettePost[] }`,
-    /// oldest-first; a missing ledger yields an empty array — the "no history
-    /// yet" state, same conduct as the pulse read.
-    async fn do_list_gazette_posts(&self) {
-        let posts = self
+    /// Request: `{ before_id?, limit? }`. No `before_id` is the tail (the
+    /// original behavior, so an older client asking for nothing gets exactly
+    /// what it always got); a `before_id` is the page immediately older than
+    /// that row. `limit` defaults to the standard tail length.
+    ///
+    /// Broadcasts `list_gazette_posts_ok { posts, has_more, before_id? }`,
+    /// posts oldest-first; a missing ledger yields an empty array — the "no
+    /// history yet" state, same conduct as the pulse read.
+    ///
+    /// **`before_id` is echoed verbatim, and that echo is load-bearing.** This
+    /// response goes out on the CONTROL *broadcast* bus with no request
+    /// correlation of any kind — which cost nothing while the only read was an
+    /// idempotent tail that replaced the list with itself. A page is not
+    /// idempotent: applied twice it prepends twice. The echo is what lets the
+    /// client tell a tail from a page, and its own page from anyone else's.
+    async fn do_list_gazette_posts(&self, before_id: Option<i64>, limit: Option<usize>) {
+        let limit = limit
+            .filter(|n| *n > 0)
+            .unwrap_or(crate::feeds::reporter::GAZETTE_TAIL_LEN);
+        let (posts, has_more) = self
             .session_ledger
             .as_ref()
             .map(|ledger| {
                 ledger
-                    .list_gazette_posts_tail(crate::feeds::reporter::GAZETTE_TAIL_LEN)
+                    .list_gazette_posts_page(before_id, limit)
                     .unwrap_or_else(|err| {
                         warn!(error = %err, "list_gazette_posts failed");
-                        Vec::new()
+                        (Vec::new(), false)
                     })
             })
             .unwrap_or_default();
         let body = serde_json::json!({
             "action": "list_gazette_posts_ok",
             "posts": posts,
+            "has_more": has_more,
+            "before_id": before_id,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
