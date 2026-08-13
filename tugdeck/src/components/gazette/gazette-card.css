@@ -18,6 +18,11 @@
   color: var(--tug7-element-global-text-normal-default-rest);
   /* Post rhythm — TUNE HERE. */
   --tugx-gazette-post-gap: var(--tug-space-md);
+  /* The space below the LAST post, above the composer's rule. Wider than the
+     gap between two posts on purpose: the last row is often the in-flight
+     wave, and a working animation needs room under it to read as motion
+     rather than as something pressed against the bottom of the column. */
+  --tugx-gazette-transcript-end-space: var(--tug-space-2xl);
 }
 
 .gazette-transcript {
@@ -71,11 +76,11 @@
   margin-block-start: var(--tug-space-md);
 }
 
-/* The same breathing room at the end. Without it the last row — often the
-   in-flight post, whose body is a working wave — sits flush on the composer's
-   border with nothing under it. */
+/* Breathing room at the end, on the last row for the symmetry of it. Without
+   it the last row — often the in-flight post, whose body is a working wave —
+   sits flush on the composer's border with nothing under it. */
 .gazette-transcript > :last-child {
-  margin-block-end: var(--tug-space-md);
+  margin-block-end: var(--tugx-gazette-transcript-end-space);
 }
 
 .gazette-transcript .tug-transcript-entry__identifier {
@@ -181,11 +186,8 @@
    PSEUDO-CLASS, which WebKit does invalidate, unlike the attribute case.
    Opacity, not `display`, so the `•` keeps its box and COPY never reflows. */
 .gazette-post-z1b:has(
-    .gazette-post-z1b-copy .tug-button:is(
-      :hover,
-      :focus-visible,
-      [data-tug-confirming="true"]
-    )
+    .gazette-post-z1b-copy
+      .tug-button:is(:hover, :focus-visible, [data-tug-confirming="true"])
   )
   .gazette-post-z1b-separator {
   opacity: 0;
@@ -287,6 +289,16 @@
   --tugx-gazette-composer-font-delta: 1px;
   --tug-font-size-editor: calc(
     var(--tugx-gazette-editor-base) - var(--tugx-gazette-composer-font-delta)
+  );
+  /* The field opens at two lines rather than one. A question to the Operator
+     is a sentence, not a search term, and an empty one-line slot reads as a
+     box to fill with a phrase. The floor is the same arithmetic the ceiling
+     uses (`tug-text-editor.css`: rows × 1lh + the field's vertical padding),
+     so the two agree on what a row costs; growth past it is the editor's own,
+     up to the `maxRows` the composer passes. TUNE HERE — the row count. */
+  --tugx-gazette-composer-min-rows: 2;
+  --tug-text-editor-min-height: calc(
+    var(--tugx-gazette-composer-min-rows) * 1lh + 16px
   );
 }
 

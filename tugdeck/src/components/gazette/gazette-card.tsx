@@ -49,6 +49,12 @@
  * No Z2 status bar, no Z4A route picker, no Z4B indicators — just the field
  * and the button.
  *
+ * ⌥⌘↑ / ⌥⌘↓ step the column one post at a time, the Session transcript's own
+ * chord over this card's column and its own selection rule
+ * ({@link computePageNavigation}). The card answers the registry's
+ * `PREVIOUS_TURN` / `NEXT_TURN` on its `card-content` responder, which is what
+ * makes the gesture work from anywhere focus sits in the rail.
+ *
  * Laws: [L02] the channel enters through `useGazette`'s
  * `useSyncExternalStore`; [L06] the follow-the-bottom scroll and the
  * composer's `data-empty` bridge are DOM writes, never React state; [L12] the
@@ -92,9 +98,15 @@ import {
   TugTranscriptEntry,
   type Participant,
 } from "@/components/tugways/tug-transcript-entry";
+import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
+import { useResponder } from "@/components/tugways/use-responder";
+import { computePageNavigation } from "@/components/tugways/internal/list-view-page-navigation";
 import { AnnotationScope } from "@/components/tugways/annotation-scope";
 import { useAnnotationPortals } from "@/components/tugways/annotation-portals";
-import { ANNOTATION_CLASS, type AnnotationContext } from "@/lib/annotator/types";
+import {
+  ANNOTATION_CLASS,
+  type AnnotationContext,
+} from "@/lib/annotator/types";
 import { annotationFromEvent } from "@/lib/annotator/annotation-element";
 import {
   commitResolverFor,
@@ -454,11 +466,17 @@ function GazettePostBody({
  * one, and the text+icon COPY.
  *
  * A post is `complete` by construction — it exists because it was written, so
- * there is no interrupted or errored post to report. Elapsed is the post's
- * own `elapsedMs`, clocked by tugcast around the agent turn that wrote it, the
- * way a session turn's time is that turn's. A user's question was typed rather
- * than run, so it carries none and its row reads `[OK] • [COPY]` — exactly as
- * the Session transcript's user half does.
+ * there is no interrupted or errored post to report.
+ *
+ * Elapsed is reported for the Operator alone. The Operator's post is an ANSWER
+ * — the reader asked for it and waited on it, so how long it took is part of
+ * what happened. A Reporter post was never waited on: it arrives unbidden, and
+ * its clock is the writing machinery's, not the reader's, so a duration on it
+ * is a number about nobody. The same reasoning already keeps the stamp off a
+ * Reporter's header; this is the rest of it. A user's question was typed rather
+ * than run and carries no elapsed at all, so its row reads `[OK] • [COPY]` —
+ * exactly as the Session transcript's user half does, and now the Reporter's
+ * does too.
  */
 function GazettePostZ1B({
   post,
@@ -468,7 +486,7 @@ function GazettePostZ1B({
   children?: React.ReactNode;
 }): React.ReactElement {
   const badge = endStateBadgeFor("complete");
-  const elapsedMs = post.elapsedMs;
+  const elapsedMs = post.author === "operator" ? post.elapsedMs : null;
   return (
     <div className="gazette-post-z1b" data-slot="gazette-post-z1b">
       <TugBadge
@@ -548,9 +566,7 @@ function useGazetteRefRoots(
   // arriving mints that project's resolvers, and the subscription has to
   // reach them — so readiness re-keys the subscribe and the store swap
   // resubscribes.
-  const readyKey = dirs
-    .filter((dir) => getWorkspace(dir) !== null)
-    .join("\n");
+  const readyKey = dirs.filter((dir) => getWorkspace(dir) !== null).join("\n");
   const subscribe = useCallback(
     (listener: () => void): (() => void) => {
       const unsubs = [
@@ -579,7 +595,8 @@ function useGazetteRefRoots(
       const ws = getWorkspace(dir);
       if (ws === null) continue;
       sum += 1;
-      sum += fileNameResolverFor(ws.projectDir, ws.workspaceKey)?.version() ?? 0;
+      sum +=
+        fileNameResolverFor(ws.projectDir, ws.workspaceKey)?.version() ?? 0;
       sum += commitResolverFor(ws.projectDir, ws.workspaceKey)?.version() ?? 0;
     }
     return sum;
@@ -645,58 +662,61 @@ function GazettePostRow({
     <ResponderScope>
       <div className="gazette-cell" data-author={post.author} {...cellProps}>
         <AnnotationScope value={annotation}>
-        <TugTranscriptEntry
-          className="gazette-post"
-          participant={AUTHOR_PARTICIPANT[post.author]}
-          identifier={<span title={identifierTitle}>{authorLabel}</span>}
-          timestamp={
-            // A Reporter post carries no stamp: it is narration read in
-            // written order, and the clock adds nothing the sequence does not
-            // already say. The conversational voices keep theirs, where a
-            // question and its answer are placed in time against each other.
-            post.author === "reporter" ? undefined : (
-              <time dateTime={at.toISOString()} title={formats.full.format(at)}>
-                {formats.short(at)}
-              </time>
-            )
-          }
-          headerTrailing={
-            post.sessionId !== null ? (
-              <TugSessionCitation
-                citedId={post.sessionId}
-                className="gazette-post-session"
-              />
-            ) : null
-          }
-          body={<GazettePostBody post={post} bodyRef={bodyRef} />}
-          controls={
-            <>
-              {chipRefs.length > 0 ? (
-                // Its OWN row, and ABOVE the Z1B: these atoms are the end of
-                // the CONTENT — the rest of what the post rests on, which the
-                // prose ran out of room to name — and the Z1B is the row's
-                // footer, under everything the post says. Below the footer
-                // they read as debris after the end; above it they read as
-                // the last thing the post tells you.
-                //
-                // A row of their own for the reason they are not in the Z1B's
-                // flex: sharing it queued the atoms after OK / elapsed / COPY
-                // and wrapped them wherever the width ran out, so where a chip
-                // landed said nothing about what it was.
-                <div className="gazette-post-refs">
-                  {chipRefs.map((r) => (
-                    <RefAtom
-                      key={`${r.kind}:${r.target}`}
-                      chipRef={r}
-                      root={root}
-                    />
-                  ))}
-                </div>
-              ) : null}
-              <GazettePostZ1B post={post} />
-            </>
-          }
-        />
+          <TugTranscriptEntry
+            className="gazette-post"
+            participant={AUTHOR_PARTICIPANT[post.author]}
+            identifier={<span title={identifierTitle}>{authorLabel}</span>}
+            timestamp={
+              // A Reporter post carries no stamp: it is narration read in
+              // written order, and the clock adds nothing the sequence does not
+              // already say. The conversational voices keep theirs, where a
+              // question and its answer are placed in time against each other.
+              post.author === "reporter" ? undefined : (
+                <time
+                  dateTime={at.toISOString()}
+                  title={formats.full.format(at)}
+                >
+                  {formats.short(at)}
+                </time>
+              )
+            }
+            headerTrailing={
+              post.sessionId !== null ? (
+                <TugSessionCitation
+                  citedId={post.sessionId}
+                  className="gazette-post-session"
+                />
+              ) : null
+            }
+            body={<GazettePostBody post={post} bodyRef={bodyRef} />}
+            controls={
+              <>
+                {chipRefs.length > 0 ? (
+                  // Its OWN row, and ABOVE the Z1B: these atoms are the end of
+                  // the CONTENT — the rest of what the post rests on, which the
+                  // prose ran out of room to name — and the Z1B is the row's
+                  // footer, under everything the post says. Below the footer
+                  // they read as debris after the end; above it they read as
+                  // the last thing the post tells you.
+                  //
+                  // A row of their own for the reason they are not in the Z1B's
+                  // flex: sharing it queued the atoms after OK / elapsed / COPY
+                  // and wrapped them wherever the width ran out, so where a chip
+                  // landed said nothing about what it was.
+                  <div className="gazette-post-refs">
+                    {chipRefs.map((r) => (
+                      <RefAtom
+                        key={`${r.kind}:${r.target}`}
+                        chipRef={r}
+                        root={root}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+                <GazettePostZ1B post={post} />
+              </>
+            }
+          />
         </AnnotationScope>
         {menu}
       </div>
@@ -804,74 +824,154 @@ export function GazetteContent({
     if (el.scrollTop < LOAD_OLDER_PX) getGazetteStore()?.loadOlder();
   };
 
+  /**
+   * Step the column one POST — the Session transcript's ⌥⌘↑ / ⌥⌘↓, read here.
+   *
+   * The selection is the transcript's own
+   * ({@link computePageNavigation}): the entry currently flush at the top is
+   * the current one, down advances to the next and pins its top flush, up
+   * snaps a mid-entry view back to the current entry's top before stepping
+   * past it, and a down press already on the last entry means the live
+   * bottom. Sharing that function is the point — a second rule for what "the
+   * next post" means would be a second navigation model on one gesture.
+   *
+   * The geometry is read from real rects rather than any height sum, for the
+   * reason the list view reads them: the column's `row-gap` and the first
+   * row's margin belong to no cell's box, so a sum drifts by a gap per post.
+   *
+   * The scroll is a plain `scrollTop` write ([L06]) — the Gazette's column is
+   * an ordinary scroller, not a `SmartScroll`-driven list view — and the
+   * follow-bottom intent is this card's `followingRef`, which `onScroll`
+   * re-reads from the landing position either way; setting it here states the
+   * intent the press carries rather than waiting to infer it.
+   */
+  const pageByPost = useCallback((direction: "up" | "down"): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const cells = Array.from(
+      el.querySelectorAll<HTMLElement>(":scope > .gazette-cell"),
+    );
+    const portTop = el.getBoundingClientRect().top;
+    const result = computePageNavigation({
+      direction,
+      cellTops: cells.map((cell) => cell.getBoundingClientRect().top - portTop),
+    });
+    if (result.kind === "none") return;
+    if (result.kind === "bottom") {
+      followingRef.current = true;
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    const target = cells[result.index];
+    if (target === undefined) return;
+    followingRef.current = false;
+    el.scrollTop += target.getBoundingClientRect().top - portTop;
+  }, []);
+
+  // ⌥⌘↑ / ⌥⌘↓ — the Session card's transcript chord, on this card's column.
+  //
+  // The commands are `PREVIOUS_TURN` / `NEXT_TURN` from the registry, routed
+  // `key-card`: the chord is delivered to whichever card the user is in, and a
+  // card answers it by registering a handler on its `card-content` responder.
+  // So this is the whole wiring — no second binding, no chord of its own, and
+  // it works from anywhere focus sits in the rail, the composer included.
+  //
+  // Their menu items are the Session menu's and validate on a session card
+  // being frontmost, so with the Gazette frontmost those rows dim. That is
+  // exactly what `disabledChord: "detach"` is for: the dimmed item releases
+  // the key equivalent, the chord reaches the web view, and the key card —
+  // this one — is asked. The registry's own comment calls that the shadowable
+  // case; this card is a shadow.
+  const {
+    ResponderScope: CardContentResponderScope,
+    responderRef: cardContentResponderRef,
+  } = useResponder({
+    id: `${cardId}-card-content`,
+    kind: "card-content",
+    actions: {
+      [TUG_ACTIONS.PREVIOUS_TURN]: () => {
+        pageByPost("up");
+      },
+      [TUG_ACTIONS.NEXT_TURN]: () => {
+        pageByPost("down");
+      },
+    },
+  });
+
   return (
-    <div
-      className="gazette-card"
-      data-slot="gazette-card"
-      data-testid="gazette-card"
-      data-gazette-card-id={cardId}
-      // Focusable root so `transferFocusForActivation` → `applyBagFocus` has a
-      // target to land the ring on when the card is focused.
-      tabIndex={-1}
-    >
+    <CardContentResponderScope>
       <div
-        className="gazette-transcript"
-        data-testid="gazette-transcript"
-        ref={scrollRef}
-        onScroll={onScroll}
+        ref={cardContentResponderRef as (el: HTMLDivElement | null) => void}
+        className="gazette-card"
+        data-slot="gazette-card"
+        data-testid="gazette-card"
+        data-gazette-card-id={cardId}
+        // Focusable root so `transferFocusForActivation` → `applyBagFocus` has a
+        // target to land the ring on when the card is focused.
+        tabIndex={-1}
       >
-        {posts.length === 0 ? (
-          <div className="gazette-empty" role="status">
-            {status === "ready" ? "Nothing reported yet." : "Loading…"}
-          </div>
-        ) : (
-          posts.map((post) => (
-            <GazettePostRow
-              key={post.key}
-              post={post}
-              root={rootFor(post.projectDir)}
-              formats={formats}
-            />
-          ))
-        )}
-        {pendingRequestId !== null ? (
-          // [L26]: keyed exactly as the answer will be, so the placeholder
-          // becomes the answer in place rather than being torn down and a new
-          // row built where it stood.
-          <div
-            key={`req:operator:${pendingRequestId}`}
-            className="gazette-cell"
-            data-author="operator"
-            data-pending=""
-            data-testid="gazette-pending-row"
-          >
-            <TugTranscriptEntry
-              className="gazette-post"
-              participant="operator"
-              identifier={AUTHOR_LABEL.operator}
-              // The transcript's in-flight wave, not a sentence: "working" is
-              // said in the Session card's language, the same three bars its
-              // own Z1C paints while a turn runs.
-              body={
-                <div className="gazette-post-pending">
-                  <TugProgressIndicator
-                    variant="wave"
-                    state="running"
-                    role="inherit"
-                    aria-label="Working…"
-                    aria-live="polite"
-                    data-testid="gazette-pending-wave"
-                  />
-                </div>
-              }
-            />
-          </div>
-        ) : null}
+        <div
+          className="gazette-transcript"
+          data-testid="gazette-transcript"
+          ref={scrollRef}
+          onScroll={onScroll}
+        >
+          {posts.length === 0 ? (
+            <div className="gazette-empty" role="status">
+              {status === "ready" ? "Nothing reported yet." : "Loading…"}
+            </div>
+          ) : (
+            posts.map((post) => (
+              <GazettePostRow
+                key={post.key}
+                post={post}
+                root={rootFor(post.projectDir)}
+                formats={formats}
+              />
+            ))
+          )}
+          {pendingRequestId !== null ? (
+            // [L26]: keyed exactly as the answer will be, so the placeholder
+            // becomes the answer in place rather than being torn down and a new
+            // row built where it stood.
+            <div
+              key={`req:operator:${pendingRequestId}`}
+              className="gazette-cell"
+              data-author="operator"
+              data-pending=""
+              data-testid="gazette-pending-row"
+            >
+              <TugTranscriptEntry
+                className="gazette-post"
+                participant="operator"
+                identifier={AUTHOR_LABEL.operator}
+                // The transcript's in-flight wave, not a sentence: "working" is
+                // said in the Session card's language, the same three bars its
+                // own Z1C paints while a turn runs.
+                body={
+                  <div className="gazette-post-pending">
+                    <TugProgressIndicator
+                      variant="wave"
+                      state="running"
+                      role="inherit"
+                      aria-label="Working…"
+                      aria-live="polite"
+                      data-testid="gazette-pending-wave"
+                    />
+                  </div>
+                }
+              />
+            </div>
+          ) : null}
+        </div>
+        <div
+          className="gazette-composer-slot"
+          data-testid="gazette-composer-slot"
+        >
+          <GazetteComposer pending={pendingRequestId !== null} />
+        </div>
       </div>
-      <div className="gazette-composer-slot" data-testid="gazette-composer-slot">
-        <GazetteComposer pending={pendingRequestId !== null} />
-      </div>
-    </div>
+    </CardContentResponderScope>
   );
 }
 
@@ -930,7 +1030,11 @@ function gazetteEditorStore(): EditorSettingsStore {
  * disabled and says so. The store enforces the same rule — this is the
  * affordance, not the guarantee.
  */
-function GazetteComposer({ pending }: { pending: boolean }): React.ReactElement {
+function GazetteComposer({
+  pending,
+}: {
+  pending: boolean;
+}): React.ReactElement {
   const editorRef = useRef<TugTextEditorDelegate | null>(null);
   const shellRef = useRef<HTMLDivElement | null>(null);
   // The user's editor settings — the same store the Session card's composer

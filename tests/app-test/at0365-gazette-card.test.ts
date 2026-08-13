@@ -247,8 +247,8 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           body: "Reworked gazette-ref-resolve.ts and left the imposer alone.",
           refs: [{ kind: "file", target: "tugdeck/src/lib/layout-imposer.ts" }],
           wake_reason: "sitrep",
-          // The turn that wrote it took this long — tugcast clocks the agent
-          // run and the Z1B reads it, the way a session turn reports its time.
+          // Clocked on the wire — tugcast times every agent run — but a
+          // Reporter's row must not READ it out. See the assertion below.
           elapsed_ms: 4_200,
           project_dir: REPO_ROOT,
         };
@@ -258,6 +258,9 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           author: "operator",
           body: "Two sessions touched that file today.",
           refs: [],
+          // The answer's own time — the reader asked and waited on it, so the
+          // Z1B reads it, the way a session turn reports its time.
+          elapsed_ms: 4_200,
         };
         // The commit half of the same shape: a sha spelled in the prose with
         // NO commit ref at all behind it. Git confirms it, so it annotates —
@@ -324,15 +327,20 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           expect(row.z1b, `${row.author}'s row carries a Z1B`).toContain("OK");
           expect(row.z1b, `${row.author}'s COPY is text+icon`).toContain("Copy");
         }
-        // And a post whose agent turn was clocked reports that time, formatted
-        // by the transcript's own duration formatter. A post carrying none
-        // shows no elapsed segment at all rather than a fabricated zero.
-        expect(rows[0]!.z1b, "the clocked post reports its elapsed").toContain(
-          "4.2s",
-        );
-        expect(rows[1]!.z1b, "an unclocked post reports no elapsed").not.toContain(
-          "s•",
-        );
+        // Elapsed is the OPERATOR'S alone, and both of these posts are clocked
+        // at 4.2s on the wire — so the two rows differ only by who is
+        // speaking. The Operator's post is an answer the reader waited on, so
+        // how long it took is part of what happened; the Reporter's arrived
+        // unbidden, and a duration on it is a number about nobody. The same
+        // reasoning keeps the stamp off a Reporter's header.
+        expect(
+          rows[1]!.z1b,
+          "the Operator's answer reports how long it took",
+        ).toContain("4.2s");
+        expect(
+          rows[0]!.z1b,
+          "the Reporter's post reads no elapsed, clocked or not",
+        ).not.toContain("4.2s");
 
         // ── 2b. The PROSE is annotated, by the app's own annotator. ───────
         // This is the claim the card exists to keep: a file named in a
@@ -570,6 +578,23 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         expect(markdown?.anchorKind).toBe("url");
 
         // ── 3. The composer round-trips through the Operator. ─────────────
+        // It opens at TWO lines, empty. A question to the Operator is a
+        // sentence, and a one-line slot reads as a box to fill with a phrase.
+        // Measured against the field's own line box rather than a pixel
+        // constant, so the user's editor font-size setting moves both sides
+        // together; the row count is the claim.
+        const openingRows = await app.evalJS<number>(
+          `(function () {
+            var scroller = document.querySelector(${JSON.stringify(`${FIELD} .cm-scroller`)});
+            var lh = parseFloat(getComputedStyle(scroller).lineHeight);
+            // The +16 is the cm-content 8px top + 8px bottom padding, which
+            // both the floor and the maxRows ceiling account for.
+            return Math.round((scroller.getBoundingClientRect().height - 16) / lh);
+          })()`,
+        );
+        note("composer opening rows", String(openingRows));
+        expect(openingRows, "the empty composer opens two lines tall").toBe(2);
+
         const question = "which sessions touched the imposer";
         await app.nativeClickAtElement(`${FIELD} .cm-content`);
         await app.waitForCondition<boolean>(
