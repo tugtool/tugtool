@@ -149,6 +149,18 @@
   display: inline-flex;
   gap: var(--tug-space-2xs);
   font-family: var(--tug-font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The two halves say opposite things, so they take the same add/remove
+   tones the status chip beside them already uses. Both classes were being
+   rendered with no rule behind them, which left the counts in body ink. */
+.tugx-commit-stat-num--add {
+  color: var(--tugx-block-tone-add-color);
+}
+
+.tugx-commit-stat-num--del {
+  color: var(--tugx-block-tone-remove-color);
 }
 
 /* ---- Message body (inside a BlockDisclosure) --------------------- */

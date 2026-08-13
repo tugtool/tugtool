@@ -43,8 +43,9 @@
  * can travel as. **Copy as Atom** writes the citation as plain text with the
  * `dev.tug.prompt-atoms` sidecar beside it, so a paste back into a Tug surface
  * returns the chip; **Copy as Citation** writes the flat string alone, for
- * anywhere outside Tug. ⌘C over the chip means the atom, the richer of the
- * two. The masthead's telemetry placard carries the same citation on a
+ * anywhere outside Tug. Both are menu items and neither is a chord: ⌘C is
+ * the app's Copy, and what it copies is what the reader selected. The
+ * masthead's telemetry placard carries the same citation on a
  * `TugCopyBadge` for a click path.
  *
  * An unresolvable citation keeps its shape — the reader still needs to know

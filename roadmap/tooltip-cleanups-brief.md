@@ -93,7 +93,9 @@ W1–W5 have landed; W6–W8 are open. What shipped:
 
 W1 was independent bookkeeping. W2–W5 were the commit spine and the highest-visibility win — and the whole *color* story, since a migrated tooltip is a themed tooltip by construction: the screenshot's gray OS box is now a themed card that tracks brio/nocturne/bravura dark and harmony/aria/vivace light. W6–W8 are breadth, and the honest reason they are the long pole: the remaining native `title=` sites are ~30 buttons, ~15 path reveals, and a scattering of overflow reveals, most reachable through the three passthrough props rather than one at a time.
 
-Two things W5 left on the floor, both in the `/commit` receipt (`body-kinds/commit-block.tsx`): the per-file `title={f.status}` hover, which wants `fileTip`, and `tugx-commit-stat-num--add` / `--del` — classes the receipt renders that no stylesheet defines, so the ± numbers in a receipt's file list are painting unstyled today. Fold them into the shared add/del tones when W6 reaches that file.
+One thing W5 left on the floor, in the `/commit` receipt (`body-kinds/commit-block.tsx`): the per-file `title={f.status}` hover, which wants `fileTip`. Its sibling defect is fixed — `tugx-commit-stat-num--add` / `--del` were rendered with no rule behind them, leaving the receipt's ± counts in body ink; they now take the same add/remove tones as the status chip beside them. `commit-block.css` carries no `@covers` from any app-test, which is why nothing caught it.
+
+Remaining native `title=` after the commit spine: ~89 JSX sites across ~52 files (a majority are content props on `TugListRow`/`TugSheet`/`FieldSection` rather than tooltips), plus one imperative stamp left — `lib/tug-atom-img.ts:800`, the CM6 atom `<img>`. The annotator's stamping is gone.
 
 Coverage: `at0404-title-bar-tooltips` (bubble + chip + rebind), the gallery surface (`cards/gallery-tooltip.tsx`) for visual review across themes, `bun run audit:theme-contrast` once new content kinds land in the bubble, and the W8 scan test as the permanent backstop. The annotator hover layer (W4) wants a new app-test alongside `at0346`/`at0310`, which already exercise the marks it will read.
 
