@@ -1,14 +1,11 @@
 /**
- * ResponseSettingsStore — subscribable store for the Dev transcript's
- * presentation knobs.
+ * TranscriptSettingsStore — subscribable store for the Session card
+ * transcript's presentation knobs.
  *
- * Two settings:
+ * One setting:
  *
- *   - `entryMargin` (px): inter-entry vertical gap, written through to
- *     `--tugx-list-view-row-gap` via the cascade variable
- *     `--tugx-session-entry-margin`.
  *   - `magnification` (factor, 1 = 100%): the Settings sheet's
- *     Magnification slider, now implemented as CSS `zoom` applied to the
+ *     Magnification slider, implemented as CSS `zoom` applied to the
  *     transcript root via `--transcript-zoom`. Layout zoom scopes the
  *     scale to this card's transcript subtree (which wholly contains
  *     the list scrollport, so the list's measurements stay in one
@@ -17,9 +14,9 @@
  *     `WKWebView.pageZoom` (View > Zoom In / Out), which scales the
  *     whole window.
  *
- * The store applies both as CSS custom properties on the bound
- * transcript root, so the transcript pane reads exactly the user's
- * choice and no other markdown surface in the deck is affected.
+ * The store applies it as a CSS custom property on the bound transcript
+ * root, so the transcript pane reads exactly the user's choice and no
+ * other markdown surface in the deck is affected.
  *
  * Reads initial state synchronously from the TugbankClient cache
  * (no async load, no placeholder flash). Observes `onDomainChanged`
@@ -30,33 +27,32 @@
  * [L22] Store changes drive DOM directly, not through React render.
  * [L23] Synchronous initial read — no visible state disturbance.
  *
- * @module lib/response-settings-store
+ * @module lib/transcript-settings-store
  */
 
 import { getTugbankClient } from "./tugbank-singleton";
-import { putResponseSettings } from "@/settings-api";
-import type { ResponseSettings } from "@/settings-api";
+import { putTranscriptSettings } from "@/settings-api";
+import type { TranscriptSettings } from "@/settings-api";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
-const DOMAIN = "dev.tugtool.dev.response";
+const DOMAIN = "dev.tugtool.transcript";
 const KEY = "settings";
 
-export const DEFAULT_RESPONSE_SETTINGS: ResponseSettings = {
-  entryMargin: 24,
+export const DEFAULT_TRANSCRIPT_SETTINGS: TranscriptSettings = {
   magnification: 1,
 };
 
 // ── Store ───────────────────────────────────────────────────────────────────
 
-export class ResponseSettingsStore {
-  private _settings: ResponseSettings;
+export class TranscriptSettingsStore {
+  private _settings: TranscriptSettings;
   private _listeners: Set<() => void> = new Set();
   private _targetEl: HTMLElement | null = null;
   private _unsubscribeTugbank: (() => void) | null = null;
 
   constructor() {
-    this._settings = this._readFromCache() ?? { ...DEFAULT_RESPONSE_SETTINGS };
+    this._settings = this._readFromCache() ?? { ...DEFAULT_TRANSCRIPT_SETTINGS };
 
     const client = getTugbankClient();
     if (client) {
@@ -69,20 +65,17 @@ export class ResponseSettingsStore {
   }
 
   /** Read settings from the TugbankClient cache. Returns null if not stored.
-   *  Persisted snapshots from earlier versions may be missing newer fields
-   *  or carry retired fields (e.g. `magnification`, which moved to the
-   *  Swift host's WKWebView.pageZoom). We pick out the keys we still
-   *  consume and ignore the rest, so the next write doesn't perpetuate
+   *  Persisted snapshots may carry retired fields; we pick out the keys we
+   *  still consume and ignore the rest, so the next write doesn't perpetuate
    *  the stale shape. */
-  private _readFromCache(): ResponseSettings | null {
+  private _readFromCache(): TranscriptSettings | null {
     const client = getTugbankClient();
     if (!client) return null;
     const entry = client.get(DOMAIN, KEY);
     if (entry && entry.kind === "json" && entry.value !== undefined) {
-      const raw = entry.value as Partial<ResponseSettings>;
+      const raw = entry.value as Partial<TranscriptSettings>;
       return {
-        ...DEFAULT_RESPONSE_SETTINGS,
-        ...(typeof raw.entryMargin === "number" ? { entryMargin: raw.entryMargin } : {}),
+        ...DEFAULT_TRANSCRIPT_SETTINGS,
         ...(typeof raw.magnification === "number" ? { magnification: raw.magnification } : {}),
       };
     }
@@ -103,7 +96,7 @@ export class ResponseSettingsStore {
   }
 
   /** Get the current settings snapshot. (L02 — useSyncExternalStore) */
-  getSnapshot = (): ResponseSettings => {
+  getSnapshot = (): TranscriptSettings => {
     return this._settings;
   };
 
@@ -114,7 +107,7 @@ export class ResponseSettingsStore {
   };
 
   /** Update one or more settings. Applies immediately and persists. */
-  set(partial: Partial<ResponseSettings>): void {
+  set(partial: Partial<TranscriptSettings>): void {
     const next = { ...this._settings, ...partial };
     this._applySettings(next, true);
   }
@@ -131,21 +124,19 @@ export class ResponseSettingsStore {
 
   // ── Internal ────────────────────────────────────────────────────────────
 
-  private _applySettings(next: ResponseSettings, persist: boolean): void {
+  private _applySettings(next: TranscriptSettings, persist: boolean): void {
     this._settings = next;
 
     this._applyCSSProperties();
 
     for (const listener of this._listeners) listener();
 
-    if (persist) putResponseSettings(next);
+    if (persist) putTranscriptSettings(next);
   }
 
   private _applyCSSProperties(): void {
     const el = this._targetEl;
     if (!el) return;
-    const s = this._settings;
-    el.style.setProperty("--tugx-session-entry-margin", `${s.entryMargin}px`);
-    el.style.setProperty("--transcript-zoom", `${s.magnification}`);
+    el.style.setProperty("--transcript-zoom", `${this._settings.magnification}`);
   }
 }

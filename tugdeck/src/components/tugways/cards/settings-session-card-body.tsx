@@ -5,10 +5,10 @@
  * card's title-bar `…` sheet, now hosted by the Settings card's
  * "Sessions" tab. Three stacked sections:
  *
- *   1. **Response** — Magnification (CSS `zoom` on the transcript
- *      root, per card) and the inter-entry vertical gap. The macOS
- *      app's View menu (`WKWebView.pageZoom`) scales the whole window
- *      and composes with the per-card magnification.
+ *   1. **Transcript** — Magnification (CSS `zoom` on the transcript
+ *      root, per card). The macOS app's View menu (`WKWebView.pageZoom`)
+ *      scales the whole window and composes with the per-card
+ *      magnification.
  *   2. **Prompt Editor** — typography, view toggles, and submit-key
  *      policy for the prompt editor.
  *   3. **AI Model** — the deck-wide default model / reasoning effort /
@@ -22,7 +22,7 @@
  *      control on this panel.
  *
  * Self-contained: the panel constructs its own `EditorSettingsStore` /
- * `ResponseSettingsStore` instances at mount and disposes them on
+ * `TranscriptSettingsStore` instances at mount and disposes them on
  * unmount. Both stores read/write **global** tugbank domains and
  * observe `onDomainChanged`, so edits made here propagate live to
  * every open Session card (whose own instances watch the same domains) —
@@ -50,7 +50,7 @@ import { TUG_ACTIONS } from "../action-vocabulary";
 import { useResponderForm } from "../use-responder-form";
 import { AiConfigEditor } from "./ai-config-editor";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
-import { ResponseSettingsStore } from "@/lib/response-settings-store";
+import { TranscriptSettingsStore } from "@/lib/transcript-settings-store";
 import { DefaultsMetadataAdapter } from "@/lib/defaults-metadata-adapter";
 import {
   computeAiConfigCommit,
@@ -119,7 +119,7 @@ function submitKeyLegend(
 
 export function SettingsSessionCardBody() {
   const [editorStore] = useState(() => new EditorSettingsStore());
-  const [responseStore] = useState(() => new ResponseSettingsStore());
+  const [transcriptStore] = useState(() => new TranscriptSettingsStore());
   // Defaults-shaped metadata store: lets the Z4B chips + picker sheets render
   // the deck defaults unmodified, with rich labels from the persisted catalog.
   // It owns the three deck-default stores the pickers write to.
@@ -127,19 +127,19 @@ export function SettingsSessionCardBody() {
   useEffect(
     () => () => {
       editorStore.dispose();
-      responseStore.dispose();
+      transcriptStore.dispose();
       defaultsAdapter.dispose();
     },
-    [editorStore, responseStore, defaultsAdapter],
+    [editorStore, transcriptStore, defaultsAdapter],
   );
 
   const editorSettings = useSyncExternalStore(
     editorStore.subscribe,
     editorStore.getSnapshot,
   );
-  const responseSettings = useSyncExternalStore(
-    responseStore.subscribe,
-    responseStore.getSnapshot,
+  const transcriptSettings = useSyncExternalStore(
+    transcriptStore.subscribe,
+    transcriptStore.getSnapshot,
   );
 
   // ---- The AI Model channels, bound live to the deck defaults ----
@@ -191,8 +191,7 @@ export function SettingsSessionCardBody() {
   const activeLineGutterId = useId();
   const returnKeyId = useId();
   const enterKeyId = useId();
-  const responseEntryMarginSliderId = useId();
-  const responseMagnificationSliderId = useId();
+  const transcriptMagnificationSliderId = useId();
 
   const { ResponderScope, responderRef } = useResponderForm({
     setValueString: {
@@ -200,10 +199,8 @@ export function SettingsSessionCardBody() {
     },
     setValueNumber: {
       [fontSizePopupId]: (v: number) => editorStore.set({ fontSize: v }),
-      [responseEntryMarginSliderId]: (v: number) =>
-        responseStore.set({ entryMargin: v }),
-      [responseMagnificationSliderId]: (v: number) =>
-        responseStore.set({ magnification: v }),
+      [transcriptMagnificationSliderId]: (v: number) =>
+        transcriptStore.set({ magnification: v }),
     },
     toggle: {
       [lineWrapId]: (v: boolean) => editorStore.set({ lineWrap: v }),
@@ -227,40 +224,29 @@ export function SettingsSessionCardBody() {
         ref={responderRef as (el: HTMLDivElement | null) => void}
       >
         <TugBox
-          label="Response"
+          label="Transcript"
           labelPosition="legend"
           variant="bordered"
           className="settings-session-card-group"
         >
-          {/* Both label/slider pairs on one row (see the grid in
-              settings-session-card-body.css). Both sliders share `valueWidth`
-              so their value boxes match. Magnification scales the whole
-              transcript subtree (CSS `zoom` on `.session-card-transcript`)
-              per card; the macOS app's View menu (`WKWebView.pageZoom`)
-              still scales the entire window and composes with this. */}
+          {/* Label + slider on one row, the slider taking the rest of the
+              width (see the grid in settings-session-card-body.css).
+              Magnification scales the whole transcript subtree (CSS `zoom`
+              on `.session-card-transcript`) per card; the macOS app's View
+              menu (`WKWebView.pageZoom`) still scales the entire window and
+              composes with this. */}
           <div className="settings-session-card-slider-grid">
             <span className="settings-session-card-slider-label">Magnification</span>
             <TugSlider
               className="settings-session-card-slider"
-              value={responseSettings.magnification}
+              value={transcriptSettings.magnification}
               min={0.5}
               max={1.5}
               step={0.05}
-              senderId={responseMagnificationSliderId}
+              senderId={transcriptMagnificationSliderId}
               size="md"
               valueWidth="3.5rem"
               formatter={MAGNIFICATION_FORMATTER}
-            />
-            <span className="settings-session-card-slider-label">Entry Gap</span>
-            <TugSlider
-              className="settings-session-card-slider"
-              value={responseSettings.entryMargin}
-              min={0}
-              max={48}
-              step={1}
-              senderId={responseEntryMarginSliderId}
-              size="md"
-              valueWidth="3.5rem"
             />
           </div>
         </TugBox>

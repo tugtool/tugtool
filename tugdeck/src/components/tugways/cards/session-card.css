@@ -389,20 +389,15 @@
   display: flex;
   flex-direction: column;
 
-  /* Per-card response-settings tokens. The `ResponseSettingsStore`
-     overrides these via inline custom properties on this same
-     element; descendants consume them via the cascade rules below.
-     Defaults mirror `DEFAULT_RESPONSE_SETTINGS` in
-     `lib/response-settings-store.ts`. [L06 / L24] */
-  --tugx-session-entry-margin: 16px;
-
   /* Per-card transcript zoom. CSS `zoom` is a layout scale (reflows,
      stays crisp) applied to this root, which wholly contains the
      TugListView scrollport — so every measurement the list makes lives
      in one uniformly-scaled space, exactly as the Swift host's
      `WKWebView.pageZoom` does for the whole document. Only the
      transcript subtree scales; the Z2/Z4 chrome (siblings) stays at 1×.
-     `ResponseSettingsStore` overrides `--transcript-zoom` per card. */
+     `TranscriptSettingsStore` overrides `--transcript-zoom` per card
+     (default mirrors `DEFAULT_TRANSCRIPT_SETTINGS` in
+     `lib/transcript-settings-store.ts`). [L06 / L24] */
   --transcript-zoom: 1;
   zoom: var(--transcript-zoom, 1);
 
@@ -456,7 +451,7 @@
      scroller's gutter at the same x. Dropping it restores a rock-steady
      column under streaming. */
   overflow-y: scroll;
-  --tugx-list-view-row-gap: var(--tugx-session-entry-margin);
+  --tugx-list-view-row-gap: 24px;
   --tugx-list-view-padding-block: var(--tug-space-md);
   /* Start side ZEROED: the permanent Z0 row is the list's leading content,
      and it must sit flush at the very top of the scroll content — exactly

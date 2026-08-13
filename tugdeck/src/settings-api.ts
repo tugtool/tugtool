@@ -735,48 +735,35 @@ export function putTextCardCardSettings(cardId: string, settings: unknown): void
   });
 }
 
-// ── Response (transcript) settings ──────────────────────────────────────────
+// ── Transcript settings ─────────────────────────────────────────────────────
 
 /**
- * Response-settings shape stored in tugbank. Presentation knobs for
+ * Transcript-settings shape stored in tugbank. Presentation knobs for
  * the Session card's transcript pane (top pane, distinct from the editor
  * pane below it):
  *
- *   - `entryMargin`: inter-entry vertical gap in CSS pixels.
  *   - `magnification`: the Settings sheet's Magnification slider value
- *     (1 = 100%). Now implemented as CSS `zoom` on the transcript root —
+ *     (1 = 100%). Implemented as CSS `zoom` on the transcript root —
  *     it scales the whole transcript subtree (text, code, atoms, icons)
  *     uniformly via layout zoom, scoped to this card's transcript and
  *     leaving the surrounding chrome at 1×. Distinct from the macOS
  *     host's `WKWebView.pageZoom` (View > Zoom In / Out), which scales
  *     the entire window; the two compose.
  */
-export interface ResponseSettings {
-  entryMargin: number;
+export interface TranscriptSettings {
   magnification: number;
 }
 
 /**
- * Read response settings from the TugbankClient cache.
+ * PUT transcript settings to tugbank (fire-and-forget).
  */
-export function readResponseSettings(client: TugbankClient): ResponseSettings | null {
-  const entry = client.get("dev.tugtool.dev.response", "settings");
-  if (entry && entry.kind === "json" && entry.value !== undefined) {
-    return entry.value as ResponseSettings;
-  }
-  return null;
-}
-
-/**
- * PUT response settings to tugbank (fire-and-forget).
- */
-export function putResponseSettings(settings: ResponseSettings): void {
-  fetch("/api/defaults/dev.tugtool.dev.response/settings", {
+export function putTranscriptSettings(settings: TranscriptSettings): void {
+  fetch("/api/defaults/dev.tugtool.transcript/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: settings }),
   }).catch((err) => {
-    console.warn("[settings] PUT responseSettings failed:", err);
+    console.warn("[settings] PUT transcriptSettings failed:", err);
   });
 }
 

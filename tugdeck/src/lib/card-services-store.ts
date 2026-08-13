@@ -33,7 +33,7 @@
 
 import { CodeSessionStore } from "./code-session-store";
 import { EditorSettingsStore } from "./editor-settings-store";
-import { ResponseSettingsStore } from "./response-settings-store";
+import { TranscriptSettingsStore } from "./transcript-settings-store";
 import { SessionMetadataStore } from "./session-metadata-store";
 import { FileTreeStore } from "./filetree-store";
 import { ChangesRouteController } from "./changes-route-controller";
@@ -87,7 +87,7 @@ export interface CardServices {
   readonly tugSessionId: string;
   readonly codeSessionStore: CodeSessionStore;
   readonly editorStore: EditorSettingsStore;
-  readonly responseStore: ResponseSettingsStore;
+  readonly transcriptStore: TranscriptSettingsStore;
   readonly sessionMetadataStore: SessionMetadataStore;
   readonly sessionMetadataFeedStore: FeedStore;
   readonly fileTreeStore: FileTreeStore;
@@ -366,7 +366,7 @@ class CardServicesStore {
       restoreWindowTurns,
     });
     const editorStore = new EditorSettingsStore();
-    const responseStore = new ResponseSettingsStore();
+    const transcriptStore = new TranscriptSettingsStore();
 
     // Filter by workspace_key for feeds that carry it. The workspace_key
     // is set on the binding when the supervisor acks and does not change
@@ -648,7 +648,7 @@ class CardServicesStore {
       tugSessionId: binding.tugSessionId,
       codeSessionStore,
       editorStore,
-      responseStore,
+      transcriptStore,
       sessionMetadataStore,
       sessionMetadataFeedStore,
       fileTreeStore,
@@ -681,7 +681,7 @@ class CardServicesStore {
     // exist anywhere ([L23]).
     stashQueuedSends(cardId, services.codeSessionStore.exportQueuedSends());
     services.codeSessionStore.dispose();
-    services.responseStore.dispose();
+    services.transcriptStore.dispose();
     services.sessionMetadataStore.dispose();
     services.sessionMetadataFeedStore.dispose();
     services.fileTreeStore.dispose();

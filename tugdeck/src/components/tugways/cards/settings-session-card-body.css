@@ -54,22 +54,16 @@
   gap: var(--tug-space-lg);
 }
 
-/* Both Response sliders on one row: label, track, label, track. A slider
-   this coarse (21 magnification steps, 49 gap steps) gains nothing from a
-   full-width track, and two of them stacked made the group's whole height
-   about two numbers. */
+/* Label + track on one row, the track claiming the rest of the box. The
+   box body packs its children to the start, so the grid has to claim the
+   width itself for the track to span. */
 .settings-session-card-slider-grid {
   display: grid;
-  grid-template-columns: repeat(2, auto minmax(0, 13rem));
+  grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--tug-space-md);
   row-gap: var(--tug-space-md);
   align-items: center;
-}
-
-/* The second pair takes more air than the gap inside a pair, so the row
-   reads as two controls rather than four things. */
-.settings-session-card-slider-grid > :nth-child(3) {
-  margin-inline-start: var(--tug-space-2xl);
+  width: 100%;
 }
 
 .settings-session-card-slider-label {

@@ -203,7 +203,7 @@ import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import type { Message, ToolUseMessage } from "@/lib/code-session-store/types";
 import { useLifecycleState } from "@/lib/code-session-store/hooks/use-lifecycle-state";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
-import type { ResponseSettingsStore } from "@/lib/response-settings-store";
+import type { TranscriptSettingsStore } from "@/lib/transcript-settings-store";
 import {
   SessionTranscriptDataSource,
   transcriptCellPropsEqual,
@@ -1662,12 +1662,12 @@ export interface SessionTranscriptHostProps {
   pendingContextStore: PendingContextStore;
   sessionMetadataStore: SessionMetadataStore;
   /**
-   * Per-card response-settings store. The host binds it to the
+   * Per-card transcript-settings store. The host binds it to the
    * `.session-card-transcript` root via `useLayoutEffect` so the store's
-   * CSS custom properties cascade onto every entry header and content
-   * body without round-tripping through React state ([L06] / [L22]).
+   * CSS custom properties cascade onto the whole transcript subtree
+   * without round-tripping through React state ([L06] / [L22]).
    */
-  responseStore: ResponseSettingsStore;
+  transcriptStore: TranscriptSettingsStore;
   /**
    * `⌕`-route Find session (shared with the prompt entry). The host owns the
    * whole-transcript index, runs the search over it, paints matches via the
@@ -1764,7 +1764,7 @@ export const SessionTranscriptHost = forwardRef<
     shellSessionStore,
     pendingContextStore,
     sessionMetadataStore,
-    responseStore,
+    transcriptStore,
     findSession,
     renderTurnTrailing,
   },
@@ -2058,18 +2058,16 @@ export const SessionTranscriptHost = forwardRef<
   );
 
 
-  // Bind the transcript root for response-settings CSS variable
-  // cascade. The store sets inline custom properties (header /
-  // content typography + entry margin); descendant rules in
-  // `session-card.css` consume them on entry headers, markdown content,
-  // and the inner list view's row gap.
+  // Bind the transcript root for transcript-settings CSS variable
+  // cascade. The store sets `--transcript-zoom` inline; the rule in
+  // `session-card.css` consumes it as the subtree's `zoom`.
   const rootRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
     const el = rootRef.current;
     if (!el) return;
-    responseStore.bind(el);
-    return () => responseStore.unbind();
-  }, [responseStore]);
+    transcriptStore.bind(el);
+    return () => transcriptStore.unbind();
+  }, [transcriptStore]);
 
   // Base/extent selection extension over transcript content. A shift-click
   // or shift-drag re-places the extent and leaves the base where the last

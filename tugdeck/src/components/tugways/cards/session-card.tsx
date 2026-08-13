@@ -151,7 +151,7 @@ import { deriveColdRestoreActive } from "./session-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
 import type { EditorSettingsStore } from "@/lib/editor-settings-store";
-import type { ResponseSettingsStore } from "@/lib/response-settings-store";
+import type { TranscriptSettingsStore } from "@/lib/transcript-settings-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
 import type { CompletionProvider } from "@/lib/tug-text-types";
@@ -489,7 +489,7 @@ export interface SessionCardServices {
    */
   pastedCommandResolver: PastedCommandResolver;
   editorStore: EditorSettingsStore;
-  responseStore: ResponseSettingsStore;
+  transcriptStore: TranscriptSettingsStore;
   /** Single-shot `/skills` request/response store ([#step-12d]). */
   skillsInventoryStore: SkillsInventoryStore;
   /** Single-shot `/hooks` request/response store ([#step-12c]). */
@@ -2417,7 +2417,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, responseStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, transcriptStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -4484,7 +4484,7 @@ export function SessionCardBody({
                   shellSessionStore={shellSessionStore}
                   pendingContextStore={pendingContextStore}
                   sessionMetadataStore={sessionMetadataStore}
-                  responseStore={responseStore}
+                  transcriptStore={transcriptStore}
                   findSession={findSession}
                   renderTurnTrailing={effectiveRenderTurnTrailing}
                 />

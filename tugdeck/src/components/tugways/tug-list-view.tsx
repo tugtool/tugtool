@@ -1833,10 +1833,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     const rowGapPxRef = React.useRef<number | null>(null);
     // Read the live flex row-gap and FOLD ANY CHANGE INTO THE LEDGER.
     // The gap is part of every ledger entry (outer extent = height +
-    // gap), and it is not a constant: the session card resolves it
-    // from a per-card response-settings custom property that lands
-    // AFTER the list mounts, and a theme or density change can move it
-    // any time. A one-shot mount read left every entry short by the
+    // gap), and it is not a constant: a host resolves it from a custom
+    // property that can land AFTER the list mounts, and a theme or
+    // density change can move it any time. A one-shot mount read left
+    // every entry short by the
     // difference between the mount-time gap and the settled one — a
     // uniform per-row deficit that collapses `scrollHeight` under
     // eviction and misplaces every spacer. Rebasing (`adjustAll` by
