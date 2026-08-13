@@ -482,11 +482,12 @@ function GazettePostBody({
  * — the reader asked for it and waited on it, so how long it took is part of
  * what happened. A Reporter post was never waited on: it arrives unbidden, and
  * its clock is the writing machinery's, not the reader's, so a duration on it
- * is a number about nobody. The same reasoning already keeps the stamp off a
- * Reporter's header; this is the rest of it. A user's question was typed rather
- * than run and carries no elapsed at all, so its row reads `[OK] • [COPY]` —
- * exactly as the Session transcript's user half does, and now the Reporter's
- * does too.
+ * is a number about nobody. This is not the header stamp's rule: every post is
+ * stamped, because WHEN a post arrived is a fact about all of them. How long
+ * one took to write is a fact about an answer. A user's question was typed
+ * rather than run and carries no elapsed at all, so its row reads
+ * `[OK] • [COPY]` — exactly as the Session transcript's user half does, and now
+ * the Reporter's does too.
  */
 function GazettePostZ1B({
   post,
@@ -677,18 +678,15 @@ function GazettePostRow({
             participant={AUTHOR_PARTICIPANT[post.author]}
             identifier={<span title={identifierTitle}>{authorLabel}</span>}
             timestamp={
-              // A Reporter post carries no stamp: it is narration read in
-              // written order, and the clock adds nothing the sequence does not
-              // already say. The conversational voices keep theirs, where a
-              // question and its answer are placed in time against each other.
-              post.author === "reporter" ? undefined : (
-                <time
-                  dateTime={at.toISOString()}
-                  title={formats.full.format(at)}
-                >
-                  {formats.short(at)}
-                </time>
-              )
+              // Every voice is stamped, the Reporter included. A post's place
+              // in the column says what came before it; the clock says WHEN,
+              // which is the question a rail of narration is most often asked
+              // — "was that just now, or this morning?" — and the sequence
+              // cannot answer it. The elapsed reading in the Z1B is a
+              // different fact and stays the Operator's alone.
+              <time dateTime={at.toISOString()} title={formats.full.format(at)}>
+                {formats.short(at)}
+              </time>
             }
             headerTrailing={
               post.sessionId !== null ? (
@@ -808,6 +806,11 @@ export function GazetteContent({
   // edge away from a reader who is following it, with no render to notice —
   // so the observer notices instead, and re-pins on the real geometry.
   //
+  // It is also where follow-state is RE-ENGAGED, which is the half a pin
+  // alone cannot do: geometry moves in both directions, and a change that
+  // brings the edge back under a reader who had left it must be read as
+  // arriving at the bottom. See the observer body.
+  //
   // The scroller is observed for its own box (the viewport) and every cell
   // for theirs (the content), which together are every way this column's
   // scroll height can change. [L03] — live before the first post can settle.
@@ -815,7 +818,22 @@ export function GazetteContent({
     const el = scrollRef.current;
     if (el === null) return;
     const observer = new ResizeObserver(() => {
-      if (followingRef.current) el.scrollTop = el.scrollHeight;
+      if (followingRef.current) {
+        el.scrollTop = el.scrollHeight;
+      } else {
+        // The other direction, and the one a resize is the only cause of: a
+        // geometry change can put the live edge back under the eye without
+        // any scroll event to say so. The rail animates from Stack to Split
+        // and the column gets taller than its content; a pane drag does the
+        // same; a collapsing row shortens the content under a reader who was
+        // above it, and the browser clamps `scrollTop` silently. In each of
+        // those the reader ends up AT the bottom while this card still
+        // believes they are away from it — so the button hovers over the
+        // newest post offering to take them where they already are, and the
+        // next post does not follow. Re-read the geometry instead of
+        // remembering it.
+        setFollowing(atBottom(el));
+      }
       prevScrollHeightRef.current = el.scrollHeight;
     });
     observer.observe(el);
@@ -835,7 +853,7 @@ export function GazetteContent({
       mutations.disconnect();
       observer.disconnect();
     };
-  }, []);
+  }, [setFollowing, atBottom]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;

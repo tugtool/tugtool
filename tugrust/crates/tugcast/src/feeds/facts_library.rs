@@ -58,6 +58,16 @@ pub const PROMPT_TEXT_CAP: usize = 500;
 /// says how many it dropped rather than dropping them quietly.
 pub const DETAIL_FILES_CAP: usize = 40;
 
+/// How much of a sha a fact's sentence spells.
+///
+/// The agents that read these sentences copy a sha verbatim into their prose
+/// and into their refs, so this number is not an internal formatting choice —
+/// it is the length a sha appears at in the Gazette. It matches the deck's
+/// `COMMIT_LABEL_LENGTH`, which every placed commit atom is labelled with, so
+/// a sha reads the same width whether a model wrote it in a sentence or a
+/// record placed it in a field. Eight is git's own abbreviation.
+pub const SHA_TEXT_LEN: usize = 8;
+
 /// Longest command echoed into a `shell` fact's rendering.
 const COMMAND_RENDER_CAP: usize = 200;
 
@@ -191,7 +201,7 @@ pub fn render_text(kind: FactKind, payload: &serde_json::Value) -> String {
         }
         FactKind::Commit => {
             let sha = str_field("sha").unwrap_or_default();
-            let short: String = sha.chars().take(12).collect();
+            let short: String = sha.chars().take(SHA_TEXT_LEN).collect();
             let subject_line = str_field("message")
                 .map(|m| collapse(m.lines().next().unwrap_or_default()))
                 .unwrap_or_default();
@@ -1031,7 +1041,10 @@ mod tests {
                     &["a.rs".to_string(), "b.rs".to_string()],
                     None,
                 ),
-                "commit a1b2c3d4e5f6 \"tugcast(facts): land it\" — 2 file(s)",
+                // Eight characters of sha, git's own abbreviation and the
+                // length every Tug surface shows — the agents copy this
+                // sentence verbatim, so this IS the sha's display length.
+                "commit a1b2c3d4 \"tugcast(facts): land it\" — 2 file(s)",
             ),
             (
                 shell_fact(

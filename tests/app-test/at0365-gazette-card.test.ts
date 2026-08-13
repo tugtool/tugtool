@@ -144,6 +144,10 @@ const ROWS_JS = `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
       chips: Array.from(el.querySelectorAll(".gazette-post-refs .tug-atom-ref"))
         .map(function (c) { return (c.textContent || "").trim(); }),
       glyph: el.querySelector(".tug-transcript-entry__icon svg") !== null,
+      stamp: (function () {
+        var t = el.querySelector(".tug-transcript-entry__timestamp time");
+        return t === null ? null : (t.textContent || "").trim();
+      })(),
       z1b: (function () {
         var z = el.querySelector(".gazette-post-z1b");
         return z === null ? null : (z.textContent || "").replace(/\\s+/g, " ").trim();
@@ -156,6 +160,7 @@ interface Row {
   body: string;
   chips: string[];
   glyph: boolean;
+  stamp: string | null;
   z1b: string | null;
 }
 
@@ -327,12 +332,22 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           expect(row.z1b, `${row.author}'s row carries a Z1B`).toContain("OK");
           expect(row.z1b, `${row.author}'s COPY is text+icon`).toContain("Copy");
         }
-        // Elapsed is the OPERATOR'S alone, and both of these posts are clocked
-        // at 4.2s on the wire — so the two rows differ only by who is
+        // EVERY voice is stamped — the Reporter's narration included. "When
+        // did this arrive?" is a fact about all three posts, and the column's
+        // order cannot answer it.
+        for (const row of rows) {
+          expect(
+            row.stamp,
+            `${row.author}'s header carries a clock`,
+          ).toMatch(/\d/);
+        }
+
+        // Elapsed, though, is the OPERATOR'S alone, and both of these posts are
+        // clocked at 4.2s on the wire — so the two rows differ only by who is
         // speaking. The Operator's post is an answer the reader waited on, so
         // how long it took is part of what happened; the Reporter's arrived
-        // unbidden, and a duration on it is a number about nobody. The same
-        // reasoning keeps the stamp off a Reporter's header.
+        // unbidden, and a duration on it is a number about nobody. That is a
+        // different question from WHEN, which is why the stamp above is on both.
         expect(
           rows[1]!.z1b,
           "the Operator's answer reports how long it took",

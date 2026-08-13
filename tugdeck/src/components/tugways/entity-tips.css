@@ -1,11 +1,5 @@
 /* @tug-pairings {
   --tugx-tip-mono-fg | --tugx-tooltip-bg | informational
-  --tugx-tip-add-fg | --tugx-tooltip-bg | informational
-  --tugx-tip-del-fg | --tugx-tooltip-bg | informational
-  --tugx-tip-mark-added | --tugx-tooltip-bg | informational
-  --tugx-tip-mark-deleted | --tugx-tooltip-bg | informational
-  --tugx-tip-mark-modified | --tugx-tooltip-bg | informational
-  --tugx-tip-mark-renamed | --tugx-tooltip-bg | informational
 } */
 
 /**
@@ -17,28 +11,19 @@
  * leads, meta rows a step back from it, flat-text runs in mono, and a roster
  * whose columns line up.
  *
+ * The roster's status marks and ± counts are NOT themed here: they are
+ * `TugStatusMark` and `DiffSummaryBadges`, which carry their own tones and
+ * their own type scale so this hover and the Changes shade's file rows are
+ * one row rendered twice rather than two rows that agree today.
+ *
  * @tug-pairings
  * | Element                   | Surface            | Role          | Context                          |
  * |---------------------------|--------------------|---------------|----------------------------------|
  * | --tugx-tip-mono-fg        | --tugx-tooltip-bg  | informational | .tugx-tip-mono (color)           |
- * | --tugx-tip-add-fg         | --tugx-tooltip-bg  | informational | .tugx-tip-add (color)            |
- * | --tugx-tip-del-fg         | --tugx-tooltip-bg  | informational | .tugx-tip-del (color)            |
- * | --tugx-tip-mark-added     | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
- * | --tugx-tip-mark-deleted   | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
- * | --tugx-tip-mark-modified  | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
- * | --tugx-tip-mark-renamed   | --tugx-tooltip-bg  | informational | .tugx-tip-roster-mark[data-mark] |
  */
 
 body {
   --tugx-tip-mono-fg: var(--tug7-element-global-text-normal-muted-rest);
-  /* The ± pair and the status marks take the same tones the diff document
-     gives them, so a file reads the same wherever its change is stated. */
-  --tugx-tip-add-fg: var(--tug7-element-tone-text-normal-success-rest);
-  --tugx-tip-del-fg: var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-tip-mark-added: var(--tug7-element-tone-text-normal-success-rest);
-  --tugx-tip-mark-deleted: var(--tug7-element-tone-text-normal-danger-rest);
-  --tugx-tip-mark-modified: var(--tug7-element-tone-text-normal-caution-rest);
-  --tugx-tip-mark-renamed: var(--tug7-element-tone-text-normal-accent-rest);
 }
 
 .tugx-tip {
@@ -86,39 +71,18 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.tugx-tip-roster-mark {
-  font-weight: var(--tug-font-weight-semibold);
-  text-align: center;
-  color: var(--tugx-tip-mono-fg);
-}
-
-.tugx-tip-roster-mark[data-mark="A"] {
-  color: var(--tugx-tip-mark-added);
-}
-.tugx-tip-roster-mark[data-mark="D"] {
-  color: var(--tugx-tip-mark-deleted);
-}
-.tugx-tip-roster-mark[data-mark="M"] {
-  color: var(--tugx-tip-mark-modified);
-}
-.tugx-tip-roster-mark[data-mark="R"] {
-  color: var(--tugx-tip-mark-renamed);
-}
-
 .tugx-tip-roster-path {
   overflow-wrap: anywhere;
 }
 
+/* The counts cell holds the shared `DiffSummaryBadges` pair, which is two
+   inline-flex badges — so the cell is a flex line that keeps them together
+   and right of the path, and states nothing about their type or their tone. */
 .tugx-tip-roster-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   white-space: nowrap;
-}
-
-.tugx-tip-add {
-  color: var(--tugx-tip-add-fg);
-}
-
-.tugx-tip-del {
-  color: var(--tugx-tip-del-fg);
 }
 
 /* What the cap left out. Set apart from the roster's own rows so it reads as

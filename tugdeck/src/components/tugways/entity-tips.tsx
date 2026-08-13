@@ -14,6 +14,15 @@
  * `entity-tips.css`, and the words it uses for a commit's shape come from
  * `lib/commit-format` so the hover and the badges beside it agree.
  *
+ * The same rule reaches inside the commit roster, whose rows are the house
+ * changed-file row and not a second drawing of it: the status letter is
+ * {@link TugStatusMark} (N / M / D in the house tones, [D118]) and the counts
+ * are {@link DiffSummaryBadges} (monochrome, [P27]). The hover once painted
+ * four marks in four tones and tinted its counts green and red, two inches
+ * from a file row in the Changes shade spelling the identical commit three
+ * ways and tinting nothing — one commit, two alphabets, two type scales.
+ * Neither element is themed here, so neither can drift again.
+ *
  * The shape is the same for all three, because it is the order a reader
  * needs: **what it is** (the title row), **what is true of it** (meta rows),
  * then **what it touched** (the shape line and roster, commits only).
@@ -28,6 +37,8 @@ import "./entity-tips.css";
 
 import React from "react";
 
+import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
+import { TugStatusMark } from "@/components/tugways/tug-status-mark";
 import {
   commitRoster,
   statLine,
@@ -81,12 +92,13 @@ export function commitTip(facts: CommitTipFacts): React.ReactNode {
           <span className="tugx-tip-roster">
             {roster.entries.map((entry) => (
               <React.Fragment key={entry.path}>
-                <span className="tugx-tip-roster-mark" data-mark={entry.mark}>
-                  {entry.mark}
-                </span>
+                <TugStatusMark status={entry.mark} />
                 <span className="tugx-tip-roster-path">{entry.path}</span>
                 <span className="tugx-tip-roster-counts">
-                  {renderCounts(entry.counts)}
+                  <DiffSummaryBadges
+                    added={entry.added}
+                    removed={entry.removed}
+                  />
                 </span>
               </React.Fragment>
             ))}
@@ -98,26 +110,6 @@ export function commitTip(facts: CommitTipFacts): React.ReactNode {
       ) : null}
     </span>
   );
-}
-
-/**
- * `+12 −3` with each side taking its own tone. Split rather than styled
- * whole, because the two numbers say opposite things and the diff surfaces
- * already colour them apart.
- */
-function renderCounts(counts: string): React.ReactNode {
-  if (counts === "") return null;
-  return counts.split(" ").map((part, index) => (
-    <span
-      // The parts of one file's counts are positional and never reorder.
-      // eslint-disable-next-line react/no-array-index-key
-      key={index}
-      className={part.startsWith("+") ? "tugx-tip-add" : "tugx-tip-del"}
-    >
-      {index > 0 ? " " : null}
-      {part}
-    </span>
-  ));
 }
 
 /** What a session hover states. */

@@ -1,0 +1,43 @@
+/**
+ * tug-status-mark.css — the N / M / D letter's type and tone.
+ *
+ * Sized a step under the path it tags (`xs`, semibold) so it reads as a quiet
+ * marker rather than competing with the filename, and laid out in a fixed
+ * `2ch` cell so the path column starts at the same offset on every row
+ * regardless of which letter shows. Rides whatever mono family its host
+ * supplies — a changes row and a hover roster are both already mono, and the
+ * mark has no opinion about which.
+ *
+ * The three tones come straight from the house semantic tones ([D118]: green
+ * new, yellow changed, red deleted). No `--tugx-*` family of its own on
+ * purpose: a private palette here is exactly what let the commit hover drift
+ * to four marks in four tones beside a file row showing three. There is one
+ * element and one set of tones, so there is nothing left to drift.
+ *
+ * [L06] appearance is CSS; [L19] file pair with the component.
+ *
+ * @module components/tugways/tug-status-mark
+ */
+
+.tug-status-mark {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 2ch;
+  font-size: var(--tug-font-size-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tug-status-mark[data-mark="N"] {
+  color: var(--tug7-element-tone-text-normal-success-rest);
+}
+
+.tug-status-mark[data-mark="M"] {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
+.tug-status-mark[data-mark="D"] {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}

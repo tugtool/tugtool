@@ -9,9 +9,10 @@
  * `33 files changed +3461 −128` two inches away.
  *
  * This module owns the parts, and the sentences are assembled from them here
- * rather than at each call site. Two status vocabularies arrive at the door
- * ({@link GitCommitFile}'s words, {@link CommitFile}'s letters), so
- * {@link statusMark} accepts both and answers in letters.
+ * rather than at each call site. Three status vocabularies arrive at the door
+ * — `git show`'s words (`modified`), porcelain's codes (`??`, `RM`), and a
+ * bare letter that is already a mark — so {@link statusMark} accepts all three
+ * and answers in the house's own three letters ([D118]).
  *
  * Pure and presentation-only: nothing here knows where its facts came from.
  *
@@ -40,26 +41,58 @@ export const COMMIT_LABEL_LENGTH = 8;
 /** How many files a hover lists before it starts counting instead. */
 export const HOVER_FILE_LIMIT = 8;
 
-/** `git show`'s status words, as the single character a roster shows. */
-const STATUS_WORD_MARK: Record<string, string> = {
-  created: "A",
-  added: "A",
+/**
+ * The house status letters ([D118]): green **N** (new — untracked or added),
+ * yellow **M** (changed — modified, moved, renamed, copied, type-changed), red
+ * **D** (deleted).
+ *
+ * Three letters, not git's seven. A roster is a glance, and the reader's
+ * question at a glance is *did this file appear, change, or go away* — which
+ * is exactly three answers. A rename is a file that changed; that it changed
+ * its name rather than its lines is a fact for the row's own hover, not for
+ * the column two characters wide.
+ */
+export type StatusMark = "N" | "M" | "D";
+
+/** Status words — `git show`'s vocabulary, and the receipt parser's. */
+const STATUS_WORD_MARK: Record<string, StatusMark> = {
+  created: "N",
+  added: "N",
+  untracked: "N",
   modified: "M",
+  renamed: "M",
+  moved: "M",
+  copied: "M",
   deleted: "D",
-  renamed: "R",
 };
 
 /**
- * The one-letter mark for a file's status. Accepts either vocabulary — a
- * status word (`created`) or a mark that is already a letter (`A`) — and
- * falls back to `M`, the status a file most often has.
+ * The house letter for a file's status, from any vocabulary that arrives at
+ * the door: a status word (`created`), a porcelain code (`??`, ` M`, `RM`), or
+ * a single letter that is already a mark (`A`). Falls back to `M`, the status
+ * a file most often has — an unknown code still means the file is in the
+ * commit, and *changed* is the honest reading of that.
+ *
+ * This is the one place the mapping lives. Every surface that shows a changed
+ * file — the Changes shade's rows, the `/commit` receipt, a commit hover, the
+ * copy payload — asks here, so none of them can invent a fourth letter.
  */
-export function statusMark(status: string): string {
-  const word = STATUS_WORD_MARK[status.toLowerCase()];
-  if (word !== undefined) return word;
+export function statusMark(status: string): StatusMark {
   const trimmed = status.trim();
-  if (trimmed.length === 1) return trimmed.toUpperCase();
-  return "M";
+  // Porcelain's untracked pair, which is not a letter and not a word.
+  if (trimmed.startsWith("?")) return "N";
+  const word = STATUS_WORD_MARK[trimmed.toLowerCase()];
+  if (word !== undefined) return word;
+  // A porcelain code is one or two letters in an XY pair; the first letter
+  // that is not a dot or a space is the change that happened.
+  switch (trimmed.replace(/[.\s]/g, "").charAt(0).toUpperCase()) {
+    case "A":
+      return "N";
+    case "D":
+      return "D";
+    default:
+      return "M";
+  }
 }
 
 /**
@@ -113,9 +146,13 @@ export function statLine(files: readonly CommitFileShape[]): string {
 /** One roster line's parts: `M  path/to/file  +12 −3`. */
 export interface RosterEntry {
   path: string;
-  mark: string;
-  /** `+12 −3`, or empty when the file changed no lines. */
+  mark: StatusMark;
+  /** `+12 −3`, or empty when the file changed no lines — the text spelling,
+   *  for a copy payload. A rendered surface uses the two numbers instead, so
+   *  its counts come from the shared `DiffSummaryBadges` atom ([P27]). */
   counts: string;
+  added: number;
+  removed: number;
 }
 
 /**
@@ -132,6 +169,8 @@ export function commitRoster(
     path: file.path,
     mark: statusMark(file.status),
     counts: deltaCounts(file.added, file.removed),
+    added: file.added,
+    removed: file.removed,
   }));
   return { entries, hidden: Math.max(0, files.length - limit) };
 }

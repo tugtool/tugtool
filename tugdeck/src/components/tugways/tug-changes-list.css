@@ -73,32 +73,9 @@
   opacity: 0.7;
 }
 
-/* The status letter — a mono N/M/D, tabular-aligned in a fixed cell so the
-   path column starts at the same offset on every row regardless of which
-   letter shows. Rides the row's mono family from the primitive, sized a step
-   under the path (`xs`, semibold) so it reads as a quiet marker rather than
-   competing with the filename it tags. */
-.tug-changes-list-file-status {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2ch;
-  font-size: var(--tug-font-size-xs);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-/* New (green), modified/moved (yellow), deleted (red). */
-.tug-changes-list-status-new {
-  color: var(--tug7-element-tone-text-normal-success-rest);
-}
-.tug-changes-list-status-deleted {
-  color: var(--tug7-element-tone-text-normal-danger-rest);
-}
-.tug-changes-list-status-modified {
-  color: var(--tug7-element-tone-text-normal-caution-rest);
-}
+/* The status letter is `TugStatusMark` — the shared N/M/D element, styled in
+   its own file pair. It rides the row's mono family from the primitive and
+   asks nothing of this file. */
 
 .tug-changes-list-file-path {
   overflow: hidden;

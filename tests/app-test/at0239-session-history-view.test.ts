@@ -15,7 +15,8 @@
  *      carries the old full-40-char hash.
  *   3. Expand the top commit → the committer's identity (name + email), the
  *      message body, and the commit's changed files (a `TugChangesList`, served
- *      by the new GIT_COMMIT_FILES path) render.
+ *      by the new GIT_COMMIT_FILES path) render, each row leading with the
+ *      shared `TugStatusMark` in the house N/M/D vocabulary ([D118]).
  *
  * @covers tugdeck/src/lib/git-log-store.ts
  * @covers tugdeck/src/lib/shade-view-controller.ts
@@ -30,6 +31,9 @@
  * @covers tugdeck/src/components/tugways/commit-sha-text.css
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
  * @covers tugdeck/src/components/tugways/entity-tips.css
+ * @covers tugdeck/src/components/tugways/tug-status-mark.tsx
+ * @covers tugdeck/src/components/tugways/tug-status-mark.css
+ * @covers tugdeck/src/components/tugways/tug-changes-list.css
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.css
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  */
@@ -281,6 +285,30 @@ describe.skipIf(!SHOULD_RUN)(
               })()`,
             );
             expect(filePaths).toContain(headFile);
+
+            // Every row's status letter is the SHARED mark — one element, the
+            // house N/M/D vocabulary ([D118]), the same one the commit hover's
+            // roster renders. The hover used to paint its own A/M/D/R in its
+            // own tones two inches from these rows; this is the assertion that
+            // there is only one alphabet left to drift.
+            const marks = await app.evalJS<string[]>(
+              `(function(){
+                var els = document.querySelectorAll(${JSON.stringify(
+                  `${ROW} [data-slot="tug-commit-changes-list"] .tug-status-mark`,
+                )});
+                return Array.prototype.map.call(els, function(el){
+                  return el.getAttribute("data-mark") + ":" + (el.textContent || "").trim();
+                });
+              })()`,
+            );
+            expect(marks.length, "each changed file leads with a mark").toBe(
+              filePaths.length,
+            );
+            for (const mark of marks) {
+              // The attribute and the glyph are the same letter — the letter IS
+              // the rendering, so a mismatch would mean two sources of truth.
+              expect(mark).toMatch(/^([NMD]):\1$/);
+            }
 
             const shot = await app.screenshot();
             console.log(`SCREENSHOT: ${shot.path}`);

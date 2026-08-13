@@ -30,19 +30,36 @@ const file = (over: Partial<CommitFileShape> = {}): CommitFileShape => ({
 });
 
 describe("statusMark", () => {
-  test("answers in letters for the status words git reports", () => {
-    expect(statusMark("created")).toBe("A");
+  test("answers in the house letters for the status words git reports", () => {
+    expect(statusMark("created")).toBe("N");
     expect(statusMark("modified")).toBe("M");
     expect(statusMark("deleted")).toBe("D");
-    expect(statusMark("renamed")).toBe("R");
+  });
+
+  // Three letters, not seven: a rename is a file that CHANGED. That it
+  // changed its name rather than its lines is the row's own business.
+  test("folds every flavor of change into M", () => {
+    expect(statusMark("renamed")).toBe("M");
+    expect(statusMark("copied")).toBe("M");
+    expect(statusMark("moved")).toBe("M");
+  });
+
+  test("reads porcelain codes, including the untracked pair", () => {
+    expect(statusMark("??")).toBe("N");
+    expect(statusMark(" M")).toBe("M");
+    expect(statusMark("RM")).toBe("M");
+    expect(statusMark("A ")).toBe("N");
+    expect(statusMark(" D")).toBe("D");
   });
 
   test("passes through a vocabulary that is already letters", () => {
-    expect(statusMark("A")).toBe("A");
+    expect(statusMark("A")).toBe("N");
     expect(statusMark("d")).toBe("D");
   });
 
   test("falls back to M for a word it does not know", () => {
+    // An unrecognized status still means the file is in the commit, and
+    // "changed" is the honest reading of that.
     expect(statusMark("typechanged")).toBe("M");
   });
 });
@@ -104,7 +121,11 @@ describe("commitRoster", () => {
       file({ path: "a.ts", status: "created", added: 9, removed: 0 }),
     ]);
     expect(hidden).toBe(0);
-    expect(entries).toEqual([{ path: "a.ts", mark: "A", counts: "+9" }]);
+    // Both spellings of the counts ride the entry: `counts` for a copy
+    // payload, the raw pair for the shared badges a rendered surface uses.
+    expect(entries).toEqual([
+      { path: "a.ts", mark: "N", counts: "+9", added: 9, removed: 0 },
+    ]);
   });
 
   test("caps the list and says how many it dropped", () => {

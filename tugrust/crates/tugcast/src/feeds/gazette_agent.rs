@@ -282,6 +282,8 @@ Every sentence you write must be COMPLETE within that budget. The budget is not 
 
 Wrap exact names in backticks — paths, commit shas, symbols, commands. The post is rendered as markdown, so `tugdeck/src/main.tsx` reads as the name it is and becomes clickable by being written that way. Nothing else about markdown: no lists, no headings, no emphasis.
 
+Name a commit; never just spell one. A bare run of hex tells a reader nothing about what they are looking at, so the word comes first: commit `6077d7d6`, not `6077d7d6` on its own. Write the eight characters the facts give you and no more — that is how a sha is spelled everywhere in this app, and a longer or shorter one reads as a different kind of thing.
+
 The post is the summary, never the content. Say what happened and stop — enough that the reader knows where the session got to and can decide whether to look in, never so much that reading the post replaces opening it. If you are explaining how something works, listing every file touched, walking through the reasoning, or reproducing the answer the session already gave, you have written the content instead of the summary. The session itself is one click away; your job is to get them there knowing what they will find.
 
 Report the work; never your view of it. Do not classify what kind of work it was, and never define it by what it was not — no \"not code\", no \"off-topic\", no \"just a question\", no \"only an aside\". Every subject gets the same voice. Open on the specifics — what was asked, what came back, what changed — rather than on a label for the kind of work it was. You are not weighing whether this belonged in the session, and a post that starts by excusing itself has spent its first sentence on nothing.
@@ -298,7 +300,7 @@ To post nothing:
 {\"post\": null}
 
 To post:
-{\"post\": {\"body\": \"...\", \"refs\": [{\"kind\": \"commit\", \"target\": \"a1b2c3d4e\"}]}}
+{\"post\": {\"body\": \"...\", \"refs\": [{\"kind\": \"commit\", \"target\": \"a1b2c3d4\"}]}}
 
 An empty refs list is fine. Answer only from the material below.";
 
@@ -344,7 +346,7 @@ Fact text looks like this — compose your queries against these words:
 
 $ just app-test at0365-gazette-card.test.ts → ok
 tests: cargo nextest — passed (1614 passed, 0 failed)
-commit 3f16971ba0de \"tugways(transcript-copy): route native ⌘C through onCopy substitution\" — 4 file(s)
+commit 3f16971b \"tugways(transcript-copy): route native ⌘C through onCopy substitution\" — 4 file(s)
 
 Ask for at most 6 verbs. Prefer two or three well-chosen ones. If the question needs a fact you can only get after seeing these results, you will get one more chance to ask later — do not try to cover every branch now.
 
@@ -379,6 +381,8 @@ The results are machine values; your answer is prose. Convert as you write. Expr
 
 A fact result may carry a detail object beside its one-line text: a commit's files and message, a test run's totals, a command's exit code, a prompt's words. Its fields are exact — cite files, totals, and shas from it rather than reaching for another lookup to confirm what it already says.
 
+Name a commit; never just spell one. A bare run of hex tells a reader nothing about what they are looking at, so the word comes first: commit `37c595cd`, not `37c595cd` on its own. Write eight characters of the sha and no more, however many the result gave you — that is how a sha is spelled everywhere in this app, and a longer or shorter one reads as a different kind of thing. The refs still carry whatever the result spelled, exactly.
+
 REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
 
 If the results are not enough and one more lookup would settle it, you may ask for more verbs instead of answering — but ONLY ONCE. If you have already been given a second round of results, you must answer now with what you have, saying what remains unconfirmed.
@@ -389,7 +393,7 @@ To answer:
 {\"answer\": {\"body\": \"...\", \"refs\": [{\"kind\": \"file\", \"target\": \"tugdeck/styles/themes/brio.css\"}]}}
 
 To ask for one more round of lookups:
-{\"verbs\": [{\"verb\": \"git.show\", \"args\": {\"sha\": \"a1b2c3d4e\"}}]}
+{\"verbs\": [{\"verb\": \"git.show\", \"args\": {\"sha\": \"a1b2c3d4\"}}]}
 
 Answer only from the material below.";
 

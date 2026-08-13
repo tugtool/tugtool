@@ -17,9 +17,18 @@
  * attribute on the real button, driven through the card's own follow-state
  * writer.
  *
+ * **Resizing.** Follow-state is a reading of geometry, not a memory of a
+ * gesture, so a change to the geometry re-reads it. A rail animating from
+ * Stack to Split, a pane drag, the composer growing under the user's typing —
+ * each moves the live edge with no scroll event to announce it, and one that
+ * brings the edge back under the eye must re-engage. The composer drives that
+ * here, and the reader is parked at exactly the distance where `scrollTop`
+ * stays valid across the resize, so the browser clamps nothing and fires
+ * nothing: the only thing that can re-engage following is the resize itself.
+ *
  * Real geometry throughout: real posts through the production publish path,
- * real rendered markdown at real measured heights, and the button clicked
- * where it actually paints.
+ * real rendered markdown at real measured heights, real typing in the real
+ * field, and the button clicked where it actually paints.
  *
  * @covers tugdeck/src/components/gazette/gazette-card.tsx
  * @covers tugdeck/src/components/gazette/gazette-card.css
@@ -38,6 +47,11 @@ const CARD = '[data-testid="gazette-card"]';
 const TRANSCRIPT = '[data-testid="gazette-transcript"]';
 const POST = `${CARD} .gazette-cell`;
 const JUMP = `${CARD} .tug-jump-to-bottom-button`;
+const COMPOSER = '[data-testid="gazette-composer-field"]';
+
+/** The composer's floor and ceiling, in rows — `gazette-card.css` / `.tsx`. */
+const COMPOSER_MIN_ROWS = 2;
+const COMPOSER_MAX_ROWS = 8;
 
 const AT_MS = 1_754_600_000_000;
 
@@ -85,6 +99,53 @@ const EDGE_JS = `(function () {
 
 async function edge(app: App): Promise<Edge> {
   return app.evalJS<Edge>(EDGE_JS);
+}
+
+/** The column's visible height — what a resize moves. */
+async function viewport(app: App): Promise<number> {
+  return app.evalJS<number>(
+    `Math.round(document.querySelector(${JSON.stringify(TRANSCRIPT)}).clientHeight)`,
+  );
+}
+
+/**
+ * The composer's height in rows, measured against the field's own line box —
+ * the 16 is the `cm-content` 8px top + 8px bottom padding, which both the
+ * two-row floor and the `maxRows` ceiling account for.
+ */
+const COMPOSER_ROWS_JS = `(function () {
+  var s = document.querySelector(${JSON.stringify(`${COMPOSER} .cm-scroller`)});
+  if (s === null) return -1;
+  var lh = parseFloat(getComputedStyle(s).lineHeight);
+  return Math.round((s.getBoundingClientRect().height - 16) / lh);
+})()`;
+
+/**
+ * Fill the composer to its `maxRows` ceiling and wait for the height to
+ * settle. Grown by RETURNS rather than by wrapped text: the Gazette's send
+ * chord is ⇧⏎, so a bare Return is a newline, and a row count is exact where a
+ * character count would depend on how wide the rail happens to be today.
+ */
+async function fillComposer(app: App): Promise<void> {
+  for (let i = 0; i < COMPOSER_MAX_ROWS; i++) await app.nativeKey("Enter");
+  await app.waitForCondition<boolean>(
+    `${COMPOSER_ROWS_JS} === ${COMPOSER_MAX_ROWS}`,
+    { timeoutMs: 10_000 },
+  );
+}
+
+/**
+ * Take the composer's rows back out and wait for the collapse. One Backspace
+ * per Return typed, rather than ⌘A + delete: ⌘A is a chain-routed command and
+ * the sweep cannot make an editor the chain's leaf, so it would be answered by
+ * the card rather than the field.
+ */
+async function clearComposer(app: App): Promise<void> {
+  for (let i = 0; i < COMPOSER_MAX_ROWS; i++) await app.nativeKey("Backspace");
+  await app.waitForCondition<boolean>(
+    `${COMPOSER_ROWS_JS} === ${COMPOSER_MIN_ROWS}`,
+    { timeoutMs: 10_000 },
+  );
 }
 
 describe.skipIf(!SHOULD_RUN)("at0370 — the Gazette's live edge", () => {
@@ -197,6 +258,109 @@ describe.skipIf(!SHOULD_RUN)("at0370 — the Gazette's live edge", () => {
         expect(
           following.atBottom,
           "the jump re-engaged following, so the new post kept the edge",
+        ).toBe(true);
+
+        // ── 6. A RESIZE re-reads the edge.
+        //
+        // The column's height moves for reasons that are not scrolling — a
+        // rail animating from Stack to Split, a pane drag, the composer
+        // growing under the user's typing — and a resize that brings the live
+        // edge back under the eye fires no scroll event to say so. Without
+        // this the card goes on believing the reader is away: the jump button
+        // hovers over the newest post offering to take them where they already
+        // are, and the next post lands below the fold.
+        //
+        // The composer is the resize driven here because it is real typing in
+        // the real field, and it moves exactly the geometry a rail animation
+        // moves: the transcript's track is what the composer takes its rows
+        // from. Eight rows of it, then two.
+        await app.nativeClickAtElement(`${COMPOSER} .cm-content`);
+        await app.waitForCondition<boolean>(
+          `document.activeElement !== null
+            && document.activeElement.closest(${JSON.stringify(COMPOSER)}) !== null`,
+          { timeoutMs: 8_000 },
+        );
+
+        // Calibrate: how many pixels does clearing the composer give back to
+        // the column? Measured, not derived — the field's line height is the
+        // reader's editor font-size setting, and this test's whole point is
+        // that a real number of real pixels moved.
+        await fillComposer(app);
+        const tall = await viewport(app);
+        await clearComposer(app);
+        const short = await viewport(app);
+        const growth = short - tall;
+        note("composer collapse gives the column back", `${growth}px`);
+        expect(
+          growth,
+          "typing into the composer really does take height from the column",
+        ).toBeGreaterThan(24);
+
+        // And while the reader was AT the edge for all of that, the pin held
+        // it there — the other direction of the same observer.
+        const throughResize = await edge(app);
+        expect(
+          throughResize.atBottom,
+          "a follower keeps the edge across a resize",
+        ).toBe(true);
+
+        // Now the real pass. Park the reader `growth + 12` from the bottom:
+        // far enough to be away (past the 24px slack, so the button shows),
+        // near enough that giving `growth` back lands them within it. The
+        // window matters — at that distance `scrollTop` stays VALID after the
+        // resize, so the browser has nothing to clamp and fires no scroll
+        // event. What re-engages follow-bottom here can only be the resize.
+        await fillComposer(app);
+        await app.evalJS<unknown>(
+          `(function () {
+            var el = document.querySelector(${JSON.stringify(TRANSCRIPT)});
+            el.scrollTop = el.scrollHeight - el.clientHeight - ${growth + 12};
+            el.dispatchEvent(new Event("scroll"));
+            return true;
+          })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(JUMP)}).getAttribute("data-visible") === "true"`,
+          { timeoutMs: 5_000 },
+        );
+        const parked = await edge(app);
+        note("parked just above the edge", JSON.stringify(parked));
+
+        await clearComposer(app);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(JUMP)}).getAttribute("data-visible") === "false"`,
+          { timeoutMs: 5_000 },
+        );
+        const resized = await edge(app);
+        note("after the resize", JSON.stringify(resized));
+        // The reader was parked FARTHER from the bottom than the resize gives
+        // back (`growth + 12` away, `growth` returned), so `scrollTop` stayed
+        // valid across it and the browser had nothing to clamp — no scroll
+        // event carried this news. What closed the last 12 pixels is the card
+        // re-reading its own geometry, finding the edge inside the slack,
+        // re-engaging, and pinning. That pin is why the final position is the
+        // exact bottom rather than the 12-px-short one the reader left.
+        expect(
+          parked.scrollTop,
+          "the park was inside the range the resize would leave — nothing to clamp",
+        ).toBeLessThan(resized.scrollTop);
+        expect(
+          resized.atBottom,
+          "the column got its rows back, and the edge is under the eye again",
+        ).toBe(true);
+
+        // Withdrawing the button is the visible half; the invisible half is
+        // that following is genuinely on again.
+        expect(await publish(app, wirePost(34))).toBe(true);
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(POST)}).length === 15`,
+          { timeoutMs: 10_000 },
+        );
+        const afterResize = await edge(app);
+        note("a post after the resize", JSON.stringify(afterResize));
+        expect(
+          afterResize.atBottom,
+          "the resize re-engaged following, so the new post kept the edge",
         ).toBe(true);
       } finally {
         await app.close();

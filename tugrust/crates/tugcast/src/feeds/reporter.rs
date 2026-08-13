@@ -960,10 +960,15 @@ mod tests {
     /// [P10]: the wake reads the facts library and hands the Reporter the facts
     /// recorded since its newest prior post — and a sha carried only by a fact
     /// survives ref validation, which is the whole point of the second corpus.
+    ///
+    /// The ref target is the sha as the FACT SPELLS IT — `SHA_TEXT_LEN`
+    /// characters, not the whole stored hash. That is the only spelling the
+    /// model was shown, and copying exactly what you were shown is the rule
+    /// validation enforces.
     #[tokio::test]
     async fn a_wake_carries_the_facts_recorded_since_the_last_post() {
         let spawner = FakeSpawner::always(Ok(r#"{"post": {"body": "A commit landed.", "refs": [
-                {"kind": "commit", "target": "03fcaa087"}
+                {"kind": "commit", "target": "03fcaa08"}
             ]}}"#
             .to_string()));
         let fake = Arc::clone(&spawner);
@@ -993,12 +998,12 @@ mod tests {
             .expect("the pool saw a turn");
         assert!(input.contains(crate::feeds::reporter_wake::FACTS_SECTION_HEADER));
         assert!(
-            input.contains("03fcaa087"),
+            input.contains("03fcaa08"),
             "the commit fact reached the wake input: {input}"
         );
         // The sha appears in no frame — only in the fact — and is kept anyway.
         assert_eq!(post.refs.len(), 1);
-        assert_eq!(post.refs[0].target, "03fcaa087");
+        assert_eq!(post.refs[0].target, "03fcaa08");
         h.cancel.cancel();
     }
 

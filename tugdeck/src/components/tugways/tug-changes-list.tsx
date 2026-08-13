@@ -67,6 +67,7 @@ import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
+import { TugStatusMark } from "@/components/tugways/tug-status-mark";
 import {
   getEntryDiffStore,
   releaseEntryDiffStore,
@@ -99,43 +100,6 @@ export type TugChangesListEntry =
   | { kind: "session"; id: string; project: ProjectChangeset; entry: SessionChangesetEntry }
   | { kind: "unattributed"; id: string; project: ProjectChangeset; files: UnattributedFile[] }
   | { kind: "orphaned"; id: string; project: ProjectChangeset; files: OrphanedFile[] };
-
-// ---------------------------------------------------------------------------
-// Status mark — a colored single letter (more legible than a glyph at this
-// size): green N (new), yellow M (modified or moved), red D (deleted).
-// ---------------------------------------------------------------------------
-
-/** The status letter + tone for a file. New folds untracked + added; modified
- *  folds renamed/moved and every other change; deleted stands alone. */
-function statusMark(gitStatus: string): { letter: "N" | "M" | "D"; toneClass: string } {
-  if (gitStatus.startsWith("??")) {
-    return { letter: "N", toneClass: "tug-changes-list-status-new" };
-  }
-  const code = gitStatus.replace(/[.\s]/g, "").charAt(0);
-  switch (code) {
-    case "A":
-      return { letter: "N", toneClass: "tug-changes-list-status-new" };
-    case "D":
-      return { letter: "D", toneClass: "tug-changes-list-status-deleted" };
-    default:
-      // Modified, renamed/moved, copied, type-changed — all read as "changed".
-      return { letter: "M", toneClass: "tug-changes-list-status-modified" };
-  }
-}
-
-/** The status letter, colored by tone. Decorative — the git status also rides
- *  the row's provenance text and title. */
-function StatusMark({ gitStatus }: { gitStatus: string }): React.ReactElement {
-  const { letter, toneClass } = statusMark(gitStatus);
-  return (
-    <span
-      className={`tug-changes-list-file-status ${toneClass}`}
-      aria-hidden="true"
-    >
-      {letter}
-    </span>
-  );
-}
 
 function isDeleted(op: string, gitStatus: string): boolean {
   return op === "deleted" || /D/.test(gitStatus);
@@ -826,7 +790,7 @@ export function ChangesFileRow({
           variant="flush"
           density="compact"
           mono
-          leading={<StatusMark gitStatus={file.git_status} />}
+          leading={<TugStatusMark status={file.git_status} />}
           trailing={
             <span
               className="tug-changes-list-row-trailing"
