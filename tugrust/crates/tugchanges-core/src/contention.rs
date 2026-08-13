@@ -303,7 +303,7 @@ impl HunkAdded {
     }
 }
 
-/// Map one owner's anchors onto the file's hunks (Spec S02).
+/// Map one owner's anchors onto the file's hunks.
 ///
 /// Every anchor either places — contributing every hunk it matched — or
 /// fails to, setting `unplaced`. The two are kept apart because the SHARED
@@ -357,6 +357,14 @@ fn claim_for(added: &[HunkAdded], anchors: &[Anchor]) -> Claim {
 /// the hash rule already produced. It exists for the two cases exact per-line
 /// hashing cannot reach: a sub-line fragment edit, whose recorded "line" is
 /// part of the hunk's line, and a line past the hash cap.
+///
+/// Containment places only on a *single* hunk. Unlike the hash rule, which
+/// compares whole lines, a probe matches any hunk whose added text merely
+/// contains it — so a short probe can appear in a region this edit never
+/// wrote. Multi-match under the hash rule is evidence of one edit reaching
+/// two hunks; multi-match under containment is indistinguishable from a
+/// coincidence, and electing a co-owner's hunk on a coincidence is the
+/// expensive, invisible error. Declining costs only the badge.
 fn added_lines_matches<'a>(
     added: &'a [HunkAdded],
     line_hashes: &[String],
@@ -374,11 +382,16 @@ fn added_lines_matches<'a>(
     if probes.is_empty() {
         return Vec::new();
     }
-    added
+    let by_containment: Vec<&String> = added
         .iter()
         .filter(|h| probes.iter().any(|probe| h.text.contains(probe)))
         .map(|h| &h.id)
-        .collect()
+        .collect();
+    if by_containment.len() == 1 {
+        by_containment
+    } else {
+        Vec::new()
+    }
 }
 
 /// Whether a hunk's added text carries what an anchor recorded.
@@ -891,6 +904,44 @@ mod tests {
             &[owner("a", vec![edit(None, "let alpha = 1;\nbeta")])],
         );
         assert_eq!(verdict.hunks_of("a", &hunks), vec![hunks[0].id.clone()]);
+    }
+
+    #[test]
+    fn an_ambiguous_containment_probe_places_nothing() {
+        // A probe matches on substring, not on the whole line, so a short
+        // fragment can turn up in a region this edit never wrote. Two hits
+        // are a coincidence, not one edit reaching two hunks — and electing
+        // the co-owner's hunk on a coincidence is the error that costs.
+        let diff = "\
+--- a/f.tsx
++++ b/f.tsx
+@@ -10,1 +10,1 @@
+-            size={12}
++            size={14}
+@@ -40,1 +40,2 @@
+ elsewhere
++  <Icon size={14} />
+";
+        let hunks = parse_hunks(diff);
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(Some("size={12}"), "size={14}")]),
+                owner("b", vec![edit(None, "  <Icon size={14} />")]),
+            ],
+        );
+        assert_eq!(
+            verdict.claims["a"],
+            Claim::Hunks {
+                placed: BTreeSet::new(),
+                unplaced: true,
+            },
+            "an ambiguous probe declines rather than claiming both"
+        );
+        assert!(
+            verdict.hunks_of("a", &hunks).is_empty(),
+            "…so the landing cannot sweep up b's region"
+        );
     }
 
     #[test]
