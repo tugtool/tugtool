@@ -1,6 +1,8 @@
-# How a reference looks — one rule for atoms, chips, refs, and code spans
+# How a reference looks — placed things are atoms, written things are mentions
 
 A file path in the transcript can be painted four different ways. A commit sha, three. Which one you get is decided by the container the entity arrived in — an editor atom, a tool input, a ref list, a pair of backticks the model happened to type — and the container is a fact about our plumbing that the reader cannot see and does not care about. This brief replaces that with a rule about authorship.
+
+**In one paragraph.** An **atom** is something someone *placed* — an `@`-mention, a tool's `file_path` field, an entry in a post's `refs` array — and it renders as a glyph plus a **name**, boxed only where the object can be manipulated in place. A **mention** is something someone *wrote* — characters in a sentence — and it renders as those characters plus a **1px underline at `currentColor` 45%** when a resolver confirms it. Placed-ness is structural, recorded in the data before anything renders, so the choice is never a judgment call. Detection stops caring about backticks; appearance keeps caring, because backticks are the author's emphasis and the code tone is a separate channel from the actionable one. Nothing about *behaviour* changes: `registry.ts` was already right.
 
 ## What is already right
 
@@ -32,7 +34,7 @@ Per entity kind: **file path 4 forms, commit sha 3, command 1, session 1.** The 
 
 **A3 — the Gazette paints the same fact two ways in one post.** `unmentionedRefs` suppresses a ref chip when the prose already names the target. So the operative rule is: *a file the sentence happened to mention renders as tinted text; a file the sentence happened to omit renders as a boxed chip.* Same kind, same post, two forms, selected by where the model put the words.
 
-**A4 — the gate is per-surface.** `proseCitesPaths` is set only by `gazette-card.tsx:359`. The Session card leaves it off, so the identical sentence naming the identical file is a live reference in one card and dead text in the other.
+**A4 — the gate is per-surface.** `proseCitesPaths` is set only by `useGazetteAnnotation` (`gazette-card.tsx:359`). The Session card's context — `useAnnotationContext` in `transcript-host-helpers.ts:134` — leaves it off, so the identical sentence naming the identical file is a live reference in one card and dead text in the other.
 
 ## How it got this way
 
@@ -66,6 +68,17 @@ The rule's value is that it is never a judgment call: **placed things arrive in 
 No heuristic, no resolver verdict, no per-surface flag, no backtick inspection. Placed-ness is structural, so it cannot drift.
 
 **[P02] The user/assistant axis is really *picked versus typed*, and it cuts across both.** `@`-mention a file and you get a chip; type the same path by hand into the same message and you get a mention. Those genuinely were two different acts, and the distinction is learnable in one exposure. This is what `atom-mention-marker.ts` already implements, and it survives by name: **what you placed comes back as what you placed.**
+
+### Vocabulary
+
+Four words, used precisely everywhere below. A plan that renames them is fine; a plan that blurs them is not.
+
+- **Atom** — the rendering of a *placed* value. Shows a **name**, not the raw value ([P09]). Two skins, never more.
+- **Editable skin** — the boxed chip (`TugAtomChip` / `createAtomImgElement`). Only where the object can be selected, deleted or dragged in place.
+- **Read-only skin** — glyph + label, transparent, no border (`ToolFileRef` today). Everywhere else a placed value appears.
+- **Mention** — the rendering of a *written* value: the characters exactly as written, plus the rule when a resolver confirms them.
+
+There is no third form. "Chip", "ref", and "citation" are legacy words for one of these two skins and should not survive the plan as separate concepts.
 
 ## Decisions
 
@@ -104,19 +117,74 @@ This is not a new idea; it is already written down. `gazette-card.tsx:264` says 
 
 After this there are **two forms and one variant**, and which one applies is decided before rendering by how the value arrived.
 
+## Call-site inventory
+
+Every place a reference is painted today, and what it becomes. Nothing outside this table needs to change.
+
+| Surface | Today | Becomes | Item |
+|---|---|---|---|
+| Composer atoms (CM6) | editable skin (`<img>`) | unchanged | — |
+| User message replay (`tug-atom-markdown-body`, `tug-atom-text-body`) | editable skin | unchanged — the user placed it, and it stays manipulable in the composer it came from | — |
+| Read / Edit / Write / NotebookEdit headers | `ToolFileRef` | unchanged — this *is* the read-only skin | — |
+| `pulse-beat-text.tsx` | `ToolFileRef` | unchanged | — |
+| Gazette trailing refs (`RefAtom`) | editable skin (`TugAtomChip`) | read-only skin | W4 |
+| Gazette commit ref | editable skin, label `Commit: <9>` | read-only skin, label `Commit <8>` | W4 + W5 |
+| `CommitShaText` (commit receipt, History rows) | hand-rolled `<code>` | read-only skin, label `Commit <8>` | W5 |
+| Inline `<code>` the annotator confirmed | code tone, no resting signal | code tone **plus** the rule | W2 |
+| Split-out prose run (`[data-tugx-wrapped]`) | invisible at rest | the rule | W2 |
+| Session citation | `TugSessionCitation` | unchanged component; skin per [P06] | W4 |
+| Bare paths in Session-card prose | unmarked | marked | W1 |
+
+Two things are deliberately absent. **`unmentionedRefs` stays** — a ref already named in the prose still should not also appear in the trailing row; the suppression was never the bug ([P06]). And **`registry.ts` is untouched** — behavior was already right, and the whole shape of this work is that no gesture changes.
+
+## Retired — do not re-propose
+
+Recorded because each was considered and rejected with a reason, and each is the obvious next idea for anyone reading this cold.
+
+- **A resting colour/tint for a resolved entity.** Failed on the bench. Colour is not an affordance, and it collides with the code tone, which already uses that channel to mean something else. [P05].
+- **Token / Ref / Mention as three peer forms.** An earlier draft's model. The box is a *skin*, not a form — treating it as a third form is what let two components drift into being the same thing. [P06].
+- **Unboxing every placed value, including the Gazette's trailing refs, on the theory that boxes mean "editing".** Half right. Boxes mean *manipulable in place*, and the Gazette row is read-only, so it unboxes — but it stays an **atom**, because `refs` is a placed array. The distinction matters: the row was never the defect.
+- **Atoms (chips) for actionable entities in prose.** The measurable cost is the 25px line-height floor spreading to every paragraph; the principled cost is that a chip replaces text the author wrote. See *Why prose mentions are not atoms*.
+- **Folding `CommitShaText` into the Mention form.** An earlier draft's [P07]. Contradicted by [P01] — a sha in a receipt header is a field, not a sentence.
+- **Stripping the code tone from a confirmed path so backticked and bare look identical.** [P04]: that overrides the author's own emphasis, which is the same violation as replacing prose with a box.
+
+## Open questions for the plan
+
+Three, all narrow, none blocking the shape.
+
+1. **Does the read-only skin carry the code font?** `ToolFileRef` sets `font-family: inherit`, which lands correctly in a tool header (the detail slot is already mono) and lands as *prose font* in the Gazette's trailing row. The bench pins the row to mono explicitly (`.gep-refs-unboxed`) to make the question visible. Decide it once, in the component, rather than per consumer.
+2. **Does `ToolFileRef` get renamed?** It is no longer "the thing in a tool header" — it is the read-only atom skin, and W5 widens it past `file-path` to commits. The name will actively mislead. Renaming is mechanical but touches six call sites; the plan should either do it in W5 or say why not.
+3. **Copy round-trip for the relabelled commit atom.** The Gazette row's label goes from `Commit: <9>` to `Commit <8>`, and `CommitShaText`'s right-click already writes `Commit <8>`. Check `copy-as-plain-text.ts` and `selectionToTranscriptMarkdown` yield one spelling, not two.
+
+**Explicitly not a question: theme tokens.** The rule is `1px solid color-mix(in srgb, currentColor 45%, transparent)` — derived from the ink it underlines, so it needs no per-theme value and cannot drift across the six themes. No `--tug7-*` addition, no `audit:theme-contrast` exposure.
+
 ## Work
 
 | # | Change | Files |
 |---|---|---|
-| W1 | Retire the `inCode` license and `proseCitesPaths`; one detection gate | `annotator/annotate-content.ts`, `annotator/types.ts`, `gazette-card.tsx` |
+| W1 | Retire the `inCode` license and the `proseCitesPaths` field; one detection gate for every surface | `annotator/annotate-content.ts` (`annotatePathsInText`), `annotator/types.ts` (delete the field), `gazette-card.tsx` (`useGazetteAnnotation`), `transcript-host-helpers.ts` (`useAnnotationContext`) |
 | W2 | Resting underline (1px solid, `currentColor` 45%) for a resolved Mention; hover keeps the full link treatment | `styles/tug-annotation.css`, `tug-markdown-view.css` |
 | W3 | The two channels kept independent: code tone from backticks, rule from the verdict | `tug-markdown-view.css` |
 | W4 | `ToolFileRef` becomes the read-only atom skin; Gazette refs adopt it | `gazette-card.tsx` (`RefAtom`), `tool-file-ref.tsx` |
 | W5 | Widen the read-only skin past `file-path`; `CommitShaText` → commit atom labelled `Commit <short>` | `tool-file-ref.tsx`, `commit-sha-text.tsx`, `commit-presentation.tsx`, `tug-history-list.tsx` |
 | W6 | Doctrine into tuglaws; placed-vs-written and [P09] named as the vocabulary | `tuglaws/` |
 
-W1 is the one with reach — it changes what gets marked on the Session card, the surface with the most ink. W2/W3 are CSS. W4/W5 are component swaps onto marks already stamped correctly.
+W1 is the one with reach — it changes what gets marked on the Session card, the surface with the most ink, and it is the only item that can regress performance. W2/W3 are CSS. W4/W5 are component swaps onto marks already stamped correctly. W6 is prose.
 
-**Bench:** `gallery-entity-presentation.tsx` (temporary, retires with this brief) paints the samples today and proposed against real resolvers, and carries the resting-underline calibration on a six-mention stress paragraph.
+Order matters once: **W1 before W2.** The rule is only legible against a corpus of marks that is already consistent, and shipping the underline first would paint the current arbitrariness in a brighter colour.
 
-Coverage: `at0346` (annotation atom + whole entity), `at0368` (Gazette session citations), `at0310` (commit receipt annotations), `at0309` (annotator cost — W1 widens what the Session card scans, so this is the one to watch), `at0381` (the bench itself).
+**W1's real risk is cost, not correctness.** Widening `proseCitesPaths` to the Session card means every path-shaped token in every assistant paragraph asks `resolvePath`. The answer is cached and detection was always permissive, but the Session card carries far more ink than the Gazette, and `at0309` exists to measure exactly this. Read it before and after; a plan that does not is not done.
+
+**Bench:** `gallery-entity-presentation.tsx` + `.css`, registered in `gallery-registrations.tsx`, covered by `at0381`. Temporary by construction — it paints today and proposed side by side against real resolvers, and it has served its purpose once the app itself shows the proposed column. **Retire all four files as the last step of the last work item**, whether the brief ships or is abandoned; a bench that outlives its question becomes a second source of truth.
+
+**Coverage.** `at0346` (annotation atom + whole entity), `at0368` (Gazette session citations), `at0310` (commit receipt annotations), `at0309` (annotator cost — the W1 gate), `at0381` (the bench). New assertions belong with the surface they cover, not in a new file per work item.
+
+## Done means
+
+1. A path that resolves is marked, and looks the same, whether it was backticked, written bare, or cited with a line number — on the Session card and in the Gazette alike.
+2. An inline `<code>` span that resolves to nothing looks exactly as it does today.
+3. `grep -r proseCitesPaths` returns nothing.
+4. Every placed value in read-only ink wears the read-only skin, and every commit atom says the word `Commit`.
+5. No gesture changed. `registry.ts` is untouched, and every click and context menu that worked before works identically.
+6. `at0309` shows no meaningful regression in annotator cost on the Session card.
+7. The bench and its test are deleted.
