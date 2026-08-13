@@ -262,7 +262,7 @@ const IMAGE_MENU_ENTRIES: AnnotationMenuEntry[] = [
 
 const COMMIT_SHA_MENU_ENTRIES: AnnotationMenuEntry[] = [
   { action: TUG_ACTIONS.OPEN_DIFF, label: "Open Diff" },
-  { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Sha" },
+  { action: TUG_ACTIONS.COPY_ANNOTATION_VALUE, label: "Copy Commit Hash" },
   INSERT_ENTRY,
 ];
 

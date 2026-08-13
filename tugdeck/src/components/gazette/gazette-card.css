@@ -71,6 +71,13 @@
   margin-block-start: var(--tug-space-md);
 }
 
+/* The same breathing room at the end. Without it the last row — often the
+   in-flight post, whose body is a working wave — sits flush on the composer's
+   border with nothing under it. */
+.gazette-transcript > :last-child {
+  margin-block-end: var(--tug-space-md);
+}
+
 .gazette-transcript .tug-transcript-entry__identifier {
   font-size: 0.95em;
 }

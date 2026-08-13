@@ -160,6 +160,13 @@ const AUTHOR_LABEL: Record<GazetteAuthor, string> = {
   user: "You",
 };
 
+/**
+ * The pixel size a ref atom bakes its label at — TUNE HERE. One step under
+ * the post body's 13px, so a chip sits inside the reading size rather than
+ * over it.
+ */
+const GAZETTE_CHIP_FONT_SIZE = 12;
+
 /** The transcript participant each Gazette voice renders as. */
 const AUTHOR_PARTICIPANT: Record<GazetteAuthor, Participant> = {
   reporter: "reporter",
@@ -270,6 +277,11 @@ function RefAtom({
   const chip = (
     <TugAtomChip
       className="tug-atom-chip"
+      // Sized to this card's prose rather than to the transcript's. The chip's
+      // default is the Session transcript's 14px body; the Gazette reads at
+      // 13px (`.gazette-post-body`), so an unsized chip stands a full step
+      // above the sentence that named the file.
+      fontSize={GAZETTE_CHIP_FONT_SIZE}
       // The chip's icon families are the atom vocabulary's own: a commit is
       // a point on a line, a folder a folder, everything else a file.
       type={chipRef.kind === "commit" ? "commit" : isDir ? "directory" : "file"}
@@ -618,9 +630,15 @@ function GazettePostRow({
           participant={AUTHOR_PARTICIPANT[post.author]}
           identifier={<span title={identifierTitle}>{authorLabel}</span>}
           timestamp={
-            <time dateTime={at.toISOString()} title={formats.full.format(at)}>
-              {formats.short(at)}
-            </time>
+            // A Reporter post carries no stamp: it is narration read in
+            // written order, and the clock adds nothing the sequence does not
+            // already say. The conversational voices keep theirs, where a
+            // question and its answer are placed in time against each other.
+            post.author === "reporter" ? undefined : (
+              <time dateTime={at.toISOString()} title={formats.full.format(at)}>
+                {formats.short(at)}
+              </time>
+            )
           }
           headerTrailing={
             post.sessionId !== null ? (
