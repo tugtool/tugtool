@@ -252,6 +252,8 @@ interface TranscriptCellProps {
   ref: (node: Element | null) => void;
   onContextMenu: (event: React.MouseEvent) => void;
   onMouseDown: (event: React.MouseEvent) => void;
+  /** Substitutes the reconstructed markdown into a native ⌘C. */
+  onCopy: (event: React.ClipboardEvent<HTMLElement>) => void;
 }
 
 /**
@@ -386,9 +388,17 @@ export function useTranscriptCellMenu({
 
   // Copy reads the live selection synchronously inside the menu's
   // mousedown gesture so `clipboard.writeText` is permitted.
-  const handleCopy = useCallback((): ActionHandlerResult => {
+  //
+  // Split from the write so the two doors into a transcript copy — the
+  // menu's chain dispatch and the native ⌘C, which never enters the chain
+  // at all — reconstruct through one body of code and cannot drift.
+  // Returns null when there is nothing to copy.
+  const reconstructCopy = useCallback((): {
+    text: string;
+    html: string | null;
+  } | null => {
     const sel = window.getSelection();
-    if (sel === null || sel.rangeCount === 0 || sel.isCollapsed) return;
+    if (sel === null || sel.rangeCount === 0 || sel.isCollapsed) return null;
     // Reconstruct markdown for the selection ([P03] — no plain-text
     // fallback for the markdown path). The plain-text branch is only a
     // last-resort guard for an unexpected DOM shape or a cell with no
@@ -438,9 +448,56 @@ export function useTranscriptCellMenu({
       }
     }
     if (text === null) text = sel.toString();
-    if (text === "") return;
-    writeCopyClipboard(text, html);
+    if (text === "") return null;
+    return { text, html };
   }, []);
+
+  const handleCopy = useCallback((): ActionHandlerResult => {
+    const copy = reconstructCopy();
+    if (copy === null) return;
+    writeCopyClipboard(copy.text, copy.html);
+  }, [reconstructCopy]);
+
+  // The native ⌘C.
+  //
+  // ⌘C is Edit ▸ Copy's key equivalent: AppKit resolves it against the main
+  // menu and performs `NSText.copy(_:)` on the web view, so it never enters
+  // the responder chain and {@link handleCopy} above never sees it. Left
+  // alone, WebKit then copies its own rendering of the selection — the
+  // transcript's markdown reconstruction reachable only from the menu, and
+  // the same selection yielding two different clipboards depending on which
+  // door the reader used.
+  //
+  // The `copy` DOM event is where that native path becomes ours: WebKit
+  // fires it before writing, and a handler that fills `clipboardData` and
+  // calls `preventDefault()` substitutes its own flavors. Synchronous by
+  // necessity — the event's data cannot be set from a later turn, which is
+  // why this writes through `clipboardData` rather than the async
+  // `navigator.clipboard` the menu path uses.
+  const handleNativeCopy = useCallback(
+    (event: React.ClipboardEvent<HTMLElement>): void => {
+      const data = event.clipboardData;
+      if (data === null || data === undefined) return;
+      // The selection must TOUCH this cell — intersect, not be contained by
+      // it. A cross-cell selection's common ancestor is above both bodies,
+      // so a containment test would refuse exactly the case the range-global
+      // serializer exists to handle and let WebKit's plain-text default
+      // stand. Intersection also still refuses a selection elsewhere
+      // entirely, which is the thing worth refusing: the event fires in the
+      // cell the selection is anchored in, so only one cell answers, and it
+      // reconstructs the whole range.
+      const body = bodyRef.current;
+      const sel = window.getSelection();
+      if (body === null || sel === null || sel.rangeCount === 0) return;
+      if (!sel.getRangeAt(0).intersectsNode(body)) return;
+      const copy = reconstructCopy();
+      if (copy === null) return;
+      data.setData("text/plain", copy.text);
+      if (copy.html !== null) data.setData("text/html", copy.html);
+      event.preventDefault();
+    },
+    [reconstructCopy],
+  );
 
   // Select All returns a continuation so the selection change lands
   // AFTER the menu's activation blink. Per [L07], the body element
@@ -668,11 +725,14 @@ export function useTranscriptCellMenu({
     // target — DOM focus (the prompt entry's caret) survives a click on
     // transcript content. First-responder promotion of this cell rides the
     // chain's pointerdown promoter, which needs no focusable element, so
-    // ⌘C / ⌘A and the right-click menu still route to this entry.
+    // ⌘A and the right-click menu route to this entry. ⌘C does NOT — it is
+    // a menu key equivalent AppKit performs natively — which is why the
+    // cell carries `onCopy` as well.
     cellProps: {
       ref: responderRef as (node: Element | null) => void,
       onContextMenu: handleContextMenu,
       onMouseDown: handleMouseDown,
+      onCopy: handleNativeCopy,
     },
     bodyRef,
     menu,

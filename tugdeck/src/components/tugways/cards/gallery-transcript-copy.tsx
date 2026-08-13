@@ -27,6 +27,12 @@
 
 import React from "react";
 
+// The cells wear `.tug-transcript-entry__body`, the real transcript's
+// selectable region — a fixture whose text is not selectable cannot
+// exercise a copy at all. Imported here rather than relied on from
+// whatever else the bundle happens to pull in.
+import "@/components/tugways/tug-transcript-entry.css";
+
 import { PropertyStore } from "@/components/tugways/property-store";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { pathResolutionStore } from "@/lib/annotator/path-resolution";
@@ -180,6 +186,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
       <cellA.ResponderScope>
         <div {...cellA.cellProps}>
           <div
+            className="tug-transcript-entry__body"
             data-testid="gallery-transcript-copy-cell-a"
             ref={(el) => {
               cellA.bodyRef.current = el;
@@ -213,6 +220,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
       <cellB.ResponderScope>
         <div {...cellB.cellProps}>
           <div
+            className="tug-transcript-entry__body"
             data-testid="gallery-transcript-copy-cell-b"
             ref={(el) => {
               cellB.bodyRef.current = el;
@@ -233,6 +241,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
       <cellC.ResponderScope>
         <div {...cellC.cellProps}>
           <div
+            className="tug-transcript-entry__body"
             data-testid="gallery-transcript-copy-cell-c"
             ref={(el) => {
               cellC.bodyRef.current = el;
@@ -254,6 +263,7 @@ export function GalleryTranscriptCopy(): React.ReactElement {
       <cellD.ResponderScope>
         <div {...cellD.cellProps}>
           <div
+            className="tug-transcript-entry__body"
             data-testid="gallery-transcript-copy-cell-d"
             ref={(el) => {
               cellD.bodyRef.current = el;

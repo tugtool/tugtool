@@ -20,10 +20,26 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * Foreground: ⌘C is Edit ▸ Copy's key equivalent, so AppKit resolves it
- * against the main menu before the web view sees a keydown. A background
- * instance has no key window for that resolution to land in, and the chord
- * dies there — the ⌘C half of this test asserts nothing without the screen.
+ * **How ⌘C actually reaches the reconstruction.** It does not go through the
+ * responder chain. `COPY` is `routing: "native"`: the chord pipeline passes
+ * ⌘C through untouched and AppKit performs Edit ▸ Copy as `NSText.copy(_:)`
+ * on the web view. The cell's chain handler never sees it. What the cell
+ * does instead is answer the `copy` DOM event WebKit fires before writing
+ * (`onCopy` in `transcript-host-helpers`), filling `clipboardData` with the
+ * same reconstruction the menu path writes and calling `preventDefault()`.
+ * So the chord and the menu produce one clipboard from one body of code —
+ * and the assertion for the chord reads the SYSTEM pasteboard, because that
+ * is where a native copy lands.
+ *
+ * Two things that path depends on, both of which this fixture must model
+ * honestly: the selection has to be inside the cell's body, and the region
+ * has to be user-selectable. The transcript grants that with
+ * `.tug-transcript-entry__body` (`user-select: text`), which the fixture
+ * wears for the same reason — a fixture whose text is not selectable cannot
+ * exercise a copy at all, and WebKit answers an unselectable selection by
+ * writing an EMPTY pasteboard rather than by failing loudly.
+ *
+ * Foreground: the chord and the pasteboard reads want a key window.
  *
  * @foreground
  *
@@ -189,15 +205,53 @@ const SELECT_DISPLAY_MATH = `(function(){
   return range.toString();
 })()`;
 
+/**
+ * Press ⌘C and read what the SYSTEM pasteboard actually received.
+ *
+ * Not `navigator.clipboard`: ⌘C is Edit ▸ Copy's key equivalent, performed
+ * by AppKit as `NSText.copy(_:)` on the web view, so it never enters the
+ * responder chain and never reaches the async clipboard API the menu path
+ * writes through. The cell substitutes its reconstruction into that native
+ * copy from the `copy` DOM event (`onCopy` in `transcript-host-helpers`),
+ * which lands on NSPasteboard — so the pasteboard is where the assertion
+ * belongs, and it is the strongest form of it: what the user would paste
+ * into any other app.
+ *
+ * A sentinel makes "the copy never happened" distinguishable from "the copy
+ * wrote this", the same guard at0376 uses.
+ */
+const COPY_SENTINEL = "at0188-sentinel-nothing-copied";
+
 async function copyAndRead(app: Awaited<ReturnType<typeof launchTugApp>>): Promise<string> {
-  await app.evalJS<unknown>(`(window.__copied = [], true)`);
+  Bun.spawnSync(["pbcopy"], { stdin: Buffer.from(COPY_SENTINEL) });
+  await app.evalJS<unknown>(`(window.__copyEvent = null, true)`);
   await app.nativeKey("c", ["cmd"]);
-  await app.waitForCondition<boolean>(
-    `Array.isArray(window.__copied) && window.__copied.length > 0`,
-    { timeoutMs: 3000 },
-  );
-  return app.evalJS<string>(`window.__copied[window.__copied.length - 1]`);
+  const deadline = Date.now() + 3000;
+  let seen = COPY_SENTINEL;
+  while (seen === COPY_SENTINEL && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+    seen = Bun.spawnSync(["pbpaste"]).stdout.toString();
+  }
+  return seen;
 }
+
+/**
+ * The flavors the cell put on the last native copy.
+ *
+ * A document-level listener sees the event after React's root handler has
+ * run, so it reads back exactly what the cell set — the one way to assert
+ * the `text/html` half, which `pbpaste` cannot show.
+ */
+const WATCH_COPY_FLAVORS = `(function(){
+  window.__copyEvent = null;
+  document.addEventListener("copy", function(e){
+    window.__copyEvent = {
+      plain: e.clipboardData.getData("text/plain"),
+      html: e.clipboardData.getData("text/html"),
+    };
+  });
+  return true;
+})()`;
 
 describe.skipIf(!SHOULD_RUN)(
   "AT0188: real transcript COPY handler reconstructs markdown to the clipboard",
@@ -314,7 +368,11 @@ describe.skipIf(!SHOULD_RUN)(
           // Exactly the selected paragraph — no rule, no heading below it.
           expect(copiedOvershoot).toBe("Alpha paragraph one only.");
 
-          // ---- ⌘C smoke: the real handler routes the same resolver to the clipboard ----
+          // ---- ⌘C smoke: the native chord carries the same reconstruction
+          // all the way to the system pasteboard. The chord never enters the
+          // responder chain (Edit ▸ Copy is performed natively), so this
+          // proves the `onCopy` substitution, not the menu path. ----
+          expect(await app.evalJS<boolean>(WATCH_COPY_FLAVORS)).toBe(true);
           await app.evalJS<string>(selectExactNodeScript("bold"));
           const viaCmdC = await copyAndRead(app);
           expect(viaCmdC).toBe("**bold**");
@@ -322,14 +380,11 @@ describe.skipIf(!SHOULD_RUN)(
           // ---- dual-format clipboard ([#step-11]): the same ⌘C write
           // also exposes text/html, the markdown re-rendered. text/plain
           // stays the markdown; text/html carries the rendered emphasis. ----
-          await app.waitForCondition<boolean>(
-            `Array.isArray(window.__copiedHtml) && window.__copiedHtml.length > 0`,
-            { timeoutMs: 3000 },
+          const flavors = await app.evalJS<{ plain: string; html: string } | null>(
+            `window.__copyEvent`,
           );
-          const copiedHtml = await app.evalJS<string>(
-            `window.__copiedHtml[window.__copiedHtml.length - 1]`,
-          );
-          expect(copiedHtml).toContain("<strong>bold</strong>");
+          expect(flavors?.plain).toBe("**bold**");
+          expect(flavors?.html).toContain("<strong>bold</strong>");
 
           // ---- cross-cell ([#step-10]): a selection spanning the two
           // separate responder scopes (cell A's closing paragraph → cell
