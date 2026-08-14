@@ -692,6 +692,8 @@ fn settle(
         refs: validated.kept,
         elapsed_ms: Some(elapsed_ms),
         project_dir,
+        // The Reporter narrates in words.
+        attachments: Vec::new(),
         request_id: None,
         transient: false,
     };
@@ -1111,10 +1113,10 @@ mod tests {
                 let seen = Arc::clone(&self.seen);
                 let turns = Arc::clone(&self.turns);
                 tokio::spawn(async move {
-                    while let Some(crate::shared_agent::TurnRequest { text, reply }) =
+                    while let Some(crate::shared_agent::TurnRequest { turn, reply }) =
                         rx.recv().await
                     {
-                        seen.lock().unwrap().push(text);
+                        seen.lock().unwrap().push(turn.text);
                         let answer = if turns.fetch_add(1, Ordering::SeqCst) == 0 {
                             Err("worker died".to_string())
                         } else {

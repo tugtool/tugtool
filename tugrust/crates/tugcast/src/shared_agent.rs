@@ -158,9 +158,40 @@ impl JobClass {
 
 // MARK: - Worker spawner seam
 
-/// One job turn: the composed message, and where its answer goes.
-pub struct TurnRequest {
+/// One image riding a turn — base64 bytes plus the media type they were
+/// decoded as, which is exactly the pair an Anthropic `image` content block
+/// takes. The worker protocol already writes the turn as a content-block
+/// array, so an image is a second block rather than a second mechanism.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnImage {
+    pub media_type: String,
+    /// Base64, no `data:` prefix.
+    pub data: String,
+}
+
+/// What one turn says: the composed message, and any images shown with it.
+///
+/// Text-only is the overwhelming case and spells itself — `Turn::from(text)` —
+/// so a job that has never seen an image reads exactly as it did when a turn
+/// WAS a string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Turn {
     pub text: String,
+    pub images: Vec<TurnImage>,
+}
+
+impl From<String> for Turn {
+    fn from(text: String) -> Self {
+        Self {
+            text,
+            images: Vec::new(),
+        }
+    }
+}
+
+/// One job turn: what to say, and where its answer goes.
+pub struct TurnRequest {
+    pub turn: Turn,
     pub reply: oneshot::Sender<Result<String, String>>,
 }
 
@@ -250,12 +281,33 @@ impl SharedAgentPool {
     /// programming error, so it panics where a test would catch it and errors
     /// where a user would rather have a missing headline than a dead process.
     pub async fn run(self: &Arc<Self>, job: &str, input: String) -> Result<String, String> {
+        self.run_seeing(job, input, Vec::new()).await
+    }
+
+    /// Run one named job with images shown alongside its input.
+    ///
+    /// The Gazette's Operator is what this exists for: a question can arrive
+    /// with a screenshot attached, and an answer about a screenshot has to be
+    /// written by a model that saw it. Every other property of `run` holds —
+    /// same job table, same ceilings, same degradation.
+    pub async fn run_seeing(
+        self: &Arc<Self>,
+        job: &str,
+        input: String,
+        images: Vec<TurnImage>,
+    ) -> Result<String, String> {
         let Some(spec) = self.spec.job(job) else {
             debug_assert!(false, "unknown shared-agent job {job:?}");
             return Err(format!("unknown job {job}"));
         };
-        self.run_spec(spec, compose_turn(spec.instructions, &input))
-            .await
+        self.run_spec(
+            spec,
+            Turn {
+                text: compose_turn(spec.instructions, &input),
+                images,
+            },
+        )
+        .await
     }
 
     /// Ask whether one line means the shell or means Claude.
@@ -286,7 +338,7 @@ impl SharedAgentPool {
             None => spec.instructions.to_string(),
         };
         let raw = self
-            .run_spec(spec, compose_turn(&instructions, &text))
+            .run_spec(spec, compose_turn(&instructions, &text).into())
             .await?;
         // The call itself succeeded, so `record` has already timed it; a refusal
         // is a fact about the answer, and logging it as a second `shared agent
@@ -300,7 +352,7 @@ impl SharedAgentPool {
     async fn run_spec(
         self: &Arc<Self>,
         spec: &'static JobSpec,
-        turn: String,
+        turn: Turn,
     ) -> Result<String, String> {
         if app_test_gated() {
             record(spec.name, "unavailable", None);
@@ -375,7 +427,7 @@ impl SharedAgentPool {
         &self,
         worker: &Arc<Worker>,
         spec: &'static JobSpec,
-        turn: String,
+        turn: Turn,
     ) -> Result<String, String> {
         match one_turn(worker, turn, spec.timeout).await {
             Ok(text) => Ok(text),
@@ -441,7 +493,10 @@ impl SharedAgentPool {
                 }
             }
         };
-        self.warm(worker, compose_turn(spec.instructions, warmup_input(class)));
+        self.warm(
+            worker,
+            compose_turn(spec.instructions, warmup_input(class)).into(),
+        );
     }
 
     /// Bring `class`'s lane up and wait for it, up to the warmup ceiling.
@@ -472,7 +527,7 @@ impl SharedAgentPool {
     /// warmup that never lands retires its worker, so a `claude` that hangs on
     /// its first turn cannot be held forever by the thing meant to make it
     /// useful.
-    fn warm(self: &Arc<Self>, worker: Arc<Worker>, turn: String) {
+    fn warm(self: &Arc<Self>, worker: Arc<Worker>, turn: Turn) {
         let pool = Arc::clone(self);
         worker.turns.fetch_add(1, Ordering::Relaxed);
         worker.in_flight.fetch_add(1, Ordering::Relaxed);
@@ -706,17 +761,12 @@ enum TurnFailure {
 /// wait is bounded no matter where the turn stalls.
 async fn one_turn(
     worker: &Arc<Worker>,
-    turn: String,
+    turn: Turn,
     ceiling: Duration,
 ) -> Result<String, TurnFailure> {
     let (reply, answer) = oneshot::channel();
     let attempt = async {
-        if worker
-            .tx
-            .send(TurnRequest { text: turn, reply })
-            .await
-            .is_err()
-        {
+        if worker.tx.send(TurnRequest { turn, reply }).await.is_err() {
             return Err("shared agent worker died".to_string());
         }
         match answer.await {
@@ -907,10 +957,24 @@ async fn drive_worker(
 ) {
     let mut lines = BufReader::new(stdout).lines();
 
-    while let Some(TurnRequest { text, reply }) = rx.recv().await {
+    while let Some(TurnRequest { turn, reply }) = rx.recv().await {
+        // The turn's text first, then whatever it was shown — the order a
+        // person would use, and the order the answering model reads the
+        // question in.
+        let mut content = vec![serde_json::json!({ "type": "text", "text": turn.text })];
+        for image in &turn.images {
+            content.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image.media_type,
+                    "data": image.data,
+                },
+            }));
+        }
         let message = serde_json::json!({
             "type": "user",
-            "message": { "role": "user", "content": [{ "type": "text", "text": text }] },
+            "message": { "role": "user", "content": content },
         });
         let Ok(line) = serde_json::to_string(&message) else {
             let _ = reply.send(Err("shared agent turn could not be encoded".to_string()));
@@ -1424,7 +1488,7 @@ pub(crate) mod test_support {
         spawns: AtomicUsize,
         spawn_fails: bool,
         /// Turn text seen, for the composition assertions.
-        seen: Arc<Mutex<Vec<String>>>,
+        seen: Arc<Mutex<Vec<Turn>>>,
     }
 
     impl FakeSpawner {
@@ -1477,13 +1541,13 @@ pub(crate) mod test_support {
             let seen = Arc::clone(&self.seen);
             tokio::spawn(async move {
                 let mut answers = answers.into_iter();
-                while let Some(TurnRequest { text, reply }) = rx.recv().await {
+                while let Some(TurnRequest { turn, reply }) = rx.recv().await {
                     if let Some((marker, delay)) = delay {
-                        if text.contains(marker) {
+                        if turn.text.contains(marker) {
                             tokio::time::sleep(delay).await;
                         }
                     }
-                    seen.lock().unwrap().push(text);
+                    seen.lock().unwrap().push(turn);
                     let answer = answers
                         .next()
                         .unwrap_or_else(|| Err("fake ran out of answers".to_string()));
@@ -1500,7 +1564,23 @@ pub(crate) mod test_support {
             self.spawns.load(Ordering::Relaxed)
         }
         pub(crate) fn turns_seen(&self) -> Vec<String> {
-            self.seen.lock().unwrap().clone()
+            self.seen
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|turn| turn.text.clone())
+                .collect()
+        }
+        /// What each turn was SHOWN, in the same order `turns_seen` reports —
+        /// how a test asserts an attached screenshot actually reached the
+        /// model rather than only the sentence about it.
+        pub(crate) fn images_seen(&self) -> Vec<Vec<TurnImage>> {
+            self.seen
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|turn| turn.images.clone())
+                .collect()
         }
     }
 
@@ -1580,6 +1660,39 @@ mod tests {
             .await
             .expect("answers");
         assert_eq!(fake.turns_seen().as_slice(), ["SUMMARIZE\n\nthe digest"]);
+    }
+
+    /// A job run with images shows them WITH the turn rather than instead of
+    /// it: the composed text is still the composed text, and the pictures ride
+    /// beside it. This is the whole contract the Gazette's Operator rests on —
+    /// an answer about a screenshot is written by a model that was handed the
+    /// screenshot.
+    #[tokio::test]
+    async fn a_turn_can_be_shown_images_alongside_its_text() {
+        let fake = FakeSpawner::always(Ok("A cat".to_string()));
+        let pool = pool(Arc::clone(&fake), 2);
+        let shown = vec![TurnImage {
+            media_type: "image/png".to_string(),
+            data: "aGVsbG8=".to_string(),
+        }];
+        pool.run_seeing("summarize", "what is this".to_string(), shown.clone())
+            .await
+            .expect("answers");
+        assert_eq!(fake.turns_seen().as_slice(), ["SUMMARIZE\n\nwhat is this"]);
+        assert_eq!(fake.images_seen().as_slice(), [shown]);
+    }
+
+    /// And a job run without them is byte-identical to what it always was —
+    /// every existing caller goes through `run`, which is `run_seeing` with
+    /// nothing to see.
+    #[tokio::test]
+    async fn a_turn_with_no_images_carries_none() {
+        let fake = FakeSpawner::always(Ok("Fix the thing".to_string()));
+        let pool = pool(Arc::clone(&fake), 2);
+        pool.run("summarize", "the digest".to_string())
+            .await
+            .expect("answers");
+        assert_eq!(fake.images_seen().as_slice(), [Vec::<TurnImage>::new()]);
     }
 
     #[tokio::test]

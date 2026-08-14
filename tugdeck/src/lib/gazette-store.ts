@@ -39,7 +39,9 @@ import {
   encodeListGazettePosts,
   parseGazetteFrame,
   parseGazettePost,
+  type GazetteAttachmentWire,
   type GazetteAuthor,
+  type GazetteInputAttachment,
   type GazetteRef,
   type GazettePostWire,
   type ListGazettePostsOk,
@@ -96,6 +98,9 @@ export interface GazettePostEntry {
   /** The root the post's refs resolve against, or null when tugcast recorded
    *  none — those refs render inert rather than against a guessed root. */
   projectDir: string | null;
+  /** Images the user attached to this question, in composition order. Empty
+   *  on every post nobody attached anything to. */
+  attachments: readonly GazetteAttachmentWire[];
   requestId: string | null;
   transient: boolean;
 }
@@ -235,15 +240,24 @@ export class GazetteStore {
    * is already in flight. Nothing is added to the transcript here: the user's
    * post comes back off the wire, persisted, exactly as every other post does
    * ([P08]) — so what the reader sees is the channel's own record rather than
-   * an optimistic echo that might not match it.
+   * an optimistic echo that might not match it. That includes the pictures:
+   * the bytes go up once, tugcast rests them beside the ledger, and the post
+   * that comes back says where they are.
+   *
+   * A picture with no words is a question — "what is this?" is what the
+   * screenshot is for — so an empty body is only nothing to ask when nothing
+   * was attached either.
    */
-  submitQuestion(body: string): string | null {
+  submitQuestion(
+    body: string,
+    attachments: readonly GazetteInputAttachment[] = [],
+  ): string | null {
     const question = body.trim();
-    if (question === "") return null;
+    if (question === "" && attachments.length === 0) return null;
     if (this.snapshot.pendingRequestId !== null) return null;
 
     const requestId = mintRequestId();
-    const frame = encodeGazetteInput(question, requestId);
+    const frame = encodeGazetteInput(question, requestId, attachments);
     this.conn.send(frame.feedId, frame.payload);
 
     this.clearPendingTimer();
@@ -389,6 +403,9 @@ export class GazetteStore {
       refs: Object.freeze([...post.refs]) as readonly GazetteRef[],
       elapsedMs: post.elapsed_ms ?? null,
       projectDir: post.project_dir ?? null,
+      attachments: Object.freeze([
+        ...(post.attachments ?? []),
+      ]) as readonly GazetteAttachmentWire[],
       requestId: post.request_id ?? null,
       transient: post.transient,
     });

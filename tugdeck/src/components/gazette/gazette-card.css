@@ -145,6 +145,18 @@
   font-size: 1em;
 }
 
+/* The pictures a question was asked with, under its prose — the transcript
+   face of `TugAttachmentPreview` (a wrapping grid of tiles), which brings its
+   own tile size, gap and captions. What the post owns is the gap between the
+   sentence and the strip: the same rhythm the body's own blocks keep, so the
+   pictures read as the end of the post rather than as something parked after
+   it. The `max-inline-size` above governs the prose; the strip wraps to the
+   rail's real width, because a row of thumbnails has no measure to keep. */
+.gazette-post-attachments {
+  margin-block-start: var(--tug-space-sm);
+  max-inline-size: none;
+}
+
 /* The narrated session's citation in the header: SHRINK-ONLY truncation.
    No fixed cap — a cap clips "tugtool/cuddly-…" while half the header sits
    empty. The citation shows whole whenever the identifier and timestamp
@@ -315,6 +327,40 @@
     var(--tugx-gazette-composer-min-rows) *
       var(--tug-text-editor-row-height, 1lh) + 16px
   );
+}
+
+/* The compose-phase attachment zone — the entry shell's `accessoryRow`, which
+   sits between the field and the toolbar and grows the composer's height the
+   way added text rows do. It is the Session composer's Z4C, at the Gazette's
+   scale: a fixed slot so the space is held the instant an image drops rather
+   than hopping when its pixels arrive, and the editor's own surface tint so a
+   picture reads as draft content in the same block as the words above it —
+   not as a stranded band under them. Shorter than the Session card's 84px
+   because this composer lives in a rail. TUNE HERE — the zone height. */
+/* @tug-renders-on: --tugx-entry-shell-rest */
+.gazette-composer-attachments {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--tug-space-2xs);
+  min-block-size: 0;
+  box-sizing: border-box;
+  padding: var(--tug-space-2xs) var(--tug-space-md);
+  background-color: var(--tugx-entry-shell-rest);
+  /* The strip clips to its own row rather than spilling up into the field. */
+  overflow: hidden;
+}
+
+.gazette-composer:focus-within .gazette-composer-attachments {
+  background-color: var(--tugx-entry-shell-focus);
+}
+
+/* An image that could not be attached, said where the question is being
+   asked. It wraps: the reason names the file, and a truncated reason is a
+   notice that explains nothing. */
+.gazette-composer-attachment-error {
+  white-space: normal;
 }
 
 /* The send button's glyph. `sm` pins its icons at 14px, which loses an arrow

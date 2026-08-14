@@ -49,10 +49,22 @@
  *     pending row. Answer *quality* is not an app-test's business (it has no
  *     model behind it); the round trip is.
  *
- * A fourth claim, asserted on its own app because it is a measurement rather
- * than a gesture:
+ * Two further claims, each on its own app — the first because it is a whole
+ * second round trip, the second because it is a measurement rather than a
+ * gesture:
  *
- *  4. **The rail's widths are the type's.** The Gazette's floor and preferred
+ *  4. **A picture is part of a question, both ways.** An image dropped on the
+ *     composer previews where it was dropped — the Session composer's own
+ *     attachment strip, tiles and ✕ and all — and then renders in the post it
+ *     was sent with. Nothing along that path is stubbed: the drop runs the
+ *     substrate's real downsample pipeline, the bytes ride GAZETTE_INPUT, the
+ *     Operator writes them beside the ledger and records the paths on the
+ *     question's row, and the strip in the transcript reads them back through
+ *     `/api/fs/blob`. A tile with `naturalWidth > 0` at each end is the
+ *     assertion, because pixels are the only evidence that every link in that
+ *     chain held.
+ *
+ *  5. **The rail's widths are the type's.** The Gazette's floor and preferred
  *     width are not pixel counts — they are 56 and 64 characters of the body
  *     face plus the chrome the column is read through, authored as constants
  *     and checked here against the REAL render. The face is measured through
@@ -66,6 +78,8 @@
  * @covers tugdeck/src/components/gazette/gazette-card-registration.tsx
  * @covers tugdeck/src/lib/gazette-measure.ts
  * @covers tugdeck/src/lib/gazette-store.ts
+ * @covers tugdeck/src/lib/gazette-attachment-bytes.ts
+ * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
  * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
@@ -780,6 +794,204 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           ),
           "the field is back after the answer landed",
         ).toBe(true);
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "an attached image previews while it is composed and renders in the post it was sent with",
+    async () => {
+      const app = await launchTugApp({ testName: "at0365-gazette-attachments" });
+      try {
+        await app.nativeKey("g", ["cmd", "ctrl"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FIELD)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // A real PNG through the real pipeline: the drop lands on the editor
+        // host, the substrate downsamples it, stages the bytes, and drops an
+        // `image-1` chip at the caret. Nothing is stubbed — the same code the
+        // Session composer runs.
+        await app.evalJS<void>(
+          `(function () {
+            window.__at0365Dropped = false;
+            var host = document.querySelector(${JSON.stringify(FIELD)});
+            var canvas = document.createElement("canvas");
+            canvas.width = 48;
+            canvas.height = 32;
+            var ctx = canvas.getContext("2d");
+            ctx.fillStyle = "#2f6f4f";
+            ctx.fillRect(0, 0, 48, 32);
+            ctx.fillStyle = "#e8f2ec";
+            ctx.fillRect(6, 6, 36, 20);
+            canvas.toBlob(function (blob) {
+              var file = new File([blob], "shot.png", { type: "image/png" });
+              var dt = new DataTransfer();
+              dt.items.add(file);
+              var r = host.getBoundingClientRect();
+              var ev = new DragEvent("drop", {
+                bubbles: true,
+                cancelable: true,
+                clientX: r.left + r.width / 2,
+                clientY: r.top + 8,
+              });
+              Object.defineProperty(ev, "dataTransfer", { value: dt });
+              host.dispatchEvent(ev);
+              window.__at0365Dropped = true;
+            }, "image/png");
+          })()`,
+        );
+        await app.waitForCondition<boolean>(`window.__at0365Dropped === true`, {
+          timeoutMs: 8_000,
+        });
+
+        // ── The compose-phase preview. This is the miss the whole feature is
+        // about: an image dropped into the Gazette used to leave nothing to
+        // look at. The strip is the Session composer's own component, so what
+        // is asserted is its own DOM — a tile with pixels in it, its `image-1`
+        // caption, and the ✕ that only a compose-phase tile carries.
+        const COMPOSE_STRIP = '[data-testid="gazette-composer-attachment-strip"]';
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var img = document.querySelector(${JSON.stringify(
+              `${COMPOSE_STRIP} .tug-attachment-preview__thumb-img`,
+            )});
+            return img !== null && img.complete && img.naturalWidth > 0;
+          })()`,
+          { timeoutMs: 20_000 },
+        );
+        const composeTile = await app.evalJS<{
+          tiles: number;
+          caption: string;
+          deletable: boolean;
+          naturalWidth: number;
+        } | null>(
+          `(function () {
+            var strip = document.querySelector(${JSON.stringify(COMPOSE_STRIP)});
+            if (strip === null) return null;
+            var caption = strip.querySelector(".tug-attachment-preview__caption");
+            var img = strip.querySelector(".tug-attachment-preview__thumb-img");
+            return {
+              tiles: strip.querySelectorAll(".tug-attachment-preview__cell").length,
+              caption: caption === null ? "" : (caption.textContent || "").trim(),
+              deletable:
+                strip.querySelector(".tug-attachment-preview__delete") !== null,
+              naturalWidth: img === null ? 0 : img.naturalWidth,
+            };
+          })()`,
+        );
+        note("composer tile", JSON.stringify(composeTile));
+        expect(composeTile?.tiles, "one image, one tile").toBe(1);
+        expect(composeTile?.caption).toContain("image-1");
+        expect(
+          composeTile?.deletable,
+          "a draft attachment can still be taken back",
+        ).toBe(true);
+        expect(composeTile!.naturalWidth).toBeGreaterThan(0);
+
+        // A question that is only a picture is a question, so the send button
+        // is live with an empty field — the emptiness bridge counts images.
+        expect(
+          await app.evalJS<string | null>(
+            `document.querySelector(${JSON.stringify(
+              '[data-testid="gazette-composer"]',
+            )}).getAttribute("data-empty")`,
+          ),
+          "an attached image is not an empty composer",
+        ).toBe("false");
+
+        await app.nativeClickAtElement(SEND);
+
+        // ── The transcript half. The bytes went up with the question, tugcast
+        // rested them beside the ledger, and the post that came back names
+        // where. The strip reads them through `/api/fs/blob` — so a tile with
+        // real pixels here proves the whole path: wire → operator → disk →
+        // ledger row → post → blob route → the same preview component.
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var img = document.querySelector(${JSON.stringify(
+              '[data-testid="gazette-post-attachments"] .tug-attachment-preview__thumb-img',
+            )});
+            return img !== null && img.complete && img.naturalWidth > 0;
+          })()`,
+          { timeoutMs: 30_000 },
+        );
+        const postStrip = await app.evalJS<{
+          author: string | null;
+          tiles: number;
+          deletable: boolean;
+          naturalWidth: number;
+        } | null>(
+          `(function () {
+            var strip = document.querySelector(${JSON.stringify(
+              '[data-testid="gazette-post-attachments"]',
+            )});
+            if (strip === null) return null;
+            var cell = strip.closest(".gazette-cell");
+            var img = strip.querySelector(".tug-attachment-preview__thumb-img");
+            return {
+              author: cell === null ? null : cell.getAttribute("data-author"),
+              tiles: strip.querySelectorAll(".tug-attachment-preview__cell").length,
+              deletable:
+                strip.querySelector(".tug-attachment-preview__delete") !== null,
+              naturalWidth: img === null ? 0 : img.naturalWidth,
+            };
+          })()`,
+        );
+        note("post strip", JSON.stringify(postStrip));
+        expect(postStrip?.author, "the picture is on the question").toBe("user");
+        expect(postStrip?.tiles).toBe(1);
+        expect(postStrip!.naturalWidth).toBeGreaterThan(0);
+        expect(
+          postStrip?.deletable,
+          "a picture already in the channel is as final as the sentence",
+        ).toBe(false);
+
+        // A tile opens the full-resolution sheet, the way it does on a
+        // Session transcript — the strip owns that gesture, so what this
+        // proves is that the Gazette's rail can host the sheet it opens.
+        await app.nativeClickAtElement(
+          '[data-testid="gazette-post-attachments"] .tug-attachment-preview__tile',
+        );
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var img = document.querySelector(
+              '[data-slot="tug-attachment-preview-sheet__image"]',
+            );
+            return img !== null && img.complete && img.naturalWidth > 0;
+          })()`,
+          { timeoutMs: 15_000 },
+        );
+        note(
+          "preview sheet",
+          await app.evalJS<string>(
+            `(function () {
+              var img = document.querySelector(
+                '[data-slot="tug-attachment-preview-sheet__image"]',
+              );
+              return JSON.stringify({
+                width: img === null ? 0 : img.naturalWidth,
+                height: img === null ? 0 : img.naturalHeight,
+              });
+            })()`,
+          ),
+        );
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="tug-attachment-preview-sheet"]') === null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // And the composer let go of it: the strip is gone, so the next
+        // question starts empty rather than re-sending the last picture.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(COMPOSE_STRIP)}) === null`,
+          { timeoutMs: 10_000 },
+        );
       } finally {
         await app.close();
       }

@@ -98,6 +98,7 @@ import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import { TugProgressIndicator } from "@/components/tugways/tug-progress-indicator";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugAtomRef } from "@/components/tugways/tug-atom-ref";
+import { TugAttachmentPreview } from "@/components/tugways/cards/tug-attachment-preview";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
 import {
   TugTextEditor,
@@ -111,6 +112,10 @@ import { TugJumpToBottomButton } from "@/components/tugways/tug-jump-to-bottom-b
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { useResponder } from "@/components/tugways/use-responder";
 import { computePageNavigation } from "@/components/tugways/internal/list-view-page-navigation";
+import {
+  getAtomsInState,
+  removeAtomById,
+} from "@/components/tugways/tug-text-editor/atom-decoration";
 import { AnnotationScope } from "@/components/tugways/annotation-scope";
 import { useAnnotationPortals } from "@/components/tugways/annotation-portals";
 import {
@@ -138,7 +143,15 @@ import {
   getWorkspace,
   subscribeWorkspaces,
 } from "@/lib/default-workspace-store";
+import {
+  createAtomBytesStore,
+  type AtomBytesStore,
+} from "@/lib/atom-bytes-store";
 import { EditorSettingsStore } from "@/lib/editor-settings-store";
+import {
+  gazetteAttachmentBytesStore,
+  hydrateGazetteAttachments,
+} from "@/lib/gazette-attachment-bytes";
 import { FeedStore } from "@/lib/feed-store";
 import { FileTreeStore } from "@/lib/filetree-store";
 import { getConnection } from "@/lib/connection-singleton";
@@ -156,8 +169,14 @@ import {
 } from "@/lib/gazette-store";
 import { selectionToTranscriptMarkdown } from "@/lib/markdown/serialize-selection";
 import { buildSlashCommandLine } from "@/lib/slash-commands";
+import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { CompletionProvider } from "@/lib/tug-text-types";
-import { FeedId, type GazetteAuthor, type GazetteRef } from "@/protocol";
+import {
+  FeedId,
+  type GazetteAuthor,
+  type GazetteInputAttachment,
+  type GazetteRef,
+} from "@/protocol";
 import "./gazette-card.css";
 
 /** How close to the bottom still counts as "following", in px. Slack for a
@@ -464,7 +483,62 @@ function GazettePostBody({
         onAnnotated={onAnnotated}
       />
       {portals}
+      <GazettePostAttachments post={post} />
     </div>
+  );
+}
+
+/**
+ * The pictures a question was asked with, under its prose — the Session
+ * transcript's own attachment strip, on this channel's posts.
+ *
+ * It IS that component ({@link TugAttachmentPreview}), not a second one that
+ * looks like it: the same tiles at the same size, the same `image-N` captions,
+ * the same click-to-enlarge sheet with ←/→ paging and Copy. What differs is
+ * only where the bytes come from. A session card's attachment lives in that
+ * card's in-memory bytes store from the moment it was dropped; a Gazette post
+ * is history, read back days later, so its bytes rest on disk and are fetched
+ * from there ({@link hydrateGazetteAttachments}) into the channel's own store,
+ * keyed by the path itself. Read-only, so no `deletable`: a picture already in
+ * the channel is as final as the sentence beside it.
+ *
+ * The fetch is asked for in a layout effect rather than during the render that
+ * needs it ([L03]) — the strip is already subscribed to the store, so a tile
+ * with no pixels yet is a reserved slot that fills in when the read lands.
+ */
+function GazettePostAttachments({
+  post,
+}: {
+  post: GazettePostEntry;
+}): React.ReactElement | null {
+  const bytesStore = gazetteAttachmentBytesStore();
+  const attachments = post.attachments;
+  useLayoutEffect(() => {
+    hydrateGazetteAttachments(attachments);
+  }, [attachments]);
+  // The path is the atom id — it is what the bytes are keyed by, and it is
+  // stable for the life of the post. The caption is the same contiguous
+  // `image-N` the composer's own strip shows, so a picture is called the same
+  // thing while it is being sent and after it has been.
+  const atoms = useMemo<AtomSegment[]>(
+    () =>
+      attachments.map((attachment, i) => ({
+        kind: "atom",
+        type: "image",
+        label: `image-${i + 1}`,
+        value: `image-${i + 1}`,
+        id: attachment.path,
+      })),
+    [attachments],
+  );
+  if (atoms.length === 0) return null;
+  return (
+    <TugAttachmentPreview
+      atoms={atoms}
+      bytesStore={bytesStore}
+      className="gazette-post-attachments"
+      data-testid="gazette-post-attachments"
+    />
   );
 }
 
@@ -1152,6 +1226,24 @@ function gazetteEditorStore(): EditorSettingsStore {
 }
 
 /**
+ * The composer's own image bytes — what a drop or a paste lands in, between
+ * the moment it is composed and the moment the question is sent.
+ *
+ * A lazy app-scoped singleton for the reason the completion provider and the
+ * editor settings are ones: the card is app-wide and single-instance. It is
+ * NOT the transcript's store ({@link gazetteAttachmentBytesStore}): these are
+ * bytes on their way up, keyed by the atom ids the drop pipeline minted, and
+ * those are bytes on their way back down, keyed by the paths tugcast rested
+ * them at. Two directions, two keyspaces, and a send hands off from one to
+ * the other by clearing its entry.
+ */
+let _composerBytesStore: AtomBytesStore | null = null;
+function gazetteComposerBytesStore(): AtomBytesStore {
+  _composerBytesStore ??= createAtomBytesStore();
+  return _composerBytesStore;
+}
+
+/**
  * Ask the Operator something — the session prompt-entry's core editing
  * experience, without its session-bound chrome.
  *
@@ -1165,9 +1257,25 @@ function gazetteEditorStore(): EditorSettingsStore {
  * ([#chord-ring]): dashed while the promise is conditional, solid for exactly
  * as long as Shift is held alone. Atoms flatten to their values on the wire.
  *
+ * **Images are attachments, not text.** Dropping or pasting one lands the
+ * substrate's whole image pipeline — the same one the Session composer runs:
+ * the file is downsampled, its bytes are staged in the composer's bytes store
+ * under a freshly minted atom id, an `image-N` chip lands at the caret, and
+ * the {@link TugAttachmentPreview} strip below the field shows the thumbnail
+ * with a ✕ on it. That strip is the Session composer's Z4C zone, in this
+ * shell's `accessoryRow` slot; the ✕ dispatches `REMOVE_ATTACHMENT` up the
+ * chain and this component answers it ([L11]), because it owns the editor
+ * document and the bytes. On submit the bytes ride the question up and the
+ * post that comes back names the files they came to rest in.
+ *
+ * A picture with no words is a question — "what is this?" is what the
+ * screenshot is for — so the submit gate is the pair, not the text.
+ *
  * Emptiness is the `data-empty` DOM bridge on the shell root, written from a
  * substrate update listener and read by CSS to dim the submit — never React
- * state ([L06], the prompt entry's own technique).
+ * state ([L06], the prompt entry's own technique). An attached image counts
+ * as not-empty for it: the button must be live for a question that is only a
+ * picture.
  *
  * One question at a time: while an answer is outstanding the field is
  * disabled and says so. The store enforces the same rule — this is the
@@ -1207,16 +1315,49 @@ function GazetteComposer({
   const returnAction = editorSettings.returnKeyAction;
   const submitChord = returnAction === "newline" ? "shift" : undefined;
 
-  // The data-empty bridge, captured at mount (the substrate reads
-  // `extensions` once). Any doc change — typing, paste, the programmatic
-  // clear after a submit — re-mirrors emptiness onto the shell root.
-  const emptyBridge = useMemo(
+  const bytesStore = gazetteComposerBytesStore();
+  // The image atoms currently in the document — external state (CodeMirror's
+  // atom field) crossing into React so the strip below the field reflects
+  // every drop, paste and delete ([L02]: the update listener is the bridge,
+  // the strip is a pure projection of what it publishes).
+  const [composeImageAtoms, setComposeImageAtoms] = React.useState<
+    readonly AtomSegment[]
+  >([]);
+  // Structural key of that list, so a keystroke does not re-render the strip.
+  // A ref because the listener closes over it exactly once — the substrate
+  // reads `extensions` at mount and never again.
+  const composeAtomsKeyRef = useRef("");
+
+  // The one extension the composer contributes: the `data-empty` bridge and
+  // the strip's atom sync, on the same update. They are one listener because
+  // they answer the same question — what is in the document now — and
+  // emptiness has to account for a picture: a question that is only an image
+  // must not dim its own send button.
+  const substrateBridge = useMemo(
     () =>
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return;
+        // Numbered by position in the document rather than by the label the
+        // atom stored, so the strip reads right the instant one is added or
+        // removed — before the chips themselves are renumbered.
+        const images = getAtomsInState(update.state)
+          .map((p) => p.segment)
+          .filter((segment) => segment.type === "image")
+          .map((segment, i) => {
+            const name = `image-${i + 1}`;
+            return segment.label === name && segment.value === name
+              ? segment
+              : { ...segment, label: name, value: name };
+          });
+        let key = "";
+        for (const atom of images) key += `${atom.id ?? ""}|${atom.label}|`;
+        if (key !== composeAtomsKeyRef.current) {
+          composeAtomsKeyRef.current = key;
+          setComposeImageAtoms(images);
+        }
         shellRef.current?.setAttribute(
           "data-empty",
-          String(update.state.doc.length === 0),
+          String(update.state.doc.length === 0 && images.length === 0),
         );
       }),
     [],
@@ -1227,6 +1368,46 @@ function GazetteComposer({
     [],
   );
 
+  // An image that could not be attached says so where the question is being
+  // asked — in the field's own placeholder-adjacent notice row — and clears
+  // on the next document change. The Session card raises a pane bulletin for
+  // this; the Gazette has no pane chrome of its own to raise one in, and a
+  // notice inside the composer is where the reader is already looking.
+  const [attachmentError, setAttachmentError] = React.useState<string | null>(
+    null,
+  );
+  const onAttachmentError = useCallback((message: string): void => {
+    setAttachmentError(message);
+  }, []);
+  useLayoutEffect(() => {
+    if (attachmentError === null) return;
+    setAttachmentError(null);
+    // Cleared by the next composition change, which is what `composeImageAtoms`
+    // moving means — a successful attach, or the removal of the chip that
+    // landed in place of the rejected one.
+  }, [composeImageAtoms]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // [L11] responder side of the strip's ✕: this component owns the editor
+  // document and the composer's bytes, so it is what performs a removal the
+  // preview's controls only ask for.
+  const removeAttachment = useCallback(
+    (atomId: string): void => {
+      const view = editorRef.current?.view() ?? null;
+      if (view !== null) removeAtomById(view, atomId);
+      bytesStore.delete(atomId);
+    },
+    [bytesStore],
+  );
+  const { ResponderScope: ComposerResponderScope, responderRef } = useResponder({
+    id: "gazette-composer",
+    actions: {
+      [TUG_ACTIONS.REMOVE_ATTACHMENT]: (event) => {
+        if (typeof event.value !== "string") return;
+        removeAttachment(event.value);
+      },
+    },
+  });
+
   const submit = (): void => {
     if (pending) return;
     const store = getGazetteStore();
@@ -1234,7 +1415,9 @@ function GazetteComposer({
     const state = editorRef.current?.captureState();
     if (state === undefined) return;
     // Atoms flatten to their values — an `@`-completed path survives as the
-    // path the Operator can act on.
+    // path the Operator can act on. An image atom is NOT flattened (the
+    // builder drops it): its payload is the picture, and it travels as an
+    // attachment beside the words rather than as the words `image-1`.
     const text = buildSlashCommandLine(
       state.text,
       state.atoms.map((a) => ({
@@ -1242,20 +1425,78 @@ function GazetteComposer({
         segment: { type: a.type, value: a.value },
       })),
     ).trim();
-    if (text === "") return;
-    if (store.submitQuestion(text) === null) return;
+    // In document order, which is the order the model is shown them in and
+    // the order the post's own strip will draw them. An atom whose bytes are
+    // gone contributes nothing rather than an empty image block.
+    const sent: string[] = [];
+    const attachments: GazetteInputAttachment[] = [];
+    for (const atom of state.atoms) {
+      if (atom.type !== "image" || atom.id === undefined) continue;
+      const bytes = bytesStore.get(atom.id);
+      if (bytes === null || bytes.content.length === 0) continue;
+      sent.push(atom.id);
+      attachments.push({ mediaType: bytes.mediaType, data: bytes.content });
+    }
+    if (text === "" && attachments.length === 0) return;
+    if (store.submitQuestion(text, attachments) === null) return;
     // The question comes back off the wire as a post; the field's job is
     // done. `clear` fires the update listener, which resets `data-empty`.
     editorRef.current?.clear();
+    // And the bytes' job is done with it: what the post shows from here on is
+    // read from where tugcast rested them, not from this store. Holding them
+    // would keep every screenshot ever composed alive for the app's life.
+    for (const id of sent) bytesStore.delete(id);
   };
 
   return (
+    // The scope is what puts this component on the chain between the preview
+    // strip and the card, so the ✕'s `REMOVE_ATTACHMENT` walk finds the thing
+    // that owns the document ([L11]).
+    <ComposerResponderScope>
     <TugEntryShell
-      ref={shellRef}
+      ref={(el) => {
+        shellRef.current = el;
+        responderRef(el);
+      }}
       className="gazette-composer"
       data-slot="gazette-composer"
       data-testid="gazette-composer"
       data-empty="true"
+      accessoryRow={
+        composeImageAtoms.length > 0 || attachmentError !== null ? (
+          <div
+            className="gazette-composer-attachments"
+            data-slot="gazette-composer-attachments"
+            // Chrome, like the toolbar: a click on a tile or its ✕ must not
+            // take the keyboard away from the field being typed in.
+            data-tug-focus="refuse"
+          >
+            {composeImageAtoms.length > 0 ? (
+              <TugAttachmentPreview
+                atoms={composeImageAtoms}
+                bytesStore={bytesStore}
+                deletable
+                data-testid="gazette-composer-attachment-strip"
+                focusGroup={GAZETTE_FOCUS_GROUP}
+                // After the field and the send button, which are the two
+                // stops a question is asked with.
+                focusOrderBase={2}
+              />
+            ) : null}
+            {attachmentError !== null ? (
+              <TugLabel
+                size="xs"
+                role="danger"
+                className="gazette-composer-attachment-error"
+                data-testid="gazette-composer-attachment-error"
+                aria-live="polite"
+              >
+                {attachmentError}
+              </TugLabel>
+            ) : null}
+          </div>
+        ) : undefined
+      }
       toolbarTrailing={
         <TugPushButton
           subtype="icon"
@@ -1302,8 +1543,14 @@ function GazetteComposer({
         disabled={pending}
         completionProviders={completionProviders}
         onSubmit={submit}
-        extensions={emptyBridge}
+        extensions={substrateBridge}
+        // What turns a dropped or pasted image into an attachment rather than
+        // a filename: the substrate's own pipeline downsamples it, stages the
+        // bytes here, and lands the chip.
+        attachmentBytesStore={bytesStore}
+        onAttachmentError={onAttachmentError}
       />
     </TugEntryShell>
+    </ComposerResponderScope>
   );
 }

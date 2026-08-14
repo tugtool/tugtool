@@ -707,6 +707,24 @@ pub struct GazetteRef {
     pub target: String,
 }
 
+/// One image a user attached to a question, as it rests after the question
+/// was asked: a file on disk plus the media type it was decoded as.
+///
+/// The bytes do NOT live in the ledger. A downsampled screenshot is a
+/// megabyte of base64, the channel is permanent history that nothing prunes,
+/// and the deck already has a route that streams a file by absolute path
+/// (`/api/fs/blob`, the viewer cards' own). So the row holds the path and the
+/// bytes rest beside the ledger under `gazette-attachments/`, which is also
+/// what lets the same file be handed to the model as an image block without a
+/// second copy.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GazetteAttachment {
+    /// Absolute path to the stored image.
+    pub path: String,
+    /// The media type the deck decoded it as — `image/png`, `image/jpeg`, …
+    pub media_type: String,
+}
+
 /// One post on the Gazette channel, as it travels on `FeedId::GAZETTE` and
 /// as the CONTROL tail read returns it.
 ///
@@ -749,6 +767,11 @@ pub struct GazettePost {
     /// resolve) and on rows written before the column existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
+    /// Images the user attached to this question, in the order they were
+    /// composed. Empty on every post nobody attached anything to, which is
+    /// every post the Reporter and the Operator write.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<GazetteAttachment>,
     /// Correlation id, on an Operator post answering a question.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,

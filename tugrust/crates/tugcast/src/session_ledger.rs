@@ -1467,6 +1467,7 @@ impl SessionLedger {
         Self::migrate_pulse_lines_add_intent(conn)?;
         Self::migrate_gazette_posts_add_elapsed_ms(conn)?;
         Self::migrate_gazette_posts_add_project_dir(conn)?;
+        Self::migrate_gazette_posts_add_attachments(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1850,7 +1851,13 @@ impl SessionLedger {
                 -- The project directory the post's refs resolve against. NULL
                 -- on a user question and on every row written before the
                 -- column existed (`migrate_gazette_posts_add_project_dir`).
-                project_dir TEXT
+                project_dir TEXT,
+                -- Images the user attached to a question, as a JSON array of
+                -- `{path, media_type}` — the bytes rest on disk beside the
+                -- ledger, never in this row. NULL on every post nobody
+                -- attached anything to and on every row written before the
+                -- column existed (`migrate_gazette_posts_add_attachments`).
+                attachments TEXT
             );
 
             CREATE INDEX IF NOT EXISTS gazette_posts_session
@@ -2447,6 +2454,23 @@ impl SessionLedger {
         }
         if !cols.iter().any(|(n, _)| n == "project_dir") {
             conn.execute("ALTER TABLE gazette_posts ADD COLUMN project_dir TEXT", [])?;
+        }
+        Ok(())
+    }
+
+    /// Self-healing add of `gazette_posts.attachments` — the images a user
+    /// attached to a question, as a JSON array of `{path, media_type}`. Same
+    /// ALTER-only posture as the two above, for the same reason: the table is
+    /// permanent history. Pre-column rows read `NULL`, which decodes to no
+    /// attachments — honest, since nobody could attach one before the column
+    /// existed.
+    fn migrate_gazette_posts_add_attachments(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "gazette_posts")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        if !cols.iter().any(|(n, _)| n == "attachments") {
+            conn.execute("ALTER TABLE gazette_posts ADD COLUMN attachments TEXT", [])?;
         }
         Ok(())
     }
@@ -5652,11 +5676,20 @@ impl SessionLedger {
     /// broadcast and forgotten by the caller.
     pub fn record_gazette_post(&self, post: &GazettePost) -> Result<i64, LedgerError> {
         let refs_json = serde_json::to_string(&post.refs).unwrap_or_else(|_| "[]".to_string());
+        // NULL rather than `[]` where there is nothing attached: the column is
+        // the exception on this table, and a row with no images should read
+        // exactly like the rows written before the column existed.
+        let attachments_json = if post.attachments.is_empty() {
+            None
+        } else {
+            serde_json::to_string(&post.attachments).ok()
+        };
         let conn = self.db.lock().expect("ledger mutex");
         conn.execute(
             "INSERT INTO gazette_posts
-                 (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir,
+                  attachments)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 post.at_ms,
                 post.author.as_str(),
@@ -5666,6 +5699,7 @@ impl SessionLedger {
                 refs_json,
                 post.elapsed_ms,
                 post.project_dir,
+                attachments_json,
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -5676,8 +5710,8 @@ impl SessionLedger {
     pub fn list_gazette_posts_tail(&self, limit: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments
                  FROM gazette_posts ORDER BY id DESC LIMIT ?1
              ) ORDER BY id ASC",
         )?;
@@ -5708,8 +5742,8 @@ impl SessionLedger {
     ) -> Result<(Vec<GazettePost>, bool), LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments
                  FROM gazette_posts
                  WHERE (?1 IS NULL OR id < ?1)
                  ORDER BY id DESC LIMIT ?2
@@ -5740,8 +5774,8 @@ impl SessionLedger {
     ) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir FROM (
-                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments FROM (
+                 SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments
                  FROM gazette_posts
                  WHERE session_id = ?1 AND author = 'reporter'
                  ORDER BY id DESC LIMIT ?2
@@ -5760,7 +5794,7 @@ impl SessionLedger {
     pub fn gazette_posts_window(&self, id: i64, n: usize) -> Result<Vec<GazettePost>, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
-            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir
+            "SELECT id, at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir, attachments
              FROM gazette_posts
              WHERE id BETWEEN ?1 - ?2 AND ?1 + ?2
              ORDER BY id ASC",
@@ -5789,7 +5823,7 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(
             "SELECT p.id, p.at_ms, p.author, p.session_id, p.wake_reason, p.body, p.refs,
-                    p.elapsed_ms, p.project_dir,
+                    p.elapsed_ms, p.project_dir, p.attachments,
                     snippet(gazette_posts_fts, 0, '', '', '…', 32)
              FROM gazette_posts_fts f
              JOIN gazette_posts p ON p.id = f.rowid
@@ -5811,9 +5845,9 @@ impl SessionLedger {
                 limit as i64,
             ],
             |row| {
-                // Index 9: the hit columns are `gazette_post_from_row`'s own
-                // nine, and the excerpt trails them.
-                let excerpt: String = row.get(9)?;
+                // Index 10: the hit columns are `gazette_post_from_row`'s own
+                // ten, and the excerpt trails them.
+                let excerpt: String = row.get(10)?;
                 Ok(gazette_post_from_row(row)?.map(|post| GazetteSearchHit { post, excerpt }))
             },
         )?;
@@ -6188,6 +6222,10 @@ fn gazette_post_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Gaz
         return Ok(None);
     };
     let refs_json: String = row.get(6)?;
+    // NULL on every post with nothing attached, and on every row older than
+    // the column. Unreadable JSON decodes to nothing attached rather than
+    // failing the row: the post's body is the news.
+    let attachments_json: Option<String> = row.get(9)?;
     Ok(Some(GazettePost {
         id: Some(row.get(0)?),
         at_ms: row.get(1)?,
@@ -6198,6 +6236,9 @@ fn gazette_post_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Gaz
         refs: serde_json::from_str(&refs_json).unwrap_or_default(),
         elapsed_ms: row.get(7)?,
         project_dir: row.get(8)?,
+        attachments: attachments_json
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default(),
         request_id: None,
         transient: false,
     }))
@@ -6796,7 +6837,7 @@ fn sweep_trash_dir(trash_root: &Path, cutoff: i64) -> usize {
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
-    use tugcast_core::{GazetteRef, GazetteRefKind};
+    use tugcast_core::{GazetteAttachment, GazetteRef, GazetteRefKind};
 
     const WS_A: &str = "ws-alpha";
     const WS_B: &str = "ws-beta";
@@ -8083,6 +8124,7 @@ mod tests {
             refs: vec![],
             elapsed_ms: None,
             project_dir: None,
+            attachments: Vec::new(),
             request_id: None,
             transient: false,
         }
@@ -8153,6 +8195,38 @@ mod tests {
         // A stored row is never transient and carries no request id.
         assert!(!restored.transient);
         assert_eq!(restored.request_id, None);
+        // And a post nobody attached anything to comes back with nothing
+        // attached, rather than with a row the card has to defend against.
+        assert!(restored.attachments.is_empty());
+    }
+
+    /// The pictures a question was asked with survive the round trip — which
+    /// is the whole reason they are a column: a post read back days later has
+    /// to still be able to show them.
+    #[test]
+    fn gazette_post_attachments_round_trip() {
+        let ledger = fresh();
+        let mut asked = gazette_post(2_000, GazetteAuthor::User, "what is this");
+        asked.attachments = vec![
+            GazetteAttachment {
+                path: "/tmp/gazette-attachments/a.png".to_string(),
+                media_type: "image/png".to_string(),
+            },
+            GazetteAttachment {
+                path: "/tmp/gazette-attachments/b.jpg".to_string(),
+                media_type: "image/jpeg".to_string(),
+            },
+        ];
+        ledger.record_gazette_post(&asked).expect("record");
+
+        let restored = ledger.list_gazette_posts_tail(10).unwrap();
+        let post = restored.first().expect("the question");
+        assert_eq!(post.attachments.len(), 2);
+        assert_eq!(post.attachments[0].path, "/tmp/gazette-attachments/a.png");
+        assert_eq!(post.attachments[0].media_type, "image/png");
+        // In the order they were composed, which is the order they are shown
+        // to the model and drawn in the strip.
+        assert_eq!(post.attachments[1].media_type, "image/jpeg");
     }
 
     /// Paging backwards through history: each page is the rows immediately

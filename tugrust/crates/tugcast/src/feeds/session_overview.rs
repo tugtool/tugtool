@@ -5084,9 +5084,10 @@ mod tests {
             let (tx, mut rx) = tokio::sync::mpsc::channel::<TurnRequest>(8);
             let inner = Arc::clone(&self.inner);
             tokio::spawn(async move {
-                while let Some(TurnRequest { text, reply }) = rx.recv().await {
+                while let Some(TurnRequest { turn, reply }) = rx.recv().await {
                     // The turn is `<instructions>\n\n<digest>`, so the marker
                     // says which lane asked and the remainder is the digest.
+                    let text = turn.text;
                     let (marker, digest) = text.split_once("\n\n").unwrap_or((text.as_str(), ""));
                     let (lane, seen) = {
                         let script = inner.lock().unwrap();

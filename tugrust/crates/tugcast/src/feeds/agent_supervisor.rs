@@ -11861,6 +11861,7 @@ mod tests {
                     refs: Vec::new(),
                     elapsed_ms: None,
                     project_dir: None,
+                    attachments: Vec::new(),
                     request_id: None,
                     transient: false,
                 })

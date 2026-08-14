@@ -1584,6 +1584,9 @@ async fn main() {
             // `shell.history` reads them back.
             shell_ledger: shell_ledger.clone(),
             bootstrap_project_dir: bootstrap.project_dir.clone(),
+            // Beside the ledger the posts live in, so an instance's history
+            // and the pictures in it are one thing to keep or to throw away.
+            attachments_dir: tugcore::instance::data_dir().join("gazette-attachments"),
         }),
         pool: Arc::clone(&gazette_agent),
         gazette_tx: gazette_tx.clone(),
@@ -1594,6 +1597,10 @@ async fn main() {
             body: Option<String>,
             #[serde(rename = "requestId", alias = "request_id")]
             request_id: Option<String>,
+            /// Images composed with the question — the deck's already
+            /// downsampled bytes. Absent on every question typed without one.
+            #[serde(default)]
+            attachments: Vec<feeds::operator::QuestionAttachment>,
         }
         while let Some(frame) = gz_input_rx.recv().await {
             let raw = match serde_json::from_slice::<RawGazetteInput>(&frame.payload) {
@@ -1607,13 +1614,17 @@ async fn main() {
                     continue;
                 }
             };
-            let Some(body) = raw.body else {
+            // A question can be a picture and nothing else — "what is this?"
+            // is what the screenshot is for — so a missing body is only
+            // malformed when nothing was attached either.
+            let body = raw.body.unwrap_or_default();
+            if body.trim().is_empty() && raw.attachments.is_empty() {
                 warn!("GAZETTE_INPUT: payload carried no body");
                 continue;
-            };
+            }
             let pipeline = Arc::clone(&operator_pipeline);
             tokio::spawn(async move {
-                pipeline.handle(body, raw.request_id).await;
+                pipeline.handle(body, raw.request_id, raw.attachments).await;
             });
         }
     });

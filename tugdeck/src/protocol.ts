@@ -952,6 +952,20 @@ export interface GazetteRef {
  * is not history). `request_id` appears only on an Operator post answering
  * a specific question.
  */
+/**
+ * One image a user attached to a question, as the post carries it: an
+ * absolute path tugcast wrote the bytes to, plus the media type they were
+ * decoded as.
+ *
+ * The bytes do not ride the wire twice. They went up once with the question
+ * and came to rest beside the ledger; the card reads them back through
+ * `/api/fs/blob`, the same route the viewer cards stream a file with.
+ */
+export interface GazetteAttachmentWire {
+  path: string;
+  media_type: string;
+}
+
 export interface GazettePostWire {
   id?: number;
   at_ms: number;
@@ -968,6 +982,8 @@ export interface GazettePostWire {
    *  question and on rows written before tugcast recorded it; those refs
    *  render inert rather than resolve against a guessed root. */
   project_dir?: string;
+  /** Images composed with a user's question. Absent on every other post. */
+  attachments?: GazetteAttachmentWire[];
   request_id?: string;
   transient: boolean;
 }
@@ -1017,12 +1033,35 @@ export function encodeListGazettePosts(opts?: {
  * post), which is how the card knows which pending row to clear. App-scoped —
  * a question is asked of the channel, not of a session.
  */
-export function encodeGazetteInput(body: string, requestId: string): Frame {
+/**
+ * One image going UP with a question — the composer's already-downsampled
+ * bytes, base64, plus the media type the downsample produced. The pair an
+ * Anthropic image block takes, so nothing between here and the model
+ * re-encodes it.
+ */
+export interface GazetteInputAttachment {
+  mediaType: string;
+  /** Base64, no `data:` prefix. */
+  data: string;
+}
+
+export function encodeGazetteInput(
+  body: string,
+  requestId: string,
+  attachments: readonly GazetteInputAttachment[] = [],
+): Frame {
   return {
     feedId: FeedId.GAZETTE_INPUT,
     flags: FrameFlags.DATA,
     payload: new TextEncoder().encode(
-      JSON.stringify({ body, requestId }),
+      // Omitted rather than sent empty on the overwhelmingly common question
+      // typed without a picture — the frame stays byte-identical to what it
+      // was before attachments existed.
+      JSON.stringify(
+        attachments.length > 0
+          ? { body, requestId, attachments }
+          : { body, requestId },
+      ),
     ),
   };
 }
@@ -1040,6 +1079,21 @@ export function parseGazettePost(value: unknown): GazettePostWire | null {
   if (typeof p.author !== "string" || !GAZETTE_AUTHORS.includes(p.author)) {
     return null;
   }
+  // An attachment the card cannot point at is no attachment: a tile whose
+  // `src` is a relative path or an empty media type paints a broken image
+  // where a picture was promised, so a malformed entry is dropped and the
+  // rest of the post still renders.
+  const attachments: GazetteAttachmentWire[] = Array.isArray(p.attachments)
+    ? p.attachments.flatMap((raw): GazetteAttachmentWire[] => {
+        if (typeof raw !== "object" || raw === null) return [];
+        const a = raw as Record<string, unknown>;
+        if (typeof a.path !== "string" || !a.path.startsWith("/")) return [];
+        if (typeof a.media_type !== "string" || a.media_type.length === 0) {
+          return [];
+        }
+        return [{ path: a.path, media_type: a.media_type }];
+      })
+    : [];
   const refs: GazetteRef[] = Array.isArray(p.refs)
     ? p.refs.flatMap((raw): GazetteRef[] => {
         if (typeof raw !== "object" || raw === null) return [];
@@ -1067,6 +1121,7 @@ export function parseGazettePost(value: unknown): GazettePostWire | null {
     ...(typeof p.project_dir === "string" && p.project_dir.startsWith("/")
       ? { project_dir: p.project_dir }
       : {}),
+    ...(attachments.length > 0 ? { attachments } : {}),
     ...(typeof p.request_id === "string" ? { request_id: p.request_id } : {}),
     transient: p.transient === true,
   };

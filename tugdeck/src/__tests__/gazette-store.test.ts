@@ -303,6 +303,56 @@ describe("GazetteStore", () => {
       .toBe(1);
   });
 
+  it("attached images ride the question up, and a picture alone is one", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    // A picture with no words is a question — the gate is the pair.
+    const requestId = store.submitQuestion("", [
+      { mediaType: "image/png", data: "aGVsbG8=" },
+    ]);
+    expect(requestId).not.toBeNull();
+    const sent = conn.frames.filter((f) => f.feedId === FeedId.GAZETTE_INPUT);
+    const decoded = JSON.parse(new TextDecoder().decode(sent[0]!.payload));
+    expect(decoded.body).toBe("");
+    expect(decoded.attachments).toEqual([
+      { mediaType: "image/png", data: "aGVsbG8=" },
+    ]);
+  });
+
+  it("a question with no picture sends no attachments field at all", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    store.submitQuestion("what landed today?");
+    const sent = conn.frames.filter((f) => f.feedId === FeedId.GAZETTE_INPUT);
+    const decoded = JSON.parse(new TextDecoder().decode(sent[0]!.payload));
+    expect("attachments" in decoded).toBe(false);
+  });
+
+  it("a post's attachments come through, and a malformed one is dropped", () => {
+    const { store, conn } = makeStore();
+    stores.push(store);
+    store.getSnapshot();
+    conn.pushGazetteFrame({
+      id: 11,
+      at_ms: 1,
+      author: "user",
+      body: "what is this",
+      refs: [],
+      transient: false,
+      attachments: [
+        { path: "/tmp/gz/a.png", media_type: "image/png" },
+        // Relative path and empty media type: a tile nobody can point at.
+        { path: "relative.png", media_type: "image/png" },
+        { path: "/tmp/gz/b.png", media_type: "" },
+      ],
+    } as GazettePostWire);
+    const post = store.getSnapshot().posts[0]!;
+    expect(post.attachments.length).toBe(1);
+    expect(post.attachments[0]!.path).toBe("/tmp/gz/a.png");
+  });
+
   it("the answer clears the wait and keys as the pending row did ([L26])", () => {
     const { store, conn } = makeStore();
     stores.push(store);

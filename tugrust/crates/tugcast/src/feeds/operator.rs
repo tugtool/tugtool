@@ -38,8 +38,11 @@ use crate::feeds::facts_library;
 use crate::session_ledger::{
     FactRow, FactSearchFilter, GazetteSearchFilter, SessionLedger, SessionRow,
 };
+use crate::shared_agent::TurnImage;
 use crate::shell_ledger::ShellLedger;
-use tugcast_core::types::{GazetteAuthor, GazettePost, GazetteRef, GazetteRefKind};
+use tugcast_core::types::{
+    GazetteAttachment, GazetteAuthor, GazettePost, GazetteRef, GazetteRefKind,
+};
 
 // MARK: - Caps
 
@@ -83,6 +86,9 @@ pub struct OperatorContext {
     /// The `--source-tree` dir `main.rs` resolves at startup — the repo a
     /// question means when it doesn't say.
     pub bootstrap_project_dir: PathBuf,
+    /// Where an attached image's bytes come to rest — one file per image,
+    /// beside the ledger rather than inside it. Created on first write.
+    pub attachments_dir: PathBuf,
 }
 
 /// Every verb the Operator may name. The retrieval instructions list the same
@@ -1047,10 +1053,35 @@ fn render_short_local(at_ms: i64) -> String {
     }
 }
 
-fn compose_retrieve_input(now_ms: i64, question: &str, roster: &str, scrollback: &str) -> String {
+/// The line that tells the model the pictures it can see belong to the
+/// question — empty when none were attached.
+///
+/// The images ride the turn as content blocks, which is what makes them
+/// visible; this is what makes them ATTRIBUTED. Without it a screenshot is
+/// just something in the context, and the model has been seen to answer about
+/// the channel while a picture of the thing asked about sat unmentioned
+/// beside it.
+fn render_attached_line(count: usize) -> String {
+    match count {
+        0 => String::new(),
+        1 => "\nATTACHED: 1 image, shown with this turn. It is part of the question.\n".to_string(),
+        n => format!(
+            "\nATTACHED: {n} images, shown with this turn, in order. They are part of the question.\n"
+        ),
+    }
+}
+
+fn compose_retrieve_input(
+    now_ms: i64,
+    question: &str,
+    roster: &str,
+    scrollback: &str,
+    attached: usize,
+) -> String {
     format!(
-        "{}\n\n{roster}\nQUESTION:\n{question}\n\nRECENT GAZETTE POSTS:\n{scrollback}",
-        render_now_line(now_ms)
+        "{}\n\n{roster}\nQUESTION:\n{question}\n{}\nRECENT GAZETTE POSTS:\n{scrollback}",
+        render_now_line(now_ms),
+        render_attached_line(attached),
     )
 }
 
@@ -1061,6 +1092,7 @@ fn compose_answer_input(
     scrollback: &str,
     results: &str,
     forced: bool,
+    attached: usize,
 ) -> String {
     let mut out = String::new();
     if forced {
@@ -1077,7 +1109,9 @@ fn compose_answer_input(
     out.push_str(roster);
     out.push_str("\nQUESTION:\n");
     out.push_str(question);
-    out.push_str("\n\nRECENT GAZETTE POSTS:\n");
+    out.push('\n');
+    out.push_str(&render_attached_line(attached));
+    out.push_str("\nRECENT GAZETTE POSTS:\n");
     out.push_str(scrollback);
     out.push_str("\nVERB RESULTS:\n");
     out.push_str(results);
@@ -1132,6 +1166,75 @@ fn is_session_uuid(id: &str) -> bool {
         })
 }
 
+/// One image as it arrives on `GAZETTE_INPUT` — the deck's downsampled bytes,
+/// base64, plus the media type it decoded them as. The same pair an Anthropic
+/// image block takes, which is why nothing re-encodes on the way to the model.
+#[derive(Debug, Clone, Deserialize)]
+pub struct QuestionAttachment {
+    #[serde(rename = "mediaType", alias = "media_type")]
+    pub media_type: String,
+    /// Base64, no `data:` prefix.
+    pub data: String,
+}
+
+/// The file extension an image of this media type is stored under. Only the
+/// types the deck's downsample pipeline can produce are named; anything else
+/// keeps its bytes under `.img`, which the deck serves by sniffing rather
+/// than by extension.
+fn attachment_extension(media_type: &str) -> &'static str {
+    match media_type {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        "image/webp" => "webp",
+        "image/heic" => "heic",
+        "image/heif" => "heif",
+        "image/avif" => "avif",
+        _ => "img",
+    }
+}
+
+/// Write each attachment's bytes into `dir` and describe where they landed.
+///
+/// Every failure — an undecodable base64 payload, a directory that will not
+/// create, a write that fails — costs that one image and nothing else. The
+/// question was still asked and the rest of it is still history, so a dropped
+/// image is a warning in the log, not an exception on the way out.
+fn store_attachments(dir: &Path, attachments: &[QuestionAttachment]) -> Vec<GazetteAttachment> {
+    use base64::Engine as _;
+    if attachments.is_empty() {
+        return Vec::new();
+    }
+    if let Err(err) = std::fs::create_dir_all(dir) {
+        warn!(error = %err, "gazette operator: attachments dir unavailable; images dropped");
+        return Vec::new();
+    }
+    let mut stored = Vec::new();
+    for attachment in attachments {
+        let bytes = match base64::engine::general_purpose::STANDARD.decode(&attachment.data) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                warn!(error = %err, "gazette operator: attachment was not base64; dropped");
+                continue;
+            }
+        };
+        let path = dir.join(format!(
+            "{}.{}",
+            uuid::Uuid::new_v4(),
+            attachment_extension(&attachment.media_type),
+        ));
+        if let Err(err) = std::fs::write(&path, &bytes) {
+            warn!(error = %err, "gazette operator: attachment write failed; dropped");
+            continue;
+        }
+        stored.push(GazetteAttachment {
+            path: path.to_string_lossy().into_owned(),
+            media_type: attachment.media_type.clone(),
+        });
+    }
+    stored
+}
+
 /// The Operator side of the Gazette: a question in, a post out.
 pub struct OperatorPipeline {
     pub ctx: Arc<OperatorContext>,
@@ -1147,11 +1250,35 @@ impl OperatorPipeline {
     /// scrollback read has to be able to see it. A failure anywhere after
     /// that becomes a transient post — broadcast so the card stops waiting,
     /// never written, because an infrastructure hiccup is not history.
-    pub async fn handle(&self, question: String, request_id: Option<String>) {
+    ///
+    /// An attached image is part of the question in both directions: its
+    /// bytes come to rest on disk so the post can show it forever, and the
+    /// same bytes are shown to the model, because an answer about a
+    /// screenshot has to be written by something that saw the screenshot.
+    /// A question with an image and no words is a question — "what is this?"
+    /// is what the picture is for — so emptiness is judged on the pair.
+    pub async fn handle(
+        &self,
+        question: String,
+        request_id: Option<String>,
+        attachments: Vec<QuestionAttachment>,
+    ) {
         let question = question.trim().to_string();
-        if question.is_empty() {
+        if question.is_empty() && attachments.is_empty() {
             return;
         }
+        // Stored before the post is published, because the post carries where
+        // they landed. An image that cannot be written is dropped with a
+        // warning rather than failing the question: the words still deserve
+        // an answer, and the model is still shown the bytes.
+        let stored = store_attachments(&self.ctx.attachments_dir, &attachments);
+        let images: Vec<TurnImage> = attachments
+            .into_iter()
+            .map(|a| TurnImage {
+                media_type: a.media_type,
+                data: a.data,
+            })
+            .collect();
         self.publish(
             GazettePost {
                 id: None,
@@ -1165,6 +1292,7 @@ impl OperatorPipeline {
                 elapsed_ms: None,
                 // And carries no refs, so there is no root to resolve under.
                 project_dir: None,
+                attachments: stored,
                 request_id: request_id.clone(),
                 transient: false,
             },
@@ -1174,7 +1302,7 @@ impl OperatorPipeline {
         // The answer's own cost, clocked around the whole round — every verb
         // round trip the Operator needed, not just the last turn's tokens.
         let started = std::time::Instant::now();
-        match self.answer(&question).await {
+        match self.answer(&question, &images).await {
             Ok((post, context)) => {
                 let validated = crate::feeds::reporter_wake::validate_refs(post.refs, &[&context]);
                 if !validated.dropped.is_empty() {
@@ -1216,6 +1344,8 @@ impl OperatorPipeline {
                                 .to_string_lossy()
                                 .into_owned(),
                         ),
+                        // The Operator answers in words.
+                        attachments: Vec::new(),
                         request_id: request_id.clone(),
                         transient: false,
                     },
@@ -1235,6 +1365,8 @@ impl OperatorPipeline {
                         refs: Vec::new(),
                         elapsed_ms: Some(started.elapsed().as_millis() as i64),
                         project_dir: None,
+                        // The Operator answers in words.
+                        attachments: Vec::new(),
                         request_id,
                         transient: true,
                     },
@@ -1267,7 +1399,11 @@ impl OperatorPipeline {
     ///
     /// Returns the answer alongside the text it was allowed to draw on, which
     /// is what its refs are then validated against.
-    async fn answer(&self, question: &str) -> Result<(AnswerPost, String), String> {
+    async fn answer(
+        &self,
+        question: &str,
+        images: &[TurnImage],
+    ) -> Result<(AnswerPost, String), String> {
         let scrollback = render_scrollback(
             &self
                 .ctx
@@ -1296,9 +1432,10 @@ impl OperatorPipeline {
 
         let raw = self
             .pool
-            .run(
+            .run_seeing(
                 "operator-retrieve",
-                compose_retrieve_input(now_ms(), question, &roster, &scrollback),
+                compose_retrieve_input(now_ms(), question, &roster, &scrollback, images.len()),
+                images.to_vec(),
             )
             .await?;
         // An unreadable retrieval is not a failed exchange. Retrieval is an
@@ -1331,7 +1468,7 @@ impl OperatorPipeline {
             let forced = round == MAX_RETRIEVAL_ROUNDS;
             let raw = self
                 .pool
-                .run(
+                .run_seeing(
                     "operator-answer",
                     // Read again rather than reusing the retrieve turn's: a
                     // retrieval round plus its verbs is real elapsed time, and
@@ -1344,7 +1481,11 @@ impl OperatorPipeline {
                         &scrollback,
                         &rendered,
                         forced,
+                        images.len(),
                     ),
+                    // Shown to every round, not just the first: the model that
+                    // writes the answer is the one that has to have looked.
+                    images.to_vec(),
                 )
                 .await?;
             match parse_answer_turn(&raw) {
@@ -1442,6 +1583,7 @@ mod tests {
                     ShellLedger::open_in_memory().expect("in-memory shell ledger"),
                 )),
                 bootstrap_project_dir: repo.path().to_path_buf(),
+                attachments_dir: dir.path().join("gazette-attachments"),
             },
             _dir: dir,
             repo,
@@ -1463,6 +1605,7 @@ mod tests {
                 }],
                 elapsed_ms: None,
                 project_dir: None,
+                attachments: Vec::new(),
                 request_id: None,
                 transient: false,
             })
@@ -2298,6 +2441,7 @@ mod tests {
 
     use crate::shared_agent::test_support::FakeSpawner;
     use crate::shared_agent::{AgentSpec, AgentWorkerSpawner, SharedAgentPool};
+    use base64::Engine as _;
     use tokio::sync::broadcast;
     use tugcast_core::protocol::{FeedId, Frame};
 
@@ -2344,6 +2488,7 @@ mod tests {
                     ledger: Arc::clone(&ledger),
                     shell_ledger: None,
                     bootstrap_project_dir: repo.path().to_path_buf(),
+                    attachments_dir: repo.path().join("gazette-attachments"),
                 }),
                 pool,
                 gazette_tx: tx,
@@ -2368,6 +2513,123 @@ mod tests {
         Ok(json!({"answer": {"body": body}}).to_string())
     }
 
+    /// One 1×1 PNG, base64, exactly as the composer would hand it up.
+    fn a_png() -> QuestionAttachment {
+        QuestionAttachment {
+            media_type: "image/png".to_string(),
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==".to_string(),
+        }
+    }
+
+    /// An attached image is part of the question in both directions: it comes
+    /// to rest on disk so the post can show it forever, and the same bytes are
+    /// shown to the model that answers.
+    #[tokio::test]
+    async fn an_attached_image_is_stored_and_shown_to_the_model() {
+        let fake = FakeSpawner::new(vec![
+            verbs_turn(),
+            answer_turn("A single transparent pixel."),
+        ]);
+        let pool = SharedAgentPool::new(
+            AgentSpec {
+                name: "gazette",
+                model: Arc::new(|| "sonnet".to_string()),
+                jobs: super::super::gazette_agent::GAZETTE_AGENT_JOBS,
+                max_workers: 3,
+            },
+            Arc::clone(&fake) as Arc<dyn AgentWorkerSpawner>,
+        );
+        let mut h = pipeline(pool);
+        h.pipeline
+            .handle(
+                "what is this".to_string(),
+                Some("req-img".into()),
+                vec![a_png()],
+            )
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert_eq!(question.attachments.len(), 1, "the picture is on the post");
+        let stored = &question.attachments[0];
+        assert_eq!(stored.media_type, "image/png");
+        assert!(
+            stored.path.ends_with(".png"),
+            "stored under its own type: {}",
+            stored.path,
+        );
+        let on_disk = std::fs::read(&stored.path).expect("the bytes were written");
+        assert_eq!(
+            on_disk.len(),
+            base64::engine::general_purpose::STANDARD
+                .decode(a_png().data)
+                .unwrap()
+                .len(),
+            "the file holds the decoded image, not the base64",
+        );
+
+        // Both model turns saw it — the one that decides what to look up and
+        // the one that writes the answer.
+        let images = fake.images_seen();
+        assert_eq!(images.len(), 2, "retrieve and answer");
+        for shown in &images {
+            assert_eq!(shown.len(), 1);
+            assert_eq!(shown[0].media_type, "image/png");
+            assert_eq!(shown[0].data, a_png().data);
+        }
+        // And both were TOLD the picture belongs to the question, rather than
+        // left to infer it from something in their context.
+        for turn in fake.turns_seen() {
+            assert!(turn.contains("ATTACHED: 1 image"), "{turn}");
+        }
+    }
+
+    /// A picture with no words is a question. Nothing here may treat an empty
+    /// body as nothing to ask when an image came with it.
+    #[tokio::test]
+    async fn an_image_alone_is_a_question() {
+        let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("A pixel.")]));
+        h.pipeline
+            .handle(String::new(), Some("req-only-img".into()), vec![a_png()])
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert_eq!(question.author, GazetteAuthor::User);
+        assert_eq!(question.body, "");
+        assert_eq!(question.attachments.len(), 1);
+        let answer = next_post(&mut h.rx);
+        assert_eq!(answer.author, GazetteAuthor::Operator);
+        assert_eq!(answer.body, "A pixel.");
+    }
+
+    /// A question typed without a picture says nothing about pictures — the
+    /// attached line is absent, not "ATTACHED: 0".
+    #[tokio::test]
+    async fn a_question_with_no_image_says_nothing_about_images() {
+        let fake = FakeSpawner::new(vec![verbs_turn(), answer_turn("Nothing to see.")]);
+        let pool = SharedAgentPool::new(
+            AgentSpec {
+                name: "gazette",
+                model: Arc::new(|| "sonnet".to_string()),
+                jobs: super::super::gazette_agent::GAZETTE_AGENT_JOBS,
+                max_workers: 3,
+            },
+            Arc::clone(&fake) as Arc<dyn AgentWorkerSpawner>,
+        );
+        let mut h = pipeline(pool);
+        h.pipeline
+            .handle("what landed".to_string(), None, Vec::new())
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert!(question.attachments.is_empty());
+        for turn in fake.turns_seen() {
+            assert!(!turn.contains("ATTACHED"), "{turn}");
+        }
+        for shown in fake.images_seen() {
+            assert!(shown.is_empty());
+        }
+    }
+
     #[tokio::test]
     async fn the_happy_path_echoes_the_question_then_answers_it() {
         let mut h = pipeline(scripted_pool(vec![
@@ -2375,7 +2637,11 @@ mod tests {
             answer_turn("The last two commits added alpha.txt and beta.txt."),
         ]));
         h.pipeline
-            .handle("what landed recently".to_string(), Some("req-1".into()))
+            .handle(
+                "what landed recently".to_string(),
+                Some("req-1".into()),
+                Vec::new(),
+            )
             .await;
 
         let question = next_post(&mut h.rx);
@@ -2406,7 +2672,7 @@ mod tests {
             answer_turn("Confirmed in the second round."),
         ]));
         h.pipeline
-            .handle("when did beta land".to_string(), None)
+            .handle("when did beta land".to_string(), None, Vec::new())
             .await;
 
         let _question = next_post(&mut h.rx);
@@ -2427,7 +2693,11 @@ mod tests {
             verbs_turn(),
         ]));
         h.pipeline
-            .handle("an unanswerable one".to_string(), Some("req-9".into()))
+            .handle(
+                "an unanswerable one".to_string(),
+                Some("req-9".into()),
+                Vec::new(),
+            )
             .await;
 
         let _question = next_post(&mut h.rx);
@@ -2445,7 +2715,11 @@ mod tests {
     async fn an_unavailable_pool_yields_a_transient_post_that_is_never_written() {
         let mut h = pipeline(dead_pool());
         h.pipeline
-            .handle("anything at all".to_string(), Some("req-2".into()))
+            .handle(
+                "anything at all".to_string(),
+                Some("req-2".into()),
+                Vec::new(),
+            )
             .await;
 
         let question = next_post(&mut h.rx);
@@ -2472,7 +2746,9 @@ mod tests {
             verbs_turn(),
             Ok("I had a look and honestly it's hard to say.".to_string()),
         ]));
-        h.pipeline.handle("what happened".to_string(), None).await;
+        h.pipeline
+            .handle("what happened".to_string(), None, Vec::new())
+            .await;
         let _question = next_post(&mut h.rx);
         let post = next_post(&mut h.rx);
         assert!(post.transient);
@@ -2491,7 +2767,9 @@ mod tests {
             }})
             .to_string()),
         ]));
-        h.pipeline.handle("where is alpha".to_string(), None).await;
+        h.pipeline
+            .handle("where is alpha".to_string(), None, Vec::new())
+            .await;
         let _question = next_post(&mut h.rx);
         let answer = next_post(&mut h.rx);
         assert_eq!(answer.refs.len(), 1);
@@ -2501,7 +2779,7 @@ mod tests {
     #[tokio::test]
     async fn an_empty_question_is_not_an_exchange() {
         let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("hi")]));
-        h.pipeline.handle("   ".to_string(), None).await;
+        h.pipeline.handle("   ".to_string(), None, Vec::new()).await;
         assert!(h.rx.try_recv().is_err(), "nothing was broadcast");
     }
 
@@ -2573,6 +2851,7 @@ mod tests {
             .handle(
                 "how many physics questions today".to_string(),
                 Some("req-3".into()),
+                Vec::new(),
             )
             .await;
 
@@ -2595,7 +2874,7 @@ mod tests {
             answer_turn("Read straight off the channel."),
         ]));
         h.pipeline
-            .handle("what have I been up to".to_string(), None)
+            .handle("what have I been up to".to_string(), None, Vec::new())
             .await;
         let _question = next_post(&mut h.rx);
         let answer = next_post(&mut h.rx);
@@ -2658,6 +2937,7 @@ mod tests {
             "what landed",
             &roster,
             "(the channel is empty)\n",
+            0,
         );
         assert!(retrieve.starts_with(NOW_HEADER), "{retrieve}");
         assert!(retrieve.find(NOW_HEADER) < retrieve.find("QUESTION:"));
@@ -2669,6 +2949,7 @@ mod tests {
             "(the channel is empty)\n",
             "",
             false,
+            0,
         );
         assert!(answer.starts_with(NOW_HEADER), "{answer}");
 
@@ -2681,6 +2962,7 @@ mod tests {
             "(the channel is empty)\n",
             "",
             true,
+            0,
         );
         assert!(forced.starts_with("THIS IS YOUR LAST ROUND"), "{forced}");
         assert!(forced.find(NOW_HEADER) < forced.find("QUESTION:"));
@@ -2807,7 +3089,7 @@ mod tests {
     fn the_roster_rides_both_turns_between_the_clock_and_the_question() {
         let roster = render_session_roster(&[]);
         for composed in [
-            compose_retrieve_input(FIXED_NOW, "q", &roster, "(the channel is empty)\n"),
+            compose_retrieve_input(FIXED_NOW, "q", &roster, "(the channel is empty)\n", 0),
             compose_answer_input(
                 FIXED_NOW,
                 "q",
@@ -2815,6 +3097,7 @@ mod tests {
                 "(the channel is empty)\n",
                 "",
                 false,
+                0,
             ),
         ] {
             let now = composed.find(NOW_HEADER).expect("the clock");
@@ -2858,6 +3141,7 @@ mod tests {
             "what did I ask yesterday",
             &roster,
             "(the channel is empty)\n",
+            0,
         );
         let order = |text: &str, marks: &[&str]| {
             let found: Vec<usize> = marks
@@ -2886,6 +3170,7 @@ mod tests {
             "(the channel is empty)\n",
             "\n--- VERB facts.list {}\n",
             false,
+            0,
         );
         order(
             &answer,
@@ -2908,6 +3193,7 @@ mod tests {
             "(the channel is empty)\n",
             "",
             true,
+            0,
         );
         order(
             &forced,
@@ -3001,6 +3287,7 @@ mod tests {
             "(the channel is empty)\n",
             &rendered,
             true,
+            0,
         );
         // A dozen fact verbs' worth of rows, every row carrying detail. This
         // measures ~494 KB — large, but it is the pathological corner: six
