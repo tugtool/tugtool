@@ -194,6 +194,11 @@ export const LOCAL_SLASH_COMMANDS = [
     takesArgs: true,
   },
   {
+    name: "dash",
+    description: "Work on a dash — bind this card to it, creating it if needed",
+    takesArgs: true,
+  },
+  {
     name: "join",
     description: "Land a dash into its base branch — preview, then squash with its join draft",
     takesArgs: true,

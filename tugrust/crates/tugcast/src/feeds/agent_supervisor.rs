@@ -2497,6 +2497,47 @@ enum Decision {
     Backpressure,
 }
 
+/// Announce a completed session↔dash mating to every connected deck.
+///
+/// A bind has two doors — the `bind_dash` CONTROL verb a card sends, and
+/// `POST /api/dash` the CLI posts (which is what `tugutil dash create`'s
+/// auto-bind rides) — and it is the same fact through either one. Both call
+/// this, because a deck that learns about one door's binds but not the other's
+/// wears a chip that disagrees with the ledger until something else happens to
+/// repaint it.
+pub(crate) fn broadcast_bind_dash_ok(
+    control_tx: &broadcast::Sender<Frame>,
+    tug_session_id: &str,
+    dash_id: &str,
+    dash_name: &str,
+) {
+    let body = serde_json::json!({
+        "action": "bind_dash_ok",
+        "tug_session_id": tug_session_id,
+        "dash_id": dash_id,
+        "dash_name": dash_name,
+    });
+    let _ = control_tx.send(Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("bind_dash_ok serializes"),
+    ));
+}
+
+/// The unmating half of [`broadcast_bind_dash_ok`], with the same two doors.
+pub(crate) fn broadcast_unbind_dash_ok(
+    control_tx: &broadcast::Sender<Frame>,
+    tug_session_id: &str,
+) {
+    let body = serde_json::json!({
+        "action": "unbind_dash_ok",
+        "tug_session_id": tug_session_id,
+    });
+    let _ = control_tx.send(Frame::new(
+        FeedId::CONTROL,
+        serde_json::to_vec(&body).expect("unbind_dash_ok serializes"),
+    ));
+}
+
 impl AgentSupervisor {
     /// Construct a supervisor with pre-made broadcast senders, a sessions
     /// recorder, and a spawner factory. Returns `(supervisor,
@@ -4277,16 +4318,12 @@ impl AgentSupervisor {
         match outcome {
             Ok(crate::dash_api::DashApiOutcome::Bound { dash_id, dash_name }) => {
                 self.registry.changeset_all_bump().notify_one();
-                let body = serde_json::json!({
-                    "action": "bind_dash_ok",
-                    "tug_session_id": request.tug_session_id,
-                    "dash_id": dash_id,
-                    "dash_name": dash_name,
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("bind_dash_ok serializes"),
-                ));
+                broadcast_bind_dash_ok(
+                    &self.control_tx,
+                    &request.tug_session_id,
+                    &dash_id,
+                    &dash_name,
+                );
             }
             Ok(crate::dash_api::DashApiOutcome::UnknownSession) => {
                 Self::send_bind_dash_err(
@@ -4323,14 +4360,7 @@ impl AgentSupervisor {
         match outcome {
             Ok(crate::dash_api::DashApiOutcome::Unbound) => {
                 self.registry.changeset_all_bump().notify_one();
-                let body = serde_json::json!({
-                    "action": "unbind_dash_ok",
-                    "tug_session_id": tug_session_id,
-                });
-                let _ = self.control_tx.send(Frame::new(
-                    FeedId::CONTROL,
-                    serde_json::to_vec(&body).expect("unbind_dash_ok serializes"),
-                ));
+                broadcast_unbind_dash_ok(&self.control_tx, tug_session_id);
             }
             Ok(crate::dash_api::DashApiOutcome::UnknownSession) => {
                 Self::send_bind_dash_err(&self.control_tx, tug_session_id, "unknown_session");

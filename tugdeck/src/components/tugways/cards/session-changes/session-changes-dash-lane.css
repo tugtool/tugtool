@@ -1,0 +1,144 @@
+/* SessionChangesDashLane — the dash lane's own grammar.
+
+   Deliberately not the file list's look: a dash is a different species, and
+   the reader must be able to tell at a glance that these rows answer a
+   different question. Appearance only ([L06]); tokens scoped to this
+   component's slots ([L20]). */
+
+.session-changes-dash-lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+}
+
+/* The lane's group headers borrow the shade's section-label weight so the
+   dash lane reads as a peer of the file buckets above it — but in the muted
+   tone, because a dash is never a bucket asking for a decision. */
+.session-changes-dash-lane-label {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-sm);
+  font-size: var(--tug-font-size-sm);
+  font-family: var(--tug-font-family-sans);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  padding: var(--tug-space-sm) var(--tug-space-sm) var(--tug-space-2xs);
+  border-top: 1px solid var(--tug7-element-tone-border-normal-neutral-rest);
+  margin-top: var(--tug-space-xs);
+}
+
+/* The folded group's cue trails its label. */
+.session-changes-dash-lane-rest-label {
+  justify-content: space-between;
+}
+
+/* ---- The row ---- */
+
+.session-changes-dash-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-changes-dash-row-trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}
+
+/* The fact run: base · rounds · dirty · stage. Mono, because every part of it
+   is a git noun. */
+.session-changes-dash-facts {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-base {
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.session-changes-dash-sep {
+  opacity: 0.55;
+}
+
+/* Uncommitted work in the worktree is the one fact here worth a tone. */
+.session-changes-dash-dirty {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
+.session-changes-dash-stage,
+.session-changes-dash-step {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* ---- The expanded detail ---- */
+
+.session-changes-dash-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-xs);
+  padding: var(--tug-space-2xs) var(--tug-space-sm) var(--tug-space-sm);
+}
+
+.session-changes-dash-subjects,
+.session-changes-dash-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+}
+
+.session-changes-dash-subjects > li {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-files > li {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+/* Display only: the path is ink, not a link — the lane offers no per-file
+   affordance because the wire has no per-file dash diff to offer. */
+.session-changes-dash-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* ---- The read-only join draft ---- */
+
+.session-changes-dash-draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+  border-left: 2px solid var(--tug7-element-tone-border-normal-neutral-rest);
+}
+
+.session-changes-dash-draft-label {
+  font-size: var(--tug-font-size-2xs);
+  font-family: var(--tug-font-family-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-draft-message {
+  white-space: pre-line;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}

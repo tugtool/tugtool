@@ -1,0 +1,214 @@
+/**
+ * at0408-dash-gesture.test.ts — `/dash`, all four ways it can go.
+ *
+ * The command means "work on this dash, making it if needed", and it takes
+ * each of its two paths for what that path is. A name the card's snapshot
+ * already knows is a pure UI-concept write: a `bind_dash` CONTROL frame,
+ * silent, no transcript ink — so this asserts the chip arrives with **no**
+ * shell row behind it. A name it does not know is a git mutation, so it goes
+ * through the shell route and leaves a receipt saying what was made, and
+ * `dash create`'s own auto-bind is what ends the card bound.
+ *
+ * The other two ways are the ones that must not mutate anything: bare `/dash`
+ * opens the Changes shade where the card's own dash facts live, and a name
+ * that could not be passed through a shell unquoted is refused with a caution
+ * naming the constraint rather than turned into a quoting adventure.
+ *
+ * The run waits for the aggregate to answer before typing anything. That is
+ * not politeness: before the first compose every name misses the snapshot
+ * match, and `/dash <known-name>` would fall through to the create path and
+ * cut a second branch for a dash that already exists.
+ *
+ * @covers tugdeck/src/lib/slash-commands.ts
+ * @covers tugdeck/src/lib/dash-name.ts
+ * @covers tugdeck/src/lib/dash-bind-error-store.ts
+ * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ */
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { launchTugApp, type App } from "./_harness";
+import {
+  mkTempTugbank,
+  rmTempTugbank,
+  seedTugbankForLaunch,
+} from "./_harness/tugbank-helpers";
+import { createDash, releaseDash } from "./dash-fixture";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 180_000;
+
+const SID = "at0408-session";
+const CARD = '[data-card-id="A"]';
+const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
+const SHEET = `${CARD} .session-view-pane[data-view="changes"] [data-slot="tug-sheet"]`;
+const CHIP = '[data-slot="session-masthead-dash-chip"]';
+const BULLETIN = ".tug-pane-bulletin";
+
+const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
+
+const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
+/** Already there when the gesture runs — the bind path. */
+const KNOWN_DASH = "at0408-known";
+/** Does not exist until `/dash` makes it — the create path. */
+const MADE_DASH = "at0408-made";
+
+beforeAll(() => {
+  if (!SHOULD_RUN) return;
+  createDash(PROJECT_DIR, KNOWN_DASH, "at0408 fixture");
+  // In case a previous run died between the create and the release.
+  releaseDash(PROJECT_DIR, MADE_DASH);
+});
+
+afterAll(() => {
+  if (!SHOULD_RUN) return;
+  for (const name of [KNOWN_DASH, MADE_DASH]) releaseDash(PROJECT_DIR, name);
+});
+
+function deckShape() {
+  return {
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 900, height: 680 },
+        cardIds: ["A"],
+        activeCardId: "A",
+        title: "",
+        acceptsFamilies: ["maker"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+
+/** Type a command into the card's prompt and submit it. */
+async function runCommand(app: App, line: string): Promise<void> {
+  await app.nativeClickAtElement(PROMPT);
+  await app.nativeType(line);
+  await settle();
+  // Dismiss the slash completion popup so Enter submits rather than accepting.
+  await app.nativeKey("Escape");
+  await settle();
+  await app.nativeKey("Return", ["cmd"]);
+}
+
+const count = (selector: string): string =>
+  `document.querySelectorAll(${JSON.stringify(selector)}).length`;
+
+describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
+  test(
+    "a known name binds silently, an unknown one is created through the shell, bare opens the shade, and a shell-unsafe name is refused",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
+      const app = await launchTugApp({
+        testName: "at0408-dash-gesture",
+        env: { TUGBANK_PATH: tugbankPath },
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", {
+          tugSessionId: SID,
+          projectDir: PROJECT_DIR,
+          workspaceKey: PROJECT_DIR,
+        });
+        await app.awaitEngineReady("A", { timeoutMs: 15000 });
+        app.seedLedger({
+          sessions: [
+            {
+              session_id: SID,
+              workspace_key: PROJECT_DIR,
+              project_dir: PROJECT_DIR,
+              card_id: "A",
+              name: "at0408 work",
+            },
+          ],
+        });
+
+        // ── Wait for the aggregate to answer ──────────────────────────────
+        // The Lens's Dashes section reads the same `ChangesetAllStore` the
+        // card's controller does, so a row for the fixture dash there is proof
+        // the snapshot has composed this project's dashes. Typing before that
+        // would send `/dash <known>` down the CREATE path.
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${LENS_SECTION} [data-slot="lens-dashes-row"][data-dash="${KNOWN_DASH}"]') !== null`,
+          { timeoutMs: 30000 },
+        );
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(LENS_SECTION)}) === null`,
+          { timeoutMs: 8000 },
+        );
+
+        // ── A known name binds, with no shell row behind it ───────────────
+        await runCommand(app, `/dash ${KNOWN_DASH}`);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(KNOWN_DASH)}`,
+          { timeoutMs: 15000 },
+        );
+        // The bind is a CONTROL frame: silent, no transcript ink.
+        expect(await app.evalJS<number>(count(SHELL_ROWS))).toBe(0);
+
+        // ── An unknown name is created, with a receipt ────────────────────
+        await runCommand(app, `/dash ${MADE_DASH}`);
+        await app.waitForCondition<boolean>(
+          `(function(){
+             var rows = document.querySelectorAll(${JSON.stringify(SHELL_ROWS)});
+             if (rows.length !== 1) return false;
+             var foot = rows[0].querySelector('[data-slot="session-z1b-end-state"]');
+             return foot !== null && foot.textContent.indexOf("exit") !== -1;
+           })()`,
+          { timeoutMs: 40000 },
+        );
+        const receipt = await app.evalJS<string>(
+          `(document.querySelectorAll(${JSON.stringify(SHELL_ROWS)})[0]?.textContent ?? "").trim()`,
+        );
+        expect(receipt).toContain(`tugutil dash create ${MADE_DASH}`);
+        // `dash create`'s unconditional auto-bind is what ends the card bound —
+        // this handler never sends a second bind of its own.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(MADE_DASH)}`,
+          { timeoutMs: 20000 },
+        );
+
+        // ── A shell-unsafe name is refused, and nothing is made ───────────
+        await runCommand(app, "/dash two words");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(BULLETIN)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+        const caution = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(BULLETIN)})?.textContent ?? "").trim()`,
+        );
+        expect(caution).toContain("dash name");
+        // Still exactly the one create; the refusal ran no command.
+        expect(await app.evalJS<number>(count(SHELL_ROWS))).toBe(1);
+
+        // ── Bare `/dash` opens the Changes shade ──────────────────────────
+        expect(await app.evalJS<number>(count(SHEET))).toBe(0);
+        await runCommand(app, "/dash");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(SHEET)}) !== null`,
+          { timeoutMs: 8000 },
+        );
+      } finally {
+        await app.close();
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});

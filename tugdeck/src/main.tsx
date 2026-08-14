@@ -55,6 +55,7 @@ import { registerJotsCard } from "./components/jots/jots-card-registration";
 import { registerGazetteCard } from "./components/gazette/gazette-card-registration";
 import { registerCardsSection } from "./components/lens/sections/cards-section";
 import { registerLayoutsSection } from "./components/lens/sections/layouts-section";
+import { registerDashesSection } from "./components/lens/sections/dashes-section";
 import { registerTextCard } from "./components/tugways/cards/text-card-registration";
 import { registerFileViewCard } from "./components/tugways/cards/file-view-card-registration";
 import { registerDiffCard } from "./components/tugways/cards/diff-card";
@@ -338,6 +339,7 @@ if (!container) {
   // `resolveSectionRenderOrder` uses when nothing is persisted.
   registerCardsSection();
   registerLayoutsSection();
+  registerDashesSection();
   registerTextCard();
   registerFileViewCard();
   registerDiffCard();

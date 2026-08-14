@@ -49,6 +49,7 @@ import {
   cardIdForSession,
   cardSessionBindingStore,
 } from "./lib/card-session-binding-store";
+import { dashBindErrorStore } from "./lib/dash-bind-error-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
 import { sessionPrivateStore } from "./lib/session-private-store";
@@ -960,6 +961,9 @@ export function initActionDispatch(
       console.warn("bind_dash_ok: missing or invalid field", payload);
       return;
     }
+    // A binding that landed is not still a failure — clear any parked refusal
+    // before the notice's next read.
+    dashBindErrorStore.clear(sessionId);
     const cardId = cardIdForSession(sessionId);
     if (cardId) {
       cardSessionBindingStore.setDashBinding(cardId, {
@@ -967,6 +971,20 @@ export function initActionDispatch(
         name: dashName,
       });
     }
+  });
+
+  // bind_dash_err: the mating did not happen. Nothing optimistic was raised —
+  // the chip and the lane both wait for `bind_dash_ok` — so a refusal has
+  // nothing to put back and would otherwise land in silence. Park it for the
+  // card's `DashBindErrorNoticeController` to surface as a bulletin.
+  registerAction("bind_dash_err", (payload) => {
+    console.warn("bind_dash failed", payload);
+    const sessionId = payload.tug_session_id;
+    if (typeof sessionId !== "string" || sessionId.length === 0) return;
+    dashBindErrorStore.fail(
+      sessionId,
+      typeof payload.reason === "string" ? payload.reason : "unknown",
+    );
   });
 
   registerAction("unbind_dash_ok", (payload) => {

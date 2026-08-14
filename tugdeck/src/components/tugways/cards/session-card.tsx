@@ -147,6 +147,7 @@ import { deriveSessionCardBannerSpec, humanizeErrorSummary } from "./session-car
 import { TransientNoticeController } from "./transient-notice-controller";
 import { ClaimErrorNoticeController } from "./claim-error-notice-controller";
 import { CommitErrorNoticeController } from "./commit-error-notice-controller";
+import { DashBindErrorNoticeController } from "./dash-bind-error-notice-controller";
 import { deriveColdRestoreActive } from "./session-card-restore-gate";
 import { REPLAY_SOFT_BUDGET_MS } from "@/lib/code-session-store";
 import { PromptHistoryStore } from "@/lib/prompt-history-store";
@@ -154,6 +155,7 @@ import type { EditorSettingsStore } from "@/lib/editor-settings-store";
 import type { TranscriptSettingsStore } from "@/lib/transcript-settings-store";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import { getConnection } from "@/lib/connection-singleton";
+import { DASH_NAME_CAUTION, isShellSafeDashName } from "@/lib/dash-name";
 import type { CompletionProvider } from "@/lib/tug-text-types";
 import {
   cardSessionBindingStore,
@@ -3912,6 +3914,70 @@ export function SessionCardBody({
     // turn, so it takes the same idle gate every mutating verb does ([P08]):
     // mid-flight it refuses with a caution rather than queueing behind the
     // running turn.
+    // `/dash <name>` — work on a dash, making it if needed ([P06]).
+    //
+    // Two paths, each using the thing for what it is. An existing name is a
+    // pure UI-concept write, so it goes over the `bind_dash` CONTROL verb:
+    // silent, no transcript ink, and the `bind_dash_ok` broadcast is what
+    // paints the chip and fronts the lane. A new name is a git mutation, so it
+    // goes through the card's shell route, where the row is a durable receipt
+    // saying what was made — and `dash create`'s own auto-bind does the
+    // binding, rather than this handler duplicating it.
+    //
+    // The name is matched against this card's snapshot rather than sent for
+    // the server to resolve, because `bind_dash` MINTS: a bind naming no dash
+    // succeeds anyway and leaves the card wearing a chip for a dash that is
+    // not there. The uncomposed guard is part of that same verb, not a
+    // nicety — before the first aggregate emit every name misses the match,
+    // and falling through to create would fire a git mutation on the strength
+    // of a snapshot that has not answered yet.
+    //
+    // A mistyped name therefore creates a dash. That is `tugutil dash
+    // create`'s semantics and this gesture inherits it on purpose: `/dash`
+    // means "work on this dash, making it if needed", so there is no name it
+    // can refuse for being unfamiliar. The shell receipt is what makes the
+    // outcome legible.
+    dash: (args) => {
+      const notify = paneBulletinRef.current;
+      // The `/diff` precedent: a surface that needs a binding returns silently
+      // when the store has none.
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      if (binding === undefined) return;
+      const snap = changesController.getSnapshot();
+      const name = args.trim();
+
+      if (name.length === 0) {
+        // Discovery lands where this card's own dash facts live ([Q02]) — the
+        // shade as a glance surface, the Z4A chip's entrance, no mode. It only
+        // shows: a typed verb asking to see something must not be the thing
+        // that hides it.
+        if (snap.dashes.length > 0) shadeViewController.show("changes");
+        else notify?.caution("No dashes in this project — /dash <name> starts one");
+        return;
+      }
+      if (!snap.composed) {
+        notify?.caution("Still scanning this project — try again in a moment");
+        return;
+      }
+      const known = snap.dashes.some((entry) => entry.display_name === name);
+      if (known) {
+        getConnection()?.sendControlFrame("bind_dash", {
+          tug_session_id: binding.tugSessionId,
+          project_dir: binding.projectDir,
+          dash: name,
+        });
+        return;
+      }
+      if (!isShellSafeDashName(name)) {
+        notify?.caution(DASH_NAME_CAUTION);
+        return;
+      }
+      if (shellSessionStore.getSnapshot().inflight !== null) {
+        notify?.caution("A shell command is already running");
+        return;
+      }
+      shellSessionStore.exec(`tugutil dash create ${name}`);
+    },
     join: (args) => {
       const notify = paneBulletinRef.current;
       if (!codeSessionStore.getSnapshot().canSubmit) {
@@ -4453,6 +4519,9 @@ export function SessionCardBody({
             <TransientNoticeController store={codeSessionStore} />
             <CommitErrorNoticeController controller={commitModeController} />
             <ClaimErrorNoticeController entryKey={changesController.entryKey} />
+            {boundSessionId !== null ? (
+              <DashBindErrorNoticeController tugSessionId={boundSessionId} />
+            ) : null}
             <TugPaneBulletinProvider
               placement="bottom"
               className="session-card-bulletin-host"
@@ -4651,6 +4720,7 @@ export function SessionCardBody({
                   modalScopeSelector='.session-view-pane[data-view="transcript"]'
                 >
                   <SessionChangesView
+                    cardId={cardId}
                     projectDir={projectDir}
                     changesController={changesController}
                     codeSessionStore={codeSessionStore}

@@ -15,6 +15,11 @@
  * the view mounts no second whole-session document above it. The repo-wide
  * view is a different surface entirely: the Project Diff card (`/diff`).
  *
+ * Below the file rows sits the `SessionChangesDashLane` — the project's dashes
+ * in their own grammar, with their own fold. The header's fold-all cue and
+ * combined pop-out keep acting on the head entries only; the lane owns its
+ * own folding, because a dash is a different species from a claimed file.
+ *
  * Laws: [L02] the controller + git-init verb store enter React through
  * `useSyncExternalStore`; [L06] no appearance state in React (status tones and
  * hover affordances paint via CSS); [L26] per-file diff bodies collapse by
@@ -38,7 +43,9 @@ import {
   fileExpandKey,
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
+import { SessionChangesDashLane } from "./session-changes-dash-lane";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
+import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 import { useChangesetClaim, useChangesetDisclaim } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -48,6 +55,9 @@ import type { CodeSessionStore } from "@/lib/code-session-store";
 // ---------------------------------------------------------------------------
 
 export interface SessionChangesViewProps {
+  /** The host card's id — the key into the session-binding store, read for
+   *  the card's own dash so the lane can front it. */
+  cardId: string;
   /** Repo-relative project directory the card is bound to. */
   projectDir: string | null;
   /** The per-card Changes controller — the changeset snapshot ([P07]). */
@@ -61,6 +71,7 @@ export interface SessionChangesViewProps {
 }
 
 export function SessionChangesView({
+  cardId,
   projectDir,
   changesController,
   codeSessionStore,
@@ -70,6 +81,13 @@ export function SessionChangesView({
     changesController.getSnapshot,
   );
   const project = snap.project;
+  // The card's own dash, by owner key ([L02]). A string snapshot is
+  // reference-stable by construction, so the store's every-binding-changed
+  // notification only re-renders when this card's dash actually moved.
+  const boundDashId = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    () => cardSessionBindingStore.getBinding(cardId)?.dash?.id ?? null,
+  );
   // `canInterrupt` is true exactly while a turn can be stopped (one is
   // running), so it is the turn-in-progress signal ([L02]).
   const turnInProgress = useSyncExternalStore(
@@ -177,8 +195,14 @@ export function SessionChangesView({
         }
       : null;
   const hasSessionFiles = sessionFiles.length > 0;
+  // Dashes count against emptiness: a project whose only news is a dash is
+  // not an all-clear, and "None" over a rendered dash lane would contradict
+  // the rows below it.
   const isEmpty =
-    !hasSessionFiles && unattributedItem === null && orphanedItem === null;
+    !hasSessionFiles &&
+    unattributedItem === null &&
+    orphanedItem === null &&
+    snap.dashes.length === 0;
   // An empty view is only a verified all-clear once the aggregate has actually
   // composed this workspace ([P02]). Before the first emit `project` is the
   // pre-scan placeholder, so an empty-and-uncomposed view says "scanning"
@@ -291,6 +315,11 @@ export function SessionChangesView({
           onElectHunks={(path, ids) => changesController.electHunks(path, ids)}
         />
       ) : null}
+      <SessionChangesDashLane
+        dashes={snap.dashes}
+        boundDashId={boundDashId}
+        projectRoot={project.project_dir}
+      />
     </div>,
     headerActions,
   );

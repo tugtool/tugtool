@@ -1,0 +1,75 @@
+/* The Lens Dashes section — appearance only ([L06]), tokens scoped to this
+   section's own slots ([L20]). */
+
+.lens-dashes-section {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.lens-dashes-row {
+  min-width: 0;
+}
+
+/* The row's one line: the name reads first, everything after it is context. */
+.lens-dashes-facts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lens-dashes-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-rest);
+}
+
+.lens-dashes-stage,
+.lens-dashes-step {
+  flex: 0 0 auto;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The project suffix appears only when more than one project has dashes, and
+   it is the quietest run in the row when it does — it disambiguates, it does
+   not inform. */
+.lens-dashes-project {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+/* The parked mark. Toned down from the live dot's palette on purpose: a dash
+   nobody is working must not read as a dash at rest between turns. */
+.lens-dashes-parked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+  opacity: 0.7;
+}
+
+.lens-dashes-jumps {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}
+
+.lens-dashes-jump {
+  cursor: pointer;
+}
+
+/* A bound session no open card holds: still stated, with nowhere to go. */
+.lens-dashes-jump-inert {
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}

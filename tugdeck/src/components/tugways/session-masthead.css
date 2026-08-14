@@ -414,3 +414,17 @@
 .session-masthead-telemetry-atom {
   margin-inline-start: -7px;
 }
+
+/* The bound dash's chip, on the title line's trailing slot. A category label
+   beside the callsign, not a second name to read: the title is what the reader
+   scans for, so the chip is capped and elides inside its own border rather
+   than pushing the identity it sits next to. Appearance only ([L06]); the
+   badge keeps its own tokens ([L20]). */
+.session-masthead-dash-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-inline-size: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

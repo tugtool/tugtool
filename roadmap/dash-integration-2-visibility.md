@@ -13,7 +13,7 @@ This is Phase 2 of the program plan [roadmap/dash-integration-plan.md](dash-inte
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | complete |
 | Target branch | main (run as a dash) |
 | Program plan | [dash-integration-plan.md](dash-integration-plan.md) |
 | Last updated | 2026-08-13 |
@@ -192,6 +192,16 @@ This plan follows devise-skeleton v4: explicit `{#anchor}` headings, `[P##]` pla
 
 **[L30]: no command-table entry, on purpose.** `components/tugways/command-registry.ts` carries one `SLASH_BRIDGES` row per slash command that has a **native door** — a menu item, sometimes a chord. `/dash` gets none, following `/shell` and `/btw`, the two other arg-taking locals: a menu item cannot supply the `<name>` the verb exists to take, and a door that always fires the bare form would be a different command wearing this one's title. Bare `/dash` is reachable by typing it, which is the funnel local slash commands go through. If `/dash` later earns a picker (Phase 5), the picker is the thing that gets the table row.
 
+#### [P07] `POST /api/dash` must broadcast too — the one Rust change this phase makes (DECIDED at implementation) {#p07-api-dash-broadcast}
+
+**What was found:** (#context) asserts that `tugutil dash create`'s auto-bind produces a `bind_dash_ok` broadcast that "reaches every deck". It did not. Only the `bind_dash` CONTROL arm (`agent_supervisor.rs::do_bind_dash`) broadcast; the HTTP door (`server.rs::dash_handler`, which is what the CLI — and therefore `dash create`'s auto-bind — posts to) fired the aggregate bump and returned `200` without announcing anything. The two halves shared their ledger write (`dash_api::bind`) and nothing else, which is exactly how they came to disagree.
+
+**Why it could not be deferred:** the chip, the fronted lane, and `/dash <new-name>`'s create path all read `CardSessionBinding.dash`, and that field moves on the broadcast alone — no bump, no snapshot, and no poll refreshes it. A CLI bind therefore left the card wearing nothing until a reload. Three of this phase's success criteria are unreachable without the announcement, and no view-layer arrangement can synthesize it.
+
+**Decision:** the announcement is factored into two `pub(crate)` functions, `broadcast_bind_dash_ok` / `broadcast_unbind_dash_ok`, and **both** doors call them. No new frame, no new field, no schema change — the frames are Phase 1's, sent from one more place. It is a deviation from (#non-goals)'s "no Rust", recorded here rather than done quietly: the non-goal exists to stop the phase from *growing* a wire surface, and this makes an already-shipped one true.
+
+**Pinned by:** `at0406-masthead-dash-chip.test.ts`, which binds and unbinds through the real CLI over the card's shell route and watches the chip appear and vanish — the exact loop that was broken.
+
 ---
 
 ### Deep Dives {#deep-dives}
@@ -356,11 +366,11 @@ App-tests drive the real app on a real scratch repo (the "real, not fake" doctri
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Changes dash lane | pending | — |
-| #step-2 | Masthead dash chip | pending | — |
-| #step-3 | Lens Dashes section | pending | — |
-| #step-4 | `/dash` gesture | pending | — |
-| #step-5 | Integration checkpoint | pending | — |
+| #step-1 | Changes dash lane | done | `95effa736` |
+| #step-2 | Masthead dash chip | done | `2c32b01c7` |
+| #step-3 | Lens Dashes section | done | `4834722d3` |
+| #step-4 | `/dash` gesture | done | `df9132bdb` |
+| #step-5 | Integration checkpoint | done | `6f2bb686f` |
 
 #### Step 1: Changes dash lane {#step-1}
 
@@ -464,7 +474,37 @@ App-tests drive the real app on a real scratch repo (the "real, not fake" doctri
 - [ ] Walk the lifecycle visually on a scratch project: create → lane appears folded → `/dash` binds → chip + fronted lane → Lens row live-dot while the session works → close the card → parked mark. Note the walk's outcome in this file the way Phase 1's (#lifecycle-walk-result) did.
 
 **Checkpoint:**
-- [ ] every gate green; walk recorded; Step Status Ledger fully `done` with commit hashes.
+- [x] every gate green; walk recorded; Step Status Ledger fully `done` with commit hashes.
+
+##### Lifecycle walk — result {#lifecycle-walk-result}
+
+The walk is **driven**, not eyeballed: every leg of it is an assertion in one of the four new app-tests, against a dash the real CLI made in a real repo. Each leg, and what drives it:
+
+| Leg | Driven by |
+|---|---|
+| create → the lane exists and everything is folded away | at0405 — the lane mounts, zero rows visible, the fold cue offers `Dashes: N` |
+| expand → the row reads in dash grammar | at0405 — `at0405-lane · main · 1 round · working`, one range pop-out, and **zero** claim/disclaim/hunk affordances anywhere in the lane |
+| expand the row → rounds, files, and the maintained draft as read-only ink | at0405 — the round subject, the range-diff file, `Join draft` with its message, and no editor element in the row |
+| bind → the dash fronts, expanded, under "This card's dash" | at0405 — the fronted label appears and the bound dash is row 0 with `data-expanded="true"` |
+| bind → the chip appears in the masthead, live | at0406 — `tugutil dash bind` through the card's `$` shell route; the chip arrives on the broadcast with no reload, inside the title line's slot, tier height unchanged |
+| unbind → the chip goes away | at0406 — same route, chip gone, tier height still unchanged |
+| the Lens row while nobody is working it | at0407 — the parked mark, `data-parked="true"`, no jump |
+| the Lens row while a session works it | at0407 — the mark becomes a phase dot and a jump chip appears |
+| the jump fronts the mated card | at0407 — the Lens is the active card, the click makes it `A` |
+| the last worker walks away → parked again | at0407 — `dash unbind`, the mark returns and the jump goes |
+| `/dash <existing>` binds with no shell noise | at0408 — the chip arrives and the transcript holds **zero** shell rows |
+| `/dash <new>` creates, with a receipt, and ends bound | at0408 — the shell row shows `tugutil dash create at0408-made`, and the chip follows from `dash create`'s own auto-bind |
+| a name that could not survive a shell is refused | at0408 — the caution names the constraint and no command runs |
+| bare `/dash` opens the Changes shade | at0408 |
+
+**The one visual review** ([Q01] / [R01]) was done from at0406's screenshot: the chip sits at the trailing end of the title line, inside the reserved content box, clear of the pane's control cluster. It reads as a trailing category label rather than as part of the callsign. Note for a future pass, not a defect: `role="data"` paints it in the data hue, which is the loudest the chip could reasonably be — if it ever wants to be quieter, that is a one-token CSS change and touches no React ([L06]).
+
+**Gates at phase end.** `cargo nextest run` 2396 pass · `bun test` 6561 pass · `bunx tsc --noEmit` clean · `bunx vite build` clean · the whole derived app-test selection for this branch (41 files) green · the ~20-file core tier green (`main.tsx` moved, so the advisory applied).
+
+Two things the run turned up that are worth carrying forward:
+
+- **at0209 and the core tier.** `at0209-text-card-live-autosave` timed out waiting for `window.__tug` under the 16-way parallel core-tier run and passed on its own in 12s. Launch contention, the known class — not a regression, and nothing this phase touched.
+- **The dash fixtures had to become lock-tolerant.** All four new tests drive the same git repository and the harness runs them in parallel, so two `tugutil dash create`s in flight collide on `index.lock`. `tests/app-test/dash-fixture.ts` is the shared fixture, and every git-touching verb in it retries through a held lock; the four files then run green together.
 
 ---
 

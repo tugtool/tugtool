@@ -434,10 +434,15 @@ async fn dash_handler(
         return err(StatusCode::SERVICE_UNAVAILABLE, "no session ledger");
     };
     let registry = supervisor.registry.clone();
+    let control_tx = supervisor.control_tx.clone();
     let req: DashApiRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
     };
+    // Kept out of the moved request: the broadcast below names the session the
+    // mating is about, and every deck holding a card for it repaints from that
+    // name alone.
+    let session_id = req.tug_session_id.clone().unwrap_or_default();
     let outcome = match tokio::task::spawn_blocking(move || apply_dash_request(&ledger, &req)).await
     {
         Ok(outcome) => outcome,
@@ -451,6 +456,15 @@ async fn dash_handler(
     match outcome {
         crate::dash_api::DashApiOutcome::Bound { dash_id, dash_name } => {
             registry.changeset_all_bump().notify_one();
+            // The same announcement the `bind_dash` CONTROL verb makes: a bind
+            // is one fact, and the card wearing the dash must not depend on
+            // which door it came through.
+            crate::feeds::agent_supervisor::broadcast_bind_dash_ok(
+                &control_tx,
+                &session_id,
+                &dash_id,
+                &dash_name,
+            );
             (
                 StatusCode::OK,
                 axum::Json(
@@ -461,6 +475,7 @@ async fn dash_handler(
         }
         crate::dash_api::DashApiOutcome::Unbound => {
             registry.changeset_all_bump().notify_one();
+            crate::feeds::agent_supervisor::broadcast_unbind_dash_ok(&control_tx, &session_id);
             (
                 StatusCode::OK,
                 axum::Json(serde_json::json!({ "status": "ok" })),

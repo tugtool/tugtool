@@ -74,6 +74,7 @@ import { FolderOpenDot, Info } from "lucide-react";
 
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { TugBadge } from "@/components/tugways/tug-badge";
 import {
   TugPopover,
   TugPopoverAnchor,
@@ -448,6 +449,20 @@ export function SessionMasthead({
       [cardId],
     ),
   );
+  // The dash this card's session is mated to, if any ([L02]). Its own read
+  // rather than a widening of the project dir's: the two facts move on
+  // different beats, and a chip appearing mid-session is exactly the
+  // `bind_dash_ok` broadcast landing in the store.
+  const dashName = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () =>
+        cardId === undefined
+          ? null
+          : (cardSessionBindingStore.getBinding(cardId)?.dash?.name ?? null),
+      [cardId],
+    ),
+  );
   // The branch is telemetry: it rides the record for the panel and never
   // reaches a rendered name.
   const branch = useSessionBranch(projectDir.length > 0 ? projectDir : null);
@@ -525,6 +540,27 @@ export function SessionMasthead({
         // The dense cut. A 72px chrome tier with a 28px dot in it would have
         // the mark out-shouting the name it marks.
         dotSize={MASTHEAD_DOT_SIZE}
+        /*
+          The bound dash's name, in the title line's trailing slot — inside the
+          row's content box, i.e. inside the width the masthead already
+          reserves against the pane's control cluster, so it cannot collide
+          with pane chrome by construction. A label, not a control: the chip
+          gains gestures when there are dash verbs to offer.
+        */
+        slots={
+          dashName !== null ? (
+            <TugBadge
+              emphasis="tinted"
+              role="data"
+              size="2xs"
+              className="session-masthead-dash-chip"
+              data-slot="session-masthead-dash-chip"
+              title={`Working on dash ${dashName}`}
+            >
+              {dashName}
+            </TugBadge>
+          ) : undefined
+        }
         // The two lines below the title start where the TITLE does — three
         // lines on two verticals read as a stack that was assembled rather than
         // set. A card-wide chrome tier can afford the indent a rail cannot.
