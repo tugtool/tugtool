@@ -920,27 +920,35 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // (⌘S, ⇧⌘S), and a card that already saves does not need a button that
   // repeats what the keystroke and the menu bar both already do.
   //
-  // Membership is genuinely the card's, and it is a different question from
-  // enablement: Reveal in Finder appears only once the buffer is bound to a
-  // file the user chose, since a draft has nothing for the Finder to select.
+  // Both buttons stand on every ready Text card, bound or not. Reveal on an
+  // untitled draft has nothing for the Finder to select, so it DIMS — it does
+  // not come and go: a control that appears only sometimes is a cluster the
+  // hand cannot learn, and its neighbours would shift under the pointer the
+  // moment a draft was saved. The dimming itself is the registry's answer,
+  // asked of this card's own `validateAction`; the phrase for the dimmed
+  // state is the card's, because "there is no file yet" is a fact only the
+  // card holds.
+  //
+  // The effect is keyed on `isBoundFile` so the bar re-renders — and re-asks
+  // the registry — the moment a draft becomes a file.
   useLayoutEffect(() => {
     if (snapshot.phase !== "ready") {
       paneTitleBarItemsStore.set(cardId, null);
       return;
     }
-    const items: PaneTitleBarItem[] = [];
-    if (isBoundFile) {
-      items.push({
+    const items: PaneTitleBarItem[] = [
+      {
         commandId: TUG_ACTIONS.REVEAL_CARD_FILE,
         presentation: "button",
         icon: "FolderOpenDot",
-      });
-    }
-    items.push({
-      commandId: TUG_ACTIONS.SHOW_CARD_SETTINGS,
-      presentation: "button",
-      icon: "Settings",
-    });
+        unavailableHint: "No file",
+      },
+      {
+        commandId: TUG_ACTIONS.SHOW_CARD_SETTINGS,
+        presentation: "button",
+        icon: "Settings",
+      },
+    ];
     paneTitleBarItemsStore.set(cardId, items);
   }, [cardId, snapshot.phase, isBoundFile]);
 

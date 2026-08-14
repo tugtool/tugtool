@@ -47,6 +47,7 @@ const MASTHEAD_TITLE = `${PANE} [data-testid="card-masthead-title"]`;
 const MASTHEAD_DESCRIPTION = `${PANE} [data-testid="card-masthead-description"]`;
 const MASTHEAD_DETAIL = `${PANE} [data-testid="card-masthead-detail"]`;
 const OPTIONS_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-item-show-card-settings"]`;
+const REVEAL_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-item-reveal-card-file"]`;
 const OPTIONS_PANEL = '[data-testid="text-card-options"]';
 // Scoped to the sheet: the same option testids also appear in the
 // Settings card's Text Card tab (shared TextCardControls).
@@ -236,9 +237,89 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () =
           timeoutMs: 15000,
         });
         expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(false);
+
+        // Done puts the sheet away. Every control wrote as it was touched, so
+        // there is nothing to confirm — but a sheet with no way out but
+        // Escape is a sheet a reader can be stuck in.
+        await app.nativeClickAtElement('[data-testid="card-settings-done"]');
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(OPTIONS_PANEL)}) === null`,
+          { timeoutMs: 10000 },
+        );
+
+        // A bound card's Reveal button is live — the dimmed case is the next
+        // test, on a buffer that is not a file yet.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(REVEAL_BUTTON)}).disabled`,
+          ),
+        ).toBe(false);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "an untitled draft keeps its Reveal button, dimmed, and says why",
+    async () => {
+      const app = await launchTugApp({ testName: "at0210-untitled-reveal" });
+      try {
+        await app.evalJS<null>(
+          `(window.__tug.dispatchControlAction("new-text-card", {}), null)`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="tug-text-card-editor"]') !== null`,
+          { timeoutMs: 15000 },
+        );
+
+        // The button is THERE. It would have been simpler to publish it only
+        // for a bound card, and that is exactly what makes the cluster
+        // unlearnable: the gear and the width control would sit at different
+        // places on a draft than on a saved file, and would jump sideways the
+        // instant it was saved.
+        const REVEAL = '[data-testid="tug-pane-title-bar-item-reveal-card-file"]';
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(REVEAL)}) !== null`,
+          { timeoutMs: 10000 },
+        );
+
+        // And it is dimmed, because there is no file for the Finder to
+        // select. The answer comes from the command table asking this card,
+        // not from the card asserting it.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(REVEAL)}).disabled`,
+          ),
+        ).toBe(true);
+
+        // The reason is reachable. A disabled `.tug-button` takes
+        // `pointer-events: none`, so the bubble hangs on the anchoring span —
+        // hovering the button itself would tell the reader nothing.
+        const anchor = `document.querySelector(${JSON.stringify(REVEAL)}).closest('.tug-pane-title-bar-tooltip-anchor')`;
+        expect(await app.evalJS<boolean>(`${anchor} !== null`)).toBe(true);
+        await app.evalJS<null>(
+          `(function () {
+             var el = ${anchor};
+             var opts = { bubbles: true, cancelable: true, pointerType: "mouse" };
+             el.dispatchEvent(new PointerEvent("pointerenter", opts));
+             el.dispatchEvent(new PointerEvent("pointermove", opts));
+             return null;
+           })()`,
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-slot="tug-tooltip"]') !== null`,
+          { timeoutMs: 8000 },
+        );
+        expect(
+          await app.evalJS<string>(
+            `document.querySelector('[data-slot="tug-tooltip"]').innerText.trim()`,
+          ),
+        ).toContain("No file");
+      } finally {
+        await app.close();
       }
     },
     TEST_TIMEOUT_MS,

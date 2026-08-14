@@ -61,6 +61,17 @@ export interface PaneTitleBarItem {
   icon?: string;
   /** Checkmark state for a toggle row; omit for a plain verb. */
   checked?: boolean;
+  /**
+   * What to say while the command validates disabled — "No file", not
+   * "Reveal in Finder" greyed out with no explanation.
+   *
+   * This is NOT the second opinion `disabled` would be. Whether the command
+   * is applicable stays the registry's answer, asked of the chain; this is
+   * the card saying *why*, which is a fact only the card holds. A control
+   * that dims without a reason is a dead end for the reader, and a button
+   * that vanished instead would be a cluster the hand cannot learn.
+   */
+  unavailableHint?: string;
 }
 
 class PaneTitleBarItemsStore {

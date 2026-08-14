@@ -28,6 +28,7 @@
 import React from "react";
 
 import type { ShowSheetOptions } from "@/components/tugways/tug-sheet";
+import { TugPushButton } from "../tug-push-button";
 import { useTextCardSettings } from "@/lib/use-text-card-settings";
 import { useImageCardSettings } from "@/lib/use-image-card-settings";
 import { usePdfCardSettings } from "@/lib/use-pdf-card-settings";
@@ -95,7 +96,14 @@ const KINDS: Record<
   pdf: { title: "PDF Settings", Body: PdfCardSettingsBody },
 };
 
-/** Present the view settings for `cardId`. Resolves when the sheet closes. */
+/**
+ * Present the view settings for `cardId`. Resolves when the sheet closes.
+ *
+ * Every control writes as it is touched — there is nothing to confirm and no
+ * Cancel to offer — so the one button is Done, and it says the only thing
+ * left to say: this is finished, put it away. Escape and the backdrop close
+ * the sheet too; the button is what makes that obvious without trying either.
+ */
 export function presentCardSettingsSheet(
   showSheet: ShowSheet,
   kind: CardSettingsKind,
@@ -105,6 +113,20 @@ export function presentCardSettingsSheet(
   return showSheet({
     title,
     displayWidth: "md",
-    content: () => <Body cardId={cardId} />,
+    content: (close) => (
+      <>
+        <Body cardId={cardId} />
+        <div className="tug-sheet-actions">
+          <TugPushButton
+            size="sm"
+            emphasis="primary"
+            onClick={() => close("done")}
+            data-testid="card-settings-done"
+          >
+            Done
+          </TugPushButton>
+        </div>
+      </>
+    ),
   });
 }

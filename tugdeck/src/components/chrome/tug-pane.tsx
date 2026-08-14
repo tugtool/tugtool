@@ -927,15 +927,25 @@ function CardTitleBar({
             `cardTitleStore` rule); the phrase is the registry's, so a button
             and the same command's menu item can never say different things.
 
-            No `disabled` projection: these buttons stand for as long as the
-            card publishes them, and a gate sampled at render would go stale
-            without a subscription to the menu-state flush. Membership is the
-            card's answer here — it publishes Reveal only once the buffer is
-            bound to a file — and `dispatchCommand` sends regardless, exactly
-            as Cocoa's `sendAction:` does. */}
+            A button that cannot act right now DIMS; it never disappears
+            ([D06] never-hide — a cluster whose controls come and go is one
+            the hand cannot learn). Enablement is the registry's answer asked
+            of the chain, and for a key-card command that query is LIVE rather
+            than a snapshot, so sampling here is correct as long as this bar
+            re-renders when the fact turns — which it does, because the card
+            re-publishes its items when the fact that decides them changes.
+            What the card adds is only the PHRASE for the dimmed state, which
+            is the one part of it the registry cannot know.
+
+            The tooltip anchors a span rather than the button: a disabled
+            `.tug-button` takes `pointer-events: none`, so a bubble hung
+            directly on it would never open — and the dimmed state is exactly
+            when the reader most needs to be told why. */}
         {titleBarButtonItems.map((item) => {
           const entry = commandEntry(item.commandId);
           const label = entry?.title ?? item.commandId;
+          const enabled =
+            entry !== undefined && validateCommand(entry, commandValidationSource());
           const ItemIcon =
             item.icon !== undefined &&
             icons[item.icon as keyof typeof icons] !== undefined
@@ -943,17 +953,23 @@ function CardTitleBar({
               : null;
           if (ItemIcon === null) return null;
           return (
-            <TugTooltip key={item.commandId} content={label}>
-              <TugButton
-                subtype="icon"
-                emphasis="ghost"
-                role="action"
-                size="sm"
-                icon={<ItemIcon />}
-                aria-label={label}
-                data-testid={`tug-pane-title-bar-item-${item.commandId}`}
-                onClick={() => dispatchCommand(item.commandId)}
-              />
+            <TugTooltip
+              key={item.commandId}
+              content={enabled ? label : (item.unavailableHint ?? label)}
+            >
+              <span className="tug-pane-title-bar-tooltip-anchor">
+                <TugButton
+                  subtype="icon"
+                  emphasis="ghost"
+                  role="action"
+                  size="sm"
+                  icon={<ItemIcon />}
+                  disabled={!enabled}
+                  aria-label={label}
+                  data-testid={`tug-pane-title-bar-item-${item.commandId}`}
+                  onClick={() => dispatchCommand(item.commandId)}
+                />
+              </span>
             </TugTooltip>
           );
         })}
