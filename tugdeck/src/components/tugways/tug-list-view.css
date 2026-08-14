@@ -105,11 +105,7 @@ body {
      token would be a straight [L20] violation ("A never overrides, aliases, or
      references B's tokens"). The old names survive as fallbacks so existing
      consumers that set them keep working. */
-  --tugx-list-view-cursor-bar-stem:    var(--tugx-focus-cursor-bar-stem);
   --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
-  --tugx-list-view-cursor-bar-point:   var(--tugx-focus-cursor-bar-point);
-  --tugx-list-view-cursor-bar-nose:    var(--tugx-focus-cursor-bar-nose);
-  --tugx-list-view-cursor-bar-nose-max: var(--tugx-focus-cursor-bar-nose-max);
   --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
   /* `--tugx-list-view-cursor-bar-inset` — OPT-IN knob, deliberately not
      declared here. How far in from the row's leading edge the bar starts
@@ -403,34 +399,9 @@ body {
      pseudo-element and generated ahead of the row, so at the default `auto` it
      would paint UNDER the row and vanish on any filled row. */
   z-index: 1;
-  /* The box is the caret's widest extent — stem plus bar plus nose — and the
-     clip cuts the shape out of it: a full-height stripe `-stem` wide at the
-     leading edge, then the taper to the nose. Clipping one box rather than
-     adding a second element keeps the caret one paint: an `::after` triangle
-     would have to track the bar's colour, its inset, and the row's height
-     independently.
-
-     The taper runs over `-nose`, a fixed length, and the caret is at its full
-     width for everything between the two. `min()` against `-nose-max` is what
-     keeps the flat segment alive on a short row: the ceiling is under half the
-     row, so the two tapers can never meet and the caret is a trapezoid at every
-     height rather than a trapezoid here and a point there. */
-  width: calc(
-    var(--tugx-list-view-cursor-bar-stem) + var(--tugx-list-view-cursor-bar-width) +
-      var(--tugx-list-view-cursor-bar-point)
-  );
+  /* A plain full-height stripe at the leading edge — one width, no clip. */
+  width: var(--tugx-list-view-cursor-bar-width);
   background: var(--tugx-list-view-cursor-bar-color);
-  clip-path: polygon(
-    0 0,
-    var(--tugx-list-view-cursor-bar-stem) 0,
-    100% min(var(--tugx-list-view-cursor-bar-nose-max), var(--tugx-list-view-cursor-bar-nose)),
-    100%
-      calc(
-        100% - min(var(--tugx-list-view-cursor-bar-nose-max), var(--tugx-list-view-cursor-bar-nose))
-      ),
-    var(--tugx-list-view-cursor-bar-stem) 100%,
-    0 100%
-  );
 }
 /* The caret sits flush against the row's leading edge unless a consumer insets
    it. It used to be pushed in by the container ring's inner overlap so it

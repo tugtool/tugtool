@@ -20,8 +20,26 @@ import type { IDeckManagerStore } from "@/deck-manager-store";
 
 const FLASH_CLASS = "tug-pane-flash";
 const FLASH_ANIMATION_NAME = "tug-pane-border-flash";
-/** `tug-pane-border-flash`'s duration in `tug-pane.css`, plus slack. */
-const FLASH_BACKSTOP_MS = 1600;
+/** Slack over the flash's own duration before the backstop fires. */
+const FLASH_BACKSTOP_SLACK_MS = 500;
+/** Used only when the computed duration can't be read (no chrome element yet). */
+const FLASH_BACKSTOP_FALLBACK_MS = 2000;
+
+/**
+ * How long the flash runs, read from the element the keyframes are on — so the
+ * backstop follows `--tugx-card-flash-duration` (`tug-pane.css`) instead of
+ * carrying a second copy of the number that can drift out of step with it.
+ */
+function flashBackstopMs(paneEl: HTMLElement): number {
+  const chrome = paneEl.querySelector(".tug-pane-chrome");
+  if (!(chrome instanceof HTMLElement)) return FLASH_BACKSTOP_FALLBACK_MS;
+  const declared = getComputedStyle(chrome).animationDuration.split(",")[0]?.trim() ?? "";
+  const seconds = declared.endsWith("ms")
+    ? Number.parseFloat(declared) / 1000
+    : Number.parseFloat(declared);
+  if (!Number.isFinite(seconds) || seconds <= 0) return FLASH_BACKSTOP_FALLBACK_MS;
+  return seconds * 1000 + FLASH_BACKSTOP_SLACK_MS;
+}
 
 /**
  * Flash the pane with this id.
@@ -61,7 +79,7 @@ export function flashPaneBorder(paneId: string, allowRetry = true): void {
   // A window whose rendering is suspended never ticks the keyframes, so
   // `animationend` never arrives and the ring would rest on the pane forever.
   // The timer is the only thing that guarantees the flash is one-shot.
-  const backstop = window.setTimeout(clear, FLASH_BACKSTOP_MS);
+  const backstop = window.setTimeout(clear, flashBackstopMs(paneEl));
 }
 
 /**

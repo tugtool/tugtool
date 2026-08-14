@@ -202,53 +202,13 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(parseFloat(bar?.width ?? "0")).toBeGreaterThan(0);
         expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
 
-        // The caret is a taper standing on a STEM: a stripe of constant width
-        // at the leading edge running the row's full height, with the taper
-        // starting where it ends. A pure triangle comes to nothing at the row's
-        // own top and bottom edges and reads lighter than it measures. The
-        // clip's second point is the stem's top corner — it must sit in from
-        // the leading edge, which is what a bare `polygon(0 0, 100% 50%, 0
-        // 100%)` would not do.
-        //
-        // The taper's vertical extent is a LENGTH, and there are two of them —
-        // one per end — so the caret reaches full width a fixed distance in and
-        // holds it for everything between. Tying that extent to the row's own
-        // height (a single widest point at `50%`) is the bug this shape exists
-        // to prevent: on a tall row — a question-dialog option is ~300px — the
-        // taper spreads over half of it and the caret is hairline-thin across
-        // the entire top of the row, reading as if it stops short of the row's
-        // top edge.
-        //
-        // The length is capped by a share of the row that must be UNDER half.
-        // At half the two tapers meet on a short row, the flat segment vanishes
-        // and the trapezoid becomes a point — one mark on a short row and
-        // another on a tall one. Split at top level: each taper vertex carries
-        // a `min()` whose own comma must not become a point boundary.
-        const clip = bar?.clipPath ?? "";
-        const points: string[] = [];
-        let depth = 0;
-        let current = "";
-        for (const ch of clip.replace(/^polygon\(/, "").replace(/\)$/, "")) {
-          if (ch === "(") depth += 1;
-          if (ch === ")") depth -= 1;
-          if (ch === "," && depth === 0) {
-            points.push(current.trim());
-            current = "";
-            continue;
-          }
-          current += ch;
-        }
-        if (current.trim()) points.push(current.trim());
-        expect(points.length).toBe(6);
-        expect(parseFloat(points[1] ?? "")).toBeGreaterThan(0);
-        // Both taper vertices sit at the caret's full width, each capped by a
-        // fixed length against a share of the row strictly under 50%.
-        for (const vertex of [points[2], points[3]]) {
-          expect(vertex?.startsWith("100%")).toBe(true);
-          const cap = /min\((\d+(?:\.\d+)?)%,\s*\d+(?:\.\d+)?px\)/.exec(vertex ?? "");
-          expect(cap).not.toBeNull();
-          expect(parseFloat(cap?.[1] ?? "100")).toBeLessThan(50);
-        }
+        // The caret is a PLAIN RECTANGLE: one constant width, full row height,
+        // no clip. It was briefly a tapered trapezoid, and the taper never read
+        // as the pointer it was meant to be — at caret widths it is a couple of
+        // pixels of bevel. Any clip here means that shape has come back.
+        expect(bar?.clipPath ?? "none").toBe("none");
+        // Narrow enough to stay a mark rather than a slab beside the content.
+        expect(parseFloat(bar?.width ?? "0")).toBeLessThanOrEqual(6);
       } finally {
         await app.close();
       }

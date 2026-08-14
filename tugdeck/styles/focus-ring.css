@@ -221,44 +221,19 @@ body {
      mark of its own (see the note above), so the caret is both "where am I"
      and, by where it sits, "which container".
 
-     The caret is not a plain stripe: it is a leading-edge triangle. Its
-     trailing edge reaches its widest at the item's mid-height and tapers to a
-     point at the top edge and at the bottom edge, so the whole silhouette
-     comes to a point at both ends rather than ending square. It reads as an
-     indicator aimed at the row rather than as a rule beside it.
+     THE CARET IS A PLAIN RECTANGLE: a stripe of constant width running the
+     row's full height. It was briefly a tapered trapezoid — widest at the row's
+     mid-height, narrowing toward each end — on the theory that a pointed
+     silhouette reads as aimed at the row rather than as a rule beside it. It
+     did not: at the widths a caret may occupy, the taper is a few pixels of
+     bevel that reads as a rendering artifact on a short row and as nothing at
+     all on a tall one, and it cost four knobs (`-stem`, `-point`, `-nose`,
+     `-nose-max`) plus a `clip-path` in two components to produce it. The
+     rectangle says the same thing at one width and no shape.
 
-     `-stem` is the one part of the caret that is NOT the triangle: a stripe of
-     constant width at the leading edge, running the row's full height, with the
-     taper starting where it ends. A pure triangle comes to nothing at the top
-     and bottom edges, so on a tall row the mark thins away exactly where the
-     row's own edges are and the caret reads lighter than it measures. The stem
-     gives it a continuous edge to stand on. Keep it to a pixel or so: more and
-     the shape stops reading as a pointer and becomes a rule with a bulge.
-
-     `-width` and `-point` together are the widest extent, on top of the stem.
-     Keep the sum SMALL — a large value turns the caret into a dart that
-     competes with the content.
-
-     `-nose` is how far from each end the taper runs before the caret reaches
-     that full width. It is a LENGTH, not a fraction of the row: tie the taper
-     to the row's own height and a tall row spreads it over half of that height,
-     so the caret is hairline-thin across the whole top of the row and reads as
-     if it stops short of the row's top edge. Rows are not one height — a picker
-     row is ~36px, a question-dialog option row is ten times that — and the mark
-     must read the same on both.
-
-     THE CARET IS A TRAPEZOID AT EVERY ROW HEIGHT. `-nose-max` is the ceiling
-     the taper may occupy as a share of the row, and it is deliberately under
-     50%: at 50% the two tapers meet on a short row, the flat segment vanishes,
-     and the caret becomes a POINT — a different mark from the one a tall row
-     wears, which is the thing this shape exists to avoid. Under the ceiling the
-     flat full-width segment always survives, so a 24px row and a 300px row wear
-     the same silhouette at two lengths. */
-  --tugx-focus-cursor-bar-stem: 1px;
-  --tugx-focus-cursor-bar-width: 3px;
-  --tugx-focus-cursor-bar-point: 3px;
-  --tugx-focus-cursor-bar-nose: 16px;
-  --tugx-focus-cursor-bar-nose-max: 30%;
+     `-width` is the whole mark. Keep it SMALL — a large value turns the caret
+     into a slab that competes with the content. */
+  --tugx-focus-cursor-bar-width: 5px;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 

@@ -543,7 +543,14 @@ body {
    it), so it must sit outside the box where nothing paints over it. The base
    active shadow rides alongside so the pane keeps its drop shadow through the
    flash. The accent holds for most of the animation, then fades, so it reads
-   clearly. Appearance only ([L06]). */
+   clearly. Appearance only ([L06]).
+
+   `--tugx-card-flash-duration` is THE knob for how long a card flash lasts —
+   the one place to tune it. Its default lives in the `var()` fallback below
+   rather than in a declaration, so a caller can override it from any ancestor.
+   Nothing else hard-codes this length: `flashPaneBorder` reads the animation's
+   computed duration off the element for its backstop timer, so the timer
+   follows the token instead of shadowing it. */
 @keyframes tug-pane-border-flash {
   0% {
     box-shadow:
@@ -562,7 +569,7 @@ body {
   }
 }
 .tug-pane-flash .tug-pane-chrome {
-  animation: tug-pane-border-flash 1100ms ease-out;
+  animation: tug-pane-border-flash var(--tugx-card-flash-duration, 1750ms) ease-out;
 }
 
 /* ============================================================================
