@@ -44,8 +44,9 @@ Program-plan phases 1 and 2 are merged to `main` (`a4477d50b`, `b53bdd718`). Thi
 #### Success Criteria (Measurable) {#success-criteria}
 
 - `tugutil plan lint roadmap/dash-integration-2-visibility.md` exits 0; `tugutil plan lint roadmap/dash-notes.md` exits 2 with `not a plan document`.
+- `tugutil plan lint roadmap/dash-integration-2.1-one-gesture.md` exits 0 — the checker passes the plan that specifies it.
 - Every seeded violation in [Table T01](#t01-lint-rules) is reported by a unit test with the right code, severity, and line.
-- A `plan_review_request` frame on a card whose session is on `sonnet` produces: the model chip reading Opus, a submitted turn whose text is `/tugplug:review-plan <path>`, and — on turn settle — the chip back on Sonnet (app-test).
+- A `plan_review_request` frame that arrives **while the devise turn is still in flight** on a card whose session is on `sonnet` produces: the request parked, then — once that turn settles — the model chip reading Opus, a submitted turn carrying the `tugplug:review-plan` command atom with the plan path as its tail ([P10](#p10-submission-is-an-atom)), and — on *that* turn's settle — the chip back on Sonnet (app-test).
 - **`GET /api/defaults/dev.model/<cardId>` is byte-identical before the request and after the restore** — the borrow never wrote the user's remembered selector (app-test).
 - A card already resolving to Opus performs **no** `model_change` in either direction ([P03](#p03-compare-resolved-ids)) — asserted at the store layer.
 - An interrupted review turn restores the model exactly as a completed one does (store-layer test).
@@ -82,7 +83,8 @@ Program-plan phases 1 and 2 are merged to `main` (`a4477d50b`, `b53bdd718`). Thi
 #### Constraints {#constraints}
 
 - **`setModel` in `tugdeck/src/lib/use-model.ts` persists.** It calls `writePersistedModel(cardId, selector)` → a `PUT /api/defaults/dev.model/<cardId>` ([D07]). The borrow must not go through it ([P02](#p02-borrow-never-persists)).
-- **Model changes are gated on `canSubmit`.** `useModel`'s `setModel` declines while a turn is in flight unless `fromRestore` is set. Borrow and restore both happen *between* turns, so they never fight the gate — but the controller must not assume it can swap mid-turn.
+- **Model changes are gated on `canSubmit`.** `useModel`'s `setModel` declines while a turn is in flight unless `fromRestore` is set. Borrow and restore both happen *between* turns, so they never fight the gate — which is exactly why a request arriving mid-turn parks instead of acting ([P11](#p11-request-parks)). The controller must never assume it can swap mid-turn.
+- **`applyModel` moves a value `useModel`'s mount-restore effect depends on.** Any borrow re-runs that effect; it must be suppressed for the borrow's duration or it will revert and persist ([#step-5](#step-5)).
 - **Persistent state goes through tugbank**, never Web storage.
 - **Warnings are errors** (`tugrust/.cargo/config.toml` sets `-D warnings`).
 - **The debug app loads the prod rollup bundle** — `bunx vite build` before declaring a tugdeck change done.
@@ -113,6 +115,8 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 
 **Resolution:** DECIDED by [P02](#p02-borrow-never-persists). Because the borrow never writes `dev.model/<cardId>`, the *persisted* selector remains the user's own throughout. On the next mount, `useModel`'s existing mount-restore effect compares the seed against the session's current selector and re-applies the seed when they differ — so a crashed borrow is repaired by machinery that already ships, with no recovery code of our own. This is the main reason the borrow must not persist.
 
+**Residual, stated rather than fixed:** the mount-restore only runs when a seed exists — `use-model.ts` returns early on `seedModel === null`. A card with nothing persisted of its own *and* no deck-wide default has no seed, so a process death mid-review leaves that session resting on the review model until the user picks something. We accept it here rather than seeding on borrow (which would write the very key [P02] exists to keep untouched): the repair is one pick, the window is a crash window, and a card that has never expressed a model preference has no remembered value to lie about. Revisit if it is ever observed in practice.
+
 #### [Q02] Should `implement` and `dash` refuse to walk a plan that fails `plan lint`? (DEFERRED) {#q02-lint-as-a-gate}
 
 **Question:** Should `/tugplug:implement` lint before walking, and stop on error-severity diagnostics?
@@ -141,7 +145,8 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 |------|--------|------------|------------|--------------------|
 | The borrow clobbers the user's remembered model | high | low | borrow/release never call `writePersistedModel`; an app-test asserts `dev.model/<cardId>` is byte-identical across a full cycle | any report of a card waking on the wrong model |
 | The restore never fires (error, interrupt, unmount) | med | med | restore is driven by turn **settle**, not turn success; the controller restores on interrupt and on unmount; [Q01](#q01-crash-recovery) covers the process-death case for free | a card observed resting on Opus after a review |
-| An unsupervised turn edits the plan badly | med | low | the review runs on a dash worktree under git, so every edit is a diff; the Review Record makes each fixup legible; the turn is interruptible | a reviewer edit the user would not have accepted |
+| An unsupervised turn edits the plan badly | med | low | every edit is a git diff — on the dash worktree when the card is bound to a dash, on `main`'s working tree when it is not; the Review Record makes each fixup legible; the turn is interruptible | a reviewer edit the user would not have accepted |
+| The borrow is reverted mid-review by `useModel`'s mount-restore | high | low | the borrow and the restore effect are made mutually exclusive in [#step-5](#step-5) and pinned by a test — the interaction is real, since `applyModel` moves a value the effect depends on ([P02](#p02-borrow-never-persists)) | a chip observed flipping back before the review turn ends |
 | Opus unavailable on the account | low | low | the review selector is resolved through the live catalog; unresolvable → no borrow, review runs on the current model, and the card says so once | account-tier feedback |
 | The linter is stricter than the real corpus | med | med | severities split; calibrated against every plan in `roadmap/` in [#step-1](#step-1); only errors gate | a plan that is fine but cannot pass |
 | Auto-submitted turns feel like loss of control | med | med | announced before submission, interruptible, and the borrow releases on interrupt ([P09](#p09-unconditional-but-interruptible)) | first "why did it just do that" |
@@ -193,13 +198,14 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 - `borrowModel` / `releaseModel` are named exports with the no-persistence property stated at the definition and pinned by a test, so a later refactor cannot quietly route them through `setModel`.
 - The chip reflects the borrow (`sessionMetadataStore.applyModel`) — the user sees Opus while Opus is running. A settled control shows what the session actually holds.
 
-#### [P03] "If different" is decided on the resolved model id (DECIDED) {#p03-compare-resolved-ids}
+#### [P03] "If different" is decided on the resolved catalog row (DECIDED) {#p03-compare-resolved-ids}
 
-**Decision:** Before borrowing, resolve both the session's current selector and the review selector to model ids through the live catalog. If they name the same model, do nothing — no borrow, no restore, no frames.
+**Decision:** Before borrowing, resolve both the session's current selector and the review selector against the live catalog. If they land on the same catalog row, do nothing — no borrow, no restore, no frames.
 
 **Rationale:**
 - Selector spellings and models are not one-to-one. A Max account on `default` may already be running Opus; comparing the strings `default` and `opus` would report a difference that does not exist and flicker the chip through two pointless control requests.
-- The catalog is the existing authority for this: `resolveModelSelector` / `resolveCatalogSelector` already match a selector to its catalog row across releases where claude respelled it, which is also what keeps a remembered pick working.
+- The catalog is the existing authority for this: `resolveModelSelector` (`model.ts`) resolves a spelling to its row through `resolveCatalogSelector` and returns that row's **selector** (`row.value`), across releases where claude respelled it — the same resolution that keeps a remembered pick working.
+- Row identity, not model id, is what the deck actually holds: `modelIdToSelector` deliberately collapses a row whose description matches `default`'s onto `"default"` (`model-picker-data.ts`), which is precisely the mechanism that detects "this account's `default` already *is* Opus". Comparing ids would defeat it.
 
 **Implications:**
 - The captured value for the restore is the **selector** (`sonnet`, `default`, …), not the resolved id — that is what `model_change` carries and what `handleModelChange` records (`"default"` records as `null`, the honest absence of a `--model` flag).
@@ -207,7 +213,7 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 
 #### [P04] `devise` signals readiness through the server, not the composer (DECIDED) {#p04-server-signal}
 
-**Decision:** `devise` ends by running `tugutil plan review-request --plan <abs-path>`, which `POST`s to the running tugcast, which broadcasts a `plan_review_request` frame to the card bound to that session. The card's controller acts on the frame.
+**Decision:** `devise` ends by running `tugutil plan review-request --plan <abs-path>`, which `POST`s to the running tugcast, which broadcasts a `plan_review_request` frame. The deck receives it the way it receives every server broadcast — a `registerAction` handler in `action-dispatch.ts` that walks `cardIdForSession` and writes into a store — and the card's controller subscribes to that store ([P11](#p11-request-parks)).
 
 **Rationale:**
 - It is invocation-spelling agnostic. A local slash verb in `session-card.tsx` (the `/join` shape) would only catch `/devise`; a user typing `/tugplug:devise`, or `devise` reached any other way, would silently skip the review. The signal has to come from the skill, which knows it finished, not from the composer, which knows how it started.
@@ -216,6 +222,7 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 
 **Implications:**
 - New HTTP route and broadcast frame; no new deck→tugcode inbound message, so the tugcode inbound allowlist is untouched.
+- The deck side is a `registerAction("plan_review_request", …)` beside `bind_dash_ok` / `bind_dash_err`, plus a new latching `plan-review-request-store.ts` — **not** a subscription taken out by the card. Broadcast handlers are registered app-wide at dispatch setup, and the card reads the store; that is the shipped shape (`bind_dash_ok` → `cardSessionBindingStore`, `bind_dash_err` → `dashBindErrorStore`), and it is also what lets a request that arrives before the controller exists survive to be seen ([P11](#p11-request-parks)).
 - No reachable tugcast → the verb fails actionably and `devise` prints the review command for the user to run by hand. The gesture degrades to the old two-step rather than silently skipping the review.
 
 #### [P05] The review is its own skill, `review-plan` (DECIDED) {#p05-review-plan-skill}
@@ -263,7 +270,38 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 - Unannounced is not the same as unconditional. The user should never wonder why the model chip changed.
 - Interrupt is the honest escape hatch, and it already exists for every turn.
 
-**Implications:** The release path is driven by turn **settle** (completed, errored, or interrupted), never by turn success.
+**Implications:** The release path is driven by the review turn's **settle** (completed, errored, or interrupted), never by turn success — and settle means *this* turn's settle, which the machine can only recognize after it has watched the turn start ([P12](#p12-armed-running-settled)).
+
+#### [P10] The submission is a command atom, and assertions name the atom (DECIDED) {#p10-submission-is-an-atom}
+
+**Decision:** The review turn is submitted through `buildCommandSubmission("tugplug:review-plan", planPath)` — a leading `command` atom plus the path as the tail. Every test asserts the **atom** (`{kind:"atom", type:"command", value:"tugplug:review-plan"}`) and the tail text, never a literal `"/tugplug:review-plan …"` string.
+
+**Rationale:** `buildCommandSubmission` (`slash-commands.ts`) returns `text = TUG_ATOM_CHAR (+ " " + args)`; the command name lives only in the atom. The rendered row reads `/tugplug:review-plan <path>` and the wire text is reassembled downstream, but `submission.text` never contains that string — an assertion written against it would fail on a working implementation, which is the worst kind of test.
+
+**Implications:** The app-test asserts either the atom on the submitted turn or the row's rendered text, and the plan's success criteria say so.
+
+#### [P11] A request that arrives mid-turn parks; it is never refused (DECIDED) {#p11-request-parks}
+
+**Decision:** `devise` fires the signal from **inside its own turn**, so the frame routinely lands while `canSubmit` is false. That is the normal case, not an error: the request is latched in the request store and the controller acts on it when the current turn settles. Only `already-reviewing` and `model-unknown` refuse.
+
+**Rationale:**
+- Treating "a turn is in flight" as a gate failure would refuse the review on the happy path — the signal cannot arrive any other way, because the skill that sends it is what the turn is running.
+- It is also the only ordering that works with the model gate: `useModel`'s `setModel` declines mid-turn by design ([L28] — a control acts on a lifecycle by subscribing to its published state), and the borrow must not fight that. Parking makes the borrow happen where the plan already said it happens: *between* turns.
+- Latching in the store rather than in the controller means a request that arrives before the card's controller exists is still seen.
+
+**Implications:**
+- The park is bounded: a parked request is dropped if a *different* user turn is submitted first, so the review can never surprise someone who has moved on. That drop is a caution, not silence.
+- The gate's `turn` reason disappears from `evaluatePlanReviewGate` — the shape in [Spec S02](#s02-borrow-machine) reflects this.
+
+#### [P12] The machine is armed → running → settled, never idle → settled (DECIDED) {#p12-armed-running-settled}
+
+**Decision:** After submitting, the controller enters `armed` and only enters `running` once it has observed the session leave the idle phase. The release fires on the transition **out of** `running`.
+
+**Rationale:** There is no turn-settled event to subscribe to. `CodeSessionStore` publishes `canSubmit` off its phase machine, and at the instant `send()` returns the phase has not yet moved — `canSubmit` is still true. A machine that released on "next idle" would release the borrow milliseconds after taking it and run the whole review on the model it just gave back. The three-beat shape is what makes the release correspond to the turn it belongs to.
+
+**Implications:**
+- An `armed` state that never sees the turn start (a send that failed outright) must still release — it falls back to releasing when the phase is idle *and* no turn was observed within the store's next notification, so a lost submission cannot strand a borrow.
+- Release stays idempotent: a second settle sends no second `model_change`.
 
 ---
 
@@ -280,6 +318,8 @@ Anchors are explicit (`{#kebab-case}`), plan-local decisions are `[P01]` (never 
 | Current selector of a live session | the mount-restore effect in `use-model.ts` | `model !== null ? modelIdToSelector(model, knownModelRows(models, readModelCatalog())) : "default"` — reuse this expression, do not re-derive it |
 | Card-submitted skill turn | `tugdeck/src/components/tugways/cards/session-card.tsx` (`join:` handler), `tugdeck/src/lib/slash-commands.ts:367` `buildCommandSubmission` | leading `command` atom → claude expands it as a USER invocation, clearing `disable-model-invocation` |
 | Controller pattern | `tugdeck/src/lib/commit-mode-controller.ts` (+ its `__tests__`) | per-card façade folding upstream stores into one referentially-stable snapshot, with an exported pure gate |
+| Broadcast frame → card | `tugdeck/src/action-dispatch.ts` — `registerAction("bind_dash_ok" \| "bind_dash_err" \| "unbind_dash_ok", …)` + `cardIdForSession` | the ONLY way a server broadcast reaches a card: a dispatch-time handler resolves the session id to a card and writes a store; the card subscribes to the store, never to the frame |
+| Turn phase / `canSubmit` | `tugdeck/src/lib/code-session-store.ts` — the phase machine, `canSubmit`, `canInterrupt` | there is **no** settled event; settle is inferred from a phase transition ([P12](#p12-armed-running-settled)) |
 | CLI → server → deck | `tugutil/src/draft.rs` (`POST /api/draft`, `resolve_port_any` from `commands/tell.rs`); phase 2's `POST /api/dash` broadcast | the template for `plan review-request` |
 | `--json` envelope | `tugutil/src/output.rs` — `JsonResponse<T>`, `print_ok`, `JsonIssue` | `JsonIssue` already carries `code`/`severity`/`message`/`file`/`line`/`anchor` — exactly a lint diagnostic |
 | Exit codes | `tugutil/src/changes.rs::finish` over `AppError::Exit1/2/3` | reuse; do not invent a second convention |
@@ -300,15 +340,16 @@ Calibrated against `roadmap/dash-integration-2-visibility.md`, `roadmap/facts-li
 
 #### The borrow cycle, end to end {#borrow-cycle}
 
-1. `devise` writes the plan, runs `tugutil plan review-request --plan <abs-path>`, and ends its turn saying the review is next.
-2. tugcast broadcasts `plan_review_request` to the card bound to that session.
-3. The controller evaluates the gate ([Spec S02](#s02-borrow-machine)). Turn in flight, unknown session model, unresolvable review selector, or a review already running → no borrow, and a caution.
-4. Same resolved model id as the review model ([P03](#p03-compare-resolved-ids)) → skip the borrow entirely and go to step 6.
-5. Capture the current **selector**; `borrowModel(reviewSelector)` — `applyModel` + `codeSessionStore.setModel`, no persistence.
-6. Announce, then `codeSessionStore.send(buildCommandSubmission("tugplug:review-plan", planPath))`.
-7. The turn runs on Opus, in the transcript, editing the plan.
-8. On turn **settle** — completed, errored, or interrupted — `releaseModel(capturedSelector)` if a borrow happened. Unmount mid-review does the same.
-9. Process death mid-review needs no handling: persistence was never touched, so `use-model.ts`'s mount-restore repairs the live session on the next mount ([Q01](#q01-crash-recovery)).
+1. `devise` writes the plan and, **still inside its own turn**, runs `tugutil plan review-request --plan <abs-path>`, then ends the turn saying the review is next.
+2. tugcast broadcasts `plan_review_request`; `action-dispatch.ts` resolves `tug_session_id` → card and latches the request in the request store ([P04](#p04-server-signal)).
+3. The controller sees the latched request. A turn is in flight — it always is, at this point — so the request **parks** ([P11](#p11-request-parks)). It is dropped, with a caution, only if the user submits a different turn first.
+4. The devise turn settles. The controller evaluates the gate ([Spec S02](#s02-borrow-machine)): a review already running, or an unknown session model → caution, no submission. An unresolvable review selector is not a gate failure — it means run without borrowing.
+5. Same catalog row as the review model ([P03](#p03-compare-resolved-ids)) → skip the borrow entirely and go to step 7.
+6. Capture the current **selector**; `borrowModel(reviewSelector)` — `applyModel` + `codeSessionStore.setModel`, no persistence, and mount-restore suppressed for the duration ([#step-5](#step-5)).
+7. Announce, then `codeSessionStore.send(…)` with the submission from `buildCommandSubmission("tugplug:review-plan", planPath)` ([P10](#p10-submission-is-an-atom)) — the machine enters `armed`.
+8. The controller observes the phase leave idle: `armed` → `running` ([P12](#p12-armed-running-settled)). The turn runs on Opus, in the transcript, editing the plan.
+9. On the transition out of `running` — completed, errored, or interrupted — `releaseModel(capturedSelector)` if a borrow happened. Unmount mid-review does the same. Release is idempotent.
+10. Process death mid-review needs no handling in the common case: persistence was never touched, so `use-model.ts`'s mount-restore repairs the live session on the next mount ([Q01](#q01-crash-recovery), whose one residual is stated there).
 
 ---
 
@@ -365,26 +406,42 @@ pub fn lint(doc: &PlanDoc) -> Vec<Diagnostic>;
 
 Severities split so only errors gate: the corpus predates any checker, and a single severity would either be too weak to run or fail plans that are fine. Exit 1 on any error; warnings exit 0; exit 2 for unreadable / not-a-plan.
 
+**PL020 is scoped to the Tests block, strictly.** The banned shapes are matched only inside a step's Tests block — never in Tasks, prose, or a table. A plan that *names* the ban in order to enforce it (this one does, in [#step-3](#step-3) and [#test-non-goals](#test-non-goals)) must lint clean; a checker that greps the whole document would fail the doctrine that defines it.
+
 **Spec S02: The borrow state machine** {#s02-borrow-machine}
 
 ```ts
 type PlanReviewPhase =
   | { kind: "idle" }
-  | { kind: "reviewing"; planPath: string; borrowedFrom: string | null };
+  | { kind: "parked"; planPath: string }                                    // [P11]
+  | { kind: "armed"; planPath: string; borrowedFrom: string | null }        // [P12] submitted, turn not yet observed
+  | { kind: "running"; planPath: string; borrowedFrom: string | null };
 ```
 
-`borrowedFrom` is the captured **selector** (`null` when no borrow happened — same model, or unresolvable review selector). Exported pure gate, mirroring `evaluateCommitLandGate`:
+`borrowedFrom` is the captured **selector** (`null` when no borrow happened — same catalog row, or unresolvable review selector). Exported pure gate, mirroring `evaluateCommitLandGate`:
 
 ```ts
 export function evaluatePlanReviewGate(input: {
-  turnInProgress: boolean;      // !canSubmit
-  phase: PlanReviewPhase;       // a review already running?
+  phase: PlanReviewPhase;       // a review already parked / armed / running?
   sessionModelKnown: boolean;   // models[].length > 0 || model !== null
-  reviewSelectorResolves: boolean;
-}): { ok: true } | { ok: false; reason: "turn" | "already-reviewing" | "model-unknown" };
+}): { ok: true } | { ok: false; reason: "already-reviewing" | "model-unknown" };
 ```
 
-`reviewSelectorResolves: false` is **not** a gate failure — it means "run the review without borrowing" plus a one-time notice. Transitions: `request` → (gate ok) capture, maybe borrow, submit, `reviewing`; `turn settled` | `interrupted` | `unmount` → release if `borrowedFrom !== null`, then `idle`. Release is idempotent — a second settle must not send a second `model_change`.
+Two inputs the earlier shape carried are deliberately gone. `turnInProgress` is not a gate reason ([P11](#p11-request-parks)): a turn in flight is the *expected* state when the request arrives, so it parks rather than failing. `reviewSelectorResolves` is not one either — it means "run the review without borrowing" plus a one-time notice.
+
+Transitions:
+
+| From | On | To | Effect |
+|---|---|---|---|
+| `idle` | request | `parked` | latch the path |
+| `parked` | turn settles | `armed` \| `idle` | gate; capture, maybe borrow, announce, submit — or caution and drop |
+| `parked` | a different turn is submitted | `idle` | drop with a caution ([P11](#p11-request-parks)) |
+| `armed` | phase leaves idle | `running` | — |
+| `armed` | no turn observed and the session is idle | `idle` | release (a submission that never became a turn) |
+| `running` | settle (completed / errored / interrupted) | `idle` | release if `borrowedFrom !== null` |
+| any | unmount | `idle` | release if `borrowedFrom !== null` |
+
+Release is idempotent — a second settle must not send a second `model_change`. A request arriving while `parked`/`armed`/`running` is `already-reviewing`.
 
 **Spec S03: The readiness signal** {#s03-signal}
 
@@ -418,11 +475,16 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 
 | State | Zone | Mechanism | Law |
 |-------|------|-----------|-----|
-| `PlanReviewPhase` (idle / reviewing + `borrowedFrom`) | structure | `plan-review-controller` store + `useSyncExternalStore` | [L02] |
+| `PlanReviewPhase` (idle / parked / armed / running + `borrowedFrom`) | structure | `plan-review-controller` store + `useSyncExternalStore` | [L02] |
+| The latched review request | structure | `plan-review-request-store` written by the `action-dispatch` handler, read by the controller — never a card-held frame subscription | [L02] |
 | The borrowed model on the chip | local-data (session truth) | `sessionMetadataStore.applyModel` — the existing optimistic path; the chip re-renders from its own subscription | [L02], [D03] |
 | The user's persisted selector | local-data (durable) | **not written** during a borrow; `dev.model/<cardId>` via tugbank only on a user pick | [D07] |
 | The announcement line | appearance | pane bulletin (`paneBulletinRef`), the `/dash` caution path | [L06] |
-| Frame → controller registration | structure | `useLayoutEffect` registration so the subscription exists before any frame arrives | [L03] |
+| Controller ↔ card registration | structure | `useLayoutEffect` at mount, so the controller is subscribed before any latched request is read | [L03] |
+| Turn state the borrow acts on | structure (read-only, upstream) | subscribe to `CodeSessionStore`'s published phase / `canSubmit`; never reach into the running turn, never re-derive its state beside the source | [L28] |
+| Every subscription this feature takes | lifecycle | each `subscribe` / `registerAction` returns its unregister, invoked on controller dispose and card unmount — inert is not released | [L27] |
+
+[L28] is the law this feature lives under: the borrow is a *control* acting on the turn lifecycle, and it acts only by subscribing to `canSubmit` and the phase — which is also why a mid-turn request parks instead of forcing a model change into a live turn ([P11](#p11-request-parks)).
 
 ---
 
@@ -435,11 +497,12 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 | `tugrust/crates/tugutil-core/src/plan.rs` | skeleton parse, ledger grammar, lint rules ([S01](#s01-lint-model), [T01](#t01-lint-rules)) |
 | `tugrust/crates/tugutil/src/plan.rs` | the `plan` namespace CLI shell (`lint`, `review-request`) |
 | `tugrust/crates/tugutil/tests/plan_cli.rs` | `assert_cmd` integration tests |
+| `tugdeck/src/lib/plan-review-request-store.ts` | the latch a broadcast `plan_review_request` lands in, keyed by card ([P04](#p04-server-signal)) |
 | `tugdeck/src/lib/plan-review-controller.ts` | the borrow state machine + exported pure gate ([S02](#s02-borrow-machine)) |
-| `tugdeck/src/lib/__tests__/plan-review-controller.test.ts` | pure tests for the machine, including release-on-interrupt |
+| `tugdeck/src/lib/__tests__/plan-review-controller.test.ts` | pure tests for the machine, including park, arm, and release-on-interrupt |
 | `tuglaws/plan-review-rubric.md` | the review doctrine ([P07](#p07-rubric-doctrine)) |
 | `tugplug/skills/review-plan/SKILL.md` | the review skill ([P05](#p05-review-plan-skill)) |
-| `tests/app-test/at04xx-plan-review-borrow.test.ts` | chip flip, submission text, restore, and persistence-untouched |
+| `tests/app-test/at0409-plan-review-borrow.test.ts` | chip flip, submission text, restore, and persistence-untouched |
 
 #### Symbols to add / modify {#symbols}
 
@@ -451,8 +514,11 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 | `Commands::Plan` | variant | `tugutil/src/cli.rs`, `src/main.rs` | dispatches to `plan::dispatch` |
 | `POST /api/plan-review` | route | `tugcast/src/main.rs` | broadcasts `plan_review_request` ([Spec S03](#s03-signal)) |
 | `PlanReviewRequest` | frame type | `tugcast-core/src/types.rs` | additive |
-| `borrowModel`, `releaseModel` | fn | `tugdeck/src/lib/use-model.ts` | `applyModel` + `codeSessionStore.setModel`, **never** `writePersistedModel` ([P02](#p02-borrow-never-persists)) |
-| `PlanReviewPhase`, `evaluatePlanReviewGate`, `createPlanReviewController` | types/fn | `tugdeck/src/lib/plan-review-controller.ts` | mirrors `commit-mode-controller` |
+| `borrowModel`, `releaseModel` | fn | `tugdeck/src/lib/use-model.ts` | `applyModel` + `codeSessionStore.setModel`, **never** `writePersistedModel` ([P02](#p02-borrow-never-persists)); suppress mount-restore while a borrow is live ([#step-5](#step-5)) |
+| `currentModelSelector`, `resolvesToSameModel` | fn | `tugdeck/src/lib/use-model.ts` | the one derivation the mount-restore already uses; row-identity comparison ([P03](#p03-compare-resolved-ids)) |
+| `registerAction("plan_review_request", …)` | handler | `tugdeck/src/action-dispatch.ts` | `cardIdForSession` → `planReviewRequestStore.latch` — beside `bind_dash_ok` ([P04](#p04-server-signal)) |
+| `planReviewRequestStore` | store | `tugdeck/src/lib/plan-review-request-store.ts` | latches one pending request per card; `take()` clears it |
+| `PlanReviewPhase`, `evaluatePlanReviewGate`, `createPlanReviewController` | types/fn | `tugdeck/src/lib/plan-review-controller.ts` | mirrors `commit-mode-controller`; every subscription it takes is released in `dispose()` ([L27]) |
 | `PLAN_REVIEW_DOMAIN`, `PLAN_REVIEW_MODEL_KEY` | const | `tugdeck/src/lib/model-domains.ts` | `dev.tugtool.plan-review` / `model`, seeded `opus` |
 
 ---
@@ -482,14 +548,14 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 | **Unit (Rust)** | parse/lint rules | every code in [T01](#t01-lint-rules) |
 | **Integration (CLI)** | `assert_cmd` over the real binary | `plan lint` exit codes and envelope; `review-request` against a live and an absent tugcast |
 | **Corpus calibration** | lint every plan in `roadmap/` | drift guard keeping the rules honest against real documents |
-| **Pure (bun)** | the borrow state machine | gate precedence, release on settle/interrupt/unmount, idempotent release, skip-when-same-model |
-| **App-test** | the real card | chip flips, submission text, restore, and `dev.model/<cardId>` untouched |
+| **Pure (bun)** | the borrow state machine | park-on-mid-turn, arm→run→settle, gate precedence, release on settle/interrupt/unmount, idempotent release, skip-when-same-row, dispose leaves nothing subscribed |
+| **App-test** | the real card | chip flips, the submitted command **atom** ([P10](#p10-submission-is-an-atom)), restore, and `dev.model/<cardId>` untouched |
 | **Real end-to-end** | one actual devise → review run | proves the gesture; done by hand in [#step-8](#step-8) |
 
 #### What stays out of tests {#test-non-goals}
 
 - **No test that calls a model.** The app-test drives the controller with an injected `plan_review_request` frame and a stubbed turn lifecycle; the one genuine Opus run is the manual checkpoint in [#step-8](#step-8). Real-claude tests are on-demand only.
-- **No assertions on reviewer prose.** Assert the contract — chip, submission text, persisted value, plan file changed — never the generation.
+- **No assertions on reviewer prose.** Assert the contract — chip, the submitted command atom, persisted value, plan file changed — never the generation.
 - **No mock-store or fake-DOM tests.** Banned. The controller is pure, so it needs neither.
 - **No assertion on animation.** Background windows run no rAF; nothing here hangs off one.
 
@@ -546,17 +612,18 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 **Tasks:**
 - [ ] Add `PlanCommands` to `tugutil/src/cli.rs` and a `Commands::Plan` variant dispatched from `src/main.rs`, following the `Commands::Dash` shape.
 - [ ] Add `tugutil/src/plan.rs` as a thin shell over `tugutil_core::plan`, mirroring `src/dash.rs`.
-- [ ] Human output: `path:line: CODE severity message` per diagnostic, then a summary. `--json` through `output::print_ok`, mapping diagnostics onto the existing `JsonIssue` — do not define a second issue type.
+- [ ] Human output: `path:line: CODE severity message` per diagnostic, then a summary. `--json` maps diagnostics onto the existing `JsonIssue` — do not define a second issue type — and picks the envelope by outcome: `output::print_ok` for clean-or-warnings, `JsonResponse::error` for a run carrying any error diagnostic, since `print_ok` hardcodes `status: "ok"`.
 - [ ] Exit codes: 0 clean-or-warnings, 1 on any error, 2 unreadable / not-a-plan, routed through `changes::finish`'s `AppError`.
 - [ ] Explicit path only — no `resolve_plan` cascade, no `PLAN_SEARCH_DIRS`.
 
 **Tests:**
 - [ ] Integration (`tests/plan_cli.rs`): conforming plan → 0; seeded error → 1 naming the code; brief → 2 `not a plan document`; missing file → 2.
-- [ ] Integration: `--json` parses and carries `schema_version`, `command`, `status`, and the diagnostics under `issues`.
+- [ ] Integration: `--json` parses and carries `schema_version`, `command`, `status`, and the diagnostics under `issues` — `status: "ok"` for a warnings-only run, `status: "error"` when an error diagnostic is present.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugutil`
 - [ ] `cd tugrust && cargo run -p tugutil -- plan lint ../roadmap/dash-integration-2-visibility.md` → exit 0.
+- [ ] `cd tugrust && cargo run -p tugutil -- plan lint ../roadmap/dash-integration-2.1-one-gesture.md` → exit 0 — the checker passes its own plan.
 - [ ] `cd tugrust && cargo run -p tugutil -- plan lint ../roadmap/dash-notes.md` → exit 2.
 
 ---
@@ -614,13 +681,15 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 **Tasks:**
 - [ ] Add `borrowModel(selector)` and `releaseModel(selector | null)` to `tugdeck/src/lib/use-model.ts`: `sessionMetadataStore.applyModel` + `codeSessionStore.setModel` and **nothing else**. State the no-persistence property in the docblock as a requirement with its reason ([Q01](#q01-crash-recovery)), not as a remark.
 - [ ] Export a `currentModelSelector(snapshot)` helper wrapping the expression the mount-restore effect already uses (`modelIdToSelector(model, knownModelRows(models, readModelCatalog()))`, else `"default"`), and use it in both places so the derivation exists once.
-- [ ] Add `resolvesToSameModel(a, b)` over the live catalog for the [P03](#p03-compare-resolved-ids) comparison.
+- [ ] Add `resolvesToSameModel(a, b)` over the live catalog for the [P03](#p03-compare-resolved-ids) comparison — same **catalog row** (`resolveModelSelector`'s `row.value`), not same model id.
+- [ ] **Make the borrow and the mount-restore mutually exclusive.** `borrowModel` calls `applyModel`, which moves `snapshot.model` — a dependency of `useModel`'s mount-restore effect, so the borrow *re-runs* it. The effect is inert only because `sentRef.current` is already true; on the path where readiness was never reached (`models.length === 0 && model === null`) it early-returns **without arming**, and the borrow's own `applyModel` is what first makes `model` non-null — at which point the effect resolves a current selector that differs from the seed and calls `setModel(seed, {fromRestore: true})`, reverting the model mid-review *and* persisting. Suppress the restore while a borrow is live (a module-level borrow flag the effect checks, or arm `sentRef` in `borrowModel`), and state the invariant in the docblock as a requirement.
 - [ ] Add `PLAN_REVIEW_DOMAIN` / `PLAN_REVIEW_MODEL_KEY` to `model-domains.ts`, seeded `opus`.
 
 **Tests:**
 - [ ] bun: `borrowModel` sends the frame and applies the chip value and performs **no** tugbank write (assert against a fake client that fails the test on any `setLocalValue`/PUT).
 - [ ] bun: `releaseModel(null)` is a no-op; `releaseModel("default")` sends `default`.
-- [ ] bun: `resolvesToSameModel("default", "opus")` is true when the catalog resolves both to the same id, false otherwise.
+- [ ] bun: `resolvesToSameModel("default", "opus")` is true when the catalog resolves both to the same row, false otherwise.
+- [ ] bun: a borrow taken while the mount-restore has **not** yet armed (`models: []`, `model: null`, a non-null seed) sends exactly one `model_change` — the borrow's — and no `writePersistedModel`. This is the [#risks](#risks) row it pins.
 
 **Checkpoint:**
 - [ ] `bun test` green; `bunx tsc --noEmit` clean.
@@ -631,23 +700,29 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 
 **Depends on:** #step-4, #step-5
 
-**Commit:** `session-card(plan-review): borrow opus for the review turn and give the model back [L02][L03]`
+**Commit:** `session-card(plan-review): borrow opus for the review turn and give the model back [L02][L03][L27][L28]`
 
-**References:** [P01] review is a turn, [P02] borrow never persists, [P09] unconditional but interruptible, Spec S02, (#borrow-cycle), (#state-zone-mapping)
+**References:** [P01] review is a turn, [P02] borrow never persists, [P09] unconditional but interruptible, [P10] submission is an atom, [P11] request parks, [P12] armed → running → settled, Spec S02, (#borrow-cycle), (#state-zone-mapping)
 
 **Tasks:**
-- [ ] Add `tugdeck/src/lib/plan-review-controller.ts` per [Spec S02](#s02-borrow-machine): the `PlanReviewPhase` snapshot, the exported pure `evaluatePlanReviewGate`, and the transitions — mirroring `commit-mode-controller`'s façade shape.
-- [ ] Wire it in `session-card.tsx`: subscribe to the `plan_review_request` frame via `useLayoutEffect` ([L03]) so the registration exists before any frame can arrive; on request, run the gate, capture the selector, borrow when [P03](#p03-compare-resolved-ids) says the models differ, announce through the pane bulletin, then `codeSessionStore.send(buildCommandSubmission("tugplug:review-plan", planPath))`.
-- [ ] Release on turn **settle** — completed, errored, or interrupted — and on unmount. Release is idempotent.
-- [ ] Unresolvable review selector → run the review with no borrow plus a one-time caution; gate failures (`turn`, `already-reviewing`, `model-unknown`) → caution and no submission.
+- [ ] Add `tugdeck/src/lib/plan-review-request-store.ts`: a latch holding at most one pending request per card, with `latch`, `take`, and a `subscribe` that returns its unregister ([L27]).
+- [ ] Add `registerAction("plan_review_request", …)` to `action-dispatch.ts` beside `bind_dash_ok`: validate the payload fields, walk `cardIdForSession(tug_session_id)`, and latch. This is how a broadcast reaches a card ([P04](#p04-server-signal)) — the card never subscribes to a frame.
+- [ ] Add `tugdeck/src/lib/plan-review-controller.ts` per [Spec S02](#s02-borrow-machine): the `PlanReviewPhase` snapshot (`idle` / `parked` / `armed` / `running`), the exported pure `evaluatePlanReviewGate`, and the transition table — mirroring `commit-mode-controller`'s façade shape, and disposing every subscription it takes ([L27]).
+- [ ] Wire it in `session-card.tsx` with a `useLayoutEffect` mount registration ([L03]) so the controller is reading the request store before a latched request could be missed. On a latched request: **park** ([P11](#p11-request-parks)) — the devise turn is still in flight, which is the normal case, not a refusal.
+- [ ] On the parked turn's settle: run the gate, capture the selector, borrow when [P03](#p03-compare-resolved-ids) says the rows differ, announce through the pane bulletin, then `codeSessionStore.send(…)` from `buildCommandSubmission("tugplug:review-plan", planPath)` and enter `armed` ([P12](#p12-armed-running-settled)).
+- [ ] Enter `running` only after observing the session phase leave idle; release on the transition **out of** `running` — completed, errored, or interrupted — and on unmount. Release is idempotent. An `armed` state whose turn never starts releases too.
+- [ ] Drop a parked request, with a caution, if the user submits a different turn first.
+- [ ] Unresolvable review selector → run the review with no borrow plus a one-time caution; gate failures (`already-reviewing`, `model-unknown`) → caution and no submission.
 
 **Tests:**
-- [ ] bun: gate precedence for each reason; skip-borrow when the models resolve the same; release on settle, on interrupt, and on unmount; a second settle sends no second `model_change`.
-- [ ] App-test (`at04xx-plan-review-borrow.test.ts`, `@covers` the controller + `use-model.ts` + `session-card.tsx`): inject a `plan_review_request` on a card whose session resolves to a non-Opus model; assert the chip reads Opus, the submitted turn's text is `/tugplug:review-plan <path>`, the chip returns to the original model after the turn settles, and **`GET /api/defaults/dev.model/<cardId>` is byte-identical before and after**.
+- [ ] bun: a request arriving mid-turn parks and submits on settle (the happy path — assert it is **not** refused); a parked request is dropped when a different turn is submitted.
+- [ ] bun: gate precedence for each reason; skip-borrow when the selectors resolve to the same row; `armed` does not release on the idle it was submitted from; release on settle, on interrupt, and on unmount; a second settle sends no second `model_change`.
+- [ ] bun: the controller's `dispose()` leaves no live subscription on the request store or the session store ([L27]).
+- [ ] App-test (`at0409-plan-review-borrow.test.ts`, `@covers` the controller + the request store + `use-model.ts` + `session-card.tsx` + `action-dispatch.ts`): inject a `plan_review_request` on a card whose session resolves to a non-Opus model *while a turn is in flight*; assert it parks, then on settle the chip reads Opus, the submitted turn carries the `tugplug:review-plan` command atom with the plan path as its tail ([P10](#p10-submission-is-an-atom)) — never asserting a literal `/tugplug:review-plan …` string, which `submission.text` does not contain — the chip returns to the original model after that turn settles, and **`GET /api/defaults/dev.model/<cardId>` is byte-identical before and after**.
 
 **Checkpoint:**
 - [ ] `bun test` green; `bunx tsc --noEmit` clean; `cd tugdeck && bunx vite build` clean.
-- [ ] `just build-app` then `just app-test tests/app-test/at04xx-plan-review-borrow.test.ts` green.
+- [ ] `just build-app` then `just app-test tests/app-test/at0409-plan-review-borrow.test.ts` green.
 
 ---
 
@@ -689,7 +764,7 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 **References:** [P01] review is a turn, [P02] borrow never persists, [P09] unconditional but interruptible, Risk R01, (#success-criteria), (#borrow-cycle)
 
 **Tasks:**
-- [ ] Run the whole gesture for real on a card set to **Sonnet**: `/tugplug:devise <idea>` → watch the chip flip to Opus → watch the review turn read the code and edit the plan in the transcript → confirm the chip returns to Sonnet.
+- [ ] Run the whole gesture for real on a card set to **Sonnet**: `/tugplug:devise <idea>` → the signal lands mid-turn and parks → the devise turn ends → watch the chip flip to Opus → watch the review turn read the code and edit the plan in the transcript → confirm the chip returns to Sonnet. The park is the beat to watch: if the review fires before the devise turn is done, or never fires, the defect is in [#step-6](#step-6)'s transition table.
 - [ ] Confirm `GET /api/defaults/dev.model/<cardId>` still reads `sonnet` after the cycle.
 - [ ] Read the reviewer's actual edits. Confirm they are real improvements and confined to the plan file (`git diff` on the worktree). A bad edit is a skill-text bug in [#step-7](#step-7) — fix it and re-run.
 - [ ] Interrupt a review turn mid-flight and confirm the model is restored.
@@ -714,8 +789,10 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 
 - [ ] `tugutil plan lint` implements every rule in [Table T01](#t01-lint-rules), calibrated so the existing `roadmap/` corpus passes with zero errors.
 - [ ] `tugutil plan review-request` reaches the card through the running tugcast, and degrades actionably when none is reachable.
-- [ ] The card borrows the review model, submits `/tugplug:review-plan <path>`, and restores on every terminal outcome — completed, errored, interrupted, unmounted.
-- [ ] The borrow never writes `dev.model/<cardId>` (app-test), so a process death mid-review is repaired by the existing mount-restore.
+- [ ] A request arriving while the devise turn is in flight **parks and then runs** — it is never refused ([P11](#p11-request-parks)).
+- [ ] The card borrows the review model, submits the `tugplug:review-plan` command atom with the plan path, and restores on every terminal outcome of *that* turn — completed, errored, interrupted, unmounted.
+- [ ] The borrow never writes `dev.model/<cardId>` (app-test), so a process death mid-review is repaired by the existing mount-restore (with the seedless residual noted in [Q01](#q01-crash-recovery)).
+- [ ] The borrow is never reverted by `useModel`'s mount-restore, including on the not-yet-armed path ([#step-5](#step-5)).
 - [ ] A card already on the review model performs no `model_change` in either direction.
 - [ ] `review-plan` exists as a skill and applies fixups; `vet` is a stub; no live surface names `/tugplug:vet` except that stub.
 - [ ] `tuglaws/plan-review-rubric.md` exists, is indexed, and carries every axis the retired skill had.
@@ -723,8 +800,8 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 
 **Acceptance tests:**
 - [ ] Corpus lint over `roadmap/` — zero error-severity diagnostics.
-- [ ] `at04xx-plan-review-borrow.test.ts` — chip flip, submission text, restore, persisted value untouched.
-- [ ] Controller unit tests — gate precedence, skip-when-same-model, release on settle/interrupt/unmount, idempotent release.
+- [ ] `at0409-plan-review-borrow.test.ts` — park-then-run, chip flip, the submitted command atom, restore, persisted value untouched.
+- [ ] Controller unit tests — park-on-mid-turn, arm→run→settle, gate precedence, skip-when-same-row, release on settle/interrupt/unmount, idempotent release, dispose.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -737,8 +814,8 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 | Checkpoint | Verification |
 |------------|--------------|
 | Parser and rules | `cargo nextest run -p tugutil-core`; corpus test over `roadmap/` |
-| Lint CLI | `cargo run -p tugutil -- plan lint ../roadmap/dash-integration-2-visibility.md` → 0; `… dash-notes.md` → 2 |
+| Lint CLI | `cargo run -p tugutil -- plan lint ../roadmap/dash-integration-2-visibility.md` → 0; `… dash-integration-2.1-one-gesture.md` → 0; `… dash-notes.md` → 2 |
 | Signal | `cargo nextest run -p tugutil -p tugcast`; live and absent-tugcast CLI runs |
-| Borrow | `bun test` (no-persistence assertion); `just app-test tests/app-test/at04xx-plan-review-borrow.test.ts` |
+| Borrow | `bun test` (no-persistence assertion); `just app-test tests/app-test/at0409-plan-review-borrow.test.ts` |
 | Skills and docs | `grep -rn "tugplug:vet" tugplug/ tuglaws/ CLAUDE.md` → stub only; `just build-app` ships `review-plan` |
 | The gesture | one real Sonnet → Opus → Sonnet cycle with the persisted selector unchanged |
