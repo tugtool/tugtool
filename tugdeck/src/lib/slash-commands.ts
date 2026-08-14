@@ -204,6 +204,11 @@ export const LOCAL_SLASH_COMMANDS = [
     takesArgs: true,
   },
   {
+    name: "plan-review",
+    description: "Review a plan on the review model — bare resolves to the last one reviewed",
+    takesArgs: true,
+  },
+  {
     name: "logout",
     description: "Log out of Claude and return to setup",
   },

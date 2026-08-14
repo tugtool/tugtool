@@ -3,13 +3,13 @@ name: dash-audit
 description: Audit the implementation work for a plan (or a step range) AFTER it's built — assess code quality, coherence, technical choices, and architecture; audit it against the tuglaws and the real diff; then rule "fixups needed" or "codebase is in good shape"
 argument-hint: "[plan-path] [; Step N | Steps N-M]"
 disable-model-invocation: true
-allowed-tools: Bash, Read, Glob, Grep, WebFetch, WebSearch
+allowed-tools: Bash, Read, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
 disallowed-tools: Task, Write, Edit
 ---
 
 ## What this is
 
-`dash-audit` is the **post-implementation** scrutiny pass. It judges the **code that got written** for a plan (or a step range) after the fact — where a plan review judges the design before anyone writes it, this pass judges the tree. It is the encapsulation of the audit the user runs by hand all the time. It produces an assessment and a verdict. It does **not** make changes — it rules; the user (or a follow-up `/tugplug:dash-implement` / `/tugplug:dash-run`) acts.
+`dash-audit` is the **post-implementation** scrutiny pass. It judges the **code that got written** for a plan (or a step range) after the fact — where a plan review judges the design before anyone writes it, this pass judges the tree. It is the encapsulation of the audit the user runs by hand all the time. It produces an assessment and a verdict. It does **not** make changes — it rules; the user (or a follow-up `/tugplug:dash-implement` / `/tugplug:dash-on`) acts.
 
 The axes below are the ones in [`tuglaws/plan-review-rubric.md`](../../../tuglaws/plan-review-rubric.md), read against built code rather than against a plan. Read the rubric for what each axis is asking; when it is absent, the axes carried here stand on their own.
 
@@ -55,8 +55,12 @@ End with a clear ruling:
 
 > **Do we need to make fixups? Or can we move on from here with confidence that the codebase is in good shape?**
 
-- If **fixups are needed**, list them concretely and in priority order — file, what's wrong, what to do — so they can be carried out (by the user, or a follow-up `/tugplug:dash-implement` / `/tugplug:dash-run`).
-- If the work is **solid**, say so plainly, with the confidence level and any watch-items worth tracking.
+- If **fixups are needed**, list them concretely and in priority order — file, what's wrong, what to do. Then ask what to do with the list, with `AskUserQuestion`: *"Carry them now as rounds on this dash"* / *"Leave the list with you"*. The user is right here, and handing back a list they then have to re-issue as an instruction is a round trip nobody wanted.
+
+  This pass cannot make the fixups itself — it holds no `Write` or `Edit`, deliberately, so that a judgment pass can never quietly become an implementation pass. "Carry them now" therefore means **hand off**: print `` `/tugplug:dash-on <name> <the fixups>` `` as its own backticked chip, with the list as the instruction, and stop. "Leave the list with you" stops with the list and no chip.
+- If the work is **solid**, say so plainly, with the confidence level and any watch-items worth tracking. Nothing to ask — a good-shape verdict has one next move, and it is step 6.
+
+That is the only question this pass asks. The boundary is the doctrine's [never-ask list](../../../tuglaws/dash-work-doctrine.md#what-never-gets-asked).
 
 ### 6. Declare it, when the work lives on a dash
 

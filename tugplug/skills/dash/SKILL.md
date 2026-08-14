@@ -1,6 +1,6 @@
 ---
 name: dash
-description: Renamed — use /tugplug:dash-run, the same skill under the dash-lane name
+description: Renamed — use /tugplug:dash-on, the same skill under the dash-lane name
 argument-hint: "[name] [instruction|status|join|release]"
 disable-model-invocation: true
 allowed-tools: Read
@@ -13,7 +13,7 @@ disallowed-tools: Task, Write, Edit, Bash, Glob, Grep
 
 Do nothing else. Print the replacement, on its own line and inside backticks so the Session card renders it as a clickable chip, with the arguments the user gave (or a placeholder if they gave none):
 
-`` `/tugplug:dash-run <name> <instruction…>` ``
+`` `/tugplug:dash-on <name> <instruction…>` ``
 
 Then stop. Do not create a dash and do not carry out the instruction — the real skill is one click away, and a half-run from a stub leaves a worktree nobody asked for.
 

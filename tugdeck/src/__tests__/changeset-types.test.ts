@@ -84,6 +84,11 @@ describe("changeset wire contract", () => {
     expect(isChangesetEntry({ ...base, bound_sessions: "sess-1" })).toBe(false);
     expect(isChangesetEntry({ ...base, bound_sessions: [1] })).toBe(false);
     expect(isChangesetEntry({ ...base, step_total: "3" })).toBe(false);
+    // `plan_path` is optional both ways: absent on every dash no run has
+    // stepped, a worktree-relative string once one has.
+    expect(isChangesetEntry({ ...base, plan_path: "roadmap/plan.md" })).toBe(true);
+    expect(isChangesetEntry({ ...base, plan_path: 7 })).toBe(false);
+    expect(isChangesetEntry({ ...base, plan_path: null })).toBe(false);
   });
 
   test("guards reject shape drift", () => {

@@ -14,6 +14,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use sha2::{Digest, Sha256};
+
 /// How much a diagnostic matters. Only [`Severity::Error`] gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -134,6 +136,53 @@ pub struct LedgerRow {
     pub line: usize,
 }
 
+/// One round recorded in the Review Record.
+///
+/// The stamp is the content identity the round vouches for. It is absent on
+/// every round written before `tugutil plan stamp` existed, and on a round
+/// whose review has not reached its final step yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewRound {
+    /// The `N` in `**Round N — …**`.
+    pub number: usize,
+    /// The round's date, as the lead-in spelled it (`YYYY-MM-DD`).
+    pub date: String,
+    /// The model that ran the round.
+    pub model: String,
+    /// The `plan:<hex>` token found anywhere in the round's paragraph.
+    pub stamp: Option<String>,
+    /// 1-indexed line of the round's bold lead-in.
+    pub line: usize,
+}
+
+/// What a document's Review Record says about the content on disk now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewState {
+    /// The newest stamped round's stamp equals the document's content stamp.
+    Reviewed,
+    /// A round carries a stamp, and the document has moved since.
+    Stale,
+    /// No rounds, or no round carrying a stamp — nothing vouches for anything.
+    NeverReviewed,
+}
+
+impl ReviewState {
+    /// The wire spelling, as `plan status` reports it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReviewState::Reviewed => "reviewed",
+            ReviewState::Stale => "stale",
+            ReviewState::NeverReviewed => "never-reviewed",
+        }
+    }
+}
+
+impl fmt::Display for ReviewState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A parsed plan document.
 #[derive(Debug, Clone)]
 pub struct PlanDoc {
@@ -155,6 +204,13 @@ pub struct PlanDoc {
     pub ledger_line: Option<usize>,
     /// The ledger table's rows.
     pub ledger_rows: Vec<LedgerRow>,
+    /// Inclusive 1-indexed line range of the `{#review-record}` section, from
+    /// its heading through the last line before the next heading of the same
+    /// level or shallower. `None` when the document declares no such section.
+    pub review_record_span: Option<(usize, usize)>,
+    /// Every round the Review Record declares, in source order — so the newest
+    /// is last, which is the one a verdict is derived from.
+    pub review_rounds: Vec<ReviewRound>,
 }
 
 /// Returned when a document is not a plan at all — a brief, a note, or a
@@ -225,7 +281,10 @@ pub fn parse(source: &str) -> Result<PlanDoc, NotAPlan> {
         steps: Vec::new(),
         ledger_line: None,
         ledger_rows: Vec::new(),
+        review_record_span: review_record_span(source, &headings),
+        review_rounds: Vec::new(),
     };
+    doc.review_rounds = collect_review_rounds(source, doc.review_record_span);
 
     // Labels are declared either by a heading (`#### [P01] …`) or by a bold
     // lead-in (`**Spec S01: …**`, `**Table T01: …**`, `**Risk R01: …**`).
@@ -674,6 +733,24 @@ pub fn lint(doc: &PlanDoc) -> Vec<Diagnostic> {
         ));
     }
 
+    // PL025 — a round that vouches for nothing.
+    //
+    // A round with no stamp cannot say which bytes it read, so the document
+    // reads `never-reviewed` however carefully the round was written.
+    for round in &doc.review_rounds {
+        if round.stamp.is_none() {
+            out.push(Diagnostic::at(
+                "PL025",
+                Severity::Warning,
+                format!(
+                    "round {} records no content stamp — run `tugutil plan stamp`",
+                    round.number
+                ),
+                round.line,
+            ));
+        }
+    }
+
     out.sort_by_key(|d| (d.line.unwrap_or(0), d.code.clone()));
     out
 }
@@ -882,6 +959,285 @@ fn carries_citation(text: &str) -> bool {
     trimmed.contains('[') || trimmed.contains("(#") || trimmed.contains('`')
 }
 
+// --- the Review Record -----------------------------------------------------
+
+/// The inclusive line range of the `{#review-record}` section: its heading
+/// through the last line before the next heading of the same level or
+/// shallower, or the end of the file.
+fn review_record_span(source: &str, headings: &[Heading]) -> Option<(usize, usize)> {
+    let record = headings
+        .iter()
+        .find(|h| h.anchor.as_deref() == Some("review-record"))?;
+    let end = headings
+        .iter()
+        .find(|h| h.line > record.line && h.level <= record.level)
+        .map(|h| h.line - 1)
+        .unwrap_or_else(|| source.lines().count());
+    Some((record.line, end.max(record.line)))
+}
+
+/// Read every round declared inside the Review Record's span.
+///
+/// A round's paragraph runs from its lead-in to the next lead-in or the end of
+/// the section, and its stamp may sit anywhere inside it — the skill writes the
+/// prose and `plan stamp` inserts the token, so the two are not required to
+/// share a line by anything but convention.
+fn collect_review_rounds(source: &str, span: Option<(usize, usize)>) -> Vec<ReviewRound> {
+    let Some((start, end)) = span else {
+        return Vec::new();
+    };
+    let lines: Vec<&str> = source.lines().collect();
+
+    // A fenced sample of the round grammar is documentation, not a round —
+    // the same rule `collect_headings` applies to fenced headings.
+    let mut in_fence = false;
+    let mut rounds: Vec<ReviewRound> = Vec::new();
+    for line_no in start..=end.min(lines.len()) {
+        let line = lines[line_no - 1].trim_end();
+        if is_fence(line) {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        if let Some((number, date, model)) = read_review_round_lead_in(line) {
+            rounds.push(ReviewRound {
+                number,
+                date,
+                model,
+                stamp: None,
+                line: line_no,
+            });
+        }
+        if let Some(round) = rounds.last_mut()
+            && round.stamp.is_none()
+            && let Some(stamp) = read_stamp_token(line)
+        {
+            round.stamp = Some(stamp);
+        }
+    }
+    rounds
+}
+
+/// `**Round 2 — 2026-08-14, opus.**` → `(2, "2026-08-14", "opus")`.
+///
+/// A lead-in that does not spell all three fields is simply not a round: the
+/// Review Record is prose, and prose that happens to open in bold is common.
+fn read_review_round_lead_in(line: &str) -> Option<(usize, String, String)> {
+    let body = line.trim_start().strip_prefix("**")?;
+    let close = body.find("**")?;
+    let lead = &body[..close];
+    let rest = lead.strip_prefix("Round ")?;
+    let (number, tail) = rest.split_once('—')?;
+    let number = number.trim().parse::<usize>().ok()?;
+    let (date, model) = tail.split_once(',')?;
+    let date = date.trim();
+    if !is_iso_date(date) {
+        return None;
+    }
+    let model = model.trim().trim_end_matches('.').trim();
+    if model.is_empty() {
+        return None;
+    }
+    Some((number, date.to_string(), model.to_string()))
+}
+
+/// `` `plan:9f2a4c1b7e0d3856` `` → `"9f2a4c1b7e0d3856"`.
+fn read_stamp_token(line: &str) -> Option<String> {
+    let at = line.find("`plan:")?;
+    let rest = &line[at + "`plan:".len()..];
+    let close = rest.find('`')?;
+    let hex = &rest[..close];
+    if hex.is_empty() || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(hex.to_ascii_lowercase())
+}
+
+fn is_iso_date(text: &str) -> bool {
+    text.len() == 10
+        && text
+            .chars()
+            .enumerate()
+            .all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() })
+}
+
+/// The content identity of a plan: the first 16 hex characters of the SHA-256
+/// of its canonical extract.
+///
+/// The extract is what a review is *about*, which is narrower than the file.
+/// Implementing a plan rewrites its ledger status and commit cells and ticks
+/// its task boxes; a stamp that moved on any of that would report every plan
+/// stale the moment its own first step landed, and a staleness signal that
+/// fires on progress trains a reader to click through it. So the extract drops
+/// the Review Record entirely (the stamp lives inside it and could never
+/// otherwise be written), drops formatting-only lines, reduces each ledger row
+/// to the two cells that describe the *plan* rather than its progress, and
+/// unticks every checkbox.
+///
+/// The 16-hex-of-SHA-256 shape is `tugchanges_core::content_hash`'s, so this
+/// codebase has one content-identity convention rather than two.
+pub fn content_stamp(doc: &PlanDoc, source: &str) -> String {
+    let mut kept: Vec<String> = Vec::new();
+    for (index, raw) in source.lines().enumerate() {
+        let line_no = index + 1;
+        if let Some((start, end)) = doc.review_record_span
+            && (start..=end).contains(&line_no)
+        {
+            continue;
+        }
+        let line = raw.trim_end();
+        if line.trim().is_empty() || is_thematic_break(line) {
+            continue;
+        }
+        // Ledger rows are reduced to anchor + title. The cells come off the
+        // parsed `LedgerRow` rather than off a re-split of the line, so this
+        // reads the row through `read_ledger_row`'s convention (0=anchor,
+        // 1=title) and cannot pick up `rewrite_ledger_line`'s one-off indexing.
+        if let Some(row) = doc.ledger_rows.iter().find(|r| r.line == line_no) {
+            kept.push(format!("| #{} | {} |", row.anchor, row.title));
+            continue;
+        }
+        kept.push(untick(line));
+    }
+    let digest = Sha256::digest(kept.join("\n").as_bytes());
+    let mut out = String::with_capacity(16);
+    for byte in digest.iter().take(8) {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
+}
+
+/// A thematic break — three or more `-` and nothing else. A markdown table
+/// separator (`|---|---|`) carries pipes and is therefore not one.
+fn is_thematic_break(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.len() >= 3 && trimmed.chars().all(|c| c == '-')
+}
+
+/// Normalize a ticked task checkbox back to unticked, keeping indentation.
+fn untick(line: &str) -> String {
+    let indent_len = line.len() - line.trim_start().len();
+    let (indent, body) = line.split_at(indent_len);
+    match body.strip_prefix("- [x]").or_else(|| body.strip_prefix("- [X]")) {
+        Some(rest) => format!("{indent}- [ ]{rest}"),
+        None => line.to_string(),
+    }
+}
+
+/// What the Review Record says about the content on disk now.
+///
+/// The comparison is against the **newest stamped round only**. An older
+/// round's stamp is history: it says what that round covered, not what the
+/// document is.
+pub fn review_state(doc: &PlanDoc, source: &str) -> ReviewState {
+    let Some(stamp) = doc
+        .review_rounds
+        .iter()
+        .rev()
+        .find_map(|r| r.stamp.as_deref())
+    else {
+        return ReviewState::NeverReviewed;
+    };
+    if stamp == content_stamp(doc, source) {
+        ReviewState::Reviewed
+    } else {
+        ReviewState::Stale
+    }
+}
+
+/// Why a Review Record stamp was refused.
+///
+/// Like [`LedgerEditError`], every variant leaves the document untouched.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StampError {
+    /// The document declares no `{#execution-steps}` section.
+    NotAPlan,
+    /// The document has no `{#review-record}` section.
+    NoRecord,
+    /// The Review Record declares no round to stamp.
+    NoRound,
+    /// The newest round already carries a stamp.
+    AlreadyStamped { round: usize, stamp: String },
+    /// The rewritten document did not read back with the stamp it wrote.
+    RoundTrip,
+}
+
+impl fmt::Display for StampError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StampError::NotAPlan => f.write_str("not a plan document"),
+            StampError::NoRecord => f.write_str("no Review Record section to stamp"),
+            StampError::NoRound => f.write_str("no review round to stamp"),
+            StampError::AlreadyStamped { round, stamp } => {
+                write!(f, "round {round} is already stamped `plan:{stamp}`")
+            }
+            StampError::RoundTrip => f.write_str("the stamped round did not read back"),
+        }
+    }
+}
+
+impl std::error::Error for StampError {}
+
+/// Insert the document's content stamp into the newest Review Record round.
+///
+/// The stamp is the last edit of a review, because any edit after it
+/// invalidates it. Re-stamping is an error rather than a silent rewrite: two
+/// stamps on one round cannot both be true, and the second one would quietly
+/// claim a review that never read those bytes.
+///
+/// Returns the edited source, already re-parsed and verified — the same
+/// compute-then-reparse-then-verify shape [`set_ledger_status`] established.
+pub fn set_review_stamp(source: &str) -> Result<String, StampError> {
+    let doc = parse(source).map_err(|_| StampError::NotAPlan)?;
+    if doc.review_record_span.is_none() {
+        return Err(StampError::NoRecord);
+    }
+    let round = doc.review_rounds.last().ok_or(StampError::NoRound)?;
+    if let Some(stamp) = &round.stamp {
+        return Err(StampError::AlreadyStamped {
+            round: round.number,
+            stamp: stamp.clone(),
+        });
+    }
+
+    // The extract elides the Review Record, so inserting the stamp inside it
+    // cannot move the hash the stamp is claiming. That is what makes a
+    // self-consistent stamp possible at all.
+    let stamp = content_stamp(&doc, source);
+    let edited = insert_stamp(source, round.line, &stamp).ok_or(StampError::RoundTrip)?;
+
+    let reparsed = parse(&edited).map_err(|_| StampError::RoundTrip)?;
+    let back = reparsed.review_rounds.last().ok_or(StampError::RoundTrip)?;
+    if back.number != round.number
+        || back.stamp.as_deref() != Some(stamp.as_str())
+        || content_stamp(&reparsed, &edited) != stamp
+    {
+        return Err(StampError::RoundTrip);
+    }
+
+    Ok(edited)
+}
+
+/// Write `Reviewed \`plan:<hash>\`.` immediately after a round's bold lead-in,
+/// preserving every other byte of the line.
+fn insert_stamp(source: &str, line_no: usize, stamp: &str) -> Option<String> {
+    let mut pieces: Vec<&str> = source.split_inclusive('\n').collect();
+    let piece = *pieces.get(line_no.checked_sub(1)?)?;
+    let (content, eol) = match piece.strip_suffix('\n') {
+        Some(rest) => (rest, "\n"),
+        None => (piece, ""),
+    };
+
+    let open = content.find("**")?;
+    let close = content[open + 2..].find("**")? + open + 4;
+    let (lead, rest) = content.split_at(close);
+    let rebuilt = format!("{lead} Reviewed `plan:{stamp}`.{rest}{eol}");
+    pieces[line_no - 1] = &rebuilt;
+    Some(pieces.concat())
+}
+
 // --- ledger editing --------------------------------------------------------
 
 /// Why a Step Status Ledger edit was refused.
@@ -1065,7 +1421,7 @@ mod tests {
 
 ### Review Record {#review-record}
 
-**Round 1 — 2026-08-13, opus.** Lint: 0 errors.
+**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.
 
 ### Phase Overview {#phase-overview}
 
@@ -1382,7 +1738,7 @@ Some context.
     #[test]
     fn pl023_missing_review_record() {
         let source = MINIMAL.replace(
-            "### Review Record {#review-record}\n\n**Round 1 — 2026-08-13, opus.** Lint: 0 errors.\n\n",
+            "### Review Record {#review-record}\n\n**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.\n\n",
             "",
         );
         assert_eq!(find(&source, "PL023").severity, Severity::Warning);
@@ -1419,7 +1775,7 @@ Some context.
 
 ### Review Record {#review-record}
 
-**Round 1 — 2026-08-13, opus.** Lint: 0 errors.
+**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.
 
 ### Phase Overview {#phase-overview}
 
@@ -1622,5 +1978,213 @@ Some context.
         assert_eq!(diff.len(), 1, "only the ledger row moves: {diff:?}");
         assert!(diff[0].1.contains("pending"));
         assert!(out.contains("```\n| #step-1 | The only step | pending | — |\n```"));
+    }
+
+    // --- the content stamp -------------------------------------------------
+
+    /// `MINIMAL` with its stamp token removed — the shape every plan written
+    /// before `plan stamp` existed still carries.
+    fn unstamped() -> String {
+        MINIMAL.replace(" Reviewed `plan:0123456789abcdef`.", "")
+    }
+
+    /// The document `set_review_stamp` produces from [`unstamped`], whose
+    /// stamp is therefore the real hash of its own extract.
+    fn freshly_stamped() -> String {
+        set_review_stamp(&unstamped()).expect("an unstamped round takes a stamp")
+    }
+
+    fn verdict(source: &str) -> ReviewState {
+        review_state(&parse(source).expect("parses"), source)
+    }
+
+    fn stamp_of(source: &str) -> String {
+        content_stamp(&parse(source).expect("parses"), source)
+    }
+
+    #[test]
+    fn a_round_parses_its_number_date_model_and_stamp() {
+        let doc = parse(MINIMAL).expect("parses");
+        assert_eq!(
+            doc.review_rounds,
+            vec![ReviewRound {
+                number: 1,
+                date: "2026-08-13".to_string(),
+                model: "opus".to_string(),
+                stamp: Some("0123456789abcdef".to_string()),
+                line: 11,
+            }]
+        );
+    }
+
+    /// The grammar the review skill actually writes: a multi-line paragraph
+    /// per round, the stamp on the lead-in, and rounds appended in order.
+    #[test]
+    fn the_written_round_grammar_parses_both_rounds() {
+        let source = MINIMAL.replace(
+            "**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.",
+            "**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors, 3 warnings (2 fixed).\n\
+             Oriented on: the Review Record.\n\
+             Applied: sequencing — Step 4 depended on a later step, reordered.\n\
+             Deferred: the migration-window question, now [Q03].\n\
+             \n\
+             **Round 2 — 2026-08-14, sonnet.** Reviewed `plan:FEDCBA9876543210`. Lint: 0 errors, 0 warnings.\n\
+             Oriented on: the git diff since round 1.\n\
+             Applied: nothing — the plan reads clean.",
+        );
+        let doc = parse(&source).expect("parses");
+        let rounds: Vec<(usize, &str, &str, Option<&str>)> = doc
+            .review_rounds
+            .iter()
+            .map(|r| (r.number, r.date.as_str(), r.model.as_str(), r.stamp.as_deref()))
+            .collect();
+        assert_eq!(
+            rounds,
+            vec![
+                (1, "2026-08-13", "opus", Some("0123456789abcdef")),
+                // Read case-insensitively: a stamp is a hash, not a spelling.
+                (2, "2026-08-14", "sonnet", Some("fedcba9876543210")),
+            ]
+        );
+        // The verdict follows the *newest* stamped round. Round 1's stamp is
+        // history — it says what round 1 covered, not what the document is.
+        assert_eq!(verdict(&source), ReviewState::Stale);
+        assert!(!codes(&source).contains(&"PL025".to_string()));
+    }
+
+    #[test]
+    fn a_fenced_sample_of_the_grammar_declares_no_round() {
+        let source = MINIMAL.replace(
+            "**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.",
+            "```\n**Round 7 — 2026-01-01, sonnet.** Reviewed `plan:aaaaaaaaaaaaaaaa`.\n```",
+        );
+        let doc = parse(&source).expect("parses");
+        assert!(doc.review_rounds.is_empty(), "{:?}", doc.review_rounds);
+        assert_eq!(verdict(&source), ReviewState::NeverReviewed);
+    }
+
+    #[test]
+    fn a_freshly_stamped_plan_reads_reviewed_and_one_word_makes_it_stale() {
+        let source = freshly_stamped();
+        assert_eq!(verdict(&source), ReviewState::Reviewed);
+
+        let edited = source.replace("Some context.", "Some other context.");
+        assert_ne!(edited, source, "the fixture edit landed");
+        assert_eq!(verdict(&edited), ReviewState::Stale);
+    }
+
+    /// The invariance the whole extract exists for: walking the ledger is
+    /// progress, not content, so a step landing must not stale its own plan.
+    #[test]
+    fn walking_the_ledger_leaves_the_plan_reviewed() {
+        let source = freshly_stamped();
+        let started = set_ledger_status(&source, "step-1", "in progress", None).unwrap();
+        let done = set_ledger_status(&started, "step-1", "done", Some("a4477d5")).unwrap();
+        assert_ne!(done, source, "the ledger really moved");
+        assert_eq!(verdict(&started), ReviewState::Reviewed);
+        assert_eq!(verdict(&done), ReviewState::Reviewed);
+    }
+
+    #[test]
+    fn ticking_a_task_is_invisible_but_a_new_ledger_row_is_not() {
+        let source = freshly_stamped();
+        let ticked = source.replace("- [ ] Do the thing.", "- [x] Do the thing.");
+        assert_ne!(ticked, source, "the fixture edit landed");
+        assert_eq!(stamp_of(&ticked), stamp_of(&source));
+
+        let grown = source.replace(
+            "| #step-1 | The only step | pending | — |",
+            "| #step-1 | The only step | pending | — |\n| #step-2 | A new step | pending | — |",
+        );
+        assert_ne!(stamp_of(&grown), stamp_of(&source));
+    }
+
+    #[test]
+    fn appending_a_round_does_not_move_the_stamp() {
+        let source = freshly_stamped();
+        let with_round = source.replace(
+            "### Phase Overview {#phase-overview}",
+            "**Round 2 — 2026-08-14, opus.** Lint: 0 errors.\n\n### Phase Overview {#phase-overview}",
+        );
+        assert_eq!(parse(&with_round).unwrap().review_rounds.len(), 2);
+        assert_eq!(stamp_of(&with_round), stamp_of(&source));
+        // …and the newest round now vouches for nothing, so the verdict falls
+        // back to it rather than to round 1's still-correct stamp.
+        assert_eq!(verdict(&with_round), ReviewState::Reviewed);
+    }
+
+    #[test]
+    fn formatting_churn_is_not_content() {
+        let source = freshly_stamped();
+        let churned = source
+            .replace("Some context.", "Some context.   ")
+            .replace("### Phase Overview", "\n\n### Phase Overview");
+        assert_ne!(churned, source, "the fixture edit landed");
+        assert_eq!(stamp_of(&churned), stamp_of(&source));
+    }
+
+    #[test]
+    fn a_record_with_no_stamp_reads_never_reviewed_and_lints_pl025() {
+        let source = unstamped();
+        assert_eq!(verdict(&source), ReviewState::NeverReviewed);
+        let diagnostic = find(&source, "PL025");
+        assert_eq!(diagnostic.severity, Severity::Warning);
+        assert!(diagnostic.message.contains("round 1"), "{diagnostic:?}");
+        assert_eq!(diagnostic.line, Some(11));
+
+        // …and a stamped record does not warn.
+        assert!(!codes(MINIMAL).contains(&"PL025".to_string()));
+    }
+
+    #[test]
+    fn a_stamp_is_self_consistent_and_re_parses() {
+        let source = freshly_stamped();
+        let doc = parse(&source).expect("the stamped document is still a plan");
+        let round = doc.review_rounds.last().expect("the round survived");
+        assert_eq!(round.stamp.as_deref(), Some(content_stamp(&doc, &source).as_str()));
+        assert!(
+            source.contains("**Round 1 — 2026-08-13, opus.** Reviewed `plan:"),
+            "the stamp lands right after the lead-in: {source}"
+        );
+        assert!(source.contains("`. Lint: 0 errors."), "the rest of the line is preserved");
+    }
+
+    #[test]
+    fn stamping_twice_refuses_and_writes_nothing() {
+        let err = set_review_stamp(MINIMAL).unwrap_err();
+        assert_eq!(
+            err,
+            StampError::AlreadyStamped {
+                round: 1,
+                stamp: "0123456789abcdef".to_string(),
+            }
+        );
+        assert!(err.to_string().contains("already stamped"), "{err}");
+    }
+
+    #[test]
+    fn stamping_refuses_a_document_with_no_record_and_no_round() {
+        let no_record = MINIMAL.replace(
+            "### Review Record {#review-record}\n\n**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.\n\n",
+            "",
+        );
+        assert_eq!(set_review_stamp(&no_record), Err(StampError::NoRecord));
+
+        let no_round = MINIMAL.replace(
+            "**Round 1 — 2026-08-13, opus.** Reviewed `plan:0123456789abcdef`. Lint: 0 errors.",
+            "Nothing has been reviewed yet.",
+        );
+        assert_eq!(set_review_stamp(&no_round), Err(StampError::NoRound));
+
+        let brief = "## How we got here\n\nSome prose.\n";
+        assert_eq!(set_review_stamp(brief), Err(StampError::NotAPlan));
+    }
+
+    #[test]
+    fn stamping_moves_exactly_one_line() {
+        let before = unstamped();
+        let after = set_review_stamp(&before).unwrap();
+        let diff = line_diff(&before, &after);
+        assert_eq!(diff.len(), 1, "only the round's lead-in line moves: {diff:?}");
     }
 }

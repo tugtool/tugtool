@@ -30,7 +30,7 @@ The **Step Status Ledger** at the top of the plan's Execution Steps is the sourc
 
 **If the plan has no Step Status Ledger** (an older or hand-written plan), the step verbs cannot drive it. Fall back gracefully: with no selector, walk from Step 1; infer which steps are already done from `tug log` on the dash branch if the dash exists, and confirm with the user before skipping any. Offer to add a ledger to the plan (on the worktree) so future runs resume — and so the verbs can drive it.
 
-If no plan exists yet, author one first with `/tugplug:devise`, or write it inline — then point this skill at it.
+If no plan exists yet, author one first with `/tugplug:plan-devise`, or write it inline — then point this skill at it.
 
 ## The five phases
 
@@ -39,8 +39,32 @@ If no plan exists yet, author one first with `/tugplug:devise`, or write it inli
 1. Read the **Step Status Ledger** and resolve the step selector into a concrete list of steps to walk this run.
 2. Derive a short dash name from the plan slug. `tugutil dash create <name> --description "<one line>" --json`. **Capture the absolute `worktree` path** and `branch` from the response. If the dash already exists (resuming a later step range), `create` is idempotent and returns it. `create` hydrates the fresh worktree itself (its `[tugtool.dash].post_create` hook runs `bun install`), so it arrives ready — no manual dependency install.
 3. Make sure the plan is present **inside the worktree**: if it was committed on the base branch it already rode along; otherwise copy the file once from its given path into the worktree. From here you drive the worktree copy only.
-4. Establish a green baseline (`bun test`, and for Rust changes `cd tugrust && cargo nextest run`) so you know what "still green" means.
-5. Make progress visible with one task per step. **This is not optional and not best-effort** — the task list is the user's live progress surface for the run, and it must mirror the resolved step list exactly: **every step selected this run gets a task, before you start walking.** `TaskCreate`/`TaskUpdate` are deferred tools — their schemas are not in the prompt until you load them, and listing them under `allowed-tools` does **not** load them. First call `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate` **once per step** (it creates a single task — it has no `tasks`/`todos` batch parameter), passing top-level string `subject` (the step title) and `description` (what the step does).
+4. **Check that the plan's review covers the plan.** Against the **worktree** copy — the one you are about to drive:
+
+   ```bash
+   tugutil plan status <worktree-plan-path> --json
+   ```
+
+   Read `data.review`. On `reviewed`, say nothing and carry on.
+
+   On **`stale`** or **`never-reviewed`**, raise an `AskUserQuestion` — never a hard refusal, because the plan is the user's:
+
+   - *"Review now (Recommended)"* — print `` `/tugplug:plan-review <path>` `` as its own backticked chip and **stop**. You do not review inline; the review is its own turn on its own model.
+   - *"Proceed as-is"* — carry on and say nothing further about it.
+
+   The message names which verdict it is, and on `stale` quotes `data.last_round`'s date and model, so the user is deciding against a fact rather than a warning. Implementing a plan nobody reviewed is strictly worse than implementing one whose review predates an edit, so both raise the same gate.
+
+   **Also compare the two copies.** When the plan was given as a base-checkout path *and* a worktree copy already exists, compare the files **before** you report the verdict. A `reviewed` verdict on a worktree copy that is missing the user's uncommitted base edits is the one wrong answer this gate can give — the run would implement a document the user has moved on from while the system reports everything is fine.
+
+   If they differ, name both paths, say what the difference looks like (ledger cells only is routine — that is what `dash step` writes; anything in the body is not), and raise an `AskUserQuestion`:
+
+   - *"Use the worktree copy"* — the run's normal state. Right whenever the difference is only ledger progress.
+   - *"Refresh it from the base copy"* — the user's base edits win. **Say in the option that this loses the worktree copy's ledger progress**, because it does: the base copy's rows are whatever they were when the dash was cut. Re-record the progress with `dash step` after refreshing, from the commits already on the branch.
+   - *"Stop and reconcile by hand"* — the honest answer when the bodies diverge in ways neither copy should lose.
+
+   Neither copy is ever overwritten without that answer. The worktree copy carries ledger progress; the base copy carries the user's edits; copying either direction destroys real state, so the choice is theirs and it is made with both paths on screen.
+5. Establish a green baseline (`bun test`, and for Rust changes `cd tugrust && cargo nextest run`) so you know what "still green" means.
+6. Make progress visible with one task per step. **This is not optional and not best-effort** — the task list is the user's live progress surface for the run, and it must mirror the resolved step list exactly: **every step selected this run gets a task, before you start walking.** `TaskCreate`/`TaskUpdate` are deferred tools — their schemas are not in the prompt until you load them, and listing them under `allowed-tools` does **not** load them. First call `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate` **once per step** (it creates a single task — it has no `tasks`/`todos` batch parameter), passing top-level string `subject` (the step title) and `description` (what the step does).
 
 ### 2. Implement (walk the steps)
 
@@ -68,7 +92,10 @@ Walk the resolved steps in dependency order. For each step:
 
 Pragmatics:
 
-- **A refused `dash step` is telling you about the document, not the tool.** It exits 1, names the plan and the row, and leaves the file untouched — a plan that does not strictly parse, a missing ledger row, an anchor that is not `#step-<n>`, or a `done` row you tried to reopen. Fix the plan and re-run the verb; hand-edit the ledger row only when the document genuinely cannot be made to parse, and say so in your report.
+- **A refused `dash step` is telling you about the document, not the tool.** It exits 1, names the plan and the row, and leaves the file untouched — a plan that does not strictly parse, a missing ledger row, an anchor that is not `#step-<n>`, or a `done` row you tried to reopen.
+
+  Raise the refusal as an `AskUserQuestion` rather than picking a repair yourself, because the wrong guess corrupts the durable record: *"Fix the plan and retry"* / *"Hand-edit the ledger this run"*. Quote what the verb said. A malformed document usually wants fixing; a document that genuinely cannot be made to parse wants the hand-edit — and which one this is depends on what the plan is *for*, which is the user's to know.
+- **A long run asks once, at its midpoint.** When a single invocation is walking **more than six** steps, stop at the halfway step and ask: *"Continue"* / *"Stop here and report"*. Once per run, at that one boundary — never per step, and never on a run of six or fewer. The threshold is stated so it is not re-invented each time.
 - Folding trivial or already-absorbed steps into a neighbor is fine — the landing squashes at the end, so per-step commit granularity is for *your* visibility during the run. When you fold a step, still run its `done` verb (pointing at the neighbor's commit) and close its task — no step is left dangling `in progress`.
 - If a step's verification fails, fix it before committing. Never commit red.
 - When you reach the end of the requested selection, stop walking and report the ledger state — which steps are `done` and which remain.
@@ -117,7 +144,8 @@ Everything in [`tuglaws/dash-work-doctrine.md`](../../../tuglaws/dash-work-doctr
 - **Honor the selector and the ledger.** Walk exactly the requested steps; resume from the first row that is not `done`; never rebuild a `done` step or build on an unfinished dependency.
 - **The verbs own the bookkeeping.** Drive the ledger with `dash step start|done`, not by hand-editing the table — the log line the verb writes is what the dash surfaces derive `implementing (i/N)` from, and a hand-edit leaves them blind.
 - **Keep the task list in lockstep.** One task per selected step, created up front; in-progress when you `start`, complete when you `done`. A run whose tasks don't match the ledger is an unfinished run.
+- **Ask at the three forks, and nowhere else.** The stale gate, a refused `dash step`, and the midpoint of a long run are the whole set. Everything outside it is covered by the doctrine's [never-ask list](../../../tuglaws/dash-work-doctrine.md#what-never-gets-asked) — a run that asks about everything trains the user to click through the dialog that mattered.
 
 ## When to reach for something else
 
-This skill holds the plan's context in one conversation, which fits small-to-medium plans well (a dozen steps is healthy). For a very large plan, walk it in batches — `/tugplug:dash-implement <plan> Steps 1-4`, review, then `Steps 5-8` — or author smaller plans. For a quick, plan-less change, use `/tugplug:dash-run` instead.
+This skill holds the plan's context in one conversation, which fits small-to-medium plans well (a dozen steps is healthy). For a very large plan, walk it in batches — `/tugplug:dash-implement <plan> Steps 1-4`, review, then `Steps 5-8` — or author smaller plans. For a quick, plan-less change, use `/tugplug:dash-on` instead.

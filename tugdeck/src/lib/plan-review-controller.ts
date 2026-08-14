@@ -6,7 +6,7 @@
  * controller is the machine that does it: it reads the latched request
  * ([plan-review-request-store.ts]), waits for the turn in flight to settle,
  * borrows the model without touching persistence, submits
- * `/tugplug:review-plan <path>` as a command atom, and releases on that turn's
+ * `/tugplug:plan-review <path>` as a command atom, and releases on that turn's
  * settle — completed, errored, interrupted, or unmounted.
  *
  * **The request arrives mid-turn, always.** `devise` fires the signal from
@@ -44,6 +44,7 @@ import { resolveCatalogSelector } from "@/lib/model-selector";
 import {
   DEFAULT_PLAN_REVIEW_SELECTOR,
   PLAN_REVIEW_DOMAIN,
+  PLAN_REVIEW_LAST_DOMAIN,
   PLAN_REVIEW_MODEL_KEY,
 } from "@/lib/model-domains";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
@@ -57,7 +58,7 @@ import {
 import { planReviewRequestStore } from "@/lib/plan-review-request-store";
 
 /** The skill the review turn invokes. */
-export const REVIEW_PLAN_COMMAND = "tugplug:review-plan";
+export const REVIEW_PLAN_COMMAND = "tugplug:plan-review";
 
 /**
  * Where the machine is. `borrowedFrom` is the **selector** captured before the
@@ -127,6 +128,107 @@ export function readPlanReviewSelector(): string {
     if (trimmed.length > 0) return trimmed;
   }
   return DEFAULT_PLAN_REVIEW_SELECTOR;
+}
+
+/**
+ * Remember the plan this card just reviewed, so a later bare `/plan-review`
+ * resolves to it.
+ *
+ * Optimistic `setLocalValue` + PUT, on `writePersistedModel`'s shape: the next
+ * bare invocation reads the cache synchronously, and a card cannot wait on a
+ * round-trip to know what it reviewed a moment ago.
+ *
+ * This is durable data *beside* the borrow, not inside it — [D137]'s
+ * no-persistence rule is about the model selector, and nothing here routes
+ * through `setModel`.
+ */
+export function writeLastReviewedPlan(cardId: string, planPath: string): void {
+  const client = getTugbankClient();
+  if (client !== null) {
+    client.setLocalValue(PLAN_REVIEW_LAST_DOMAIN, cardId, {
+      kind: "string",
+      value: planPath,
+    });
+  }
+  const url = `/api/defaults/${PLAN_REVIEW_LAST_DOMAIN}/${encodeURIComponent(cardId)}`;
+  fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "string", value: planPath }),
+  }).catch((err) => {
+    console.warn(`[plan-review] PUT failed for card ${cardId}:`, err);
+  });
+}
+
+/** The plan this card last reviewed, or `null`. Cache read — never a fetch. */
+export function readLastReviewedPlan(cardId: string): string | null {
+  const entry = getTugbankClient()?.get(PLAN_REVIEW_LAST_DOMAIN, cardId);
+  if (entry?.kind === "string" && typeof entry.value === "string") {
+    const trimmed = entry.value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return null;
+}
+
+/** What bare-form resolution has to work with. The card holds all of it. */
+export interface PlanReviewTargetInput {
+  /** The trimmed argument the user typed, `""` when they typed none. */
+  args: string;
+  /** The session's absolute project root. */
+  projectDir: string;
+  /** The plan this card last reviewed, or `null`. */
+  lastReviewed: string | null;
+  /** The bound dash's worktree (repo-relative) and recorded plan path
+   *  (worktree-relative), when this card is bound to one that records a plan. */
+  boundDash: { worktree: string; planPath: string } | null;
+}
+
+/** Where a `/plan-review` invocation points, or a refusal. */
+export type PlanReviewTarget = { path: string } | { refused: true };
+
+/**
+ * Resolve `/plan-review`'s target: explicit argument, else the plan this card
+ * last reviewed, else the bound dash's plan, else refuse.
+ *
+ * **Last-reviewed beats the bound dash, deliberately.** The gesture's moment is
+ * a plan devised and then edited, when the card usually has no dash yet; and a
+ * card that *is* bound is frequently bound to a dash implementing some other
+ * plan. Resolving to the dash first would silently review the wrong document —
+ * which is the failure this whole lane exists to kill. The dash is not lost: it
+ * is step 2, and it is the only answer a fresh card bound to a running dash has.
+ *
+ * The dash branch composes `projectDir` / `worktree` / `plan_path` and so lands
+ * on the **worktree** copy — the one a run edits and whose ledger the step verbs
+ * rewrite, which is the copy the run's own stale gate reads.
+ *
+ * Pure: the card has no filesystem, so nothing here stats, normalizes, or
+ * round-trips. A path that does not exist is the review turn's report to make.
+ */
+export function resolvePlanReviewTarget(
+  input: PlanReviewTargetInput,
+): PlanReviewTarget {
+  const explicit = input.args.trim();
+  if (explicit.length > 0) {
+    return { path: joinPath(input.projectDir, explicit) };
+  }
+  if (input.lastReviewed !== null) {
+    return { path: input.lastReviewed };
+  }
+  if (input.boundDash !== null) {
+    return {
+      path: joinPath(
+        joinPath(input.projectDir, input.boundDash.worktree),
+        input.boundDash.planPath,
+      ),
+    };
+  }
+  return { refused: true };
+}
+
+/** Join a relative path onto a base; an absolute path passes through. */
+function joinPath(base: string, path: string): string {
+  if (path.startsWith("/")) return path;
+  return `${base.replace(/\/+$/, "")}/${path}`;
 }
 
 /** What the card is told, so it can put it on a pane bulletin ([L06]). */
@@ -338,6 +440,10 @@ export class PlanReviewController {
     if (borrowedFrom !== null) {
       this.setPhase({ kind: "armed", planPath, borrowedFrom });
     }
+    // Both entrances end here, so both record — reviewing via `devise`'s
+    // broadcast seeds the card for a later bare `/plan-review`.
+    writeLastReviewedPlan(this.deps.cardId, planPath);
+
     const submission = buildCommandSubmission(REVIEW_PLAN_COMMAND, planPath);
     codeSessionStore.send(submission.text, submission.atoms);
 

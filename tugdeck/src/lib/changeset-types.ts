@@ -145,6 +145,10 @@ export interface DashChangesetEntry {
   /** Declared step counters; not yet emitted. */
   step_current?: number;
   step_total?: number;
+  /** The plan this dash is driving, relative to its **worktree** — the copy a
+   *  run edits and whose ledger the step verbs rewrite. Absolute path is
+   *  `projectDir` / `worktree` / `plan_path`. */
+  plan_path?: string;
   /** The base branch the dash was created from. */
   base: string;
   /** Number of commits on the dash branch past its base. */
@@ -314,7 +318,8 @@ export function isChangesetEntry(value: unknown): value is ChangesetEntry {
       (value.stage === undefined || typeof value.stage === "string") &&
       isOptionalStringArray(value.bound_sessions) &&
       (value.step_current === undefined || typeof value.step_current === "number") &&
-      (value.step_total === undefined || typeof value.step_total === "number")
+      (value.step_total === undefined || typeof value.step_total === "number") &&
+      (value.plan_path === undefined || typeof value.plan_path === "string")
     );
   }
   return false;

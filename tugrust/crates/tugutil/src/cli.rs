@@ -298,6 +298,27 @@ pub enum PlanCommands {
         path: String,
     },
 
+    /// Report what a plan's Review Record says about the content on disk now.
+    ///
+    /// A readout, not a gate: exit 0 whatever the verdict, 2 only when the file
+    /// cannot be read or is not a plan document. The verdict rides in the
+    /// `review` field — `reviewed`, `stale`, or `never-reviewed`.
+    Status {
+        /// Path to the plan document.
+        path: String,
+    },
+
+    /// Write the plan's content stamp into its newest Review Record round.
+    ///
+    /// The stamp is computed, never authored: a model cannot compute SHA-256,
+    /// so any hash it types is fabricated. Run this as the *last* edit of a
+    /// review — anything written afterwards invalidates it. Exit 1 when there
+    /// is no round to stamp or the newest round already carries one.
+    Stamp {
+        /// Path to the plan document.
+        path: String,
+    },
+
     /// Tell the running Tug instance a plan is written and ready for review.
     ///
     /// The card carrying `$TUG_SESSION_ID` runs the review as its next turn.

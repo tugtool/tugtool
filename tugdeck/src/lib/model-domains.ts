@@ -44,3 +44,17 @@ export const PLAN_REVIEW_MODEL_KEY = "model";
 
 /** The review model shipped as the seed for {@link PLAN_REVIEW_MODEL_KEY}. */
 export const DEFAULT_PLAN_REVIEW_SELECTOR = "opus";
+
+/**
+ * tugbank domain for the plan each card last reviewed, keyed by card id.
+ *
+ * Bare `/plan-review` resolves through this first: the gesture's moment is a
+ * plan just devised and edited, when the card is usually *not* bound to a dash
+ * yet — and when it is, it is frequently bound to a dash implementing a
+ * different plan. Card-keyed, so it joins the startup orphan sweep.
+ *
+ * Distinct from {@link PLAN_REVIEW_DOMAIN}, which holds the model a review
+ * borrows. This is a path, and it is durable data beside the borrow — never
+ * inside it ([D137]).
+ */
+export const PLAN_REVIEW_LAST_DOMAIN = "dev.plan-review-last";

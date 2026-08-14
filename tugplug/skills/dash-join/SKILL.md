@@ -9,7 +9,7 @@ disallowed-tools: Task
 
 ## What this is
 
-`dash-join` is the **dash lane's landing gesture** — the twin of `/commit` on the main lane. A dash has been worked (by `/tugplug:dash-implement` or `/tugplug:dash-run`), the user has vetted the build, and this run lands it: preview the merge in memory, land the squash onto the base branch with the dash's join draft as the message, tear down the worktree + branch, clear the draft, and report.
+`dash-join` is the **dash lane's landing gesture** — the twin of `/commit` on the main lane. A dash has been worked (by `/tugplug:dash-implement` or `/tugplug:dash-on`), the user has vetted the build, and this run lands it: preview the merge in memory, land the squash onto the base branch with the dash's join draft as the message, tear down the worktree + branch, clear the draft, and report.
 
 **You do not decide whether to land.** The user invoked this skill; that invocation is the byline. Your job is to land it correctly, or to stop with a clear reading of why it cannot land yet.
 
@@ -69,7 +69,11 @@ Preflight refusals come back as errors from this same command — surface them v
 - *"Cannot join from inside the dash worktree"* → re-run from the repo root.
 - *"repo root worktree is on branch 'X' but dash targets 'Y'"* → the user checks out the base branch; do not switch branches for them.
 - *"the base worktree has uncommitted changes to files this dash also changed (…)"* → the preflight is intersection-aware, so only the named files block. Report them and let the user commit or stash. Never stash, reset, or check out on their behalf.
-- *"Nothing to join: dash '<name>' has no commits past '<base>'. Release it to discard."* → the dash is empty. Report it and offer release as the user's call. **Never run `tugutil dash release` yourself** — release is the one irreversible act in the workflow, and it belongs to the user's own gesture.
+- *"Nothing to join: dash '<name>' has no commits past '<base>'. Release it to discard."* → the dash is empty. This one is a **question**, not a stop: report it and raise an `AskUserQuestion` — *"Release it"* / *"Leave it"*. An empty dash is a real fork with two good answers (the work was abandoned, or it has not started yet) and no conventional default, which is exactly what a dialog is for.
+
+  On *"Release it"*, run `tugutil dash release <name>` — the dialog **is** the user's gesture, which is the only thing that ever authorizes it. On *"Leave it"*, stop and say the dash is still there. **Never release on your own initiative** — release is the one irreversible act in the workflow, so it needs the user to have said so, in the answer, that turn.
+
+The other three above stay stops. They are correct refusals with one right answer, not unasked questions — the distinction is the doctrine's [never-ask list](../../../tuglaws/dash-work-doctrine.md#what-never-gets-asked).
 
 ## Beat 2 — land
 
@@ -104,9 +108,9 @@ On a stop instead of a land, report what blocked it, the exact CLI message, and 
 
 - **`tugutil dash join` does the git.** No `git merge`, `git rebase`, `git cherry-pick`, `git checkout`, `git stash`, or `git reset` — not to prepare the join, not to recover from one.
 - **Never compose the landing message.** No draft is a stop, not a prompt to write one.
-- **Never release.** `tugutil dash release` discards work; it is the user's gesture and never yours, including on the "nothing to join" path.
+- **Never release on your own initiative.** `tugutil dash release` discards work. The one path that may run it is the empty-dash dialog, and only on the answer that asked for it — a release nobody chose, that turn, is never yours to make.
 - **Preview before landing, always** — even when the user names the dash and the message. Beat 1 shows exactly what beat 2 does.
 - **Never resolve conflicts unasked.** `--resolve` rewrites the merge result; it runs on the user's word.
 - **Squash only.**
-- **Don't edit the tree.** This skill lands what exists; it does not fix a build, a test, or a lint on the way through. A dash that isn't ready goes back to `/tugplug:dash-run` or `/tugplug:dash-implement`.
+- **Don't edit the tree.** This skill lands what exists; it does not fix a build, a test, or a lint on the way through. A dash that isn't ready goes back to `/tugplug:dash-on` or `/tugplug:dash-implement`.
 - **No AI attribution in the landed message. Ever.**

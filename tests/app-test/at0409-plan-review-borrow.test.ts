@@ -20,7 +20,7 @@
  * checkpoint, not an app-test.
  *
  * Two assertions are about what must NOT move. The submitted turn is checked
- * for the **command atom**, never for a literal `/tugplug:review-plan …`
+ * for the **command atom**, never for a literal `/tugplug:plan-review …`
  * string — `buildCommandSubmission` puts the name in the atom and the text
  * carries only the placeholder plus the tail, so a string assertion would fail
  * on a working implementation. And `dev.model/A` is read before and after the
@@ -263,7 +263,7 @@ describe.skipIf(!SHOULD_RUN)("AT0409: the plan review's model borrow", () => {
         // path as its tail. The transcript renders an atom as a baked
         // `svg.tug-atom-chip` whose `aria-label` is the chip's own text, so
         // that label is the atom — asserted instead of a literal
-        // "/tugplug:review-plan …" string, which `submission.text` never
+        // "/tugplug:plan-review …" string, which `submission.text` never
         // contains (the name lives only in the atom).
         const submitted = await app.evalJS<{
           chipLabel: string | null;
@@ -280,7 +280,7 @@ describe.skipIf(!SHOULD_RUN)("AT0409: the plan review's model borrow", () => {
            })()`,
         );
         note("at0409 submitted row", JSON.stringify(submitted));
-        expect(submitted.chipLabel).toBe("/tugplug:review-plan");
+        expect(submitted.chipLabel).toBe("/tugplug:plan-review");
         expect(submitted.text).toContain(planPath);
 
         const shot = await app.screenshot();

@@ -2,7 +2,7 @@
 
 What a reviewer judges when reading an implementation plan, and what a reviewer deliberately does not.
 
-This is doctrine, not skill prose. `/tugplug:review-plan` reads it before reviewing a plan, `/tugplug:audit` applies the same axes to built code, and a human reading a plan by hand can work down it. One copy, three readers.
+This is doctrine, not skill prose. `/tugplug:plan-review` reads it before reviewing a plan, `/tugplug:dash-audit` applies the same axes to built code, and a human reading a plan by hand can work down it. One copy, three readers.
 
 ## What this rubric does not cover
 
@@ -63,6 +63,16 @@ Also read [`component-authoring.md`](component-authoring.md) and [`pane-model.md
 **Does this leave the architecture better?** Not just locally correct — a foundation the next feature can build on without having to undo it. A plan that solves its problem by growing a special case the next plan has to work around has failed this test even if every step is executable.
 
 **The cold-reader test.** Could someone who has not been in this conversation read the plan and build the thing? A plan that only makes sense to its author is a plan that will be rebuilt from scratch the next time anyone touches it. Where the plan carries context that lives only in a transcript, say so.
+
+## Re-review: what a second round may touch
+
+A plan is a living artifact between devise and implement. The user reads it, edits it, argues with it, and starts building from it — so a later round is reviewing a document that has *moved*, and two things that moved are not the review's to undo.
+
+**Edits are decisions.** A change the user made since the last round is a decision they made on purpose, whatever it did to the plan's shape. Fix what it broke, name a consequence it missed, raise a trade-off it forces — but never revert its intent. A round that quietly restores round 1's wording has spent the user's time twice and thrown away the answer.
+
+**Done rows are frozen.** A Step Status Ledger row marked `done` describes work that is already in the tree. Rewriting that step produces a document that lies about the code — the plan would say one thing was built and the commits another. When a landed step turns out to be wrong, that is an Open Question or a new step, never a rewrite of the old one.
+
+Orient on what moved: read the diff since the previous round when the plan is tracked and dirty, and the Review Record when it is not. Both are legitimate; which one you used belongs in the round paragraph, because it tells the next reader how much of the document this round actually looked at.
 
 ## How a reviewer works
 

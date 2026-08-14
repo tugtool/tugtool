@@ -18,7 +18,7 @@
 
 ### Review Record {#review-record}
 
-**Round 1 — 2026-08-14, opus.** Lint: 0 errors, 1 warning (PL023, discharged by this section). No content stamp: `tugutil plan stamp` does not exist yet, because this is the plan that builds it — so this document reads `never-reviewed` under its own machinery until Step 2 ships and a later round stamps it. That is the migration case (#rollout) describes, observed on the first document to hit it.
+**Round 1 — 2026-08-14, opus.** Reviewed `plan:30d41afd245faebe`. Lint: 0 errors, 1 warning (PL023, discharged by this section). No content stamp: `tugutil plan stamp` does not exist yet, because this is the plan that builds it — so this document reads `never-reviewed` under its own machinery until Step 2 ships and a later round stamps it. That is the migration case (#rollout) describes, observed on the first document to hit it.
 
 Applied, holes and failure modes: the stale gate had a hole that reproduced the exact failure the phase exists to prevent — `dash-implement` reads the **worktree** copy ([P04]), but its Setup only copies a plan in when the plan was *not* already committed on base, so a plan edited-but-uncommitted on base leaves the worktree holding an older document whose stamp matches itself, and the gate reports `reviewed` while the run implements the wrong bytes. Neither copy can be blindly overwritten (the worktree copy holds ledger progress, the base copy holds the user's edits), so this became [Q02] rather than a silent decision; Step 6 now ships the cheap half (detect and report the divergence) and defers the policy. Also unstated: the review's fixups and stamp land **uncommitted in the dash worktree** and are swept into the next round's commit — recorded in [P04]'s implications, since a reviewer expecting a clean worktree would read the dirt as a bug.
 
@@ -124,7 +124,7 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 
 **Resolution:** DEFERRED to phase 5, per the program plan's own sequencing. Revisit if the gate fires often enough to feel like a surprise.
 
-#### [Q02] Which copy wins when base and worktree diverge? (OPEN) {#q02-copy-divergence}
+#### [Q02] Which copy wins when base and worktree diverge? (RESOLVED) {#q02-copy-divergence}
 
 **Question:** The stale gate reads the **worktree** copy ([P04]). `dash-implement`'s Setup says a plan committed on the base branch "already rode along" into the worktree at `dash create` time. So if the user edits the plan on base *after* the dash was created and does not commit, the worktree copy is an older document whose stamp still matches **itself** — `plan status` reports `reviewed`, the gate passes, and the run implements a plan that is missing the user's latest edits while the system reports everything is fine.
 
@@ -137,7 +137,11 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 
 **Plan to resolve:** [#step-6](#step-6) ships the **detection** only, because it is nearly free (compare the given path against the worktree copy) and because an undetected divergence is the part that does damage. The policy is the user's call and is not decided here.
 
-**Resolution:** OPEN — detection lands in this phase; the resolution policy is deferred pending the user's answer. If it is left open past this phase, the honest default is the first option, since it never destroys state without being asked.
+**Resolution:** RESOLVED — **detect and ask**, the first option. The user chose it at the close of this phase, which is also the default this question named for itself: it never destroys state without being asked.
+
+`dash-implement`'s Setup compares the two copies before it reports the review verdict and, on a difference, names both paths, characterizes the difference (ledger cells only is routine; anything in the body is not), and raises the three-way fork — use the worktree copy / refresh it from the base copy / stop and reconcile by hand. The refresh option states that it loses the worktree copy's ledger progress, because it does; the progress is re-recorded with `dash step` from the commits already on the branch.
+
+The ledger-preserving merge (the second option) was considered and not taken here: it is a new class of document edit for `tugutil-core::plan` to own and test, which is a plan of its own rather than a paragraph of this one. The third option — base authoritative until the first `dash step`, worktree after — was rejected for the reason this phase exists: it silently picks a side.
 
 ---
 
@@ -511,15 +515,15 @@ No new React state and no new component are introduced. The card's `slashCommand
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Content stamp and review state | pending | — |
-| #step-2 | `plan status` and `plan stamp` verbs | pending | — |
-| #step-3 | `plan_path` on the dash changeset entry | pending | — |
-| #step-4 | `/plan-review` as a card verb | pending | — |
-| #step-5 | Re-review semantics in the review skill | pending | — |
-| #step-6 | The never-ask doctrine, the stale gate, and dash-implement's forks | pending | — |
-| #step-7 | Dialog discipline across the remaining skills | pending | — |
-| #step-8 | The roster rename | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Content stamp and review state | done | `40c1bac54` |
+| #step-2 | `plan status` and `plan stamp` verbs | done | `462142152` |
+| #step-3 | `plan_path` on the dash changeset entry | done | `5729f728c` |
+| #step-4 | `/plan-review` as a card verb | done | `589ac16a2` |
+| #step-5 | Re-review semantics in the review skill | done | `10ef5d11b` |
+| #step-6 | The never-ask doctrine, the stale gate, and dash-implement's forks | done | `636c2d20d` |
+| #step-7 | Dialog discipline across the remaining skills | done | `5e78c7ded` |
+| #step-8 | The roster rename | done | `dfb492a20` |
+| #step-9 | Integration checkpoint | done | `189e8490a` |
 
 #### Step 1: Content stamp and review state {#step-1}
 

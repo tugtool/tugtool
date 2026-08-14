@@ -69,6 +69,18 @@ The build is the user's to vet. Bring up the debug instance from the worktree (`
 
 Before stopping, leave the **join draft** behind: compose the squash message from what the rounds actually did and write it with `tugutil draft set --owner dash:<name> --message "…"`. The landing gesture lands that message; it does not compose one. A dash that arrives at the landing draftless stops there, which is a stall you caused one step earlier.
 
+## What never gets asked
+
+A skill in this lane may raise a dialog at a real decision point — an unsettleable design question, a judgment call with no technically correct answer, a stale plan, a refused ledger edit, a disposition the user owns. That licence is narrow, and it comes with a boundary, because a run that asks about everything is worse than one that asks about nothing: it trains the user to click through the dialog that mattered.
+
+- Never ask to commit a round.
+- Never ask before running a checkpoint.
+- Never ask permission to write the join draft.
+- Never ask "should I continue?" between ordinary steps.
+- Never ask anything with a conventional default.
+
+Join's other stops — a conflict, a missing draft, a named blocker — stay stops. They are correct refusals with one right answer, not unasked questions.
+
 ## No plan numbers in durable artifacts
 
 Never write step identifiers — "Step 4.5", "4i", "roadmap step X" — into code, comments, docstrings, test names, or commit messages. Describe the behavior or the reason directly.

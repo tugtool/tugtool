@@ -29,6 +29,9 @@ pub mod plan;
 pub use config::{Config, find_project_root, find_tugplans, tugplan_name_from_path};
 pub use error::TugError;
 pub use paths::project_state_dir;
-pub use plan::{Diagnostic, NotAPlan, PlanDoc, Severity, has_errors, lint, parse};
+pub use plan::{
+    Diagnostic, NotAPlan, PlanDoc, ReviewRound, ReviewState, Severity, StampError, content_stamp,
+    has_errors, lint, parse, review_state, set_review_stamp,
+};
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use worktree::{find_repo_root, sanitize_branch_name};

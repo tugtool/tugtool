@@ -759,6 +759,10 @@ pub struct DashDetail {
     /// How far a stepped run has got, from the latest step declaration.
     pub step_current: Option<u32>,
     pub step_total: Option<u32>,
+    /// The plan this dash is driving, relative to its *worktree* — the copy a
+    /// run edits and whose ledger the step verbs rewrite. `None` when no run
+    /// has recorded one.
+    pub plan_path: Option<String>,
 }
 
 /// Parse `git diff --name-status` output. Rename and copy lines
@@ -883,6 +887,7 @@ pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
             .to_owned(),
             step_current: declarations.step.map(|(current, _)| current),
             step_total: declarations.step.map(|(_, total)| total),
+            plan_path: dash_plan_path(repo_root, name),
             base,
             rounds,
             worktree_rel,
@@ -2319,6 +2324,30 @@ Some context.
         let entry = built.iter().find(|d| d.name == "feed-dash").unwrap();
         assert_eq!(entry.stage, "built");
         assert_eq!(entry.step_current, Some(1));
+    }
+
+    /// The recorded plan path rides the same composition, so a card bound to a
+    /// dash can resolve the plan it is implementing without a shell round-trip.
+    #[serial]
+    #[test]
+    fn detail_entries_carry_the_recorded_plan_path() {
+        let (_temp, root) = stepped_dash("plan-path-dash");
+
+        let before = dash_detail_entries_in(&root);
+        let entry = before.iter().find(|d| d.name == "plan-path-dash").unwrap();
+        assert!(
+            entry.plan_path.is_none(),
+            "a dash no run has stepped records no plan: {:?}",
+            entry.plan_path
+        );
+
+        step_start("plan-path-dash", 1, Some("roadmap/plan.md")).unwrap();
+        let after = dash_detail_entries_in(&root);
+        let entry = after.iter().find(|d| d.name == "plan-path-dash").unwrap();
+        assert_eq!(entry.plan_path.as_deref(), Some("roadmap/plan.md"));
+        // Worktree-relative, which is what makes the composition
+        // `projectDir` / `worktree` / `plan_path` land on the copy a run edits.
+        assert!(!entry.plan_path.as_deref().unwrap().starts_with('/'));
     }
 
     #[serial]

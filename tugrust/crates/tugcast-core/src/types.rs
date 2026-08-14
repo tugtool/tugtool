@@ -498,6 +498,12 @@ pub enum ChangesetEntry {
         step_current: Option<u32>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         step_total: Option<u32>,
+        /// The plan this dash is driving, relative to its **worktree** — the
+        /// copy a run edits and whose ledger the step verbs rewrite, which is
+        /// what makes it the copy a review of a bound dash has to read. Compose
+        /// an absolute path as `projectDir` / `worktree` / `plan_path`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        plan_path: Option<String>,
         /// The base branch the dash was created from.
         base: String,
         /// Number of commits on the dash branch past its base.
@@ -1315,6 +1321,7 @@ mod tests {
             bound_sessions: vec!["sess-1".to_string()],
             step_current: None,
             step_total: None,
+            plan_path: None,
             base: "main".to_string(),
             rounds: 0,
             worktree: ".tug/worktrees/tugdash__x".to_string(),
@@ -1340,6 +1347,8 @@ mod tests {
         assert!(json.contains(r#""bound_sessions":["sess-1"]"#));
         // Phase 3's slots stay off the wire while they are empty.
         assert!(!json.contains("step_current"));
+        // …and so does the plan path, which most dashes never record.
+        assert!(!json.contains("plan_path"));
 
         // An older sender's entry — no new fields at all — still decodes.
         let legacy = r#"{"kind":"dash","owner_id":"tugdash/y","display_name":"y",

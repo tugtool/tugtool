@@ -58,7 +58,12 @@ import {
 import { AiChip } from "./ai-chip";
 import { useAiConfigSheet } from "./ai-config-sheet";
 import { useModel } from "@/lib/use-model";
-import { PlanReviewController } from "@/lib/plan-review-controller";
+import {
+  PlanReviewController,
+  readLastReviewedPlan,
+  resolvePlanReviewTarget,
+} from "@/lib/plan-review-controller";
+import { planReviewRequestStore } from "@/lib/plan-review-request-store";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
@@ -4020,6 +4025,43 @@ export function SessionCardBody({
         return;
       }
       shellSessionStore.exec(`tugutil dash create ${name}`);
+    },
+    // `/plan-review [path]` — the typed twin of the `plan_review_request`
+    // broadcast. It resolves a path and latches it into the same store
+    // `action-dispatch.ts` writes; the controller owns everything after that
+    // (the gate, the mid-turn park, the borrow, the three-beat release), so
+    // there is one machine rather than two that drift.
+    //
+    // No `canSubmit` gate on purpose: `RUN_SLASH_COMMAND` dispatches before the
+    // send-readiness gates, so a mid-turn invocation reaches here and parks —
+    // which is better than `/join`'s hard refusal and costs nothing.
+    "plan-review": (args) => {
+      const notify = paneBulletinRef.current;
+      // The `/diff` precedent: a surface that needs a binding returns silently
+      // when the store has none.
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      if (binding === undefined) return;
+      const boundName = binding.dash?.name;
+      const entry =
+        boundName === undefined
+          ? undefined
+          : changesController
+              .getSnapshot()
+              .dashes.find((row) => row.display_name === boundName);
+      const target = resolvePlanReviewTarget({
+        args,
+        projectDir: binding.projectDir,
+        lastReviewed: readLastReviewedPlan(cardId),
+        boundDash:
+          entry?.plan_path === undefined
+            ? null
+            : { worktree: entry.worktree, planPath: entry.plan_path },
+      });
+      if ("refused" in target) {
+        notify?.caution("Name the plan — /plan-review <path>");
+        return;
+      }
+      planReviewRequestStore.latch(cardId, target.path);
     },
     join: (args) => {
       const notify = paneBulletinRef.current;

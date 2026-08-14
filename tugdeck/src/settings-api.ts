@@ -20,7 +20,7 @@ import type { HistoryEntry } from "./lib/prompt-history-store";
 import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
-import { MODEL_DOMAIN } from "./lib/model-domains";
+import { MODEL_DOMAIN, PLAN_REVIEW_LAST_DOMAIN } from "./lib/model-domains";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import { canonicalizeDirPath } from "./lib/dir-existence";
 import type { FindOptions } from "./lib/transcript-search";
@@ -579,6 +579,7 @@ export const CARD_KEYED_DOMAINS: readonly string[] = [
   CARDSTATE_DOMAIN,
   PERMISSION_MODE_DOMAIN,
   MODEL_DOMAIN,
+  PLAN_REVIEW_LAST_DOMAIN,
 ];
 
 /** DELETE a single defaults entry from tugbank. Fire-and-forget. */

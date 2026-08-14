@@ -1,9 +1,9 @@
 <!-- devise-skeleton v5 -->
 
 <!--
-  This is the format contract for plans authored by `/tugplug:devise` and walked
+  This is the format contract for plans authored by `/tugplug:plan-devise` and walked
   by `/tugplug:implement`. Its mechanical half is checked by `tugutil plan lint`;
-  its judgment half is `/tugplug:review-plan`'s, against
+  its judgment half is `/tugplug:plan-review`'s, against
   `tuglaws/plan-review-rubric.md`.
   The devise skill's output is a plan written against this skeleton.
 
@@ -32,7 +32,7 @@
 ### Review Record {#review-record}
 
 <!--
-  One paragraph per review round, appended by `/tugplug:review-plan` — never
+  One paragraph per review round, appended by `/tugplug:plan-review` — never
   rewritten, since the point is the history. It sits here, before the body, so a
   cold reader learns whether this plan has been reviewed and what the review
   found before investing in the rest.
@@ -42,9 +42,17 @@
   review should be visible in the artifact rather than invisible in a transcript.
 
   Absent until the first review; `plan lint` warns (PL023) rather than failing.
+
+  The `plan:<hash>` token is the round's **content stamp** — the identity of the
+  document the round actually read. `tugutil plan stamp` computes and inserts it
+  as the review's last edit; it is never text a model types, because a hash a
+  model types is a fabricated one. `tugutil plan status` compares it against the
+  document on disk to report `reviewed` / `stale` / `never-reviewed`, and a round
+  carrying none warns (PL025).
 -->
 
-**Round 1 — <YYYY-MM-DD>, <model>.** Lint: <N> errors, <N> warnings (<N> fixed).
+**Round 1 — <YYYY-MM-DD>, <model>.** Reviewed `plan:<hash>`. Lint: <N> errors, <N> warnings (<N> fixed).
+Oriented on: <the git diff since round <n-1> | the Review Record>.
 Applied: <what changed, and why — name the axis and the specific fix>.
 Deferred: <what was raised as an Open Question instead of decided>.
 

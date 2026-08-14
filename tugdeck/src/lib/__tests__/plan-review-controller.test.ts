@@ -24,9 +24,12 @@ import {
   PlanReviewController,
   REVIEW_PLAN_COMMAND,
   evaluatePlanReviewGate,
+  readLastReviewedPlan,
+  resolvePlanReviewTarget,
   sessionModelKnown,
   type PlanReviewNotice,
 } from "@/lib/plan-review-controller";
+import { PLAN_REVIEW_LAST_DOMAIN } from "@/lib/model-domains";
 import {
   planReviewRequestStore,
   _resetPlanReviewRequestStoreForTest,
@@ -168,15 +171,41 @@ function harness(
   };
 }
 
+/**
+ * What the fake tugbank recorded, so the last-reviewed write is assertable.
+ * The submit path writes it optimistically into the cache and PUTs; there is
+ * no server here, so the PUT is caught below.
+ */
+let written: { domain: string; key: string; value: string }[] = [];
+let stored: Map<string, string>;
+const realFetch = globalThis.fetch;
+
 beforeEach(() => {
   _resetPlanReviewRequestStoreForTest();
-  setTugbankClient({ get: () => undefined } as never);
+  written = [];
+  stored = new Map();
+  setTugbankClient({
+    get: (domain: string, key: string) => {
+      const value = stored.get(`${domain}/${key}`);
+      return value === undefined ? undefined : { kind: "string", value };
+    },
+    setLocalValue: (domain: string, key: string, entry: { value: string }) => {
+      stored.set(`${domain}/${key}`, entry.value);
+      written.push({ domain, key, value: entry.value });
+    },
+  } as never);
+  // The controller PUTs its last-reviewed path. There is no server in a unit
+  // test and a relative URL has no origin to resolve against, so stand in for
+  // the transport rather than let the machine under test depend on it.
+  globalThis.fetch = (() =>
+    Promise.resolve(new Response("{}"))) as unknown as typeof fetch;
 });
 
 afterEach(() => {
   for (const controller of live.splice(0)) controller.dispose();
   _resetPlanReviewRequestStoreForTest();
   setTugbankClient(null);
+  globalThis.fetch = realFetch;
 });
 
 describe("evaluatePlanReviewGate", () => {
@@ -251,7 +280,7 @@ describe("park and submit", () => {
     h.latch();
     h.setPhase("idle");
     const [turn] = h.turns;
-    // Never a literal "/tugplug:review-plan …" — the command lives in the
+    // Never a literal "/tugplug:plan-review …" — the command lives in the
     // atom, and `submission.text` carries only the placeholder plus the tail.
     expect(turn.text).toBe(`${TUG_ATOM_CHAR} ${PLAN}`);
     expect(turn.atoms).toEqual([
@@ -493,5 +522,99 @@ describe("dispose", () => {
     // And neither must a session beat.
     h.setPhase("idle");
     expect(h.turns).toEqual([]);
+  });
+});
+
+describe("resolvePlanReviewTarget", () => {
+  const PROJECT = "/Users/x/src/proj";
+  const DASH = { worktree: ".tug/worktrees/fix", planPath: "roadmap/dash-plan.md" };
+
+  test("an explicit argument wins, absolute or project-relative", () => {
+    expect(
+      resolvePlanReviewTarget({
+        args: "/elsewhere/plan.md",
+        projectDir: PROJECT,
+        lastReviewed: "/abs/last.md",
+        boundDash: DASH,
+      }),
+    ).toEqual({ path: "/elsewhere/plan.md" });
+
+    expect(
+      resolvePlanReviewTarget({
+        args: "  roadmap/typed.md  ",
+        projectDir: PROJECT,
+        lastReviewed: "/abs/last.md",
+        boundDash: DASH,
+      }),
+    ).toEqual({ path: `${PROJECT}/roadmap/typed.md` });
+  });
+
+  test("bare: last-reviewed beats a bound dash naming a different plan", () => {
+    expect(
+      resolvePlanReviewTarget({
+        args: "",
+        projectDir: PROJECT,
+        lastReviewed: "/abs/last.md",
+        boundDash: DASH,
+      }),
+    ).toEqual({ path: "/abs/last.md" });
+  });
+
+  test("bare with nothing reviewed: the dash composes project/worktree/plan", () => {
+    expect(
+      resolvePlanReviewTarget({
+        args: "",
+        projectDir: PROJECT,
+        lastReviewed: null,
+        boundDash: DASH,
+      }),
+    ).toEqual({ path: `${PROJECT}/.tug/worktrees/fix/roadmap/dash-plan.md` });
+  });
+
+  test("bare with nothing resolvable refuses", () => {
+    expect(
+      resolvePlanReviewTarget({
+        args: "",
+        projectDir: PROJECT,
+        lastReviewed: null,
+        boundDash: null,
+      }),
+    ).toEqual({ refused: true });
+  });
+
+  test("a trailing slash on the project root does not double up", () => {
+    expect(
+      resolvePlanReviewTarget({
+        args: "roadmap/p.md",
+        projectDir: `${PROJECT}/`,
+        lastReviewed: null,
+        boundDash: null,
+      }),
+    ).toEqual({ path: `${PROJECT}/roadmap/p.md` });
+  });
+});
+
+describe("the last-reviewed record", () => {
+  test("a review records its plan, in its own card-keyed domain", () => {
+    const h = harness();
+    h.latch();
+    h.setPhase("idle");
+    expect(h.turns.length).toBe(1);
+    expect(written).toEqual([
+      { domain: PLAN_REVIEW_LAST_DOMAIN, key: "card-1", value: PLAN },
+    ]);
+    // …and it reads straight back out of the cache, which is what makes a
+    // later bare `/plan-review` synchronous.
+    expect(readLastReviewedPlan("card-1")).toBe(PLAN);
+    expect(readLastReviewedPlan("card-2")).toBeNull();
+  });
+
+  test("recording the path is not a model write ([D137])", () => {
+    const h = harness();
+    h.latch();
+    h.setPhase("idle");
+    // The borrow still went out over the wire and nothing touched dev.model.
+    expect(h.sent).toEqual(["opus"]);
+    expect(written.every((w) => w.domain === PLAN_REVIEW_LAST_DOMAIN)).toBe(true);
   });
 });
