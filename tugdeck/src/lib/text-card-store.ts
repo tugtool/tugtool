@@ -41,6 +41,7 @@ import { getConnection } from "./connection-singleton";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
 import type { FileReadErrorKind, FileWriteOutcome } from "./file-io";
 import { readFileFromDisk, writeFileToDisk } from "./file-io";
+import { applyAssetRenames, migrateDraftAssets } from "./attachment-upload";
 import {
   AsideWriter,
   asidePathFor,
@@ -567,6 +568,27 @@ export class TextCardStore {
         baselineSha256: oldBaseline,
         delete: true,
       });
+    }
+
+    // The document has a real home now, so its attachments follow it there
+    // ([P03]). This runs BEFORE the rebind below, so the strip's next
+    // projection already resolves against the destination directory.
+    //
+    // The relative link is stable across the move by construction, so in the
+    // common case `renames` is empty and the document text does not change at
+    // all — which is what makes the untitled story seamless rather than a
+    // rewrite-everything migration. When a name did have to change (something
+    // of that name already sat beside the destination document), the rewrite
+    // leaves the buffer dirty against the bytes just written, and the
+    // `editedDuringWrite` check below is exactly what notices and re-saves.
+    if (wasDraft && snap.draftId !== null) {
+      const renames = await migrateDraftAssets(snap.draftId, newPath);
+      if (this._disposed) return "noop";
+      if (renames !== null && renames.length > 0 && this._bridge !== null) {
+        this._bridge.replaceText(
+          applyAssetRenames(this._bridge.getText(), renames),
+        );
+      }
     }
 
     // Rebind IN PLACE — same document, new identity. Save As must keep

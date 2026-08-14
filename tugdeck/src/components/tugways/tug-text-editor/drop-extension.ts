@@ -125,6 +125,45 @@ const IMG_EXTS: ReadonlySet<string> = new Set([
  * drop point. Both paint the same ring + drop caret. Keyboard-driven or
  * application-specific drags pass through untouched.
  */
+/**
+ * Filename → absolute path for the files in a drag, read from its
+ * `text/uri-list` flavor.
+ *
+ * A `File` object carries no path — only a name — so this is the only place a
+ * Finder drag's real location is legible. The OS writes one `file://` URL per
+ * line, and the browser hands the matching `File` objects in the same order,
+ * but keying by basename rather than by index keeps the two independent.
+ *
+ * Empty for a drag that carries no URLs (a synthesized drop in a test, a drag
+ * out of another web page), in which case callers keep the bare filename.
+ */
+function droppedFilePaths(
+  dataTransfer: DataTransfer | null,
+): ReadonlyMap<string, string> {
+  const out = new Map<string, string>();
+  if (dataTransfer === null) return out;
+  let list = "";
+  try {
+    list = dataTransfer.getData("text/uri-list");
+  } catch {
+    return out;
+  }
+  for (const line of list.split(/\r?\n/)) {
+    const url = line.trim();
+    if (url.length === 0 || url.startsWith("#")) continue;
+    if (!url.startsWith("file://")) continue;
+    let path: string;
+    try {
+      path = decodeURIComponent(new URL(url).pathname);
+    } catch {
+      continue;
+    }
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    if (name.length > 0) out.set(name, path);
+  }
+  return out;
+}
+
 function acceptsDrag(dataTransfer: DataTransfer | null): boolean {
   if (dataTransfer === null) return false;
   return dataTransfer.types.includes("Files") || hasJotDrag(dataTransfer);
@@ -700,9 +739,18 @@ type ResolvedDrop =
  * carrying the reason, so a bad image lands exactly like a `.zip` drop
  * rather than vanishing.
  */
-async function resolveDroppedFile(file: File): Promise<ResolvedDrop> {
+async function resolveDroppedFile(
+  file: File,
+  // The absolute path the drag reported for this file, when the OS supplied
+  // one. A `File` carries no path, so this comes from the drag's own
+  // `text/uri-list` flavor.
+  absolutePath?: string,
+): Promise<ResolvedDrop> {
   if (!isImageFile(file)) {
-    return { kind: "text", text: file.name };
+    // A path is actionable — the model can read the file — where a bare
+    // filename names nothing anyone can open ([P13]). The prompt holds
+    // references to non-image files as text, never as atoms ([P05]).
+    return { kind: "text", text: absolutePath ?? file.name };
   }
   try {
     const outcome = await downsampleImage(file);
@@ -768,6 +816,8 @@ export async function processAttachmentFiles(
   insertPos: number,
   bytesStore: AtomBytesStore,
   onError: (message: string) => void,
+  /** Filename → absolute path, from the drag's `text/uri-list` ([P13]). */
+  paths?: ReadonlyMap<string, string>,
 ): Promise<void> {
   if (files.length === 0) return;
 
@@ -780,7 +830,9 @@ export async function processAttachmentFiles(
 
   // Preflight — resolve every file (decoding images) before touching the
   // document. Order is preserved.
-  const resolved = await Promise.all(files.map(resolveDroppedFile));
+  const resolved = await Promise.all(
+    files.map((file) => resolveDroppedFile(file, paths?.get(file.name))),
+  );
 
   // The editor may have unmounted while we were decoding.
   if (!view.dom.isConnected) return;
@@ -1106,6 +1158,7 @@ export function tugDropExtension(
           insertPos,
           bytesStore,
           onAttachmentError,
+          droppedFilePaths(event.dataTransfer),
         );
       };
 

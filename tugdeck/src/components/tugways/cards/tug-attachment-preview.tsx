@@ -62,10 +62,11 @@
 import "./tug-attachment-preview.css";
 
 import * as React from "react";
-import { ImageOff, X } from "lucide-react";
+import { AlertTriangle, File as FileIcon, ImageOff, X } from "lucide-react";
 
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
+import { blobUrl } from "@/lib/file-kinds";
 import { decorateChipLabel } from "./tug-atom-text-body";
 import type { TurnAddress } from "../tug-transcript-entry";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
@@ -81,6 +82,7 @@ import { useControlDispatch } from "@/components/tugways/use-control-dispatch";
 import { ResponderChainContext } from "@/components/tugways/responder-chain";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { writeImageToNativeClipboard } from "@/lib/tug-native-clipboard";
+import { toBase64 } from "@/lib/attachment-upload";
 import { registerAttachmentPreviewOpener } from "@/lib/attachment-preview-open";
 
 // ---------------------------------------------------------------------------
@@ -192,6 +194,30 @@ export interface TugAttachmentPreviewProps {
   focusOrderBase?: number;
   /** Walk policy when registered (`accept` default; `skip` = a11y-only). */
   focusPolicy?: FocusPolicy;
+  /**
+   * Activating a tile that has no pixels — a non-image attachment, or one
+   * whose attach failed. The image lightbox has nothing to show for either, so
+   * the click is the host's to interpret: the Text card reveals the link in
+   * the document, or retries the failed upload. Omit and such a tile is inert.
+   */
+  onActivateFile?: (atom: AtomSegment) => void;
+  /**
+   * Measure whether the tile row overflows, and mark the strip when it does so
+   * the stylesheet can pay for the scrollbar out of the tile height.
+   *
+   * This belongs to the **prompt entry's compose strip** specifically — a
+   * fixed-HEIGHT single row, where shrinking the tiles is the only place the
+   * scrollbar's pixels can come from. It used to be inferred from
+   * {@link deletable}, which happened to be true for exactly that one surface
+   * and stopped being a safe proxy the moment a second surface wanted a ✕: the
+   * measurement writes an attribute that changes the row's size, so on a strip
+   * whose height is *not* fixed the `ResizeObserver` re-fires on its own write
+   * and spins.
+   *
+   * A strip that scrolls by ordinary CSS — the Text card's — wants none of it.
+   * @default false
+   */
+  measureRowOverflow?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +228,13 @@ interface TileSnapshot {
   readonly atomId: string;
   readonly label: string;
   readonly value: string;
+  /**
+   * The atom's own type. `"image"` for everything the prompt entry puts in a
+   * strip; the Text card's projection also mints `"file"` for a non-image
+   * attachment, which has no pixels and must not be mistaken for an image
+   * whose bytes have not landed yet.
+   */
+  readonly type: string;
   readonly thumbnailDataUrl: string | undefined;
   /**
    * Full-resolution bytes + media type when the store entry is present.
@@ -212,11 +245,22 @@ interface TileSnapshot {
   readonly content: string | undefined;
   readonly mediaType: string | undefined;
   /**
-   * The atom resolves to a bytes-store entry that carries no usable
-   * pixels — neither a thumbnail nor full content. This is the
-   * "broken image" state: a recalled history atom whose bytes are gone
-   * and whose durable thumbnail was never captured (re-seeded as an empty
-   * marker). Distinct from the pre-pixel drop window (no entry at all),
+   * Absolute path of the file behind the entry, when it has one.
+   *
+   * The Text card's strip paints from this rather than from base64: its tiles
+   * stand for files already on disk, so holding their bytes in JS would park a
+   * whole document's assets in memory to draw thumbnails. `/api/fs/blob`
+   * streams, revalidates by `ETag`, and is what the viewer card already reads.
+   * The prompt entry's tiles keep painting from `content`, which genuinely has
+   * to exist in JS because it goes on the wire.
+   */
+  readonly path: string | undefined;
+  /**
+   * The atom resolves to a bytes-store entry that carries nothing paintable —
+   * no thumbnail, no content, no path. This is the "broken image" state: a
+   * recalled history atom whose bytes are gone and whose durable thumbnail was
+   * never captured (re-seeded as an empty marker), or a projected link whose
+   * file is missing. Distinct from the pre-pixel drop window (no entry at all),
    * which stays a transparent reserved slot.
    */
   readonly broken: boolean;
@@ -232,14 +276,24 @@ function buildSnapshot(
     const entry = id.length > 0 ? bytesStore.get(id) : null;
     const hasThumb = (entry?.thumbnailDataUrl ?? "").length > 0;
     const hasContent = (entry?.content ?? "").length > 0;
+    const hasPath = (entry?.path ?? "").length > 0;
     out.push({
       atomId: id,
       label: atom.label,
       value: atom.value,
+      type: atom.type,
       thumbnailDataUrl: entry?.thumbnailDataUrl,
       content: entry?.content,
       mediaType: entry?.mediaType,
-      broken: entry !== null && !hasThumb && !hasContent,
+      path: entry?.path,
+      // A file tile is never broken for want of pixels — it has none by
+      // nature. Only an image with nothing to paint is.
+      broken:
+        atom.type === "image" &&
+        entry !== null &&
+        !hasThumb &&
+        !hasContent &&
+        !hasPath,
     });
   }
   return out;
@@ -259,9 +313,11 @@ function snapshotKey(snap: ReadonlyArray<TileSnapshot>): string {
     // hashing the whole base64 string on every snapshot. `broken` joins it
     // too so a same-id atom flipping from broken-marker to real bytes (or
     // back) busts the cache even though its presence flags didn't move.
-    key += `${t.atomId}|${t.thumbnailDataUrl ?? ""}|${
+    // `type` and `path` join it because both decide which branch of the src
+    // ladder a tile takes, and neither is implied by the presence flags.
+    key += `${t.atomId}|${t.type}|${t.thumbnailDataUrl ?? ""}|${
       (t.content ?? "").length > 0 ? "c" : ""
-    }|${t.broken ? "b" : ""}|`;
+    }|${t.path ?? ""}|${t.broken ? "b" : ""}|`;
   }
   return key;
 }
@@ -353,6 +409,8 @@ export const TugAttachmentPreview = React.forwardRef<
     focusGroup,
     focusOrderBase = 0,
     focusPolicy,
+    onActivateFile,
+    measureRowOverflow = false,
   },
   ref,
 ) {
@@ -376,6 +434,11 @@ export const TugAttachmentPreview = React.forwardRef<
     },
     [controlDispatch, removeSenderId],
   );
+
+  // Read at click time so `openPreview` — memoized on the atom set — does not
+  // have to be rebuilt when the host passes a fresh closure ([L07]).
+  const onActivateFileRef = React.useRef(onActivateFile);
+  onActivateFileRef.current = onActivateFile;
 
   const cacheRef = React.useRef<{
     atoms: ReadonlyArray<AtomSegment>;
@@ -407,6 +470,13 @@ export const TugAttachmentPreview = React.forwardRef<
   const { showSheet, renderSheet } = useTugSheet();
   const openPreview = React.useCallback(
     (atom: AtomSegment, clickedIndex: number): void => {
+      // The sheet is an image lightbox — it paints a data URL and pages across
+      // an image set. A tile with no pixels has nothing for it to show, so the
+      // click goes to the host instead of opening an empty panel.
+      if (atom.type !== "image") {
+        onActivateFileRef.current?.(atom);
+        return;
+      }
       void showSheet({
         title: atom.value,
         // The preview owns its own top bar (title + actions), so the
@@ -474,7 +544,7 @@ export const TugAttachmentPreview = React.forwardRef<
     },
     [ref],
   );
-  useComposeStripScrolls(stripRef, deletable, tiles);
+  useComposeStripScrolls(stripRef, measureRowOverflow, tiles);
 
   // Empty atoms → no DOM. The host surface sees no strip contribution.
   if (tiles.length === 0) return null;
@@ -563,6 +633,12 @@ function AttachmentPreviewTile({
   // codec on replay), the content fallback persists — the tile shows the
   // original scaled down rather than an empty box. Heavier than a thumbnail,
   // but rare and strictly better than the alternative.
+  //
+  // A fourth rung sits below content: an entry that names a file on disk
+  // paints straight from `/api/fs/blob`. That is how the Text card's strip
+  // renders a whole document's assets without holding any of their bytes.
+  const isFile = tile.type !== "image";
+  const isFailed = tile.type === "failed";
   const hasThumb =
     tile.thumbnailDataUrl !== undefined && tile.thumbnailDataUrl.length > 0;
   const hasContent =
@@ -570,11 +646,16 @@ function AttachmentPreviewTile({
     tile.content.length > 0 &&
     tile.mediaType !== undefined &&
     tile.mediaType.length > 0;
-  const src = hasThumb
-    ? tile.thumbnailDataUrl
-    : hasContent
-      ? `data:${tile.mediaType};base64,${tile.content}`
-      : undefined;
+  const hasPath = tile.path !== undefined && tile.path.length > 0;
+  const src = isFile
+    ? undefined
+    : hasThumb
+      ? tile.thumbnailDataUrl
+      : hasContent
+        ? `data:${tile.mediaType};base64,${tile.content}`
+        : hasPath
+          ? blobUrl(tile.path as string)
+          : undefined;
 
   return (
     <div
@@ -609,7 +690,7 @@ function AttachmentPreviewTile({
           className="tug-attachment-preview__thumb"
           // The frame (border + fill) is gated on this in CSS, so the
           // pre-pixel window shows nothing instead of an empty box.
-          data-has-image={src !== undefined ? "" : undefined}
+          data-has-image={src !== undefined || isFile ? "" : undefined}
         >
           {src !== undefined ? (
             <img
@@ -617,6 +698,29 @@ function AttachmentPreviewTile({
               src={src}
               alt={caption}
             />
+          ) : isFile ? (
+            // A non-image attachment — a zip, an archive, a spreadsheet. It
+            // has no pixels by nature, so it gets a glyph and its name rather
+            // than the reserved slot an image-with-no-bytes-yet gets. Without
+            // this branch the tile would be an invisible gap with no delete
+            // affordance.
+            <span
+              data-slot="tug-attachment-preview__file"
+              className="tug-attachment-preview__file"
+              // Appearance via an attribute + CSS, never React state ([L06]).
+              // A failed tile is the same tile in the caution tone: the file
+              // it stands for is named right below it, which is the whole
+              // reason this reads better than a banner could.
+              data-failed={isFailed ? "" : undefined}
+              aria-label={isFailed ? `${tile.value} — attach failed` : tile.value}
+              title={isFailed ? `${tile.value} — attach failed. Click to retry.` : tile.value}
+            >
+              {isFailed ? (
+                <AlertTriangle aria-hidden="true" />
+              ) : (
+                <FileIcon aria-hidden="true" />
+              )}
+            </span>
           ) : tile.broken ? (
             // Broken image: the atom points at a bytes-store entry with no
             // pixels — a recalled history image whose bytes are gone and whose
@@ -641,7 +745,7 @@ function AttachmentPreviewTile({
               aria-hidden="true"
             />
           )}
-          {deletable && (src !== undefined || tile.broken) && (
+          {deletable && (src !== undefined || tile.broken || isFile) && (
             // Compose-phase delete. A component-owned overlay affordance (not a
             // TugButton) pinned to the thumbnail's own top-right corner, so it
             // stays flush regardless of cell/caption width. It is an [L11]
@@ -728,10 +832,24 @@ async function copyImageToClipboard(dataUrl: string): Promise<boolean> {
   // JS clipboard image write does not work there — the same reason
   // clipboard READ is bridged natively — so the web path below is only the
   // browser-dev fallback.
-  const comma = dataUrl.indexOf(",");
-  const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
-  if (writeImageToNativeClipboard(base64)) {
-    return true;
+  // Only a `data:` URL carries its bytes inline. A path-backed tile's src is a
+  // blob-route URL, whose tail is a query string rather than base64 — slicing
+  // at the comma there would hand the pasteboard nonsense, so that case takes
+  // the fetch-and-encode path below instead.
+  if (dataUrl.startsWith("data:")) {
+    const comma = dataUrl.indexOf(",");
+    const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+    if (writeImageToNativeClipboard(base64)) {
+      return true;
+    }
+  } else if (dataUrl.length > 0) {
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const buffer = new Uint8Array(await blob.arrayBuffer());
+      if (writeImageToNativeClipboard(toBase64(buffer))) return true;
+    } catch {
+      // Fall through to the web clipboard path.
+    }
   }
   const clip = navigator.clipboard;
   if (
@@ -814,6 +932,12 @@ function buildPreviewSnapshot(
   }
   if (entry.thumbnailDataUrl !== undefined && entry.thumbnailDataUrl.length > 0) {
     return entry.thumbnailDataUrl;
+  }
+  // A path-backed entry — the Text card's projection, whose tiles never hold
+  // bytes. The blob route serves the full-resolution original, which is
+  // exactly what the lightbox wants.
+  if (entry.path !== undefined && entry.path.length > 0) {
+    return blobUrl(entry.path);
   }
   return null;
 }

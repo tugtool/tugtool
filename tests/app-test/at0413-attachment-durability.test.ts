@@ -1,5 +1,5 @@
 /**
- * at0409-attachment-durability.test.ts — an image dropped on the Session
+ * at0413-attachment-durability.test.ts — an image dropped on the Session
  * card's prompt entry survives a quit and relaunch as resubmittable bytes.
  *
  * ## The loss this pins

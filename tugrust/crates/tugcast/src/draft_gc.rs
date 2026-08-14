@@ -110,6 +110,87 @@ pub(crate) fn sweep_draft_attachments(
     removed
 }
 
+/// The newest mtime anywhere in `dir`'s tree, or `None` when nothing is
+/// readable.
+///
+/// A draft home's own mtime says only when its `assets/` child was created, so
+/// a home whose files were written yesterday can carry a directory mtime from
+/// last month. Taking the newest mtime in the tree errs toward retention,
+/// which is the only direction it is safe to err in here.
+fn newest_mtime(dir: &Path) -> Option<SystemTime> {
+    let mut newest = std::fs::metadata(dir).ok()?.modified().ok();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return newest;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let candidate = match entry.file_type() {
+            Ok(ft) if ft.is_dir() => newest_mtime(&path),
+            Ok(_) => entry.metadata().ok().and_then(|md| md.modified().ok()),
+            Err(_) => None,
+        };
+        if let Some(candidate) = candidate
+            && newest.is_none_or(|current| candidate > current)
+        {
+            newest = Some(candidate);
+        }
+    }
+    newest
+}
+
+/// Delete abandoned draft-document asset homes directly inside `dir`.
+///
+/// The mirror of `sweep_draft_attachments` for the *document* tier. A Text card
+/// editing a not-yet-saved buffer attaches into `draft-docs/<draftId>/assets/`;
+/// closing that card without saving (the "Don't Save" path) leaves the tree
+/// behind with nothing referencing it. The attachment sweep above cannot
+/// reclaim it — it considers files only, and deliberately so — so this pass
+/// exists to.
+///
+/// The predicate is the draft id, which is the Text card's own card id and
+/// therefore appears in the card-state JSON for exactly as long as the card
+/// does. Same reasoning as the UUID predicate above: a draft id has one
+/// spelling, so the match cannot fail the way a path comparison could, and the
+/// cost of a false miss here is deleting a live document's attachments.
+///
+/// Directories only — a stray *file* directly inside `draft-docs/` is not
+/// something this module wrote, so it is not this module's to remove.
+pub(crate) fn sweep_draft_docs(
+    dir: &Path,
+    root_json: &[String],
+    grace: Duration,
+    now: SystemTime,
+) -> usize {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(ft) if ft.is_dir() => {}
+            _ => continue,
+        }
+        let Some(draft_id) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if root_json.iter().any(|json| json.contains(draft_id)) {
+            continue;
+        }
+        let aged_out = newest_mtime(&path)
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age > grace);
+        if !aged_out {
+            continue;
+        }
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => removed += 1,
+            Err(err) => warn!(error = %err, path = %path.display(), "draft-gc: remove failed"),
+        }
+    }
+    removed
+}
+
 /// Read the root domains and run the sweep. Called once at tugcast startup;
 /// tugbank is fatal-if-absent there, so the roots are always readable.
 pub(crate) fn sweep_at_startup(bank: &TugbankClient) {
@@ -143,14 +224,24 @@ pub(crate) fn sweep_at_startup(bank: &TugbankClient) {
             }
         }
     }
+    let now = SystemTime::now();
     let removed = sweep_draft_attachments(
         &crate::attachments::draft_attachments_dir(),
         &root_json,
         GRACE,
-        SystemTime::now(),
+        now,
     );
     if removed > 0 {
         info!(count = removed, "swept unreferenced draft attachments");
+    }
+    let removed = sweep_draft_docs(
+        &crate::attachments::draft_docs_dir(),
+        &root_json,
+        GRACE,
+        now,
+    );
+    if removed > 0 {
+        info!(count = removed, "swept abandoned draft document assets");
     }
 }
 
@@ -277,5 +368,81 @@ mod tests {
             sweep_draft_attachments(&dir.path().join("never-created"), &[], GRACE, long_after(),),
             0,
         );
+        assert_eq!(
+            sweep_draft_docs(&dir.path().join("never-created"), &[], GRACE, long_after()),
+            0,
+        );
+    }
+
+    /// A draft home with one attached asset in it. Returns its path.
+    fn make_draft_home(root: &Path, draft_id: &str) -> std::path::PathBuf {
+        let home = root.join(draft_id);
+        std::fs::create_dir_all(home.join("assets")).unwrap();
+        std::fs::write(home.join("assets").join("photo.png"), b"bytes").unwrap();
+        home
+    }
+
+    #[test]
+    fn sweep_removes_an_unreferenced_aged_draft_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let abandoned = make_draft_home(dir.path(), "card-abandoned");
+
+        let removed = sweep_draft_docs(dir.path(), &[], GRACE, long_after());
+
+        assert_eq!(removed, 1);
+        assert!(!abandoned.exists());
+    }
+
+    /// Two independent reasons a home survives, each on its own fixture: card
+    /// state still names it, or it is inside the grace window — which is what
+    /// covers the gap between a first drop and the card-state write recording
+    /// the card that made it.
+    #[test]
+    fn sweep_keeps_a_referenced_draft_home() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = make_draft_home(dir.path(), "card-live");
+
+        let roots = vec![r#"{"card-live":{"kind":"text","draftId":"card-live"}}"#.to_string()];
+        assert_eq!(sweep_draft_docs(dir.path(), &roots, GRACE, long_after()), 0);
+        assert!(live.join("assets").join("photo.png").exists());
+    }
+
+    #[test]
+    fn sweep_keeps_a_young_draft_home_even_unreferenced() {
+        let dir = tempfile::tempdir().unwrap();
+        let young = make_draft_home(dir.path(), "card-young");
+
+        assert_eq!(
+            sweep_draft_docs(dir.path(), &[], GRACE, SystemTime::now()),
+            0
+        );
+        assert!(young.join("assets").join("photo.png").exists());
+    }
+
+    /// The home directory's own mtime is set when `assets/` is created and
+    /// never touched again, so age has to be read from the whole tree — else a
+    /// home whose asset was written this morning looks ancient.
+    #[test]
+    fn a_recently_written_asset_keeps_its_home_alive() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = make_draft_home(dir.path(), "card-active");
+
+        // `now` sits just past the file's mtime but far past a directory mtime
+        // that a grace period would have aged out.
+        let just_after = SystemTime::now() + Duration::from_secs(60);
+        assert_eq!(sweep_draft_docs(dir.path(), &[], GRACE, just_after), 0);
+        assert!(home.exists());
+    }
+
+    /// A loose file in `draft-docs/` was not written by this module, so it is
+    /// not this module's to delete — the mirror of `subdirectories_are_left_alone`.
+    #[test]
+    fn a_loose_file_in_the_draft_docs_root_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let stray = dir.path().join("notes.md");
+        std::fs::write(&stray, b"bytes").unwrap();
+
+        assert_eq!(sweep_draft_docs(dir.path(), &[], GRACE, long_after()), 0);
+        assert!(stray.exists());
     }
 }

@@ -52,6 +52,7 @@ import {
   type PositionedAtom,
 } from "./atom-decoration";
 import { processAttachmentFiles } from "./drop-extension";
+import { downsampleImage } from "@/lib/image-downsample";
 import type { AtomBytesEntry, AtomBytesStore } from "@/lib/atom-bytes-store";
 import {
   hasNativeClipboardBridge,
@@ -83,6 +84,37 @@ export interface TugAtomsClipboardPayload {
   text: string;
   /** Atoms aligned with U+FFFC characters in `text`. */
   atoms: TugAtomsClipboardEntry[];
+  /**
+   * Ranges of `text` that are markdown links to attached files, for the
+   * attachments a *document* copy carries that are not atoms.
+   *
+   * The atom schema is positional — one U+FFFC per entry — and a markdown link
+   * is a range of literal text, so the two do not fit the same shape. An image
+   * link is substituted with U+FFFC and rides as an ordinary atom entry, which
+   * is what lets the prompt entry reconstitute it as an image chip with no
+   * special case at all. A **non-image** link stays literal text and is
+   * recorded here instead: the prompt inserts it as markup untouched, because
+   * there is no atom entry to place — which is how "non-images in the prompt
+   * are markup, never atoms" holds by construction rather than by a rule
+   * somebody has to remember ([P05]).
+   *
+   * A destination that also understands documents uses these ranges to copy
+   * the bytes into its own asset base and rewrite the link when it resolves
+   * somewhere else.
+   */
+  assets?: TugAtomsClipboardAssetRange[];
+}
+
+/** One non-atom asset link inside a copied range. */
+export interface TugAtomsClipboardAssetRange {
+  /** Offset into the payload's `text` where the link begins. */
+  from: number;
+  /** Offset just past the link's closing `)`. */
+  to: number;
+  /** The file's absolute, canonical path — see {@link TugAtomsClipboardEntry.assetPath}. */
+  assetPath: string;
+  /** The file's own name, for the destination's link label. */
+  assetName: string;
 }
 
 /**
@@ -98,6 +130,23 @@ export interface TugAtomsClipboardEntry {
   position: number;
   segment: AtomSegment;
   bytes?: AtomBytesEntry;
+  /**
+   * Absolute, canonical path of the file this atom stands for.
+   *
+   * A relative link means nothing without its document, and the absolute path
+   * is the only spelling that survives a hop through the clipboard into a
+   * surface with a different base — the prompt entry has a project directory,
+   * but it is not the document the link was relative to. A destination uses it
+   * to copy the bytes into its own asset base when it needs its own copy
+   * ([P04]).
+   *
+   * This is also the *original* file, where `bytes.content` is a downsample.
+   * A destination that is writing a file to disk must read from here, never
+   * from `content`, or it stores a degraded copy that looks perfectly fine.
+   */
+  assetPath?: string;
+  /** The file's own name, for the destination's link label. */
+  assetName?: string;
 }
 
 /**
@@ -222,12 +271,55 @@ export function parseClipboardSidecar(
       };
       const bytes = parseBytesEntry(entry.bytes);
       if (bytes !== null) out_entry.bytes = bytes;
+      // Reconstruction means every field has to be named here or it is
+      // silently dropped on every paste — "additive and optional" is free on
+      // the write side and never free on the read side.
+      if (typeof entry.assetPath === "string") {
+        out_entry.assetPath = entry.assetPath;
+      }
+      if (typeof entry.assetName === "string") {
+        out_entry.assetName = entry.assetName;
+      }
       out.push(out_entry);
     }
-    return { version: 1, text: obj.text, atoms: out };
+    const payload: TugAtomsClipboardPayload = {
+      version: 1,
+      text: obj.text,
+      atoms: out,
+    };
+    const assets = parseAssetRanges(obj.assets);
+    if (assets !== null) payload.assets = assets;
+    return payload;
   } catch {
     return null;
   }
+}
+
+/**
+ * Validate the payload's optional `assets` range list. Returns `null` when it
+ * is absent or unusable, which degrades to reference-only paste — a correct
+ * behavior rather than a broken one.
+ */
+function parseAssetRanges(
+  raw: unknown,
+): TugAtomsClipboardAssetRange[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: TugAtomsClipboardAssetRange[] = [];
+  for (const item of raw as unknown[]) {
+    if (typeof item !== "object" || item === null) continue;
+    const r = item as Record<string, unknown>;
+    if (typeof r.from !== "number" || typeof r.to !== "number") continue;
+    if (typeof r.assetPath !== "string" || typeof r.assetName !== "string") {
+      continue;
+    }
+    out.push({
+      from: r.from,
+      to: r.to,
+      assetPath: r.assetPath,
+      assetName: r.assetName,
+    });
+  }
+  return out.length > 0 ? out : null;
 }
 
 /**
@@ -244,6 +336,14 @@ function parseBytesEntry(raw: unknown): AtomBytesEntry | null {
   const entry: AtomBytesEntry = { content: b.content, mediaType: b.mediaType };
   if (typeof b.thumbnailDataUrl === "string") {
     entry.thumbnailDataUrl = b.thumbnailDataUrl;
+  }
+  // `path` names the ORIGINAL upload, where `content` is the downsample. A
+  // destination writing a file to disk reads from the path; dropping it here
+  // would leave it able to reach only the degraded copy, and store that
+  // instead — a corruption that renders perfectly and is invisible until
+  // somebody opens the file expecting their original.
+  if (typeof b.path === "string") {
+    entry.path = b.path;
   }
   return entry;
 }
@@ -265,10 +365,57 @@ export function rehydrateSidecarBytes(
   if (store === null) return;
   for (const a of payload.atoms) {
     const id = a.segment.id;
-    if (id !== undefined && a.bytes !== undefined) {
+    if (id === undefined) continue;
+    if (a.bytes !== undefined) {
       store.put(id, a.bytes);
+      continue;
+    }
+    // An attachment copied out of a *document* carries no inline bytes — the
+    // strip it came from never held any, painting straight from disk instead.
+    // Seed the entry from its path and read the file in; the chip renders from
+    // the path immediately and resolves to real bytes when they land, which is
+    // what `buildWirePayload` needs to submit it.
+    if (a.assetPath !== undefined && a.assetPath.length > 0) {
+      store.put(id, { content: "", mediaType: "", path: a.assetPath });
+      fetchSidecarAssetBytes(id, a.assetPath, store);
     }
   }
+}
+
+/**
+ * Read an asset off disk and put it in `store` as real, submittable bytes.
+ *
+ * Fire-and-forget, and deliberately downsampled: this is the prompt entry's
+ * contract, where the bytes exist in JS because they are about to go on the
+ * wire. What stays on disk is the untouched original, and `path` keeps
+ * pointing at it — the same shape a restored draft attachment has.
+ */
+function fetchSidecarAssetBytes(
+  id: string,
+  path: string,
+  store: AtomBytesStore,
+): void {
+  void (async () => {
+    try {
+      const res = await fetch(`/api/fs/blob?path=${encodeURIComponent(path)}`);
+      if (!res.ok) return;
+      const outcome = await downsampleImage(await res.blob());
+      if (!outcome.ok) return;
+      // Re-read rather than reconstruct: the user may have removed the chip
+      // while the read was in flight.
+      if (store.get(id) === null) return;
+      store.put(id, {
+        content: outcome.result.content,
+        mediaType: outcome.result.mediaType,
+        thumbnailDataUrl: outcome.result.thumbnailDataUrl,
+        path,
+      });
+    } catch {
+      // The file moved or was deleted. The chip keeps its path-only entry,
+      // which paints but submits as preview-only — the pre-existing
+      // degradation for an attachment whose bytes cannot be read.
+    }
+  })();
 }
 
 // ---------------------------------------------------------------------------
@@ -330,8 +477,12 @@ function handleCopyOrCut(
  * text paste, internal sidecar paste); callers fall through to the
  * sidecar/text path. Returns an empty array only if items report as
  * images but `getAsFile()` yields nothing (rare; defensive).
+ *
+ * Exported because the Text card's paste handler asks the same question of
+ * the same event. Re-authoring the `DataTransferItem` quirk-handling for the
+ * second surface is how the two drifted apart the first time.
  */
-function extractImageFiles(
+export function extractImageFiles(
   items: DataTransferItemList | null,
 ): readonly File[] | null {
   if (items === null || items.length === 0) return null;

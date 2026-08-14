@@ -111,19 +111,34 @@ export interface DocAttachment {
 }
 
 /**
- * Copy `file` into `docPath`'s sibling `assets/` folder and report the name it
- * ended up with, or `null` when the write did not happen.
+ * Which document's assets a write belongs to: a saved one by path, or a
+ * not-yet-saved one by draft id. Every document has one or the other from its
+ * first keystroke, which is what removes the untitled precondition ([P02]).
+ */
+export type AssetBaseDescriptor = { doc: string } | { draft: string };
+
+/**
+ * Copy `file` into the document's `assets/` folder and report the name it ended
+ * up with, or `null` when the write did not happen.
  *
  * The server picks the final name so the choice and the write are one step: a
  * second `photo.png` becomes `photo-2.png` with no window in which two callers
- * could agree on the same free name.
+ * could agree on the same free name. Passing `name: null` hands the naming to
+ * the server too — which is what a paste does, since pasted image data arrives
+ * with no filename and the timestamped name is minted where the write happens.
  */
 export async function uploadDocAttachment(
-  docPath: string,
+  base: AssetBaseDescriptor,
   file: File,
+  name: string | null = file.name,
 ): Promise<DocAttachment | null> {
+  const docPath = "doc" in base ? base.doc : base.draft;
+  const where =
+    "doc" in base
+      ? `doc=${encodeURIComponent(base.doc)}`
+      : `draft=${encodeURIComponent(base.draft)}`;
   const query =
-    `doc=${encodeURIComponent(docPath)}&name=${encodeURIComponent(file.name)}`;
+    name === null ? where : `${where}&name=${encodeURIComponent(name)}`;
   try {
     const res = await fetch(`/api/fs/attach?${query}`, {
       method: "POST",
@@ -151,6 +166,118 @@ export async function uploadDocAttachment(
     tugDevLogStore.warn("attachments", "asset write failed", {
       error: err instanceof Error ? err.message : String(err),
       name: file.name,
+    });
+    return null;
+  }
+}
+
+/**
+ * The absolute directory a draft document's relative links resolve against.
+ *
+ * The deck cannot compute it: the home lives under `data_dir()`, which is
+ * per-instance and host-side. Created on demand by the route, so the answer is
+ * always a directory that exists. `null` when the server could not answer, in
+ * which case the caller has no base and declines the write rather than
+ * inventing a location.
+ */
+export async function fetchAttachBase(draftId: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `/api/fs/attach-base?draft=${encodeURIComponent(draftId)}`,
+    );
+    if (!res.ok) {
+      tugDevLogStore.warn("attachments", "attach-base refused", {
+        status: res.status,
+        draftId,
+      });
+      return null;
+    }
+    const body = (await res.json()) as { base?: unknown };
+    if (typeof body.base !== "string" || body.base.length === 0) return null;
+    return body.base;
+  } catch (err) {
+    tugDevLogStore.warn("attachments", "attach-base failed", {
+      error: err instanceof Error ? err.message : String(err),
+      draftId,
+    });
+    return null;
+  }
+}
+
+/** One asset that had to change name to fit beside the saved document. */
+export interface AssetRename {
+  /** The relative destination the document currently holds. */
+  from: string;
+  /** What it must say instead. */
+  to: string;
+}
+
+/**
+ * Rewrite `text`'s asset links to match the names the migration actually used.
+ *
+ * Only the destination half of a link moves. The label is the name the user
+ * gave the file and stays put — a document that suddenly says `photo-2` about
+ * a picture the user knows as `photo` is this feature's collision bookkeeping
+ * leaking into their prose.
+ *
+ * Both spellings of a destination are rewritten, because either may be in the
+ * document: the bare form and the angle-bracketed one ([P08]).
+ */
+export function applyAssetRenames(
+  text: string,
+  renames: readonly AssetRename[],
+): string {
+  let out = text;
+  for (const { from, to } of renames) {
+    out = out.split(`(${from})`).join(`(${to})`);
+    out = out.split(`(<${from}>)`).join(`(<${to}>)`);
+  }
+  return out;
+}
+
+/**
+ * Move a draft document's assets into the directory it was just saved into.
+ *
+ * The renames are what the buffer must be rewritten with, and are empty in the
+ * overwhelmingly common case — the relative link is stable across the move by
+ * construction, which is what makes the untitled story seamless rather than a
+ * rewrite-everything migration. `null` means the migration failed outright and
+ * the draft home still holds the bytes.
+ */
+export async function migrateDraftAssets(
+  draftId: string,
+  docPath: string,
+): Promise<AssetRename[] | null> {
+  const query =
+    `draft=${encodeURIComponent(draftId)}&doc=${encodeURIComponent(docPath)}`;
+  try {
+    const res = await fetch(`/api/fs/attach/migrate?${query}`, { method: "POST" });
+    const body = (await res.json()) as { renames?: unknown };
+    const renames = Array.isArray(body.renames)
+      ? body.renames.filter(
+          (r): r is AssetRename =>
+            typeof r === "object" &&
+            r !== null &&
+            typeof (r as AssetRename).from === "string" &&
+            typeof (r as AssetRename).to === "string",
+        )
+      : [];
+    if (!res.ok) {
+      tugDevLogStore.warn("attachments", "asset migration failed", {
+        status: res.status,
+        draftId,
+        doc: docPath,
+        // Anything already moved still has to be applied to the document, so
+        // a partial failure is reported with its renames rather than dropped.
+        moved: renames.length,
+      });
+      return renames.length > 0 ? renames : null;
+    }
+    return renames;
+  } catch (err) {
+    tugDevLogStore.warn("attachments", "asset migration failed", {
+      error: err instanceof Error ? err.message : String(err),
+      draftId,
     });
     return null;
   }

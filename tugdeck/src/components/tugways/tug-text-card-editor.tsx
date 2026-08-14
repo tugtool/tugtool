@@ -68,6 +68,7 @@ import { placeFindFlash, type FindFlashHandle } from "./find-flash";
 
 import React, {
   useCallback,
+  useEffect,
   useId,
   useImperativeHandle,
   useLayoutEffect,
@@ -140,8 +141,27 @@ import { mdListHangingIndent } from "./tug-text-editor/list-hanging-indent";
 import { anchorLinkExtension } from "./tug-text-card-editor/anchor-links";
 import {
   fileDropExtension,
-  resolveAgainstDoc,
+  linksForFiles,
 } from "./tug-text-card-editor/file-drop";
+import {
+  extractImageFiles,
+  parseClipboardSidecar,
+} from "./tug-text-editor/clipboard-filters";
+import {
+  assetMarkdownForPaste,
+  buildAssetSidecar,
+  insertPastedText,
+} from "./tug-text-card-editor/asset-clipboard";
+import {
+  assetTrashEffectHandler,
+  assetTrashInvertedEffects,
+} from "./tug-text-card-editor/asset-trash";
+import { directoryOf, resolveRelativePath } from "@/lib/asset-links";
+import type { AssetProjection } from "@/lib/asset-projection";
+import {
+  fetchAttachBase,
+  type AssetBaseDescriptor,
+} from "@/lib/attachment-upload";
 import { isViewableFile } from "@/lib/file-kinds";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusable } from "./use-focusable";
@@ -162,6 +182,19 @@ import { tugTextCardEditorTheme } from "./tug-text-card-editor/theme";
 // ---------------------------------------------------------------------------
 
 /** Reconfigurable soft-wrap (`EditorView.lineWrapping` or empty). */
+/** How a paste reshapes the clipboard's text before it is inserted. */
+type PasteTransform = (text: string) => string;
+
+/**
+ * A plain paste, as opposed to Paste as Quote or Paste as Plain Text.
+ *
+ * Hoisted to a constant so it has a stable identity the paste path can compare
+ * against: only a *plain* paste turns a clipboard attachment into a file and a
+ * link. The transforming pastes are explicitly asking for text, and quoting a
+ * markdown image link is a perfectly reasonable thing to want.
+ */
+const IDENTITY_TRANSFORM: PasteTransform = (text) => text;
+
 const lineWrapCompartment = new Compartment();
 
 /** Reconfigurable line-number gutter. */
@@ -366,6 +399,13 @@ export interface TugTextCardEditorDelegate {
    * flashes its first changed line(s).
    */
   revealLine(line: number, endLine?: number): void;
+  /**
+   * The same reveal, addressed by document offsets rather than lines. The
+   * attachment strip knows where a link *is* — it parsed it — and converting
+   * to a line number and back would be a round trip through information the
+   * caller already has and the editor is about to re-derive.
+   */
+  revealOffsets(from: number, to: number): void;
   /** Set / replace the active search query (paints match highlights). */
   setSearchQuery(query: TugTextCardEditorSearchQuery): void;
   /**
@@ -473,11 +513,12 @@ export interface TugTextCardEditorProps {
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
   focusOrder?: number;
   /**
-   * Report a file drop that could not be attached — an untitled buffer, a
-   * refused write. Omit and failures are silent; the Text card wires this to
-   * its own notice.
+   * The card's attachment strip ([P01]). The editor feeds it the buffer's text
+   * source and the document's asset base — the two things only the editor
+   * knows — and the card renders the tiles it publishes. Omit and no strip is
+   * derived.
    */
-  onAttachmentError?: (message: string) => void;
+  assetProjection?: AssetProjection;
   /**
    * Open an absolute path a ⌘-clicked relative link resolved to. Omit and
    * relative links are inert. The card wires this to `openFileInCard`, the
@@ -507,7 +548,7 @@ export const TugTextCardEditor = React.forwardRef<
     onStats,
     focusGroup,
     focusOrder = 0,
-    onAttachmentError,
+    assetProjection,
     onOpenPath,
   },
   ref,
@@ -537,14 +578,110 @@ export const TugTextCardEditor = React.forwardRef<
   // ⌘-click anchor navigation jumps through this ref so the mount-time
   // extension always calls the latest `revealLine` closure [L07].
   const anchorNavigateRef = useRef<(line: number) => void>(() => {});
-  // Live prop ref for the drop's failure sink: the extension is built once at
-  // mount and must never call a stale handler ([L07]).
-  const attachmentErrorRef = useRef<((message: string) => void) | undefined>(
-    onAttachmentError,
-  );
-  attachmentErrorRef.current = onAttachmentError;
   const openRelativeRef = useRef<(path: string) => void>(() => {});
   openRelativeRef.current = onOpenPath ?? (() => {});
+  // The document's asset base ([P02]): the draft home when the buffer carries a
+  // `draftId`, else the directory holding its path. It is resolved
+  // asynchronously because a draft home lives under `data_dir()`, which is
+  // per-instance and only the host can compute — and it is read through a ref
+  // at dispatch time, never captured at extension-construction time ([L07]).
+  const assetBaseRef = useRef<string | null>(null);
+  // Read at dispatch time by the editor's update listener, which is built once
+  // at mount ([L07]).
+  const assetProjectionRef = useRef<AssetProjection | undefined>(assetProjection);
+  assetProjectionRef.current = assetProjection;
+  // The CM6 paste handler is built once at mount, so it reaches the shared
+  // attachment routine through a ref rather than closing over it ([L07]).
+  const pasteAttachmentsRef = useRef<() => Promise<boolean>>(async () => false);
+  /**
+   * Write the selection to the clipboard with its attachment sidecar, and on a
+   * cut, remove it. Returns `true` when it claimed the event.
+   *
+   * Owning the whole write is what the prompt entry does, for the same reason:
+   * WebKit's pasteboard normalization swallows custom types, so a sidecar left
+   * to the default `copy` would simply not arrive. The plain-text flavor stays
+   * the literal markdown, so an external app pastes what the document says.
+   */
+  const writeSelectionSidecar = useCallback(
+    (view: EditorView, event: ClipboardEvent, isCut: boolean): boolean => {
+      if (isCut && readOnlyRef.current) return false;
+      const { from, to } = view.state.selection.main;
+      if (from === to) return false;
+      const text = view.state.sliceDoc(from, to);
+      const sidecar = buildAssetSidecar(text, assetBaseRef.current);
+      if (sidecar === null) return false; // No attachments — let the default run.
+      if (!hasNativeClipboardBridge()) return false;
+      if (!writeClipboardViaNative(text, JSON.stringify(sidecar))) return false;
+      event.preventDefault();
+      if (isCut) {
+        view.dispatch({
+          changes: { from, to, insert: "" },
+          selection: { anchor: from },
+          userEvent: "delete.cut",
+        });
+      }
+      return true;
+    },
+    [],
+  );
+  /**
+   * Which document an attachment belongs to, read at gesture time ([L07]).
+   * A draft id when the buffer has one, else its path — every document has one
+   * or the other from its first keystroke, which is what removes the untitled
+   * precondition entirely ([P02]).
+   */
+  const assetBaseDescriptor = useCallback((): AssetBaseDescriptor | null => {
+    const snapshot = storeRef.current.getSnapshot();
+    if (snapshot.draftId !== null) return { draft: snapshot.draftId };
+    if (snapshot.path !== null) return { doc: snapshot.path };
+    return null;
+  }, []);
+  /**
+   * Report one file's failure where the user is already looking — the tile
+   * that stands for it ([P06]). There is no error vocabulary above this: a
+   * modal banner could only ever say *something* failed, while a tile names
+   * the file and offers the retry.
+   */
+  const reportAttachmentFailure = useCallback(
+    (name: string, message: string): void => {
+      assetProjectionRef.current?.noteFailure(name, message);
+    },
+    [],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    // Re-resolve only when the *binding* changes. The store notifies on every
+    // dirty-state transition, and refetching a draft home per keystroke would
+    // be exactly the kind of writer the typing-lag campaign has been removing.
+    let lastBinding: string | null = null;
+    const resolve = (): void => {
+      const snapshot = storeRef.current.getSnapshot();
+      const binding =
+        snapshot.draftId !== null
+          ? `draft:${snapshot.draftId}`
+          : `path:${snapshot.path ?? ""}`;
+      if (binding === lastBinding) return;
+      lastBinding = binding;
+      if (snapshot.draftId === null) {
+        const base = snapshot.path === null ? null : directoryOf(snapshot.path);
+        assetBaseRef.current = base;
+        assetProjectionRef.current?.setBase(base);
+        return;
+      }
+      const draftId = snapshot.draftId;
+      void fetchAttachBase(draftId).then((base) => {
+        if (cancelled || lastBinding !== `draft:${draftId}`) return;
+        assetBaseRef.current = base;
+        assetProjectionRef.current?.setBase(base);
+      });
+    };
+    resolve();
+    const unsubscribe = store.subscribe(resolve);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [store]);
   // Doc-derived counts, recomputed only on document change; caret is
   // recomputed on every selection change from the live state.
   const docStatsRef = useRef<DocStats>({ lines: 1, words: 0, chars: 0 });
@@ -759,16 +896,22 @@ export const TugTextCardEditor = React.forwardRef<
           // A dropped `.zip` writes a perfectly good link that any other tool
           // will follow; it just is not a thing this card has a viewer for, so
           // it stays inert rather than lighting up and doing nothing.
+          // Resolved against the document's asset base rather than its path,
+          // so a link in a not-yet-saved buffer opens like any other — an
+          // untitled manual buffer has `path === null`, which used to make
+          // ⌘-click dead there. `resolveRelativePath`, not `resolveAssetPath`:
+          // ⌘-click follows *any* in-tree relative link, and narrowing it to
+          // `assets/` would silently kill a hand-written `images/diagram.png`.
           canOpenRelative: (destination) => {
-            const resolved = resolveAgainstDoc(
-              storeRef.current.getSnapshot().path,
+            const resolved = resolveRelativePath(
+              assetBaseRef.current,
               destination,
             );
             return resolved !== null && isViewableFile(resolved);
           },
           openRelative: (destination) => {
-            const resolved = resolveAgainstDoc(
-              storeRef.current.getSnapshot().path,
+            const resolved = resolveRelativePath(
+              assetBaseRef.current,
               destination,
             );
             if (resolved !== null) openRelativeRef.current(resolved);
@@ -780,9 +923,73 @@ export const TugTextCardEditor = React.forwardRef<
         // sink is a prop ([L07]).
         fileDropExtension({
           host,
-          getDocPath: () => storeRef.current.getSnapshot().path,
-          onError: (message) => attachmentErrorRef.current?.(message),
+          getAssetBase: () => assetBaseDescriptor(),
+          onError: (name, message) => reportAttachmentFailure(name, message),
         }),
+        // ⌘V with image data. The native clipboard bridge's read result
+        // carries no image bytes at all, so the DOM `paste` event is the only
+        // channel a screenshot can arrive through — which is why this is a CM6
+        // dom handler rather than a responder action.
+        EditorView.domEventHandlers({
+          // ⌘C / ⌘X are `routing: "native"` commands, so AppKit performs the
+          // copy against the WKWebView and what actually runs is this DOM
+          // event — not the responder action. The sidecar has to be written
+          // here or a keyboard copy carries plain text only, and the
+          // attachment does not survive the hop.
+          copy: (event, view) => writeSelectionSidecar(view, event, false),
+          cut: (event, view) => writeSelectionSidecar(view, event, true),
+          paste: (event, view) => {
+            const files = extractImageFiles(event.clipboardData?.items ?? null);
+            if (files === null || files.length === 0) {
+              // No image data. The clipboard may still carry a Tug sidecar —
+              // an attachment copied from the prompt entry or another document
+              // — but this event cannot see the private pasteboard type, so
+              // the shared routine asks the host. It reports whether it
+              // handled the paste; if not, CM6's default text paste runs.
+              if (!hasNativeClipboardBridge()) return false;
+              event.preventDefault();
+              void (async () => {
+                if (await pasteAttachmentsRef.current()) return;
+                const { text } = await readClipboardViaNative();
+                if (text.length > 0 && view.dom.isConnected) {
+                  insertPastedText(view, text);
+                }
+              })();
+              return true;
+            }
+            const base = assetBaseDescriptor();
+            if (base === null) return false;
+            event.preventDefault();
+            const at = view.state.selection.main.from;
+            void (async () => {
+              // No names: pasted image data has none, so the server mints a
+              // timestamped one where the write happens ([P11]).
+              const links = await linksForFiles(
+                base,
+                files,
+                reportAttachmentFailure,
+                false,
+              );
+              if (!view.dom.isConnected || links.length === 0) return;
+              const pos = Math.min(at, view.state.doc.length);
+              const insert = links.join(" ");
+              // One transaction, so one undo removes the whole paste.
+              view.dispatch({
+                changes: { from: pos, insert },
+                selection: { anchor: pos + insert.length },
+                userEvent: "input.paste",
+              });
+            })();
+            return true;
+          },
+        }),
+        // Removing an attachment moves its file to the Trash, and the undo
+        // brings both halves back — coupled through the history itself rather
+        // than through bookkeeping beside it.
+        assetTrashInvertedEffects,
+        assetTrashEffectHandler((name, message) =>
+          reportAttachmentFailure(name, message),
+        ),
         search({ top: true }),
         // Every user edit arms the autosave debounce. Store-driven
         // replacements (external-change reverts) carry the
@@ -806,6 +1013,10 @@ export const TugTextCardEditor = React.forwardRef<
             // Store-driven reverts must NOT re-arm autosave; the stats
             // above still refresh for them.
             if (!isExternal) storeRef.current.noteEdit();
+            // The attachment strip is a projection of this text ([P01]). The
+            // call is a string compare and an idle-timer reset; the parse
+            // itself never runs on the edit path.
+            assetProjectionRef.current?.noteChanged();
           }
           if (update.docChanged || update.selectionSet) {
             publishStats(update.state);
@@ -830,6 +1041,11 @@ export const TugTextCardEditor = React.forwardRef<
       getPositions,
       applyPositions,
     });
+
+    // The strip derives from this buffer. Handing over a getter rather than a
+    // string is what keeps the rope out of the edit path — the projection
+    // reads it once per idle window, in the parse that needed it anyway.
+    assetProjectionRef.current?.setTextSource(() => cmView.state.doc.toString());
 
     // Seed the status bar with the mounted document's stats.
     docStatsRef.current = {
@@ -1127,6 +1343,25 @@ export const TugTextCardEditor = React.forwardRef<
   );
   anchorNavigateRef.current = revealLineFn;
 
+  const revealOffsetsFn = useCallback((from: number, to: number): void => {
+    const live = viewRef.current;
+    if (live === null) return;
+    const length = live.state.doc.length;
+    const start = Math.max(0, Math.min(from, length));
+    const end = Math.max(start, Math.min(to, length));
+    live.dispatch({
+      selection: { anchor: start },
+      effects: [
+        EditorView.scrollIntoView(start, { y: "center" }),
+        setRevealFlash.of({ from: start, to: end }),
+      ],
+    });
+    live.focus();
+    window.setTimeout(() => {
+      viewRef.current?.dispatch({ effects: setRevealFlash.of(null) });
+    }, REVEAL_FLASH_MS);
+  }, []);
+
   useImperativeHandle(
     ref,
     (): TugTextCardEditorDelegate => ({
@@ -1134,6 +1369,7 @@ export const TugTextCardEditor = React.forwardRef<
       focus: () => viewRef.current?.focus(),
       responderId: () => responderId,
       revealLine: revealLineFn,
+      revealOffsets: revealOffsetsFn,
       setSearchQuery: setSearchQueryFn,
       selectFirstMatch: selectFirstMatchFn,
       clearSearch: clearSearchFn,
@@ -1152,6 +1388,7 @@ export const TugTextCardEditor = React.forwardRef<
     }),
     [
       revealLineFn,
+      revealOffsetsFn,
       setSearchQueryFn,
       selectFirstMatchFn,
       clearSearchFn,
@@ -1245,7 +1482,15 @@ export const TugTextCardEditor = React.forwardRef<
     if (from === to) return true; // nothing selected — handled no-op
     const text = live.state.sliceDoc(from, to);
     if (hasNativeClipboardBridge()) {
-      return writeClipboardViaNative(text, "");
+      // The plain-text flavor is always the literal markdown, so an external
+      // app pastes exactly what the document says. The sidecar rides beside
+      // it, carrying the absolute path of every attachment in the selection —
+      // a relative link means nothing in a surface with a different base.
+      const sidecar = buildAssetSidecar(text, assetBaseRef.current);
+      return writeClipboardViaNative(
+        text,
+        sidecar === null ? "" : JSON.stringify(sidecar),
+      );
     }
     void navigator.clipboard?.writeText(text);
     return true;
@@ -1300,9 +1545,46 @@ export const TugTextCardEditor = React.forwardRef<
     };
   }, []);
 
+  /**
+   * The attachment half of a paste, shared by **both** entry points a ⌘V on
+   * this card actually has: the responder route below, and the CM6 DOM
+   * handler. Two implementations of one gesture is how the surfaces drifted
+   * apart the first time.
+   *
+   * Resolves `true` when it handled the paste — an attachment landed and the
+   * markdown was inserted — and `false` when the clipboard carried no
+   * attachments, in which case the caller does its ordinary text paste.
+   *
+   * The sidecar always comes from the native bridge. The DOM `paste` event
+   * cannot see the Tug-private `dev.tug.prompt-atoms` pasteboard type in its
+   * `clipboardData` at all, so asking the host is the only way either route
+   * can find it — the same reason `clipboard-filters.ts` asks in its own
+   * DOM-mode fallback.
+   */
+  const pasteAttachments = useCallback(async (): Promise<boolean> => {
+    if (!hasNativeClipboardBridge()) return false;
+    const base = assetBaseDescriptor();
+    if (base === null) return false;
+    const { atoms } = await readClipboardViaNative();
+    if (atoms.length === 0) return false;
+    const payload = parseClipboardSidecar(atoms);
+    if (payload === null) return false;
+    const markdown = await assetMarkdownForPaste(
+      payload,
+      base,
+      assetBaseRef.current,
+    );
+    if (markdown === null) return false;
+    const live = viewRef.current;
+    if (live === null || !live.dom.isConnected) return false;
+    insertPastedText(live, markdown);
+    return true;
+  }, [assetBaseDescriptor]);
+  pasteAttachmentsRef.current = pasteAttachments;
+
   /** Insert clipboard text at the selection, via a transform. */
   const pasteWithTransform = useCallback(
-    (transform: (text: string) => string): ActionHandlerResult => {
+    (transform: PasteTransform): ActionHandlerResult => {
       const live = viewRef.current;
       if (live === null || readOnlyRef.current) return;
       live.focus();
@@ -1322,7 +1604,17 @@ export const TugTextCardEditor = React.forwardRef<
       if (hasNativeClipboardBridge()) {
         const readPromise = readClipboardViaNative();
         return () => {
-          void readPromise.then(({ text }) => insert(text));
+          void (async () => {
+            // Attachments first: a clipboard carrying an image from the prompt
+            // entry should become a file and a link here, not the label text
+            // the plain-text flavor holds. A transforming paste (Paste as
+            // Quote / as Plain Text) is asking for text, so it skips this.
+            if (transform === IDENTITY_TRANSFORM && (await pasteAttachments())) {
+              return;
+            }
+            const { text } = await readPromise;
+            insert(text);
+          })();
         };
       }
       if (typeof navigator !== "undefined" && navigator.clipboard?.readText) {
@@ -1333,11 +1625,11 @@ export const TugTextCardEditor = React.forwardRef<
       }
       return;
     },
-    [],
+    [pasteAttachments],
   );
 
   const handlePaste = useCallback(
-    (): ActionHandlerResult => pasteWithTransform((text) => text),
+    (): ActionHandlerResult => pasteWithTransform(IDENTITY_TRANSFORM),
     [pasteWithTransform],
   );
 

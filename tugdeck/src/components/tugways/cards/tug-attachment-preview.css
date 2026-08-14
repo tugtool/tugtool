@@ -199,6 +199,38 @@
   height: 45%;
 }
 
+.tug-attachment-preview__file {
+  /* A non-image attachment — a zip, an archive. It has no pixels by nature,
+     so it takes the broken tile's framed footprint with a document glyph
+     instead: same slot, same size, and it reads as a thing rather than as an
+     image that failed. The caption below already names the file. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border: 1px solid color-mix(in srgb,
+    var(--tug7-element-global-text-normal-default-rest) 50%, transparent);
+  background: var(--tugx-attachment-thumb-bg,
+    var(--tug7-element-field-fill-rest,
+    var(--tug-color-surface-2, #1d1d1d)));
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-attachment-preview__file svg {
+  width: 45%;
+  height: 45%;
+}
+
+.tug-attachment-preview__file[data-failed] {
+  /* An attach that did not land. The same tile in the caution tone — the file
+     it stands for is named on the caption right below, which is what a banner
+     could never do. */
+  border-color: var(--tug7-element-global-border-caution-plain-rest,
+    color-mix(in srgb, currentColor 60%, transparent));
+  color: var(--tug7-element-global-text-caution-default-rest, currentColor);
+}
+
 .tug-attachment-preview__caption {
   /* The unified `image-N` label beneath the thumbnail. A single centred
      line, monospaced to match the inline chip's label rendering — readers
@@ -390,7 +422,8 @@
 }
 
 [data-slot="tug-attachment-preview"][data-deletable]
-  .tug-attachment-preview__broken {
+  .tug-attachment-preview__broken,
+  .tug-attachment-preview__file {
   /* Fixed square in the height-driven compose strip, matching the pending
      placeholder's footprint so a recalled broken tile holds the same slot. */
   width: var(--tugx-attachment-tile-height, 56px);

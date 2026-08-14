@@ -3428,6 +3428,10 @@ export const TugPromptEntry = React.forwardRef<
                 atoms={composeImageAtoms}
                 bytesStore={attachmentBytesStore}
                 deletable
+                // The Z4C zone is a fixed-height single row, so the scrollbar's
+                // pixels have to come out of the tile height. This is the only
+                // surface that layout applies to.
+                measureRowOverflow
                 focusGroup={attachmentFocusGroup}
                 focusOrderBase={attachmentFocusOrderBase}
               />

@@ -446,6 +446,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "menuState")
         contentController.add(self, name: "hmrUpdate")
         contentController.add(self, name: "openPath")
+        contentController.add(self, name: "trashPath")
+        contentController.add(self, name: "restorePath")
         contentController.add(self, name: "exportSession")
         contentController.add(self, name: "checkForUpdates")
 
@@ -867,6 +869,47 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         }
     }
 
+    /// `wanted` if nothing is there, else the same name with `-2`, `-3`, …
+    /// before the extension. Mirrors tugcast's `resolve_collision_name`, so a
+    /// restored asset is named the way an attached one would have been.
+    static func unoccupiedURL(for wanted: URL, fileManager fm: FileManager) -> URL {
+        if !fm.fileExists(atPath: wanted.path) { return wanted }
+        let dir = wanted.deletingLastPathComponent()
+        let stem = wanted.deletingPathExtension().lastPathComponent
+        let ext = wanted.pathExtension
+        var n = 2
+        while true {
+            let name = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
+            let candidate = dir.appendingPathComponent(name)
+            if !fm.fileExists(atPath: candidate.path) { return candidate }
+            n += 1
+        }
+    }
+
+    /// Deliver a trash/restore result to JavaScript. Same double-serialization
+    /// as `clipboardRead`: JSON for the payload, then JSON again to produce a
+    /// valid JS string literal (U+2028 / U+2029 are legal in JSON and not in
+    /// JS source text).
+    func replyToTrashRequest(_ payload: [String: Any]) {
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
+              let jsonString = String(data: jsonData, encoding: .utf8),
+              let quotedData = try? JSONSerialization.data(withJSONObject: jsonString,
+                                                          options: [.fragmentsAllowed]),
+              let quotedString = String(data: quotedData, encoding: .utf8) else {
+            NSLog("MainWindow: JSON serialization failed for trash reply")
+            return
+        }
+        let script = "window.__tugTrashCallback?.(JSON.parse(\(quotedString)))"
+        DispatchQueue.main.async { [weak self] in
+            self?.webView.evaluateJavaScript(script) { _, error in
+                if let error = error {
+                    NSLog("MainWindow: evaluateJavaScript failed for trash reply: %@",
+                          error.localizedDescription)
+                }
+            }
+        }
+    }
+
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
     func cleanupBridge() {
         guard !bridgeCleaned else { return }
@@ -882,6 +925,8 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "menuState")
         contentController.removeScriptMessageHandler(forName: "hmrUpdate")
         contentController.removeScriptMessageHandler(forName: "openPath")
+        contentController.removeScriptMessageHandler(forName: "trashPath")
+        contentController.removeScriptMessageHandler(forName: "restorePath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
         contentController.removeScriptMessageHandler(forName: "checkForUpdates")
         bridgeCleaned = true
@@ -1358,6 +1403,63 @@ extension MainWindow: WKScriptMessageHandler {
                     fm.createFile(atPath: expanded, contents: nil)
                 }
                 NSWorkspace.shared.open(url)
+            }
+        case "trashPath":
+            // Move an attachment to the macOS Trash. `NSWorkspace.recycle`
+            // reports the destination URL, and that URL is the entire restore
+            // mechanism — `restorePath` moves the file back from it, so undo
+            // never needs Finder's Put Back to be programmatically drivable.
+            // Trashing rather than unlinking also means Put Back works for a
+            // user who never presses Cmd-Z.
+            //
+            // JS-side contract: post {requestId, path} and wait for
+            // window.__tugTrashCallback({requestId, ok, trashedPath, error}).
+            // See os-trash.ts.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["requestId"] as? String,
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty else { return }
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            NSWorkspace.shared.recycle([url]) { [weak self] newURLs, error in
+                guard let self = self else { return }
+                if let error = error {
+                    self.replyToTrashRequest(["requestId": requestId, "ok": false,
+                                              "error": error.localizedDescription])
+                    return
+                }
+                guard let trashed = newURLs[url] else {
+                    self.replyToTrashRequest(["requestId": requestId, "ok": false,
+                                              "error": "no trashed URL reported"])
+                    return
+                }
+                self.replyToTrashRequest(["requestId": requestId, "ok": true,
+                                          "trashedPath": trashed.path])
+            }
+        case "restorePath":
+            // The symmetric half of `trashPath`, and it has to live here: the
+            // fs route family has no move verb, and /api/fs/write is a text
+            // writer that would corrupt binary bytes. The host already holds
+            // the trashed URL it minted, so the restore is one moveItem.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["requestId"] as? String,
+                  let trashedPath = body["trashedPath"] as? String, !trashedPath.isEmpty,
+                  let destinationPath = body["destination"] as? String, !destinationPath.isEmpty
+            else { return }
+            let from = URL(fileURLWithPath: (trashedPath as NSString).expandingTildeInPath)
+            let wanted = URL(fileURLWithPath: (destinationPath as NSString).expandingTildeInPath)
+            let fm = FileManager.default
+            do {
+                try fm.createDirectory(at: wanted.deletingLastPathComponent(),
+                                       withIntermediateDirectories: true)
+                // Something may have taken the name back while the file sat in
+                // the Trash. Suffix rather than overwrite, and report where it
+                // actually landed so the deck can rewrite the re-inserted link.
+                let target = Self.unoccupiedURL(for: wanted, fileManager: fm)
+                try fm.moveItem(at: from, to: target)
+                replyToTrashRequest(["requestId": requestId, "ok": true,
+                                     "restoredPath": target.path])
+            } catch {
+                replyToTrashRequest(["requestId": requestId, "ok": false,
+                                     "error": error.localizedDescription])
             }
         case "checkForUpdates":
             // The update bulletin's action. Brings Sparkle's standard update

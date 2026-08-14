@@ -29,15 +29,18 @@
  * atoms, no bytes-store, no downsample. A document attachment is a file, not
  * a payload.
  *
- * ## The untitled guard
+ * ## Every document has somewhere to put a file
  *
- * An untitled buffer refuses the drop. Not for want of a directory — it has a
- * very real one, an asides draft path under the Tug data root — but because
- * that directory is app-private and temporary: `saveAs` moves the document
- * out of it, and an `assets/` folder written there would be invisible to the
- * user and orphaned the moment the buffer is saved anywhere. Saving a
- * *titled* document elsewhere breaks its links the same way any `mv` would;
- * that is the standard cost of relative links and is not guarded here.
+ * There is no untitled guard. A buffer that has never been saved carries a
+ * draft id, and a draft id names a real writable home under the Tug data root
+ * — so the drop writes `assets/<name>` there and the document says exactly
+ * what it will say after it is saved. Save As migrates the home into the
+ * destination directory, and because the relative link is stable across that
+ * move, the document text usually does not change at all.
+ *
+ * Saving a *titled* document elsewhere by any other means breaks its links the
+ * way any `mv` would; that is the standard cost of relative links and is not
+ * guarded here.
  *
  * Laws:
  *  - [L06] the drop ring and caret are DOM/CSS — a `data-drop-active`
@@ -59,34 +62,10 @@ import {
 } from "../tug-text-editor/drop-extension";
 import {
   uploadDocAttachment,
+  type AssetBaseDescriptor,
   type DocAttachment,
 } from "@/lib/attachment-upload";
-
-/**
- * The absolute path a relative markdown destination names, resolved against
- * the directory holding `docPath`, or `null` when it cannot be resolved to a
- * plain sibling path.
- *
- * Deliberately narrow: only a destination that stays inside the document's own
- * directory tree resolves. An absolute destination, a URL, an anchor, and a
- * `..` escape all answer `null` — a ⌘-click is a reading gesture, and the
- * paths it can reach should be the ones the document itself put there. What
- * comes back is handed to the same guarded open path every other producer
- * uses; nothing assembled here is persisted or compared ([L29]).
- */
-export function resolveAgainstDoc(
-  docPath: string | null,
-  destination: string,
-): string | null {
-  if (docPath === null || destination.length === 0) return null;
-  if (destination.startsWith("#") || destination.startsWith("/")) return null;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(destination)) return null;
-  const segments = destination.split("/");
-  if (segments.some((s) => s === "" || s === "." || s === "..")) return null;
-  const dir = docPath.slice(0, docPath.lastIndexOf("/"));
-  if (dir.length === 0) return null;
-  return `${dir}/${segments.join("/")}`;
-}
+import { encodeLinkDestination } from "@/lib/asset-links";
 
 /** True when the drag carries at least one file. */
 function acceptsDrag(transfer: DataTransfer | null): boolean {
@@ -102,23 +81,6 @@ function setDropActive(host: HTMLElement | null, active: boolean): void {
   } else {
     host.removeAttribute("data-drop-active");
   }
-}
-
-/**
- * Percent-encode a link destination so CommonMark reads it as one
- * destination. Spaces and parentheses are what actually break — a space ends
- * the destination, a `)` closes it early — and everything else in a filename
- * is left legible on purpose, since the point of keeping the original name is
- * that somebody reads it in the source.
- */
-export function encodeLinkDestination(relativePath: string): string {
-  return relativePath
-    .replace(/%/g, "%25")
-    .replace(/ /g, "%20")
-    .replace(/\(/g, "%28")
-    .replace(/\)/g, "%29")
-    .replace(/</g, "%3C")
-    .replace(/>/g, "%3E");
 }
 
 /**
@@ -156,13 +118,52 @@ export interface FileDropOptions {
   /** The editor's host element, for the drop ring. */
   host: HTMLElement | null;
   /**
-   * The document's absolute path, or `null` for an untitled buffer. Already
-   * canonical — it came back from the store's own `openPath` resolution, and
-   * the route re-guards it regardless.
+   * Which document's assets this drop belongs to — a saved one by path, or a
+   * not-yet-saved one by draft id ([P02]). `null` only when the card has no
+   * binding at all, which is not a state a mounted editor rests in.
+   *
+   * A path here is already canonical: it came back from the store's own
+   * `openPath` resolution, and the route re-guards it regardless.
    */
-  getDocPath: () => string | null;
-  /** Surface a failure in the card's notice vocabulary. */
-  onError: (message: string) => void;
+  getAssetBase: () => AssetBaseDescriptor | null;
+  /** Report a failure for one named file, in place ([P06]). */
+  onError: (name: string, message: string) => void;
+}
+
+/**
+ * Upload `files` into the document's asset base and return the markdown links
+ * for the ones that landed.
+ *
+ * Shared by the drop path and the paste path, which differ only in where the
+ * files came from and whether they have names.
+ */
+export async function linksForFiles(
+  base: AssetBaseDescriptor,
+  files: readonly File[],
+  onError: (name: string, message: string) => void,
+  // A paste has no filename; the server mints one, so the timestamp and the
+  // write are a single step ([P11]).
+  named: boolean,
+): Promise<string[]> {
+  const uploaded = await Promise.all(
+    files.map(async (file) => ({
+      file,
+      attachment: await uploadDocAttachment(base, file, named ? file.name : null),
+    })),
+  );
+  const links: string[] = [];
+  for (const { file, attachment } of uploaded) {
+    if (attachment === null) {
+      onError(file.name, `Could not attach ${file.name}.`);
+      continue;
+    }
+    const droppedName = named
+      ? file.name
+      : // The server named it; the document should say the same thing.
+        attachment.relativePath.replace(/^assets\//, "");
+    links.push(linkForAsset(attachment, droppedName, file.type));
+  }
+  return links;
 }
 
 /**
@@ -223,12 +224,9 @@ export function fileDropExtension(options: FileDropOptions): Extension {
         event.stopPropagation();
         setDropActive(host, false);
 
-        const docPath = options.getDocPath();
-        if (docPath === null) {
+        const base = options.getAssetBase();
+        if (base === null) {
           clearDropCaret(view);
-          options.onError(
-            "Save the file first — an unsaved document has nowhere to keep an attachment.",
-          );
           return;
         }
 
@@ -241,23 +239,9 @@ export function fileDropExtension(options: FileDropOptions): Extension {
         clearDropCaret(view);
 
         void (async () => {
-          const uploaded = await Promise.all(
-            files.map(async (file) => ({
-              file,
-              attachment: await uploadDocAttachment(docPath, file),
-            })),
-          );
+          const links = await linksForFiles(base, files, options.onError, true);
           // The editor may have unmounted while the bytes were in flight.
           if (!view.dom.isConnected) return;
-
-          const links: string[] = [];
-          for (const { file, attachment } of uploaded) {
-            if (attachment === null) {
-              options.onError(`Could not attach ${file.name}.`);
-              continue;
-            }
-            links.push(linkForAsset(attachment, file.name, file.type));
-          }
           if (links.length === 0) return;
 
           // One transaction, so one undo removes the whole drop.

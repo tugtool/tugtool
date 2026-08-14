@@ -362,3 +362,99 @@ describe("planLeadingCommandPaste", () => {
     expect(planLeadingCommandPaste("/path/to/file.md", 0, resolve)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Attachment interop fields — they have to survive their own parser
+// ---------------------------------------------------------------------------
+
+describe("sidecar attachment fields round-trip", () => {
+  it("preserves assetPath, assetName, and bytes.path through parse", () => {
+    // The parser does not pass objects through — it reconstructs every entry
+    // from a named field list. A field the writer adds and the reader does not
+    // name is stripped on every paste, silently, which is exactly what this
+    // guards. `bytes.path` matters most: it names the ORIGINAL upload where
+    // `content` is the downsample, so a destination that loses it can only
+    // write a degraded copy of the image — and the degraded copy renders
+    // convincingly enough that nobody notices.
+    const payload = {
+      version: 1 as const,
+      text: `a${TUG_ATOM_CHAR}b`,
+      atoms: [
+        {
+          position: 1,
+          segment: {
+            kind: "atom" as const,
+            type: "image",
+            label: "image-1",
+            value: "image-1",
+            id: "abc-123",
+          },
+          bytes: { ...SAMPLE_BYTES, path: "/u/docs/assets/photo.png" },
+          assetPath: "/u/docs/assets/photo.png",
+          assetName: "photo.png",
+        },
+      ],
+    };
+
+    const parsed = parseClipboardSidecar(JSON.stringify(payload));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.atoms[0]).toEqual(payload.atoms[0]);
+    expect(parsed!.atoms[0].bytes!.path).toBe("/u/docs/assets/photo.png");
+  });
+
+  it("preserves the non-atom asset range list", () => {
+    // A non-image link is a range of literal text, not a U+FFFC position, so
+    // it cannot ride as an atom entry — it rides here instead.
+    const payload = {
+      version: 1 as const,
+      text: "see [notes](assets/notes.zip) for more",
+      atoms: [],
+      assets: [
+        {
+          from: 4,
+          to: 28,
+          assetPath: "/u/docs/assets/notes.zip",
+          assetName: "notes.zip",
+        },
+      ],
+    };
+
+    const parsed = parseClipboardSidecar(JSON.stringify(payload));
+
+    expect(parsed).not.toBeNull();
+    expect(parsed!.assets).toEqual(payload.assets);
+  });
+
+  it("a payload with none of the new fields parses unchanged", () => {
+    // Every sidecar written before this existed, and every copy of a
+    // selection that has no attachments in it.
+    const payload = {
+      version: 1 as const,
+      text: `a${TUG_ATOM_CHAR}b`,
+      atoms: [{ position: 1, segment: SAMPLE_FILE.segment }],
+    };
+
+    const parsed = parseClipboardSidecar(JSON.stringify(payload));
+
+    expect(parsed).toEqual(payload);
+    expect(parsed!.assets).toBeUndefined();
+  });
+
+  it("drops a malformed asset range rather than the whole payload", () => {
+    const parsed = parseClipboardSidecar(
+      JSON.stringify({
+        version: 1,
+        text: "hello",
+        atoms: [],
+        assets: [{ from: "nope", to: 3, assetPath: "/x", assetName: "x" }],
+      }),
+    );
+
+    // Degrading to reference-only is the correct behavior; refusing the paste
+    // outright over one bad range is not.
+    expect(parsed).not.toBeNull();
+    expect(parsed!.text).toBe("hello");
+    expect(parsed!.assets).toBeUndefined();
+  });
+});

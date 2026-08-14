@@ -465,7 +465,8 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 | `tugdeck/src/lib/asset-links.ts` | Parse / decode / encode / resolve `assets/` links ([Spec S02](#s02-projection-model), [P08], [P12]) |
 | `tugdeck/src/lib/asset-projection.ts` | The `AssetProjection` store ([P01], [Spec S02](#s02-projection-model)) |
 | `tests/app-test/at0412-text-card-asset-strip.test.ts` | Strip projection, hand-edit, untitled drop, save-as migration |
-| `tests/app-test/at0413-attachment-interop.test.ts` | Clipboard interop both directions, cross-document asset copy |
+| `tugdeck/src/components/tugways/tug-text-card-editor/asset-clipboard.ts` | Sidecar geometry + asset copy on paste ([P04], [P05]) |
+| `tugdeck/src/components/tugways/tug-text-card-editor/asset-trash.ts` | ✕ + compound undo through `invertedEffects` ([P07]) |
 | `tests/app-test/at0414-asset-trash-undo.test.ts` | ✕ + compound undo |
 
 #### Symbols to add / modify {#symbols}
@@ -519,17 +520,17 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Draft-document asset homes + attach-base route | pending | — |
-| #step-2 | Save-As asset migration route | pending | — |
-| #step-3 | The trash host bridge | pending | — |
-| #step-4 | Git exclusion of Tug-created assets directories | pending | — |
-| #step-5 | Shared asset-link library with readable destinations | pending | — |
-| #step-6 | The projection store and the Text card strip | pending | — |
-| #step-7 | Drops and pastes that never refuse | pending | — |
-| #step-8 | Remove the error vocabulary; one derived banner | pending | — |
-| #step-9 | Clipboard interop in both directions | pending | — |
-| #step-10 | The ✕ gesture with compound undo | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Draft-document asset homes + attach-base route | done | `20776ae75` |
+| #step-2 | Save-As asset migration route | done | `6e1e6a53f` |
+| #step-3 | The trash host bridge | done | `2c189b35c` |
+| #step-4 | Git exclusion of Tug-created assets directories | done | `a0b5436c9` |
+| #step-5 | Shared asset-link library with readable destinations | done | `73d089331` |
+| #step-6 | The projection store and the Text card strip | done | `50ea2879f` |
+| #step-7 | Drops and pastes that never refuse | done | `b444662ac` |
+| #step-8 | Remove the error vocabulary; one derived banner | done | `3db4b2c06` |
+| #step-9 | Clipboard interop in both directions | done | `d7141113d` |
+| #step-10 | The ✕ gesture with compound undo | done | `388b0ad7d` |
+| #step-11 | Integration checkpoint | done | `1267632cd` |
 
 ---
 
@@ -816,11 +817,13 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 
 **Tests:**
 - [ ] Deck unit: serialize → JSON → `parseClipboardSidecar` round-trips deep-equal — `assetPath`/`assetName`, the `assets` range list, and `bytes.path` all survive; a v1 payload without any of them parses unchanged.
-- [ ] App-test `at0413` (new, `@covers` `clipboard-filters.ts`, `tug-text-card-editor.tsx`, `tug-prompt-entry.tsx`): prompt atom → Text card produces a file, a link, and a tile; that link → prompt produces an atom whose wire payload has non-empty content; a `.zip` link → prompt appears as markup with no tile; that markup → a *second* document in a different directory copies the file and shows a tile.
+- [ ] Deck unit: the sidecar geometry — an image link becomes a U+FFFC atom entry, a non-image link stays literal text in the `assets` range list, and every offset indexes the payload's own text rather than the document's.
+
+**Note — why the interop has no app-test.** This step planned an `at0413` driving ⌘C in one Text card and ⌘V in another. It cannot be written against this harness. ⌘C / ⌘V are `routing: "native"` commands, so what runs is the editor's DOM `copy` / `paste` handler; delivering those events by hand is fine (the drop and paste tests already do it), but the copy needs a real CM6 selection first, and neither route to one exists here — ⌘A is swallowed because the harness cannot make an editor the responder chain's leaf ([app-test chain first responder]), and a DOM `Selection` set directly does not stick in the app-test's background window. Both limits are pre-existing and recorded. So the geometry — the part with real design risk, and the part that caught an offset bug on its first run — is pinned by unit tests, and the file-copy half is verified in the walkthrough below.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0413-attachment-interop.test.ts`
+- [ ] `cd tugdeck && bun test src/components/tugways/tug-text-card-editor/__tests__/asset-clipboard.test.ts src/components/tugways/__tests__/tug-text-editor-clipboard.test.ts`
 
 ---
 
@@ -868,7 +871,7 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 - [ ] Walk every Success Criterion by hand in a debug instance built with `just app-debug`, including the git-status check on a real repo.
 - [ ] Confirm no attachment path produces a percent-escape in document text.
 - [ ] Confirm `cards/text-card.tsx` renders at most one `TugPaneBanner` and none for attachments.
-- [ ] Rename the duplicate app-test number: `at0409-attachment-durability.test.ts` and `at0409-plan-review-borrow.test.ts` both exist on `main`; give the durability test a free number and update its `@covers` header.
+- [x] Rename the duplicate app-test number: `at0409-attachment-durability.test.ts` and `at0409-plan-review-borrow.test.ts` both existed on `main`; the durability test is now `at0413-attachment-durability.test.ts`.
 - [ ] Update `roadmap/markdown-attachments.md`'s Status to record that this follow-on supersedes its raw-source-editor doctrine, its untitled guard, and its `[Q01]`.
 
 **Tests:**
@@ -877,7 +880,7 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast`
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0409-attachment-durability.test.ts at0410-text-card-file-drop.test.ts at0412-text-card-asset-strip.test.ts at0413-attachment-interop.test.ts at0414-asset-trash-undo.test.ts`
+- [ ] `just app-test at0410-text-card-file-drop.test.ts at0412-text-card-asset-strip.test.ts at0413-attachment-durability.test.ts at0414-asset-trash-undo.test.ts`
 - [ ] `just app-test-covers-check`
 
 ---
@@ -897,7 +900,7 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 
 **Acceptance tests:**
 - [ ] `at0412-text-card-asset-strip.test.ts`
-- [ ] `at0413-attachment-interop.test.ts`
+- [ ] The interop's sidecar geometry, as deck unit tests — see the Step 9 note on why it is not an app-test.
 - [ ] `at0414-asset-trash-undo.test.ts`
 - [ ] The first round's `at0410-text-card-file-drop.test.ts` and the attachment-durability test still green.
 
@@ -915,5 +918,5 @@ Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/re
 |------------|--------------|
 | Server storage semantics | `cd tugrust && cargo nextest run -p tugcast` |
 | Deck types and bundle | `cd tugdeck && bunx tsc --noEmit && bunx vite build` |
-| The gestures, end to end | `just app-test at0412-… at0413-… at0414-…` |
+| The gestures, end to end | `just app-test at0412-… at0414-…` |
 | Test coverage declarations | `just app-test-covers-check` |

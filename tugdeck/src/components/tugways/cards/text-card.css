@@ -40,6 +40,34 @@
   min-height: 0;
 }
 
+/* ---- Attachment strip ---- */
+
+/* What the document has attached, derived from its own text. A single
+ * fixed-height row below the editor — the same shape the prompt entry's
+ * compose strip takes, since it is the same component. It sits between the
+ * editor and the find bar, and is absent entirely when the document has no
+ * attachments, so an ordinary text file's layout is unchanged. */
+/* The selector carries `[data-deletable]` deliberately, and its specificity is
+   the point. The strip renders that attribute because its tiles have a ✕, and
+   the component's own stylesheet reads the same attribute as "this is the
+   prompt entry's Z4C zone" — where the strip is given `height: 100%` because a
+   space-taking scrollbar has to come out of a fixed budget. Inherited here that
+   rule hands the strip the whole card, which collapses the editor's viewport to
+   zero — and CM6 renders only what is in its viewport, so the document would go
+   blank. This strip is sized by its own content instead. */
+[data-slot="tug-attachment-preview"][data-deletable].text-card-asset-strip {
+  display: flex;
+  flex: 0 0 auto;
+  height: auto;
+  align-items: flex-start;
+  gap: var(--tugx-attachment-gap, 8px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px var(--tug-space-3, 12px);
+  border-top: 1px solid var(--tug7-element-global-border-normal-plain-rest,
+    color-mix(in srgb, currentColor 15%, transparent));
+}
+
 /* ---- Bottom status bar ---- */
 
 /* A thin strip below the editor: line ending, file type, caret L/C, and the

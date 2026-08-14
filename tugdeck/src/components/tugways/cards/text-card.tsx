@@ -47,6 +47,7 @@ import "./text-card.css";
 
 import React, {
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useRef,
@@ -79,6 +80,9 @@ import { useTugSheet } from "@/components/tugways/tug-sheet";
 import { useFileSaveSheets } from "./text-card-save-sheets";
 
 import { TugTextCardEditor, type TugTextCardEditorDelegate } from "../tug-text-card-editor";
+import { AssetProjection } from "@/lib/asset-projection";
+import { removeAssetWithUndo } from "../tug-text-card-editor/asset-trash";
+import { TugAttachmentPreview } from "./tug-attachment-preview";
 import { TugFileChooser } from "../tug-file-chooser";
 import { TugPaneBanner } from "../tug-pane-banner";
 import { TugPushButton } from "../tug-push-button";
@@ -292,11 +296,25 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // defaults on first open, then owned by this card ([D07] pattern).
   const { settings: editorSettings, setSetting } = useTextCardSettings(cardId);
 
-  // Why a file drop did not attach — an untitled buffer, a write the server
-  // refused. Structure, not appearance: the banner's presence is content the
-  // card renders, and it is dismissed by the next successful drop or by the
-  // user closing it.
-  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  // The attachment strip, derived from the buffer's own text ([P01]). One
+  // instance per card, disposed with it; the editor feeds it the text source
+  // and the asset base, and it publishes the tiles below.
+  const [assetProjection] = useState(() => new AssetProjection());
+  useEffect(() => () => assetProjection.dispose(), [assetProjection]);
+  const assetTiles = useSyncExternalStore(
+    assetProjection.subscribe,
+    assetProjection.getSnapshot,
+    assetProjection.getSnapshot,
+  );
+  const assetAtoms = useSyncExternalStore(
+    assetProjection.subscribe,
+    assetProjection.getAtoms,
+    assetProjection.getAtoms,
+  );
+  // The responder's action map is built once; the ✕ resolves its tile through
+  // this rather than through a captured array ([L07]).
+  const assetTilesRef = useRef(assetTiles);
+  assetTilesRef.current = assetTiles;
 
   // Live editor stats (caret + counts) for the bottom status bar. The
   // editor writes it; the status bar reads it — so keystroke-rate
@@ -958,6 +976,28 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       [TUG_ACTIONS.CYCLE_FOCUS_MODE]: () => {
         cycle.toggle();
       },
+      // The strip's ✕ dispatches through the chain and the owner performs the
+      // removal ([L11]) — which here is both halves of a compound gesture: the
+      // link comes out of the document and the file goes to the macOS Trash,
+      // coupled so one ⌘Z brings both back ([P07]).
+      [TUG_ACTIONS.REMOVE_ATTACHMENT]: (payload) => {
+        const atomId = typeof payload?.value === "string" ? payload.value : "";
+        const tile = assetTilesRef.current.find((t) => t.id === atomId);
+        const view = editorRef.current?.view() ?? null;
+        if (tile === undefined || view === null) return;
+        if (tile.failed) {
+          // Nothing on disk to remove — dismissing the failed tile is all a ✕
+          // can mean here.
+          assetProjection.clearFailure(tile.name);
+          return;
+        }
+        void removeAssetWithUndo(
+          view,
+          { from: tile.from, to: tile.to },
+          tile.path,
+          (name, message) => assetProjection.noteFailure(name, message),
+        );
+      },
     },
     validateAction: (action) =>
       // Nothing for the Finder to select until the buffer is bound to a real
@@ -1129,7 +1169,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             onFindNavigated={() => findBarRef.current?.refreshCount()}
             onSaveCommand={onSaveCommand}
             onStats={statsStore.set}
-            onAttachmentError={setAttachmentError}
+            assetProjection={assetProjection}
             onOpenPath={(p) => {
               // The same routing every other open takes — a viewable kind
               // lands in a file-view card, and a path already open is reused
@@ -1139,6 +1179,35 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             }}
           />
         </cycle.CycleScope>
+        {/* What this document has attached, derived from its own text ([P01]).
+         * The same component the prompt entry mounts — extended for non-image
+         * tiles, never forked. It renders inside `CardContentResponderScope`
+         * so its ✕ dispatch resolves to this card ([L11]), and it returns
+         * `null` for an empty tile set, so a document with no attachments
+         * contributes no height at all. */}
+        {assetAtoms.length > 0 ? (
+          <TugAttachmentPreview
+            atoms={assetAtoms}
+            bytesStore={assetProjection.bytesStore}
+            className="text-card-asset-strip"
+            data-testid="text-card-asset-strip"
+            // Enabled only now that the ✕ has a restore path: no shipped
+            // intermediate state could ever remove a file irreversibly.
+            deletable={!snapshot.readOnly}
+            onActivateFile={(atom) => {
+              // A tile with no pixels: retry the attach that failed, or
+              // reveal the link the tile stands for — the document is where
+              // an attachment actually lives, so that is where a click goes.
+              const tile = assetTiles.find((t) => t.id === atom.id);
+              if (tile === undefined) return;
+              if (tile.failed) {
+                assetProjection.retryFailure(tile.name);
+                return;
+              }
+              editorRef.current?.revealOffsets(tile.from, tile.to);
+            }}
+          />
+        ) : null}
         {/* Under the SAME cycle the editor and the status strip use, so the
          * bar's stops take their seat in the card's one Tab order instead of
          * opening a walk of their own ([P10]) — the Session card wires its bar
@@ -1168,6 +1237,14 @@ export function TextCardContent({ cardId }: { cardId: string }) {
           />
         </cycle.CycleScope>
         {renderSheet()}
+        {/* The card's ONE banner. There used to be a second one for
+         * attachment failures, and the two were a live defect rather than
+         * merely redundant: `TugPaneBanner` sets and removes `inert` on the
+         * same `.tug-pane-body` with no refcount, so whichever unmounted first
+         * un-inerted the body under the other. Attachment failures now render
+         * on the tile that failed ([P06]), which leaves exactly one banner and
+         * makes the interference impossible by construction — the same shape
+         * the Session card gets by deriving a single banner. */}
         <TugPaneBanner
           visible={conflict !== null && snapshot.saveMode === "automatic"}
           variant="error"
@@ -1226,21 +1303,6 @@ export function TextCardContent({ cardId }: { cardId: string }) {
                 </TugPushButton>
               </>
             )
-          }
-        />
-        <TugPaneBanner
-          visible={attachmentError !== null}
-          variant="error"
-          tone="caution"
-          label="Attachment failed"
-          message={attachmentError ?? ""}
-          footer={
-            <TugPushButton
-              data-testid="text-card-attachment-error-dismiss"
-              onClick={() => setAttachmentError(null)}
-            >
-              OK
-            </TugPushButton>
           }
         />
       </div>

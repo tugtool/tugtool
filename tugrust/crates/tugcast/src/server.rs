@@ -1147,6 +1147,14 @@ pub(crate) fn build_app(
             )),
         )
         .route(
+            "/api/fs/attach-base",
+            get(crate::attachments::get_attach_base),
+        )
+        .route(
+            "/api/fs/attach/migrate",
+            post(crate::attachments::post_attach_migrate),
+        )
+        .route(
             "/api/fs/write",
             // Per-route body limit above axum's 2 MB default so an 8 MiB
             // file (the read cap) still saves through the JSON envelope.

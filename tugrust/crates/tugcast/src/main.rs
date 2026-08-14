@@ -18,6 +18,7 @@ mod fs_mkdir;
 mod fs_read;
 mod fs_stat;
 mod fs_write;
+mod git_exclude;
 mod host;
 mod jots;
 mod ledger_integrity;
