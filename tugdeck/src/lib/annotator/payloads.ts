@@ -27,6 +27,7 @@ import {
 } from "./detect-path-reference";
 import type { PathVerdict } from "./path-resolution";
 import type { AnnotationKind } from "./types";
+import { resolveAtomFilePath, type AtomPathRoots } from "@/lib/atom-file-path";
 
 /** A URL in transcript ink. */
 export interface UrlPayload {
@@ -40,7 +41,7 @@ export interface EmailPayload {
   address: string;
 }
 
-/** A slash command a click can seed into the composer. */
+/** A slash command a click can seed into the prompt. */
 export interface SlashCommandPayload {
   kind: "slash-command";
   /** Bare command name, no leading slash. */
@@ -49,7 +50,7 @@ export interface SlashCommandPayload {
   args: string;
 }
 
-/** A project shell command a click can seed into the composer. */
+/** A project shell command a click can seed into the prompt. */
 export interface ShellCommandPayload {
   kind: "shell-command";
   /** The whole command line, as written. */
@@ -76,14 +77,14 @@ export interface DirectoryPayload {
 
 /**
  * An image carried as bytes rather than as a file — a paste, or a
- * screenshot dropped into the composer. It has an id and no path, so the
+ * screenshot dropped into the prompt. It has an id and no path, so the
  * only thing "open" can mean is the attachment strip's own lightbox.
  */
 export interface ImagePayload {
   kind: "image";
   /** The atom id the bytes are stored under. */
   atomId: string;
-  /** What the chip reads, for the clipboard and the composer. */
+  /** What the chip reads, for the clipboard and the prompt. */
   label: string;
 }
 
@@ -132,28 +133,59 @@ export interface AtomLike {
 }
 
 /**
+ * The absolute path a **mention's** value names, or `null` when there is
+ * no root to count a relative one from.
+ *
+ * Only the types an `@` mention mints go through here. A mention's value
+ * comes from the file index, which reports paths relative to the project
+ * root, so joining it onto that root recovers the address it was written
+ * against. An image atom is deliberately not one of those: a dropped image
+ * carries the bare filename the browser was willing to disclose, and
+ * joining THAT onto a root would invent an address rather than recover one.
+ */
+function mentionPathOf(value: string, roots?: AtomPathRoots): string | null {
+  if (value.startsWith("/")) return value;
+  if (roots === undefined) return null;
+  const resolved = resolveAtomFilePath(value, roots);
+  return resolved.startsWith("/") ? resolved : null;
+}
+
+/**
  * The annotation an attached atom carries, or `null` when nothing sensible
  * can be done with it.
  *
  * Born confirmed: the user picked this thing, which is better evidence
  * than a probe, so an atom never waits on verification.
  *
- * Every atom type the composer can mint is answered here, because an inert
+ * Every atom type the prompt can mint is answered here, because an inert
  * chip is a promise the transcript does not keep — it looks like an object
  * and behaves like text. A file or directory opens by path; an image
  * pasted as bytes has no path, so it opens the attachment strip's own
- * lightbox by atom id. An atom whose path is not absolute is still
- * refused: the contract is an openable target, and guessing what a bare
- * name is relative to is how a link starts dead-ending.
+ * lightbox by atom id.
+ *
+ * A file or directory atom does not have to carry an absolute value: an
+ * `@` mention takes its value from the file index, which counts from the
+ * project root. Such a value is resolved against `roots` — the same roots
+ * the mention was written against ({@link mentionPathOf}). With no roots to
+ * resolve against, a relative value is still refused: the contract is an
+ * openable target, and guessing what a bare name is relative to is how a
+ * link starts dead-ending.
  */
-export function payloadForAtom(atom: AtomLike): AnnotationPayload | null {
+export function payloadForAtom(
+  atom: AtomLike,
+  roots?: AtomPathRoots,
+): AnnotationPayload | null {
   const { type, value } = atom;
-  if (type === "file" && value.startsWith("/")) {
-    return { kind: "file-path", path: value };
+  if (type === "file") {
+    const path = mentionPathOf(value, roots);
+    return path === null ? null : { kind: "file-path", path };
   }
-  if (type === "directory" && value.startsWith("/")) {
+  if (type === "directory") {
+    const path = mentionPathOf(value, roots);
     // The index form carries a trailing separator; the path form does not.
-    return { kind: "directory", path: value.replace(/\/+$/, "") };
+    return path === null
+      ? null
+      : { kind: "directory", path: path.replace(/\/+$/, "") };
   }
   if (type === "image") {
     // A dropped image file has somewhere to go on disk; a pasted one has
@@ -171,7 +203,7 @@ export function payloadForAtom(atom: AtomLike): AnnotationPayload | null {
 /**
  * Whether acting on this kind opens another surface. Those annotations
  * need the focus discipline a card-opening gesture requires: the press
- * must not move DOM focus or activate the host pane, or the composer's
+ * must not move DOM focus or activate the host pane, or the prompt's
  * caret goes with it.
  */
 export function annotationOpensSurface(kind: AnnotationKind): boolean {
@@ -346,9 +378,9 @@ export function payloadFromDataset(
 
 /**
  * The annotation's canonical value as text: what Copy puts on the
- * clipboard and what Insert into Composer sends back into the
+ * clipboard and what Insert into Prompt sends back into the
  * conversation. A slash command regains its leading slash, so the
- * inserted text is a command line the composer can act on rather than a
+ * inserted text is a command line the prompt can act on rather than a
  * bare name.
  */
 export function annotationValue(payload: AnnotationPayload): string {

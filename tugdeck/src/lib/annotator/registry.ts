@@ -69,10 +69,10 @@ export interface AnnotationMenuEntry {
 export interface AnnotationDispatchContext {
   /** Bring the annotation's own card forward before acting on it. */
   activateCard: () => void;
-  /** The composer/transcript store a command or snippet is seeded into.
+  /** The prompt/transcript store a command or snippet is seeded into.
    *  Absent on a surface with no live session (the Gazette): such a surface
-   *  can't seed a composer, so a command's click is a no-op there — the same
-   *  rule its menu already follows by dropping Insert into Composer. */
+   *  can't seed a prompt, so a command's click is a no-op there — the same
+   *  rule its menu already follows by dropping Insert into Prompt. */
   codeSessionStore?: CodeSessionStore;
 }
 
@@ -117,7 +117,7 @@ export function annotationEntryFor(
 }
 
 /**
- * Seed a command into the composer as a ready-to-run draft: bring the
+ * Seed a command into the prompt as a ready-to-run draft: bring the
  * card forward, then park the draft. A slash command seeds itself; a
  * shell command seeds into the Code route as a one-shot `/shell <cmd>`.
  */
@@ -142,12 +142,12 @@ function seedCommand(
  * Send this annotation back into the conversation. Every kind offers it —
  * that is the point of having one vocabulary: whatever the transcript
  * mentions, the user can pick it up and talk about it. What lands in the
- * composer is the handler's call, not a second menu item's: a file arrives
+ * prompt is the handler's call, not a second menu item's: a file arrives
  * as the chip an `@` mention mints, everything else as its text.
  */
 const INSERT_ENTRY: AnnotationMenuEntry = {
-  action: TUG_ACTIONS.INSERT_INTO_COMPOSER,
-  label: "Insert into Composer",
+  action: TUG_ACTIONS.INSERT_INTO_PROMPT,
+  label: "Insert into Prompt",
 };
 
 /** Copy / Copy as Plain Text — the pair both command families offer. */

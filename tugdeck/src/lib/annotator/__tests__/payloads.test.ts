@@ -6,7 +6,7 @@
  * exactly right for a gesture to act on the right value: that a payload
  * survives the round trip through a dataset record unchanged, that a
  * half-stamped record is refused rather than half-acted-on, that the
- * canonical value is what a Copy or a composer insert should carry, and
+ * canonical value is what a Copy or a prompt insert should carry, and
  * that inline-code classification resolves a span to at most one kind by
  * a fixed precedence.
  */
@@ -141,7 +141,7 @@ describe("annotationValue — what Copy and Insert carry", () => {
   });
 });
 
-describe("payloadForAtom — every chip the composer can mint has an action", () => {
+describe("payloadForAtom — every chip the prompt can mint has an action", () => {
   const atom = (type: string, value: string, rest: Partial<AtomLike> = {}) => ({
     type,
     value,
@@ -189,6 +189,50 @@ describe("payloadForAtom — every chip the composer can mint has an action", ()
     expect(payloadForAtom(atom("file", "notes.md"))).toBeNull();
     expect(payloadForAtom(atom("file", "src/notes.md"))).toBeNull();
     expect(payloadForAtom(atom("directory", "src/"))).toBeNull();
+  });
+
+  test("a mention resolves against the roots it was written against", () => {
+    // What an `@` mention actually carries: the file index counts from
+    // the project root, so the chip's value is relative and only the
+    // roots make it an address.
+    const roots = { projectDir: "/repo", cwd: "/elsewhere" };
+    expect(payloadForAtom(atom("file", "src/notes.md"), roots)).toEqual({
+      kind: "file-path",
+      path: "/repo/src/notes.md",
+    });
+    expect(payloadForAtom(atom("directory", "src/"), roots)).toEqual({
+      kind: "directory",
+      path: "/repo/src",
+    });
+  });
+
+  test("the session cwd is the root when the card is bound to no project", () => {
+    expect(
+      payloadForAtom(atom("file", "notes.md"), {
+        projectDir: null,
+        cwd: "/work",
+      }),
+    ).toEqual({ kind: "file-path", path: "/work/notes.md" });
+  });
+
+  test("roots never invent an address for a dropped image", () => {
+    // A dropped image carries the bare filename the browser disclosed —
+    // never a path — so no root makes it an openable file.
+    expect(
+      payloadForAtom(atom("image", "shot.png", { id: "atom-3" }), {
+        projectDir: "/repo",
+        cwd: null,
+      }),
+    ).toEqual({ kind: "image", atomId: "atom-3", label: "shot.png" });
+  });
+
+  test("with neither root a relative mention is still refused", () => {
+    expect(
+      payloadForAtom(atom("file", "src/notes.md"), {
+        projectDir: null,
+        cwd: null,
+      }),
+    ).toBeNull();
   });
 
   test("an image with neither a path nor bytes to find has nothing to open", () => {

@@ -4,7 +4,7 @@
  * A file atom does not carry an address; it carries whatever minted it. An
  * `@` mention takes its value straight from the FILETREE index, which
  * reports paths relative to the project root. Session ▸ Insert File… and
- * the transcript's Insert into Composer both carry absolute paths. So the
+ * the transcript's Insert into Prompt both carry absolute paths. So the
  * same chip type holds two different kinds of string, and any gesture that
  * acts on the file — opening it, revealing it — has to close that gap
  * before it hands the path to a service that only speaks absolute.

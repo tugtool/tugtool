@@ -235,7 +235,7 @@ function FilePathLink({
 
   // Under a host the menu comes from the host, built from the registry for
   // whatever kind the gesture landed on — the same Open in Editor / Show in
-  // Finder / Copy Path / Insert into Composer over the standard editing block
+  // Finder / Copy Path / Insert into Prompt over the standard editing block
   // a file reference in prose offers. A second menu here would be the two
   // popups over one press this surface used to show.
   if (annotationHost) return link;

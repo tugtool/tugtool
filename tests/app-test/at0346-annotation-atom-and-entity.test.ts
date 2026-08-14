@@ -1,25 +1,30 @@
 /**
- * at0346-annotation-atom-and-entity.test.ts — the two ways the transcript's
+ * at0346-annotation-atom-and-entity.test.ts — the ways the transcript's
  * right-click treats an annotation as a thing rather than as text.
  *
- * Both cases are about the same claim from opposite sides. An annotation is
+ * Every case is the same claim from a different side. An annotation is
  * an object the transcript mentions; a secondary click on it should offer
  * object-shaped acts and should not narrow it to whatever run of characters
  * the browser thinks a word is.
  *
  *  1. **A file inserts as an atom** — a verified file path offers exactly one
- *     way into the composer, Insert into Composer, and it mints the chip an
+ *     way into the prompt, Insert into Prompt, and it mints the chip an
  *     `@` mention does: the file arrives carrying the canonical path as its
  *     value rather than as a run of path characters. The assertions are that
  *     the menu offers one insert item and not two, the chip's own
  *     `data-atom-value`, and that the path never landed as literal text.
- *  2. **A command is one entity** — right-clicking a command span leaves no
+ *  2. **A mention chip is that same object** — an `@` mention's value is
+ *     relative (that is what the file index reports), and a chip carrying
+ *     one used to name nothing a menu could act on: the right-click offered
+ *     the bare editing block. Resolved against the card's project it is the
+ *     same file the same path in prose is, and offers the same four items.
+ *  3. **A command is one entity** — right-clicking a command span leaves no
  *     selection behind. The control is the span beside it: an inline-code
  *     span the registry has no entry for, where WebKit's smart-select still
  *     runs and paints a sub-word. Same DOM shape, same gesture, different
  *     verdict — which is what proves the suppression is the registry's doing
  *     and not the surface refusing selection wholesale.
- *  3. **A mention says so at rest** — the same claim seen from the surface
+ *  4. **A mention says so at rest** — the same claim seen from the surface
  *     rather than from the menu. A run the resolver confirmed carries the
  *     resting rule whether it was backticked or bare, and an inline-code
  *     span the resolver refused carries none: code tone and actionability
@@ -29,6 +34,9 @@
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
  * @covers tugdeck/src/lib/annotator/registry.ts
+ * @covers tugdeck/src/lib/annotator/payloads.ts
+ * @covers tugdeck/src/lib/atom-file-path.ts
+ * @covers tugdeck/src/components/tugways/cards/tug-atom-markdown-body.tsx
  * @covers tugdeck/styles/tug-annotation.css
  * @covers tugdeck/src/components/tugways/tug-markdown-view.css
  * @covers tugdeck/src/components/tugways/cards/transcript-host-helpers.ts
@@ -156,7 +164,7 @@ const menuItemPointJS = (action: string) =>
 
 describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
   test(
-    "a file inserts into the composer as an atom, not as its path text",
+    "a file inserts into the prompt as an atom, not as its path text",
     async () => {
       const app = await launchTugApp({
         testName: "at0346-annotation-atom",
@@ -201,30 +209,30 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
         await app.evalJS<boolean>(revealJS(SPAN));
         await app.nativeRightClickAtElement(SPAN);
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
+          `document.querySelector('[data-item-action="insert-into-prompt"]') !== null`,
           { timeoutMs: 4000 },
         );
-        // Exactly one — a file's way into the composer is the chip, and the
+        // Exactly one — a file's way into the prompt is the chip, and the
         // path as characters is what Copy Path is for.
         const insertItems = await app.evalJS<number>(
-          `document.querySelectorAll('[data-item-action="insert-into-composer"]').length`,
+          `document.querySelectorAll('[data-item-action="insert-into-prompt"]').length`,
         );
         expect(insertItems).toBe(1);
         const insertLabel = await app.evalJS<string | null>(
           `(function(){
-            var el = document.querySelector('[data-item-action="insert-into-composer"]');
+            var el = document.querySelector('[data-item-action="insert-into-prompt"]');
             return el === null ? null : (el.textContent || '').trim();
           })()`,
         );
-        expect(insertLabel).toBe("Insert into Composer");
+        expect(insertLabel).toBe("Insert into Prompt");
 
         const itemPoint = await app.evalJS<{ x: number; y: number } | null>(
-          menuItemPointJS("insert-into-composer"),
+          menuItemPointJS("insert-into-prompt"),
         );
         expect(itemPoint).not.toBeNull();
         await app.nativeClick(itemPoint as { x: number; y: number });
 
-        // The composer carries a file chip whose value is the canonical
+        // The prompt carries a file chip whose value is the canonical
         // path — an object, not the path spelled out.
         await app.waitForCondition<boolean>(
           `(function(){
@@ -247,7 +255,7 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
           ),
         ) as { value?: string | null; label?: string | null };
         expect(chip.value).toBe(stampedPath);
-        // The chip reads as the filename — a composer line has no room for
+        // The chip reads as the filename — a prompt line has no room for
         // an absolute path, and the whole path is right there in the value.
         expect(chip.label).toBe(FILE_NAME);
 
@@ -260,6 +268,108 @@ describe.skipIf(!SHOULD_RUN)("AT0346: annotations as objects", () => {
           })()`,
         );
         expect(literal).toBe(false);
+
+        process.stdout.write("VERDICT: PASS\n");
+      } catch (err) {
+        process.stdout.write("VERDICT: FAIL\n");
+        const tail = app.tailLog(200);
+        if (tail !== "") process.stderr.write(`\n[at0346] log tail:\n${tail}\n`);
+        throw err;
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a mention chip offers the file's own menu, resolved against the project",
+    async () => {
+      const app = await launchTugApp({
+        testName: "at0346-annotation-mention-chip",
+      });
+      const ingest = (decoded: unknown) =>
+        app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: CODE_OUTPUT_FEED,
+          decoded,
+        });
+
+      try {
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+          { timeoutMs: 30_000 },
+        );
+        // The card's project IS the temp project — the root the file index
+        // counts from, and so the root the mention's value counts from.
+        await app.bindSession("A", {
+          tugSessionId: SID,
+          sessionMode: "resume",
+          projectDir,
+        });
+        await app.ingestSessionMetadata("A", {
+          type: "system_metadata",
+          cwd: projectDir,
+          ipc_version: 2,
+        });
+
+        // The wire form of an `@` mention: the value wrapped as a
+        // backtick-`@` marker, which the synthesizer re-mints as the chip.
+        // Its value is RELATIVE — that is what `@`-completion carries, and
+        // the case a chip with an absolute value never exercises.
+        await ingest(replayStarted());
+        await ingest(userMsg("read `@" + FILE_NAME + "` please"));
+        await ingest(asstText("m1", "Reading it now.", 1));
+        await ingest(turnDone("m1"));
+        await ingest(replayComplete());
+
+        const CHIP_HOST =
+          `[data-card-id="A"] [data-slot="tug-atom-markdown-body"] .tug-atom-chip-host`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CHIP_HOST)}) !== null`,
+          { timeoutMs: 15_000 },
+        );
+
+        // The chip names a file, so it wears the file annotation — carrying
+        // the address the relative value never had on its own.
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(CHIP_HOST)});
+            return el !== null && el.getAttribute('data-tug-annotation') === 'file-path';
+          })()`,
+          { timeoutMs: 8000 },
+        );
+        const stampedPath = await app.evalJS<string | null>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(CHIP_HOST)});
+            return el === null ? null : el.getAttribute('data-path');
+          })()`,
+        );
+        note(`mention chip resolved to: ${stampedPath ?? "(none)"}`);
+        expect(stampedPath).toBe(realPath);
+
+        // And the menu is the file's own — the same four items a path in
+        // prose offers, over the standard editing block.
+        await app.evalJS<boolean>(revealJS(CHIP_HOST));
+        await app.nativeRightClickAtElement(CHIP_HOST);
+        await app.waitForCondition<boolean>(
+          `document.querySelector('[data-item-action="insert-into-prompt"]') !== null`,
+          { timeoutMs: 4000 },
+        );
+        const labels = JSON.parse(
+          await app.evalJS<string>(
+            `JSON.stringify(Array.prototype.map.call(
+              document.querySelectorAll('[data-item-action]'),
+              function(el){ return (el.textContent || '').trim(); },
+            ))`,
+          ),
+        ) as string[];
+        note(`mention chip menu: ${labels.join(" / ")}`);
+        expect(labels).toContain("Open in Editor");
+        expect(labels).toContain("Show in Finder");
+        expect(labels).toContain("Copy Path");
+        expect(labels).toContain("Insert into Prompt");
 
         process.stdout.write("VERDICT: PASS\n");
       } catch (err) {

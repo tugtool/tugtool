@@ -189,6 +189,16 @@ export function useAnnotationContext(
     ].filter((source): source is NonNullable<typeof source> => source !== null);
     return new VerdictBatcher(sources).subscribe;
   }, [names, commits]);
+  // The same two roots the path resolver counts from, handed on for the
+  // atoms the row carries: an `@` mention's value is project-relative, and
+  // without a root it names nothing a menu item could act on. Memoized so a
+  // consumer can hang an effect on it — both roots arrive after mount, and
+  // an atom annotated on the pass that first has one must not be re-stamped
+  // on every render after.
+  const atomPathRoots = useMemo(
+    () => ({ projectDir, cwd }),
+    [projectDir, cwd],
+  );
   return useMemo(
     () => ({
       isKnownSlashCommand,
@@ -198,9 +208,17 @@ export function useAnnotationContext(
       // same reference it is in a Gazette post, and gets the same chip.
       resolveSession: resolveSessionRef,
       commitRoot: projectDir,
+      atomPathRoots,
       subscribe,
     }),
-    [isKnownSlashCommand, resolvePath, resolveCommit, projectDir, subscribe],
+    [
+      isKnownSlashCommand,
+      resolvePath,
+      resolveCommit,
+      projectDir,
+      atomPathRoots,
+      subscribe,
+    ],
   );
 }
 
@@ -335,7 +353,7 @@ export interface TranscriptCellMenuOptions {
    */
   resolveCopyMarkdown?: CopyMarkdownResolver;
   /**
-   * The session whose composer an annotation's Insert into Composer item
+   * The session whose prompt an annotation's Insert into Prompt item
    * seeds. Omitted by a fixture with no live session; the item is then not
    * offered.
    */
@@ -356,7 +374,7 @@ export function useTranscriptCellMenu({
 } {
   const bodyRef = useRef<HTMLElement | null>(null);
   const adapterRef = useRef<TextSelectionAdapter | null>(null);
-  // Insert into Composer brings the annotation's own card forward before
+  // Insert into Prompt brings the annotation's own card forward before
   // it types into it. Both come from context rather than props: every
   // transcript cell already renders inside the deck and its card host, so
   // threading them down through the cell tree would be ceremony.
@@ -551,17 +569,17 @@ export function useTranscriptCellMenu({
   }, []);
 
   // Send the right-clicked annotation back into the conversation. Brings
-  // the card forward first, so the composer it lands in is the one the user
+  // the card forward first, so the prompt it lands in is the one the user
   // is looking at. Returns a continuation so the insert happens after the
-  // menu's activation blink, like Select All — the composer takes the
+  // menu's activation blink, like Select All — the prompt takes the
   // caret, and doing that mid-blink fights the menu's own teardown.
   //
   // A file goes in as an object: the same chip an `@` mention mints,
-  // carrying the canonical path as its value, so the composer treats it as
+  // carrying the canonical path as its value, so the prompt treats it as
   // one thing to move, delete, or send rather than as a run of path
   // characters. A cited line is deliberately dropped — an atom names a
   // file, and `path:line` is not one. Every other kind goes in as its text.
-  const handleInsertIntoComposer = useCallback((): ActionHandlerResult => {
+  const handleInsertIntoPrompt = useCallback((): ActionHandlerResult => {
     const payload = contextAnnotationRef.current;
     if (payload === null || codeSessionStore === undefined) return;
     if (payload.kind === "file-path") {
@@ -570,7 +588,7 @@ export function useTranscriptCellMenu({
         type: "file",
         // The chip reads as a filename and carries the whole path
         // underneath — the same split every other file chip in the app
-        // makes, and the reason one fits on a composer line at all.
+        // makes, and the reason one fits on a prompt line at all.
         label: formatAtomLabel(payload.path, "filename"),
         value: payload.path,
       };
@@ -629,7 +647,7 @@ export function useTranscriptCellMenu({
       [TUG_ACTIONS.COPY_COMMAND]: handleCopyCommand,
       [TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT]: handleCopyCommandPlain,
       [TUG_ACTIONS.COPY_ANNOTATION_VALUE]: handleCopyAnnotationValue,
-      [TUG_ACTIONS.INSERT_INTO_COMPOSER]: handleInsertIntoComposer,
+      [TUG_ACTIONS.INSERT_INTO_PROMPT]: handleInsertIntoPrompt,
       [TUG_ACTIONS.REVEAL_IN_FINDER]: handleRevealAnnotatedFile,
       [TUG_ACTIONS.OPEN_IMAGE_PREVIEW]: handleOpenImagePreview,
       [TUG_ACTIONS.OPEN_DIFF]: handleOpenAnnotatedDiff,
@@ -651,10 +669,10 @@ export function useTranscriptCellMenu({
       if (hit === null) return [];
       const entries =
         annotationEntryFor(hit.payload.kind)?.menuEntries(hit.payload) ?? [];
-      // A surface with no live session can't seed a composer, so it doesn't
+      // A surface with no live session can't seed a prompt, so it doesn't
       // offer to.
       return codeSessionStore === undefined
-        ? entries.filter((e) => e.action !== TUG_ACTIONS.INSERT_INTO_COMPOSER)
+        ? entries.filter((e) => e.action !== TUG_ACTIONS.INSERT_INTO_PROMPT)
         : entries;
     },
     [codeSessionStore],

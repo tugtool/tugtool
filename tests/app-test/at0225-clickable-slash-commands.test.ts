@@ -5,7 +5,7 @@
  * A backticked slash command in assistant prose (e.g.
  * `` `/tugplug:implement roadmap/find-route.md` ``) whose name is in the
  * live command catalog is marked `.tugx-annotation`; a click seeds the
- * composer with a ready-to-run, atomized draft.
+ * prompt with a ready-to-run, atomized draft.
  *
  * This drives the actual render/interaction (no fake DOM):
  *
@@ -17,10 +17,10 @@
  *      The known span becomes tagged over the already-rendered DOM — the
  *      on-resume re-tag — while the unknown command and the path stay
  *      inert.
- *   3. A click on the tagged span seeds the composer: the editor holds the
+ *   3. A click on the tagged span seeds the prompt: the editor holds the
  *      argument text (`roadmap/find-route.md`) plus a command chip, is the
  *      focused first responder, and the card is on the Code route.
- *   4. A right-click on the same span offers Insert into Composer, which
+ *   4. A right-click on the same span offers Insert into Prompt, which
  *      puts the command line in as literal text — the indirect gesture,
  *      distinguishable from the seed by the literal `/name args` string.
  *
@@ -165,7 +165,7 @@ const spanStateJS = (needle: string) => `JSON.stringify((function(){
 
 describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
   test(
-    "known command tags on catalog arrival and click seeds the composer",
+    "known command tags on catalog arrival and click seeds the prompt",
     async () => {
       const app = await launchTugApp({
         testName: "at0225-clickable-slash-commands",
@@ -230,7 +230,7 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         expect(path.found).toBe(true);
         expect(path.tagged).toBe(false);
 
-        // --- 3. Click the tagged span → the composer seeds --------------
+        // --- 3. Click the tagged span → the prompt seeds --------------
         await app.click(
           `[data-card-id="A"] code.tugx-annotation[data-slash-command="${KNOWN_CMD}"]`,
         );
@@ -262,9 +262,9 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
           true,
         );
 
-        // --- 4. Right-click → Insert into Composer ----------------------
+        // --- 4. Right-click → Insert into Prompt ----------------------
         // The indirect gesture: instead of seeding a ready-to-run draft,
-        // the command's literal text goes into the composer as something to
+        // the command's literal text goes into the prompt as something to
         // talk about. The click above seeded an atomized chip plus its
         // argument, so the whole command line as literal text is what
         // distinguishes this path from that one.
@@ -274,12 +274,12 @@ describe.skipIf(!SHOULD_RUN)("AT0225: clickable slash commands", () => {
         );
         await app.nativeRightClickAtElement(SPAN);
         await app.waitForCondition<boolean>(
-          `document.querySelector('[data-item-action="insert-into-composer"]') !== null`,
+          `document.querySelector('[data-item-action="insert-into-prompt"]') !== null`,
           { timeoutMs: 4000 },
         );
         const itemPoint = await app.evalJS<{ x: number; y: number } | null>(
           `(() => {
-            const item = document.querySelector('[data-item-action="insert-into-composer"]');
+            const item = document.querySelector('[data-item-action="insert-into-prompt"]');
             if (item === null) return null;
             const r = item.getBoundingClientRect();
             return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };

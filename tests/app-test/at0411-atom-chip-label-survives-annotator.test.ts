@@ -9,13 +9,14 @@
  * glyph, and a `<text>` holding the label, at a width the renderer measured
  * that label at.
  *
- * The content annotator's text scan walked into that `<svg>`. A chip whose
- * value is a *relative* workspace path (`@`-mention completions are relative)
- * gets no annotation on its host — `payloadForAtom` marks absolute paths —
- * so nothing told the scan to stay out. It found the label, the resolver
- * confirmed the file, and the run was wrapped in an HTML `<span>`: a
- * foreign-namespace element inside an SVG, which paints nothing. The chip
- * kept its measured width and lost every character in it. An empty atom.
+ * The content annotator's text scan walked into that `<svg>`. It found the
+ * label, the resolver confirmed the file, and the run was wrapped in an HTML
+ * `<span>`: a foreign-namespace element inside an SVG, which paints nothing.
+ * The chip kept its measured width and lost every character in it. An empty
+ * atom. What keeps the scan out is the namespace rule in `collectTextNodes`
+ * — a drawing is not prose — and nothing else: the mention here carries a
+ * *relative* value (that is what `@`-completion mints), so this is also the
+ * chip whose host the payload layer once refused to annotate at all.
  *
  * ## Shape
  *

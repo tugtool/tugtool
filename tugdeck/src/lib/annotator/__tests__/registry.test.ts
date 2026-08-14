@@ -47,7 +47,7 @@ describe("command kinds replace the standard menu block", () => {
         entry
           ?.menuEntries({ kind: "shell-command", command: "just x" })
           .map((e) => e.label),
-      ).toEqual(["Copy", "Copy as Plain Text", "Insert into Composer"]);
+      ).toEqual(["Copy", "Copy as Plain Text", "Insert into Prompt"]);
     });
   }
 
@@ -59,7 +59,7 @@ describe("command kinds replace the standard menu block", () => {
     ).toEqual([
       TUG_ACTIONS.COPY_COMMAND,
       TUG_ACTIONS.COPY_COMMAND_AS_PLAIN_TEXT,
-      TUG_ACTIONS.INSERT_INTO_COMPOSER,
+      TUG_ACTIONS.INSERT_INTO_PROMPT,
     ]);
   });
 
@@ -102,12 +102,12 @@ describe("link kinds leave the standard menu block alone", () => {
       annotationEntryFor("url")
         ?.menuEntries({ kind: "url", url: "https://x.y" })
         .map((e) => e.label),
-    ).toEqual(["Copy Link", "Insert into Composer"]);
+    ).toEqual(["Copy Link", "Insert into Prompt"]);
     expect(
       annotationEntryFor("email")
         ?.menuEntries({ kind: "email", address: "a@b.com" })
         .map((e) => e.label),
-    ).toEqual(["Copy Address", "Insert into Composer"]);
+    ).toEqual(["Copy Address", "Insert into Prompt"]);
   });
 });
 
@@ -123,7 +123,7 @@ describe("a file offers one way into the composer", () => {
       "Open in Editor",
       "Show in Finder",
       "Copy Path",
-      "Insert into Composer",
+      "Insert into Prompt",
     ]);
   });
 });
@@ -153,7 +153,7 @@ describe("every kind offers to send its value back into the conversation", () =>
         NonNullable<ReturnType<typeof annotationEntryFor>>["menuEntries"]
       >[0];
       const actions = annotationEntryFor(kind)?.menuEntries(sample).map((e) => e.action);
-      expect(actions).toContain(TUG_ACTIONS.INSERT_INTO_COMPOSER);
+      expect(actions).toContain(TUG_ACTIONS.INSERT_INTO_PROMPT);
     });
   }
 });

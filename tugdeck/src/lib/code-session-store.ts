@@ -1475,8 +1475,8 @@ export class CodeSessionStore {
 
   /**
    * Park one atom on `pendingAtomInsert` for the prompt entry to insert at
-   * the caret. Used by Insert into Composer on a transcript file reference,
-   * which hands the composer an object rather than path text. The entry
+   * the caret. Used by Insert into Prompt on a transcript file reference,
+   * which hands the prompt an object rather than path text. The entry
    * observes the slot, inserts, and calls
    * {@link consumePendingAtomInsert}. Public because the dispatch source is a
    * UI surface (the transcript's context menu), not the reducer.

@@ -140,9 +140,9 @@ export const TUG_ACTIONS = {
   //              time rather than the live selection, so it copies the
   //              WHOLE value regardless of any sub-word the browser
   //              smart-selected.
-  // INSERT_INTO_COMPOSER: payload — none. Send the sampled annotation back
+  // INSERT_INTO_PROMPT: payload — none. Send the sampled annotation back
   //              into the conversation: activate the card, then insert it
-  //              into the prompt composer at the caret. Menu-only. This is
+  //              into the prompt at the caret. Menu-only. This is
   //              the "indirect action" every annotation kind offers — a
   //              URL, a path, or a command line becomes something to talk
   //              about rather than something to follow. A file arrives as
@@ -188,7 +188,7 @@ export const TUG_ACTIONS = {
   COPY_SESSION_ID:     "copy-session-id",
   COPY_SESSION_DESCRIPTION: "copy-session-description",
   COPY_SESSION_ACTIVITY: "copy-session-activity",
-  INSERT_INTO_COMPOSER: "insert-into-composer",
+  INSERT_INTO_PROMPT: "insert-into-prompt",
   PASTE:               "paste",
   PASTE_AS_QUOTE:      "paste-as-quote",
   PASTE_AS_PLAIN_TEXT: "paste-as-plain-text",

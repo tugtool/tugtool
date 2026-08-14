@@ -18,6 +18,7 @@ import type { CommitVerdict } from "./commit-resolution";
 import type { PathReference } from "./detect-path-reference";
 import type { PathVerdict } from "./path-resolution";
 import type { SessionVerdict } from "./session-resolution";
+import type { AtomPathRoots } from "@/lib/atom-file-path";
 
 /** The entity types the annotator recognizes. */
 export type AnnotationKind =
@@ -103,4 +104,15 @@ export interface AnnotationContext {
    * never re-marks, which is correct for static content.
    */
   subscribe?: (listener: () => void) => () => void;
+  /**
+   * The roots a project-relative atom value is resolved against — the
+   * card's project directory and the session's cwd, the two roots an `@`
+   * mention could have been written against. Prose paths carry their own
+   * resolution through {@link resolvePath}; an atom is born confirmed and
+   * needs only the root its value was counted from.
+   *
+   * Optional: a surface without one still annotates the atoms whose values
+   * are already absolute.
+   */
+  atomPathRoots?: AtomPathRoots;
 }

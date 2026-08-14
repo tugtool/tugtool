@@ -55,6 +55,7 @@ import {
   payloadForAtom,
 } from "@/lib/annotator/payloads";
 import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import type { AtomPathRoots } from "@/lib/atom-file-path";
 import type { TurnAddress } from "../tug-transcript-entry";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +168,12 @@ export interface TugAtomTextBodyProps {
    * surface. See {@link decorateChipLabel}.
    */
   address?: TurnAddress;
+  /**
+   * The roots a project-relative atom value resolves against. An `@`
+   * mention's value counts from the project root, so without these the
+   * chip names no openable target and wears no annotation.
+   */
+  pathRoots?: AtomPathRoots;
   /** Forwarded to the root span. */
   className?: string;
   /** Forwarded to the root span (for test anchoring). */
@@ -182,7 +189,7 @@ export const TugAtomTextBody = React.forwardRef<
   HTMLSpanElement,
   TugAtomTextBodyProps
 >(function TugAtomTextBody(
-  { text, atoms, address, className, "data-testid": dataTestid },
+  { text, atoms, address, pathRoots, className, "data-testid": dataTestid },
   ref,
 ) {
   const segments = walkAtomText(text, atoms);
@@ -250,7 +257,7 @@ export const TugAtomTextBody = React.forwardRef<
         // it the same gestures the markdown renderer's chips get. The
         // wrapper exists only to carry that dataset; chips with nothing to
         // act on render bare, exactly as before.
-        const payload = payloadForAtom(seg.atom);
+        const payload = payloadForAtom(seg.atom, pathRoots);
         if (payload === null) return chip;
         return (
           <span

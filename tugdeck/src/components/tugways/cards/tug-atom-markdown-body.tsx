@@ -67,6 +67,7 @@ import { hasLeadingCommandAtom } from "@/lib/command-atom";
 import { parseSlashCommandLine } from "@/lib/annotator/command-grammar";
 import { stampAnnotation } from "@/lib/annotator/annotation-element";
 import { payloadForAtom } from "@/lib/annotator/payloads";
+import type { AtomPathRoots } from "@/lib/atom-file-path";
 import type { AnnotationContext } from "@/lib/annotator/types";
 import { buildSlashCommandLine } from "@/lib/slash-commands";
 import { decorateChipLabel } from "./tug-atom-text-body";
@@ -198,15 +199,16 @@ function tagLeadingCommandHost(
 function tagAtomHosts(
   hosts: ReadonlyArray<HTMLElement>,
   atoms: ReadonlyArray<AtomSegment>,
+  roots: AtomPathRoots | undefined,
 ): void {
   for (let i = 0; i < hosts.length; i += 1) {
     const host = hosts[i];
     const atom = atoms[i];
     if (atom === undefined) continue;
     // The leading submitted-command chip already carries its own
-    // annotation.
+    // annotation; so does an atom a previous pass could already resolve.
     if (host.dataset.tugAnnotation !== undefined) continue;
-    const payload = payloadForAtom(atom);
+    const payload = payloadForAtom(atom, roots);
     if (payload !== null) stampAnnotation(host, payload);
   }
 }
@@ -272,12 +274,24 @@ export const TugAtomMarkdownBody = React.forwardRef<
     if (root === null) return;
     const hosts = injectAtomHosts(root, atoms.length);
     tagLeadingCommandHost(hosts, text, atoms);
-    tagAtomHosts(hosts, atoms);
+    tagAtomHosts(hosts, atoms, annotation?.atomPathRoots);
     setMounts(
       hosts.map((host, i) => ({ host, atom: atoms[i], key: `atom-${i}` })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
+
+  // The roots a project-relative atom value resolves against arrive after
+  // the row paints — the card's project binding and the session's cwd both
+  // land post-handshake. Re-tag when they change so a mention written
+  // against the project root becomes actionable the moment there is a root
+  // to count from. Idempotent: an atom already stamped is skipped.
+  const atomPathRoots = annotation?.atomPathRoots;
+  React.useLayoutEffect(() => {
+    if (mounts.length === 0) return;
+    tagAtomHosts(mounts.map((m) => m.host), atoms, atomPathRoots);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounts, atomPathRoots]);
 
   const setRefs = React.useCallback(
     (el: HTMLDivElement | null) => {
