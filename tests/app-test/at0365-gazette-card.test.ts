@@ -84,6 +84,7 @@
  * @covers tugdeck/src/lib/gazette-attachment-bytes.ts
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.css
+ * @covers tugdeck/src/components/tugways/tug-sheet.tsx
  * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
@@ -1031,6 +1032,7 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         // is only meaningful relative to what it opened inside.
         const sheetFit = await app.evalJS<{
           density: string | null;
+          inlineMax: string;
           sheet: number;
           card: number;
           leading: number;
@@ -1048,6 +1050,9 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
             var c = card.getBoundingClientRect();
             return {
               density: body.getAttribute("data-density"),
+              // The cap the sheet was actually given, so a failure says
+              // whether the fraction was wrong or something overrode it.
+              inlineMax: panel.style.maxWidth,
               sheet: Math.round(p.width),
               card: Math.round(c.width),
               leading: Math.round(p.left - c.left),
@@ -1073,6 +1078,42 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           sheetFit!.trailing,
           "and the same at the trailing edge",
         ).toBeGreaterThanOrEqual(24);
+        // The margin is not a rounding artifact of a cap that nearly bound —
+        // the panel is a clear step narrower than the column it opened in.
+        // This is what the drag-resize floor was defeating: it outranked the
+        // cap, so on any host under ~640px the sheet came out at the floor's
+        // 460px however small a fraction the caller asked for.
+        expect(
+          sheetFit!.sheet / sheetFit!.card,
+          "the sheet reads as nested, not as a lid",
+        ).toBeLessThanOrEqual(0.85);
+
+        // The chrome is the rail's scale too. Three card-scale buttons are
+        // most of what a footer this wide holds, so the tier is stamped on
+        // each of them — asserted as the size class the button family writes,
+        // which is the same thing the CSS keys its metrics on.
+        const chromeSizes = await app.evalJS<string[]>(
+          `Array.from(
+            document.querySelectorAll(
+              '[data-slot="tug-attachment-preview-sheet"] button',
+            ),
+          )
+            .map(function (b) {
+              var cls = Array.from(b.classList).find(function (c) {
+                return c.indexOf("tug-button-size-") === 0;
+              });
+              return cls === undefined ? "" : cls.replace("tug-button-size-", "");
+            })
+            .filter(function (s) { return s.length > 0; })`,
+        );
+        note("sheet chrome sizes", JSON.stringify(chromeSizes));
+        // Copy and Done. This sheet was opened from a POST, which is
+        // read-only — there is no Delete on a picture already in the channel,
+        // which is claim 4's own rule restated from the sheet's side.
+        expect(chromeSizes.length, "Copy and Done").toBe(2);
+        for (const size of chromeSizes) {
+          expect(size, "every control is at the rail's scale").toBe("sm");
+        }
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-slot="tug-attachment-preview-sheet"]') === null`,

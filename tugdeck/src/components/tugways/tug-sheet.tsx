@@ -1074,10 +1074,19 @@ export function TugSheetContent({
           const heightCap = Math.min(available, frame.height * frac);
           widthCap = Math.min(widthCap, (heightCap - chromeY) * aspect + padX);
         }
+        // The drag floor keeps a sheet the USER is dragging from collapsing to
+        // a slit. It is not a claim about how wide the sheet may be — so on a
+        // host too narrow to hold it, the floor is the thing that yields. Left
+        // outranking the cap it was smashing the card it nests in: on a rail
+        // (a Gazette a few hundred pixels wide) `max(460, cap)` is always 460,
+        // whatever fraction the caller asked for, and the panel comes out
+        // wider than the column it opened in. Capped by the same fraction, the
+        // floor still does its job on every host wide enough to have one.
+        const floor = Math.min(SHEET_RESIZE_MIN_WIDTH, frame.width * frac);
         // Write only on change — `observer.observe(content)` would otherwise
         // re-fire on our own write. The value is scale-invariant, so a repeat
         // measure yields the same string and the loop quiesces immediately.
-        const next = `${Math.max(SHEET_RESIZE_MIN_WIDTH, widthCap)}px`;
+        const next = `${Math.max(floor, widthCap)}px`;
         if (content.style.maxWidth !== next) content.style.maxWidth = next;
         return;
       }

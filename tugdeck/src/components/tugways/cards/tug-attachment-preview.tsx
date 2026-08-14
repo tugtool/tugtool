@@ -29,10 +29,12 @@
  * re-renders from the shrunken atom array the responder produces.
  *
  * Density: `compact` steps both faces down for a surface a few hundred pixels
- * wide (the Gazette rail) — smaller tiles, and a sheet that opens at the
- * narrow width tier well short of the host card's edges. It is a size, never a
- * different design: same tiles, same captions, same sheet, same gestures. The
- * default is the card's.
+ * wide (the Gazette rail) — smaller tiles, a sheet that opens at the narrow
+ * width tier short of the host card's edges, and that sheet's chrome (Copy,
+ * Delete, Done) at the smaller button scale, since three card-scale buttons
+ * are most of what a rail-width footer holds. It is a size, never a different
+ * design: same tiles, same captions, same sheet, same gestures. The default is
+ * the card's.
  *
  * The bytes-store IS external state: its contents grow on the live path
  * (drop / paste / synthesize) and on the replay path (synthesizer mints
@@ -100,7 +102,20 @@ const SHEET_GEOMETRY: Record<
   { displayWidth: "sm" | "xl"; maxHostFraction: number }
 > = {
   comfortable: { displayWidth: "xl", maxHostFraction: 0.9 },
-  compact: { displayWidth: "sm", maxHostFraction: 0.72 },
+  compact: { displayWidth: "sm", maxHostFraction: 0.85 },
+};
+
+/**
+ * The button scale each density's chrome runs at. A sheet a third the width
+ * carries the same three controls — Copy, Delete, Done — and at the card's
+ * scale they are most of what a rail-width footer contains.
+ */
+const CHROME_SIZE: Record<
+  TugAttachmentPreviewDensity,
+  { button: "sm" | "md"; copy: "sm" | "md" }
+> = {
+  comfortable: { button: "md", copy: "md" },
+  compact: { button: "sm", copy: "sm" },
 };
 
 export interface TugAttachmentPreviewProps {
@@ -985,7 +1000,7 @@ function AttachmentPreviewSheet({
           <div className="tug-attachment-preview-sheet__actions">
             <BlockCopyButton
               subtype="text"
-              size="md"
+              size={CHROME_SIZE[density].copy}
               emphasis="outlined"
               aria-label="Copy image"
               data-slot="tug-attachment-preview-sheet__copy"
@@ -1029,6 +1044,7 @@ function AttachmentPreviewSheet({
               <TugPushButton
                 emphasis="outlined"
                 role="danger"
+                size={CHROME_SIZE[density].button}
                 onClick={() => onRemove?.(atom as AtomSegment)}
                 focusGroup={focusGroup}
                 focusOrder={PREVIEW_DELETE_ORDER}
@@ -1084,6 +1100,7 @@ function AttachmentPreviewSheet({
             <TugPushButton
               emphasis="primary"
               role="action"
+              size={CHROME_SIZE[density].button}
               onClick={onClose}
               focusGroup={focusGroup}
               focusOrder={PREVIEW_DONE_ORDER}
