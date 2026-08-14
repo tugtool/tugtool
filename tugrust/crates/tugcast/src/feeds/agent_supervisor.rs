@@ -2523,29 +2523,6 @@ pub(crate) fn broadcast_bind_dash_ok(
     ));
 }
 
-/// Announce that a plan is written and ready for its review turn.
-///
-/// The signal comes from the skill, which knows it finished, rather than from
-/// the composer, which would only know how the user spelled the invocation.
-/// The deck resolves `tug_session_id` to a card and latches the request there;
-/// a broadcast naming a session no deck holds is a no-op, exactly as the
-/// binding announcements are.
-pub(crate) fn broadcast_plan_review_request(
-    control_tx: &broadcast::Sender<Frame>,
-    tug_session_id: &str,
-    plan_path: &str,
-) {
-    let body = serde_json::json!({
-        "action": "plan_review_request",
-        "tug_session_id": tug_session_id,
-        "plan_path": plan_path,
-    });
-    let _ = control_tx.send(Frame::new(
-        FeedId::CONTROL,
-        serde_json::to_vec(&body).expect("plan_review_request serializes"),
-    ));
-}
-
 /// The unmating half of [`broadcast_bind_dash_ok`], with the same two doors.
 pub(crate) fn broadcast_unbind_dash_ok(
     control_tx: &broadcast::Sender<Frame>,
@@ -8751,18 +8728,6 @@ mod tests {
                 None,
             )
             .unwrap();
-    }
-
-    /// The plan-review signal reaches the CONTROL feed carrying the session it
-    /// names and the plan path exactly as it was handed over — no re-resolution
-    /// against a cwd the card does not share.
-    #[tokio::test]
-    async fn plan_review_request_broadcasts_the_session_and_the_absolute_path() {
-        let (sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
-        broadcast_plan_review_request(&sup.control_tx, "sess-1", "/abs/roadmap/plan.md");
-        let body = next_action(&mut control_rx, "plan_review_request").await;
-        assert_eq!(body["tug_session_id"], "sess-1");
-        assert_eq!(body["plan_path"], "/abs/roadmap/plan.md");
     }
 
     /// bind → the binding shows on the restore round-trip → unbind → nulls.

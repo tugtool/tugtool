@@ -1,12 +1,18 @@
 /**
  * at0412-plan-review-verb.test.ts — `/plan-review` typed in the card.
  *
- * The typed verb and the `plan_review_request` broadcast share one entrance:
- * the handler resolves a path and latches it into the store `action-dispatch`
- * writes, and the controller owns everything after that. So this test is the
- * twin of at0409 with the signal replaced by a keystroke, and what it pins is
- * that joining that entrance really did inherit the whole machine — the
- * borrow, the announce, and the release — rather than growing a second one.
+ * `/plan-review` is an ordinary turn on whatever model is selected. **Nothing
+ * switches the model** — not before the turn, not after it. That is the whole
+ * point of the gesture: the moment before clicking the chip is the user's
+ * moment to choose a model, and a surface that moved the selection out from
+ * under them would take that choice away.
+ *
+ * So the load-bearing assertion here is a *negative* one: a card sitting on
+ * Sonnet is still on Sonnet while the review turn runs, and still on Sonnet
+ * after it settles. The chip never says Opus at any point. This replaces the
+ * borrow/announce/release machine that used to live behind this verb — it was
+ * removed, along with the `plan_review_request` broadcast, because a review
+ * scheduled on the user's behalf could silently never happen.
  *
  * **The command is typed, not injected, and the completion popup is not
  * dismissed.** Submitting runs `editor.acceptActiveCompletion()` first, so what
@@ -21,16 +27,10 @@
  * value round-trips through the real tugbank, so a resolver that read the wrong
  * domain or never wrote at submit fails here and nowhere else.
  *
- * As in at0409, the turn lifecycle is driven by injected frames — the
- * lifecycle's published phase is the whole input to a control that observes it
- * — and `dev.model/A` is read before and after and must be byte-identical: the
- * borrow is a loan, and a loan that rewrote what the card remembers would turn
- * a crash mid-review into a durable lie.
- *
- * @covers tugdeck/src/lib/plan-review-controller.ts
- * @covers tugdeck/src/lib/plan-review-request-store.ts
+ * @covers tugdeck/src/lib/plan-review.ts
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/lib/model-domains.ts
+ * @covers tugdeck/src/lib/use-model.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
@@ -168,7 +168,7 @@ function submittedRow(app: App): Promise<{ chipLabel: string | null; text: strin
 
 describe.skipIf(!SHOULD_RUN)("AT0412: the /plan-review card verb", () => {
   test(
-    "an explicit path borrows the review model and releases it; a bare invocation lands on the plan just reviewed",
+    "the review runs on the selected model and never moves it; a bare invocation lands on the plan just reviewed",
     async () => {
       const scratch = mkdtempSync(join(tmpdir(), "at0412-"));
       const planPath = join(scratch, "plan.md");
@@ -220,10 +220,6 @@ describe.skipIf(!SHOULD_RUN)("AT0412: the /plan-review card verb", () => {
           `document.querySelectorAll(${JSON.stringify(USER_ROWS)}).length === 1`,
           { timeoutMs: 10000 },
         );
-        await app.waitForCondition<boolean>(
-          `(document.querySelector(${JSON.stringify(CHIP_VALUE)})?.textContent ?? "").indexOf("Opus") !== -1`,
-          { timeoutMs: 10000 },
-        );
 
         // The turn carries the command ATOM — `submission.text` never holds a
         // literal "/tugplug:plan-review", so a string assertion would fail on a
@@ -233,15 +229,21 @@ describe.skipIf(!SHOULD_RUN)("AT0412: the /plan-review card verb", () => {
         expect(explicit.chipLabel).toBe("/tugplug:plan-review");
         expect(explicit.text).toContain(planPath);
 
-        const shot = await app.screenshot();
-        note("at0412 the typed review on the borrowed model", shot.path);
+        // The card is on Sonnet and STAYS on Sonnet. Asserted while the review
+        // turn is in flight, which is exactly when the old borrow would have
+        // swapped the chip to Opus.
+        expect(
+          await chipText(app),
+          "the review runs on the selected model — nothing borrows",
+        ).toContain("Sonnet");
 
-        // ── That turn settles: the model goes back ───────────────────────
+        const shot = await app.screenshot();
+        note("at0412 the typed review on the selected model", shot.path);
+
+        // ── That turn settles: still nothing moved ───────────────────────
         await settleTurn(app, "m-review-1");
-        await app.waitForCondition<boolean>(
-          `(document.querySelector(${JSON.stringify(CHIP_VALUE)})?.textContent ?? "").indexOf("Sonnet") !== -1`,
-          { timeoutMs: 10000 },
-        );
+        await settle();
+        expect(await chipText(app)).toContain("Sonnet");
 
         // ── Bare: last-reviewed resolves it, through the real tugbank ────
         await runCommand(app, "/plan-review");
@@ -256,22 +258,16 @@ describe.skipIf(!SHOULD_RUN)("AT0412: the /plan-review card verb", () => {
           bare.text,
           "a bare /plan-review resolves to the plan this card last reviewed",
         ).toContain(planPath);
-        await app.waitForCondition<boolean>(
-          `(document.querySelector(${JSON.stringify(CHIP_VALUE)})?.textContent ?? "").indexOf("Opus") !== -1`,
-          { timeoutMs: 10000 },
-        );
+        expect(await chipText(app)).toContain("Sonnet");
 
         await settleTurn(app, "m-review-2");
-        await app.waitForCondition<boolean>(
-          `(document.querySelector(${JSON.stringify(CHIP_VALUE)})?.textContent ?? "").indexOf("Sonnet") !== -1`,
-          { timeoutMs: 10000 },
-        );
+        await settle();
 
         // Exactly two turns went out across both gestures.
         expect(await userRowCount(app)).toBe(2);
         expect(await chipText(app)).toContain("Sonnet");
 
-        // ── And neither loan touched what the card remembers ─────────────
+        // ── And the persisted selector is untouched throughout ───────────
         const after = await persistedModel(app, "after");
         note("at0412 persisted model after", after);
         expect(after).toBe(before);

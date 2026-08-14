@@ -64,31 +64,27 @@ It answers the mechanical half — required sections, unique anchors, `[P##]` vs
 
 Then run the **cold-reader test**: could a fresh session, given only this document and the repository, implement every step without asking you anything? Hunt for references that lean on session context — "as discovered above", "the function we looked at", steps that name a change but not its location — and replace each with the concrete paths, symbols, and findings.
 
-Then run the **cold-reader test**: could a fresh session, given only this document and the repository, implement every step without asking you anything? Hunt for references that lean on session context — "as discovered above", "the function we looked at", steps that name a change but not its location — and replace each with the concrete paths, symbols, and findings.
+### 5. Review it, or hand the review over
 
-### 5. Ask for the review
+The plan is not ready when you finish writing it; it is ready when it has been reviewed. Which of those two you do next depends on one thing, and only one: **the model you are running on right now.**
 
-The plan is not ready when you finish writing it; it is ready when it has been reviewed. Ask for that review from **inside this turn**, before you end it:
+**If you are running on Opus, review it yourself, immediately, in this same turn.** Do not stop, do not ask, do not print a command. Read [`tuglaws/plan-review-rubric.md`](../../../tuglaws/plan-review-rubric.md) and `plan-review`'s own skill text and carry the review out: lint the plan, judge it against the rubric and the real code, apply the fixups in the document, append the Review Record, and stamp it with `tugutil plan stamp` as the last edit. You are the review model; there is nothing to hand off to and nothing to wait for.
 
-```bash
-tugutil plan review-request --plan <absolute-plan-path>
-```
-
-This tells the running Tug instance that the plan is written. The card runs `/tugplug:plan-review <path>` as its next turn, on the review model, visibly — it borrows that model for the turn and gives it back afterward.
-
-The signal goes through the server rather than through what the user typed, because only you know you finished. Fire it with an **absolute** path: the card does not share your cwd.
-
-If the verb fails — no reachable Tug instance — do not declare the plan ready. Say the review could not be requested, and print the command for the user to run by hand, on its own line and inside backticks:
+**If you are running on anything else, stop.** Do not review — the review is where judgment lands, and it is worth the better model. Say the plan is written and unreviewed, and print the review command on its own line and inside backticks so it arrives as a clickable chip:
 
 `` `/tugplug:plan-review roadmap/my-plan.md` ``
 
+Then say plainly that clicking it reviews the plan **on whatever model is selected at that moment**, so switching models first is the user's call and their opportunity to make it. Nothing switches models on their behalf, before or after.
+
+That is the whole rule. There is no signal to fire, no request to queue, and no turn scheduled on the user's behalf — a review either happens now because you are already the right model, or it happens when the user asks for it.
+
 ### 6. Hand off
 
-Tell the user the plan is written, name the exact path, and say the review turn is coming next and on which model. Do not tell them to implement yet — the review may still change the plan.
+Tell the user the plan is written and name the exact path. If you reviewed it, say so and summarize what the review changed. If you handed the review over, say the plan is **unreviewed** and leave the chip as the next gesture. Either way, do not tell them to implement yet — an unreviewed plan is not ready, and a reviewed one may have just changed.
 
 The command after the review lands is `` `/tugplug:dash-implement <plan-path>` ``, and `plan-review` prints it. Write any command you do print on its own line **inside backticks**, command and path together in one span, with the real path substituted in — the Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text.
 
-Don't start reviewing or implementing from the devise skill — authoring, reviewing, and implementing are separate turns (as is committing the plan to git, which the user owns).
+Don't start implementing from the devise skill — authoring and implementing are separate turns, as is committing the plan to git, which the user owns. Reviewing is the one exception, and only on Opus: there the review is the same turn's second half, because the model that would be handed the job is already the one holding it.
 
 ## Guardrails
 
@@ -99,6 +95,6 @@ Don't start reviewing or implementing from the devise skill — authoring, revie
 - **Standalone always.** The plan must be implementable from any session with zero conversation context — bake every investigation finding into the document.
 - **Don't over-ask.** Clarify only design-changing unknowns.
 - **Lint before handing off.** `tugutil plan lint` exit 0 is the bar.
-- **Ask for the review from inside your own turn**, with an absolute path, and never declare the plan ready when that request fails.
+- **Review it on Opus, hand it over otherwise** — and never declare a plan ready that nothing has reviewed. Never switch the user's model, in either direction.
 - **Don't auto-implement.** `plan-devise` produces the document; the review turn improves it; `dash-implement` runs it.
 - **Don't auto-enter Plan mode** (`EnterPlanMode`) — just write the plan document.

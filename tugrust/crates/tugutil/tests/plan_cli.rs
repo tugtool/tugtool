@@ -1,20 +1,12 @@
-//! `tugutil plan lint` and `tugutil plan review-request`.
+//! `tugutil plan lint`, `plan status`, and `plan stamp`.
 //!
 //! Lint's three outcomes are distinct on purpose: a warnings-only run is still
 //! a usable plan (exit 0, `status: "ok"`), an error diagnostic gates (exit 1,
 //! `status: "error"`), and a document that is not a plan at all is neither
 //! clean nor dirty (exit 2).
-//!
-//! `review-request` has two: it reaches a running instance, or it fails with a
-//! remedy the skill can act on. The second is not an edge case — a project
-//! without a running Tug is where the gesture has to degrade to the old
-//! two-step rather than silently skip the review.
 
-use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
 use std::path::Path;
 use std::process::Command;
-use std::sync::mpsc;
 
 use assert_cmd::cargo::CommandCargoExt;
 
@@ -366,141 +358,6 @@ fn a_stale_plan_still_reports_its_step_counts() {
     assert_eq!(value["data"]["steps"]["done"], 1);
     assert_eq!(value["data"]["last_round"]["date"], "2026-08-13");
     assert_eq!(value["data"]["last_round"]["model"], "opus");
-}
-
-/// A one-shot stand-in for a running tugcast: accepts POSTs, hands each JSON
-/// body back over a channel, and answers `{"status":"ok"}`.
-fn fake_tugcast() -> (u16, mpsc::Receiver<serde_json::Value>) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let mut reader = BufReader::new(stream.try_clone().unwrap());
-            let mut length = 0usize;
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).unwrap_or(0) == 0 {
-                    break;
-                }
-                if let Some(value) = line
-                    .to_ascii_lowercase()
-                    .strip_prefix("content-length:")
-                    .and_then(|v| v.trim().parse::<usize>().ok())
-                {
-                    length = value;
-                }
-                if line == "\r\n" || line == "\n" {
-                    break;
-                }
-            }
-            let mut body = vec![0u8; length];
-            let _ = reader.read_exact(&mut body);
-            if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body) {
-                let _ = tx.send(value);
-            }
-            let payload = br#"{"status":"ok"}"#;
-            let _ = write!(
-                stream,
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                payload.len()
-            );
-            let _ = stream.write_all(payload);
-            let _ = stream.flush();
-        }
-    });
-    (port, rx)
-}
-
-#[test]
-fn review_request_sends_the_session_and_an_absolute_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = write(dir.path(), "plan.md", CONFORMING);
-    let (port, rx) = fake_tugcast();
-
-    let out = Command::cargo_bin("tugutil")
-        .unwrap()
-        .env("TUG_SESSION_ID", "sess-42")
-        .current_dir(dir.path())
-        .args([
-            "plan",
-            "review-request",
-            "--plan",
-            "plan.md",
-            "--port",
-            &port.to_string(),
-        ])
-        .output()
-        .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(0),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let body = rx
-        .recv_timeout(std::time::Duration::from_secs(5))
-        .expect("the CLI posted a body");
-    assert_eq!(body["tug_session_id"], "sess-42");
-    // Relative on the command line, absolute on the wire — the card does not
-    // share the cwd the skill ran in.
-    let sent = body["plan_path"].as_str().unwrap();
-    assert!(Path::new(sent).is_absolute(), "{sent}");
-    assert!(sent.ends_with("plan.md"), "{sent}");
-    assert_eq!(
-        std::fs::canonicalize(sent).unwrap(),
-        std::fs::canonicalize(&path).unwrap()
-    );
-}
-
-#[test]
-fn review_request_with_no_reachable_instance_names_the_manual_command() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = write(dir.path(), "plan.md", CONFORMING);
-    // An empty registry under the child's $TMPDIR: discovery finds nothing.
-    std::fs::write(
-        dir.path().join("tug-instances.json"),
-        br#"{"version":1,"instances":[]}"#,
-    )
-    .unwrap();
-
-    let out = Command::cargo_bin("tugutil")
-        .unwrap()
-        .env_remove("TUG_INSTANCE")
-        .env("TUG_SESSION_ID", "sess-42")
-        .env("TMPDIR", dir.path())
-        .env("TUG_DATA_DIR", dir.path().join("state"))
-        .current_dir(dir.path())
-        .args(["plan", "review-request", "--plan"])
-        .arg(&path)
-        .output()
-        .unwrap();
-    assert_ne!(out.status.code(), Some(0));
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("/tugplug:plan-review"),
-        "the remedy has to name the command the user can run by hand: {stderr}"
-    );
-}
-
-#[test]
-fn review_request_refuses_a_plan_that_is_not_there() {
-    let dir = tempfile::tempdir().unwrap();
-    let out = Command::cargo_bin("tugutil")
-        .unwrap()
-        .env("TUG_SESSION_ID", "sess-42")
-        .args(["plan", "review-request", "--plan"])
-        .arg(dir.path().join("nope.md"))
-        .output()
-        .unwrap();
-    assert_ne!(out.status.code(), Some(0));
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("no plan at"),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
 }
 
 #[test]

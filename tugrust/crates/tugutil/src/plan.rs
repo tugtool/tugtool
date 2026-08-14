@@ -25,12 +25,6 @@ pub fn dispatch(cmd: PlanCommands, json: bool) -> ExitCode {
         PlanCommands::Lint { path } => run_lint(Path::new(&path), json),
         PlanCommands::Status { path } => run_status(Path::new(&path), json),
         PlanCommands::Stamp { path } => run_stamp(Path::new(&path), json),
-        PlanCommands::ReviewRequest {
-            plan,
-            session,
-            port,
-            instance,
-        } => run_review_request(Path::new(&plan), session, port, instance, json),
     })
 }
 
@@ -318,92 +312,3 @@ fn run_stamp(path: &Path, json: bool) -> Result<(), AppError> {
     Ok(())
 }
 
-/// `--json` payload for `plan review-request`.
-#[derive(Debug, Serialize)]
-struct ReviewRequestData {
-    /// The session whose card was told.
-    tug_session_id: String,
-    /// The absolute path that was sent.
-    plan_path: String,
-}
-
-fn run_review_request(
-    plan: &Path,
-    session: Option<String>,
-    port: Option<u16>,
-    instance: Option<String>,
-    json: bool,
-) -> Result<(), AppError> {
-    use crate::commands::tell::{Remedy, resolve_port_any};
-
-    let tug_session_id = session
-        .or_else(|| std::env::var("TUG_SESSION_ID").ok())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            AppError::Exit1(
-                "no session — pass --session, or run inside a Tug session so TUG_SESSION_ID is set"
-                    .to_string(),
-            )
-        })?;
-
-    // The card does not share the cwd this ran in, so a relative path could
-    // only be resolved wrongly on the other side.
-    let plan_path = if plan.is_absolute() {
-        plan.to_path_buf()
-    } else {
-        std::env::current_dir()
-            .map_err(|e| AppError::Exit1(format!("cannot resolve cwd: {e}")))?
-            .join(plan)
-    };
-    if !plan_path.exists() {
-        return Err(AppError::Exit1(format!(
-            "no plan at {}",
-            plan_path.display()
-        )));
-    }
-    let plan_path = plan_path.to_string_lossy().into_owned();
-
-    let port = resolve_port_any(port, instance).map_err(|e| {
-        AppError::Exit1(format!(
-            "the plan review runs in a Tug card, but no running Tug instance was found ({}) — \
-             run `/tugplug:plan-review {plan_path}` by hand instead",
-            e.describe(Remedy::Flags)
-        ))
-    })?;
-    let url = format!("http://127.0.0.1:{port}/api/plan-review");
-    let response = ureq::post(&url)
-        .send_json(serde_json::json!({
-            "tug_session_id": tug_session_id,
-            "plan_path": plan_path,
-        }))
-        .map_err(|e| {
-            AppError::Exit1(format!(
-                "cannot reach tugcast at {url}: {e} — \
-                 run `/tugplug:plan-review {plan_path}` by hand instead"
-            ))
-        })?;
-    let value: serde_json::Value = response
-        .into_body()
-        .read_json()
-        .map_err(|e| AppError::Exit1(format!("bad response from tugcast: {e}")))?;
-    if value.get("status").and_then(|s| s.as_str()) != Some("ok") {
-        let message = value
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("unknown error");
-        return Err(AppError::Exit1(format!(
-            "plan review request failed: {message}"
-        )));
-    }
-
-    let data = ReviewRequestData {
-        tug_session_id,
-        plan_path,
-    };
-    if json {
-        crate::output::print_ok("plan review-request", &data);
-    } else {
-        println!("review requested for {}", data.plan_path);
-    }
-    Ok(())
-}

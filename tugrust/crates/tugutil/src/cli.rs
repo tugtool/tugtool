@@ -319,25 +319,6 @@ pub enum PlanCommands {
         path: String,
     },
 
-    /// Tell the running Tug instance a plan is written and ready for review.
-    ///
-    /// The card carrying `$TUG_SESSION_ID` runs the review as its next turn.
-    /// Exits non-zero when no instance is reachable, so the caller can fall
-    /// back to printing the review command for the user to run by hand.
-    ReviewRequest {
-        /// Path to the plan document; resolved to an absolute path before sending.
-        #[arg(long)]
-        plan: String,
-        /// Session id (default: $TUG_SESSION_ID).
-        #[arg(long)]
-        session: Option<String>,
-        /// Tugcast server port (overrides --instance and CLI discovery).
-        #[arg(long)]
-        port: Option<u16>,
-        /// Target a specific instance by ID.
-        #[arg(long)]
-        instance: Option<String>,
-    },
 }
 
 #[derive(Subcommand)]

@@ -122,72 +122,6 @@ export function resolvesToSameModel(
   return modelIdToSelector(rowA.value, rows) === modelIdToSelector(rowB.value, rows);
 }
 
-/**
- * Cards whose live model is on loan, by card id.
- *
- * The mount-restore effect below stands down for these. It has to: a borrow
- * calls {@link SessionMetadataStore.applyModel}, which moves `snapshot.model`
- * — a dependency of that effect — so every borrow re-runs it. On the path
- * where readiness was never reached (`models.length === 0 && model === null`)
- * the effect early-returns *without* arming `sentRef`, and the borrow's own
- * `applyModel` is what first makes `model` non-null. The effect would then
- * resolve a current selector differing from the seed and call
- * `setModel(seed, {fromRestore: true})` — reverting the model mid-review and
- * persisting it. The two are made mutually exclusive here.
- */
-const cardsWithBorrowedModel = new Set<string>();
-
-/** What a borrow acts on: one card and the two stores that carry its model. */
-export interface ModelBorrow {
-  /** The card whose live model is on loan. */
-  cardId: string;
-  /** Store that sends the `model_change` frame. */
-  codeSessionStore: CodeSessionStore;
-  /** Store that carries the optimistic chip value. */
-  sessionMetadataStore: SessionMetadataStore;
-}
-
-/**
- * Put the session on `selector` for the duration of one turn — **without
- * writing the card's remembered selector**.
- *
- * The no-persistence property is a requirement, not an incidental. `setModel`
- * persists by design ([D07]), which is right for a user's pick and wrong for a
- * loan: it would write the borrowed model into `dev.model/<cardId>`, and a
- * crash mid-borrow would make that lie durable. Because nothing is persisted,
- * the persisted selector stays correct throughout, and the mount-restore
- * effect below realigns the live session on the next mount — crash recovery
- * for free, with no recovery code of our own.
- *
- * Do not route this through `setModel`, ever.
- */
-export function borrowModel(borrow: ModelBorrow, selector: string): void {
-  cardsWithBorrowedModel.add(borrow.cardId);
-  borrow.sessionMetadataStore.applyModel(selector);
-  borrow.codeSessionStore.setModel(selector);
-}
-
-/**
- * Give the model back. `selector` is the value captured before the borrow, or
- * `null` when no borrow happened — same catalog row, or a review selector the
- * catalog could not resolve — in which case there is nothing to undo.
- *
- * Persistence is untouched here for the same reason it is untouched in
- * {@link borrowModel}: the card's remembered selector was never the loan's to
- * move. Idempotent — releasing twice sends one `model_change`.
- */
-export function releaseModel(borrow: ModelBorrow, selector: string | null): void {
-  if (!cardsWithBorrowedModel.delete(borrow.cardId)) return;
-  if (selector === null) return;
-  borrow.sessionMetadataStore.applyModel(selector);
-  borrow.codeSessionStore.setModel(selector);
-}
-
-/** Whether this card's live model is currently on loan. */
-export function hasBorrowedModel(cardId: string): boolean {
-  return cardsWithBorrowedModel.has(cardId);
-}
-
 /** What the mount-restore should do with what it currently knows. */
 export type MountRestoreDecision =
   /** Not enough is known yet, or there is nothing to correct. */
@@ -209,8 +143,6 @@ export type MountRestoreDecision =
 export function evaluateMountRestore(input: {
   /** Whether a manual set or a completed restore already armed this mount. */
   alreadySent: boolean;
-  /** Whether this card's live model is on loan. */
-  modelIsBorrowed: boolean;
   /** The seed: the per-card selector if any, else the deck-wide default. */
   seedModel: string | null;
   /** The live capability list. */
@@ -218,10 +150,8 @@ export function evaluateMountRestore(input: {
   /** The resolved model id, when one has landed. */
   model: string | null;
 }): MountRestoreDecision {
-  const { alreadySent, modelIsBorrowed, seedModel, models, model } = input;
+  const { alreadySent, seedModel, models, model } = input;
   if (alreadySent) return { kind: "wait" };
-  // A borrowed model is not a drift to correct.
-  if (modelIsBorrowed) return { kind: "wait" };
   if (seedModel === null) return { kind: "wait" };
   // Readiness: nothing known yet (no capabilities AND no resolved model) →
   // can't tell the current model, don't race the spawn.
@@ -312,7 +242,6 @@ export function useModel({
   useEffect(() => {
     const decision = evaluateMountRestore({
       alreadySent: sentRef.current,
-      modelIsBorrowed: hasBorrowedModel(cardId),
       seedModel,
       models,
       model,

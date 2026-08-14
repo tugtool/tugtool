@@ -59,11 +59,11 @@ import { AiChip } from "./ai-chip";
 import { useAiConfigSheet } from "./ai-config-sheet";
 import { useModel } from "@/lib/use-model";
 import {
-  PlanReviewController,
+  REVIEW_PLAN_COMMAND,
   readLastReviewedPlan,
   resolvePlanReviewTarget,
-} from "@/lib/plan-review-controller";
-import { planReviewRequestStore } from "@/lib/plan-review-request-store";
+  writeLastReviewedPlan,
+} from "@/lib/plan-review";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
@@ -3293,48 +3293,6 @@ export function SessionCardBody({
     sessionMetadataStore,
   });
 
-  // The plan review's borrow machine ([P01], [P11], [P12]). Created here and
-  // registered in a layout effect below so it is reading the request store
-  // before a latched request could be missed ([L03]) — the signal is fired
-  // from inside the devise turn and can land before this card ever renders.
-  // Every subscription it takes comes back on `dispose` ([L27]).
-  const planReviewControllerRef = useRef<PlanReviewController | null>(null);
-  const planReviewStoresRef = useRef<{
-    codeSessionStore: CodeSessionStore;
-    sessionMetadataStore: SessionMetadataStore;
-  } | null>(null);
-  const planReviewStores = planReviewStoresRef.current;
-  if (
-    planReviewControllerRef.current === null ||
-    planReviewStores === null ||
-    planReviewStores.codeSessionStore !== codeSessionStore ||
-    planReviewStores.sessionMetadataStore !== sessionMetadataStore
-  ) {
-    // A session swap ends any review the old session was running: the borrow
-    // belongs to that session, and the outgoing controller's dispose (below)
-    // gives its model back.
-    planReviewControllerRef.current = new PlanReviewController({
-      cardId,
-      codeSessionStore,
-      sessionMetadataStore,
-    });
-    planReviewStoresRef.current = { codeSessionStore, sessionMetadataStore };
-  }
-  const planReviewController = planReviewControllerRef.current;
-  useLayoutEffect(() => {
-    planReviewController.setNotifier((notice) => {
-      const bulletin = paneBulletinRef.current;
-      if (bulletin === null) return;
-      const options = { id: "plan-review", description: notice.detail };
-      if (notice.kind === "announce") bulletin(notice.message, options);
-      else bulletin.caution(notice.message, options);
-    });
-    return () => {
-      planReviewController.setNotifier(null);
-      planReviewController.dispose();
-    };
-  }, [planReviewController]);
-
   // Bulletin when the card's saved model selector (per-card, else the deck
   // default) is a concrete pick the persisted live catalog no longer offers:
   // reset to `default` and point the user at Settings → Assistant. Single-shot
@@ -4026,17 +3984,19 @@ export function SessionCardBody({
       }
       shellSessionStore.exec(`tugutil dash create ${name}`);
     },
-    // `/plan-review [path]` — the typed twin of the `plan_review_request`
-    // broadcast. It resolves a path and latches it into the same store
-    // `action-dispatch.ts` writes; the controller owns everything after that
-    // (the gate, the mid-turn park, the borrow, the three-beat release), so
-    // there is one machine rather than two that drift.
+    // `/plan-review [path]` — review a plan, as an ordinary turn on whatever
+    // model is selected right now. Nothing here changes the model, and nothing
+    // schedules a turn on the user's behalf: the chip is the gesture, and the
+    // moment before clicking it is the moment to switch models if they want to.
     //
-    // No `canSubmit` gate on purpose: `RUN_SLASH_COMMAND` dispatches before the
-    // send-readiness gates, so a mid-turn invocation reaches here and parks —
-    // which is better than `/join`'s hard refusal and costs nothing.
+    // Bare-form resolution is the only cleverness — explicit arg, else the plan
+    // this card last reviewed, else the bound dash's recorded plan.
     "plan-review": (args) => {
       const notify = paneBulletinRef.current;
+      if (!codeSessionStore.getSnapshot().canSubmit) {
+        notify?.caution("Can't review a plan while a turn is in flight");
+        return;
+      }
       // The `/diff` precedent: a surface that needs a binding returns silently
       // when the store has none.
       const binding = cardSessionBindingStore.getBinding(cardId);
@@ -4061,7 +4021,9 @@ export function SessionCardBody({
         notify?.caution("Name the plan — /plan-review <path>");
         return;
       }
-      planReviewRequestStore.latch(cardId, target.path);
+      writeLastReviewedPlan(cardId, target.path);
+      const submission = buildCommandSubmission(REVIEW_PLAN_COMMAND, target.path);
+      codeSessionStore.send(submission.text, submission.atoms);
     },
     join: (args) => {
       const notify = paneBulletinRef.current;
