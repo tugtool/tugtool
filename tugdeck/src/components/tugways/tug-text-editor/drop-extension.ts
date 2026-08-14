@@ -83,6 +83,7 @@ import {
   type DownsampleResult,
 } from "@/lib/image-downsample";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
+import { uploadDraftAttachment } from "@/lib/attachment-upload";
 import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
 
 // ---------------------------------------------------------------------------
@@ -620,6 +621,22 @@ const tugDropCaretTheme = EditorView.baseTheme({
   },
 });
 
+/**
+ * The drop caret on its own — state field, layer plugin, and styling — with
+ * none of the composer's atom, jot, or attachment machinery attached.
+ *
+ * {@link paintDropCaret} and {@link clearDropCaret} require this field to be
+ * in the editor's state; a surface that wants the same "here is where these
+ * bytes will land" affordance for its own drop handling installs this and
+ * drives it with those two calls. The Text card's file drop is the second
+ * such surface, and it deliberately takes only this much.
+ */
+export const tugDropCaretExtension: Extension = [
+  tugDropCaretField,
+  tugDropCaretPlugin,
+  tugDropCaretTheme,
+];
+
 // ---------------------------------------------------------------------------
 // Image-attachment async pipeline
 // ---------------------------------------------------------------------------
@@ -735,6 +752,12 @@ async function resolveDroppedFile(file: File): Promise<ResolvedDrop> {
  * decode await — if the editor unmounted while we were decoding, the
  * insertion is skipped (the doc is gone anyway).
  *
+ * Each surviving image's ORIGINAL file is then sent up in the background
+ * (`/api/attachments`) and its stored path merged into the entry when it
+ * lands. That path is what lets the attachment survive a relaunch: the
+ * downsampled bytes in the store are far too large to persist, a path is not.
+ * The chip never waits on the upload and never renders pending for it.
+ *
  * Returns a `Promise` (the decode is awaited); callers fire-and-forget
  * with `void`. Exported so the paste handler in `clipboard-filters.ts`
  * shares the same pipeline.
@@ -767,12 +790,20 @@ export async function processAttachmentFiles(
   // is filename text. Ordinals advance only for surviving images.
   let imageOrdinal = existingImageCount;
   const bytesToPut: Array<{ id: string; result: DownsampleResult }> = [];
-  const items: DropMixedItem[] = resolved.map((entry) => {
+  // The originals to upload, paired with the atom that will reference them.
+  // Pairing is by the `resolved` index rather than `bytesToPut`'s: the two
+  // diverge the moment any file degrades to text.
+  const originalsToUpload: Array<{ id: string; file: File }> = [];
+  const items: DropMixedItem[] = resolved.map((entry, index) => {
     if (entry.kind === "atom") {
       imageOrdinal += 1;
       const id = mintAtomId();
       const name = `image-${imageOrdinal}`;
       bytesToPut.push({ id, result: entry.result });
+      const original = files[index];
+      if (original !== undefined) {
+        originalsToUpload.push({ id, file: original });
+      }
       return {
         kind: "atom" as const,
         segment: { kind: "atom", type: "image", label: name, value: name, id },
@@ -790,6 +821,24 @@ export async function processAttachmentFiles(
       content: b.result.content,
       mediaType: b.result.mediaType,
       thumbnailDataUrl: b.result.thumbnailDataUrl,
+    });
+  }
+
+  // Send each original up in the background so the entry can carry a durable
+  // reference to it. The chip never waits on this — its bytes are already in
+  // the store — and an upload that fails or is refused simply leaves the
+  // entry pathless, which is the behavior that shipped before paths existed.
+  for (const { id, file } of originalsToUpload) {
+    void uploadDraftAttachment(file).then((path) => {
+      if (path === null) return;
+      // Re-read rather than reconstruct: if the user removed the chip while
+      // the upload was in flight, `delete(id)` has already run, and putting
+      // an entry back would both resurrect a row for an atom that no longer
+      // exists and hand the sweep a live-looking reference to bytes nobody
+      // can reach.
+      const live = bytesStore.get(id);
+      if (live === null) return;
+      bytesStore.put(id, { ...live, path });
     });
   }
 

@@ -37,6 +37,7 @@
  */
 
 import { createAtomBytesStore, type AtomBytesStore } from "@/lib/atom-bytes-store";
+import { toBase64 } from "@/lib/attachment-upload";
 import type { GazetteAttachmentWire } from "@/protocol";
 
 /**
@@ -53,24 +54,6 @@ export function gazetteAttachmentBytesStore(): AtomBytesStore {
 
 /** Paths currently being read, so a re-render never starts a second read. */
 const inFlight = new Set<string>();
-
-/**
- * Base64 for a byte buffer, chunked.
- *
- * `String.fromCharCode(...bytes)` on a whole image blows the argument limit
- * somewhere north of a hundred kilobytes — which every screenshot is — so the
- * conversion walks the buffer in slices. `FileReader`'s data-URL path would
- * also work and is asynchronous for no reason here; this is called once per
- * image, off the render path.
- */
-function toBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-}
 
 /**
  * Make sure every attachment in `attachments` has its bytes in the store,

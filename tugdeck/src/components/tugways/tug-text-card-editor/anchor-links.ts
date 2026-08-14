@@ -9,6 +9,14 @@
  *   - plan-local shorthands `[Q01]` / `[P05]` / `[R01]` / `[S01]` / `[M04]`
  *     that name the heading declaring that decision, question, risk, or spec.
  *
+ * It also follows links that leave the document: a relative destination like
+ * `![photo](assets/photo.png)` — the form a file drop writes — resolves
+ * against the document's own directory and opens in a viewer card. Whether a
+ * destination is openable is the host's question, asked through
+ * `canOpenRelative`, and the same answer governs decoration and click: a link
+ * that lights up under the accelerator and then does nothing is worse than one
+ * that never lit up.
+ *
  * This extension makes those references clickable IN THE SOURCE BUFFER
  * without leaving edit mode: a plain click still places the caret; only a
  * ⌘-click (Ctrl on non-mac) navigates. A resolvable reference is marked so
@@ -55,9 +63,17 @@ function accelHeld(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
 // `#anchor` — requires a preceding whitespace / `(` / `|` so it never fires on
 // a markdown heading marker (`#### …`, no space before the hash) or on an
 // anchor definition `{#slug}` (preceded by `{`).
+//
+// The relative-destination branch (`![alt](assets/x.png)`, `[name](assets/x)`)
+// sits after the `#` form so an in-document anchor is still matched as one,
+// and it carries an optional leading `!`: the image form is what a file drop
+// writes for every image, which makes it the common case rather than an
+// afterthought. The `!` is inside the match so the decorated range and the
+// click target cover the same characters — a mark that started one column
+// late would leave the `!` unlit and unclickable.
 
 const TOKEN_SOURCE =
-  "\\[[^\\]\\n]+\\]\\(#[\\w-]+\\)|\\[#?[A-Za-z][\\w-]*\\]|(?<=[\\s(|])#[A-Za-z][\\w-]*";
+  "\\[[^\\]\\n]+\\]\\(#[\\w-]+\\)|!?\\[[^\\]\\n]*\\]\\([^)\\s]+\\)|\\[#?[A-Za-z][\\w-]*\\]|(?<=[\\s(|])#[A-Za-z][\\w-]*";
 
 interface TokenMatch {
   start: number;
@@ -85,13 +101,35 @@ function tokenAt(lineText: string, col: number): string | null {
   return null;
 }
 
-/** Normalise a raw token to a lookup key + kind, or `null` if not a link. */
+/**
+ * Normalise a raw token to a lookup key + kind, or `null` if not a link.
+ *
+ * `relative` names a destination outside the document — the `assets/photo.png`
+ * of a file drop — and carries the destination itself rather than a lookup
+ * key, percent-decoded back to the name on disk (a drop encodes spaces and
+ * parens so CommonMark reads the destination whole).
+ */
 function normalizeToken(
   token: string,
-): { kind: "hash" | "short"; key: string } | null {
+): { kind: "hash" | "short" | "relative"; key: string } | null {
   let m: RegExpExecArray | null;
   if ((m = /^\[[^\]]+\]\(#([\w-]+)\)$/.exec(token)) !== null) {
     return { kind: "hash", key: m[1] };
+  }
+  if ((m = /^!?\[[^\]]*\]\(([^)\s]+)\)$/.exec(token)) !== null) {
+    const destination = m[1];
+    // Absolute URLs and in-document anchors are somebody else's gesture.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(destination) || destination.startsWith("#")) {
+      return null;
+    }
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(destination);
+    } catch {
+      // A stray `%` that is not an escape — take the destination as written.
+      decoded = destination;
+    }
+    return { kind: "relative", key: decoded };
   }
   if ((m = /^\[#([\w-]+)\]$/.exec(token)) !== null) {
     return { kind: "hash", key: m[1] };
@@ -171,17 +209,38 @@ function buildIndex(doc: Text): AnchorIndex {
   return { anchors, hashRows, shorthands, headingSlugs };
 }
 
-/** The 1-based line a reference token jumps to, or `null` if unresolved. */
-function resolveLine(index: AnchorIndex, token: string): number | null {
+/** What a reference token does when followed. */
+type Target =
+  /** Jump to a 1-based line in this document. */
+  | { kind: "line"; line: number }
+  /** Open a path relative to the document's own directory. */
+  | { kind: "relative"; destination: string };
+
+/**
+ * What a token resolves to, or `null` when it resolves to nothing — a bare
+ * `[x]` checkbox, an anchor with no heading, a relative link the host has no
+ * viewer for. Unresolved tokens are neither decorated nor clickable, which is
+ * what keeps bracketed prose inert.
+ */
+function resolveToken(
+  index: AnchorIndex,
+  token: string,
+  canOpenRelative: (destination: string) => boolean,
+): Target | null {
   const n = normalizeToken(token);
   if (n === null) return null;
-  if (n.kind === "short") return index.shorthands.get(n.key) ?? null;
-  return (
-    index.anchors.get(n.key) ??
-    index.hashRows.get(n.key) ??
-    index.headingSlugs.get(n.key) ??
-    null
-  );
+  if (n.kind === "relative") {
+    return canOpenRelative(n.key)
+      ? { kind: "relative", destination: n.key }
+      : null;
+  }
+  const line =
+    n.kind === "short"
+      ? index.shorthands.get(n.key)
+      : (index.anchors.get(n.key) ??
+        index.hashRows.get(n.key) ??
+        index.headingSlugs.get(n.key));
+  return line === undefined ? null : { kind: "line", line };
 }
 
 // ---------------------------------------------------------------------------
@@ -190,12 +249,23 @@ function resolveLine(index: AnchorIndex, token: string): number | null {
 
 const anchorLinkMark = Decoration.mark({ class: "cm-anchor-link" });
 
+/**
+ * Whether a relative destination is one the host will open. Injected because
+ * the answer is the host's — the Text card asks `isViewableFile` — and because
+ * decoration and click must agree: a link that lights up under the accelerator
+ * and then does nothing is worse than one that never lit up.
+ */
+type CanOpenRelative = (destination: string) => boolean;
+
 class AnchorLinkPlugin {
   decorations: DecorationSet;
   private cachedIndex: AnchorIndex;
   private accelActive = false;
 
-  constructor(private readonly view: EditorView) {
+  constructor(
+    private readonly view: EditorView,
+    private readonly canOpenRelative: CanOpenRelative,
+  ) {
     this.cachedIndex = buildIndex(view.state.doc);
     this.decorations = this.buildDecorations(view);
 
@@ -223,8 +293,8 @@ class AnchorLinkPlugin {
   }
 
   /** Resolve a raw token against the live index (used by the click handler). */
-  resolve(token: string): number | null {
-    return resolveLine(this.cachedIndex, token);
+  resolve(token: string): Target | null {
+    return resolveToken(this.cachedIndex, token, this.canOpenRelative);
   }
 
   private buildDecorations(view: EditorView): DecorationSet {
@@ -237,7 +307,7 @@ class AnchorLinkPlugin {
         if (line.number > lastLine) {
           lastLine = line.number;
           for (const t of matchTokens(line.text)) {
-            if (resolveLine(this.cachedIndex, t.token) !== null) {
+            if (this.resolve(t.token) !== null) {
               builder.add(line.from + t.start, line.from + t.end, anchorLinkMark);
             }
           }
@@ -270,16 +340,40 @@ class AnchorLinkPlugin {
   };
 }
 
-const anchorLinkPlugin = ViewPlugin.fromClass(AnchorLinkPlugin, {
-  decorations: (plugin) => plugin.decorations,
-});
+/** What the host wires the ⌘-click gesture to. */
+export interface AnchorLinkOptions {
+  /**
+   * Jump to a 1-based line in this document. The card wires this to
+   * `revealLine` so the jump lands with the accent flash.
+   */
+  navigate: (line: number) => void;
+  /**
+   * Open a destination relative to the document's own directory — the
+   * `assets/photo.png` a file drop writes. Omit and relative links stay
+   * inert, exactly as they were before drops existed.
+   */
+  openRelative?: (destination: string) => void;
+  /**
+   * Whether {@link openRelative} would actually open this destination. Used
+   * for the decoration as well as the click, so a link only lights up under
+   * the accelerator when following it will do something.
+   */
+  canOpenRelative?: CanOpenRelative;
+}
 
 /**
- * ⌘-click (Ctrl-click off macOS) intra-document link navigation for the
- * text card. `navigate(line)` is called with the 1-based target line — the
- * card wires this to `revealLine` so the jump lands with the accent flash.
+ * ⌘-click (Ctrl-click off macOS) link navigation for the text card: intra-
+ * document anchors, and relative destinations the host can open.
+ *
+ * The plugin is minted per call rather than shared at module scope, so two
+ * editors with different hosts each resolve against their own predicate.
  */
-export function anchorLinkExtension(navigate: (line: number) => void): Extension {
+export function anchorLinkExtension(options: AnchorLinkOptions): Extension {
+  const canOpenRelative: CanOpenRelative = options.canOpenRelative ?? (() => false);
+  const anchorLinkPlugin = ViewPlugin.define(
+    (view) => new AnchorLinkPlugin(view, canOpenRelative),
+    { decorations: (plugin) => plugin.decorations },
+  );
   return [
     anchorLinkPlugin,
     EditorView.domEventHandlers({
@@ -292,11 +386,16 @@ export function anchorLinkExtension(navigate: (line: number) => void): Extension
         if (token === null) return false;
         const plugin = view.plugin(anchorLinkPlugin);
         const target =
-          plugin?.resolve(token) ?? resolveLine(buildIndex(view.state.doc), token);
+          plugin?.resolve(token) ??
+          resolveToken(buildIndex(view.state.doc), token, canOpenRelative);
         if (target === null) return false;
         e.preventDefault();
         e.stopPropagation();
-        navigate(target);
+        if (target.kind === "line") {
+          options.navigate(target.line);
+        } else {
+          options.openRelative?.(target.destination);
+        }
         return true;
       },
     }),

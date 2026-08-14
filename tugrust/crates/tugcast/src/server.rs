@@ -1134,6 +1134,19 @@ pub(crate) fn build_app(
         .route("/api/fs/mkdir", post(crate::fs_mkdir::post_fs_mkdir))
         .route("/api/fs/stat", post(crate::fs_stat::post_fs_stat))
         .route(
+            "/api/attachments",
+            // Raw file bytes, so the limit is the file size itself.
+            post(crate::attachments::post_attachments).layer(DefaultBodyLimit::max(
+                crate::attachments::MAX_ATTACHMENT_BODY_BYTES,
+            )),
+        )
+        .route(
+            "/api/fs/attach",
+            post(crate::attachments::post_fs_attach).layer(DefaultBodyLimit::max(
+                crate::attachments::MAX_ATTACHMENT_BODY_BYTES,
+            )),
+        )
+        .route(
             "/api/fs/write",
             // Per-route body limit above axum's 2 MB default so an 8 MiB
             // file (the read cap) still saves through the JSON envelope.

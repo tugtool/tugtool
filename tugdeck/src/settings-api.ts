@@ -34,18 +34,30 @@ const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
  * a card byte-for-byte); this function decides what is worth persisting past
  * a page reload or app relaunch, both of which read only the durable copy.
  *
- * Two strips, both about size:
+ * Two caps, both about size:
  *
  *  1. **`content.attachmentBytes`** — in-flight image-attachment payloads
- *     (base64, megabytes-scale) carried by the prompt entry. They survive
- *     HMR via the in-memory cache, but across a true reload / relaunch the
- *     JS heap is gone and an abandoned prompt-edit's images can't be
- *     re-resolved, so persisting them buys nothing and risks the exact
- *     bloat that stalled boot at ~18 MB. Dropped here; the user's typed
- *     text + non-image atoms still round-trip durably. The orphaned image
- *     atoms are pruned on restore (see `coerceRestorePayload`'s caller).
- *     [L23] protects user-visible state that *can* be preserved — image
- *     bytes whose source is gone across a cold boot are not in that set.
+ *     carried by the prompt entry. The bag is not dropped; each entry is
+ *     reduced to a **reference**: `{content: "", mediaType, path}`, where
+ *     `path` is where tugcast rested the original at drop time. What made
+ *     the old wholesale strip necessary was size — base64 at megabytes
+ *     scale, the bloat that once stalled boot at ~18 MB — and a path is
+ *     tens of bytes. No image data of any kind is persisted here, not even
+ *     the baked thumbnail: it is derivable from the bytes the restore is
+ *     already fetching, and three of them written on every durable save
+ *     (including the synchronous XHR at quit) would re-grow exactly the
+ *     surface that caused the problem.
+ *
+ *     `content` is the empty string rather than an absent field on purpose:
+ *     both filters on the restore path require `content` to be a string and
+ *     skip the entry otherwise, and `buildWirePayload` already reads an
+ *     empty `content` as "preview-only, do not ship" — so a not-yet-rehydrated
+ *     entry falls through to a mention marker rather than shipping nothing.
+ *
+ *     An entry with no `path` — the upload was still in flight at quit, or
+ *     it was refused — keeps `{content: "", mediaType}` and degrades exactly
+ *     as every entry did before paths existed: its atom is pruned on restore
+ *     (see `coerceRestorePayload`'s caller). [L23].
  *
  *  2. **`regionScroll[*].meta.cellHeights`** — a dead per-cell
  *     measured-height seed for the old `content-visibility` / estimate
@@ -57,22 +69,52 @@ const CARDSTATE_DOMAIN = "dev.tugtool.deck.cardstate";
  *
  * Exported for unit testing; callers use {@link putCardState}.
  */
+/**
+ * Reduce an `attachmentBytes` map to the references worth persisting, or
+ * `null` when there is nothing left to write.
+ *
+ * Every surviving entry is `{content: "", mediaType, path?}` — no base64
+ * payload, no thumbnail data URL, nothing else the in-memory entry happened
+ * to carry. See {@link capDurableCardState}'s docblock for why the shape is
+ * exactly this.
+ */
+function capAttachmentBytes(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== "object") return null;
+  const out: Record<string, unknown> = {};
+  let any = false;
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== "object") continue;
+    const e = entry as { mediaType?: unknown; path?: unknown };
+    if (typeof e.mediaType !== "string") continue;
+    out[id] =
+      typeof e.path === "string" && e.path.length > 0
+        ? { content: "", mediaType: e.mediaType, path: e.path }
+        : { content: "", mediaType: e.mediaType };
+    any = true;
+  }
+  return any ? out : null;
+}
+
 export function capDurableCardState(bag: CardStateBag): CardStateBag {
   let next = bag;
 
-  // Strip 1 — in-flight attachment bytes (see docblock).
+  // Cap 1 — attachment bytes become references (see docblock).
   if (
     next.content !== null &&
     typeof next.content === "object" &&
     "attachmentBytes" in (next.content as Record<string, unknown>)
   ) {
-    const { attachmentBytes: _dropBytes, ...restContent } =
+    const { attachmentBytes, ...restContent } =
       next.content as Record<string, unknown>;
-    void _dropBytes;
-    next = { ...next, content: restContent };
+    const capped = capAttachmentBytes(attachmentBytes);
+    next = {
+      ...next,
+      content:
+        capped === null ? restContent : { ...restContent, attachmentBytes: capped },
+    };
   }
 
-  // Strip 2 — dead cellHeights seed (migration, see docblock).
+  // Cap 2 — dead cellHeights seed (migration, see docblock).
   if (next.regionScroll !== undefined && next.regionScroll !== null) {
     let changed = false;
     const capped: RegionScrollSnapshot = {};
@@ -1036,8 +1078,12 @@ export function insertSessionRecentProject(existing: string[], projectDir: strin
  * dominant weight in prompt history and what bloated the domain to
  * megabytes. A recent few are genuinely useful (a recalled prompt shows
  * its image preview); a deep history of them is pure boot-frame ballast,
- * so older image entries persist without the thumbnail (they recall as a
- * broken-image tile, exactly as an un-baked thumbnail already does).
+ * so older image entries persist without the thumbnail.
+ *
+ * Only the thumbnail is trimmed. The atom's stored `path` is tens of bytes
+ * and rides through untouched, so an entry past this cutoff still recalls to
+ * real, resubmittable bytes — it just paints a reserved slot rather than a
+ * preview until the read lands.
  */
 export const MAX_PERSISTED_THUMBNAILS = 4;
 

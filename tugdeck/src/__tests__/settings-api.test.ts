@@ -648,24 +648,96 @@ describe("capDurableCardState — strip the dead cellHeights field", () => {
   });
 });
 
-describe("capDurableCardState — strip in-flight attachment bytes", () => {
-  test("drops content.attachmentBytes, keeps the rest of content", () => {
+describe("capDurableCardState — attachment bytes become references", () => {
+  /** The `attachmentBytes` map off a capped bag. */
+  function cappedBytes(out: CardStateBag): Record<string, Record<string, unknown>> {
+    return (out.content as Record<string, unknown>).attachmentBytes as Record<
+      string,
+      Record<string, unknown>
+    >;
+  }
+
+  test("a path-bearing entry keeps its path and sheds every byte", () => {
     const bag: CardStateBag = {
       content: {
         route: "❯",
         draft: { text: "hi", atoms: [], selection: null },
-        attachmentBytes: { b1: { content: "AAAA", mediaType: "image/png" } },
+        attachmentBytes: {
+          b1: {
+            content: "AAAA",
+            mediaType: "image/png",
+            thumbnailDataUrl: "data:image/png;base64,QUJD",
+            path: "/data/draft-attachments/abc.png",
+          },
+        },
       },
     };
     const out = capDurableCardState(bag);
+    expect(cappedBytes(out).b1).toEqual({
+      content: "",
+      mediaType: "image/png",
+      path: "/data/draft-attachments/abc.png",
+    });
     const content = out.content as Record<string, unknown>;
-    expect(content.attachmentBytes).toBeUndefined();
     expect(content.route).toBe("❯");
     expect(content.draft).toEqual({ text: "hi", atoms: [], selection: null });
     // The input bag is not mutated — the in-memory cache keeps its bytes.
     expect(
-      (bag.content as Record<string, unknown>).attachmentBytes,
-    ).toBeDefined();
+      (
+        (bag.content as Record<string, unknown>).attachmentBytes as Record<
+          string,
+          Record<string, unknown>
+        >
+      ).b1.content,
+    ).toBe("AAAA");
+  });
+
+  /**
+   * The Success Criterion in one assertion: a card with three dropped images
+   * persists three short path strings and no image data at all. A thumbnail
+   * here would re-grow the surface that once stalled boot at ~18 MB.
+   */
+  test("no entry carries image data of any kind — no content, no thumbnail", () => {
+    const bag: CardStateBag = {
+      content: {
+        attachmentBytes: {
+          b1: { content: "A".repeat(4096), mediaType: "image/png", thumbnailDataUrl: "data:x", path: "/d/1.png" },
+          b2: { content: "B".repeat(4096), mediaType: "image/jpeg", thumbnailDataUrl: "data:y", path: "/d/2.jpg" },
+          b3: { content: "C".repeat(4096), mediaType: "image/gif", thumbnailDataUrl: "data:z", path: "/d/3.gif" },
+        },
+      },
+    };
+    const entries = Object.values(cappedBytes(capDurableCardState(bag)));
+    expect(entries).toHaveLength(3);
+    for (const entry of entries) {
+      expect(entry.content).toBe("");
+      expect(entry.thumbnailDataUrl).toBeUndefined();
+      expect(typeof entry.path).toBe("string");
+    }
+  });
+
+  test("an entry with no path degrades to a media type alone", () => {
+    const bag: CardStateBag = {
+      content: {
+        attachmentBytes: { b1: { content: "AAAA", mediaType: "image/png" } },
+      },
+    };
+    expect(cappedBytes(capDurableCardState(bag)).b1).toEqual({
+      content: "",
+      mediaType: "image/png",
+    });
+  });
+
+  test("a malformed entry is dropped, and an all-malformed map removes the field", () => {
+    const bag: CardStateBag = {
+      content: {
+        route: "$",
+        attachmentBytes: { junk: null, alsoJunk: { content: "x" } },
+      },
+    };
+    const content = capDurableCardState(bag).content as Record<string, unknown>;
+    expect(content.attachmentBytes).toBeUndefined();
+    expect(content.route).toBe("$");
   });
 
   test("a content payload without attachmentBytes is returned unchanged", () => {
@@ -675,13 +747,19 @@ describe("capDurableCardState — strip in-flight attachment bytes", () => {
     expect(capDurableCardState(bag)).toBe(bag);
   });
 
-  test("strips both attachmentBytes and cellHeights in one pass", () => {
+  test("caps attachmentBytes and cellHeights in one pass", () => {
     const bag: CardStateBag = {
-      content: { attachmentBytes: { b: { content: "x", mediaType: "image/png" } } },
+      content: {
+        attachmentBytes: { b: { content: "x", mediaType: "image/png", path: "/d/b.png" } },
+      },
       regionScroll: { r: { x: 0, y: 0, meta: { cellHeights: [1, 2, 3] } } },
     };
     const out = capDurableCardState(bag);
-    expect((out.content as Record<string, unknown>).attachmentBytes).toBeUndefined();
+    expect(cappedBytes(out).b).toEqual({
+      content: "",
+      mediaType: "image/png",
+      path: "/d/b.png",
+    });
     expect((out.regionScroll!.r.meta as Record<string, unknown>).cellHeights).toBeUndefined();
   });
 });

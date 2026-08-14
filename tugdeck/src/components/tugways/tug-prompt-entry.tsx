@@ -160,6 +160,7 @@ import type { FindSession } from "@/lib/find-session";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
 import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
 import { resolveAtomFilePath } from "@/lib/atom-file-path";
+import { rehydrateDraftAttachments } from "@/lib/attachment-upload";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
 
 // ---------------------------------------------------------------------------
@@ -285,10 +286,15 @@ interface TugPromptEntryState {
    * attachment bytes (the corresponding atoms become unsubmittable
    * skeletons rather than crashes).
    *
+   * Across a true reload or relaunch the entries arrive reduced to
+   * references — an empty `content` and a `path` to the original on disk —
+   * because `capDurableCardState` persists no image data. Rehydration reads
+   * the bytes back after the restore.
+   *
    * Per [D03](roadmap/dev-atoms.md#d03-atom-bytes-store) and
    * [L23](../../tuglaws/tuglaws.md#l23).
    */
-  attachmentBytes?: Record<string, { content: string; mediaType: string }>;
+  attachmentBytes?: Record<string, RestoredAttachmentEntry>;
 }
 
 /**
@@ -358,28 +364,32 @@ export function coerceRestorePayload(raw: unknown): TugPromptEntryState {
  * payload, splicing out their `TUG_ATOM_CHAR` placeholders and shifting the
  * surviving atom positions + selection to match.
  *
- * Image-attachment bytes live only in the in-memory cache: HMR Fast Refresh
- * carries them, but `capDurableCardState` strips them from the durable bag
- * (`settings-api.ts`), so a reload or relaunch restores the draft with
- * `attachmentBytes` absent. Without this prune the editor would mount a
- * placeholder chip with no payload — a chip that ships no image on resubmit.
- * The user accepts losing attachments across a cold boot; what they keep is
- * their typed text and every self-contained atom (text/file/command/doc,
- * whose `value` IS the payload and so are never pruned here). [L23].
+ * An image atom is kept when its entry can still produce bytes — either it
+ * carries them outright (the HMR path, where the in-memory cache brought
+ * everything across) or it carries a `path` to the original tugcast stored at
+ * drop time, which rehydration reads back. An entry with neither is the old
+ * case and still the reason this function exists: `capDurableCardState`
+ * persists no image data, so an attachment whose upload never landed restores
+ * as a payload-less placeholder — a chip that would ship no image on resubmit.
+ * Its atom is spliced out. What the user keeps regardless is their typed text
+ * and every self-contained atom (text/file/command/doc, whose `value` IS the
+ * payload and so are never pruned here). [L23].
  *
- * Returns the draft unchanged when nothing is orphaned (the HMR path), and
- * `null` straight through. Exported-via-coerce; a self-consistent payload
- * where every surviving image atom has bytes is the postcondition.
+ * Returns the draft unchanged when nothing is orphaned, and `null` straight
+ * through. Exported-via-coerce; a self-consistent payload where every
+ * surviving image atom has bytes or a route to them is the postcondition.
  */
 function pruneOrphanedImageAtoms(
   draft: TugTextEditingState | null,
-  attachmentBytes:
-    | Record<string, { content: string; mediaType: string }>
-    | undefined,
+  attachmentBytes: Record<string, RestoredAttachmentEntry> | undefined,
 ): TugTextEditingState | null {
   if (draft === null) return null;
-  const hasBytes = (id: string | undefined): boolean =>
-    id !== undefined && attachmentBytes !== undefined && id in attachmentBytes;
+  const hasBytes = (id: string | undefined): boolean => {
+    if (id === undefined || attachmentBytes === undefined) return false;
+    const entry = attachmentBytes[id];
+    if (entry === undefined) return false;
+    return entry.content.length > 0 || typeof entry.path === "string";
+  };
   const dropPositions = draft.atoms
     .filter((a) => a.type === "image" && !hasBytes(a.id))
     .map((a) => a.position)
@@ -420,23 +430,42 @@ function pruneOrphanedImageAtoms(
  * `undefined` when the input contains zero valid entries — that
  * value round-trips through the snapshot pipeline cleanly and gates
  * `restore` from being called with an empty object.
+ *
+ * `path` is forwarded when present. It has to be: a durably-restored entry
+ * carries nothing else — the bytes were left on disk and the path is the
+ * only way back to them — so dropping it here (this function reconstructs
+ * the entry field by field) would make the whole restore a silent no-op.
  */
 function coerceAttachmentBytes(
   value: unknown,
-): Record<string, { content: string; mediaType: string }> | undefined {
+): Record<string, RestoredAttachmentEntry> | undefined {
   if (value === null || typeof value !== "object") return undefined;
-  const out: Record<string, { content: string; mediaType: string }> = {};
+  const out: Record<string, RestoredAttachmentEntry> = {};
   let any = false;
   for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
     if (entry === null || typeof entry !== "object") continue;
-    const e = entry as { content?: unknown; mediaType?: unknown };
+    const e = entry as { content?: unknown; mediaType?: unknown; path?: unknown };
     if (typeof e.content !== "string" || typeof e.mediaType !== "string") {
       continue;
     }
-    out[id] = { content: e.content, mediaType: e.mediaType };
+    out[id] =
+      typeof e.path === "string" && e.path.length > 0
+        ? { content: e.content, mediaType: e.mediaType, path: e.path }
+        : { content: e.content, mediaType: e.mediaType };
     any = true;
   }
   return any ? out : undefined;
+}
+
+/**
+ * One entry as it comes back off the durable bag: either real bytes (the HMR
+ * path, where the in-memory cache carried everything) or a reference to the
+ * original on disk with an empty `content`.
+ */
+interface RestoredAttachmentEntry {
+  content: string;
+  mediaType: string;
+  path?: string;
 }
 
 /**
@@ -1870,10 +1899,16 @@ export const TugPromptEntry = React.forwardRef<
   // Gaps only: a live id whose full bytes are still present is never
   // clobbered. An image atom with no stored thumbnail gets an empty marker
   // so it recalls as a broken-image tile rather than inert text.
+  //
+  // An entry that also carries a stored `path` is re-seeded with it and
+  // handed to rehydration, which reads the original back and replaces the
+  // marker with real bytes — the difference between a recalled prompt that
+  // merely shows what was attached and one that can be resubmitted.
   useLayoutEffect(() => {
     const sessionId = snap.tugSessionId;
     if (sessionId.length === 0) return;
     const reseed = (): void => {
+      const seeded: Record<string, { content: string; mediaType: string; path?: string }> = {};
       for (const entry of historyStore.getSessionEntries(sessionId)) {
         for (const atom of entry.atoms) {
           if (atom.type !== "image" || atom.id === undefined) continue;
@@ -1882,8 +1917,17 @@ export const TugPromptEntry = React.forwardRef<
             content: "",
             mediaType: "",
             thumbnailDataUrl: atom.thumbnailDataUrl,
+            path: atom.path,
           });
+          if (atom.path !== undefined) {
+            seeded[atom.id] = { content: "", mediaType: "", path: atom.path };
+          }
         }
+      }
+      // After every marker is in place, never during — rehydration re-reads
+      // the store to decide whether the atom is still live.
+      if (Object.keys(seeded).length > 0) {
+        rehydrateDraftAttachments(seeded, attachmentBytesStore);
       }
     };
     reseed();
@@ -2776,6 +2820,12 @@ export const TugPromptEntry = React.forwardRef<
           a.segment.id !== undefined
             ? attachmentBytesStore.get(a.segment.id)?.thumbnailDataUrl
             : undefined,
+        // And the stored original alongside it, so a recalled prompt can
+        // read its bytes back rather than recalling preview-only.
+        path:
+          a.segment.id !== undefined
+            ? attachmentBytesStore.get(a.segment.id)?.path
+            : undefined,
       })),
       timestamp: Date.now(),
     });
@@ -3200,6 +3250,14 @@ export const TugPromptEntry = React.forwardRef<
       // taken (rare), they survive the restore.
       if (restored.attachmentBytes !== undefined) {
         attachmentBytesStore.restore(restored.attachmentBytes);
+        // Read the originals back for every entry that arrived as a bare
+        // reference. Fire-and-forget, and strictly after `coerceRestorePayload`
+        // has already decided which atoms survive: the prune reads the
+        // restored bag, not the eventual store contents, so the two must not
+        // race. Until a read lands the chip paints a reserved slot and its
+        // empty `content` submits as a mention marker, exactly as a recalled
+        // thumbnail always has.
+        rehydrateDraftAttachments(restored.attachmentBytes, attachmentBytesStore);
       }
       const editor = textEditorRef.current;
       if (editor !== null) {

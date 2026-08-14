@@ -1177,23 +1177,6 @@ pub struct QuestionAttachment {
     pub data: String,
 }
 
-/// The file extension an image of this media type is stored under. Only the
-/// types the deck's downsample pipeline can produce are named; anything else
-/// keeps its bytes under `.img`, which the deck serves by sniffing rather
-/// than by extension.
-fn attachment_extension(media_type: &str) -> &'static str {
-    match media_type {
-        "image/png" => "png",
-        "image/jpeg" => "jpg",
-        "image/gif" => "gif",
-        "image/webp" => "webp",
-        "image/heic" => "heic",
-        "image/heif" => "heif",
-        "image/avif" => "avif",
-        _ => "img",
-    }
-}
-
 /// Write each attachment's bytes into `dir` and describe where they landed.
 ///
 /// Every failure — an undecodable base64 payload, a directory that will not
@@ -1221,7 +1204,11 @@ fn store_attachments(dir: &Path, attachments: &[QuestionAttachment]) -> Vec<Gaze
         let path = dir.join(format!(
             "{}.{}",
             uuid::Uuid::new_v4(),
-            attachment_extension(&attachment.media_type),
+            // Gazette keeps its long-standing `.img` fallback for a media
+            // type outside the servable set. Such a file cannot be read back
+            // through `/api/fs/blob` — a pre-existing gap on this path, left
+            // exactly as it was rather than changed under a passing refactor.
+            crate::attachments::attachment_extension(&attachment.media_type).unwrap_or("img"),
         ));
         if let Err(err) = std::fs::write(&path, &bytes) {
             warn!(error = %err, "gazette operator: attachment write failed; dropped");

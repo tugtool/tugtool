@@ -34,6 +34,11 @@ const MAX_DEFAULTS_VALUE_BYTES: usize = 256 * 1024;
 /// launch — so a startup sweep drops entries whose session is gone.
 pub(crate) const PROMPT_HISTORY_DOMAIN: &str = "dev.tugtool.prompt.history";
 
+/// Domain of per-card durable state, keyed by card id. Alongside prompt
+/// history it is one of the two places a stored draft-attachment path can be
+/// referenced from, so `draft_gc` reads both as its root set.
+pub(crate) const CARDSTATE_DOMAIN: &str = "dev.tugtool.deck.cardstate";
+
 /// Delete keys of `domain` whose id is not in `live`, returning how many
 /// were removed. Best-effort startup hygiene: a missing domain yields 0,
 /// and a failed delete is logged and skipped. Run BEFORE the DEFAULTS feed

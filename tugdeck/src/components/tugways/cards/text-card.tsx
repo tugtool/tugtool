@@ -107,6 +107,8 @@ import { useFocusManager } from "../use-focusable";
 import { useCycleMode } from "../use-cycle-mode";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
+import { getDeckStore } from "@/lib/deck-store-registry";
+import { openFileInCard } from "@/lib/open-file-in-card";
 
 // ---------------------------------------------------------------------------
 // Keyboard-focus cycle ([P09]/[P10])
@@ -289,6 +291,12 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // Card-local editor settings, seeded from the deck-wide Text Card
   // defaults on first open, then owned by this card ([D07] pattern).
   const { settings: editorSettings, setSetting } = useTextCardSettings(cardId);
+
+  // Why a file drop did not attach — an untitled buffer, a write the server
+  // refused. Structure, not appearance: the banner's presence is content the
+  // card renders, and it is dismissed by the next successful drop or by the
+  // user closing it.
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
 
   // Live editor stats (caret + counts) for the bottom status bar. The
   // editor writes it; the status bar reads it — so keystroke-rate
@@ -1121,6 +1129,14 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             onFindNavigated={() => findBarRef.current?.refreshCount()}
             onSaveCommand={onSaveCommand}
             onStats={statsStore.set}
+            onAttachmentError={setAttachmentError}
+            onOpenPath={(p) => {
+              // The same routing every other open takes — a viewable kind
+              // lands in a file-view card, and a path already open is reused
+              // rather than duplicated.
+              const deck = getDeckStore();
+              if (deck !== null) openFileInCard(deck, p);
+            }}
           />
         </cycle.CycleScope>
         {/* Under the SAME cycle the editor and the status strip use, so the
@@ -1210,6 +1226,21 @@ export function TextCardContent({ cardId }: { cardId: string }) {
                 </TugPushButton>
               </>
             )
+          }
+        />
+        <TugPaneBanner
+          visible={attachmentError !== null}
+          variant="error"
+          tone="caution"
+          label="Attachment failed"
+          message={attachmentError ?? ""}
+          footer={
+            <TugPushButton
+              data-testid="text-card-attachment-error-dismiss"
+              onClick={() => setAttachmentError(null)}
+            >
+              OK
+            </TugPushButton>
           }
         />
       </div>

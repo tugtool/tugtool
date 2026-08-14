@@ -115,6 +115,24 @@ export interface AtomBytesEntry {
    * thumbnail-at-synthesis design.
    */
   thumbnailDataUrl?: string;
+  /**
+   * Absolute path of the **original** dropped file, as tugcast rested it.
+   *
+   * This is the durable half of the entry. `content` is the downsampled copy
+   * and is far too large to persist; the path is tens of bytes, so a card
+   * state that would have thrown its attachments away can carry a reference
+   * to them instead and read the bytes back on restore.
+   *
+   * Optional because it arrives late and may never arrive: the upload runs in
+   * the background after the chip is already on screen, and a refused media
+   * type or an unreachable server simply leaves it absent. An entry with no
+   * path behaves exactly as every entry did before there were paths.
+   *
+   * Note that the path names the original, while `mediaType` describes
+   * `content` — the downsample output. They can disagree (a PNG that hit the
+   * JPEG ladder), which is why the upload sends the `File`'s own type.
+   */
+  path?: string;
 }
 
 /**
@@ -282,6 +300,9 @@ export function createAtomBytesStore(): AtomBytesStore {
         if (entry.thumbnailDataUrl !== undefined) {
           e.thumbnailDataUrl = entry.thumbnailDataUrl;
         }
+        if (entry.path !== undefined) {
+          e.path = entry.path;
+        }
         out[id] = e;
       }
       return out;
@@ -305,6 +326,12 @@ export function createAtomBytesStore(): AtomBytesStore {
         const next: AtomBytesEntry = { content: e.content, mediaType: e.mediaType };
         if (typeof e.thumbnailDataUrl === "string") {
           next.thumbnailDataUrl = e.thumbnailDataUrl;
+        }
+        // The durable reference. A restored entry whose `content` is the
+        // empty string is the normal shape here — the bytes were left on
+        // disk rather than persisted, and this path is how they come back.
+        if (typeof e.path === "string") {
+          next.path = e.path;
         }
         map.set(id, next);
         added += 1;

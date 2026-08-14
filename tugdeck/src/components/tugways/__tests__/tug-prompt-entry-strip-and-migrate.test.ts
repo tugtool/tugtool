@@ -425,3 +425,63 @@ describe("buildEditingStateFromDraftRestore — atom id round-trip", () => {
     expect(state.atoms.map((a) => a.position)).toEqual([0, 6, 7]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// coerceRestorePayload — durable attachment references
+//
+// `capDurableCardState` no longer throws the attachment bag away; it reduces
+// each entry to `{content: "", mediaType, path}`. Two things have to hold for
+// that to mean anything: the coercion must forward `path` (it reconstructs
+// entries field by field and silently discards anything it does not name), and
+// the prune must read a path-bearing entry as "bytes are coming" rather than
+// as an orphan.
+// ---------------------------------------------------------------------------
+
+describe("coerceRestorePayload — durable attachment references", () => {
+  const A = TUG_ATOM_CHAR;
+
+  const draftWithImage: TugTextEditingState = {
+    text: `pic ${A}`,
+    atoms: [
+      { position: 4, type: "image", label: "image-1", value: "image-1", id: "b1" },
+    ],
+    selection: { start: 5, end: 5 },
+  };
+
+  it("forwards path through the coercion filter", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: draftWithImage,
+      attachmentBytes: {
+        b1: { content: "", mediaType: "image/png", path: "/d/abc.png" },
+      },
+    });
+    expect(result.attachmentBytes?.b1).toEqual({
+      content: "",
+      mediaType: "image/png",
+      path: "/d/abc.png",
+    });
+  });
+
+  it("keeps an image atom whose entry has a path but no bytes yet", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: draftWithImage,
+      attachmentBytes: {
+        b1: { content: "", mediaType: "image/png", path: "/d/abc.png" },
+      },
+    });
+    expect(result.draft).toEqual(draftWithImage);
+  });
+
+  it("drops an image atom whose entry has neither bytes nor a path", () => {
+    const result = coerceRestorePayload({
+      route: "❯",
+      draft: draftWithImage,
+      // The upload never landed before the save: media type only.
+      attachmentBytes: { b1: { content: "", mediaType: "image/png" } },
+    });
+    expect(result.draft?.text).toBe("pic ");
+    expect(result.draft?.atoms).toEqual([]);
+  });
+});

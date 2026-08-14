@@ -9,7 +9,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented — awaiting vetting |
 | Target branch | main |
 | Last updated | 2026-08-13 |
 
@@ -358,15 +358,15 @@ Saving a *titled* document elsewhere breaks its links the same way; that is [R03
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | tugcast attachment storage + `POST /api/attachments` | pending | — |
-| #step-2 | `POST /api/fs/attach` (document-sibling assets) | pending | — |
-| #step-3 | `AtomBytesEntry.path` + original upload on drop/paste | pending | — |
-| #step-4 | Durable card state maps references; restore rehydrates | pending | — |
-| #step-5 | Prompt-history recall becomes resubmittable | pending | — |
-| #step-6 | Draft-attachments GC at tugcast startup | pending | — |
-| #step-7 | Text card file drop → assets + markdown links | pending | — |
-| #step-8 | ⌘-click asset links open a viewer card | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | tugcast attachment storage + `POST /api/attachments` | done | `79a7f4576` |
+| #step-2 | `POST /api/fs/attach` (document-sibling assets) | done | `79a7f4576` (landed with Step 1) |
+| #step-3 | `AtomBytesEntry.path` + original upload on drop/paste | done | `ef3a76ad4` |
+| #step-4 | Durable card state maps references; restore rehydrates | done | `8050a1410` |
+| #step-5 | Prompt-history recall becomes resubmittable | done | `5e3496e41` |
+| #step-6 | Draft-attachments GC at tugcast startup | done | `d05d5ff46` |
+| #step-7 | Text card file drop → assets + markdown links | done | `3baf3ff1a` |
+| #step-8 | ⌘-click asset links open a viewer card | done | `3baf3ff1a` (landed with Step 7) |
+| #step-9 | Integration checkpoint | done | verification only |
 
 #### Step 1: tugcast attachment storage + `POST /api/attachments` {#step-1}
 

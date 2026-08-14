@@ -139,6 +139,24 @@ html[data-app-active="false"] .tug-text-card-editor[data-key-view-kbd]::after {
   content: none;
 }
 
+/* The drop ring — a file drag is hovering the editor and a drop will write an
+ * asset and insert a link. Drawn the same way as the key-view ring above and
+ * for the same reason (an outline anywhere in this subtree is covered by
+ * `.cm-editor` or by the sticky gutter), in the drop accent rather than the
+ * focus accent, and after it in source order so a dragged-over editor that
+ * also holds the ring reads as the drop target it is about to be.
+ * @tug-renders-on: --tugx-block-surface */
+.tug-text-card-editor[data-drop-active]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: var(--tugx-drop-ring-width) solid
+    var(--tug7-element-highlight-stroke-normal-drop-rest);
+  border-radius: var(--tugx-focus-ring-radius);
+  pointer-events: none;
+  z-index: 300;
+}
+
 /* ---- Invisibles ---- */
 
 /* `highlightWhitespace()` marks BOTH spaces and tabs; the two settings

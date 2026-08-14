@@ -1,0 +1,381 @@
+/**
+ * at0410-text-card-file-drop.test.ts — dropping a file on a Text card writes a
+ * real file into a sibling `assets/` folder and inserts a standard markdown
+ * link to it, and ⌘-clicking that link opens the asset.
+ *
+ * ## What this pins
+ *
+ * The Text card's editor deliberately excluded drop handling — dropping a file
+ * on it did nothing at all, and there was no storage or linkage story for an
+ * attachment in a document that has to stay pure markdown. The gesture now
+ * means something, and what it means is deliberately boring: the bytes are
+ * copied next to the document and the document gets a CommonMark link. There
+ * is no sidecar bundle, no database id, no `tug://` scheme — the written
+ * markdown renders on GitHub and resolves under `cat`.
+ *
+ * ## Shape
+ *
+ *   1. A temp directory holding `doc.md`. A Text card opens it.
+ *   2. A real PNG from the tree is dropped on the editor via a synthesized
+ *      `drop` DragEvent carrying a `File` — the same event the OS delivers for
+ *      a Finder drag, driving `/api/fs/attach` for real.
+ *   3. Assertions on **disk**: `assets/dropped.png` exists and is byte-identical
+ *      to the source. Assertions on the **document**: it carries
+ *      `![dropped](assets/dropped.png)` — the image form, relative
+ *      destination, no Tug-specific syntax.
+ *   4. A second drop of the same filename lands `assets/dropped-2.png` rather
+ *      than clobbering the first — and the link still *reads* `![dropped]`.
+ *      The suffix is how this feature keeps two files with one name apart;
+ *      the user dropped something called `dropped.png` and that is what their
+ *      document should say. Only the destination, which has to name a real
+ *      file, carries the suffix.
+ *   5. ⌘-click on each link — the `![…]` image form and the plain `[…]` form,
+ *      since only one of the two exercises the `!` branch of the grammar —
+ *      opens a file-view card on the asset.
+ *
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor/file-drop.ts
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor/anchor-links.ts
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.tsx
+ * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
+ * @covers tugdeck/src/components/tugways/cards/text-card.tsx
+ * @covers tugdeck/src/lib/attachment-upload.ts
+ * @covers tugrust/crates/tugcast/src/attachments.rs
+ */
+
+import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { launchTugApp, type App } from "./_harness";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+
+const TEST_TIMEOUT_MS = 120_000;
+
+/** A real PNG already in the tree — real bytes a real decoder has to handle. */
+const REPO_PNG_FIXTURE = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "resources",
+  "AppIcon-1024b.png",
+);
+
+const EDITOR_HOST_SELECTOR =
+  '[data-card-id="A"] [data-slot="tug-text-card-editor"]';
+const EDITOR_CONTENT_SELECTOR = `${EDITOR_HOST_SELECTOR} .cm-content`;
+
+const DOC_SEED = "# Notes\n\nDrop lands here: \n";
+
+function deckShape() {
+  return {
+    cards: [{ id: "A", componentId: "text", title: "doc.md", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 760, height: 560 },
+        cardIds: ["A"],
+        activeCardId: "A",
+        title: "",
+        acceptsFamilies: ["standard"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+/**
+ * Drop a real PNG `File` on the editor under `fileName`, and return the exact
+ * bytes that were dropped so the test can compare them against what landed on
+ * disk.
+ *
+ * The image is encoded in-page (canvas → blob), which is what a real drag
+ * would deliver anyway, and — unlike shipping a fixture's base64 through the
+ * RPC — keeps the script small enough to evaluate. `evalJS` cannot await, so
+ * the handler signals through a window flag that the test polls, and stashes
+ * the bytes for the caller to read back afterwards.
+ */
+async function dropPngOnEditor(app: App, fileName: string): Promise<Buffer> {
+  await app.evalJS<void>(
+    `(function(){
+      window.__at0410Dropped = false;
+      window.__at0410Bytes = null;
+      var host = document.querySelector(${JSON.stringify(EDITOR_CONTENT_SELECTOR)});
+      var canvas = document.createElement("canvas");
+      canvas.width = 80; canvas.height = 48;
+      var ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#2b3a55"; ctx.fillRect(0, 0, 80, 48);
+      ctx.fillStyle = "#e8c07d"; ctx.fillRect(10, 10, 28, 28);
+      canvas.toBlob(function(blob){
+        blob.arrayBuffer().then(function(buf){
+          var bytes = new Uint8Array(buf);
+          var binary = "";
+          for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          window.__at0410Bytes = btoa(binary);
+
+          var file = new File([bytes], ${JSON.stringify(fileName)}, { type: "image/png" });
+          var dt = new DataTransfer();
+          dt.items.add(file);
+          var r = host.getBoundingClientRect();
+          var ev = new DragEvent("drop", {
+            bubbles: true,
+            cancelable: true,
+            clientX: r.left + 4,
+            clientY: r.bottom - 6,
+          });
+          Object.defineProperty(ev, "dataTransfer", { value: dt });
+          host.dispatchEvent(ev);
+          window.__at0410Dropped = true;
+        });
+      }, "image/png");
+    })()`,
+  );
+  await app.waitForCondition<boolean>(`window.__at0410Dropped === true`, {
+    timeoutMs: 10_000,
+  });
+  return Buffer.from(await app.evalJS<string>(`window.__at0410Bytes`), "base64");
+}
+
+/** The editor's whole document, read off CM6's rendered lines. */
+function docText(app: App): Promise<string> {
+  return app.evalJS<string>(
+    `Array.from(document.querySelectorAll(${JSON.stringify(`${EDITOR_CONTENT_SELECTOR} .cm-line`)}))
+      .map(function(l){ return l.textContent || ""; })
+      .join("\\n")`,
+  );
+}
+
+/**
+ * ⌘-click the first character of `needle` in the document.
+ *
+ * The click is a synthesized `mousedown` at the character's own screen
+ * position, which is what the extension's `posAtCoords` reads — clicking by
+ * coordinate rather than by element is the only way to address a position
+ * inside a text node.
+ */
+async function accelClickText(app: App, needle: string): Promise<boolean> {
+  return app.evalJS<boolean>(
+    `(function(){
+      var content = document.querySelector(${JSON.stringify(EDITOR_CONTENT_SELECTOR)});
+      if (content === null) return false;
+      var needle = ${JSON.stringify(needle)};
+      // The needle is located against a LINE's text, then mapped back through
+      // that line's text nodes. Markdown highlighting splits a link across
+      // several spans, so searching node by node would miss a needle that
+      // straddles a span boundary — which "![shown]" does.
+      var lines = content.querySelectorAll(".cm-line");
+      var node = null, offset = -1;
+      for (var i = 0; i < lines.length && node === null; i++) {
+        var at = (lines[i].textContent || "").indexOf(needle);
+        if (at === -1) continue;
+        var walker = document.createTreeWalker(lines[i], NodeFilter.SHOW_TEXT);
+        var seen = 0, n = null;
+        while ((n = walker.nextNode()) !== null) {
+          var len = (n.nodeValue || "").length;
+          if (at < seen + len) { node = n; offset = at - seen; break; }
+          seen += len;
+        }
+      }
+      if (node === null || offset === -1) return false;
+      var range = document.createRange();
+      // A one-character range so the rect is the glyph's, not the line's.
+      range.setStart(node, offset);
+      range.setEnd(node, Math.min(offset + 1, (node.nodeValue || "").length));
+      var rect = range.getBoundingClientRect();
+      content.dispatchEvent(new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        metaKey: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      }));
+      return true;
+    })()`,
+  );
+}
+
+/**
+ * The paths every open file-view card is showing.
+ *
+ * A viewer card points an `<img>` at `/api/fs/blob?path=…`, so its `src` is
+ * where the path it opened on is legible from the DOM.
+ */
+function viewerPaths(app: App): Promise<string[]> {
+  return app.evalJS<string[]>(
+    `Array.from(document.querySelectorAll('[data-slot="file-view-card"] img'))
+      .map(function(img){
+        var m = /[?&]path=([^&]+)/.exec(img.getAttribute("src") || "");
+        return m === null ? "" : decodeURIComponent(m[1]);
+      })
+      .filter(function(p){ return p.length > 0; })`,
+  );
+}
+
+/** A condition that holds once some viewer card is showing `target`. */
+function viewerShowing(target: string): string {
+  return `(function(){
+    return Array.from(document.querySelectorAll('[data-slot="file-view-card"] img'))
+      .some(function(img){
+        var m = /[?&]path=([^&]+)/.exec(img.getAttribute("src") || "");
+        return m !== null && decodeURIComponent(m[1]) === ${JSON.stringify(target)};
+      });
+  })()`;
+}
+
+describe.skipIf(!SHOULD_RUN)(
+  "at0410: Text card file drops write assets and insert markdown links",
+  () => {
+    test(
+      "a dropped image becomes a sibling asset and a relative markdown link",
+      async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), "at0410-"));
+        const docPath = path.join(dir, "doc.md");
+        fs.writeFileSync(docPath, DOC_SEED, "utf8");
+
+        try {
+          const app = await launchTugApp({ testName: "at0410-text-card-file-drop" });
+          try {
+            await app.seedDeckState({
+              state: deckShape(),
+              cardStates: {
+                A: {
+                  content: { path: docPath, anchor: { line: 1, ch: 0 }, scrollTop: 0 },
+                },
+              },
+              focusCardId: "A",
+            });
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(EDITOR_CONTENT_SELECTOR)});
+                return el !== null && el.innerText.indexOf("Drop lands here") !== -1;
+              })()`,
+              { timeoutMs: 15_000 },
+            );
+
+            // ── First drop ────────────────────────────────────────────────
+            const dropped = await dropPngOnEditor(app, "dropped.png");
+            const assetPath = path.join(dir, "assets", "dropped.png");
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var lines = document.querySelectorAll(${JSON.stringify(`${EDITOR_CONTENT_SELECTOR} .cm-line`)});
+                return Array.from(lines).some(function(l){
+                  return (l.textContent || "").indexOf("assets/dropped.png") !== -1;
+                });
+              })()`,
+              { timeoutMs: 20_000 },
+            );
+
+            // On disk: byte-identical to the source, in a sibling folder.
+            expect(fs.existsSync(assetPath)).toBe(true);
+            expect(fs.readFileSync(assetPath).equals(dropped)).toBe(true);
+
+            // In the document: the image form, a relative destination, and
+            // nothing a non-Tug markdown renderer would not understand.
+            expect(await docText(app)).toContain("![dropped](assets/dropped.png)");
+
+            // ── Second drop of the same name ──────────────────────────────
+            await dropPngOnEditor(app, "dropped.png");
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var lines = document.querySelectorAll(${JSON.stringify(`${EDITOR_CONTENT_SELECTOR} .cm-line`)});
+                return Array.from(lines).some(function(l){
+                  return (l.textContent || "").indexOf("assets/dropped-2.png") !== -1;
+                });
+              })()`,
+              { timeoutMs: 20_000 },
+            );
+            expect(fs.existsSync(path.join(dir, "assets", "dropped-2.png"))).toBe(true);
+            // The first asset was not clobbered.
+            expect(fs.readFileSync(assetPath).equals(dropped)).toBe(true);
+            // The label is still `dropped` — the name the user dragged. The
+            // suffix is this feature's bookkeeping for keeping two files with
+            // one name apart, and it belongs in the destination only; a
+            // document that suddenly says `dropped-2` about a picture the
+            // user knows as `dropped` is that bookkeeping leaking out.
+            expect(await docText(app)).toContain("![dropped](assets/dropped-2.png)");
+          } finally {
+            await app.close();
+          }
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "cmd-click on an asset link opens the asset, in both link forms",
+      async () => {
+        // Resolved, because the paths this test compares against are the
+        // ones the app reports — and everything the app touches has passed
+        // the canonicalization gateway, where `/var` becomes `/private/var`.
+        const dir = fs.realpathSync(
+          fs.mkdtempSync(path.join(os.tmpdir(), "at0410-click-")),
+        );
+        const docPath = path.join(dir, "doc.md");
+        const assetsDir = path.join(dir, "assets");
+        fs.mkdirSync(assetsDir);
+        fs.copyFileSync(REPO_PNG_FIXTURE, path.join(assetsDir, "shown.png"));
+        fs.copyFileSync(REPO_PNG_FIXTURE, path.join(assetsDir, "plain.png"));
+        // Both forms, one per line: the image embed a drop writes for an
+        // image, and the plain link it writes for everything else.
+        fs.writeFileSync(
+          docPath,
+          "IMAGEFORM ![shown](assets/shown.png)\n\nPLAINFORM [plain.png](assets/plain.png)\n",
+          "utf8",
+        );
+
+        try {
+          const app = await launchTugApp({ testName: "at0410-asset-link-click" });
+          try {
+            await app.seedDeckState({
+              state: deckShape(),
+              cardStates: {
+                A: {
+                  content: { path: docPath, anchor: { line: 1, ch: 0 }, scrollTop: 0 },
+                },
+              },
+              focusCardId: "A",
+            });
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(EDITOR_CONTENT_SELECTOR)});
+                return el !== null && el.innerText.indexOf("IMAGEFORM") !== -1;
+              })()`,
+              { timeoutMs: 15_000 },
+            );
+
+            // The image form. The click lands on the `!`, which the grammar
+            // has to include in the token's extent for the two to line up.
+            expect(await accelClickText(app, "![shown]")).toBe(true);
+            await app.waitForCondition<boolean>(
+              viewerShowing(path.join(assetsDir, "shown.png")),
+              { timeoutMs: 15_000 },
+            );
+
+            // The plain form — the branch the `!` test cannot reach.
+            expect(await accelClickText(app, "[plain.png]")).toBe(true);
+            await app.waitForCondition<boolean>(
+              viewerShowing(path.join(assetsDir, "plain.png")),
+              { timeoutMs: 15_000 },
+            );
+
+            // Both, not one card retargeted.
+            const paths = await viewerPaths(app);
+            expect(paths).toContain(path.join(assetsDir, "shown.png"));
+            expect(paths).toContain(path.join(assetsDir, "plain.png"));
+          } finally {
+            await app.close();
+          }
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+  },
+);

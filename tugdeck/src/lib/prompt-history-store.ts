@@ -43,6 +43,18 @@ export interface SerializedAtom {
    * recall as a broken-image tile).
    */
   thumbnailDataUrl?: string;
+  /**
+   * Absolute path of the original file tugcast stored at drop time. What
+   * makes a recalled prompt *resubmittable* rather than merely legible: the
+   * thumbnail above shows what the attachment was, and this reads the bytes
+   * back so the recalled prompt ships a real image block instead of a
+   * mention marker. Absent for non-image atoms and for images whose upload
+   * had not landed at submit time.
+   *
+   * A path string is negligible beside the thumbnail already here, so it
+   * costs nothing against `MAX_PROMPT_HISTORY_BYTES`.
+   */
+  path?: string;
 }
 
 /**

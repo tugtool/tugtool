@@ -11,8 +11,14 @@
  * shared undo-menu-state plugin, and a right-click context menu via
  * `useTextSurfaceContextMenu`.
  *
+ * File drops ARE here, but only as file drops: bytes are copied into an
+ * `assets/` folder beside the document and a standard markdown link is
+ * inserted at the drop caret (`tug-text-card-editor/file-drop`). The
+ * composer's caret affordance is reused; none of its atom or attachment
+ * machinery is.
+ *
  * What is deliberately NOT here (prompt-only concerns): atoms,
- * completion/typeahead, drop handling, attachments, submit/history
+ * completion/typeahead, inline attachment payloads, submit/history
  * navigation, the custom caret/selection layers (native caret and
  * `::selection` work fine without atom widgets in the document).
  *
@@ -132,6 +138,11 @@ import { languageForExtension, tugEditingHighlightStyle } from "@/lib/language-r
 
 import { mdListHangingIndent } from "./tug-text-editor/list-hanging-indent";
 import { anchorLinkExtension } from "./tug-text-card-editor/anchor-links";
+import {
+  fileDropExtension,
+  resolveAgainstDoc,
+} from "./tug-text-card-editor/file-drop";
+import { isViewableFile } from "@/lib/file-kinds";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusable } from "./use-focusable";
 import { useCardId } from "./use-card-state-preservation";
@@ -461,6 +472,18 @@ export interface TugTextCardEditorProps {
   focusGroup?: string;
   /** Order within {@link focusGroup}. Defaults to 0 (registration order breaks ties). */
   focusOrder?: number;
+  /**
+   * Report a file drop that could not be attached — an untitled buffer, a
+   * refused write. Omit and failures are silent; the Text card wires this to
+   * its own notice.
+   */
+  onAttachmentError?: (message: string) => void;
+  /**
+   * Open an absolute path a ⌘-clicked relative link resolved to. Omit and
+   * relative links are inert. The card wires this to `openFileInCard`, the
+   * one implementation behind every "open this path" entry point.
+   */
+  onOpenPath?: (path: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -484,6 +507,8 @@ export const TugTextCardEditor = React.forwardRef<
     onStats,
     focusGroup,
     focusOrder = 0,
+    onAttachmentError,
+    onOpenPath,
   },
   ref,
 ) {
@@ -512,6 +537,14 @@ export const TugTextCardEditor = React.forwardRef<
   // ⌘-click anchor navigation jumps through this ref so the mount-time
   // extension always calls the latest `revealLine` closure [L07].
   const anchorNavigateRef = useRef<(line: number) => void>(() => {});
+  // Live prop ref for the drop's failure sink: the extension is built once at
+  // mount and must never call a stale handler ([L07]).
+  const attachmentErrorRef = useRef<((message: string) => void) | undefined>(
+    onAttachmentError,
+  );
+  attachmentErrorRef.current = onAttachmentError;
+  const openRelativeRef = useRef<(path: string) => void>(() => {});
+  openRelativeRef.current = onOpenPath ?? (() => {});
   // Doc-derived counts, recomputed only on document change; caret is
   // recomputed on every selection change from the live state.
   const docStatsRef = useRef<DocStats>({ lines: 1, words: 0, chars: 0 });
@@ -716,7 +749,40 @@ export const TugTextCardEditor = React.forwardRef<
         // ⌘-click intra-document link/anchor navigation (plain click still
         // edits). Jumps via the live `revealLine` through a ref so the
         // mount-time closure never goes stale.
-        anchorLinkExtension((line) => anchorNavigateRef.current(line)),
+        anchorLinkExtension({
+          navigate: (line) => anchorNavigateRef.current(line),
+          // A relative destination resolves against the document's own
+          // directory. The resolved path is handed straight to the same
+          // guarded open path everything else uses — nothing assembled here
+          // is persisted or compared ([L29]).
+          // Viewable kinds only — an image or a PDF opens in the viewer card.
+          // A dropped `.zip` writes a perfectly good link that any other tool
+          // will follow; it just is not a thing this card has a viewer for, so
+          // it stays inert rather than lighting up and doing nothing.
+          canOpenRelative: (destination) => {
+            const resolved = resolveAgainstDoc(
+              storeRef.current.getSnapshot().path,
+              destination,
+            );
+            return resolved !== null && isViewableFile(resolved);
+          },
+          openRelative: (destination) => {
+            const resolved = resolveAgainstDoc(
+              storeRef.current.getSnapshot().path,
+              destination,
+            );
+            if (resolved !== null) openRelativeRef.current(resolved);
+          },
+        }),
+        // File drops write into a sibling `assets/` folder and insert a
+        // standard markdown link. Everything is read through getters at
+        // drop time — the store's path changes with Save As, and the error
+        // sink is a prop ([L07]).
+        fileDropExtension({
+          host,
+          getDocPath: () => storeRef.current.getSnapshot().path,
+          onError: (message) => attachmentErrorRef.current?.(message),
+        }),
         search({ top: true }),
         // Every user edit arms the autosave debounce. Store-driven
         // replacements (external-change reverts) carry the

@@ -1,4 +1,5 @@
 mod actions;
+mod attachments;
 mod auth;
 mod changes_journal;
 mod changes_writer;
@@ -8,6 +9,7 @@ mod dash_api;
 mod dead_branch;
 mod defaults;
 mod dev;
+mod draft_gc;
 mod external_sessions;
 mod feeds;
 mod fs_blob;
@@ -604,6 +606,14 @@ async fn main() {
             }
             Err(e) => warn!(error = %e, "failed to list sessions for prompt-history prune"),
         }
+    }
+
+    // Startup hygiene, second half: reclaim composer attachments nothing
+    // references any more. Runs after the prune above so a swept history key
+    // has already released whatever it was holding, and before the DEFAULTS
+    // feed registers its callback for the same reason that one does.
+    if let Some(bank) = bank_client.as_ref() {
+        crate::draft_gc::sweep_at_startup(bank);
     }
 
     // Create DEFAULTS feed from the TugbankClient.

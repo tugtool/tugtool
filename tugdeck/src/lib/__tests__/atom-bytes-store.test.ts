@@ -467,3 +467,53 @@ describe("instance independence", () => {
     expect(b.size()).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Durable attachment references
+// ---------------------------------------------------------------------------
+
+describe("path — the durable attachment reference", () => {
+  test("snapshot round-trips path through restore", () => {
+    const a = createAtomBytesStore();
+    a.put("x", { ...PNG_ENTRY, path: "/data/draft-attachments/abc.png" });
+    const b = createAtomBytesStore();
+    b.restore(a.snapshot());
+    expect(b.get("x")?.path).toBe("/data/draft-attachments/abc.png");
+  });
+
+  test("snapshot omits path entirely when the entry has none", () => {
+    const store = createAtomBytesStore();
+    store.put("x", PNG_ENTRY);
+    expect("path" in store.snapshot().x!).toBe(false);
+  });
+
+  test("path-less entries still survive restore", () => {
+    const store = createAtomBytesStore();
+    store.restore({ x: PNG_ENTRY });
+    expect(store.get("x")).toEqual(PNG_ENTRY);
+  });
+
+  test("a non-string path is dropped rather than carried through", () => {
+    const store = createAtomBytesStore();
+    store.restore({
+      x: { ...PNG_ENTRY, path: 42 as unknown as string },
+    });
+    expect(store.get("x")?.path).toBeUndefined();
+    expect(store.get("x")?.content).toBe(PNG_ENTRY.content);
+  });
+
+  // The shape a durably-saved card state restores as: the bytes were left on
+  // disk, so `content` is empty and `path` is how they come back. An absent
+  // `content` would be filtered out here and the whole feature would be a
+  // silent no-op, which is why the cap writes `""` rather than omitting it.
+  test("an entry with empty content and a path survives restore", () => {
+    const store = createAtomBytesStore();
+    store.restore({
+      x: { content: "", mediaType: "image/png", path: "/data/abc.png" },
+    });
+    const entry = store.get("x");
+    expect(entry).not.toBeNull();
+    expect(entry?.content).toBe("");
+    expect(entry?.path).toBe("/data/abc.png");
+  });
+});
