@@ -259,6 +259,10 @@ pub enum Commands {
     #[command(subcommand)]
     Dash(DashCommands),
 
+    /// Plan documents — mechanical conformance against the devise skeleton.
+    #[command(subcommand)]
+    Plan(PlanCommands),
+
     /// Instance discovery, the build gate, project state, and the tell bridge.
     #[command(subcommand)]
     Host(HostCommands),
@@ -280,6 +284,39 @@ impl From<CliStrategy> for JoinStrategy {
             CliStrategy::Rebase => JoinStrategy::Rebase,
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum PlanCommands {
+    /// Check a plan document against the devise skeleton.
+    ///
+    /// Exit 0 clean or warnings-only, 1 on any error diagnostic, 2 when the
+    /// file cannot be read or is not a plan document. The path is explicit —
+    /// there is no search cascade.
+    Lint {
+        /// Path to the plan document.
+        path: String,
+    },
+
+    /// Tell the running Tug instance a plan is written and ready for review.
+    ///
+    /// The card carrying `$TUG_SESSION_ID` runs the review as its next turn.
+    /// Exits non-zero when no instance is reachable, so the caller can fall
+    /// back to printing the review command for the user to run by hand.
+    ReviewRequest {
+        /// Path to the plan document; resolved to an absolute path before sending.
+        #[arg(long)]
+        plan: String,
+        /// Session id (default: $TUG_SESSION_ID).
+        #[arg(long)]
+        session: Option<String>,
+        /// Tugcast server port (overrides --instance and CLI discovery).
+        #[arg(long)]
+        port: Option<u16>,
+        /// Target a specific instance by ID.
+        #[arg(long)]
+        instance: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

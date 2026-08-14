@@ -1,6 +1,6 @@
 ---
 name: devise
-description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it — ready for /tugplug:vet and /tugplug:implement
+description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it, and hand it to the review turn — ready for /tugplug:implement
 argument-hint: "[idea] [→ output-path]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
@@ -52,18 +52,41 @@ Prefer a tight, real plan over an exhaustive one. Every step should be executabl
 
 ### 4. Self-check
 
-Re-read the plan against the skeleton: required sections present, anchors unique, `**Depends on:**` lines point at real step anchors, every step has a commit boundary and a falsifiable checkpoint. Conformance is a convention you uphold by authorship and review — fix anything off before handing off.
+Run the checker over what you wrote:
+
+```bash
+tugutil plan lint <plan-path>
+```
+
+It answers the mechanical half — required sections, unique anchors, `[P##]` vs `[D##]`, per-step field presence, `**Depends on:**` resolution and direction, ledger integrity, banned test shapes. Fix every diagnostic it names, warnings included, and re-run until it is clean. Exit 0 is the bar before you hand off.
 
 Then run the **cold-reader test**: could a fresh session, given only this document and the repository, implement every step without asking you anything? Hunt for references that lean on session context — "as discovered above", "the function we looked at", steps that name a change but not its location — and replace each with the concrete paths, symbols, and findings.
 
-### 5. Hand off
+Then run the **cold-reader test**: could a fresh session, given only this document and the repository, implement every step without asking you anything? Hunt for references that lean on session context — "as discovered above", "the function we looked at", steps that name a change but not its location — and replace each with the concrete paths, symbols, and findings.
 
-Tell the user the plan is ready and name the exact path you wrote. Then give them both next moves as literal, clickable commands — each one written out in full so the user can click it in the transcript and run it as-is:
+### 5. Ask for the review
 
-- `/tugplug:vet <plan-path>` — assess the plan against the tuglaws and the real code before building anything.
-- `/tugplug:implement <plan-path>` — drive the plan to a tested build.
+The plan is not ready when you finish writing it; it is ready when it has been reviewed. Ask for that review from **inside this turn**, before you end it:
 
-Write both on their own lines with the real path substituted in; never abbreviate the path or leave a placeholder. **Write each command inside backticks**, command and path together in one span — `` `/tugplug:vet roadmap/my-plan.md` ``. The Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text. Don't start vetting or implementing from the devise skill — authoring, vetting, and implementing are separate steps (as is committing the plan to git, which the user owns).
+```bash
+tugutil plan review-request --plan <absolute-plan-path>
+```
+
+This tells the running Tug instance that the plan is written. The card runs `/tugplug:review-plan <path>` as its next turn, on the review model, visibly — it borrows that model for the turn and gives it back afterward.
+
+The signal goes through the server rather than through what the user typed, because only you know you finished. Fire it with an **absolute** path: the card does not share your cwd.
+
+If the verb fails — no reachable Tug instance — do not declare the plan ready. Say the review could not be requested, and print the command for the user to run by hand, on its own line and inside backticks:
+
+`` `/tugplug:review-plan roadmap/my-plan.md` ``
+
+### 6. Hand off
+
+Tell the user the plan is written, name the exact path, and say the review turn is coming next and on which model. Do not tell them to implement yet — the review may still change the plan.
+
+The command after the review lands is `` `/tugplug:implement <plan-path>` ``, and `review-plan` prints it. Write any command you do print on its own line **inside backticks**, command and path together in one span, with the real path substituted in — the Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text.
+
+Don't start reviewing or implementing from the devise skill — authoring, reviewing, and implementing are separate turns (as is committing the plan to git, which the user owns).
 
 ## Guardrails
 
@@ -73,5 +96,7 @@ Write both on their own lines with the real path substituted in; never abbreviat
 - **Ground the plan in the real code.** Read before you design.
 - **Standalone always.** The plan must be implementable from any session with zero conversation context — bake every investigation finding into the document.
 - **Don't over-ask.** Clarify only design-changing unknowns.
-- **Don't auto-implement.** `devise` produces the document; `implement` runs it.
+- **Lint before handing off.** `tugutil plan lint` exit 0 is the bar.
+- **Ask for the review from inside your own turn**, with an absolute path, and never declare the plan ready when that request fails.
+- **Don't auto-implement.** `devise` produces the document; the review turn improves it; `implement` runs it.
 - **Don't auto-enter Plan mode** (`EnterPlanMode`) — just write the plan document.

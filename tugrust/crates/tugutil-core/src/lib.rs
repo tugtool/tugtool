@@ -22,9 +22,13 @@ pub mod resolve;
 /// Per-project runtime-state directory resolution
 pub mod paths;
 
+/// Devise-skeleton plan parsing and linting
+pub mod plan;
+
 // Re-exports — exactly the surface consumed by the `tugutil` binary.
 pub use config::{Config, find_project_root, find_tugplans, tugplan_name_from_path};
 pub use error::TugError;
 pub use paths::project_state_dir;
+pub use plan::{Diagnostic, NotAPlan, PlanDoc, Severity, has_errors, lint, parse};
 pub use resolve::{ResolveResult, ResolveStage, resolve_plan};
 pub use worktree::{find_repo_root, sanitize_branch_name};

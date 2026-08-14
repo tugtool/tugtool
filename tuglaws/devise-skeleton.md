@@ -1,8 +1,10 @@
-<!-- devise-skeleton v4 -->
+<!-- devise-skeleton v5 -->
 
 <!--
   This is the format contract for plans authored by `/tugplug:devise` and walked
-  by `/tugplug:implement`. It is a convention upheld by authorship and review.
+  by `/tugplug:implement`. Its mechanical half is checked by `tugutil plan lint`;
+  its judgment half is `/tugplug:review-plan`'s, against
+  `tuglaws/plan-review-rubric.md`.
   The devise skill's output is a plan written against this skeleton.
 
   Prefix reservation: plan-local design decisions use `[P01]` (NOT `[D01]`).
@@ -24,6 +26,27 @@
 | Status | draft |
 | Target branch | <branch> |
 | Last updated | <YYYY-MM-DD> |
+
+---
+
+### Review Record {#review-record}
+
+<!--
+  One paragraph per review round, appended by `/tugplug:review-plan` — never
+  rewritten, since the point is the history. It sits here, before the body, so a
+  cold reader learns whether this plan has been reviewed and what the review
+  found before investing in the rest.
+
+  Prose, not a table: a table invites one-word entries, and the value is the
+  specificity. A round that found nothing still gets a paragraph — a vacuous
+  review should be visible in the artifact rather than invisible in a transcript.
+
+  Absent until the first review; `plan lint` warns (PL023) rather than failing.
+-->
+
+**Round 1 — <YYYY-MM-DD>, <model>.** Lint: <N> errors, <N> warnings (<N> fixed).
+Applied: <what changed, and why — name the axis and the specific fix>.
+Deferred: <what was raised as an Open Question instead of decided>.
 
 ---
 

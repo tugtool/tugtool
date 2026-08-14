@@ -13,11 +13,11 @@ The plugin ships **agentless, main-loop-driven** skills — there are no sub-age
 
 **Assessment & drafting:**
 
-- **`vet`** — pre-implementation: assess a plan (or step range) against the tuglaws and the real code, then rule "fixups needed" or "clear to implement". Read-only.
+- **`review-plan`** — pre-implementation: lint the plan (`tugutil plan lint`), judge it against [`tuglaws/plan-review-rubric.md`](../tuglaws/plan-review-rubric.md) and the real code, **apply the fixups in the plan**, and append a Review Record. `devise` asks for this automatically through `tugutil plan review-request`, and the card runs it as a turn on a borrowed review model; it is also the by-hand entrance for any plan. *(replaced `vet`, which was read-only by construction and so could only hand its findings back — `vet` is a stub awaiting deletion.)*
 - **`audit`** — post-implementation: audit the built code (or step range) against the tuglaws and the real diff, then rule "fixups needed" or "good shape". Read-only.
 - **`draft`** — analyze the working changes, decide per-file dispositions, and author the session's landing draft via `tugutil draft set`. **Never commits** — the user lands the draft with `/commit` in the Session card. *(was `commit`, which committed fire-and-forget; skills draft, humans land.)*
 
-The lifecycle skills run in the main conversation and ride the `tugutil dash` CLI (`create` → `commit` per step/round). The flow is `/tugplug:devise` → `/tugplug:vet` → `/tugplug:implement` (or just `/tugplug:dash`) → `/tugplug:audit` → review → the user's `/join <name>` in the Session card (the implement run leaves the dash's join draft behind for it).
+The lifecycle skills run in the main conversation and ride the `tugutil dash` CLI (`create` → `commit` per step/round). The flow is `/tugplug:devise` (which asks for its own review turn) → `/tugplug:implement` (or just `/tugplug:dash`) → `/tugplug:audit` → review → the user's `/join <name>` in the Session card (the implement run leaves the dash's join draft behind for it).
 
 **Location discipline (critical):** no skill assumes a plan directory — `roadmap/`, `.tugtool/`, and any other home are never hardcoded. A plan is always an explicit path; the working root is derived from that path and from `tugutil dash create`'s worktree response. Once a worktree exists it is the **only** working root — every operation uses an absolute path into it, and nothing (code, plan, ledger) is written to the base checkout until `tugutil dash join`.
 

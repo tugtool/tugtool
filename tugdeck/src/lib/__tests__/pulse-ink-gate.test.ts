@@ -29,10 +29,15 @@
 
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-/** The two trees a surface's ink can live in. */
-const ROOTS = ["src/components", "src/lib"];
+/**
+ * The two trees a surface's ink can live in, resolved from this file rather
+ * than from the process cwd — a gate that only runs from `tugdeck/` is a gate
+ * that fails the moment anyone runs `bun test` from the repo root.
+ */
+const TUGDECK_SRC = resolve(import.meta.dir, "..", "..");
+const ROOTS = [join(TUGDECK_SRC, "components"), join(TUGDECK_SRC, "lib")];
 
 /** Files whose whole job is to discuss the vocabulary. */
 function isExempt(path: string): boolean {

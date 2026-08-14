@@ -567,14 +567,14 @@ One paragraph per round, appended. Prose, not a table — a table invites one-wo
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Plan parser and lint rules | pending | — |
-| #step-2 | `tugutil plan lint` | pending | — |
-| #step-3 | The review rubric | pending | — |
-| #step-4 | The readiness signal | pending | — |
-| #step-5 | Non-persisting model borrow | pending | — |
-| #step-6 | The plan-review controller | pending | — |
-| #step-7 | Skills, skeleton v5, vet retirement | pending | — |
-| #step-8 | Integration checkpoint — one real gesture | pending | — |
+| #step-1 | Plan parser and lint rules | done | `c56eef322` |
+| #step-2 | `tugutil plan lint` | done | `5f42a89e2` |
+| #step-3 | The review rubric | done | `332f3d05c` |
+| #step-4 | The readiness signal | done | `4de031866` |
+| #step-5 | Non-persisting model borrow | done | `a9c988b7a` |
+| #step-6 | The plan-review controller | done | `44c2eb5bc` |
+| #step-7 | Skills, skeleton v5, vet retirement | done | `2ea1114ad` |
+| #step-8 | Integration checkpoint — one real gesture | in progress | automated sweep green; the by-hand gesture is the user's |
 
 #### Step 1: Plan parser and lint rules {#step-1}
 

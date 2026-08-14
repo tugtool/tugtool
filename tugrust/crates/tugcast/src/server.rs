@@ -406,6 +406,63 @@ struct DashApiRequest {
     dash_id: Option<String>,
 }
 
+/// Request payload for POST /api/plan-review — `tugutil plan review-request`,
+/// the signal `devise` fires from inside its own turn once the plan is written.
+#[derive(serde::Deserialize)]
+struct PlanReviewApiRequest {
+    /// The session whose card should run the review turn.
+    tug_session_id: String,
+    /// Absolute path to the plan. The CLI resolves it before sending, because
+    /// the card does not share the cwd the skill ran in.
+    plan_path: String,
+}
+
+/// Handle POST /api/plan-review. Loopback only, like every tugcast API.
+///
+/// There is no ledger work and nothing to persist: the request is an
+/// announcement, and the deck decides what to do with it. An absolute
+/// `plan_path` is required rather than resolved here — the server's cwd is not
+/// the caller's, so a relative path could only be resolved wrongly.
+async fn plan_review_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    fn err(status: StatusCode, message: &str) -> Response {
+        (
+            status,
+            axum::Json(serde_json::json!({ "status": "error", "message": message })),
+        )
+            .into_response()
+    }
+    if !addr.ip().is_loopback() {
+        return err(StatusCode::FORBIDDEN, "forbidden");
+    }
+    let Some(supervisor) = router.supervisor.as_ref() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "no supervisor");
+    };
+    let req: PlanReviewApiRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
+    };
+    if req.tug_session_id.is_empty() {
+        return err(StatusCode::BAD_REQUEST, "empty tug_session_id");
+    }
+    if !std::path::Path::new(&req.plan_path).is_absolute() {
+        return err(StatusCode::BAD_REQUEST, "plan_path must be absolute");
+    }
+    crate::feeds::agent_supervisor::broadcast_plan_review_request(
+        &supervisor.control_tx,
+        &req.tug_session_id,
+        &req.plan_path,
+    );
+    (
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "status": "ok" })),
+    )
+        .into_response()
+}
+
 /// Handle POST /api/dash. Loopback only, like every tugcast API; the ledger
 /// work runs on the blocking pool.
 ///
@@ -1059,6 +1116,7 @@ pub(crate) fn build_app(
         .route("/api/changesets", get(changesets_handler))
         .route("/api/draft", post(draft_handler))
         .route("/api/dash", post(dash_handler))
+        .route("/api/plan-review", post(plan_review_handler))
         .route("/api/changes-write", post(changes_write_handler))
         .route(
             "/api/workspace/acquire",

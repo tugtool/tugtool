@@ -27,10 +27,14 @@ const LOCK_BACKOFF_MS = 250;
  * The built CLI, by absolute path.
  *
  * `~/.local/bin/tugutil` is a symlink whose target is somebody else's build
- * decision, which is not a thing a test should inherit silently. The cargo
- * target dir lives in the **main** checkout, which `--git-common-dir` names
- * whether the caller runs from that checkout or from a dash worktree cut off
- * it.
+ * decision, which is not a thing a test should inherit silently.
+ *
+ * `projectDir`'s **own** `tugrust/target` comes first, then the main
+ * checkout's. That order matters on a dash worktree: a worktree builds into
+ * its own target dir, so a test exercising a CLI verb this branch adds would
+ * otherwise run the main checkout's older binary and fail with `unrecognized
+ * subcommand` — a stale build reported as a broken feature. A worktree that
+ * has not been built falls back, which is what a test touching no Rust wants.
  */
 export function tugutilPath(projectDir: string): string {
   const commonDir = Bun.spawnSync(
@@ -39,12 +43,14 @@ export function tugutilPath(projectDir: string): string {
   )
     .stdout.toString()
     .trim();
-  const mainCheckout = resolve(commonDir, "..");
-  for (const profile of ["debug", "release"]) {
-    const candidate = join(mainCheckout, "tugrust/target", profile, "tugutil");
-    if (existsSync(candidate)) return candidate;
+  const roots = [projectDir, resolve(commonDir, "..")];
+  for (const root of roots) {
+    for (const profile of ["debug", "release"]) {
+      const candidate = join(root, "tugrust/target", profile, "tugutil");
+      if (existsSync(candidate)) return candidate;
+    }
   }
-  throw new Error(`dash-fixture: no built tugutil under ${mainCheckout}/tugrust/target`);
+  throw new Error(`dash-fixture: no built tugutil under ${roots.join(" or ")}`);
 }
 
 function heldLock(stderr: string): boolean {

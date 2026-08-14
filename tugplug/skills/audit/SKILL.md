@@ -9,7 +9,9 @@ disallowed-tools: Task, Write, Edit
 
 ## What this is
 
-`audit` is the **post-implementation** scrutiny pass — the counterpart to `/tugplug:vet`. Where `vet` judges a plan before the code is written, `audit` judges the **code that got written** for a plan (or a step range) after the fact. It is the encapsulation of the audit the user runs by hand all the time. It produces an assessment and a verdict. It does **not** make changes — `audit` rules; the user (or a follow-up `/tugplug:implement` / `/tugplug:dash`) acts.
+`audit` is the **post-implementation** scrutiny pass. It judges the **code that got written** for a plan (or a step range) after the fact — where a plan review judges the design before anyone writes it, `audit` judges the tree. It is the encapsulation of the audit the user runs by hand all the time. It produces an assessment and a verdict. It does **not** make changes — `audit` rules; the user (or a follow-up `/tugplug:implement` / `/tugplug:dash`) acts.
+
+The axes below are the ones in [`tuglaws/plan-review-rubric.md`](../../../tuglaws/plan-review-rubric.md), read against built code rather than against a plan. Read the rubric for what each axis is asking; when it is absent, the axes carried here stand on their own.
 
 **You are the auditor, in-thread.** Do not spawn sub-agents (`Task`). Do not edit files — this is a read-and-judge pass, not a fixup pass.
 

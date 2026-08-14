@@ -35,12 +35,16 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
-import type { SessionMetadataStore } from "@/lib/session-metadata-store";
+import type {
+  CapabilityModel,
+  SessionMetadataStore,
+} from "@/lib/session-metadata-store";
 import { getTugbankClient } from "@/lib/tugbank-singleton";
 import { useTugbankValue } from "@/lib/use-tugbank-value";
 import { modelIdToSelector } from "@/lib/model-picker-data";
 import { knownModelRows } from "@/lib/model-label";
 import { readModelCatalog } from "@/lib/model-catalog";
+import { resolveCatalogSelector } from "@/lib/model-selector";
 import {
   MODEL_DEFAULT_DOMAIN,
   MODEL_DEFAULT_KEY,
@@ -71,6 +75,160 @@ export function writePersistedModel(cardId: string, selector: string): void {
   }).catch((err) => {
     console.warn(`[model] PUT failed for card ${cardId}:`, err);
   });
+}
+
+/**
+ * The session's current selector, derived the one way: the resolved model id
+ * mapped back to its selector against the known rows (live capability list,
+ * else the persisted catalog), or `default` — the account default a fresh
+ * session spawns on — when no model id has landed yet.
+ *
+ * The mount-restore and the borrow both compare against this, so the
+ * derivation exists once instead of twice.
+ */
+export function currentModelSelector(snapshot: {
+  models: CapabilityModel[];
+  model: string | null;
+}): string {
+  const { models, model } = snapshot;
+  return model !== null
+    ? modelIdToSelector(model, knownModelRows(models, readModelCatalog()))
+    : "default";
+}
+
+/**
+ * Whether two selector spellings name the same model — decided on the
+ * **catalog row**, not on the strings and not on the resolved model id.
+ *
+ * Selector spellings and models are not one-to-one. A Max account on `default`
+ * may already be running Opus; comparing the strings `default` and `opus`
+ * would report a difference that does not exist and flicker the chip through
+ * two pointless control requests. Each spelling is resolved to the row it
+ * names, then collapsed through the same rule the picker uses — a row whose
+ * description matches `default`'s IS `default` — which is precisely the
+ * mechanism that detects "this account's default already is Opus".
+ *
+ * A spelling the catalog cannot resolve is not the same as anything: it names
+ * no model, so it can make no claim about matching one.
+ */
+export function resolvesToSameModel(
+  a: string,
+  b: string,
+  rows: CapabilityModel[],
+): boolean {
+  const rowA = resolveCatalogSelector(a, rows);
+  const rowB = resolveCatalogSelector(b, rows);
+  if (rowA === null || rowB === null) return false;
+  return modelIdToSelector(rowA.value, rows) === modelIdToSelector(rowB.value, rows);
+}
+
+/**
+ * Cards whose live model is on loan, by card id.
+ *
+ * The mount-restore effect below stands down for these. It has to: a borrow
+ * calls {@link SessionMetadataStore.applyModel}, which moves `snapshot.model`
+ * — a dependency of that effect — so every borrow re-runs it. On the path
+ * where readiness was never reached (`models.length === 0 && model === null`)
+ * the effect early-returns *without* arming `sentRef`, and the borrow's own
+ * `applyModel` is what first makes `model` non-null. The effect would then
+ * resolve a current selector differing from the seed and call
+ * `setModel(seed, {fromRestore: true})` — reverting the model mid-review and
+ * persisting it. The two are made mutually exclusive here.
+ */
+const cardsWithBorrowedModel = new Set<string>();
+
+/** What a borrow acts on: one card and the two stores that carry its model. */
+export interface ModelBorrow {
+  /** The card whose live model is on loan. */
+  cardId: string;
+  /** Store that sends the `model_change` frame. */
+  codeSessionStore: CodeSessionStore;
+  /** Store that carries the optimistic chip value. */
+  sessionMetadataStore: SessionMetadataStore;
+}
+
+/**
+ * Put the session on `selector` for the duration of one turn — **without
+ * writing the card's remembered selector**.
+ *
+ * The no-persistence property is a requirement, not an incidental. `setModel`
+ * persists by design ([D07]), which is right for a user's pick and wrong for a
+ * loan: it would write the borrowed model into `dev.model/<cardId>`, and a
+ * crash mid-borrow would make that lie durable. Because nothing is persisted,
+ * the persisted selector stays correct throughout, and the mount-restore
+ * effect below realigns the live session on the next mount — crash recovery
+ * for free, with no recovery code of our own.
+ *
+ * Do not route this through `setModel`, ever.
+ */
+export function borrowModel(borrow: ModelBorrow, selector: string): void {
+  cardsWithBorrowedModel.add(borrow.cardId);
+  borrow.sessionMetadataStore.applyModel(selector);
+  borrow.codeSessionStore.setModel(selector);
+}
+
+/**
+ * Give the model back. `selector` is the value captured before the borrow, or
+ * `null` when no borrow happened — same catalog row, or a review selector the
+ * catalog could not resolve — in which case there is nothing to undo.
+ *
+ * Persistence is untouched here for the same reason it is untouched in
+ * {@link borrowModel}: the card's remembered selector was never the loan's to
+ * move. Idempotent — releasing twice sends one `model_change`.
+ */
+export function releaseModel(borrow: ModelBorrow, selector: string | null): void {
+  if (!cardsWithBorrowedModel.delete(borrow.cardId)) return;
+  if (selector === null) return;
+  borrow.sessionMetadataStore.applyModel(selector);
+  borrow.codeSessionStore.setModel(selector);
+}
+
+/** Whether this card's live model is currently on loan. */
+export function hasBorrowedModel(cardId: string): boolean {
+  return cardsWithBorrowedModel.has(cardId);
+}
+
+/** What the mount-restore should do with what it currently knows. */
+export type MountRestoreDecision =
+  /** Not enough is known yet, or there is nothing to correct. */
+  | { kind: "wait" }
+  /** The session already matches the seed — mark the restore done. */
+  | { kind: "arm" }
+  /** Align the session to `selector`. */
+  | { kind: "restore"; selector: string };
+
+/**
+ * The mount-restore's whole decision, as a pure function of what it knows.
+ *
+ * It lives out here rather than inside the effect because its interaction with
+ * {@link borrowModel} is load-bearing and has to be pinned by a test: a borrow
+ * moves `model`, which re-runs the effect, and the `modelIsBorrowed` branch is
+ * the only thing standing between that and a mid-review revert-plus-persist.
+ * A decision expressed as data can be asserted without rendering anything.
+ */
+export function evaluateMountRestore(input: {
+  /** Whether a manual set or a completed restore already armed this mount. */
+  alreadySent: boolean;
+  /** Whether this card's live model is on loan. */
+  modelIsBorrowed: boolean;
+  /** The seed: the per-card selector if any, else the deck-wide default. */
+  seedModel: string | null;
+  /** The live capability list. */
+  models: CapabilityModel[];
+  /** The resolved model id, when one has landed. */
+  model: string | null;
+}): MountRestoreDecision {
+  const { alreadySent, modelIsBorrowed, seedModel, models, model } = input;
+  if (alreadySent) return { kind: "wait" };
+  // A borrowed model is not a drift to correct.
+  if (modelIsBorrowed) return { kind: "wait" };
+  if (seedModel === null) return { kind: "wait" };
+  // Readiness: nothing known yet (no capabilities AND no resolved model) →
+  // can't tell the current model, don't race the spawn.
+  if (models.length === 0 && model === null) return { kind: "wait" };
+  return seedModel !== currentModelSelector({ models, model })
+    ? { kind: "restore", selector: seedModel }
+    : { kind: "arm" };
 }
 
 export interface UseModelOptions {
@@ -152,25 +310,20 @@ export function useModel({
   const seedModel = resolveSeedModel(persistedModel, defaultModel);
   const { models, model } = snapshot;
   useEffect(() => {
-    if (sentRef.current) return;
-    if (seedModel === null) return;
-    // Readiness: nothing known yet (no capabilities AND no resolved model) →
-    // can't tell the current model, don't race the spawn.
-    if (models.length === 0 && model === null) return;
-    // The session's current selector: the resolved model mapped back to its
-    // selector against the known rows (live list, else the persisted
-    // catalog), or `default` (the account default a fresh session spawns on)
-    // when no model id has landed yet.
-    const currentSelector =
-      model !== null
-        ? modelIdToSelector(model, knownModelRows(models, readModelCatalog()))
-        : "default";
-    if (seedModel !== currentSelector) {
-      setModel(seedModel, { fromRestore: true });
-    } else {
+    const decision = evaluateMountRestore({
+      alreadySent: sentRef.current,
+      modelIsBorrowed: hasBorrowedModel(cardId),
+      seedModel,
+      models,
+      model,
+    });
+    if (decision.kind === "wait") return;
+    if (decision.kind === "arm") {
       sentRef.current = true;
+      return;
     }
-  }, [seedModel, models, model, setModel]);
+    setModel(decision.selector, { fromRestore: true });
+  }, [cardId, seedModel, models, model, setModel]);
 
   return { setModel };
 }

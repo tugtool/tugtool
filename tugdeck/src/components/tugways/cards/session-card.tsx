@@ -58,6 +58,7 @@ import {
 import { AiChip } from "./ai-chip";
 import { useAiConfigSheet } from "./ai-config-sheet";
 import { useModel } from "@/lib/use-model";
+import { PlanReviewController } from "@/lib/plan-review-controller";
 import { useUnavailableModelBulletin } from "@/lib/use-unavailable-model-bulletin";
 import { persistModelCatalog } from "@/lib/model-catalog";
 import { useRewindSheet } from "./rewind-sheet";
@@ -3286,6 +3287,48 @@ export function SessionCardBody({
     codeSessionStore,
     sessionMetadataStore,
   });
+
+  // The plan review's borrow machine ([P01], [P11], [P12]). Created here and
+  // registered in a layout effect below so it is reading the request store
+  // before a latched request could be missed ([L03]) — the signal is fired
+  // from inside the devise turn and can land before this card ever renders.
+  // Every subscription it takes comes back on `dispose` ([L27]).
+  const planReviewControllerRef = useRef<PlanReviewController | null>(null);
+  const planReviewStoresRef = useRef<{
+    codeSessionStore: CodeSessionStore;
+    sessionMetadataStore: SessionMetadataStore;
+  } | null>(null);
+  const planReviewStores = planReviewStoresRef.current;
+  if (
+    planReviewControllerRef.current === null ||
+    planReviewStores === null ||
+    planReviewStores.codeSessionStore !== codeSessionStore ||
+    planReviewStores.sessionMetadataStore !== sessionMetadataStore
+  ) {
+    // A session swap ends any review the old session was running: the borrow
+    // belongs to that session, and the outgoing controller's dispose (below)
+    // gives its model back.
+    planReviewControllerRef.current = new PlanReviewController({
+      cardId,
+      codeSessionStore,
+      sessionMetadataStore,
+    });
+    planReviewStoresRef.current = { codeSessionStore, sessionMetadataStore };
+  }
+  const planReviewController = planReviewControllerRef.current;
+  useLayoutEffect(() => {
+    planReviewController.setNotifier((notice) => {
+      const bulletin = paneBulletinRef.current;
+      if (bulletin === null) return;
+      const options = { id: "plan-review", description: notice.detail };
+      if (notice.kind === "announce") bulletin(notice.message, options);
+      else bulletin.caution(notice.message, options);
+    });
+    return () => {
+      planReviewController.setNotifier(null);
+      planReviewController.dispose();
+    };
+  }, [planReviewController]);
 
   // Bulletin when the card's saved model selector (per-card, else the deck
   // default) is a concrete pick the persisted live catalog no longer offers:

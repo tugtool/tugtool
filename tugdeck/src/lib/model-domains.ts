@@ -32,3 +32,15 @@ export const MODEL_DEFAULT_KEY = "default";
 /** The selector new cards adopt when nothing else is configured — the account
  *  default, which forces no particular model. */
 export const DEFAULT_MODEL_SELECTOR = "default";
+
+/**
+ * tugbank domain/key for the model a plan review borrows. A value rather than
+ * a constant because "always Opus" is explicitly for now: the review wants the
+ * strongest model regardless of what devised the plan, and which model that is
+ * should be changeable without a build.
+ */
+export const PLAN_REVIEW_DOMAIN = "dev.tugtool.plan-review";
+export const PLAN_REVIEW_MODEL_KEY = "model";
+
+/** The review model shipped as the seed for {@link PLAN_REVIEW_MODEL_KEY}. */
+export const DEFAULT_PLAN_REVIEW_SELECTOR = "opus";

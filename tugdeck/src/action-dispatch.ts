@@ -50,6 +50,7 @@ import {
   cardSessionBindingStore,
 } from "./lib/card-session-binding-store";
 import { dashBindErrorStore } from "./lib/dash-bind-error-store";
+import { planReviewRequestStore } from "./lib/plan-review-request-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
 import { sessionPrivateStore } from "./lib/session-private-store";
@@ -985,6 +986,28 @@ export function initActionDispatch(
       sessionId,
       typeof payload.reason === "string" ? payload.reason : "unknown",
     );
+  });
+
+  // plan_review_request: `devise` finished writing a plan and asked, through
+  // the running tugcast, for its review turn. The signal comes from the skill
+  // rather than the composer because only the skill knows it finished — a
+  // local slash verb would catch `/devise` and silently skip the review for
+  // `/tugplug:devise`. Latched by card, so a request that lands before the
+  // card's controller exists is still there when it mounts.
+  registerAction("plan_review_request", (payload) => {
+    const sessionId = payload.tug_session_id;
+    const planPath = payload.plan_path;
+    if (
+      typeof sessionId !== "string" ||
+      sessionId.length === 0 ||
+      typeof planPath !== "string" ||
+      planPath.length === 0
+    ) {
+      console.warn("plan_review_request: missing or invalid field", payload);
+      return;
+    }
+    const cardId = cardIdForSession(sessionId);
+    if (cardId) planReviewRequestStore.latch(cardId, planPath);
   });
 
   registerAction("unbind_dash_ok", (payload) => {

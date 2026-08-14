@@ -51,3 +51,4 @@
 ## Templates
 
 - [devise-skeleton.md](devise-skeleton.md) — Template for plan documents (the format `/tugplug:devise` authors and `/tugplug:implement` walks). Kept here per user decision; it is a template, not a tuglaws law or architecture doc.
+- [plan-review-rubric.md](plan-review-rubric.md) — What a reviewer judges when reading a plan, and what belongs to `tugutil plan lint` instead. Read by `/tugplug:review-plan` and `/tugplug:audit`.
