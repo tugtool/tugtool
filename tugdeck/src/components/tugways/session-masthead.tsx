@@ -70,7 +70,7 @@ import "./session-masthead.css";
 
 import React, { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { FolderOpenDot, Info } from "lucide-react";
+import { FolderOpenDot, Summary } from "lucide-react";
 
 import { TugButton } from "@/components/tugways/internal/tug-button";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
@@ -721,7 +721,7 @@ export function SessionMasthead({
             emphasis="ghost"
             role="action"
             size="sm"
-            icon={<Info />}
+            icon={<Summary />}
             data-slot="session-masthead-widget"
             // Chrome, like the close button — never a card-cycle focus stop.
             // `TugButton` already refuses first responder on click; opening the
