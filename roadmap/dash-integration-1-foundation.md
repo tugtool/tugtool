@@ -19,6 +19,16 @@ This is Phase 1 of the program plan [roadmap/dash-integration-plan.md](dash-inte
 
 ---
 
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus (post-implementation audit).** Reviewed after the merge rather than before it: the review gesture this record is a product of did not exist when this plan was devised, so the assessment is of the shipped tree (`a4477d50b`) against the plan, not of the plan against the code. Lint: 0 errors, 0 warnings.
+
+Applied: nothing. The implementation is faithful and the mechanisms hold up under the technical-choices and holes axes. Three specifics worth recording because they are what the phase was really for. The sessions-ledger migration is additive, column-checked, and self-healing in the same shape as its six predecessors, so a rollback leaves no wreckage. `mark_closed` clears `dash_id`/`dash_name` in the same UPDATE that closes the row, which is what makes *parked* reachable at all rather than a state the system can only claim. And `bound_sessions_by_dash` filters on `state = 'live'`, so a binding row that escaped the release is harmless instead of wrong — bound-ness is defined by that query, not merely reported by it. Wire additions are all `Option`/`skip_serializing_if` with an explicit legacy-decode test, so a deck and a server that disagree on version still talk.
+
+Deferred: nothing raised.
+
+---
+
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}

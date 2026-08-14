@@ -20,6 +20,16 @@ This is Phase 2 of the program plan [roadmap/dash-integration-plan.md](dash-inte
 
 ---
 
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus (post-implementation audit).** Reviewed after the merge, for the same reason Phase 1's record gives: the review gesture postdates the plan. The assessment is of the shipped tree (`b53bdd718`) against the plan. Lint: 0 errors, 1 warning.
+
+Applied: nothing. The phase held its own "zero landing-path stakes" promise literally — view-layer only, over stores Phase 1 already filled, with no schema or wire change to re-destabilize the shipped Changes surface. The one choice worth recording under the technical-choices axis is the Lens row's liveness mark: `DashPhaseDot` mounts the phase subscription at the glyph rather than reading phase in the row projection, so a transcript event repaints one dot instead of waking the section. The parked mark being a *glyph* and not a resting dot is the right call for the same reason — "nobody is working this" is not a state of work — and `rowFromEntry` treats an absent `bound_sessions` as parked rather than as a live claim, which is the honest reading of an older sender.
+
+Deferred: the PL011 warning on [#step-5](#step-5) stands unfixed and should. That step is a verification pass whose gates live in its Tasks block; a Tests block there would be ceremony. It is exactly the calibration case that keeps PL011 a warning rather than an error.
+
+---
+
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}

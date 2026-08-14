@@ -12,7 +12,22 @@
 | Status | draft |
 | Target branch | main (runs as a dash) |
 | Program plan | [dash-integration-plan.md](dash-integration-plan.md) §[Phase 2.1](dash-integration-plan.md#phase-2-1), its [P07 (devise absorbs vet)](dash-integration-plan.md#p07-devise-absorbs-vet) — that document's label namespace, distinct from this plan's |
-| Last updated | 2026-08-13 |
+| Last updated | 2026-08-14 |
+
+---
+
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus (post-implementation audit).** This plan built the review gesture and shipped before running it on itself; the record is therefore an audit of the merged tree (`eb5953baa`) rather than a pre-implementation review. Lint: 0 errors, 1 warning (PL023, now satisfied by this section).
+
+Applied — two findings under the holes-and-failure-modes axis, both real, both fixed:
+
+- **The park's "user moved on" guard was one-sided.** It abandoned only on a non-empty `queuedSends`, but a turn submitted from a *settled* session sends straight out instead of queueing, so a user turn could start with `queuedSends` empty and the review would ride in behind it, uncautioned. The park now also treats an unsettled beat that follows a settled one it did not act on as somebody else's turn. `canSubmit` being phase **and** transport is what makes that precise — a settled beat reaches a park unacted-on exactly when the wire is down — so reconnecting still submits and only a real turn abandons.
+- **The release fired into a running turn.** `CodeSessionStore.setModel` carries no `canSubmit` gate of its own (the gate lives in `useModel`, which the borrow deliberately bypasses), so an unmount mid-review put a `model_change` on the wire mid-flight and rested on claude honoring it there — unverified, and if it does not, the live session keeps the borrowed model. `dispose` now defers the release to the turn's settle, on a one-shot subscription detached from the controller so it can outlive the card. The borrow registration is held until that release actually fires, so a remount's mount-restore stands down instead of racing it.
+
+Also applied: **PL024**, a plan-level error when no step in a plan carries a Tests block. PL011 has to stay a warning for the integration-checkpoint shape, but PL020 can only inspect Tests blocks that exist — so a per-step warning alone made *no* test planning cheaper than wrong test planning. The rule that cannot be satisfied by omission is the plan-level one. The parser also learned `~~~` fences, so a plan whose sample markdown contains a backtick fence can still hide it.
+
+Deferred: nothing raised as an Open Question. Two items were considered and rejected rather than deferred — narrowing `read_label`'s bracket form (the `**[T01] …` bold declaration is used across the real corpus, so the change would break valid plans), and giving the park a timeout (the park settles off session snapshots by design; a timer would be the first one in this machine, and "the user came back an hour later" is a review still worth running).
 
 ---
 

@@ -154,6 +154,16 @@ export class PlanReviewController {
   private phase: PlanReviewPhase = { kind: "idle" };
   private notifier: ((notice: PlanReviewNotice) => void) | null = null;
   private disposed = false;
+  /**
+   * Whether this park has already seen a settled beat it did not act on.
+   *
+   * A park normally begins mid-turn and ends at the first settled beat, which
+   * submits — so this stays false. It flips only when the session settles
+   * while `canSubmit` is false, which `canSubmit`'s definition makes precise:
+   * settled **and offline**. From there a later unsettled beat is a turn
+   * somebody else started, and the review must not ride in behind it.
+   */
+  private parkSawSettled = false;
 
   constructor(deps: PlanReviewControllerDeps) {
     this.deps = deps;
@@ -221,6 +231,7 @@ export class PlanReviewController {
     }
 
     planReviewRequestStore.take(this.deps.cardId);
+    this.parkSawSettled = false;
     this.setPhase({ kind: "parked", planPath: pending.planPath });
     // The turn that fired the signal is normally still running, but the frame
     // can also land after it settled — in which case there is nothing to wait
@@ -237,16 +248,24 @@ export class PlanReviewController {
       // The user moved on: something they typed is queued to run next, so the
       // review would land after a turn they did not connect it to.
       if (session.queuedSends.length > 0) {
-        const planPath = this.phase.planPath;
-        this.setPhase({ kind: "idle" });
-        this.notify({
-          kind: "caution",
-          message: "Skipped the plan review — you submitted something else",
-          detail: planPath,
-        });
+        this.abandonPark();
         return;
       }
-      if (session.canSubmit) this.submit(this.phase.planPath);
+      if (session.canSubmit) {
+        this.submit(this.phase.planPath);
+        return;
+      }
+      // A queue is not the only way the user gets ahead of a park. Submitting
+      // from a settled session sends straight out rather than queueing, so a
+      // turn can start while `queuedSends` stays empty — and the review would
+      // then ride in behind a turn nobody connected it to. A park that has
+      // already sat through a settled beat treats the next unsettled one as
+      // exactly that.
+      if (isSettledPhase(session.phase)) {
+        this.parkSawSettled = true;
+        return;
+      }
+      if (this.parkSawSettled) this.abandonPark();
       return;
     }
 
@@ -332,6 +351,19 @@ export class PlanReviewController {
     }
   }
 
+  /** Drop a park without acting on it, and say why. Nothing was borrowed. */
+  private abandonPark(): void {
+    if (this.phase.kind !== "parked") return;
+    const { planPath } = this.phase;
+    this.parkSawSettled = false;
+    this.setPhase({ kind: "idle" });
+    this.notify({
+      kind: "caution",
+      message: "Skipped the plan review — you submitted something else",
+      detail: planPath,
+    });
+  }
+
   /** Give the model back. Idempotent — a second settle sends nothing. */
   private release(): void {
     if (this.phase.kind !== "armed" && this.phase.kind !== "running") return;
@@ -350,11 +382,54 @@ export class PlanReviewController {
   }
 
   /**
+   * Give the model back at the first moment the session can take it.
+   *
+   * `CodeSessionStore.setModel` carries no `canSubmit` gate of its own — the
+   * gate lives in `useModel`, which this path deliberately does not go
+   * through — so releasing into a running turn puts a `model_change` on the
+   * wire mid-flight and depends on claude honoring it there. Rather than rest
+   * on that, a release that arrives mid-turn rides a one-shot subscription
+   * that fires on the turn's settle and then unregisters itself ([L27], and
+   * [L28] again: the release acts on the lifecycle by observing it).
+   *
+   * The subscription is deliberately detached from this controller. It has to
+   * outlive it — an unmount mid-review is precisely the case — and the session
+   * store outlives the card in both shapes that reach here: a session swap
+   * leaves the old store running its turn, and a disposed store makes both
+   * `subscribe` and `setModel` no-ops. The borrow registration is left in
+   * place until the release actually fires, so a remount's mount-restore
+   * stands down instead of racing it.
+   */
+  private releaseWhenSettled(): void {
+    if (this.phase.kind !== "armed" && this.phase.kind !== "running") return;
+    const { borrowedFrom } = this.phase;
+    const store = this.deps.codeSessionStore;
+    this.setPhase({ kind: "idle" });
+    if (borrowedFrom === null || isSettledPhase(store.getSnapshot().phase)) {
+      releaseModel(this.borrow, borrowedFrom);
+      return;
+    }
+    const borrow = this.borrow;
+    let unsubscribe: (() => void) | null = null;
+    let released = false;
+    const settleRelease = (): void => {
+      if (released || !isSettledPhase(store.getSnapshot().phase)) return;
+      released = true;
+      unsubscribe?.();
+      releaseModel(borrow, borrowedFrom);
+    };
+    unsubscribe = store.subscribe(settleRelease);
+    // The turn may have settled between the snapshot read and the subscribe.
+    settleRelease();
+  }
+
+  /**
    * Tear down. An unmount mid-review is a terminal outcome like any other, so
-   * the model goes back before the subscriptions do ([L27]).
+   * the model goes back before the subscriptions do ([L27]) — or as soon as
+   * the turn it was borrowed for is over, when one is still running.
    */
   dispose(): void {
-    this.release();
+    this.releaseWhenSettled();
     this.disposed = true;
     for (const unsubscribe of this.unsubscribes) unsubscribe();
     this.unsubscribes.length = 0;

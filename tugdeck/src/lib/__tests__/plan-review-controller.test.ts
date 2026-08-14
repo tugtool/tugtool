@@ -75,6 +75,8 @@ interface Harness {
   setPhase: (phase: CodeSessionPhase) => void;
   /** Put a user's queued send in the way. */
   queue: (n: number) => void;
+  /** Drop or restore the wire. `canSubmit` is phase AND transport ([D01]). */
+  setOnline: (online: boolean) => void;
   latch: (planPath?: string) => void;
 }
 
@@ -94,6 +96,7 @@ function harness(
   const sessionListeners = new Set<() => void>();
 
   let phase: CodeSessionPhase = "streaming";
+  let online = true;
   let queuedSends: unknown[] = [];
   let model: string | null = options.model === undefined ? "sonnet" : options.model;
 
@@ -108,7 +111,7 @@ function harness(
     },
     getSnapshot: () => ({
       phase,
-      canSubmit: phase === "idle" || phase === "errored",
+      canSubmit: (phase === "idle" || phase === "errored") && online,
       queuedSends,
     }),
     setModel: (selector: string) => {
@@ -155,6 +158,10 @@ function harness(
     },
     queue: (n) => {
       queuedSends = Array.from({ length: n }, (_, i) => i);
+      notifySession();
+    },
+    setOnline: (next) => {
+      online = next;
       notifySession();
     },
     latch: (planPath = PLAN) => planReviewRequestStore.latch("card-1", planPath),
@@ -285,6 +292,41 @@ describe("park and submit", () => {
     h.controller.dispose();
   });
 
+  test("a parked request is dropped when a turn it did not submit starts", () => {
+    // Submitting from a settled session sends straight out instead of
+    // queueing, so `queuedSends` stays empty and the queue guard never sees
+    // it. The park has to notice the turn itself. Offline is how a settled
+    // beat reaches a park without submitting it — `canSubmit` is phase AND
+    // transport — which is what puts the park in that position at all.
+    const h = harness();
+    h.setOnline(false);
+    h.latch();
+    h.setPhase("idle");
+    expect(h.controller.getSnapshot()).toEqual({ kind: "parked", planPath: PLAN });
+    expect(h.turns).toEqual([]);
+
+    h.setPhase("streaming");
+    expect(h.controller.getSnapshot()).toEqual({ kind: "idle" });
+    expect(h.turns).toEqual([]);
+    expect(h.sent).toEqual([]);
+    expect(lastNotice(h)?.kind).toBe("caution");
+    expect(lastNotice(h)?.message).toContain("submitted something else");
+  });
+
+  test("a park that only waited out the wire still submits", () => {
+    // The counterpart: a settled beat the park sat through is not by itself
+    // evidence of a user turn, so reconnecting submits rather than abandons.
+    const h = harness();
+    h.setOnline(false);
+    h.latch();
+    h.setPhase("idle");
+    expect(h.turns).toEqual([]);
+
+    h.setOnline(true);
+    expect(h.turns.length).toBe(1);
+    expect(h.sent).toEqual(["opus"]);
+  });
+
   test("a second request while one is under way is refused, not queued", () => {
     const h = harness();
     h.latch();
@@ -390,12 +432,42 @@ describe("release", () => {
     expect(h.sent).toEqual(["opus", "sonnet"]);
   });
 
-  test("unmount mid-review gives the model back", () => {
+  test("unmount after the review turn ended gives the model back at once", () => {
+    const h = harness({ sendStartsTurn: false });
+    h.latch();
+    h.setPhase("idle");
+    expect(h.sent).toEqual(["opus", "sonnet"]);
+    h.controller.dispose();
+    expect(h.sent).toEqual(["opus", "sonnet"]);
+  });
+
+  test("unmount mid-turn gives the model back when the turn settles", () => {
+    // `CodeSessionStore.setModel` has no `canSubmit` gate of its own, so
+    // releasing here would put a `model_change` on the wire mid-flight and
+    // rest on claude honoring it there. The release waits out the turn it was
+    // borrowed for instead — on a subscription that outlives the controller,
+    // because an unmount mid-review is exactly the case it exists for.
     const h = harness();
     h.latch();
     h.setPhase("idle");
     expect(h.sent).toEqual(["opus"]);
+    expect(h.controller.getSnapshot().kind).toBe("running");
+
     h.controller.dispose();
+    expect(h.sent).toEqual(["opus"]);
+
+    h.setPhase("idle");
+    expect(h.sent).toEqual(["opus", "sonnet"]);
+  });
+
+  test("the deferred release fires once, however many beats follow", () => {
+    const h = harness();
+    h.latch();
+    h.setPhase("idle");
+    h.controller.dispose();
+    h.setPhase("idle");
+    h.setPhase("streaming");
+    h.setPhase("idle");
     expect(h.sent).toEqual(["opus", "sonnet"]);
   });
 

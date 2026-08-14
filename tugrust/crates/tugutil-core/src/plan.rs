@@ -255,7 +255,7 @@ pub fn parse(source: &str) -> Result<PlanDoc, NotAPlan> {
 
         // A fenced block is a sample, not structure — a spec that shows the
         // Review Record's markdown must not declare its heading.
-        if line.trim_start().starts_with("```") {
+        if is_fence(line) {
             in_fence = !in_fence;
             continue;
         }
@@ -650,6 +650,21 @@ pub fn lint(doc: &PlanDoc) -> Vec<Diagnostic> {
         }
     }
 
+    // PL024 — a plan that plans no tests at all.
+    //
+    // PL011 has to stay a warning: an integration-checkpoint step legitimately
+    // carries its gates in Tasks. But PL020 can only inspect Tests blocks that
+    // exist, so a per-step warning on its own makes *no* test planning cheaper
+    // than wrong test planning — omitting the block skips the ban. The rule
+    // that cannot be satisfied by omission is this one, at the plan level.
+    if !doc.steps.is_empty() && doc.steps.iter().all(|s| s.tests.is_none()) {
+        out.push(Diagnostic::whole_doc(
+            "PL024",
+            Severity::Error,
+            "no step in this plan carries a Tests block — a plan says how it will be checked",
+        ));
+    }
+
     // PL023 — the Review Record.
     if !declared.contains("review-record") {
         out.push(Diagnostic::whole_doc(
@@ -677,7 +692,7 @@ fn collect_headings(source: &str) -> Vec<Heading> {
     let mut in_fence = false;
     for (index, raw) in source.lines().enumerate() {
         let line = raw.trim_end();
-        if line.trim_start().starts_with("```") {
+        if is_fence(line) {
             in_fence = !in_fence;
             continue;
         }
@@ -697,6 +712,14 @@ fn collect_headings(source: &str) -> Vec<Heading> {
         });
     }
     out
+}
+
+/// Whether a line opens or closes a fenced block. Both CommonMark spellings
+/// count: a plan that shows sample markdown reaches for whichever one its
+/// sample does not itself contain.
+fn is_fence(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
 fn heading_level(line: &str) -> Option<usize> {
@@ -1155,6 +1178,37 @@ Some context.
             .replace("| #step-1 |", "| #step-one |");
         let d = find(&source, "PL022");
         assert_eq!(d.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn pl024_a_plan_that_plans_no_tests_at_all() {
+        // The single step's Tests block is what PL020 would have scanned;
+        // dropping it must not be the cheap way past the ban.
+        let source = MINIMAL.replace("**Tests:**\n- [ ] Unit: the thing works.\n\n", "");
+        let d = find(&source, "PL024");
+        assert_eq!(d.severity, Severity::Error);
+    }
+
+    #[test]
+    fn pl024_silent_when_one_step_carries_tests() {
+        // Step 2 keeps its block, so step 1 going without is PL011's warning
+        // and nothing more — the integration-checkpoint shape stays legal.
+        let source = TWO_STEPS.replace("**Tests:**\n- [ ] Unit: the first thing works.\n\n", "");
+        assert!(!codes(&source).contains(&"PL024".to_string()));
+        assert!(codes(&source).contains(&"PL011".to_string()));
+    }
+
+    #[test]
+    fn a_tilde_fence_hides_its_sample_too() {
+        // The same shape `pl023`'s spec needs: a plan showing sample markdown
+        // reaches for the fence its sample does not itself contain.
+        let source = MINIMAL.replace(
+            "### Phase Overview {#phase-overview}",
+            "### Phase Overview {#phase-overview}\n\n~~~markdown\n#### Step 9: A sample {#step-1}\n~~~",
+        );
+        let doc = parse(&source).expect("parses");
+        assert_eq!(doc.steps.len(), 1, "the fenced sample declares no step");
+        assert_eq!(diagnose(&source), Vec::new());
     }
 
     #[test]
