@@ -110,6 +110,39 @@
   margin-block-start: 1px;
 }
 
+/* Optical corrections to that one box, per voice.
+
+   The size above is the side of the glyph's square, not how large the glyph
+   READS. `Newspaper` inks nearly the whole square, so at the shared size it
+   out-weighed the `User` above it; the `operator` sprite carries margin
+   inside its own viewBox, so at the same number it read a size below
+   everything else. Nudged until the three sit at one weight down a column of
+   posts, which is what a reader scanning the rail is actually comparing.
+
+   Here rather than on the icon registry in `tug-transcript-entry.tsx`: the
+   `size` prop that registry sets is overridden by the `em` rule above (and by
+   the Session card's matching one), so a number written there governs
+   nothing. Both em-relative, so the correction survives a change to the row's
+   type scale.
+
+   Judged by eye, because "reads the same size" is a perceptual claim and
+   nothing computes it. `at0365` measures that the pair is applied at all. */
+.gazette-transcript
+  .tug-transcript-entry[data-participant="reporter"]
+  .tug-transcript-entry__icon
+  svg {
+  width: 1.08em;
+  height: 1.08em;
+}
+
+.gazette-transcript
+  .tug-transcript-entry[data-participant="operator"]
+  .tug-transcript-entry__icon
+  svg {
+  width: 1.34em;
+  height: 1.34em;
+}
+
 /* Per-entry control-row icons (the copy button's glyph) scale with the row,
    exactly as they do in the Session transcript. */
 .gazette-transcript .tug-transcript-entry__controls .lucide {
@@ -242,10 +275,13 @@
    sizes and tones them; the code font is the skin's own
    (`tug-atom-ref.css`), decided once rather than per consumer.
 
-   A step under the post body's 13px, so a ref sits inside the reading size
-   rather than over it, and muted, because provenance is the quietest thing
-   in the post. The gap is wider than a boxed row's would be: with no
-   borders to separate them, whitespace is what tells two atoms apart.
+   Two steps under the post body's 13px, so a ref sits well inside the
+   reading size rather than beside it, and muted, because provenance is the
+   quietest thing in the post. The gap is wider than a boxed row's would be:
+   with no borders to separate them, whitespace is what tells two atoms
+   apart. The session atom that leads the row is unaffected — a chip carries
+   its own size (`tug-session-identity.css`'s `2xs`), so this governs the
+   bare code-set refs alone.
 
    @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gazette-post-refs {
@@ -254,7 +290,7 @@
   align-items: center;
   gap: var(--tug-space-md);
   margin-block-start: var(--tug-space-xs);
-  font-size: 0.9em;
+  font-size: 0.82em;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 

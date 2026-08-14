@@ -90,6 +90,7 @@
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
  * @covers tugdeck/src/lib/contextual-stamp.ts
  * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.tsx
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
  * @covers tugdeck/src/components/tugways/tug-text-editor.css
  */
@@ -164,6 +165,10 @@ const ROWS_JS = `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
       chips: Array.from(el.querySelectorAll(".gazette-post-refs .tug-atom-ref"))
         .map(function (c) { return (c.textContent || "").trim(); }),
       glyph: el.querySelector(".tug-transcript-entry__icon svg") !== null,
+      glyphPx: (function () {
+        var s = el.querySelector(".tug-transcript-entry__icon svg");
+        return s === null ? 0 : Math.round(s.getBoundingClientRect().width);
+      })(),
       stamp: (function () {
         var t = el.querySelector(".tug-transcript-entry__timestamp time");
         return t === null ? null : (t.textContent || "").trim();
@@ -180,6 +185,7 @@ interface Row {
   body: string;
   chips: string[];
   glyph: boolean;
+  glyphPx: number;
   stamp: string | null;
   z1b: string | null;
 }
@@ -331,6 +337,28 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         for (const row of rows) {
           expect(row.glyph, `${row.author}'s row carries a glyph`).toBe(true);
         }
+
+        // And the two Gazette voices are OPTICALLY sized rather than sharing
+        // the row's one box. A glyph's size is the side of its square, not how
+        // large it reads: the Reporter's newspaper inks nearly the whole
+        // square and the Operator sprite carries margin inside its viewBox, so
+        // at one shared number the first out-weighed the row above it and the
+        // second read a size below.
+        //
+        // Measured, because the first attempt at this correction was written
+        // on the icon registry's `size` prop and changed nothing — the card's
+        // own `em` rule overrides that prop, so both voices went on painting
+        // at the same width. An eye can judge whether the pair is right; only
+        // a measurement can tell a pair apart from a change that never reached
+        // the render.
+        expect(
+          rows[0]!.glyphPx,
+          "the Reporter is drawn under the box",
+        ).toBeLessThan(17);
+        expect(
+          rows[1]!.glyphPx,
+          "the Operator is drawn over it",
+        ).toBeGreaterThan(17);
 
         // A ref the prose did not name rides the trailing strip as an ATOM —
         // the app's own `TugAtomRef`, the read-only skin, labelled by the
