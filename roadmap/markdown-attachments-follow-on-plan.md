@@ -19,6 +19,8 @@
 
 **Round 1 — 2026-08-14, fable.** Lint: 0 errors, 1 warning (the missing review record itself, now fixed by this entry). Read the shipped surfaces the plan builds on rather than the plan's account of them — `tug-attachment-preview.tsx`, `tug-text-card-editor.tsx`'s `anchorLinkExtension` wiring, `text-card-store.ts`'s draft/`saveAs` paths, `draft_gc.rs`, `attachments.rs`, and `MainWindow.swift`'s message-handler dispatch. Applied four substantive fixes. **Correctness — a silent ⌘-click regression:** Step 5 said to move the `canOpenRelative`/`openRelative` callbacks onto `resolveAssetPath` "keeping ⌘-click behavior identical", but `resolveAssetPath` is `assets/`-only by [P12] while the shipped `resolveAgainstDoc` resolves *any* in-tree relative destination, so a hand-written `images/diagram.png` link would have gone inert; split into `resolveRelativePath` (⌘-click, semantics unchanged) and `resolveAssetPath` (strip only), and noted in the same step that those callbacks read a `path` that is `null` for an untitled buffer, so they should take the asset base and start working there. **Under-specification that would have shipped invisible UI:** [P10]/Step 6 said the tile renderer "keys off the segment type", but `TileSnapshot` carries no type, `AttachmentPreviewTile`'s `src` ladder paints a transparent placeholder when there are no pixels, and the ✕ is gated on `src !== undefined || broken` — so every non-image tile would have rendered as an invisible slot with no delete affordance; enumerated the three concrete changes required. **A resource leak the plan introduced:** `draft-docs/<draftId>/` homes are never reclaimed, because the shipped `sweep_draft_attachments` walks files only and explicitly skips subdirectories; added a `sweep_draft_docs` pass with tests to Step 1, matching on the draft id the Text card bag already carries. **Test hygiene:** at0414 trashes real files into the running machine's Trash, so every ✕ case must close on its restore assertion or each run litters a developer's Trash. Also confirmed two claims the plan rests on that turned out sound: multiple mounted strips do not contend (`registerAttachmentPreviewOpener` holds a `Set` and `openAttachmentPreview` tries each opener), and `NSWorkspace.recycle` fits the existing `clipboardRead` request/response bridge shape exactly. Deferred: nothing new — [Q02] and [Q03] stand as written, and [Q01] remains correctly closed by the system-Trash decision.
 
+**Round 2 — 2026-08-14, opus.** Lint: 0 errors, 0 warnings on entry. Read the surfaces Round 1 had not: the `fs` route table in `tugcast/src/server.rs`, `fs_write.rs`'s request struct, `fs_blob.rs`'s response contract, `tugchanges-core::git::repo_root_for`, `MainWindow.swift`'s `cleanupBridge`, and `AtomBytesEntry`'s field set. Four fixes, all of them things the plan asserted about code it had not checked. **Correctness — the restore path did not exist.** [Spec S03](#s03-trash-bridge) and Step 10 said undo moves the file back from the trashed URL "through the existing `fs` write surface." There is no such surface: the `fs` family is `complete`/`read`/`blob`/`mkdir`/`stat`/`attach`/`write` with no move or copy verb, and `POST /api/fs/write` takes `content: String` and writes `content.as_bytes()` under a `baseline_sha256` precondition — a text-document writer that would corrupt any binary asset routed through it. Undo would have failed on the first photo. Made `restorePath` a second host handler, symmetric with `trashPath`, doing a `FileManager.moveItem` from the URL the host itself minted, resolving a destination collision and reporting the path it actually restored to; specified through S03, Step 3, and Step 10. **Correctness — the git exclusion breaks in exactly the worktree Tug creates.** Step 4 said to write `<repo>/.git/info/exclude` where `repo` comes from `repo_root_for`, but that function deliberately returns the *linked worktree's* root (its docblock says so), and a linked worktree's `.git` is a **file** — so on every dash worktree the join names a path that cannot be created. Rewrote the step to locate the file through `git rev-parse --git-common-dir` and the anchored path through `--show-toplevel`, which is also what makes [P09]'s "shared across worktrees" claim true rather than incidental; added a `git worktree add` fixture test. **Efficiency — the strip would have held every asset twice over.** [P10] and Step 6 said the projection populates a card-local `AtomBytesStore` from `/api/fs/blob`, but `AtomBytesEntry.content` is required base64 and `AttachmentPreviewTile`'s `src` ladder paints `thumbnailDataUrl`, else a `data:` URL built from `content`, else nothing — so a ten-image document would have parked ten base64-inflated files in JS memory for the life of the card, to render thumbnails. The entry already carries an optional `path` and `/api/fs/blob` is streamed, `ETag`-revalidated, and `Range`-capable; specified a `blobUrl(path)` branch in the ladder, `path` on `TileSnapshot`/`snapshotKey`, and `content` relaxed to optional, which lets the projection do no byte I/O at all — and corrected [Risk R02](#r02-projection-cost)'s mitigation, which had promised to de-duplicate fetches that now do not happen. **Leak — `cleanupBridge()`.** `MainWindow` removes each script-message handler by name at teardown; Step 3 registered `trashPath` without adding it there, which retains `self` through the `WKUserContentController`. Both new names now appear in both places. Verified sound and left alone: `sweep_at_startup` is the real entry point and reads the card-state domain the draft id lives in, so Round 1's `sweep_draft_docs` addition lands correctly; `classifyFileKind`, `extractImageFiles`, `CardContentResponderScope`, `REMOVE_ATTACHMENT`, and `resolveDroppedFile` all exist as named; and the three app-test files the plan adds do not collide with existing numbers. Deferred: nothing new.
+
 ---
 
 ### Phase Overview {#phase-overview}
@@ -181,7 +183,7 @@ This plan uses explicit `{#anchor}` headings, plan-local decisions labelled `[P0
 - **Mitigation:**
   - The parse is debounced (idle-triggered), never synchronous with the edit transaction.
   - The parse output is compared structurally; an unchanged link set publishes nothing, so a keystroke in prose costs one regex pass and no store write or React render.
-  - Blob fetches are keyed by resolved absolute path with an in-flight interlock, so a re-parse never re-fetches what it already has.
+  - The projection performs no byte I/O: tiles paint from `blobUrl(path)` ([P10]), so a re-parse costs a string compare and never a fetch, and WebKit's own `ETag` revalidation handles the rest.
 - **Residual risk:** A very large document pays a regex pass per idle window. Bounded and measurable; the checkpoint measures it.
 
 ---
@@ -283,7 +285,7 @@ This plan uses explicit `{#anchor}` headings, plan-local decisions labelled `[P0
 - `recycle` additionally sets Finder's Put Back metadata, so a user who never presses ⌘Z can still restore by hand — a recovery path a private trash could not offer.
 
 **Implications:**
-- A new `trashPath` `WKScriptMessageHandler` in `tugapp/Sources/MainWindow.swift`, following the request/response shape `clipboardRead` established ([Spec S03](#s03-trash-bridge)).
+- A `trashPath` **and** a `restorePath` `WKScriptMessageHandler` in `tugapp/Sources/MainWindow.swift`, following the request/response shape `clipboardRead` established. Both halves live in the host because the `fs` route family has no move verb and `/api/fs/write` is a text writer ([Spec S03](#s03-trash-bridge)).
 - The document edit and the file move must be coupled: the CM6 transaction carries an annotation the undo listener watches, and the restore is issued when that specific change is undone.
 - Recovery is bounded by the user's own Trash rather than by a retention window. If they emptied it between ✕ and undo, the restore fails and says so through the failed-tile channel ([P06]) — an outcome the user can completely understand.
 - Outside Tug.app (browser dev) the bridge is absent; ✕ reports failure rather than silently editing text and orphaning the file ([L23] honest feedback).
@@ -332,6 +334,7 @@ This plan uses explicit `{#anchor}` headings, plan-local decisions labelled `[P0
   1. `TileSnapshot` (built by `buildSnapshot`) carries no segment `type`, so a bytes-less tile is indistinguishable from one whose pixels have not arrived. Add `type` to the snapshot and to `snapshotKey`, or every file tile renders as the transparent reserved slot — invisible.
   2. `AttachmentPreviewTile` picks its `src` from thumbnail → content → `undefined`, and `undefined` with `broken === false` paints the placeholder. A `"file"` tile must take a fourth branch: an extension-derived glyph plus the name.
   3. The ✕ is gated on `deletable && (src !== undefined || tile.broken)`, so a file tile would never show one. The gate becomes `deletable && (src !== undefined || tile.broken || type === "file")`.
+- **An image tile in the strip renders from its path, not from base64.** `AtomBytesEntry.content` is required today and is base64 with no `data:` prefix, and `AttachmentPreviewTile` paints `thumbnailDataUrl`, else `data:<mediaType>;base64,<content>`, else nothing — so a projection that filled the store the shipped way would hold every referenced asset's full bytes, base64-inflated, in memory for as long as the card is open. That is the prompt entry's contract, where the bytes must exist in JS because they go on the wire; the strip's do not. The entry already carries an optional `path`, and `GET /api/fs/blob` was built for exactly this (streamed, constant-memory, `ETag`-revalidated, `Range`-capable). So: carry `path` onto `TileSnapshot` and `snapshotKey`, add `blobUrl(path)` as a branch of the `src` ladder below `content`, and let the projection mint entries with an empty `content` — which requires relaxing `AtomBytesEntry.content` to optional, a change no existing producer notices since all of them fill it.
 - Clicking a `"file"` tile reveals its link in the text rather than opening the image sheet — `openPreview` is image-only and must not be entered for a tile with no pixels.
 - Multiple mounted strips are already safe: `registerAttachmentPreviewOpener` keeps a `Set` of openers and `openAttachmentPreview` tries each until one claims the atom, so a Text card strip and a Session card strip coexist without contention.
 - The Text card registers a `REMOVE_ATTACHMENT` responder action, which is where [P07]'s compound gesture is implemented. The strip's `useControlDispatch` resolves the parent responder at its render location, so the strip must mount inside the card's `CardContentResponderScope`.
@@ -405,20 +408,26 @@ A single deck module owns the derivation. Its shape:
 
 - `parseAssetLinks(text): AssetLinkRef[]` — every markdown link/image whose destination is `assets/`-scoped, with its document range, the decoded relative destination, and the label. Accepts bare, angle-bracketed, and percent-encoded destinations ([P08]).
 - **Two resolvers, deliberately.** `resolveRelativePath(base, destination)` keeps the shipped `resolveAgainstDoc` semantics verbatim — any plain relative destination inside the document's tree, rejecting absolute paths, URLs, anchors, `.`/`..`, and empty segments — and remains what ⌘-click uses. `resolveAssetPath(base, destination)` is `resolveRelativePath` plus the `assets/`-first-segment requirement, and is what the strip projection uses ([P12]). Collapsing them would silently narrow ⌘-click: today a hand-written `images/diagram.png` link opens in a viewer card, and `assets/`-only resolution would make it inert.
-- `AssetProjection` — a store ([L02]) holding the current tile set, fed by a debounced parse of the buffer plus resolution against the asset base ([P02]). It owns the card-local `AtomBytesStore` that `TugAttachmentPreview` reads ([P10]), fetching image bytes through `/api/fs/blob` with a keyed in-flight interlock.
+- `AssetProjection` — a store ([L02]) holding the current tile set, fed by a debounced parse of the buffer plus resolution against the asset base ([P02]). It owns the card-local `AtomBytesStore` that `TugAttachmentPreview` reads ([P10]), minting path-only entries so image tiles paint straight from `/api/fs/blob` rather than from base64 the projection would have to hold.
 - Tile states: **ready** (bytes present), **pending** (fetch in flight — the existing reserved-slot appearance), **missing** (resolved path does not exist — the existing `ImageOff` broken state, relabelled), **failed** (an attach or migration failed for this name, carrying a retry) ([P06]).
 
 **Spec S03: The trash host bridge** {#s03-trash-bridge}
 
 A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` beside the existing handlers, using the request/response shape `clipboardRead` established (post a `requestId`, receive a callback via `evaluateJavaScript`).
 
+Two handlers, not one: `trashPath` and `restorePath`. Both follow the request/response shape `clipboardRead` established (post a `requestId`, receive a callback via `evaluateJavaScript`).
+
 | Direction | Payload |
 |---|---|
-| deck → host | `{ requestId, path }` (absolute; the host expands a leading `~` as `openPath` does) |
+| deck → host (`trashPath`) | `{ requestId, path }` (absolute; the host expands a leading `~` as `openPath` does) |
 | host → deck | `{ requestId, ok: true, trashedPath }` or `{ requestId, ok: false, error }` |
+| deck → host (`restorePath`) | `{ requestId, trashedPath, destination }` |
+| host → deck | `{ requestId, ok: true, restoredPath }` or `{ requestId, ok: false, error }` |
 
-- The host calls `NSWorkspace.shared.recycle([url])` and reports the destination URL from its completion handler's source→destination map. That URL is the whole restore mechanism — undo moves the file back from it with `FileManager.moveItem`, which needs no Put Back metadata and no Trash enumeration.
-- Restoring is an ordinary move performed through the existing `fs` write surface; if the original path is occupied when undo runs, the restore resolves the collision and the re-inserted link's destination is rewritten in the same transaction.
+- The host calls `NSWorkspace.shared.recycle([url])` and reports the destination URL from its completion handler's source→destination map. That URL is the whole restore mechanism — it needs no Put Back metadata and no Trash enumeration.
+- **The restore is a host operation too, and it has to be.** The obvious cheaper design — "move it back through the existing `fs` write surface" — does not exist: `POST /api/fs/write` takes `content: String` and writes `content.as_bytes()` under a `baseline_sha256` precondition (`fs_write.rs`), so it is a text-document writer that would corrupt any binary asset routed through it, and the `fs` route family (`complete`, `read`, `blob`, `mkdir`, `stat`, `attach`, `write`) has no move or copy verb at all. Adding one would push a whole file's bytes through the JSON bridge for an operation the host can do with a single `FileManager.moveItem`, and the host is already holding the trashed URL it minted. So `restorePath` is the symmetric half of `trashPath`.
+- The host resolves a collision at `destination` itself (suffixing as `resolve_collision_name` does) and reports the path it actually restored to, so the deck rewrites the re-inserted link's destination in the same transaction when they differ.
+- **Both handlers must be torn down as well as registered.** `MainWindow.cleanupBridge()` removes every handler by name with `removeScriptMessageHandler(forName:)`; a handler added to `add(self, name:)` and not to that list holds `self` alive through the `WKUserContentController`. Add both names to both places.
 - There is no Tug-owned trash directory, no token index, and no retention sweep: the user's Trash is the store and the user's Finder is the surface.
 - Nothing persists across a relaunch. A trashed-file URL lives in a ref beside the undo entry that produced it, and both die with the card — undo across a relaunch was never offered for text edits either.
 
@@ -445,7 +454,7 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 | File | Purpose |
 |------|---------|
 | `tugrust/crates/tugcast/src/git_exclude.rs` | `.git/info/exclude` marked-block management ([P09]) |
-| `tugdeck/src/lib/os-trash.ts` | Deck half of the `trashPath` host bridge ([Spec S03](#s03-trash-bridge)) |
+| `tugdeck/src/lib/os-trash.ts` | Deck half of the `trashPath` / `restorePath` host bridges ([Spec S03](#s03-trash-bridge)) |
 | `tugdeck/src/lib/asset-links.ts` | Parse / decode / encode / resolve `assets/` links ([Spec S02](#s02-projection-model), [P08], [P12]) |
 | `tugdeck/src/lib/asset-projection.ts` | The `AssetProjection` store ([P01], [Spec S02](#s02-projection-model)) |
 | `tests/app-test/at0412-text-card-asset-strip.test.ts` | Strip projection, hand-edit, untitled drop, save-as migration |
@@ -462,8 +471,9 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 | `get_attach_base` | fn | `tugcast/src/attachments.rs` | `GET /api/fs/attach-base` |
 | `post_attach_migrate` | fn | `tugcast/src/attachments.rs` | `POST /api/fs/attach/migrate` ([P03]) |
 | `ensure_assets_excluded` | fn | `tugcast/src/git_exclude.rs` | Idempotent anchored-line insertion ([P09]) |
-| `trashPath` handler | case | `tugapp/Sources/MainWindow.swift` | `NSWorkspace.recycle`; request/response like `clipboardRead` ([Spec S03](#s03-trash-bridge)) |
-| `trashPathInOS` | fn | `tugdeck/src/lib/os-trash.ts` | Resolves the trashed URL, or null off-host |
+| `trashPath` / `restorePath` handlers | case | `tugapp/Sources/MainWindow.swift` | `NSWorkspace.recycle` and `FileManager.moveItem`; request/response like `clipboardRead`; both registered **and** removed in `cleanupBridge()` ([Spec S03](#s03-trash-bridge)) |
+| `trashPathInOS` / `restoreTrashedPathInOS` | fn | `tugdeck/src/lib/os-trash.ts` | Resolve the trashed / restored path, or null off-host |
+| `AtomBytesEntry` | interface | `tugdeck/src/lib/atom-bytes-store.ts` | `content` becomes optional so a projection tile can be path-only ([P10]) |
 | `parseAssetLinks` / `encodeLinkDestination` / `resolveAssetPath` | fn | `tugdeck/src/lib/asset-links.ts` | `encodeLinkDestination` moves here from `file-drop.ts` and changes to [P08] |
 | `AssetProjection` | class | `tugdeck/src/lib/asset-projection.ts` | [Spec S02](#s02-projection-model) |
 | `uploadDocAttachment` | fn | `tugdeck/src/lib/attachment-upload.ts` | Accepts a base descriptor (`{doc}` or `{draft}`) and an optional name |
@@ -589,14 +599,15 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 **References:** [P07] ✕ moves the asset to the macOS Trash, Spec S03, (#s03-trash-bridge)
 
 **Artifacts:**
-- A `trashPath` message handler in `tugapp/Sources/MainWindow.swift`
-- `trashPathInOS` in a deck module beside `lib/os-open.ts`
+- `trashPath` and `restorePath` message handlers in `tugapp/Sources/MainWindow.swift`
+- `trashPathInOS` / `restoreTrashedPathInOS` in a deck module beside `lib/os-open.ts`
 
 **Tasks:**
-- [ ] Register `contentController.add(self, name: "trashPath")` alongside the existing handlers in `MainWindow.swift`.
-- [ ] Handle it in `userContentController(_:didReceive:)`: read `{ requestId, path }`, expand a leading `~` exactly as the `openPath` arm does, and call `NSWorkspace.shared.recycle([url])`.
+- [ ] Register `contentController.add(self, name: "trashPath")` and `…"restorePath"` alongside the existing handlers in `MainWindow.swift`, **and add both names to `cleanupBridge()`'s `removeScriptMessageHandler(forName:)` list** — that method removes each handler by name, so one left out of it keeps `self` retained by the `WKUserContentController` ([Spec S03](#s03-trash-bridge)).
+- [ ] Handle `trashPath` in `userContentController(_:didReceive:)`: read `{ requestId, path }`, expand a leading `~` exactly as the `openPath` arm does, and call `NSWorkspace.shared.recycle([url])`.
 - [ ] In the completion handler, report `{ requestId, ok, trashedPath }` back to JavaScript through the same JSON-quoted `evaluateJavaScript` callback pattern `clipboardRead` uses (which double-serializes to survive ` `/` `); on error report `ok: false` with the message.
-- [ ] Add the deck half — a `trashPathInOS(path): Promise<string | null>` that posts the message and resolves the trashed path, or `null` when the bridge is absent (browser dev) or the host reported failure. Model the pending-callback map on `tug-native-clipboard.ts`.
+- [ ] Handle `restorePath`: read `{ requestId, trashedPath, destination }`, `FileManager.moveItem` the file back, suffixing the destination name when it is occupied, and report the path actually restored to. The restore belongs to the host because the `fs` route family has no move or copy verb and `POST /api/fs/write` is a text writer (`content: String` → `content.as_bytes()`, under a `baseline_sha256` precondition) that would corrupt binary bytes ([Spec S03](#s03-trash-bridge)).
+- [ ] Add the deck half — `trashPathInOS(path): Promise<string | null>` and `restoreTrashedPathInOS(trashedPath, destination): Promise<string | null>`, each resolving `null` when the bridge is absent (browser dev) or the host reported failure. Model the pending-callback map on `tug-native-clipboard.ts`.
 - [ ] Confirm no tugcast route, no `data_dir()/trash`, and no retention sweep are introduced — the user's Trash is the store ([P07]).
 
 **Tests:**
@@ -622,8 +633,9 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 - Calls from the attach and migrate paths
 
 **Tasks:**
-- [ ] Create `git_exclude.rs` with `ensure_assets_excluded(assets_dir: &Path)`: resolve the repo root via `tugchanges_core::git::repo_root_for` (already a tugcast dependency); return quietly when the directory is not inside a working tree.
-- [ ] Compute the repo-relative path and write an **anchored** entry (`/roadmap/assets/`) into `<repo>/.git/info/exclude`, inside a block delimited by `# tug:attachments` and `# end tug:attachments`. Create the block if absent; append inside it if present; do nothing if the exact line is already there (idempotent).
+- [ ] Create `git_exclude.rs` with `ensure_assets_excluded(assets_dir: &Path)`: resolve the repo root via `tugchanges_core::git::repo_root_for` (already a tugcast dependency); return quietly when the directory is not inside a working tree (`repo_root_for` falls back to returning `dir` itself, so detect the non-repo case explicitly rather than trusting the return).
+- [ ] **Find the exclude file through `git rev-parse --git-common-dir`, never by joining `<root>/.git`.** `repo_root_for` deliberately returns the *linked worktree's* root rather than the main repo's (its docblock says so — that is what makes the changes join correct), and in a linked worktree — every dash worktree — `.git` is a **file**, not a directory, so `<root>/.git/info/exclude` does not exist and `create_dir_all` on it fails. `--git-common-dir` answers with the shared `info/` in both layouts, which is also what makes [P09]'s "shared across worktrees" claim true: the rule written from a dash worktree is the same rule the main checkout reads, at the same worktree-relative path.
+- [ ] Compute the path relative to `--show-toplevel` (the worktree root, which is what an anchored exclude line is resolved against) and write an **anchored** entry (`/roadmap/assets/`) into `<common-dir>/info/exclude`, inside a block delimited by `# tug:attachments` and `# end tug:attachments`. Create the block if absent; append inside it if present; do nothing if the exact line is already there (idempotent).
 - [ ] Skip the write entirely when the directory's files are already tracked (`git ls-files --error-unmatch` on the directory), so a project that has chosen to commit its assets is never touched.
 - [ ] Never write a bare `assets/` pattern, and never touch the project's `.gitignore` — assert both in tests.
 - [ ] Call it from the `doc` arm of the attach route after a successful write, and from the migration's destination side; sweep the source repo's stale entry after a migration when its `assets/` directory is gone.
@@ -636,6 +648,7 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 - [ ] `a_tracked_assets_directory_is_left_alone` — `git add` the directory first, then attach; assert `.git/info/exclude` is unchanged.
 - [ ] `a_non_repo_directory_writes_no_exclude_file`.
 - [ ] `the_project_gitignore_is_never_modified`.
+- [ ] `a_linked_worktree_writes_into_the_shared_common_dir` — `git worktree add` a fixture, attach inside it, and assert the line landed in the main repo's `.git/info/exclude` (not in a `.git/info` under the worktree, which cannot exist) and that `git status --porcelain` is empty in the worktree.
 
 **Checkpoint:**
 - [ ] `cd tugrust && cargo nextest run -p tugcast git_exclude attachments`
@@ -691,10 +704,11 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 - The strip mounted in `cards/text-card.tsx` below the editor
 
 **Tasks:**
-- [ ] Create `AssetProjection`: holds the asset base, accepts `noteText(text)` from the editor's update listener (debounced, off the edit path — [Risk R02](#r02-projection-cost)), parses with `parseAssetLinks`, resolves with `resolveAssetPath`, and publishes a tile list plus a card-local `AtomBytesStore` populated from `/api/fs/blob` for image tiles. Structural diff before publishing so an unchanged link set notifies nobody.
+- [ ] Create `AssetProjection`: holds the asset base, accepts `noteText(text)` from the editor's update listener (debounced, off the edit path — [Risk R02](#r02-projection-cost)), parses with `parseAssetLinks`, resolves with `resolveAssetPath`, and publishes a tile list plus a card-local `AtomBytesStore`. Structural diff before publishing so an unchanged link set notifies nobody.
+- [ ] Mint image entries carrying only `{ path, mediaType }` and let the tile paint from `blobUrl(path)` ([P10]) — never fetch and base64 the file. The projection therefore does no byte I/O at all: `<img>` pulls through `/api/fs/blob`, which revalidates by `ETag` and streams. This is also what keeps [Risk R02](#r02-projection-cost)'s "blob fetches are keyed and de-duplicated" honest — there are no fetches to key.
 - [ ] Mint synthetic `AtomSegment`s per [P10]: stable `id` derived from the resolved path, `label`/`value` the decoded human name, `type` `"image"` when `classifyFileKind` says image, `"file"` otherwise.
 - [ ] Resolve the base from the `TextCardStore` snapshot: `fetchAttachBase(draftId)` when `draftId !== null`, else `dirname(path)` ([P02]). Re-resolve when the binding changes.
-- [ ] Extend `TugAttachmentPreview` with the three specific changes [P10] enumerates — `type` on `TileSnapshot` and `snapshotKey`, a `"file"` branch in `AttachmentPreviewTile`'s `src` ladder, and the widened ✕ gate — plus a "missing" label on the existing `ImageOff` state. Keep every existing behavior for image atoms so the prompt entry is untouched.
+- [ ] Extend `TugAttachmentPreview` with the specific changes [P10] enumerates — `type` and `path` on `TileSnapshot` and `snapshotKey`, a `blobUrl(path)` branch and a `"file"` branch in `AttachmentPreviewTile`'s `src` ladder, the widened ✕ gate, and `AtomBytesEntry.content` relaxed to optional — plus a "missing" label on the existing `ImageOff` state. Keep every existing behavior for image atoms so the prompt entry is untouched.
 - [ ] Mount the strip in `text-card.tsx` below the editor and above the find bar, **inside `CardContentResponderScope`** so its `REMOVE_ATTACHMENT` dispatch resolves to the card ([P10]), subscribed via `useSyncExternalStore` ([L02]), registered in a `useLayoutEffect` ([L03]).
 - [ ] Confirm nothing about attachments enters `TextCardBagContent` — the bag stays positions-only.
 
@@ -814,7 +828,7 @@ A new `trashPath` `WKScriptMessageHandler` registered in `MainWindow.swift` besi
 **Tasks:**
 - [ ] Register a `REMOVE_ATTACHMENT` responder action on the Text card ([L11] — the strip dispatches, the owner performs), resolving the atom id back to its link range through the projection.
 - [ ] Perform the compound gesture: remove the link's text range in one annotated transaction, and call `trashPathInOS(resolvedPath)`; hold the returned trashed URL in a ref keyed by that transaction's annotation ([#state-zone-mapping](#state-zone-mapping)).
-- [ ] Watch the editor's update listener for the undo of that specific change and move the file back from the recorded URL through the existing `fs` write surface; reconcile if the original path is now occupied (resolve the collision and rewrite the re-inserted link's destination in the same transaction). Drop the recorded URL when the change is redone or leaves the undo stack.
+- [ ] Watch the editor's update listener for the undo of that specific change and call `restoreTrashedPathInOS(trashedUrl, originalPath)` — the host performs the move ([Spec S03](#s03-trash-bridge)); there is no `fs` move route and `/api/fs/write` cannot carry binary bytes. When the host reports a restored path different from the one asked for (the original was occupied), rewrite the re-inserted link's destination in the same transaction. Drop the recorded URL when the change is redone or leaves the undo stack.
 - [ ] Report a failed restore (Trash emptied, file moved) on the tile ([P06]) rather than leaving the text silently edited.
 - [ ] Enable `deletable` on the Text card's strip only now, so no shipped intermediate state can remove a file without a restore path.
 - [ ] Confirm the ✕ is the only mutation affordance on a Text card tile — no rename, no replace.
