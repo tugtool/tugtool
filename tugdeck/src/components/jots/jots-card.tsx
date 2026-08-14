@@ -44,6 +44,7 @@
 
 import React, {
   useCallback,
+  useEffect,
   useId,
   useLayoutEffect,
   useMemo,
@@ -52,17 +53,21 @@ import React, {
   useSyncExternalStore,
 } from "react";
 import { Copy, Plus, X } from "lucide-react";
+import type { Extension } from "@codemirror/state";
 
 import { PLACEMENT_POLICY_ATTRIBUTE } from "@/gesture-interpreter";
+import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
+import { pathResolutionStore } from "@/lib/annotator/path-resolution";
+import { makeMultiRootReferenceResolver } from "@/lib/annotator/resolve-reference";
+import { VerdictBatcher } from "@/lib/annotator/verdict-batching";
+import { useFrontmostProjectBinding } from "@/lib/frontmost-project";
 import { getJotsStore } from "@/lib/jots-store";
 import { jotIncipit, type Jot } from "@/lib/jots-doc";
 import { jotDragStart } from "@/lib/jot-drag";
 import { renderPulseLine } from "@/lib/pulse-line/render-pulse-line";
-import {
-  hasNativeClipboardBridge,
-  writeClipboardViaNative,
-} from "@/lib/tug-native-clipboard";
+import { copyTextWithOrigins } from "@/lib/copy-text";
 import { animate } from "@/components/tugways/tug-animator";
+import { annotationLinkExtension } from "@/components/tugways/tug-text-editor/annotation-links";
 import { TugListView } from "@/components/tugways/tug-list-view";
 import type {
   TugListViewCellProps,
@@ -133,16 +138,15 @@ function inlineMarkdownHtml(html: string): string {
 }
 
 /** Copy a jot's raw text to the clipboard — native bridge in Tug.app (no
- *  permission popup), the async Clipboard API in browser-dev. */
-function copyJotText(text: string): void {
-  if (text === "") return;
-  if (hasNativeClipboardBridge()) {
-    writeClipboardViaNative(text, "");
-    return;
-  }
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    void navigator.clipboard.writeText(text).catch(() => {});
-  }
+ *  permission popup), the async Clipboard API in browser-dev.
+ *
+ *  The jot's own origins ride along, so provenance survives another hop: a
+ *  passage copied out of a transcript into a jot and on into a prompt is still
+ *  about the project it started in. This is the one surface whose roots are
+ *  DATA rather than a DOM stamp — and the one that can carry more than one. */
+function copyJotText(jot: Jot): void {
+  if (jot.text === "") return;
+  void copyTextWithOrigins(jot.text, jot.origins ?? []);
 }
 
 /** Row verbs and the live filter, provided by the card body to the
@@ -283,7 +287,7 @@ function JotDisplayRow({
               onClick={(e) => {
                 // A copy is not a row activation — stop it reaching the cell.
                 e?.stopPropagation();
-                copyJotText(jot.text);
+                copyJotText(jot);
               }}
             />
             <TugIconButton
@@ -353,6 +357,94 @@ function JotDisplayRow({
  */
 const JOT_WELL_MOTION_SLOT = "jot-editor-well";
 
+/**
+ * The annotator's file references, followable from inside the jot.
+ *
+ * A jot is most often a passage lifted straight out of a transcript, and a
+ * transcript passage cites files. The text survives the copy — the link does
+ * not, because the annotator marks rendered ink and a jot is a CM6 document.
+ * `annotationLinkExtension` runs the same grammar and the same resolvers over
+ * the buffer, so the citation the user copied is ⌘-clickable where they
+ * parked it.
+ *
+ * **Which project.** Jots are machine-global (`jots.json`), so unlike the
+ * transcript there is no session binding to read a root from. The frontmost
+ * bound card's project stands in — the same root Open Quickly searches, and
+ * for the same reason: whatever project is in front is very likely the one
+ * the jot is about. A jot carried to another project simply resolves to
+ * nothing and stays plain text, which is what every unconfirmed reference
+ * does anywhere else.
+ *
+ * The extension is minted once per editor: the substrate reads its host
+ * extensions at mount and never again. So the inputs are handed over as
+ * stable closures that read the live values — a project binding landing while
+ * a jot is open still lights its references up, through the verdict fan-out
+ * below rather than through a new extension identity.
+ */
+function useJotAnnotationLinks(jot: Jot): Extension {
+  const binding = useFrontmostProjectBinding();
+  const projectDir = binding?.projectDir ?? null;
+  const workspaceKey = binding?.workspaceKey ?? null;
+  const names = fileNameResolverFor(projectDir, workspaceKey);
+  // The jot's OWN roots first — the projects its text was pasted out of, which
+  // is the only thing that knows what a relative path in it means. The
+  // frontmost bound project comes last as a fallback, for a jot typed rather
+  // than pasted and for every jot written before provenance was carried at
+  // all: a guess, but the same one the card made before, and a wrong guess
+  // resolves nothing rather than resolving something else.
+  const origins = jot.origins;
+  const cwds = useMemo(
+    () => [...(origins ?? []), projectDir],
+    [origins, projectDir],
+  );
+  const resolvePath = useMemo(
+    () =>
+      makeMultiRootReferenceResolver({
+        paths: pathResolutionStore,
+        names,
+        cwds,
+      }),
+    [names, cwds],
+  );
+  const subscribe = useMemo(() => {
+    const sources = [pathResolutionStore, names].filter(
+      (source): source is NonNullable<typeof source> => source !== null,
+    );
+    return new VerdictBatcher(sources).subscribe;
+  }, [names]);
+
+  // Both inputs reach the mount-captured extension through one indirection:
+  // the resolver is read at call time, and verdicts fan out from a listener
+  // set this effect re-attaches whenever the batcher changes. Without the
+  // fan-out the extension would hold a subscription to whichever batcher
+  // existed at mount, and a workspace acquired afterwards would answer into
+  // a channel nobody was listening on.
+  const resolveRef = useRef(resolvePath);
+  resolveRef.current = resolvePath;
+  const listenersRef = useRef<Set<() => void>>(new Set());
+  useEffect(() => {
+    const listeners = listenersRef.current;
+    return subscribe(() => {
+      for (const listener of listeners) listener();
+    });
+  }, [subscribe]);
+
+  return useMemo(
+    () =>
+      annotationLinkExtension({
+        resolvePath: (reference) => resolveRef.current(reference),
+        subscribe: (listener) => {
+          const listeners = listenersRef.current;
+          listeners.add(listener);
+          return () => {
+            listeners.delete(listener);
+          };
+        },
+      }),
+    [],
+  );
+}
+
 function JotEditorRow({
   jot,
   store,
@@ -365,6 +457,7 @@ function JotEditorRow({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const wellRef = useRef<HTMLDivElement | null>(null);
   const focusableId = useId();
+  const annotationLinks = useJotAnnotationLinks(jot);
 
   // Slide the editor OPEN — the WELL grows from zero to its natural height so
   // the card visibly opens rather than snapping ([L06] via WAAPI, not React
@@ -688,7 +781,7 @@ function JotEditorRow({
               title="Copy jot"
               onClick={(e) => {
                 e?.stopPropagation();
-                copyJotText(jot.text);
+                copyJotText(jot);
               }}
             />
             <TugIconButton
@@ -735,6 +828,14 @@ function JotEditorRow({
           lineWrap
           fontSize="var(--tugx-jot-editor-font-size)"
           maxRows={120}
+          // A file the jot cites is ⌘-clickable in place — the annotator's
+          // gate, the annotator's gesture, in a buffer that is still editable.
+          extensions={annotationLinks}
+          // A pasted passage brings the project it was written against, and
+          // the jot keeps it: this is the whole reason a relative path copied
+          // out of a transcript still resolves here, in a card that is bound
+          // to no session and belongs to no project.
+          onPastedOrigins={(origins) => store.addJotOrigins(jot.id, origins)}
           onChange={onChange}
           onSubmit={onSubmit}
           aria-label="Jot text"

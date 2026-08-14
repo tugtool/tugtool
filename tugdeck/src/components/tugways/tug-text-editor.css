@@ -410,3 +410,18 @@ body {
 .tug-text-editor[data-drop-active] .cm-selectionBackground {
   background-color: var(--tug7-surface-selection-primary-normal-plain-inactive) !important;
 }
+
+/* Annotation links — ⌘-click navigation for the file references the content
+ * annotator confirms, in a buffer that is still being edited (see
+ * `tug-text-editor/annotation-links.ts`). A confirmed reference carries
+ * `.cm-annotation-link`; the pointer + underline affordance appears only
+ * while the platform accelerator is held (the plugin toggles
+ * `.cm-annotation-mod` on the `.cm-editor`), so a plain click still reads as
+ * ordinary editing and unheld text keeps the tone its markup gave it.
+ *
+ * @tug-renders-on .cm-content (background established by tug-text-editor/theme.ts) */
+.tug-text-editor .cm-annotation-mod .cm-annotation-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: from-font;
+}

@@ -59,6 +59,50 @@ export interface ReferenceResolvers {
  * Returns cached verdicts and records what it could not answer, so the
  * DOM pass never waits and a later pass sees the answer.
  */
+/**
+ * Resolve against SEVERAL roots, taking the first that confirms.
+ *
+ * A surface can hold text from more than one project — a jot pasted into twice
+ * is about both — and there is no way to tell from a relative path which of
+ * them it was written against. So ask each, and let the filesystem decide: a
+ * confirmed answer anywhere wins, because a path that names a real file under
+ * some root the text actually came from is not a coincidence worth refusing.
+ *
+ * The fold is ordered by certainty, not by root: **confirmed** beats
+ * everything; failing that a **pending** answer is reported, so the run stays
+ * silent and re-marks when the verdict lands rather than settling on "missing"
+ * while a probe is still out; failing that, whatever the first root said. A
+ * `names` index answers bare filenames once, not per root — it searches a
+ * project, not a directory.
+ *
+ * Roots are tried in order, so a caller that knows which is likeliest should
+ * put it first. Cost is one cached lookup per root per reference; the resolvers
+ * memoize, so a re-mark over already-answered ink is free.
+ */
+export function makeMultiRootReferenceResolver(
+  resolvers: Omit<ReferenceResolvers, "cwd"> & { cwds: readonly (string | null)[] },
+): (reference: PathReference) => PathVerdict {
+  const { paths, names, cwds } = resolvers;
+  const roots = cwds.filter((cwd): cwd is string => cwd !== null);
+  // No root to try is exactly the single-resolver case with a null cwd: an
+  // absolute path still stats, a relative one goes to the index.
+  const perRoot = (roots.length === 0 ? [null] : roots).map((cwd) =>
+    makeReferenceResolver({ paths, names, cwd }),
+  );
+  if (perRoot.length === 1) return perRoot[0];
+  return (reference: PathReference): PathVerdict => {
+    let pending: PathVerdict | null = null;
+    let first: PathVerdict | null = null;
+    for (const resolve of perRoot) {
+      const verdict = resolve(reference);
+      if (verdict.state === "confirmed") return verdict;
+      if (verdict.state === "pending" && pending === null) pending = verdict;
+      if (first === null) first = verdict;
+    }
+    return pending ?? first ?? UNKNOWN;
+  };
+}
+
 export function makeReferenceResolver(
   resolvers: ReferenceResolvers,
 ): (reference: PathReference) => PathVerdict {

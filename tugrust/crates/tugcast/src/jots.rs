@@ -39,6 +39,25 @@ pub struct Jot {
     pub id: String,
     #[serde(default)]
     pub text: String,
+    /// Absolute project roots this jot's text was written against — the
+    /// provenance of whatever was pasted in.
+    ///
+    /// A jot is usually a passage lifted out of a transcript, and such a
+    /// passage cites files the way people do: relative to a repo root the
+    /// sentence never names. The text survives the copy; the root only
+    /// survives if it is carried, so a Tug copy puts it on the pasteboard and
+    /// the paste records it here. A reader tries each root and takes the first
+    /// that names a real file.
+    ///
+    /// A LIST because a jot accumulates: pasted into twice from two projects,
+    /// it is about both, and dropping the first root to record the second
+    /// would put out links that were working a moment ago.
+    ///
+    /// Absent on every jot written before this existed, and on any jot typed
+    /// rather than pasted — which is why it defaults empty and is omitted from
+    /// the file when it is.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub origins: Vec<String>,
 }
 
 /// The whole jots document. Array position is display order.
@@ -409,9 +428,45 @@ mod tests {
                 .map(|id| Jot {
                     id: (*id).to_owned(),
                     text: format!("body of {id}"),
+                    origins: Vec::new(),
                 })
                 .collect(),
         }
+    }
+
+    /// A jot's provenance survives the file, which is the whole point of
+    /// storing it: the roots a pasted passage was written against are what let
+    /// a relative path in it still name a file after a restart.
+    ///
+    /// The risk this pins is silent: `serialize_doc` writes a TYPED struct, so
+    /// a field the model does not know is dropped on the next save — the
+    /// frontend would record an origin, the next write would erase it, and
+    /// nothing would report a thing.
+    #[test]
+    fn origins_round_trip_through_the_file() {
+        let doc = JotsDoc {
+            version: JOTS_VERSION,
+            jots: vec![Jot {
+                id: "jt_a".into(),
+                text: "see lib/a.ts".into(),
+                origins: vec!["/alpha".into(), "/beta".into()],
+            }],
+        };
+        let bytes = serialize_doc(&doc);
+        let parsed: JotsDoc = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(parsed, doc);
+    }
+
+    /// Absent on every jot written before this existed, and omitted again on
+    /// the way out — so adding the field does not rewrite a file nobody
+    /// changed.
+    #[test]
+    fn a_jot_without_origins_reads_and_writes_without_the_field() {
+        let parsed: JotsDoc =
+            serde_json::from_str(r#"{"version":1,"jots":[{"id":"jt_a","text":"t"}]}"#).unwrap();
+        assert!(parsed.jots[0].origins.is_empty());
+        let text = String::from_utf8(serialize_doc(&parsed)).unwrap();
+        assert!(!text.contains("origins"), "got: {text}");
     }
 
     #[test]

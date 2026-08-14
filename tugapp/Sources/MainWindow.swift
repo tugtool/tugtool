@@ -1618,22 +1618,32 @@ extension MainWindow: WKScriptMessageHandler {
             // readable text on `.string` for external apps, the sidecar on
             // our private `dev.tug.prompt-atoms` type for Tug-to-Tug paste.
             // Fire-and-forget; NSPasteboard writes synchronously.
-            // JS-side contract: post {text, atoms}. `atoms` is "" when the
-            // selection carried no atoms. See tug-native-clipboard.ts.
+            // JS-side contract: post {text, atoms, html}. `atoms` is "" when
+            // the selection carried no atoms; `html` is "" for a surface with
+            // no rich-text flavor to offer. A surface that renders its text
+            // sends both: owning the whole write is the only way to carry a
+            // sidecar, and a write that carried only `.string` would silently
+            // strip formatting an external paste used to get.
+            // See tug-native-clipboard.ts.
             guard let body = message.body as? [String: Any],
                   let text = body["text"] as? String else {
                 NSLog("MainWindow: clipboardWrite invalid payload")
                 return
             }
             let atoms = body["atoms"] as? String ?? ""
+            let html = body["html"] as? String ?? ""
             let pasteboard = NSPasteboard.general
             var types: [NSPasteboard.PasteboardType] = [.string]
+            if !html.isEmpty { types.append(.html) }
             if !atoms.isEmpty { types.append(tugAtomsPasteboardType) }
             // declareTypes clears the pasteboard and declares ownership of
             // the listed types in one step, so the subsequent setString
             // calls are guaranteed to take.
             pasteboard.declareTypes(types, owner: nil)
             pasteboard.setString(text, forType: .string)
+            if !html.isEmpty {
+                pasteboard.setString(html, forType: .html)
+            }
             if !atoms.isEmpty {
                 pasteboard.setString(atoms, forType: tugAtomsPasteboardType)
             }

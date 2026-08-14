@@ -43,6 +43,7 @@ import "./tug-message-editor.css";
 
 import React, { useMemo, useRef } from "react";
 import { EditorView } from "@codemirror/view";
+import type { Extension } from "@codemirror/state";
 
 import { cn } from "@/lib/utils";
 import {
@@ -97,6 +98,13 @@ export interface TugMessageEditorProps {
   onChange?: (text: string) => void;
   /** Fired on Cmd-Enter (regardless of `returnAction`). */
   onSubmit?: () => void;
+  /**
+   * Fired when a paste carried its source project's roots. Forwarded to the
+   * substrate; see `TugTextEditorProps.onPastedOrigins`. The Jots editor
+   * records them on the jot, which is what lets a relative path pasted out of
+   * a transcript keep resolving after that session is gone.
+   */
+  onPastedOrigins?: (origins: readonly string[]) => void;
   /**
    * Whether a submit Enter defers to a default button on the responder chain
    * instead of firing `onSubmit`. Forwarded to the substrate. @default true
@@ -163,6 +171,14 @@ export interface TugMessageEditorProps {
    * restore and steals the keyboard key view. @default false
    */
   suppressCardEngineHooks?: boolean;
+  /**
+   * Extra CM6 extensions, installed at mount alongside the field's own
+   * document mirror. Mount-captured like the substrate's own `extensions`
+   * prop — a later change does NOT propagate — so an extension that needs
+   * live host state reads it through a stable closure rather than a new
+   * identity (the Jots editor's annotation links do exactly that).
+   */
+  extensions?: Extension | readonly Extension[];
   /** Forwarded to the host wrapper. */
   className?: string;
   /** Test hook, forwarded to the host wrapper. */
@@ -179,6 +195,7 @@ export const TugMessageEditor = React.forwardRef<
     value,
     onChange,
     onSubmit,
+    onPastedOrigins,
     deferToDefaultButton = true,
     placeholder,
     maxRows = DEFAULT_MAX_ROWS,
@@ -193,6 +210,7 @@ export const TugMessageEditor = React.forwardRef<
     focusGroup,
     focusOrder,
     focusPolicy,
+    extensions,
     className,
     "data-testid": dataTestid,
     "aria-label": ariaLabel,
@@ -216,23 +234,28 @@ export const TugMessageEditor = React.forwardRef<
   // programmatic restore/clear paths carry no matching `userEvent`, so a
   // seeded draft never reads as a user edit ([P28] pinning). `delete.tug-clear`
   // is the substrate's own `clear()` marker and is excluded explicitly.
-  const messageEditorExtensions = useMemo(
-    () =>
-      EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return;
-        const userEdit = update.transactions.some(
-          (t) =>
-            (t.isUserEvent("input") ||
-              t.isUserEvent("delete") ||
-              t.isUserEvent("undo") ||
-              t.isUserEvent("redo")) &&
-            !t.isUserEvent("delete.tug-clear"),
-        );
-        if (!userEdit) return;
-        onChangeRef.current?.(update.state.doc.toString());
-      }),
-    [],
-  );
+  //
+  // Host extensions ride along, snapshotted at mount for the same reason:
+  // the substrate would ignore a later identity anyway, and a ref snapshot
+  // says so rather than implying a live prop.
+  const hostExtensionsRef = useRef(extensions);
+  const messageEditorExtensions = useMemo(() => {
+    const mirror = EditorView.updateListener.of((update) => {
+      if (!update.docChanged) return;
+      const userEdit = update.transactions.some(
+        (t) =>
+          (t.isUserEvent("input") ||
+            t.isUserEvent("delete") ||
+            t.isUserEvent("undo") ||
+            t.isUserEvent("redo")) &&
+          !t.isUserEvent("delete.tug-clear"),
+      );
+      if (!userEdit) return;
+      onChangeRef.current?.(update.state.doc.toString());
+    });
+    const host = hostExtensionsRef.current;
+    return host === undefined ? mirror : [mirror, host];
+  }, []);
 
   const seed = (text: string): void => {
     substrateRef.current?.restoreState({ text, atoms: [], selection: null });
@@ -295,6 +318,7 @@ export const TugMessageEditor = React.forwardRef<
       focusOrder={focusOrder}
       focusPolicy={focusPolicy}
       onSubmit={onSubmit}
+      onPastedOrigins={onPastedOrigins}
       extensions={messageEditorExtensions}
     />
   );

@@ -21,7 +21,11 @@ import type { PathReference } from "../detect-path-reference";
 import { bestIndexMatch, indexResultMatches } from "../file-name-resolution";
 import type { ScoredResult } from "../../filetree-store";
 import { PathResolutionStore, type PathVerdict } from "../path-resolution";
-import { makeReferenceResolver, type NameLookup } from "../resolve-reference";
+import {
+  makeMultiRootReferenceResolver,
+  makeReferenceResolver,
+  type NameLookup,
+} from "../resolve-reference";
 
 /** A store already holding the answers a probe would have brought back. */
 function seededPaths(answers: Record<string, string | false>): PathResolutionStore {
@@ -194,6 +198,114 @@ describe("makeReferenceResolver — who gets asked", () => {
     expect(resolve(pathRef("lib/a.ts"))).toEqual({
       state: "confirmed",
       canonical: "/repo/lib/a.ts",
+      isDir: false,
+    });
+  });
+});
+
+describe("makeMultiRootReferenceResolver — a surface can hold two projects", () => {
+  // A jot pasted into from two transcripts is about both, and a relative path
+  // in it does not say which. The resolver asks every root the text came from
+  // and lets the filesystem decide.
+
+  test("a path under the SECOND root still resolves", () => {
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({
+        "/alpha/lib/a.ts": false,
+        "/beta/lib/a.ts": "/beta/lib/a.ts",
+      }),
+      names: null,
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({
+      state: "confirmed",
+      canonical: "/beta/lib/a.ts",
+      isDir: false,
+    });
+  });
+
+  test("the first confirming root wins, and later roots are not consulted", () => {
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({
+        "/alpha/lib/a.ts": "/alpha/lib/a.ts",
+        "/beta/lib/a.ts": "/beta/lib/a.ts",
+      }),
+      names: null,
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({
+      state: "confirmed",
+      canonical: "/alpha/lib/a.ts",
+      isDir: false,
+    });
+  });
+
+  test("a pending root outranks a missing one", () => {
+    // Reporting `missing` while a probe is still out would settle the run as
+    // plain text and never re-mark: `missing` is terminal, `pending` is what
+    // marks the container as awaiting an answer.
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({ "/alpha/lib/a.ts": false }),
+      names: null,
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({ state: "pending" });
+  });
+
+  test("no root has it and no index can be asked — nothing is known", () => {
+    // Each root's own resolver escalates its `missing` to the index, and with
+    // no index there is nobody left to ask: `unknown`, the single-root answer,
+    // unchanged by folding several of them. Not actionable either way — the
+    // run stays plain text.
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({
+        "/alpha/lib/a.ts": false,
+        "/beta/lib/a.ts": false,
+      }),
+      names: null,
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({ state: "unknown" });
+  });
+
+  test("every root says missing, with an index that also has nothing", () => {
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({
+        "/alpha/lib/a.ts": false,
+        "/beta/lib/a.ts": false,
+      }),
+      names: seededNames({}),
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(pathRef("lib/a.ts"))).toEqual({ state: "missing" });
+  });
+
+  test("null roots drop out, and no root at all is the plain single-resolver", () => {
+    // A jot with no provenance and no frontmost project: an absolute path
+    // still stats, which is the one shape that needs no root at all.
+    const resolve = makeMultiRootReferenceResolver({
+      paths: seededPaths({ "/abs/a.ts": "/abs/a.ts" }),
+      names: null,
+      cwds: [null, null],
+    });
+    expect(resolve(pathRef("/abs/a.ts"))).toEqual({
+      state: "confirmed",
+      canonical: "/abs/a.ts",
+      isDir: false,
+    });
+  });
+
+  test("a bare name is answered by the index, whatever the roots", () => {
+    // A name says what to look for, not where; the index searches a project,
+    // so asking it once per root would be the same question three times.
+    const resolve = makeMultiRootReferenceResolver({
+      paths: new PathResolutionStore(),
+      names: seededNames({ "a.ts": "/beta/lib/a.ts" }),
+      cwds: ["/alpha", "/beta"],
+    });
+    expect(resolve(nameRef("a.ts"))).toEqual({
+      state: "confirmed",
+      canonical: "/beta/lib/a.ts",
       isDir: false,
     });
   });

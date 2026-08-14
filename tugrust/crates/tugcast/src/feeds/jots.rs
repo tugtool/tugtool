@@ -152,6 +152,7 @@ mod tests {
             jots: vec![Jot {
                 id: "sn_a".into(),
                 text: "body".into(),
+                origins: Vec::new(),
             }],
         }
     }

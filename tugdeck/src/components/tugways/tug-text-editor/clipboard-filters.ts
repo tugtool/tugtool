@@ -59,6 +59,7 @@ import {
   readClipboardViaNative,
   writeClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
+import { clipboardOriginFor } from "@/lib/clipboard-origin";
 
 // ---------------------------------------------------------------------------
 // Wire format
@@ -85,6 +86,28 @@ export interface TugAtomsClipboardPayload {
   text: string;
   /** Atoms aligned with U+FFFC characters in `text`. */
   atoms: TugAtomsClipboardEntry[];
+  /**
+   * The absolute project roots this text was READ against — its provenance.
+   *
+   * Prose cites files the way people talk about them: `tugdeck/src/x.css:12`,
+   * relative to a repo root the sentence never names because everyone reading
+   * it in place already knows which one. Carry the text somewhere else and the
+   * citation is unresolvable, not because anything was lost but because the
+   * root was never written down. This is where it gets written down.
+   *
+   * It is the same argument {@link TugAtomsClipboardEntry.assetPath} makes for
+   * an attachment — a relative link means nothing without its document — one
+   * level up: for the sentence rather than the link.
+   *
+   * A LIST, because a destination accumulates. A jot pasted into twice from
+   * two projects is about both, and dropping the first root to record the
+   * second would put out links that were working a moment ago. Readers try
+   * every root and take the first that confirms.
+   *
+   * Absent for a copy from a surface with no project — which is honest, and
+   * leaves the destination exactly as well off as it was before any of this.
+   */
+  origins?: string[];
   /**
    * Ranges of `text` that are markdown links to attached files, for the
    * attachments a *document* copy carries that are not atoms.
@@ -184,6 +207,7 @@ export function serializeClipboard(
   atoms: readonly PositionedAtom[],
   from: number,
   getBytes?: (id: string) => AtomBytesEntry | null,
+  origins?: readonly string[],
 ): ClipboardSerialization {
   const local: TugAtomsClipboardEntry[] = atoms.map((a) => {
     const entry: TugAtomsClipboardEntry = {
@@ -210,9 +234,15 @@ export function serializeClipboard(
     }
   }
 
-  const sidecar: TugAtomsClipboardPayload | null = local.length > 0
-    ? { version: 1, text, atoms: local }
-    : null;
+  // A selection with no atoms still earns a sidecar when it has provenance to
+  // carry: plain prose citing a file is the ordinary case, not the exotic one,
+  // and it is the case with nothing else to ride on.
+  const carried = parseOrigins(origins ?? null);
+  const sidecar: TugAtomsClipboardPayload | null =
+    local.length > 0 || carried !== null
+      ? { version: 1, text, atoms: local }
+      : null;
+  if (sidecar !== null && carried !== null) sidecar.origins = carried;
 
   return {
     text,
@@ -290,10 +320,59 @@ export function parseClipboardSidecar(
     };
     const assets = parseAssetRanges(obj.assets);
     if (assets !== null) payload.assets = assets;
+    const origins = parseOrigins(obj.origins);
+    if (origins !== null) payload.origins = origins;
     return payload;
   } catch {
     return null;
   }
+}
+
+/**
+ * Attach `origins` to a sidecar, minting one when the copy had no other reason
+ * to carry a sidecar at all. Returns `null` only when there is nothing to say:
+ * no atoms, no assets, no provenance.
+ *
+ * Every copy path that knows its project calls this on the way to the write,
+ * which is what keeps "prose carries its root" from being a rule each surface
+ * re-implements slightly differently.
+ */
+export function withClipboardOrigins(
+  sidecar: TugAtomsClipboardPayload | null,
+  text: string,
+  origins: readonly string[] | string | null | undefined,
+): TugAtomsClipboardPayload | null {
+  const list = parseOrigins(
+    typeof origins === "string" ? [origins] : (origins ?? null),
+  );
+  if (list === null) return sidecar;
+  const base: TugAtomsClipboardPayload = sidecar ?? {
+    version: 1,
+    text,
+    atoms: [],
+  };
+  return { ...base, origins: list };
+}
+
+/**
+ * Validate the payload's optional `origins` list: absolute paths only, deduped,
+ * order preserved. Returns `null` when nothing usable survives, so a malformed
+ * field degrades to "this copy carried no provenance" rather than to a root
+ * that resolves paths against the wrong repository.
+ *
+ * Absolute is not a formality. A relative root would have to be resolved
+ * against something, and the only candidate is the destination's own project —
+ * which is exactly the assumption this field exists to stop making.
+ */
+export function parseOrigins(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const item of raw as unknown[]) {
+    if (typeof item !== "string") continue;
+    if (!item.startsWith("/")) continue;
+    if (!out.includes(item)) out.push(item);
+  }
+  return out.length > 0 ? out : null;
 }
 
 /**
@@ -457,7 +536,17 @@ function handleCopyOrCut(
   const atoms = getAtomsInRange(view.state, from, to);
   const store = getBytesStore();
   const getBytes = store !== null ? (id: string) => store.get(id) : undefined;
-  const payload = serializeClipboard(text, atoms, from, getBytes);
+  // An editor is a surface like any other: text copied out of one carries the
+  // project it was written against, read off the nearest stamp above the
+  // editor's own DOM.
+  const origin = clipboardOriginFor(view.dom);
+  const payload = serializeClipboard(
+    text,
+    atoms,
+    from,
+    getBytes,
+    origin === null ? undefined : [origin],
+  );
 
   const wroteNatively =
     payload.sidecar !== null &&
@@ -583,6 +672,7 @@ function handlePaste(
   getBytesStore: () => AtomBytesStore | null,
   onAttachmentError: (message: string) => void,
   getPastedCommandResolver: () => PastedCommandResolver | null,
+  onPastedOrigins: (origins: readonly string[]) => void,
 ): boolean {
   const dt = event.clipboardData;
   if (dt === null) return false;
@@ -613,6 +703,10 @@ function handlePaste(
     const sidecar = parseClipboardSidecar(sidecarRaw);
     if (sidecar !== null) {
       insertSidecar(view, sidecar, bytesStore);
+      // The provenance the copy carried. Reported rather than applied: what to
+      // do with a root is the HOST's question — a jot records it, the prompt
+      // entry has a project of its own and ignores it.
+      if (sidecar.origins !== undefined) onPastedOrigins(sidecar.origins);
       event.preventDefault();
       return true;
     }
@@ -645,6 +739,7 @@ function handlePaste(
       const sidecar = atoms !== "" ? parseClipboardSidecar(atoms) : null;
       if (sidecar !== null) {
         insertSidecar(view, sidecar, getBytesStore());
+        if (sidecar.origins !== undefined) onPastedOrigins(sidecar.origins);
         return;
       }
       const plain = text !== "" ? text : domText;
@@ -771,6 +866,7 @@ export function clipboardExtension(
   getBytesStore: () => AtomBytesStore | null = () => null,
   onAttachmentError: (message: string) => void = () => undefined,
   getPastedCommandResolver: () => PastedCommandResolver | null = () => null,
+  onPastedOrigins: (origins: readonly string[]) => void = () => undefined,
 ): Extension {
   return EditorView.domEventHandlers({
     copy(event, view) {
@@ -786,6 +882,7 @@ export function clipboardExtension(
         getBytesStore,
         onAttachmentError,
         getPastedCommandResolver,
+        onPastedOrigins,
       );
     },
   });

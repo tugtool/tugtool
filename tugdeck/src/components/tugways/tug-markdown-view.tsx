@@ -81,6 +81,7 @@ import {
   selectionGuard,
 } from "@/components/tugways/selection-guard";
 import { useCardId, useCardStatePreservation } from "@/components/tugways/use-card-state-preservation";
+import { copyTextFrom } from "@/lib/copy-text";
 import { lex_blocks, parse_to_html } from "../../../crates/tugmark-wasm/pkg/tugmark_wasm.js";
 
 // ---------------------------------------------------------------------------
@@ -1153,7 +1154,10 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
       const engine = engineRef.current;
       if (engine) {
         const text = engine.regionMap.text;
-        void navigator.clipboard.writeText(text);
+        // The whole document, so it carries the project it was read against —
+        // a rendered document is exactly the surface whose prose cites files
+        // by a root the text never spells out.
+        void copyTextFrom(scrollContainerRef.current, text);
       }
     } else {
       // Normal selection: use execCommand("copy") which copies the

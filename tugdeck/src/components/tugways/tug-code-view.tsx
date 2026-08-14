@@ -117,6 +117,7 @@ import {
   selectMatches as cmSelectMatches,
 } from "@codemirror/search";
 import { cn } from "@/lib/utils";
+import { copyTextFrom } from "@/lib/copy-text";
 import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
 import { loadMarkdownTextStyling } from "@/components/tugways/tug-text-editor/markdown-text-styling";
 import { gutterLineSelectionHandlers } from "@/components/tugways/gutter-line-selection";
@@ -624,7 +625,9 @@ export const TugCodeView = React.forwardRef<
       from === to
         ? view.state.doc.toString()
         : view.state.sliceDoc(from, to);
-    void navigator.clipboard?.writeText(text);
+    // Code and diffs name files; the copy carries the project it was read
+    // against so those names still resolve wherever it lands.
+    void copyTextFrom(view.dom, text);
   }, []);
 
   // FIND comes in via the responder chain (e.g. user presses Cmd-F).

@@ -167,6 +167,7 @@ import {
   cardSessionBindingStore,
   type CardSessionMode,
 } from "@/lib/card-session-binding-store";
+import { clipboardOriginProps } from "@/lib/clipboard-origin";
 import {
   provisionSpawnTag,
   sendCloseSessionKeepingBinding,
@@ -4488,6 +4489,12 @@ export function SessionCardBody({
         className="session-card"
         data-slot="session-card"
         data-testid="session-card"
+        // Provenance for every copy taken out of this card — transcript prose,
+        // a block's Copy, the composer's own selection. The paths in a session
+        // are spelled against the project it is bound to, and this is where
+        // that root is knowable; a destination that keeps the text keeps the
+        // root with it. Unbound cards stamp nothing ([lib/clipboard-origin]).
+        {...clipboardOriginProps(projectDir)}
         // Keyboard-focus-cycling signal ([P12]). Set while the card's
         // cycle mode is on; the fill-suppression CSS keys on this ancestor
         // so the submit's standing fill stands down to outlined and the

@@ -18,6 +18,22 @@ export const JOTS_VERSION = 1;
 export interface Jot {
   id: string;
   text: string;
+  /**
+   * Absolute project roots this jot's text was written against — the
+   * provenance of whatever was pasted in, mirroring `Jot.origins` in
+   * `tugcast/src/jots.rs` (the two must agree, or the field is dropped on the
+   * next save).
+   *
+   * A jot is usually a passage lifted out of a transcript, and such a passage
+   * cites files relative to a repo root the sentence never names. The text
+   * survives the copy; the root survives only if it is carried, so a Tug copy
+   * puts it on the pasteboard and the paste records it here. Readers try each
+   * root and take the first that names a real file.
+   *
+   * Absent on every jot written before this existed, and on any jot typed
+   * rather than pasted.
+   */
+  origins?: string[];
 }
 
 /** The whole jots document. Array position is display order ([P09]). */
@@ -78,10 +94,24 @@ export function parseJotsFrame(payload: Uint8Array): JotsFrame | null {
     if (typeof raw !== "object" || raw === null) return null;
     const s = raw as Record<string, unknown>;
     if (typeof s.id !== "string") return null;
-    jots.push({
+    const jot: Jot = {
       id: s.id,
       text: typeof s.text === "string" ? s.text : "",
-    });
+    };
+    // Named explicitly on the read side or it is silently dropped on every
+    // round trip — "additive and optional" is free on the write side and never
+    // free here. Absolute only, deduped: a relative root would have to be
+    // resolved against the reader's own project, which is the assumption the
+    // field exists to stop making.
+    if (Array.isArray(s.origins)) {
+      const origins: string[] = [];
+      for (const raw of s.origins as unknown[]) {
+        if (typeof raw !== "string" || !raw.startsWith("/")) continue;
+        if (!origins.includes(raw)) origins.push(raw);
+      }
+      if (origins.length > 0) jot.origins = origins;
+    }
+    jots.push(jot);
   }
   return {
     doc: { version: d.version, jots },
@@ -113,6 +143,37 @@ export function applyCreate(
 export function applyUpdate(doc: JotsDoc, id: string, text: string): JotsDoc {
   const jots = doc.jots.map((s) => (s.id === id ? { ...s, text } : s));
   return { ...doc, jots };
+}
+
+/**
+ * Record project roots a paste brought into a jot. Accumulates rather than
+ * replaces: a jot pasted into twice from two projects is about both, and
+ * dropping the first root to record the second would put out links that were
+ * working a moment ago.
+ *
+ * Returns the document unchanged when there is nothing new to add, so a paste
+ * from a project the jot already knows costs no write and no autosave.
+ */
+export function applyAddOrigins(
+  doc: JotsDoc,
+  id: string,
+  origins: readonly string[],
+): JotsDoc {
+  const fresh = origins.filter((root) => root.startsWith("/"));
+  if (fresh.length === 0) return doc;
+  let changed = false;
+  const jots = doc.jots.map((jot) => {
+    if (jot.id !== id) return jot;
+    const merged = jot.origins?.slice() ?? [];
+    for (const root of fresh) {
+      if (!merged.includes(root)) {
+        merged.push(root);
+        changed = true;
+      }
+    }
+    return changed ? { ...jot, origins: merged } : jot;
+  });
+  return changed ? { ...doc, jots } : doc;
 }
 
 /**

@@ -40,18 +40,10 @@ import type { Extension, Text } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 
-/**
- * The platform accelerator for "follow this link". ⌘ on macOS (Ctrl there is
- * a right-click), Ctrl elsewhere — mirroring the editor's other modifier
- * gestures (see `use-outer-scroll-on-modifier-wheel`).
- */
-const IS_MAC =
-  typeof navigator !== "undefined" &&
-  /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
-
-function accelHeld(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
-  return IS_MAC ? e.metaKey : e.ctrlKey;
-}
+import {
+  accelHeld,
+  FollowAcceleratorObserver,
+} from "@/components/tugways/tug-text-editor/follow-accelerator";
 
 // ---------------------------------------------------------------------------
 // Token grammar
@@ -260,19 +252,18 @@ type CanOpenRelative = (destination: string) => boolean;
 class AnchorLinkPlugin {
   decorations: DecorationSet;
   private cachedIndex: AnchorIndex;
-  private accelActive = false;
+  private readonly accelerator: FollowAcceleratorObserver;
 
   constructor(
-    private readonly view: EditorView,
+    view: EditorView,
     private readonly canOpenRelative: CanOpenRelative,
   ) {
     this.cachedIndex = buildIndex(view.state.doc);
     this.decorations = this.buildDecorations(view);
-
-    const win = view.dom.ownerDocument.defaultView;
-    win?.addEventListener("keydown", this.onModifier, true);
-    win?.addEventListener("keyup", this.onModifier, true);
-    win?.addEventListener("blur", this.clearAccel);
+    this.accelerator = new FollowAcceleratorObserver(
+      view.dom,
+      "cm-anchor-mod",
+    );
   }
 
   update(u: ViewUpdate): void {
@@ -285,11 +276,7 @@ class AnchorLinkPlugin {
   }
 
   destroy(): void {
-    const win = this.view.dom.ownerDocument.defaultView;
-    win?.removeEventListener("keydown", this.onModifier, true);
-    win?.removeEventListener("keyup", this.onModifier, true);
-    win?.removeEventListener("blur", this.clearAccel);
-    this.view.dom.classList.remove("cm-anchor-mod");
+    this.accelerator.destroy();
   }
 
   /** Resolve a raw token against the live index (used by the click handler). */
@@ -318,26 +305,6 @@ class AnchorLinkPlugin {
     }
     return builder.finish();
   }
-
-  /**
-   * A modifier-hold *observer*, not a chord claim. It reads whether the
-   * accelerator is currently down so links can light up under the cursor,
-   * never prevents a default, never stops propagation, and never runs a
-   * command — there is nothing here for the keymap to see, because there is
-   * nothing here that a chord could collide with.
-   */
-  private readonly onModifier = (e: KeyboardEvent): void => {
-    const held = accelHeld(e);
-    if (held === this.accelActive) return;
-    this.accelActive = held;
-    this.view.dom.classList.toggle("cm-anchor-mod", held);
-  };
-
-  private readonly clearAccel = (): void => {
-    if (!this.accelActive) return;
-    this.accelActive = false;
-    this.view.dom.classList.remove("cm-anchor-mod");
-  };
 }
 
 /** What the host wires the ⌘-click gesture to. */

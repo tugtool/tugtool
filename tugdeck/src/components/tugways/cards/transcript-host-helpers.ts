@@ -27,6 +27,12 @@ import {
   type TextSelectionAdapter,
 } from "@/components/tugways/text-selection-adapter";
 import { transcriptMarkdownToHtml } from "@/lib/markdown/transcript-copy-html";
+import { clipboardOriginFor } from "@/lib/clipboard-origin";
+import {
+  hasNativeClipboardBridge,
+  writeClipboardViaNative,
+} from "@/lib/tug-native-clipboard";
+import { withClipboardOrigins } from "@/components/tugways/tug-text-editor/clipboard-filters";
 import { dispatchCommand } from "@/command-dispatch";
 import { revealDirectoryInFinder, revealPathInFinder } from "@/lib/os-open";
 import { openAttachmentPreview } from "@/lib/attachment-preview-open";
@@ -295,7 +301,24 @@ export type CopyMarkdownResolver = (
  * `clipboard.write` is unavailable or the dual-format write rejects, so
  * copy never silently produces nothing ([P07]).
  */
-function writeCopyClipboard(plain: string, html: string | null): void {
+function writeCopyClipboard(
+  plain: string,
+  html: string | null,
+  origin: string | null,
+): void {
+  // Inside Tug.app the native bridge is the only write that can carry the
+  // sidecar — WebKit's pasteboard normalization swallows custom types, which
+  // is the whole reason the bridge exists — so a copy with provenance goes
+  // that way, carrying its html flavor along rather than losing it.
+  if (origin !== null && hasNativeClipboardBridge()) {
+    const sidecar = withClipboardOrigins(null, plain, origin);
+    if (
+      sidecar !== null &&
+      writeClipboardViaNative(plain, JSON.stringify(sidecar), html ?? undefined)
+    ) {
+      return;
+    }
+  }
   const clip = navigator.clipboard;
   if (clip === undefined || clip === null) return;
   if (
@@ -473,7 +496,11 @@ export function useTranscriptCellMenu({
   const handleCopy = useCallback((): ActionHandlerResult => {
     const copy = reconstructCopy();
     if (copy === null) return;
-    writeCopyClipboard(copy.text, copy.html);
+    writeCopyClipboard(
+      copy.text,
+      copy.html,
+      clipboardOriginFor(bodyRef.current),
+    );
   }, [reconstructCopy]);
 
   // The native ⌘C.
@@ -510,6 +537,27 @@ export function useTranscriptCellMenu({
       if (!sel.getRangeAt(0).intersectsNode(body)) return;
       const copy = reconstructCopy();
       if (copy === null) return;
+      // The project this prose was read against, so a path it cites still
+      // resolves after it lands somewhere with no session and no project of
+      // its own. It cannot ride `clipboardData` — a custom MIME type does not
+      // survive WebKit's pasteboard normalization — so a copy with provenance
+      // is handed to the native bridge, which owns every flavor including the
+      // `text/html` this event would otherwise have written.
+      const origin = clipboardOriginFor(body);
+      if (origin !== null && hasNativeClipboardBridge()) {
+        const sidecar = withClipboardOrigins(null, copy.text, origin);
+        if (
+          sidecar !== null &&
+          writeClipboardViaNative(
+            copy.text,
+            JSON.stringify(sidecar),
+            copy.html ?? undefined,
+          )
+        ) {
+          event.preventDefault();
+          return;
+        }
+      }
       data.setData("text/plain", copy.text);
       if (copy.html !== null) data.setData("text/html", copy.html);
       event.preventDefault();
@@ -548,7 +596,11 @@ export function useTranscriptCellMenu({
   const handleCopyCommand = useCallback((): ActionHandlerResult => {
     const cmd = sampledAnnotationValue(contextAnnotationRef.current);
     if (cmd === null) return;
-    writeCopyClipboard("`" + cmd + "`", `<code>${escapeHtml(cmd)}</code>`);
+    writeCopyClipboard(
+      "`" + cmd + "`",
+      `<code>${escapeHtml(cmd)}</code>`,
+      clipboardOriginFor(bodyRef.current),
+    );
   }, []);
 
   // Copy the right-clicked command as bare text — no backticks, no
@@ -556,7 +608,7 @@ export function useTranscriptCellMenu({
   const handleCopyCommandPlain = useCallback((): ActionHandlerResult => {
     const cmd = sampledAnnotationValue(contextAnnotationRef.current);
     if (cmd === null) return;
-    writeCopyClipboard(cmd, null);
+    writeCopyClipboard(cmd, null, clipboardOriginFor(bodyRef.current));
   }, []);
 
   // Copy the right-clicked annotation's canonical value as bare text — the
@@ -565,7 +617,7 @@ export function useTranscriptCellMenu({
   const handleCopyAnnotationValue = useCallback((): ActionHandlerResult => {
     const value = sampledAnnotationValue(contextAnnotationRef.current);
     if (value === null) return;
-    writeCopyClipboard(value, null);
+    writeCopyClipboard(value, null, clipboardOriginFor(bodyRef.current));
   }, []);
 
   // Send the right-clicked annotation back into the conversation. Brings

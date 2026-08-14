@@ -120,6 +120,10 @@ import {
 
 import { cn } from "@/lib/utils";
 import {
+  clipboardOriginFor,
+  stampClipboardOrigin,
+} from "@/lib/clipboard-origin";
+import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
   writeClipboardViaNative,
@@ -146,6 +150,7 @@ import {
 import {
   extractImageFiles,
   parseClipboardSidecar,
+  withClipboardOrigins,
 } from "./tug-text-editor/clipboard-filters";
 import {
   assetMarkdownForPaste,
@@ -607,8 +612,15 @@ export const TugTextCardEditor = React.forwardRef<
       const { from, to } = view.state.selection.main;
       if (from === to) return false;
       const text = view.state.sliceDoc(from, to);
-      const sidecar = buildAssetSidecar(text, assetBaseRef.current);
-      if (sidecar === null) return false; // No attachments — let the default run.
+      // Provenance rides beside the attachments: a plan document's prose cites
+      // repo paths the same way a transcript's does, and the sidecar is the
+      // only flavor that can carry the root either of them means.
+      const sidecar = withClipboardOrigins(
+        buildAssetSidecar(text, assetBaseRef.current),
+        text,
+        clipboardOriginFor(view.dom),
+      );
+      if (sidecar === null) return false; // Nothing to carry — let the default run.
       if (!hasNativeClipboardBridge()) return false;
       if (!writeClipboardViaNative(text, JSON.stringify(sidecar))) return false;
       event.preventDefault();
@@ -664,6 +676,7 @@ export const TugTextCardEditor = React.forwardRef<
       if (snapshot.draftId === null) {
         const base = snapshot.path === null ? null : directoryOf(snapshot.path);
         assetBaseRef.current = base;
+        stampClipboardOrigin(hostRef.current, base);
         assetProjectionRef.current?.setBase(base);
         return;
       }
@@ -671,6 +684,7 @@ export const TugTextCardEditor = React.forwardRef<
       void fetchAttachBase(draftId).then((base) => {
         if (cancelled || lastBinding !== `draft:${draftId}`) return;
         assetBaseRef.current = base;
+        stampClipboardOrigin(hostRef.current, base);
         assetProjectionRef.current?.setBase(base);
       });
     };
@@ -1485,7 +1499,11 @@ export const TugTextCardEditor = React.forwardRef<
       // app pastes exactly what the document says. The sidecar rides beside
       // it, carrying the absolute path of every attachment in the selection —
       // a relative link means nothing in a surface with a different base.
-      const sidecar = buildAssetSidecar(text, assetBaseRef.current);
+      const sidecar = withClipboardOrigins(
+        buildAssetSidecar(text, assetBaseRef.current),
+        text,
+        clipboardOriginFor(live.dom),
+      );
       return writeClipboardViaNative(
         text,
         sidecar === null ? "" : JSON.stringify(sidecar),

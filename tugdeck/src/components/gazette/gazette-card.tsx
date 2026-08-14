@@ -764,7 +764,17 @@ function GazettePostRow({
   }, [post]);
   return (
     <ResponderScope>
-      <div className="gazette-cell" data-author={post.author} {...cellProps}>
+      {/* Per POST, not per card: the Gazette is app-wide and each post
+          narrates a different session, so the root a copy carries is the one
+          that post's prose was written against — the same root its own
+          annotator resolves paths with. `closest()` takes the nearest stamp,
+          so this wins for its own subtree without anyone coordinating. */}
+      <div
+        className="gazette-cell"
+        data-author={post.author}
+        {...clipboardOriginProps(root?.projectDir ?? null)}
+        {...cellProps}
+      >
         <AnnotationScope value={annotation}>
           <TugTranscriptEntry
             className="gazette-post"

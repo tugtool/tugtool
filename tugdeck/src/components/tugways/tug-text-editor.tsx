@@ -753,6 +753,17 @@ export interface TugTextEditorProps
    */
   onAttachmentError?: (message: string) => void;
   /**
+   * Called when a paste carried its source project's roots — the sidecar's
+   * `origins`, written by whichever Tug surface the text was copied from.
+   *
+   * Reported rather than applied, because what to do with a root is the
+   * HOST's question. A jot records them, so a relative path in the pasted
+   * prose still names a file long after the session it came from is closed; the
+   * prompt entry has a project of its own and ignores them. Defaults to a
+   * no-op, which is every surface that has no use for provenance.
+   */
+  onPastedOrigins?: (origins: readonly string[]) => void;
+  /**
    * Opt in to tugdeck card state preservation. When `true`, the
    * editor registers `onSave` / `onRestore` / `onCardActivated` /
    * `onCardWillDeactivate` callbacks with the enclosing `CardHost`
@@ -1083,6 +1094,7 @@ function buildExtensions(
   getInlineCommandMatcher: () => InlineCommandMatcher,
   getPastedCommandResolver: () => PastedCommandResolver | null,
   onAttachmentError: (message: string) => void,
+  onPastedOrigins: (origins: readonly string[]) => void,
   initial: {
     placeholder: string;
     lineWrap: boolean;
@@ -1266,6 +1278,7 @@ function buildExtensions(
       getBytesStore,
       onAttachmentError,
       getPastedCommandResolver,
+      onPastedOrigins,
     ),
     tugDropExtension(host, getDropHandler, getBytesStore, onAttachmentError),
     keepCaretVisible,
@@ -1340,6 +1353,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
       dropHandler,
       attachmentBytesStore,
       onAttachmentError,
+      onPastedOrigins,
       preserveState = true,
       placeholder = "",
       maxRows = DEFAULT_MAX_ROWS,
@@ -1591,6 +1605,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
     useLayoutEffect(() => {
       argumentHintRefreshRef.current = argumentHintRefresh ?? null;
     }, [argumentHintRefresh]);
+
+    // [L07] live ref: the host handler can arrive or change after mount, and
+    // the extension below is built once.
+    const onPastedOriginsRef = useRef(onPastedOrigins);
+    onPastedOriginsRef.current = onPastedOrigins;
 
     // Same [L07] live-ref pattern for the pasted-command resolver, so paste
     // recognition reads the current catalog without rebuilding the editor.
@@ -2314,6 +2333,11 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
                 userEvent: "input.paste",
                 scrollIntoView: true,
               });
+              // Same report the DOM paste path makes: the roots this text was
+              // written against, for a host that keeps the text.
+              if (sidecar.origins !== undefined) {
+                onPastedOriginsRef.current?.(sidecar.origins);
+              }
               return;
             }
             if (text === "") return;
@@ -2584,6 +2608,7 @@ export const TugTextEditor = React.forwardRef<TugTextEditorDelegate, TugTextEdit
           () => (query: string) => inlineCommandMatcherRef.current(query),
           () => pastedCommandResolverRef.current,
           (message) => onAttachmentErrorRef.current(message),
+          (origins) => onPastedOriginsRef.current?.(origins),
           {
             placeholder: initialPlaceholder,
             lineWrap: initialLineWrap,

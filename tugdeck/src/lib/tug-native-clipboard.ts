@@ -225,17 +225,27 @@ export function writeImageToNativeClipboard(base64: string): boolean {
  * that round-trip entirely, and avoids the race where WebKit's own
  * post-event pasteboard write would clobber a native write.
  *
+ * `html`, when supplied, is written to `.html` beside the other two. A
+ * surface that renders its text — the transcript — has a rich-text flavor
+ * worth carrying, and once it owns the whole write to carry a sidecar it has
+ * to carry that flavor too or an external paste silently loses its formatting.
+ * Omit it and only `.string` is declared, which is the prompt entry's case.
+ *
  * Fire-and-forget: NSPasteboard writes synchronously on the Swift side.
  * Returns `true` when the bridge is present and the message was posted,
  * `false` when it's absent (normal browser dev) so callers fall back to
  * the DOM `copy` path. Mirrors {@link hasNativeClipboardBridge}'s
  * detection.
  */
-export function writeClipboardViaNative(text: string, atoms: string): boolean {
+export function writeClipboardViaNative(
+  text: string,
+  atoms: string,
+  html?: string,
+): boolean {
   const webkit = (globalThis as unknown as { webkit?: ClipboardWebkit }).webkit;
   const handler = webkit?.messageHandlers?.clipboardWrite;
   if (!handler || typeof handler.postMessage !== "function") return false;
-  handler.postMessage({ text, atoms });
+  handler.postMessage({ text, atoms, html: html ?? "" });
   return true;
 }
 

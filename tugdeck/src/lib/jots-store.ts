@@ -23,6 +23,7 @@ import {
   applyCreate,
   applyDelete,
   applyOrder,
+  applyAddOrigins,
   applyUpdate,
   emptyDoc,
   emptyUndo,
@@ -174,6 +175,25 @@ export class JotsStore {
       this.undoStack = pushUndo(this.undoStack, this.doc);
     }
     this.doc = applyUpdate(this.doc, id, text);
+    this.commit();
+    this.save(false);
+  }
+
+  /**
+   * Record the project roots a paste brought into a jot — its provenance, so a
+   * relative path in the pasted text still names a file long after the session
+   * it came from is closed.
+   *
+   * NOT an undo entry, and not a coalescing concern: this is a fact about
+   * where text came from, arriving in the same gesture as the text itself. An
+   * undo of the paste restores a document whose jot never had the origin, so
+   * the two stay consistent without this pushing a step of its own — and a
+   * step here would make ⌘Z ask twice for one paste.
+   */
+  addJotOrigins(id: string, origins: readonly string[]): void {
+    const next = applyAddOrigins(this.doc, id, origins);
+    if (next === this.doc) return; // nothing new — no write, no autosave
+    this.doc = next;
     this.commit();
     this.save(false);
   }

@@ -67,6 +67,7 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { TugButtonEmphasis } from "@/components/tugways/tug-push-button";
 import { useOuterScrollport } from "@/components/tugways/internal/outer-scrollport-context";
 import { usePositionStableClick } from "@/components/tugways/internal/use-position-stable-click";
+import { copyTextFrom } from "@/lib/copy-text";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -261,16 +262,15 @@ export function BlockCopyButton({
         });
       return;
     }
-    const writeText = navigator.clipboard?.writeText.bind(navigator.clipboard);
-    if (writeText === undefined) return;
     const text = getTextRef.current?.() ?? "";
     if (text.length === 0) return;
-    writeText(text)
-      .then(() => flashCopied())
-      .catch(() => {
-        // Silent failure — no false-positive flash. The user can
-        // re-click to retry.
-      });
+    // A block's text is prose and tool output — the shapes that cite files by
+    // relative path — so the copy carries the project it was read against,
+    // read off the nearest surface stamp above this button.
+    void copyTextFrom(buttonRef.current, text).then((ok) => {
+      // Silent failure — no false-positive flash. The user can re-click.
+      if (ok) flashCopied();
+    });
   }, [flashCopied]);
 
   // Clean up the pending timer on unmount so we never call setState

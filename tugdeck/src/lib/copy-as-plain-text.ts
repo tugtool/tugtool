@@ -21,6 +21,8 @@ import {
   hasNativeClipboardBridge,
   writeClipboardViaNative,
 } from "./tug-native-clipboard";
+import { clipboardOriginForSelection } from "./clipboard-origin";
+import { copyTextWithOrigins } from "./copy-text";
 
 /**
  * Read the plain text of the current selection. Native `<input>` /
@@ -50,6 +52,15 @@ export function copySelectionAsPlainText(): void {
   const raw = readSelectionText();
   if (raw === "") return; // nothing selected — no-op
   const text = stripMarkdown(raw);
+  // Stripping the markdown does not strip the provenance: the paths this prose
+  // cites are still relative to the project it was read in, and this path — a
+  // menu command reading the live selection — is the one with no element to
+  // ask, so it asks the selection where it started.
+  const origin = clipboardOriginForSelection();
+  if (origin !== null) {
+    void copyTextWithOrigins(text, [origin]);
+    return;
+  }
   if (hasNativeClipboardBridge()) {
     writeClipboardViaNative(text, "");
     return;

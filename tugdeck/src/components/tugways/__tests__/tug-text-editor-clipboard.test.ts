@@ -458,3 +458,79 @@ describe("sidecar attachment fields round-trip", () => {
     expect(parsed!.assets).toBeUndefined();
   });
 });
+
+describe("origins — the project a copied passage was written against", () => {
+  // Prose cites files relative to a root the sentence never names. Carrying
+  // that root is what lets `tugdeck/src/x.css:12` still name a file after the
+  // text lands in a jot, a surface bound to no project at all.
+
+  it("rides the sidecar and survives the round trip", () => {
+    const payload = serializeClipboard("see lib/a.ts", [], 0, undefined, [
+      "/repo",
+    ]);
+    expect(payload.sidecar?.origins).toEqual(["/repo"]);
+    const parsed = parseClipboardSidecar(JSON.stringify(payload.sidecar));
+    expect(parsed?.origins).toEqual(["/repo"]);
+  });
+
+  it("mints a sidecar for prose with no atoms at all", () => {
+    // The ordinary case, and the one with nothing else to ride on: before
+    // this, a selection without atoms wrote no sidecar and there was nowhere
+    // for a root to go.
+    const bare = serializeClipboard("see lib/a.ts", [], 0);
+    expect(bare.sidecar).toBeNull();
+    const carried = serializeClipboard("see lib/a.ts", [], 0, undefined, [
+      "/repo",
+    ]);
+    expect(carried.sidecar).not.toBeNull();
+    expect(carried.sidecar?.atoms).toEqual([]);
+    expect(carried.sidecar?.text).toBe("see lib/a.ts");
+  });
+
+  it("keeps carrying atoms when it also carries a root", () => {
+    const payload = serializeClipboard(
+      `a${TUG_ATOM_CHAR}b`,
+      [{ position: 1, segment: SAMPLE_FILE.segment }],
+      0,
+      undefined,
+      ["/repo"],
+    );
+    expect(payload.sidecar?.atoms).toHaveLength(1);
+    expect(payload.sidecar?.origins).toEqual(["/repo"]);
+  });
+
+  it("refuses a relative root, which would have to be resolved against the reader", () => {
+    // Resolving it against the DESTINATION's project is exactly the assumption
+    // the field exists to stop making, so a root that isn't absolute is no
+    // root at all.
+    const payload = serializeClipboard("see lib/a.ts", [], 0, undefined, [
+      "repo",
+    ]);
+    expect(payload.sidecar).toBeNull();
+    expect(
+      parseClipboardSidecar(
+        JSON.stringify({ version: 1, text: "t", atoms: [], origins: ["repo"] }),
+      )?.origins,
+    ).toBeUndefined();
+  });
+
+  it("dedupes and drops non-strings without failing the parse", () => {
+    const parsed = parseClipboardSidecar(
+      JSON.stringify({
+        version: 1,
+        text: "t",
+        atoms: [],
+        origins: ["/repo", "/repo", 7, "/other"],
+      }),
+    );
+    expect(parsed?.origins).toEqual(["/repo", "/other"]);
+  });
+
+  it("a payload written before origins existed still parses", () => {
+    const parsed = parseClipboardSidecar(
+      JSON.stringify({ version: 1, text: "t", atoms: [] }),
+    );
+    expect(parsed).not.toBeNull();
+    expect(parsed?.origins).toBeUndefined();
+  });
+});

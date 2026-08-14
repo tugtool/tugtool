@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type JotsDoc,
   type JotsFrame,
+  applyAddOrigins,
   applyCreate,
   applyDelete,
   applyOrder,
@@ -176,5 +177,55 @@ describe("helpers", () => {
 
   test("emptyDoc is version 1 with no jots", () => {
     expect(emptyDoc()).toEqual({ version: 1, jots: [] });
+  });
+});
+
+describe("origins — a jot remembers which projects its text came from", () => {
+  // A jot is usually a passage lifted out of a transcript, and such a passage
+  // cites files relative to a root the sentence never names. The paste records
+  // that root here so the citation still resolves once the session is gone.
+
+  test("applyAddOrigins records a root on the named jot", () => {
+    const next = applyAddOrigins(doc("a", "b"), "a", ["/repo"]);
+    expect(next.jots[0].origins).toEqual(["/repo"]);
+    expect(next.jots[1].origins).toBeUndefined();
+  });
+
+  test("a second paste from elsewhere ACCUMULATES rather than replaces", () => {
+    // Dropping the first root to record the second would put out links that
+    // were working a moment ago — the jot is about both projects now.
+    const once = applyAddOrigins(doc("a"), "a", ["/alpha"]);
+    const twice = applyAddOrigins(once, "a", ["/beta"]);
+    expect(twice.jots[0].origins).toEqual(["/alpha", "/beta"]);
+  });
+
+  test("a repeat paste from the same project is not a write", () => {
+    // Identity, not just equality: the store checks it to skip the autosave.
+    const once = applyAddOrigins(doc("a"), "a", ["/alpha"]);
+    expect(applyAddOrigins(once, "a", ["/alpha"])).toBe(once);
+    expect(applyAddOrigins(once, "a", [])).toBe(once);
+    expect(applyAddOrigins(once, "a", ["relative"])).toBe(once);
+    expect(applyAddOrigins(once, "missing-id", ["/beta"])).toBe(once);
+  });
+
+  test("parseJotsFrame reads origins back — the field is named on BOTH sides", () => {
+    // An optional field is free to add on the write side and never free on the
+    // read side: unnamed here, it is dropped on every round trip through the
+    // frame, and the provenance quietly stops surviving a restart.
+    const frame: JotsFrame = {
+      doc: {
+        version: 1,
+        jots: [{ id: "a", text: "t", origins: ["/repo", "/repo", "rel"] }],
+      },
+      hash: "h",
+      error: null,
+    };
+    const parsed = parseJotsFrame(encodeFrame(frame));
+    expect(parsed!.doc.jots[0].origins).toEqual(["/repo"]);
+  });
+
+  test("a jot written before origins existed still parses", () => {
+    const parsed = parseJotsFrame(encodeFrame({ doc: doc("a"), hash: null, error: null }));
+    expect(parsed!.doc.jots[0].origins).toBeUndefined();
   });
 });
