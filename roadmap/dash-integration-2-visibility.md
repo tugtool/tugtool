@@ -40,7 +40,7 @@ The rendering doctrine comes from the consolidation plan's Zone-2 ruling (archiv
 - **Dash grammar, never claim grammar.** The lane renders its own row species (Spec S01), not `TugChangesList` entries — file lists are display-only name-status rows with no claim/disclaim/hunk affordances, and the lane's diff affordance is the whole-range pop-out (the server's range diff takes no pathspec; see (#range-diff-no-pathspec)).
 - **Bound fronts, unbound folds.** A card whose session is mated to a dash renders that dash's lane expanded and first; other dashes (and all dashes on an unbound card) fold to one summary line, the Zone-2 "Also on this project" shape.
 - **Churny state stays in leaves.** The Lens row's live indicator is a leaf subscription (the `SessionPhaseDot` pattern — `tugdeck/src/components/tugways/session-phase-dot.tsx`): phase reads never enter the row projection or the section's data pass.
-- **One gesture, existing machinery.** `/dash <name>` resolves the name client-side against the snapshot; an existing dash binds via a `bind_dash` CONTROL frame (no shell noise), a new name runs `tugutil dash create <name>` through the card's shell route (visible receipt, auto-bind does the rest). Both paths converge on the same `bind_dash_ok` broadcast the deck already handles.
+- **One gesture, existing machinery.** `/dash <name>` resolves the name client-side against the snapshot; an existing dash binds via a `bind_dash` CONTROL frame (no shell noise), a new name runs `tugutil dash create <name>` through the card's shell route (visible receipt, auto-bind does the rest), and an unanswered snapshot resolves nothing at all — it cautions and waits, because bind mints and create mutates, and neither is a thing to do on a guess ([P06]). All resolved paths converge on the same `bind_dash_ok` broadcast the deck already handles.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
@@ -73,7 +73,7 @@ The rendering doctrine comes from the consolidation plan's Zone-2 ruling (archiv
 
 #### Constraints {#constraints}
 
-- Tuglaws: [L01] no second `root.render()`; [L02] every store enters React through `useSyncExternalStore`; [L03] `useLayoutEffect` for registrations events depend on (`setSectionContent`, `setSectionAttachedList`); [L06] appearance via CSS/DOM attributes, never React state; [L13] motion belongs to the animation engine — the live indicator is `TugProgressIndicator`'s; [L19]/[L20] compose published Tug components (`TugBadge`, `TugListRow`, `BlockFoldCue`, `BlockStrip`) — never hand-roll chrome, and borrowing a component's CSS is still hand-rolling.
+- Tuglaws: [L01] no second `root.render()`; [L02] every store enters React through `useSyncExternalStore`; [L03] `useLayoutEffect` for registrations events depend on (`setSectionContent`, `setSectionAttachedList`); [L06] appearance via CSS/DOM attributes, never React state; [L11] controls emit actions, responders own the state they operate on — the Lens jump dispatches `focus-session-card` rather than reaching into a card; [L13] motion belongs to the animation engine — the live indicator is `TugProgressIndicator`'s; [L19] every component follows the component-authoring guide, whose reuse rule is why the lane and the chip compose `TugBadge` / `TugListRow` / `BlockFoldCue` / `BlockStrip` rather than hand-rolling chrome (borrowing a component's CSS is still hand-rolling); [L20] each component owns tokens scoped to its own slot — the chip keeps `TugBadge`'s tokens and the masthead restyles none of its internals; [L30] every user-invocable command is a registry entry reached through the two funnels — `/dash`'s registry is `LOCAL_SLASH_COMMANDS`, and its (deliberate) absence from the command table is stated in [P06].
 - No `localStorage`; any persisted preference goes through tugbank defaults. (This phase persists nothing new: the lane's fold is view-scope ephemeral state, deliberately — see [P02].)
 - bun, never npm; `bunx vite build` must pass before the phase is called done (the debug app loads the prod rollup bundle).
 - App-tests: selective runs via `just app-test-changed`; every new test carries `@covers` lines; never pipe app-test output.
@@ -145,6 +145,8 @@ This plan follows devise-skeleton v4: explicit `{#anchor}` headings, `[P##]` pla
 
 **Rationale:** program-plan Phase 2 item 1 verbatim ("A dash-bound card fronts its dash's lane; unbound cards fold dashes under the project"). Ephemeral fold state matches the shade's existing per-file collapse precedent — the shade is a glance surface, dismiss-and-forget; persisting its folds would be state nobody asked to keep. The binding match keys on the **owner key**, not the name, so a stale binding to a dead incarnation of a reused name never fronts the wrong dash (the haunting class program-[P03] retired).
 
+**One expected mismatch window, by design.** For a dash created before ids existed, the feed's read path never mints (`dash_owner_key`) and emits `owner_id = tugdash/<name>`, while a bind *does* mint (`ensure_dash_id`) and returns `tugdash/<name>#<id>`. Between the `bind_dash_ok` ack and the next CHANGESET_ALL recompose the two disagree: the chip appears and the lane does not front. `do_bind_dash` fires the aggregate bump on success, so the window is one recompose wide. The lane needs no special case for it — an unmatched binding is the ordinary unbound rendering (everything folded), which is exactly what should be on screen for that instant.
+
 #### [P03] The chrome chip is a `TugBadge` in the masthead's title-line slot, read from the binding store (DECIDED) {#p03-chrome-chip}
 
 **Decision:** `SessionMasthead` (`tugdeck/src/components/tugways/session-masthead.tsx`) reads the card's dash binding from `cardSessionBindingStore` (it already subscribes to that store for `projectDir`) and, when `dash` is present, passes `slots={<TugBadge …>{dash.name}</TugBadge>}` into its `SessionIdentityRow` — the same title-line trailing slot the Lens's Cards section fills with `SlotPicker`. The badge is display-only (`TugBadge` is a label by contract; its intrinsic right-click-copy copies the dash name), `emphasis="tinted"`, `role="data"`, with a `data-slot="session-masthead-dash-chip"` hook and a hover title `Working on dash <name>`.
@@ -175,13 +177,20 @@ This plan follows devise-skeleton v4: explicit `{#anchor}` headings, `[P##]` pla
 
 - **`/dash <name>`, name matches an entry in this card's `changesController.getSnapshot().dashes`** (exact match on `display_name`): send `getConnection()?.sendControlFrame("bind_dash", { tug_session_id, project_dir, dash: name })` — the Phase 1 CONTROL verb (its payload shape is phase1-Spec S03). The `bind_dash_ok` broadcast updates the chip and the lane; `bind_dash_err` is surfaced by a new small handler in `action-dispatch.ts` routing to nothing card-specific — the surface raises no optimistic state, so the only UX need is a caution, delivered via the existing pane bulletin from the handler's card resolution (`cardIdForSession`); when no card resolves, `console.warn` suffices.
 - **`/dash <name>`, no matching entry**: run the create through the card's shell route — `shellSessionStore.exec("tugutil dash create <name>")` — guarded exactly like `/shell` (inflight exchange → caution "A shell command is already running"). The shell row is the visible receipt; `run_create`'s unconditional auto-bind (via `TUG_SESSION_ID` → `POST /api/dash`) produces the `bind_dash_ok` that binds the card. The name is passed through unquoted after a conservative client-side check (`/^[A-Za-z0-9][A-Za-z0-9._-]*$/`); anything else gets a caution naming the constraint rather than a shell-quoting adventure — `tugutil` remains the real validator.
+- **`/dash <name>` on an uncomposed snapshot** (`snap.composed === false`): caution `Still scanning this project — try again in a moment`, and do nothing else. Before the first aggregate emit the snapshot's project is the placeholder and `dashes` is empty, so *every* name misses the match and would fall to the create path — firing a git mutation on the strength of a snapshot that has not answered yet. The guard is one condition and it is the difference between "the name isn't a dash" and "we don't know yet".
 - **Bare `/dash`, `snapshot.dashes` non-empty**: `shadeViewController.show("changes")` — the shade opens with the dash lane in view ([Q02]).
 - **Bare `/dash`, no dashes**: caution bulletin `No dashes in this project — /dash <name> starts one`.
 - Already bound to the named dash → re-binding is harmless (idempotent server-side); no special case.
 
 **Rationale:** program-[P05] makes `/dash <name>` "create (if needed) + bind *this card*". The two paths use each thing for what it is: bind is a pure UI-concept write with a dedicated CONTROL verb — silent, no transcript ink; create is a git mutation — the shell route gives it a durable, visible receipt ([D111] shell rows), and reuses the auto-bind rather than duplicating it. Client-side resolution against the snapshot is exact and cheap (the same snapshot the lane renders).
 
-**Implications:** `slash-supported.ts` classification and `help-content.ts` gain the entry (both enumerate local commands); the exhaustive `Record<LocalCommandName, …>` in `session-card.tsx` makes a missing surface a compile error, which is the wiring guarantee.
+**Why the match must happen client-side.** `bind_dash` **mints**: `dash_api::bind` calls `ensure_dash_id`, which writes `branch.tugdash/<name>.tugid` without ever checking that the branch exists — bind is a write-path verb by construction (phase1-[P02]). A CONTROL bind for a name that names no dash therefore *succeeds*, leaving the card wearing a chip for a dash that is not there. The snapshot match is what keeps that frame from ever being sent, which is why the uncomposed-snapshot guard above is part of the verb rather than a nicety.
+
+**A mistyped name creates a dash.** That is `tugutil dash create`'s semantics and this gesture inherits it deliberately: `/dash` means "work on this dash, making it if needed", so there is no name it can refuse on the grounds of being unfamiliar. The shell receipt is what makes the outcome legible — the row says `Created dash '<name>'` in the transcript, where a surprised user can see it and `tugutil dash release` it.
+
+**Implications:** the exhaustive `Record<LocalCommandName, …>` in `session-card.tsx` makes a missing surface a compile error, which is the wiring guarantee. Nothing else enumerates commands by hand: `slash-supported.ts` derives its supported-local set from `LOCAL_SLASH_COMMANDS`, and `help-content.ts` builds the `/help` Commands tab from the same array — the registry entry is the whole edit (see (#slash-surfaces)).
+
+**[L30]: no command-table entry, on purpose.** `components/tugways/command-registry.ts` carries one `SLASH_BRIDGES` row per slash command that has a **native door** — a menu item, sometimes a chord. `/dash` gets none, following `/shell` and `/btw`, the two other arg-taking locals: a menu item cannot supply the `<name>` the verb exists to take, and a door that always fires the bare form would be a different command wearing this one's title. Bare `/dash` is reachable by typing it, which is the funnel local slash commands go through. If `/dash` later earns a picker (Phase 5), the picker is the thing that gets the table row.
 
 ---
 
@@ -202,7 +211,9 @@ This plan follows devise-skeleton v4: explicit `{#anchor}` headings, `[P##]` pla
 
 #### How the shade opens programmatically {#shade-open}
 
-`SessionChangesView` rides a passive TugSheet shade owned by the Session card; the card's `shadeViewController.show("changes")` opens it (the same call the `/commit` entrance and the ⌃⌘C toggle funnel through), and opening fires `changesController.refresh()` for a fresh scan. The `/dash` bare-form handler calls exactly this — no new plumbing.
+`SessionChangesView` rides a passive TugSheet shade owned by the Session card; `shadeViewController.show("changes")` opens it, and opening fires `changesController.refresh()` for a fresh scan. The `/dash` bare-form handler calls exactly this — no new plumbing.
+
+Two distinct entrances share that call, and bare `/dash` takes the second. `/commit` and ⌃⌘C reach it *indirectly*, through `commitModeController.enter()` and the card's effect on the mode's active flag — the shade comes up **in commit mode**, composer and Z5 swapped. The Z4A changes chip calls `show("changes")` **directly**, with no mode: the shade as a glance surface, which is what discovery wants and what [Q02] decided. The chip is the precedent to copy; note it also toggles (`getSnapshot() === "changes"` → `hide()`) where `/dash` only shows, because a typed verb asking to see something should not be the thing that hides it.
 
 #### The masthead's geometry contract {#masthead-geometry}
 
@@ -218,7 +229,9 @@ Phase 1 shipped the CONTROL arm (`agent_supervisor.rs::handle_control`, payload 
 
 #### The `/dash` completion + help surfaces {#slash-surfaces}
 
-Adding to `LOCAL_SLASH_COMMANDS` automatically lists `/dash` in the composer's slash popup (`completion-providers/local-commands.ts` reads the registry). Two more files enumerate commands and must gain the entry: `lib/slash-supported.ts` (the [D14] classification allowlist) and `lib/help-content.ts` (the `/help` sheet). `src/__tests__/slash-commands.test.ts` and `lib/__tests__/slash-supported.test.ts` pin these lists.
+**One edit, three surfaces.** Adding to `LOCAL_SLASH_COMMANDS` lists `/dash` in the composer's slash popup (`completion-providers/local-commands.ts` reads the registry), classifies it `supported-local` for [D14] (`lib/slash-supported.ts` builds its `SUPPORTED_LOCAL` set by mapping `LOCAL_SLASH_COMMANDS`), and gives it a row in the `/help` Commands tab (`lib/help-content.ts` seeds its built-in map from the same array, where the registry description outranks any catalog one). Do **not** hand-add `/dash` to either of those two files — they derive, and a second spelling is a second thing to drift.
+
+The only place the description text is authored is the registry entry itself, which is why it should read as help copy. `src/__tests__/slash-commands.test.ts` and `lib/__tests__/slash-supported.test.ts` pin the derived lists; extend them rather than rewriting.
 
 ---
 
@@ -250,7 +263,8 @@ Adding to `LOCAL_SLASH_COMMANDS` automatically lists `/dash` in the composer's s
 | Invocation | Dash state | Behavior |
 |---|---|---|
 | `/dash <name>` | entry with `display_name === name` in this card's `snapshot.dashes` | CONTROL `bind_dash { tug_session_id, project_dir, dash: name }`; chip + lane update on `bind_dash_ok` |
-| `/dash <name>` | no matching entry | validate name shape; `shellSessionStore.exec("tugutil dash create <name>")`; auto-bind lands as `bind_dash_ok` |
+| `/dash <name>` | no matching entry, snapshot composed | validate name shape; `shellSessionStore.exec("tugutil dash create <name>")`; auto-bind lands as `bind_dash_ok`. A name that is nobody's dash creates one — inherited from the CLI verb, receipt in the shell row |
+| `/dash <name>` | snapshot not composed yet (`composed === false`) | caution `Still scanning this project — try again in a moment`; no CONTROL frame, no shell exec |
 | `/dash <name>` | shell exchange inflight (create path only) | caution `A shell command is already running` |
 | `/dash` | `snapshot.dashes.length > 0` | `shadeViewController.show("changes")` |
 | `/dash` | no dashes | caution `No dashes in this project — /dash <name> starts one` |
@@ -297,7 +311,6 @@ Adding to `LOCAL_SLASH_COMMANDS` automatically lists `/dash` in the composer's s
 | `dash:` surface handler | map entry | `cards/session-card.tsx` `slashCommandSurfaces` | Spec S03; compile-forced by the exhaustive `Record` |
 | `bind_dash` send | glue | inside the `dash:` handler | `getConnection()?.sendControlFrame(...)` (#bind-dash-send) |
 | `bind_dash_err` handler | registerAction | `src/action-dispatch.ts` | caution via resolved card / `console.warn` fallback |
-| `/dash` entries | modify | `lib/slash-supported.ts`, `lib/help-content.ts` | (#slash-surfaces) |
 | projection helpers (`dashRowsFromSnapshot`, summary counts) | pure fns | `sections/dashes-section.tsx` (exported) | bun-testable against the golden fixture |
 
 ---
@@ -305,7 +318,7 @@ Adding to `LOCAL_SLASH_COMMANDS` automatically lists `/dash` in the composer's s
 ### Documentation Plan {#documentation-plan}
 
 - [ ] Module doc comments on the two new components state the perky-frog rule and the read-only phase boundary (no landing affordances until Phase 4).
-- [ ] `slash-commands.ts` entry description + `help-content.ts` copy for `/dash`.
+- [ ] `slash-commands.ts` entry description for `/dash` — authored once, and the `/help` sheet's row derives from it ((#slash-surfaces)).
 - [ ] The tuglaws doc (`dash-lifecycle.md`) remains **Phase 5**; no laws edits here. Design-decision entries, if any earn global status, wait for Phase 5's sweep.
 
 ---
@@ -321,6 +334,11 @@ Adding to `LOCAL_SLASH_COMMANDS` automatically lists `/dash` in the composer's s
 | **Existing-suite guard** | `slash-commands.test.ts`, `slash-supported.test.ts`, `changes-route-controller.test.ts` keep passing (extended, not rewritten) | step 4 |
 
 App-tests drive the real app on a real scratch repo (the "real, not fake" doctrine): the dash is created by shelling `tugutil dash create` inside the test project before/while the app runs, so the CHANGESET_ALL snapshot carries a genuine entry — no fixtures injected into stores. Every new test file carries `@covers` lines naming the source it exercises (`just app-test-covers-check` gates); note the changeset workspace is transient (~2s entries) only for *session* claim rows — dash entries derive from git refs and persist, so no timing dance is needed.
+
+**Which `tugutil`, and from where — the two facts every dash app-test turns on.**
+
+- **Creating** a dash is pure git and needs no session: any shell can run `tugutil dash create <name>` in the scratch repo. Invoke it by an **absolute path** to the built binary — `~/.local/bin/tugutil` is a symlink to main's build, which is the right code here (this phase ships no Rust and Phase 1 is merged to main) but is the wrong habit to write into a test.
+- **Binding** is not. `tugutil dash bind|unbind` resolves the calling session from `TUG_SESSION_ID` and POSTs `/api/dash` to the live instance whose ledger **owns that session** — a harness-side Bash has neither the env nor an owned session, and the command exits with `no session — dash binding names the calling session`. Every in-app bind in these tests therefore goes through the **card's `$` shell route**, which is what stamps `TUG_SESSION_ID` on the child (shipped `dc9263805`), or through `/dash` once #step-4 lands. The instance loop is ownership-checked, so a release Tug running alongside the test instance cannot swallow the bind.
 
 #### What stays out of tests {#test-non-goals}
 
@@ -368,9 +386,9 @@ App-tests drive the real app on a real scratch repo (the "real, not fake" doctri
 
 #### Step 2: Masthead dash chip {#step-2}
 
-**Depends on:** (none — parallel to #step-1)
+**Depends on:** (none for the code — parallel to #step-1. The *test* needs a way to bind from inside the app, which the card's `$` shell route already provides; it does not wait on #step-4's `/dash`.)
 
-**Commit:** `session-masthead(dash-chip): the bound dash's name as a TugBadge on the title line [L02][L06][L20]`
+**Commit:** `session-masthead(dash-chip): the bound dash's name as a TugBadge on the title line [L02][L06][L19][L20]`
 
 **References:** [P03], [Q01], Risk R01, (#masthead-geometry)
 
@@ -380,7 +398,7 @@ App-tests drive the real app on a real scratch repo (the "real, not fake" doctri
 - [ ] CSS: cap the chip's width so a long name elides inside its own border; assert no tier-height change.
 
 **Tests:**
-- [ ] App-test (rides `at04xx-changes-dash-lane.test.ts` or its own file, `@covers session-masthead.tsx`): after binding (via `tugutil dash bind` in the scratch repo shell), the chip exists with the dash name; after `tugutil dash unbind`, it is gone — both without reload (the broadcasts drive it); masthead tier height unchanged; screenshot captured for the [R01] review.
+- [ ] App-test (rides `at04xx-changes-dash-lane.test.ts` or its own file, `@covers session-masthead.tsx`): with the dash already created, type `$ tugutil dash bind <name>` into the card's **shell route** — the route stamps `TUG_SESSION_ID`, which is what makes the bind resolvable at all (see (#test-categories)) — and the chip appears with the dash name; `$ tugutil dash unbind` and it is gone. Both without reload: the `bind_dash_ok` / `unbind_dash_ok` broadcasts drive it. Masthead tier height unchanged; screenshot captured for the [R01] review.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx vite build`
@@ -414,17 +432,17 @@ App-tests drive the real app on a real scratch repo (the "real, not fake" doctri
 
 **Depends on:** #step-1 (bare `/dash` opens the shade whose lane must exist; bind feedback is the chip/lane)
 
-**Commit:** `session-card(/dash): bind an existing dash over CONTROL, create a new one over the shell route [D111]`
+**Commit:** `session-card(/dash): bind an existing dash over CONTROL, create a new one over the shell route [L11][L30][D111]`
 
-**References:** [P06], Spec S03, (#bind-dash-send), (#slash-surfaces), program-[P05]
+**References:** [P06], Spec S03, (#bind-dash-send), (#slash-surfaces), (#shade-open), program-[P05]
 
 **Tasks:**
-- [ ] Registry entry in `lib/slash-commands.ts`; entries in `lib/slash-supported.ts` and `lib/help-content.ts`.
-- [ ] `dash:` handler in `slashCommandSurfaces` per Spec S03, including the name-shape validation and both guards (missing binding → silent no-op; busy shell on the create path → caution).
+- [ ] Registry entry in `lib/slash-commands.ts` — the only enumeration edit; `slash-supported.ts` and `help-content.ts` derive from it ((#slash-surfaces)). No `command-registry.ts` row, per [P06]'s [L30] note.
+- [ ] `dash:` handler in `slashCommandSurfaces` per Spec S03, including the name-shape validation and all three guards (missing binding → silent no-op; uncomposed snapshot → caution, no mutation; busy shell on the create path → caution).
 - [ ] `bind_dash_err` handler in `action-dispatch.ts` (caution on the resolved card; warn otherwise).
 
 **Tests:**
-- [ ] bun: `matchLocalSlashCommand("/dash x")` and bare `/dash` resolve; name validation accepts `fix-join`/`a.b_c`, rejects spaces/leading `-`; existing enumeration tests updated.
+- [ ] bun: `matchLocalSlashCommand("/dash x")` and bare `/dash` resolve; `slashSupport("dash") === "supported-local"` falls out of the registry entry with no second edit; name validation accepts `fix-join`/`a.b_c`, rejects spaces/leading `-`; existing enumeration tests updated.
 - [ ] App-test (`at04xx-dash-gesture.test.ts`, `@covers slash-commands.ts + the session-card handler`): `/dash <existing>` typed into the composer binds (chip appears, no shell row); `/dash <new>` produces the shell receipt row and ends bound; bare `/dash` opens the Changes shade; bare `/dash` in a dash-less project raises the caution bulletin.
 
 **Checkpoint:**
