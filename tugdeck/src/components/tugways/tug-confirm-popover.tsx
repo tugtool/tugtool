@@ -104,6 +104,7 @@ import {
   TugPopoverContent,
   TugPopoverAnchor,
   type TugPopoverHandle,
+  type TugPopoverMeasurable,
 } from "./tug-popover";
 import { TugLabel } from "./tug-label";
 import { isCancelChordEvent } from "./keymap-registry";
@@ -228,10 +229,15 @@ export interface TugConfirmPopoverProps {
    */
   open?: boolean;
   /**
-   * Controlled-mode anchor element. The popover positions itself
-   * relative to this element via `<TugPopoverAnchor virtualRef>`.
-   * Required (but allowed to be `null` transiently) in controlled mode;
-   * ignored in imperative mode.
+   * Controlled-mode anchor. The popover positions itself relative to it
+   * via `<TugPopoverAnchor virtualRef>`. Required (but allowed to be
+   * `null` transiently) in controlled mode; ignored in imperative mode.
+   *
+   * Usually an element. A `TugPopoverMeasurable` — any object reporting a
+   * rect — covers the case where the thing to point at is a REGION rather
+   * than a node: a row's hover-revealed accessory collapses when the
+   * pointer leaves, so a popover that must keep pointing at it anchors to
+   * the accessory's column measured off the still-present row.
    *
    * When `open === true` but `anchorEl == null`, the popover stays
    * closed — useful for callers that resolve the anchor in a layout
@@ -239,7 +245,7 @@ export interface TugConfirmPopoverProps {
    * next render once both `open === true` and a non-null `anchorEl`
    * are observed.
    */
-  anchorEl?: HTMLElement | null;
+  anchorEl?: HTMLElement | TugPopoverMeasurable | null;
   /**
    * Controlled-mode confirm callback. Fires when the user clicks the
    * confirm button or presses the corresponding key binding. Use the
@@ -565,7 +571,9 @@ export const TugConfirmPopover = React.forwardRef<
   // closed for one render, then opens on the next once `anchorEl` is
   // available. Without this gate, Radix would mount Popper with no
   // anchor and warn.
-  const virtualAnchorRef = React.useRef<HTMLElement | null>(anchorEl ?? null);
+  const virtualAnchorRef = React.useRef<TugPopoverMeasurable | null>(
+    anchorEl ?? null,
+  );
   virtualAnchorRef.current = anchorEl ?? null;
 
   const effectiveOpenForControlled = isControlled

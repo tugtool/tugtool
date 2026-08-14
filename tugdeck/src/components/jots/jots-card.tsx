@@ -82,6 +82,7 @@ import {
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
+import type { TugPopoverMeasurable } from "@/components/tugways/tug-popover";
 import {
   attachedListDelegate,
   TugFilterField,
@@ -149,12 +150,49 @@ function copyJotText(jot: Jot): void {
   void copyTextWithOrigins(jot.text, jot.origins ?? []);
 }
 
+/**
+ * An anchor over a row's trailing accessory that cannot collapse under its
+ * own popover.
+ *
+ * The ✕ is a hover reveal, and opening the popover takes the pointer off the
+ * row: the accessory slot goes to `inline-size: 0` and the button's own rect
+ * becomes a sliver at the row's trailing edge, so a popover anchored to the
+ * button visibly hops there. The ROW is present for as long as the question it
+ * is asking about — so measure the accessory's column once, against the row,
+ * and re-derive it from the row on every reposition. The popover keeps
+ * pointing at the ✕ and still tracks scroll and relayout.
+ *
+ * The rect spans the row vertically (the popover sits above the row, as a
+ * row-anchored one did) and the accessory horizontally (which is the part the
+ * user asked for back).
+ */
+function accessoryColumnAnchor(
+  row: HTMLElement,
+  accessory: HTMLElement,
+): TugPopoverMeasurable {
+  const inset =
+    row.getBoundingClientRect().right -
+    accessory.getBoundingClientRect().right;
+  const width = accessory.getBoundingClientRect().width;
+  return {
+    getBoundingClientRect(): DOMRect {
+      const live = row.getBoundingClientRect();
+      return new DOMRect(
+        live.right - inset - width,
+        live.top,
+        width,
+        live.height,
+      );
+    },
+  };
+}
+
 /** Row verbs and the live filter, provided by the card body to the
  *  module-level cell. */
 interface JotsCellContextValue {
   onRowPointerDown: (id: string, event: React.PointerEvent) => void;
-  /** Open the destructive-delete confirm popover anchored to the row. */
-  onRequestDelete: (id: string, anchorEl: HTMLElement) => void;
+  /** Open the destructive-delete confirm popover over the row's ✕. */
+  onRequestDelete: (id: string, anchor: TugPopoverMeasurable) => void;
   /** The query the rows mark their matches against. */
   filterQuery: string;
 }
@@ -303,15 +341,16 @@ function JotDisplayRow({
                 // Never let the delete read as a row activation (open) on the
                 // cell wrapper above.
                 e?.stopPropagation();
-                // Anchor the confirm to the ROW, not to this button. The ✕ is
-                // a hover reveal, and the popover takes the pointer off the row
-                // the moment it opens — the button then unmounts out from under
-                // its own popover, which re-anchors to whatever is left and
-                // visibly hops. The row is present for as long as the question
-                // it is asking about.
-                const cell = e?.currentTarget?.closest?.(".tug-list-view-cell");
-                if (cell instanceof HTMLElement) {
-                  ctx.onRequestDelete(jot.id, cell);
+                // Point the confirm at this ✕ — but measured off the ROW, which
+                // outlives the hover reveal the button depends on. See
+                // `accessoryColumnAnchor`.
+                const button = e?.currentTarget;
+                const cell = button?.closest?.(".tug-list-view-cell");
+                if (cell instanceof HTMLElement && button instanceof HTMLElement) {
+                  ctx.onRequestDelete(
+                    jot.id,
+                    accessoryColumnAnchor(cell, button),
+                  );
                 }
               }}
             />
@@ -975,11 +1014,11 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
   );
 
   // Destructive-delete confirmation ([D15] controlled `TugConfirmPopover`): the
-  // row ✕ opens the popover anchored to itself instead of deleting immediately.
-  // Local UI state ([L24]) — the pending row id + its anchor element.
+  // row ✕ opens the popover over itself instead of deleting immediately.
+  // Local UI state ([L24]) — the pending row id + the anchor to point at.
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
-    anchorEl: HTMLElement;
+    anchor: TugPopoverMeasurable;
   } | null>(null);
 
   // Delete `id` and land the cursor on the surviving neighbor (same index,
@@ -1049,7 +1088,7 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
   const cellContext = useMemo<JotsCellContextValue>(
     () => ({
       onRowPointerDown,
-      onRequestDelete: (id, anchorEl) => setPendingDelete({ id, anchorEl }),
+      onRequestDelete: (id, anchor) => setPendingDelete({ id, anchor }),
       filterQuery,
     }),
     [onRowPointerDown, filterQuery],
@@ -1095,11 +1134,22 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
       }
       if (e.key === "Backspace" || e.key === "Delete") {
         const id = cursorJotId();
-        const anchor = cursorCell();
-        if (id === null || anchor === null) return false;
-        // Destructive — raise the SAME confirm popover the mouse ✕ does, anchored
-        // to the cursor row. Confirm deletes (keeping the cursor on a neighbor).
-        setPendingDelete({ id, anchorEl: anchor });
+        const cell = cursorCell();
+        if (id === null || cell === null) return false;
+        // Destructive — raise the SAME confirm popover the mouse ✕ does, over the
+        // cursor row's ✕: the key cursor reveals the trailing accessory, so the
+        // keyboard sees the popover point at the same control the pointer would
+        // have pressed. Without a ✕ to find (a row rendered with no verbs), the
+        // row itself is the anchor. Confirm deletes, keeping the cursor on a
+        // neighbor.
+        const button = cell.querySelector(".jot-row-delete");
+        setPendingDelete({
+          id,
+          anchor:
+            button instanceof HTMLElement
+              ? accessoryColumnAnchor(cell, button)
+              : cell,
+        });
         return true;
       }
       return false;
@@ -1129,10 +1179,24 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
     actions: responderActions,
   });
 
+  // The card's own root, kept alongside the chain registration: the delete
+  // confirm names it as its collision boundary. Anchored over the ✕ the popover
+  // sits at the card's trailing edge, and an unbounded shift would let it spill
+  // onto whatever card is next door — leaving which row it is asking about
+  // ambiguous. Bounded, it slides back inside and keeps its arrow on the ✕.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const attachCardRoot = useCallback(
+    (el: HTMLDivElement | null): void => {
+      cardRef.current = el;
+      responderRef(el);
+    },
+    [responderRef],
+  );
+
   return (
     <ResponderScope>
       <div
-        ref={responderRef as (el: HTMLDivElement | null) => void}
+        ref={attachCardRoot}
         className="jots-card"
         data-testid="jots-card"
         data-jots-card-id={cardId}
@@ -1192,19 +1256,22 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
             </JotsCellContext>
           </div>
         )}
-        {/* One controlled confirm popover serves every row — it anchors to the
-            ROW the question is about (never to the hover-revealed ✕, which
-            unmounts under its own popover), centered over it and pointing down
-            at it. Confirm deletes (keeping the cursor on a surviving neighbor);
-            cancel / outside-click / Escape dismisses. */}
+        {/* One controlled confirm popover serves every row — it sits over the ✕
+            the question is about and points down at it, anchored to the ✕'s
+            COLUMN measured off the row rather than to the hover-revealed button
+            itself, which collapses under its own popover
+            (`accessoryColumnAnchor`). Confirm deletes (keeping the cursor on a
+            surviving neighbor); cancel / outside-click / Escape dismisses. */}
         <TugConfirmPopover
           open={pendingDelete !== null}
-          anchorEl={pendingDelete?.anchorEl ?? null}
+          anchorEl={pendingDelete?.anchor ?? null}
           message="Delete this jot?"
           confirmLabel="Delete"
           confirmRole="danger"
           side="top"
           align="center"
+          collisionBoundary={cardRef.current}
+          collisionPadding={6}
           arrow
           onConfirm={() => {
             if (pendingDelete !== null) deleteJotKeepingCursor(pendingDelete.id);

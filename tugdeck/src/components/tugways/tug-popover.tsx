@@ -515,6 +515,17 @@ export function TugPopoverTrigger({ asChild = true, children }: TugPopoverTrigge
  * TugPopoverAnchor
  * ---------------------------------------------------------------------------*/
 
+/**
+ * Anything that can report a rectangle — what Radix's Popper actually needs
+ * from an anchor. An `HTMLElement` satisfies it; so does a hand-written
+ * object that derives its rect from a live element, which is how a popover
+ * points at a REGION of an element (a row's trailing accessory column)
+ * without depending on a node that may collapse or unmount.
+ */
+export interface TugPopoverMeasurable {
+  getBoundingClientRect(): DOMRect;
+}
+
 /** TugPopoverAnchor props. */
 export interface TugPopoverAnchorProps {
   /**
@@ -525,12 +536,17 @@ export interface TugPopoverAnchorProps {
    */
   asChild?: boolean;
   /**
-   * Virtual anchor: a ref to an external `HTMLElement` that the popover
-   * positions itself against. When provided, the anchor renders no DOM
-   * node of its own — Radix reads `ref.current` on every Popper update
-   * to compute the anchor rectangle. Lets a single popover instance
-   * point at different DOM nodes across renders by swapping the ref's
-   * `current` (or by passing a different ref object).
+   * Virtual anchor: a ref to an external `HTMLElement` — or to any
+   * `TugPopoverMeasurable` — that the popover positions itself against.
+   * When provided, the anchor renders no DOM node of its own — Radix
+   * reads `ref.current` on every Popper update to compute the anchor
+   * rectangle. Lets a single popover instance point at different anchors
+   * across renders by swapping the ref's `current` (or by passing a
+   * different ref object).
+   *
+   * Because the rect is re-read on every update, a `TugPopoverMeasurable`
+   * that computes its rect from a live element tracks that element through
+   * scroll and layout exactly as an element anchor would.
    *
    * The ref's `current` is permitted to be `null` transiently. Radix
    * only reads `current` while the popover is mounted (i.e., the
@@ -542,7 +558,7 @@ export interface TugPopoverAnchorProps {
    * Mutually exclusive with `children`. When `virtualRef` is set,
    * `children` is ignored.
    */
-  virtualRef?: React.RefObject<HTMLElement | null>;
+  virtualRef?: React.RefObject<TugPopoverMeasurable | null>;
   /**
    * Anchor element rendered in the React tree. Pass when the anchor IS
    * a component in the tree (the typical "anchor a popover to this
