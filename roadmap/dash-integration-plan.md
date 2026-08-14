@@ -2,7 +2,9 @@
 
 **Purpose:** Make dashes a first-class concept in Tug's UI — a session card can bind to a dash, the Changes/Commit surface shows dash progress and lands joins, the Lens shows inflight dashes, and the workflow the skills currently improvise in prose is codified into `tugutil dash` verbs — so the dash lane reaches parity with the main-lane Changes/Commit flow.
 
-This is a **program plan**: five phases, each of which gets its own devise-skeleton recipe (`/tugplug:devise`) before implementation. This document fixes the decisions, the state model, the phase boundaries, and the contracts between phases; it deliberately does not enumerate per-file tasks.
+This is a **program plan**: numbered phases (including the inserted 2.1 and 3.1), each of which gets its own devise-skeleton recipe before implementation. This document fixes the decisions, the state model, the phase boundaries, and the contracts between phases; it deliberately does not enumerate per-file tasks.
+
+*Reading convention: a shipped phase's prose keeps the names that were current when it shipped — phase 2.1 says `devise`, phase 3 says `dash-run`. The [P05] amendment table is the live roster; the phase text is the record of what was built and when.*
 
 ---
 
@@ -14,13 +16,13 @@ This is a **program plan**: five phases, each of which gets its own devise-skele
 | Status | draft |
 | Target branch | main (phases run as dashes) |
 | Brief | [dash-integration-brief.md](dash-integration-brief.md) |
-| Last updated | 2026-08-13 |
+| Last updated | 2026-08-14 |
 
 ---
 
 ## Ratified Decisions {#ratified-decisions}
 
-These were decided in conversation on 2026-08-13 and are not open for relitigating inside phase recipes.
+These were decided in conversation on 2026-08-13 ([P01]–[P07]) and 2026-08-14 ([P08]–[P09]) and are not open for relitigating inside phase recipes.
 
 ### [P01] Binding is an overlay, not a relocation {#p01-overlay}
 
@@ -38,11 +40,25 @@ The binding is many-to-one: several session cards may bind to the same dash; a d
 
 The markdown ledger table in the plan document stays the single durable record of step state. `tugutil dash step start <n>` / `dash step done <n> --commit <sha>` edit that table **and** append structured dash-log lines, so ledger, log, and rounds cannot drift — "task, ledger, and commit move together" becomes a verb, not a rule the model must remember. The triple bookkeeping (markdown table + Task items + rounds) collapses to one gesture per transition.
 
-### [P05] Naming: `dash-*` skills, `dash-run`, `/dash` gesture {#p05-naming}
+### [P05] Naming: a skill's prefix is the `tugutil` namespace it rides {#p05-naming}
 
-Dash-lane-only skills take the prefix: `implement`→`dash-implement`, `dash`→`dash-run`, `join`→`dash-join`, `audit`→`dash-audit`, with the old names kept as aliases for one release. `devise` stays unprefixed — it is a plan skill, lane-agnostic. `/dash <name>` becomes a card gesture: create (if needed) + bind *this card* to the dash. `/join` remains the landing gesture.
+**Planning and dashing are two different things, and the names say so.** A skill's prefix names the `tugutil` namespace it drives — and therefore the artifact it acts on.
 
-*(Amended by [P07]: the original ruling read "`devise` and `vet` stay unprefixed." There is no `vet` to keep unprefixed once phase 2.1 lands.)*
+| Skill | Rides | Acts on |
+|---|---|---|
+| `plan-devise` | `tugutil plan` | a plan document |
+| `plan-review` | `tugutil plan` | a plan document |
+| `dash-implement` | `tugutil dash` | a dash, walking a plan |
+| `dash-on` | `tugutil dash` | a dash, from a typed instruction |
+| `dash-audit` | `tugutil dash` | a dash's built code |
+| `dash-join` | `tugutil dash` | a dash, landing it |
+| `draft` | `tugutil draft` | the main-lane landing draft — the namespace is the name |
+
+The rule is **checkable rather than remembered**: a skill's own commands say which namespace it rides, so a user who learns `tugutil plan lint` can guess `plan-review`, and the next skill anyone writes has an obvious correct name. The flow reads `plan-devise → plan-review → dash-implement → dash-audit → dash-join`, with the artifact hand-off visible at exactly the point `dash create` happens.
+
+Card gestures take the leaf, unprefixed: `/dash <name>` (create-if-needed + bind *this card*), `/join` (landing), `/commit` (main lane), and `/plan-review` ([P08]) — never `/review`, which is Claude Code's built-in PR review and is not shadowed.
+
+*Amendment history. The original 2026-08-13 ruling prefixed dash-lane-only skills and left `devise` (and then-still-extant `vet`) unprefixed; [P07] retired `vet`. The 2026-08-14 amendment replaces "dash-lane-only" with the namespace rule, because the resulting roster proved unreadable in practice: `review-plan` suffixed its noun while everything else prefixed, and no user could reconstruct the rule from the names — it lived only in this document. `dash-run` becomes `dash-on` in the same pass: "run" named only the fact of execution, and collided with the built-in `run` skill (launch the app), which is a step **inside** the skill rather than the skill.*
 
 ### [P06] Derive, don't record {#p06-derive}
 
@@ -62,13 +78,37 @@ Two halves, split by what each is good for: the **mechanical** half of vetting (
 
 The stage vocabulary loses the `vetted ⊙` declaration: after phase 2.1 there is no devised-but-unvetted plan to distinguish. `devised` means reviewed.
 
+### [P08] A plan is reviewed *as of its content*; re-review is additive {#p08-review-stamp}
+
+A plan is a **living artifact between devise and implement** — the user edits it interactively, and the system must know whether the review on record covers the bytes now on disk. The mechanism is the ledger mechanism applied to review:
+
+- **The document carries the record.** Each Review Record round line carries a **content stamp** — a hash of the document *excluding the Review Record section* (the record is metadata about the review, not plan content). No sidecar, no database ([P06] applied to the plan lane).
+- **A verb derives the answer.** `tugutil plan status <path> [--json]` recomputes the hash and compares it to the last round's stamp: `reviewed` / `stale` / `never reviewed`, plus round count, last round's date and model, lint verdict, and ledger progress. Every consumer reads the verb; none re-derives.
+- **Re-review is additive and edit-respecting.** Rounds append, never rewrite. A user edit since the last round is a **decision to carry forward** — fix what it broke, name a consequence it missed, never revert its intent. A `done` ledger row is **frozen**: rewriting a step whose work already landed produces a document that lies about the tree; raise an Open Question or add a new step instead. A re-review orients on what moved (the git diff when the plan is tracked and dirty; the Review Record otherwise) and says which it used.
+
+Consumers: `dash-implement`'s setup gate (see [P09] for its presentation), the review verb's bare-form resolution, and — as phase 5 polish only — a stale mark on the Lens/chrome surfaces.
+
+### [P09] Decision points raise dialogs; documents record only what dialogs deferred {#p09-dialogs}
+
+**A dialog belongs exactly where different answers produce materially different work, and nowhere else.** The skills in this lane are ours; every one that hits a genuine fork gets `AskUserQuestion` and puts the call to the user at the moment it arises, instead of stopping with prose or guessing. A `[Q##]` in a finished plan means **asked and deferred** — never never-asked.
+
+The forks, which are the complete set:
+
+- **Devise** — an Open Question the author cannot settle is asked before the plan is declared ready.
+- **Review** — a judgment call (scope, product trade-off, no technically correct answer) is a dialog first; the answer lands in the plan as a decided item, and only a deferral becomes `[Q##]`.
+- **Implement** — three: the **stale-plan gate** (plan changed since its last review → "Review now (Recommended) / Proceed as-is"; never a hard refusal — the plan is the user's); a **`dash step` refusal** (→ "Fix the plan and retry / Hand-edit the ledger this run" — the wrong guess corrupts the durable record); a **batch boundary** on a long plan (only when the run is long enough that eyes on the middle are plausible; never per-step).
+- **Audit** — the verdict's disposition: "Carry the fixups now as rounds on this dash / Leave the list with you." The verdict itself stays read-only.
+- **Join** — the empty-dash outcome asks "Release it / Leave it" (release is the user's gesture, and a dialog *is* the user gesturing). Join's other stops — conflicts, draftless, blockers — remain stops: they are correct refusals, not unasked questions.
+
+**The never-ask list** (recorded in `tuglaws/dash-work-doctrine.md` so it holds): never ask to commit a round, never ask before running a checkpoint, never ask permission to write the join draft, never ask "should I continue?" between ordinary steps, never ask anything with a conventional default.
+
 ---
 
 ## The dash lifecycle state model {#state-model}
 
 This is the shared vocabulary for `dash status`, the feed, the Lens section, and the join-mode presentation. States marked ⊕ are derived; ⊙ are declared via dash-log lines.
 
-**Shaping** (no worktree yet): idea → brief → devised ⊕(plan file exists — and, per [P07], reviewed: `devise` does not emit an unvetted plan).
+**Shaping** (no worktree yet): idea → brief → devised ⊕(plan file exists — and, per [P07], reviewed: the devise gesture does not emit an unvetted plan) → **stale-reviewed** ⊕([P08] — the plan's content moved past its last Review Record stamp; a re-review returns it to `devised`, and this is the only Shaping state a user can re-enter by editing).
 
 **Working:** created ⊕(branch + worktree) → implementing ⊙(step *i* of *N*; rounds accrete ⊕) → built ⊙(`just app-debug` reported) → audited ⊙ → draft-ready ⊕(non-empty `dash:<id>` draft).
 
@@ -144,6 +184,28 @@ The improvised workflow becomes verbs; the skills shrink to policy.
 3. **Draft symmetry**: the plain-dash lane maintains the join draft the same way `implement` phase 3 does (via `dash-run` skill text or a `dash draft` convenience), retiring `dash-join`'s compose-fallback branch.
 4. **Skill renames + rewrites** ([P05]): `dash-implement`, `dash-run`, `dash-join`, `dash-audit` with one-release aliases; rewrite onto the new verbs (bind, status, step); factor the ~70% duplicated doctrine text between `dash-run` and `dash-implement` into one shared reference both cite; update `tugplug/CLAUDE.md`, repo `CLAUDE.md` git-policy exceptions, and the memory-relevant naming.
 
+### Phase 3.1 — The plan lane becomes a workflow {#phase-3-1}
+
+Implements [P08] and [P09]. The gap this closes was hit in practice immediately after phase 3 landed: a plan devised, then edited interactively, has **no sanctioned path to a final cleanup review** — the obvious gesture (`/tugplug:review-plan`, the very chip `review-plan` prints) silently runs on the card's current model, the strong path is a CLI verb named after its mechanism (`plan review-request`), nothing records *what* was reviewed, and a second review can quietly revert the user's hand edits back to what Round 1 wrote. Ad-hoc, wrong-suggesting, and confusing — this phase replaces it with an actual workflow.
+
+Sequenced after phase 3 (it edits the skills phase 3 rewrote, and `plan status` lands beside `plan lint` in the `tugutil plan` namespace) and **before phase 4's implementation**, so phase 4's own recipe is devised, edited, and re-reviewed under the workflow it defines. Independent of the landing surface; runs as its own dash with its own devise recipe.
+
+The program plan itself is deliberately **out of scope for this machinery**: it declares no `{#execution-steps}`, so `plan lint` exits 2 on it and `plan-review` stops rather than reviewing a brief as a plan. Program-plan edits are conversation edits; the workflow below governs phase recipes.
+
+1. **The staleness primitive** ([P08]): the content-stamp grammar in Review Record round lines (`Reviewed `` `plan:<hash>` ``…`), hashed over the document minus the Review Record section; `tugutil plan status <path> [--json]` derives `reviewed`/`stale`/`never reviewed` plus rounds, last round's date/model, lint verdict, and ledger progress. Lives in `tugutil-core::plan` beside the parse, the linter, and the ledger edit; the review skill writes the stamp *via the verb*, so there is exactly one hash implementation.
+
+2. **`/plan-review` as a local card verb** — the sibling of `/commit`, `/join`, `/dash`. Always routes through `plan-review-controller`, so the obvious gesture **always** gets the borrowed review model. Bare-form resolution, three steps and never a search: the bound dash's recorded plan (`branch.tugdash/<name>.tugplan`, already reported as `plan_path`) → the card's last-reviewed plan → refuse, printing the explicit form. `tugutil plan review-request` demotes to plumbing — still the devise signal path, no longer anything a user types.
+
+3. **Re-review semantics in `plan-review`** ([P08]): edits-are-decisions, done-rows-frozen, orient-on-what-moved — and each round line stamps the content it covered and names its orientation (diff vs. record).
+
+4. **Dialog discipline across the lane** ([P09]): grant `plan-review` the `AskUserQuestion` tool it never had; the ask-first-then-`[Q##]` rule; the enumerated forks added to `plan-devise`, `dash-implement` (stale gate, step-refusal, batch boundary), `dash-audit` (disposition), and `dash-join` (empty dash); the never-ask list appended to `tuglaws/dash-work-doctrine.md`.
+
+5. **The stale gate in `dash-implement`**: setup runs `tugutil plan status` before walking; `stale` raises the [P09] dialog rather than silently implementing a plan whose review predates the user's edits — and never hard-refuses.
+
+6. **The roster rename** ([P05] as amended): `devise`→`plan-devise`, `review-plan`→`plan-review`, `dash-run`→`dash-on`, each leaving a vet-precedent redirect stub. `dash-on`'s input grammar **trims to `<name> <instruction…>`** — the vestigial `status` / `join` / `release` sub-verbs go, since `dash-join` and `/join` own landing, `tugutil dash status|list` own the readouts, and release is a bare CLI call; one skill, one job, one argument shape. Hand-off strings, `tugplug/CLAUDE.md`, and the repo `CLAUDE.md` roster follow. All stubs — these three, phase 3's four, and `vet` — are deleted together in phase 5. **Renames land last within the phase**, after the machinery above is real, on phase 3's precedent: the rewritten skill text then quotes invocations that already work.
+
+**Contract to later phases:** the `plan status` JSON shape and stamp grammar (phase 5's Lens/chrome stale mark reads it), the never-ask doctrine as the boundary any future dialog must respect, and the final skill roster under [P05]'s namespace rule.
+
 ### Phase 4 — Join mode (the landing surface) {#phase-4}
 
 The twin of commit mode, over server machinery that already exists. No new Rust beyond receipts.
@@ -161,6 +223,7 @@ The twin of commit mode, over server machinery that already exists. No new Rust 
 2. Parked-dash affordances: adopt (bind), release, or leave.
 3. **`tuglaws/dash-lifecycle.md`**: the state model, the binding concept, the derive-vs-declare rule, and the landing doctrine — plus updates to `tracking-changes.md` (including its stale two-beat `/commit` description) and `design-decisions.md`.
 4. Drop the one-release aliases (skill names, draft-row compat reads) once shipped bundles have turned over.
+5. Stale-review mark on the Lens Dashes section and the dash chrome — the cosmetic remainder of [P08], reading `plan status` (or its feed projection); no new derivation.
 
 ---
 
@@ -184,3 +247,5 @@ The twin of commit mode, over server machinery that already exists. No new Rust 
 Phases 2 and 3 are independent of each other (both depend only on phase 1) and could run as parallel dashes. Phase 4 depends on 1 and benefits from 2's lane rendering. Visibility-first is deliberate: it de-risks the binding concept with zero landing-path stakes before the landing surface is built on it.
 
 Phase 2.1 depends on **nothing in this program** — it touches the plan skills, a new `tugutil plan` namespace, and one card controller, none of which the binding or landing work reads — so it can run as a parallel dash at any time. Its one ordering constraint is that it must precede phase 3, which rewrites the skill roster and would otherwise rewrite a skill 2.1 deletes; phase 3 also inherits 2.1's skeleton parse for its `dash step` ledger edits ([P04]) rather than growing a second one.
+
+Phase 3.1 depends on 2.1 (the review machinery it puts a gesture on) and 3 (the skill roster and `tugutil plan` namespace it extends) — both shipped — and on nothing in phase 4. It runs **before phase 4's implementation** by design: phase 4's recipe is the first plan devised, edited, and re-reviewed under the workflow 3.1 codifies, which is the same eat-its-own-cooking sequencing phase 3 used for the step verbs.
