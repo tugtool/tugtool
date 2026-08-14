@@ -157,20 +157,6 @@
   max-inline-size: none;
 }
 
-/* The narrated session's citation in the header: SHRINK-ONLY truncation.
-   No fixed cap — a cap clips "tugtool/cuddly-…" while half the header sits
-   empty. The citation shows whole whenever the identifier and timestamp
-   leave it room, and gives way (its own internal ellipsis rule) only when
-   the rail genuinely runs out. `min-width: 0` down the trailing slot is
-   what lets the flex chain actually squeeze it. */
-.gazette-transcript .tug-transcript-entry__header-trailing {
-  min-width: 0;
-}
-
-.gazette-post-session {
-  min-width: 0;
-}
-
 /* Z1B — the row's footer, under the body, exactly where the Session card's
    end-state row sits and spaced the way it is: one uniform gap between every
    member (badge, each `•`, elapsed, COPY, the atoms), which is
@@ -248,7 +234,10 @@
 
    Refs the prose DID name never arrive here at all — the annotator already
    marked those in the sentence (`unmentionedRefs`), so this strip is the
-   remainder rather than a second copy of the post. */
+   remainder rather than a second copy of the post.
+
+   The narrated session leads the row — the first thing the post rests on,
+   named where the things a post rests on are named. */
 /* The trailing provenance strip — read-only atoms, so no boxes. The row
    sizes and tones them; the code font is the skin's own
    (`tug-atom-ref.css`), decided once rather than per consumer.
@@ -267,6 +256,16 @@
   margin-block-start: var(--tug-space-xs);
   font-size: 0.9em;
   color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* An atom wider than the rail elides rather than hanging out of it. A flex
+   item's automatic minimum is its content, so without the zeroed floor the
+   session chip's own ellipsis rule never gets a deficit to act on — it would
+   simply overflow, which on a row that wraps looks like the wrap failed.
+   The ceiling is the row: an atom alone on its line may take all of it. */
+.gazette-post-refs > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */

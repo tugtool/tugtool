@@ -34,12 +34,21 @@
  * store, the verdict batch, the re-mark, the portal.
  *
  * And one geometry claim about the OTHER place a session shows up in this card
- * — the header citation, which shares a flex row with the author and the clock:
- * a session name is the one run whose length the user chooses, so the atom has
- * to be able to compress to any width the row leaves it. It gives way in a
- * declared order (the minted handle first, the user's own words last) but it
- * always gives way, and the clock beside it never breaks onto a second line.
+ * — the narrated session's own citation, which leads the provenance strip under
+ * the post body. A session name is the one run whose length the user chooses,
+ * so the atom has to be able to compress to whatever width it is given: it
+ * gives way in a declared order (the minted handle first, the user's own words
+ * last) but it always gives way, and it never hangs out of the rail.
  *
+ * The strip is where it lives BECAUSE of the other half of the claim. The atom
+ * used to ride the header's trailing edge, sharing one flex line with the
+ * author and the clock — and whatever an over-wide atom would not give up, the
+ * clock paid for by breaking across two lines. Nothing of variable width lands
+ * in that header now, so the clock reads on one line no matter how long a name
+ * the user chose; the assertion stays because that is the regression.
+ *
+ * @covers tugdeck/src/components/gazette/gazette-card.tsx
+ * @covers tugdeck/src/components/gazette/gazette-card.css
  * @covers tugdeck/src/lib/annotator/detect-session-ref.ts
  * @covers tugdeck/src/lib/annotator/session-resolution.ts
  * @covers tugdeck/src/lib/annotator/annotate-content.ts
@@ -138,18 +147,24 @@ interface Runs {
   awaiting: boolean;
 }
 
-/* ── The header-citation claim's fixtures. ─────────────────────────────── */
+/* ── The narrated-citation claim's fixtures. ───────────────────────────── */
 
 const NAMED_SHORT = "c4d5e6f7-1a2b-4c3d-8e4f-5a6b7c8d9e03";
 const NAMED_LONG = "d5e6f7a8-1a2b-4c3d-8e4f-5a6b7c8d9e04";
 
-/** A name the rail can hold whole beside a clock — the screenshot's own. */
+/** A name the rail holds whole with room to spare — the screenshot's own. */
 const SHORT_NAME = "dash-integration-1";
-/** A name no rail could hold, so the run that carries it has to elide. */
+/**
+ * A name past the strip's own width, so the run that carries it has to elide
+ * even with the whole row to itself. The strip measures ~500px at the
+ * Gazette's registered width and this spells to half again that, so the claim
+ * does not rest on the rail being any exact size.
+ */
 const LONG_NAME =
-  "dash-integration-phase-two-attachment-parity-and-composer-metrics";
-/** Long minted handles, so both atoms are genuinely over-wide. */
-const SHORT_TAG = "violet-mesa-plateau-of-considerable-length";
+  "dash-integration-phase-two-attachment-parity-and-composer-metrics-and-the-follow-on-sweep-that-came-after-it";
+/** Minted handles long enough that both atoms are genuinely over-wide. */
+const SHORT_TAG =
+  "violet-mesa-plateau-of-considerable-length-with-an-escarpment-and-a-long-ridge-beyond";
 const LONG_TAG = "amber-thicket-escarpment-of-similar-length";
 
 /** One resolvable row, as the ledger's answer carries it. */
@@ -188,7 +203,8 @@ function resolveNamedSessions(): string {
 }
 
 /**
- * Each post header's geometry, in document order.
+ * Each post's geometry, in document order: the clock in its header, and the
+ * session atom leading its provenance strip.
  *
  * "Elided" is `scrollWidth > clientWidth` on the run itself — the run's text
  * is wider than the box it was given, which is exactly the condition
@@ -196,18 +212,24 @@ function resolveNamedSessions(): string {
  * not work: the ellipsis is painted, never inserted, so `textContent` is the
  * whole name either way.
  */
-const HEADERS_JS = `Array.from(
-  document.querySelectorAll(${JSON.stringify(`${CARD} .tug-transcript-entry__header`)}),
+const POSTS_JS = `Array.from(
+  document.querySelectorAll(${JSON.stringify(`${CARD} .gazette-cell`)}),
 )
-  .filter(function (h) { return h.querySelector(".gazette-post-session") !== null; })
-  .map(function (h) {
-    var clock = h.querySelector(".tug-transcript-entry__timestamp time");
-    var chip = h.querySelector(".gazette-post-session");
+  .filter(function (cell) {
+    return cell.querySelector(".gazette-post-refs .tug-session-identity") !== null;
+  })
+  .map(function (cell) {
+    var clock = cell.querySelector(".tug-transcript-entry__timestamp time");
+    var strip = cell.querySelector(".gazette-post-refs");
+    var chip = strip.querySelector(".tug-session-identity");
     var name = chip.querySelector(".tug-session-identity-name");
     var callsign = chip.querySelector(".tug-session-identity-callsign");
     return {
       clockLines: clock === null ? 0 : clock.getClientRects().length,
-      headerRight: Math.round(h.getBoundingClientRect().right),
+      // The atom leads the strip, so it is the strip's first element child.
+      leadsStrip: strip.firstElementChild === chip,
+      stripWidth: Math.round(strip.getBoundingClientRect().width),
+      stripRight: Math.round(strip.getBoundingClientRect().right),
       chipRight: Math.round(chip.getBoundingClientRect().right),
       nameText: name === null ? "" : (name.textContent || "").trim(),
       nameElided: name !== null && name.scrollWidth > name.clientWidth,
@@ -216,9 +238,11 @@ const HEADERS_JS = `Array.from(
     };
   })`;
 
-interface Header {
+interface Post {
   clockLines: number;
-  headerRight: number;
+  leadsStrip: boolean;
+  stripWidth: number;
+  stripRight: number;
   chipRight: number;
   nameText: string;
   nameElided: boolean;
@@ -322,9 +346,9 @@ describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () =>
   );
 
   test(
-    "the header citation compresses to the row it is in, and the clock never wraps",
+    "the narrated citation leads the provenance strip and compresses to it, and the clock never wraps",
     async () => {
-      const app = await launchTugApp({ testName: "at0368-gazette-header-atom" });
+      const app = await launchTugApp({ testName: "at0368-gazette-post-atom" });
       try {
         await app.nativeKey("g", ["cmd", "ctrl"]);
         await app.waitForCondition<boolean>(
@@ -335,7 +359,8 @@ describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () =>
         // Two posts, two narrated sessions, one difference: how long a name
         // the user gave. Both are wider than the rail can spell in full, so
         // both atoms are under a squeeze — the question each answers is WHICH
-        // run pays for it.
+        // run pays for it. Neither post declares a ref, so the strip each one
+        // grows holds the narrated session and nothing else.
         for (const post of [
           {
             id: 9301,
@@ -366,37 +391,40 @@ describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () =>
         // The atoms mount inert and ask the ledger; this is the ledger
         // answering, through the production handler.
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(`${CARD} .gazette-post-session`)}).length === 2`,
+          `document.querySelectorAll(
+            ${JSON.stringify(`${CARD} .gazette-post-refs .tug-session-identity`)}).length === 2`,
           { timeoutMs: 15_000 },
         );
         await app.evalJS<unknown>(resolveNamedSessions());
         await app.waitForCondition<boolean>(
           `(function () {
             var runs = document.querySelectorAll(
-              ${JSON.stringify(`${CARD} .gazette-post-session .tug-session-identity-name`)});
+              ${JSON.stringify(`${CARD} .gazette-post-refs .tug-session-identity-name`)});
             return runs.length === 2 && (runs[1].textContent || "").length > 0;
           })()`,
           { timeoutMs: 15_000 },
         );
 
-        const headers = await app.evalJS<Header[]>(HEADERS_JS);
-        note("header atoms", JSON.stringify(headers));
-        expect(headers.length, "one header per post").toBe(2);
+        const posts = await app.evalJS<Post[]>(POSTS_JS);
+        note("post atoms", JSON.stringify(posts));
+        expect(posts.length, "one strip per post").toBe(2);
 
-        for (const header of headers) {
-          // THE bug this pins: an atom that could not compress pushed the
-          // clock into a second line. A wrapped inline element reports one
-          // client rect per line, so this is the wrap itself, measured — not a
-          // height compared against a guess.
-          expect(
-            header.clockLines,
-            "the clock reads on one line",
-          ).toBe(1);
-          // And the atom stayed inside the row rather than overhanging it —
+        for (const post of posts) {
+          // Where the atom sits is the whole point of the move: the first
+          // thing the post rests on, at the head of the row that names what a
+          // post rests on.
+          expect(post.leadsStrip, "the atom leads the strip").toBe(true);
+          // THE bug this pins: an atom sharing the header's flex line could
+          // not compress far enough, and the clock paid by breaking in two. A
+          // wrapped inline element reports one client rect per line, so this
+          // is the wrap itself, measured — not a height compared against a
+          // guess.
+          expect(post.clockLines, "the clock reads on one line").toBe(1);
+          // And the atom stayed inside its row rather than overhanging it —
           // compression, not overflow. One pixel of slack for subpixel layout.
           expect(
-            header.chipRight - header.headerRight,
-            "the atom ends inside the header",
+            post.chipRight - post.stripRight,
+            "the atom ends inside the strip",
           ).toBeLessThanOrEqual(1);
         }
 
@@ -404,20 +432,20 @@ describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () =>
         // name: the minted handle is the run that elides, and the user's own
         // words are whole. This is the shipped rule for the citation register.
         expect(
-          headers[0]!.callsignElided,
+          posts[0]!.callsignElided,
           "the minted handle gives way first",
         ).toBe(true);
         expect(
-          headers[0]!.nameElided,
+          posts[0]!.nameElided,
           "and a name this row can hold is shown whole",
         ).toBe(false);
-        expect(headers[0]!.nameText).toBe(SHORT_NAME);
+        expect(posts[0]!.nameText).toBe(SHORT_NAME);
 
         // Long name: the handle has already given everything it had, so the
         // name elides too. It has to be ABLE to — a run that refuses to
         // shrink is what breaks the row it sits in.
         expect(
-          headers[1]!.nameElided,
+          posts[1]!.nameElided,
           "a name past the row's width elides rather than pushing",
         ).toBe(true);
       } finally {

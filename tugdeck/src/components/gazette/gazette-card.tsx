@@ -12,8 +12,8 @@
  * The rows are a transcript: each post is a {@link TugTranscriptEntry} wearing
  * the Session card's own attribution line — its icon size, its gutter, its
  * identifier, its stamp, its header surface, overridden nowhere. The narrated
- * session's citation rides the header's trailing edge; copy sits in the Z1B
- * footer under the body, where the Session card puts copy. Post bodies are
+ * session's citation leads the provenance strip under the body; copy sits in
+ * the Z1B footer beneath that, where the Session card puts copy. Post bodies are
  * markdown, rendered by the transcript's own {@link TugMarkdownBlock}; ⌘C and
  * the right-click menu work per row through the shared transcript cell wiring
  * and reconstruct markdown from the rendered DOM.
@@ -743,15 +743,25 @@ function GazettePostRow({
   // A ref the prose already names is already clickable where the reader is
   // reading — the annotator marked it in the sentence — so a chip for it
   // would be the same thing twice. What is left is provenance the sentence
-  // never got to. The narrated session's citation rides the header, so its
-  // chip is redundant for the same reason.
-  const chipRefs = useMemo(
-    () =>
-      unmentionedRefs(post.body, post.refs).filter(
-        (r) => !(r.kind === "session" && r.target === post.sessionId),
-      ),
-    [post],
-  );
+  // never got to.
+  //
+  // The narrated session leads that list. It is the first thing the post
+  // rests on, and this strip is where the things a post rests on are named —
+  // so it is a ref here like any other, rendered by the same `RefAtom` that
+  // draws a cited session anywhere else. It used to ride the header instead,
+  // beside the clock, which is a single flex line shared with a chip of no
+  // fixed width: whatever the atom could not give up, the clock paid for by
+  // breaking "7:10:22 PM" across two lines. Truncating the atom harder only
+  // moved the loss around. Here the row is the atom's own and wraps, so the
+  // name and the callsign both fit, and the header holds nothing that varies.
+  const chipRefs = useMemo(() => {
+    const rest = unmentionedRefs(post.body, post.refs).filter(
+      (r) => !(r.kind === "session" && r.target === post.sessionId),
+    );
+    return post.sessionId === null
+      ? rest
+      : [{ kind: "session" as const, target: post.sessionId }, ...rest];
+  }, [post]);
   return (
     <ResponderScope>
       <div className="gazette-cell" data-author={post.author} {...cellProps}>
@@ -770,14 +780,6 @@ function GazettePostRow({
               <time dateTime={at.toISOString()} title={formats.full.format(at)}>
                 {formats.short(at)}
               </time>
-            }
-            headerTrailing={
-              post.sessionId !== null ? (
-                <TugSessionCitation
-                  citedId={post.sessionId}
-                  className="gazette-post-session"
-                />
-              ) : null
             }
             body={<GazettePostBody post={post} bodyRef={bodyRef} />}
             controls={
