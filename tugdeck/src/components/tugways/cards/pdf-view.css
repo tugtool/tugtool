@@ -37,3 +37,28 @@
 .pdf-view-page[data-pdf-page-status="drawing"] .pdf-view-canvas {
   visibility: hidden;
 }
+
+/* Inverted pages — dark paper, light ink — under a dark theme only.
+
+   TWO conditions, and both belong here rather than in JS: the card's
+   preference rides `data-pdf-invert-in-dark` on the surface, and whether a
+   dark theme is in force is `<html data-theme-mode>`, which the theme engine
+   already reflects. Reading the theme in the component would mean a
+   subscription that repaints the surface on every theme change; this repaints
+   without one ([L06]).
+
+   `invert` alone would also rotate every hue — a red heading arriving cyan —
+   so the hue rotation puts colour back where it started while leaving
+   lightness flipped. The page's own white background is inverted with the
+   canvas, so the two stay in step. */
+:root[data-theme-mode="dark"]
+  .pdf-view[data-pdf-invert-in-dark="on"]
+  .pdf-view-page {
+  --tugx-pdf-page-background: black;
+}
+
+:root[data-theme-mode="dark"]
+  .pdf-view[data-pdf-invert-in-dark="on"]
+  .pdf-view-canvas {
+  filter: invert(1) hue-rotate(180deg);
+}

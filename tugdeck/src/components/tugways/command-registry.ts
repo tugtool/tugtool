@@ -310,18 +310,19 @@ export interface CommandEntry {
    */
   readonly internal?: boolean;
   /**
-   * Its door is a card's pane `…` menu ({@link PaneTitleBarMenuItem}), which
-   * the door-coverage lint cannot see because that lint counts native menu
-   * items and key equivalents — the two doors the host resolves.
+   * Its door is a control the active card contributes to its pane's title
+   * bar (`PaneTitleBarItem` — a standing button or a `…` row), which the
+   * door-coverage lint cannot see because that lint counts native menu items
+   * and key equivalents — the two doors the host resolves.
    *
    * Distinct from `internal`, and the distinction is the point: `internal`
-   * says *nothing* opens this yet, while `paneMenu` says a real door does and
+   * says *nothing* opens this yet, while `paneChrome` says a real door does and
    * names which. Collapsing the two would make `internal` mean two opposite
    * things, and the keymap pane would hide a command a user can already
-   * invoke. A `paneMenu` entry is listed and rebindable there; a chord is
+   * invoke. A `paneChrome` entry is listed and rebindable there; a chord is
    * simply a second door it has not been granted yet.
    */
-  readonly paneMenu?: boolean;
+  readonly paneChrome?: boolean;
 }
 
 /* ---------------------------------------------------------------------------
@@ -769,35 +770,35 @@ export const COMMANDS: readonly CommandEntry[] = [
     mirrored: true,
     validate: (chain) => chain.menu.fileGates?.reload ?? false,
   },
-  // The two rows a document card contributes to its PANE's `…` menu. That
-  // menu is a real door — every row in it is dispatched through this table,
-  // and the registry answers for its title, its enablement, and its chord —
-  // but it is a door the door-coverage lint cannot see, because it counts
-  // only native menu items and key equivalents. So both say `paneMenu`, which
-  // names the door they have rather than claiming they have none: `internal`
-  // would be a lie here, and a lie that hides them from the keymap pane. Both
-  // are listed there, unbound, because a chord is a door neither has been
-  // asked for yet.
+  // The two verbs a document card contributes to its PANE's title bar, each
+  // as a standing button there. That button is a real door — every press is
+  // dispatched through this table, and the registry answers for its title,
+  // its enablement, and its chord — but it is a door the door-coverage lint
+  // cannot see, because it counts only native menu items and key
+  // equivalents. So both say `paneChrome`, which names the door they have
+  // rather than claiming they have none: `internal` would be a lie here, and
+  // a lie that hides them from the keymap pane. Both are listed there,
+  // unbound, because a chord is a door neither has been asked for yet.
   //
   // Enablement is the chain's, not the card's: a Text card that computed its
-  // own `disabled` for these rows would be the second opinion [L30] forbids.
+  // own `disabled` for these would be the second opinion [L30] forbids.
   //
-  // KEY-CARD routed, not first-responder. Both mean "the card this menu
-  // belongs to", and pressing the pane's `…` button promotes the PANE as
-  // first responder — so a first-responder walk starts ABOVE the card and
-  // never enters it. Key-card dispatch starts at the active card's
-  // card-content responder, which is where a card's own verbs belong.
+  // KEY-CARD routed, not first-responder. Both mean "the card this title bar
+  // belongs to", and pressing a title-bar button promotes the PANE as first
+  // responder — so a first-responder walk starts ABOVE the card and never
+  // enters it. Key-card dispatch starts at the active card's card-content
+  // responder, which is where a card's own verbs belong.
   {
     id: TUG_ACTIONS.REVEAL_CARD_FILE,
     title: "Reveal in Finder",
     routing: "key-card",
-    paneMenu: true,
+    paneChrome: true,
   },
   {
-    id: TUG_ACTIONS.SHOW_EDITOR_OPTIONS,
-    title: "Editor Options…",
+    id: TUG_ACTIONS.SHOW_CARD_SETTINGS,
+    title: "Card Settings…",
     routing: "key-card",
-    paneMenu: true,
+    paneChrome: true,
   },
 
   // ---- Edit ----
@@ -2175,7 +2176,7 @@ export function lintCommandTable(
     const hasDoor =
       entry.menuItemId !== undefined ||
       (entry.bindings !== undefined && entry.bindings.length > 0) ||
-      entry.paneMenu === true;
+      entry.paneChrome === true;
     if (!hasDoor && !entry.parameterized && !entry.internal) {
       problems.push(
         `${entry.id}: no menu item and no binding — no way to invoke it`,

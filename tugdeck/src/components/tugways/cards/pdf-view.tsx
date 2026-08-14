@@ -61,6 +61,7 @@ import React, {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -82,6 +83,7 @@ import {
   clampScale,
   fitScale,
   layoutSpread,
+  PDF_SPACING,
   spreadIndexOfPage,
   spreadsFor,
   steppedScale,
@@ -133,6 +135,21 @@ export interface PdfViewProps {
   initialState?: PdfViewState;
   /** Mirrors mode and zoom back to the card so the bag can persist them. */
   onStateChange?: (state: PdfViewState) => void;
+  /**
+   * Pixels between adjacent pages, and around the content box. A reader's
+   * preference rather than a reading position, so it arrives as a prop and
+   * changes under an open document rather than only at open time. Defaults to
+   * the surface's own spacing.
+   */
+  pageGap?: number;
+  /**
+   * Render pages inverted while a DARK theme is in force — dark paper, light
+   * ink. The prop carries only the PREFERENCE; whether a dark theme is
+   * actually in force is `<html data-theme-mode>`, which the stylesheet reads
+   * directly ([L06]), so a theme switch re-paints without this surface
+   * subscribing to anything.
+   */
+  invertInDark?: boolean;
   /**
    * What the loaded document turned out to be. Reported once per binding,
    * after the document resolves — the card's masthead says how many pages it
@@ -286,7 +303,19 @@ export function PdfView({
   initialState,
   onStateChange,
   onDocumentInfo,
+  pageGap,
+  invertInDark = false,
 }: PdfViewProps) {
+  // The spacing every layout call reads. Memoized because it is an argument to
+  // pure layout functions on every render, and a fresh object each time would
+  // defeat nothing here but would invite a `useMemo` downstream to lie.
+  const spacing = useMemo(
+    () =>
+      pageGap === undefined
+        ? PDF_SPACING
+        : { gap: pageGap, padding: PDF_SPACING.padding },
+    [pageGap],
+  );
   // Read through a ref at report time [L07]: the load effect is keyed on the
   // path, and a fresh callback identity must not re-fetch the document.
   const onDocumentInfoRef = useRef(onDocumentInfo);
@@ -415,12 +444,13 @@ export function PdfView({
             pageMode,
             viewport,
             zoom === "fit-width" ? "width" : "page",
+            spacing,
           )
         : 1;
   const layout =
     currentSpread.length === 0
       ? NO_LAYOUT
-      : layoutSpread(pageSizes, currentSpread, pageMode, scale);
+      : layoutSpread(pageSizes, currentSpread, pageMode, scale, spacing);
   const mounted =
     viewport.height > 0
       ? visiblePages(layout, scrollTop, viewport.height, RENDER_MARGIN_PX)
@@ -618,6 +648,7 @@ export function PdfView({
           data-pdf-view-status={status}
           data-pdf-page-mode={pageMode}
           data-pdf-zoom={typeof zoom === "number" ? zoom.toFixed(2) : zoom}
+          data-pdf-invert-in-dark={invertInDark ? "on" : "off"}
           data-tug-focus-key="primary"
           onScroll={onScroll}
         >

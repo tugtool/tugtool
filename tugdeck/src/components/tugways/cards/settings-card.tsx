@@ -38,7 +38,7 @@
  */
 
 import React, { useCallback, useId, useLayoutEffect, useState } from "react";
-import { FileText, MessageSquareText, Settings2 } from "lucide-react";
+import { FileText, Image, MessageSquareText, Settings2 } from "lucide-react";
 import { registerCard } from "@/card-registry";
 import { CONTENT_WIDTH_SLIM_PX } from "@/lib/layout-imposer";
 import { TugTabView, TugTabViewItem } from "@/components/tugways/tug-tab-view";
@@ -51,6 +51,7 @@ import {
 } from "@/lib/settings-sections-pref";
 import { registerSettingsRevealConsumer } from "@/lib/settings-reveal";
 import { SettingsSessionCardBody } from "./settings-session-card-body";
+import { SettingsViewerCardBody } from "./settings-viewer-card-body";
 import { SettingsTextCardBody } from "./settings-text-card-body";
 import { SettingsGeneralBody } from "./settings-general-body";
 import "./settings-card.css";
@@ -78,6 +79,14 @@ const SECTIONS: readonly SettingsSectionSpec[] = [
     Body: SettingsSessionCardBody,
   },
   { id: "textCard", label: "Text Card", Icon: FileText, Body: SettingsTextCardBody },
+  // One section for both viewer kinds — images and PDFs are one card, and a
+  // reader should not have to learn that their preferences live in two places.
+  {
+    id: "viewerCard",
+    label: "Viewer Cards",
+    Icon: Image,
+    Body: SettingsViewerCardBody,
+  },
 ];
 
 // ---------------------------------------------------------------------------

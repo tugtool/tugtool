@@ -2,11 +2,12 @@
  * at0404-title-bar-tooltips.test.ts — every control at the trailing end of a
  * title bar says what it does before you press it.
  *
- * The cluster is four icons and a count: a stack badge, a bullseye target, the
- * `…` card menu, a width control, and the close box. Four of the five are
- * glyphs with no text anywhere near them, and the fifth is a bare number. Read
- * cold, none of them is self-evident — so each now carries a tooltip, and two
- * of them carry the chord that does the same thing without the mouse.
+ * The cluster is a row of icons and a count: a stack badge, a bullseye target,
+ * the active card's own verbs (a Text card contributes Reveal in Finder and
+ * Card Settings…), a width control, and the close box. All but the count are
+ * glyphs with no text anywhere near them, and the count is a bare number. Read
+ * cold, none of them is self-evident — so each carries a tooltip, and two of
+ * them carry the chord that does the same thing without the mouse.
  *
  * What is worth proving here:
  *
@@ -30,8 +31,8 @@
  *      holding. A tooltip that read the same in both postures would be the
  *      resting lie the `aria-label` already avoids.
  *
- *   4. The composition survives. Three of these controls are popup-menu
- *      triggers and the fourth runs its own pointer-capture close protocol,
+ *   4. The composition survives. Two of these controls are popup-menu
+ *      triggers and a third runs its own pointer-capture close protocol,
  *      so none of them can be a Radix tooltip trigger directly — the bubble
  *      anchors a span around each. The proof that the wrapper is inert is that
  *      the controls still work: this test opens the width menu through the
@@ -45,6 +46,7 @@
  * the pane.
  *
  * @covers tugdeck/src/components/chrome/tug-pane.tsx
+ * @covers tugdeck/src/lib/pane-title-bar-items-store.ts
  * @covers tugdeck/src/components/tugways/tug-pane.css
  * @covers tugdeck/src/components/tugways/tug-action-tooltip.tsx
  * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
@@ -67,7 +69,8 @@ const AFTER_LAND_MS = 900;
 const PANE = '[data-pane-id="p1"]';
 const BADGE = `${PANE} [data-testid="tug-pane-title-bar-stack-badge"]`;
 const BULLSEYE = `${PANE} [data-testid="tug-pane-title-bar-bullseye-button"]`;
-const MENU_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-menu-button"]`;
+const REVEAL_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-item-reveal-card-file"]`;
+const OPTIONS_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-item-show-card-settings"]`;
 const WIDTH_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-width-button"]`;
 const CLOSE_BUTTON = `${PANE} [data-testid="tug-pane-close-button"]`;
 const WIDTH_MENU = '[data-testid="tug-pane-title-bar-width-menu"]';
@@ -93,8 +96,8 @@ function mkFixture(): string {
  * Two panes in slot 0 so the stack badge has something to report, at
  * MISMATCHED widths so the buried one is not fully covered and the front one
  * stays hoverable. The front card is a Text card because a Text card is what
- * publishes title-bar menu items — without one the `…` button does not render
- * at all, and there would be nothing to hover.
+ * publishes title-bar items — without one the card-contributed buttons do not
+ * render at all, and there would be nothing to hover.
  */
 function deckShape() {
   return {
@@ -331,15 +334,18 @@ describe.skipIf(!SHOULD_RUN)(
             "and names the chord that does the same thing without the mouse",
           ).toBe("⌃⌘B");
 
-          // --- The `…` menu: a promise of a list. -------------------------
+          // --- The card's own verbs: each button says its command. --------
+          // Both phrases are READ from the command table, the same source the
+          // File menu's items and any chord read, so a button and its command
+          // cannot say different things.
           expect(
-            await hoverPhrase(app, MENU_BUTTON),
-            "the overflow names what it holds, not the press",
-          ).toBe("Assorted commands");
+            await hoverPhrase(app, REVEAL_BUTTON),
+            "the folder glyph names the act, from the registry",
+          ).toBe("Reveal in Finder");
           expect(
-            await chipText(app, MENU_BUTTON),
-            "no single command stands behind it, so no chip",
-          ).toBeNull();
+            await hoverPhrase(app, OPTIONS_BUTTON),
+            "the gear opens the card's own view settings",
+          ).toBe("Card Settings…");
 
           // --- Width: the act, and the width it is holding now. -----------
           expect(

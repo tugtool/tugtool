@@ -21,6 +21,46 @@
   max-height: 100%;
 }
 
+/* Fill: the picture takes the whole frame and crops what does not fit, so the
+   block has to be given the frame to fill. Sizing lives here rather than in
+   `ImageBlock` because how much room the picture gets is the CARD's question;
+   what the picture does with it is the block's ([L20]). */
+.file-view-card[data-file-view-image-fit="fill"] {
+  padding: 0;
+}
+
+.file-view-card[data-file-view-image-fit="fill"] .file-view-card-image {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+/* Actual size: one image pixel per CSS pixel, which routinely overflows. The
+   card's scroller carries it, and the centering has to give way — a centered
+   overflowing child cannot be scrolled back to its own top-left. */
+.file-view-card[data-file-view-image-fit="actual"] {
+  align-items: safe center;
+  justify-content: safe center;
+}
+
+.file-view-card[data-file-view-image-fit="actual"] .file-view-card-image {
+  max-width: none;
+  max-height: none;
+  flex: none;
+}
+
+/* The info strip: what the file measures, what kind it is, what it weighs.
+   Under the picture, quiet, and never in the way of it. */
+.file-view-card-info {
+  flex: none;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  text-align: center;
+}
+
 /* The PDF surface fills the card and owns its own scrolling, so the card
    frame must not also scroll or the two would fight. */
 .file-view-card[data-file-view-kind="pdf"] {

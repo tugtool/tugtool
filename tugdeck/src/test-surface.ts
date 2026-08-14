@@ -296,8 +296,14 @@ import {
  * the production chain one function later than a wire response does, and
  * drives the real correlation, dedupe, prepend, and scroll compensation.
  * Additive; major stays `2`.
+ *
+ * `2.8.0`: adds {@link TugTestSurface.getTugbankValue} — the read counterpart
+ * to `setTugbankValue`. A card's per-card view settings resolve from the deck
+ * defaults until the first change and are card-local afterwards, and the two
+ * states look identical on screen; only the store says which one is in force.
+ * Additive; major stays `2`.
  */
-export const SURFACE_VERSION = "2.7.0" as const;
+export const SURFACE_VERSION = "2.8.0" as const;
 
 /**
  * `sessionStorage` key for the cross-reload generation counter.
@@ -609,6 +615,16 @@ export interface TugTestSurface {
    * deletion, so a test that could only write values could never drive one.
    */
   deleteTugbankValue(domain: string, key: string): void;
+
+  /**
+   * Read a tugbank value out of the client cache (SURFACE_VERSION 2.8.0), or
+   * `null` when the key is unset. The read counterpart to
+   * {@link setTugbankValue}: a test that drives a card's own settings needs to
+   * assert what the card PERSISTED, and reading the store is the only way to
+   * tell "the card owns these now" from "the card is still following the deck
+   * defaults" — the two look identical on screen.
+   */
+  getTugbankValue(domain: string, key: string): TaggedValue | null;
 
   // ---- Granular reset ([D01]) ----
   reset(opts: ResetOptions): void;
@@ -1588,6 +1604,13 @@ export function createTugTestSurface(deck: DeckManager): TugTestSurface {
         return;
       }
       client.deleteLocalValue(domain, key);
+    },
+
+    /** Read one tugbank value from the client cache, or `null` when unset. */
+    getTugbankValue(domain: string, key: string): TaggedValue | null {
+      const client = getTugbankClient();
+      if (client === null) return null;
+      return client.get(domain, key) ?? null;
     },
 
     // ---- granular reset ----

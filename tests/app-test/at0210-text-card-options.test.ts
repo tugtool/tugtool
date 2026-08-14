@@ -1,13 +1,12 @@
 /**
  * at0210-text-card-options.test.ts — Text card masthead + editor options
- * ([AT0210]): open a real file, then drive the pane `…` menu's Editor
- * Options sheet and assert each toggle reconfigures the live CodeMirror 6
- * editor.
+ * ([AT0210]): open a real file, then drive the title bar's Editor Options
+ * sheet and assert each toggle reconfigures the live CodeMirror 6 editor.
  *
  * Scenario: seed a Text card bound to a real temp fixture, assert the pane's
  * document masthead names the file and its path and that the editor mounts
- * with the default line-number gutter. Open the `…` menu, choose Editor
- * Options…, toggle Line numbers off (the CM6 `lineNumbers` compartment drops
+ * with the default line-number gutter. Press the title bar's gear button,
+ * toggle Line numbers off (the CM6 `lineNumbers` compartment drops
  * the gutter), then toggle Soft wrap on (the `lineWrapping` compartment adds
  * `.cm-lineWrapping`). Every step drives the real settings → CM6 reconfigure
  * path on a real file — no mocks.
@@ -17,7 +16,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
- * @covers tugdeck/src/components/tugways/cards/text-card-options-sheet.tsx
+ * @covers tugdeck/src/components/tugways/cards/card-settings-sheet.tsx
  * @covers tugdeck/src/components/tugways/cards/text-card-controls.tsx
  * @covers tugdeck/src/lib/text-card-settings.ts
  * @covers tugdeck/src/lib/use-text-card-settings.ts
@@ -40,14 +39,14 @@ const TEST_TIMEOUT_MS = 120_000;
 const CARD = '[data-card-id="A"]';
 const EDITOR_CONTENT = `${CARD} [data-slot="tug-text-card-editor"] .cm-content`;
 const LINE_NUMBERS = `${CARD} [data-slot="tug-text-card-editor"] .cm-lineNumbers`;
-// The masthead and the `…` button are the PANE's, not the card's — the title
+// The masthead and the title-bar buttons are the PANE's, not the card's — the title
 // bar is a sibling of the card element, so a card-scoped prefix matches
 // nothing here.
 const PANE = '[data-pane-id="p1"]';
 const MASTHEAD_TITLE = `${PANE} [data-testid="card-masthead-title"]`;
 const MASTHEAD_DESCRIPTION = `${PANE} [data-testid="card-masthead-description"]`;
 const MASTHEAD_DETAIL = `${PANE} [data-testid="card-masthead-detail"]`;
-const MENU_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-menu-button"]`;
+const OPTIONS_BUTTON = `${PANE} [data-testid="tug-pane-title-bar-item-show-card-settings"]`;
 const OPTIONS_PANEL = '[data-testid="text-card-options"]';
 // Scoped to the sheet: the same option testids also appear in the
 // Settings card's Text Card tab (shared TextCardControls).
@@ -140,46 +139,21 @@ const WRAP_STATE = `(() => {
 })()`;
 
 /**
- * Open the pane's `…` menu and choose a row by its label. The menu portals to
- * the document root, so the rows are found globally once it is open.
+ * Press the title bar's gear — the card's own Editor Options button. The
+ * press dispatches the command key-card routed, so the sheet opens wherever
+ * focus happens to sit.
  */
-async function chooseMenuRow(app: App, label: string): Promise<void> {
-  await app.nativeClickAtElement(MENU_BUTTON);
-  const found = JSON.stringify(label);
+async function pressEditorOptions(app: App): Promise<void> {
   await app.waitForCondition<boolean>(
-    `!!Array.from(document.querySelectorAll('.tug-menu-item')).find(n => n.textContent && n.textContent.includes(${found}))`,
+    `document.querySelector(${JSON.stringify(OPTIONS_BUTTON)}) !== null`,
     { timeoutMs: 8000 },
   );
-  const pt = await app.evalJS<{ x: number; y: number; disabled: boolean } | null>(
-    `(() => {
-      const item = Array.from(document.querySelectorAll('.tug-menu-item'))
-        .find(n => n.textContent && n.textContent.includes(${found}));
-      if (!item) return null;
-      const r = item.getBoundingClientRect();
-      return {
-        x: Math.round(r.left + r.width / 2),
-        y: Math.round(r.top + r.height / 2),
-        disabled: item.hasAttribute('data-disabled'),
-      };
-    })()`,
-  );
-  if (pt === null) throw new Error(`[at0210] menu row ${label} not found`);
-  // A disabled row swallows the click, so a wrongly-gated row would read as a
-  // sheet that never opened. The registry answers this — the card does not —
-  // so a disabled Editor Options row means the key-card walk missed.
-  expect(pt.disabled, `the ${label} row must be enabled`).toBe(false);
-  await app.nativeClick(pt);
-  // The menu closes in the same step that invokes the command, so a menu
-  // still standing here means the selection never fired.
-  await app.waitForCondition<boolean>(
-    `document.querySelectorAll('.tug-menu-item').length === 0`,
-    { timeoutMs: 5000 },
-  );
+  await app.nativeClickAtElement(OPTIONS_BUTTON);
 }
 
 describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () => {
   test(
-    "the masthead names the file; the … menu's options reconfigure the live editor",
+    "the masthead names the file; the gear's options reconfigure the live editor",
     async () => {
       const { dir, file } = mkFixture();
       const app = await launchTugApp({ testName: "at0210-text-card-options" });
@@ -242,8 +216,8 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () =
         ).toBe(true);
         expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(true);
 
-        // Open the options through the pane's `…` menu.
-        await chooseMenuRow(app, "Editor Options");
+        // Open the options through the title bar's gear button.
+        await pressEditorOptions(app);
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(OPTIONS_PANEL)}) !== null`,
           { timeoutMs: 15000 },

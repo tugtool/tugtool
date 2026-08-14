@@ -29,11 +29,17 @@
 
 import "./file-view-card.css";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { classifyFileKind, blobUrl } from "@/lib/file-kinds";
+import { formatByteSize } from "@/lib/image-card-settings";
+import { useImageCardSettings } from "@/lib/use-image-card-settings";
+import { usePdfCardSettings } from "@/lib/use-pdf-card-settings";
+import { openingZoomToPdfZoom } from "@/lib/pdf-card-settings";
+import { useTugSheet } from "@/components/tugways/tug-sheet";
+import { presentCardSettingsSheet } from "./card-settings-sheet";
 import { cardTitleStore } from "@/lib/card-title-store";
-import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
+import { paneTitleBarItemsStore } from "@/lib/pane-title-bar-items-store";
 import { openPathInOS } from "@/lib/os-open";
 import { useResponder } from "@/components/tugways/use-responder";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
@@ -112,9 +118,59 @@ function fileKindLabel(path: string, pdfPages: number | null): string {
   return ext ?? "File";
 }
 
+/**
+ * The strip under an image: what it measures, what kind it is, and what it
+ * weighs on disk. Every line is a fact about the FILE rather than about the
+ * view, which is why it says nothing about the current scaling — a reader who
+ * wants to know how big something really is turns this on and reads the
+ * numbers, and the numbers must not move when the card is resized.
+ *
+ * A fact the card does not have yet is simply absent: dimensions arrive when
+ * the image decodes and the byte count when the HEAD lands, and a placeholder
+ * for either would be a resting lie for the moment it stood.
+ */
+function ImageInfoStrip({
+  path,
+  naturalSize,
+  byteSize,
+}: {
+  path: string;
+  naturalSize: { width: number; height: number } | null;
+  byteSize: number | null;
+}) {
+  const parts: string[] = [];
+  if (naturalSize !== null) {
+    parts.push(`${naturalSize.width} × ${naturalSize.height}`);
+  }
+  parts.push(fileKindLabel(path, null));
+  if (byteSize !== null) parts.push(formatByteSize(byteSize));
+
+  return (
+    <TugLabel
+      size="sm"
+      className="file-view-card-info"
+      data-slot="file-view-card-info"
+      data-testid="file-view-card-info"
+    >
+      {parts.join("  ·  ")}
+    </TugLabel>
+  );
+}
+
 export function FileViewCardContent({ cardId }: { cardId: string }) {
   const [path, setPath] = useState<string | null>(null);
   const [view, setView] = useState<PdfViewState | undefined>(undefined);
+  // What the bytes turned out to be — the natural size the `<img>` reports and
+  // the byte count the blob route's headers carry. Both are what the info
+  // strip says, and neither is knowable before the file is read.
+  const [naturalSize, setNaturalSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const [byteSize, setByteSize] = useState<number | null>(null);
+  // The gear's sheet. `renderSheet()` is mounted once in the card body, the
+  // same arrangement the Text card uses for its save decisions.
+  const { showSheet, renderSheet } = useTugSheet();
   // How many pages the bound PDF turned out to have; null until the surface
   // reports, and for every non-PDF kind.
   const [pdfPages, setPdfPages] = useState<number | null>(null);
@@ -154,8 +210,11 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
         restoredViewRef.current = undefined;
         setView(undefined);
         // A different document has a different length; the old count would be
-        // a resting lie on the masthead until the new one loaded.
+        // a resting lie on the masthead until the new one loaded. The same is
+        // true of the previous file's dimensions and byte count.
         setPdfPages(null);
+        setNaturalSize(null);
+        setByteSize(null);
         setPath(next);
       },
     });
@@ -171,6 +230,42 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
     pathRef.current = path;
     notifyOpenFileViewCardsChanged();
   }, [path]);
+
+  // ---- View settings ----
+  //
+  // Both kinds' settings are read on every viewer card, not only the kind the
+  // card is currently showing. They are two `useTugbankValue` subscriptions
+  // each ([L02]) and nothing else, and a card rebinds from a PNG to a PDF
+  // through `openFile` without remounting — reading them conditionally would
+  // mean a hook order that changes with the file on screen, which React
+  // forbids outright.
+  const image = useImageCardSettings(cardId);
+  const pdf = usePdfCardSettings(cardId);
+
+  // The file's size on disk, for the image info strip. A HEAD against the same
+  // blob route the `<img>` is already pointed at: the response carries
+  // `content-length`, so this costs a header exchange rather than a second
+  // copy of the bytes. Only asked when the strip is actually shown — a reader
+  // who never turns it on never pays for it.
+  const kindNow = path === null ? null : classifyFileKind(path);
+  const wantsByteSize = kindNow === "image" && image.settings.showInfo;
+  useEffect(() => {
+    if (path === null || !wantsByteSize) return;
+    let cancelled = false;
+    void fetch(blobUrl(path), { method: "HEAD" })
+      .then((response) => {
+        const header = response.headers.get("content-length");
+        const parsed = header === null ? NaN : Number.parseInt(header, 10);
+        if (!cancelled && Number.isFinite(parsed)) setByteSize(parsed);
+      })
+      .catch(() => {
+        // A size we could not read is a line the strip simply does not print;
+        // there is nothing to report to the reader about a header.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [path, wantsByteSize]);
 
   // ---- Title + masthead sync (pane chrome) ----
   //
@@ -202,31 +297,51 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
     });
   }, [cardId, path, pdfPages]);
 
-  // Reveal in Finder — the one verb this card has, and a bound viewer card
-  // always has a real file to reveal. Membership is the card's; the row's
+  // The card's two verbs, each a standing button in the pane's title bar:
+  // reveal the file, and open this card's own view settings. Both wear the
+  // glyphs the Text card wears for the same commands — one gesture, one
+  // glyph, wherever it appears. Membership is the card's; each control's
   // label, its enablement, and any chord are the command table's ([L30]).
+  //
+  // The gear appears only for a kind that HAS settings. A file the card can
+  // name but not display has nothing to configure, and a gear that opened an
+  // empty sheet would be a door onto a room with nothing in it.
+  const settableKind = kindNow === "image" || kindNow === "pdf";
   useLayoutEffect(() => {
     if (path === null) {
-      paneTitleBarMenuStore.set(cardId, null);
+      paneTitleBarItemsStore.set(cardId, null);
       return;
     }
-    paneTitleBarMenuStore.set(cardId, [
-      { commandId: TUG_ACTIONS.REVEAL_CARD_FILE },
+    paneTitleBarItemsStore.set(cardId, [
+      {
+        commandId: TUG_ACTIONS.REVEAL_CARD_FILE,
+        presentation: "button",
+        icon: "FolderOpenDot",
+      },
+      ...(settableKind
+        ? [
+            {
+              commandId: TUG_ACTIONS.SHOW_CARD_SETTINGS,
+              presentation: "button" as const,
+              icon: "Settings",
+            },
+          ]
+        : []),
     ]);
-  }, [cardId, path]);
+  }, [cardId, path, settableKind]);
 
   // What this card published to the pane goes away with the card, and only
   // then ([L27]) — one teardown for both channels.
   useLayoutEffect(
     () => () => {
       cardTitleStore.clear(cardId);
-      paneTitleBarMenuStore.set(cardId, null);
+      paneTitleBarItemsStore.set(cardId, null);
     },
     [cardId],
   );
 
-  // The `…` row's landing point. Key-card routed, so it arrives here however
-  // focus happens to sit when the menu row is chosen.
+  // Where the title bar's buttons land. Key-card routed, so a press arrives
+  // here however focus happens to sit.
   const {
     ResponderScope: CardContentResponderScope,
     responderRef: cardContentResponderRef,
@@ -237,6 +352,18 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
       [TUG_ACTIONS.REVEAL_CARD_FILE]: () => {
         const live = pathRef.current;
         if (live !== null) openPathInOS(live, "reveal");
+      },
+      // Which sheet is the card's answer, not the command's: one gear
+      // command, and the card showing the document is the only thing that
+      // knows whether that document is pixels or pages. Read live from the
+      // ref ([L07]) — a rebind through `openFile` must not leave this handler
+      // opening the previous file's sheet.
+      [TUG_ACTIONS.SHOW_CARD_SETTINGS]: () => {
+        const live = pathRef.current;
+        if (live === null) return;
+        const liveKind = classifyFileKind(live);
+        if (liveKind !== "image" && liveKind !== "pdf") return;
+        void presentCardSettingsSheet(showSheet, liveKind, cardId);
       },
     },
   });
@@ -259,19 +386,49 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
         className="file-view-card"
         data-slot="file-view-card"
         data-file-view-kind={kind}
+        // The image settings that the CARD's own frame answers for rather than
+        // the image block: how the frame scrolls at Actual Size, and whether
+        // the strip is standing under the picture ([L06] — the attribute is
+        // the state, and CSS reads it).
+        {...(kind === "image"
+          ? { "data-file-view-image-fit": image.settings.scaling }
+          : {})}
       >
         {kind === "image" ? (
-          <ImageBlock
-            className="file-view-card-image"
-            src={blobUrl(path)}
-            alt={name}
-          />
+          <>
+            <ImageBlock
+              className="file-view-card-image"
+              src={blobUrl(path)}
+              alt={name}
+              fit={image.settings.scaling}
+              ground={image.settings.background}
+              smoothing={image.settings.smoothing}
+              onNaturalSize={setNaturalSize}
+            />
+            {image.settings.showInfo ? (
+              <ImageInfoStrip
+                path={path}
+                naturalSize={naturalSize}
+                byteSize={byteSize}
+              />
+            ) : null}
+          </>
         ) : kind === "pdf" ? (
           <PdfView
             key={path}
             path={path}
             cardId={cardId}
-            initialState={restoredViewRef.current}
+            // The bag first — a document comes back where the reader left it —
+            // and the preference only when there is no bag, which is exactly
+            // "a document nobody has read yet" ([L23] state vs. preference).
+            initialState={
+              restoredViewRef.current ?? {
+                pageMode: pdf.settings.pageMode,
+                zoom: openingZoomToPdfZoom(pdf.settings.openingZoom),
+              }
+            }
+            pageGap={pdf.settings.pageGap}
+            invertInDark={pdf.settings.invertInDark}
             onStateChange={setView}
             onDocumentInfo={(info) => setPdfPages(info.pages)}
           />
@@ -280,6 +437,7 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
             Tug can&rsquo;t display this file yet.
           </TugLabel>
         )}
+        {renderSheet()}
       </div>
     </CardContentResponderScope>
   );

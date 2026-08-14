@@ -59,9 +59,9 @@ import { TextCardStore, type FilePositions } from "@/lib/text-card-store";
 import { saveText } from "@/lib/text-card-save-text";
 import { cardTitleStore } from "@/lib/card-title-store";
 import {
-  paneTitleBarMenuStore,
-  type PaneTitleBarMenuItem,
-} from "@/lib/pane-title-bar-menu-store";
+  paneTitleBarItemsStore,
+  type PaneTitleBarItem,
+} from "@/lib/pane-title-bar-items-store";
 import {
   notifyOpenTextCardsChanged,
   registerOpenTextCard,
@@ -91,7 +91,7 @@ import {
   type TextCardFindBarHandle,
 } from "./text-card-find-bar";
 import { TugLabel } from "../tug-label";
-import { presentTextCardOptionsSheet } from "./text-card-options-sheet";
+import { presentCardSettingsSheet } from "./card-settings-sheet";
 import { TextCardStatusBar } from "./text-card-status-bar";
 import { useTextCardSettings } from "@/lib/use-text-card-settings";
 import { EditorStatsStore } from "@/lib/editor-stats-store";
@@ -905,41 +905,53 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     snapshot.conflict,
   ]);
 
-  // ---- The pane's `…` menu ----
+  // ---- What this card puts in its pane's title bar ----
   //
-  // What the card publishes is MEMBERSHIP: which commands belong on this
-  // pane's menu, and in what order. It never publishes a label, a shortcut,
-  // or an enabled bit — `CardTitleBar` resolves all three from the command
-  // table, which is the same answer ⌘S and File ▸ Save get, so a row here
-  // can never disagree with them ([L30]).
+  // What the card publishes is MEMBERSHIP: which commands belong in this
+  // pane's title bar, in what order, and in which shape. It never publishes
+  // a label, a shortcut, or an enabled bit — `CardTitleBar` resolves all
+  // three from the command table, which is the same answer ⌘S and File ▸
+  // Save get, so a control here can never disagree with them ([L30]).
+  //
+  // Two standing buttons, and no `…` menu. Both are verbs the card offers
+  // whenever it is open, and a verb reached that often does not belong
+  // behind a menu that has to be opened to find out what is in it. Save and
+  // Move To… are not here at all: they are File-menu commands with chords
+  // (⌘S, ⇧⌘S), and a card that already saves does not need a button that
+  // repeats what the keystroke and the menu bar both already do.
   //
   // Membership is genuinely the card's, and it is a different question from
-  // enablement. Save is on a manual-mode card's menu even when there is
-  // nothing to save (it dims); it is not on an automatic-mode card's menu at
-  // all, because that card has no manual save contract. Move To… appears
-  // only for a draft the native picker can relocate, and Reveal in Finder
-  // only once the buffer is bound to a file the user chose.
-  const canMoveTo = snapshot.draftId !== null && isPathPickerAvailable();
+  // enablement: Reveal in Finder appears only once the buffer is bound to a
+  // file the user chose, since a draft has nothing for the Finder to select.
   useLayoutEffect(() => {
     if (snapshot.phase !== "ready") {
-      paneTitleBarMenuStore.set(cardId, null);
+      paneTitleBarItemsStore.set(cardId, null);
       return;
     }
-    const items: PaneTitleBarMenuItem[] = [];
-    if (isManual) items.push({ commandId: TUG_ACTIONS.SAVE });
-    if (canMoveTo) items.push({ commandId: TUG_ACTIONS.SAVE_AS });
-    if (isBoundFile) items.push({ commandId: TUG_ACTIONS.REVEAL_CARD_FILE });
-    items.push({ commandId: TUG_ACTIONS.SHOW_EDITOR_OPTIONS });
-    paneTitleBarMenuStore.set(cardId, items);
-  }, [cardId, snapshot.phase, isManual, canMoveTo, isBoundFile]);
+    const items: PaneTitleBarItem[] = [];
+    if (isBoundFile) {
+      items.push({
+        commandId: TUG_ACTIONS.REVEAL_CARD_FILE,
+        presentation: "button",
+        icon: "FolderOpenDot",
+      });
+    }
+    items.push({
+      commandId: TUG_ACTIONS.SHOW_CARD_SETTINGS,
+      presentation: "button",
+      icon: "Settings",
+    });
+    paneTitleBarItemsStore.set(cardId, items);
+  }, [cardId, snapshot.phase, isBoundFile]);
 
-  // Same shape as the masthead's teardown, and for the same reason: the rows
-  // belong to the card's lifetime, not to any one membership fact ([L27]).
-  useLayoutEffect(() => () => paneTitleBarMenuStore.set(cardId, null), [cardId]);
+  // Same shape as the masthead's teardown, and for the same reason: the
+  // controls belong to the card's lifetime, not to any one membership fact
+  // ([L27]).
+  useLayoutEffect(() => () => paneTitleBarItemsStore.set(cardId, null), [cardId]);
 
-  // The two `…` rows the chain has to deliver. They are KEY-CARD routed and
-  // land here, on the card's own content responder, rather than on the
-  // editor's: both mean "this card", and pressing the pane's `…` button
+  // The two title-bar verbs the chain has to deliver. They are KEY-CARD
+  // routed and land here, on the card's own content responder, rather than
+  // on the editor's: both mean "this card", and pressing a title-bar button
   // promotes the PANE as first responder, so a first-responder walk would
   // start above the editor and never reach it. Key-card dispatch starts at
   // this node regardless of where focus sits, which is the same reason the
@@ -966,8 +978,8 @@ export function TextCardContent({ cardId }: { cardId: string }) {
       [TUG_ACTIONS.REVEAL_CARD_FILE]: () => {
         revealInFinder();
       },
-      [TUG_ACTIONS.SHOW_EDITOR_OPTIONS]: () => {
-        void presentTextCardOptionsSheet(showSheet, cardId);
+      [TUG_ACTIONS.SHOW_CARD_SETTINGS]: () => {
+        void presentCardSettingsSheet(showSheet, "text", cardId);
       },
       // ⌥⇥ toggles keyboard-focus-cycling ([P09]/[P10]). Registered on the
       // card-content responder for the same reason the Session card does it

@@ -717,16 +717,21 @@ export const TUG_ACTIONS = {
   //                         file in the Finder. Deliberately not
   //                         REVEAL_IN_FINDER, which means "the path the
   //                         pointer sampled" and carries that path as its
-  //                         payload: a pane-menu row has no pointer target
-  //                         and always means the document the card is
-  //                         showing, which only the chain can resolve.
-  //                         Dispatched by the pane's `…` menu; handled by
+  //                         payload: a title-bar button has no pointer
+  //                         target and always means the document the card
+  //                         is showing, which only the chain can resolve.
+  //                         Dispatched by the pane's title bar; handled by
   //                         the card's first responder.
-  // SHOW_EDITOR_OPTIONS:    payload — none. Open the card-local editor
-  //                         options (the Editing + Display groups the
-  //                         Settings card's Text Card tab shows) as a card
-  //                         sheet. Dispatched by the pane's `…` menu;
-  //                         handled by the card's first responder.
+  // SHOW_CARD_SETTINGS:     payload — none. Open the card-local view
+  //                         settings for whatever kind of document the card
+  //                         is showing — the Text card's editor options,
+  //                         the viewer's image or PDF settings — as a card
+  //                         sheet. One command, not one per kind: the
+  //                         gesture is "settings for THIS card", and the
+  //                         card that handles it is the only thing that
+  //                         needs to know what kind it is. Dispatched by
+  //                         the pane's title bar; handled by the card's
+  //                         first responder.
   // OPEN_IMAGE_PREVIEW:     payload — `value: string` (an atom id). Open
   //                         the full-resolution lightbox for an image
   //                         carried as bytes rather than as a file, at
@@ -878,7 +883,7 @@ export const TUG_ACTIONS = {
   OPEN_DIFF:              "open-diff",
   REVEAL_IN_FINDER:       "reveal-in-finder",
   REVEAL_CARD_FILE:       "reveal-card-file",
-  SHOW_EDITOR_OPTIONS:    "show-editor-options",
+  SHOW_CARD_SETTINGS:     "show-card-settings",
   OPEN_IMAGE_PREVIEW:     "open-image-preview",
 
   // ---- Dev session management ----

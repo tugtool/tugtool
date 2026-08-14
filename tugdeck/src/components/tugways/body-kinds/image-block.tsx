@@ -86,9 +86,45 @@ import { isCancelChordEvent } from "@/components/tugways/keymap-registry";
  */
 export type ImageBlockStatus = "loading" | "loaded" | "error";
 
+/**
+ * How the image is sized in the space its host gives it. Absent — the value
+ * every transcript and gallery caller wants — leaves the block's natural
+ * inline sizing alone; a viewer card passes the reader's choice.
+ */
+export type ImageBlockFit = "fit" | "fill" | "actual";
+
+/**
+ * What is painted behind the image. `"frame"` is the block's own scaffold
+ * tone, the inline default; the other three are the grounds a reader picks
+ * when the question is what the alpha channel is hiding.
+ */
+export type ImageBlockGround = "frame" | "checker" | "surface" | "black" | "white";
+
 export interface ImageBlockProps {
   /** Image source URL. Reset between renders triggers a fresh load. */
   src: string;
+  /**
+   * How the image is sized. Defaults to `"fit"`, which is the inline
+   * behaviour this block always had: scaled down to the available width,
+   * never up past its natural size.
+   */
+  fit?: ImageBlockFit;
+  /** What is painted behind the image. Defaults to the block's own frame. */
+  ground?: ImageBlockGround;
+  /**
+   * Smooth interpolation when the image is drawn at other than its natural
+   * size. `false` selects nearest-neighbour (`image-rendering: pixelated`),
+   * which is what icon and pixel-art work needs. Defaults to `true`.
+   */
+  smoothing?: boolean;
+  /**
+   * What the bytes turned out to be, reported once per successful load. The
+   * `<img>` is the only thing that knows an image's natural size, so a host
+   * that wants to say it has to be told ([D05]: the block reports, the host
+   * decides what to do with it) — the same shape `PdfView.onDocumentInfo`
+   * uses for a document's page count.
+   */
+  onNaturalSize?: (size: { width: number; height: number }) => void;
   /**
    * Accessible alt text. Used as both the `<img>` alt attribute and
    * the fallback caption when load fails. Defaults to empty string
@@ -123,6 +159,10 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   alt = "",
   className,
   fullscreenDisabled = false,
+  fit = "fit",
+  ground = "frame",
+  smoothing = true,
+  onNaturalSize,
 }) => {
   const [status, setStatus] = React.useState<ImageBlockStatus>("loading");
   const [overlayOpen, setOverlayOpen] = React.useState(false);
@@ -146,7 +186,19 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     };
   }, [overlayOpen]);
 
-  const onLoad = React.useCallback(() => setStatus("loaded"), []);
+  // Read through a ref at report time ([L07]): a fresh callback identity from
+  // the host must not re-run anything about the load.
+  const onNaturalSizeRef = React.useRef(onNaturalSize);
+  onNaturalSizeRef.current = onNaturalSize;
+
+  const onLoad = React.useCallback((event: React.SyntheticEvent<HTMLImageElement>) => {
+    setStatus("loaded");
+    const img = event.currentTarget;
+    onNaturalSizeRef.current?.({
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+    });
+  }, []);
   const onError = React.useCallback(() => setStatus("error"), []);
 
   const onClick = React.useCallback(() => {
@@ -171,6 +223,9 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     <figure
       data-slot="image-body"
       data-tugx-image-status={status}
+      data-tugx-image-fit={fit}
+      data-tugx-image-ground={ground}
+      data-tugx-image-smoothing={smoothing ? "on" : "off"}
       className={cn("tugx-image", className)}
     >
       <img
@@ -201,6 +256,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
             <div
               className="tugx-image-overlay"
               data-slot="image-overlay"
+              data-tugx-image-smoothing={smoothing ? "on" : "off"}
               role="dialog"
               aria-modal="true"
               aria-label={alt.length > 0 ? alt : "Image preview"}

@@ -1,0 +1,30 @@
+/* ----------------------------------------------------------------------------
+   .settings-viewer-card — the Viewer Cards settings panel
+   ----------------------------------------------------------------------------
+   The shared image and PDF control groups (`card-view-controls.css`), bound
+   here to the deck-wide defaults. Two kinds in one section, each under its
+   own heading; mirrors settings-text-card-body.css so the panels read as one
+   system.
+   ----------------------------------------------------------------------------- */
+
+.settings-viewer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xl);
+  /* Room for the first box's legend, which overhangs above its border. */
+  padding-top: var(--tug-space-md);
+}
+
+/* The kind's name, standing above its groups. Quieter than the section title
+   the card's own chrome prints, louder than a box legend. */
+.settings-viewer-card-heading {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+}
+
+/* The heading owns the space above its own groups, so the flex gap between a
+   preceding group and the next heading does not double up. */
+.settings-viewer-card-heading + .card-view-controls {
+  margin-top: calc(-1 * var(--tug-space-lg));
+}

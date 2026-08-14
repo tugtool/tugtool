@@ -21,6 +21,9 @@ import { logSessionLifecycle } from "./lib/session-lifecycle-log";
 import { tugDevLogStore } from "./lib/tug-dev-log-store/tug-dev-log-store";
 import { PERMISSION_MODE_DOMAIN } from "./lib/permission-mode";
 import { MODEL_DOMAIN, PLAN_REVIEW_LAST_DOMAIN } from "./lib/model-domains";
+import { TEXT_CARD_DOMAIN } from "./lib/text-card-settings";
+import { IMAGE_CARD_DOMAIN } from "./lib/image-card-settings";
+import { PDF_CARD_DOMAIN } from "./lib/pdf-card-settings";
 import { getTugbankClient } from "./lib/tugbank-singleton";
 import { canonicalizeDirPath } from "./lib/dir-existence";
 import type { FindOptions } from "./lib/transcript-search";
@@ -580,6 +583,12 @@ export const CARD_KEYED_DOMAINS: readonly string[] = [
   PERMISSION_MODE_DOMAIN,
   MODEL_DOMAIN,
   PLAN_REVIEW_LAST_DOMAIN,
+  // The per-card view settings, one domain per card kind. They accumulate
+  // exactly like the others — a card that was tuned once and closed leaves
+  // its blob behind — so they belong in the same sweep.
+  TEXT_CARD_DOMAIN,
+  IMAGE_CARD_DOMAIN,
+  PDF_CARD_DOMAIN,
 ];
 
 /** DELETE a single defaults entry from tugbank. Fire-and-forget. */
@@ -749,33 +758,52 @@ export function readTextCardDefaults(client: TugbankClient): unknown {
 }
 
 /**
- * PUT the deck-wide Text Card defaults to tugbank (fire-and-forget).
- * New Text cards adopt these on first open; see
- * `use-text-card-settings.ts` and `resolveTextCardSettings`.
+ * PUT the deck-wide defaults for one card kind (fire-and-forget). A newly
+ * opened card of that kind adopts these when it has nothing of its own; see
+ * `use-card-settings.ts`.
  */
-export function putTextCardDefaults(defaults: unknown): void {
-  fetch("/api/defaults/dev.tugtool.text-card/settings", {
+export function putCardSettingsDefaults(
+  domain: string,
+  key: string,
+  defaults: unknown,
+): void {
+  const url = `/api/defaults/${domain}/${encodeURIComponent(key)}`;
+  fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: defaults }),
   }).catch((err) => {
-    console.warn("[settings] PUT textCardDefaults failed:", err);
+    console.warn(`[settings] PUT card defaults failed for ${domain}:`, err);
   });
 }
 
 /**
- * PUT one Text card's per-card editor settings to tugbank
- * (fire-and-forget), keyed by cardId under `dev.text-card`.
+ * PUT one card's per-card view settings to tugbank (fire-and-forget), keyed
+ * by cardId under that kind's domain.
  */
-export function putTextCardCardSettings(cardId: string, settings: unknown): void {
-  const url = `/api/defaults/dev.text-card/${encodeURIComponent(cardId)}`;
+export function putCardSettings(
+  domain: string,
+  cardId: string,
+  settings: unknown,
+): void {
+  const url = `/api/defaults/${domain}/${encodeURIComponent(cardId)}`;
   fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "json", value: settings }),
   }).catch((err) => {
-    console.warn(`[settings] PUT textCardCardSettings failed for ${cardId}:`, err);
+    console.warn(`[settings] PUT card settings failed for ${cardId}:`, err);
   });
+}
+
+/** PUT the deck-wide Text Card defaults. */
+export function putTextCardDefaults(defaults: unknown): void {
+  putCardSettingsDefaults("dev.tugtool.text-card", "settings", defaults);
+}
+
+/** PUT one Text card's per-card editor settings. */
+export function putTextCardCardSettings(cardId: string, settings: unknown): void {
+  putCardSettings(TEXT_CARD_DOMAIN, cardId, settings);
 }
 
 // ── Transcript settings ─────────────────────────────────────────────────────

@@ -84,7 +84,7 @@ import {
 import { SessionMasthead } from "@/components/tugways/session-masthead";
 import { CardMasthead } from "@/components/tugways/card-masthead";
 import { composePaneTitleBarText } from "@/lib/pane-title";
-import { paneTitleBarMenuStore } from "@/lib/pane-title-bar-menu-store";
+import { paneTitleBarItemsStore } from "@/lib/pane-title-bar-items-store";
 import {
   TugPopupMenu,
   type TugPopupMenuEntry,
@@ -236,9 +236,9 @@ export interface CardTitleBarProps {
    */
   confirmClose?: boolean;
   /**
-   * The pane's active card id. Used only to look up any title-bar menu
-   * items the active card has contributed via `paneTitleBarMenuStore`
-   * (the generic `…` affordance). Omitted → no `…` menu.
+   * The pane's active card id. Used only to look up any title-bar items the
+   * active card has contributed via `paneTitleBarItemsStore` — its standing
+   * buttons and its `…` rows. Omitted → the card contributes nothing.
    */
   activeCardId?: string;
   /**
@@ -353,12 +353,23 @@ function CardTitleBar({
   // stack of any kind — the one fact the badge's glyph, its label, and its
   // verbs all read.
   const railSplit = railArrangement?.mode === "split";
-  // Generic title-bar `…` menu: the active card may contribute items via
-  // `paneTitleBarMenuStore`. The pane renders them without knowing what
+  // Generic title-bar contributions: the active card may publish items via
+  // `paneTitleBarItemsStore`. The pane renders them without knowing what
   // card published them (the `cardTitleStore` precedent) — no lens import.
-  const titleBarMenuItems = useSyncExternalStore(
-    paneTitleBarMenuStore.subscribe,
-    () => paneTitleBarMenuStore.get(activeCardId ?? null),
+  // An item wears itself as a standing button or as a `…` row; the two are
+  // split here so each side renders only what belongs to it, and the `…`
+  // button itself appears only when a row asked for it.
+  const titleBarItems = useSyncExternalStore(
+    paneTitleBarItemsStore.subscribe,
+    () => paneTitleBarItemsStore.get(activeCardId ?? null),
+  );
+  const titleBarButtonItems = useMemo(
+    () => (titleBarItems ?? []).filter((item) => item.presentation === "button"),
+    [titleBarItems],
+  );
+  const titleBarMenuItems = useMemo(
+    () => (titleBarItems ?? []).filter((item) => item.presentation !== "button"),
+    [titleBarItems],
   );
 
   // Every row is a command reference, so a row's title, its enablement, and
@@ -391,7 +402,7 @@ function CardTitleBar({
     dispatchCommand(pendingCommandId);
   }, [pendingCommandId, titleBarMenuOpen]);
   const titleBarMenuRows = useMemo<TugPopupMenuEntry[]>(() => {
-    if (!titleBarMenuOpen || titleBarMenuItems === null) return [];
+    if (!titleBarMenuOpen) return [];
     const source = commandValidationSource();
     return titleBarMenuItems.map((item) => {
       const entry = commandEntry(item.commandId);
@@ -910,7 +921,43 @@ function CardTitleBar({
           className="tug-pane-title-bar-accessory"
           data-slot="tug-pane-title-bar-accessory"
         />
-        {titleBarMenuItems !== null && titleBarMenuItems.length > 0 && (
+        {/* A card's standing verbs, each as its own ghost icon button in the
+            cluster — the shape a verb the card offers every time it is open
+            wants. The glyph is the card's (a lucide NAME, resolved here, the
+            `cardTitleStore` rule); the phrase is the registry's, so a button
+            and the same command's menu item can never say different things.
+
+            No `disabled` projection: these buttons stand for as long as the
+            card publishes them, and a gate sampled at render would go stale
+            without a subscription to the menu-state flush. Membership is the
+            card's answer here — it publishes Reveal only once the buffer is
+            bound to a file — and `dispatchCommand` sends regardless, exactly
+            as Cocoa's `sendAction:` does. */}
+        {titleBarButtonItems.map((item) => {
+          const entry = commandEntry(item.commandId);
+          const label = entry?.title ?? item.commandId;
+          const ItemIcon =
+            item.icon !== undefined &&
+            icons[item.icon as keyof typeof icons] !== undefined
+              ? icons[item.icon as keyof typeof icons]
+              : null;
+          if (ItemIcon === null) return null;
+          return (
+            <TugTooltip key={item.commandId} content={label}>
+              <TugButton
+                subtype="icon"
+                emphasis="ghost"
+                role="action"
+                size="sm"
+                icon={<ItemIcon />}
+                aria-label={label}
+                data-testid={`tug-pane-title-bar-item-${item.commandId}`}
+                onClick={() => dispatchCommand(item.commandId)}
+              />
+            </TugTooltip>
+          );
+        })}
+        {titleBarMenuItems.length > 0 && (
           // Same span anchor as the stack badge, for the same reason. The
           // phrase names what the menu HOLDS — the commands for the card the
           // title bar belongs to — rather than describing the press.

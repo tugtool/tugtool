@@ -75,9 +75,9 @@ describe.skipIf(!SHOULD_RUN)("at0356: Settings remembers the selected section", 
       })()`);
       await app.waitForCondition<boolean>(`window.__at0356_cleared === true`);
 
-      // ---- First open: three tabs in the sidebar, General showing.
+      // ---- First open: every section has a sidebar tab, General showing.
       await app.evalJS(SHOW_SETTINGS);
-      await app.waitForCondition<boolean>(`${TAB_COUNT} === 3`, {
+      await app.waitForCondition<boolean>(`${TAB_COUNT} === 4`, {
         timeoutMs: 8000,
       });
       await app.waitForCondition<boolean>(
@@ -133,7 +133,7 @@ describe.skipIf(!SHOULD_RUN)("at0356: Settings remembers the selected section", 
       );
 
       await app.evalJS(SHOW_SETTINGS);
-      await app.waitForCondition<boolean>(`${TAB_COUNT} === 3`, {
+      await app.waitForCondition<boolean>(`${TAB_COUNT} === 4`, {
         timeoutMs: 8000,
       });
 

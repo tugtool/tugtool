@@ -325,13 +325,13 @@ describe.skipIf(!SHOULD_RUN)("at0310 — image opens in a viewer card", () => {
         expect(truncation.squeezed.tailWhole, "the filename survives").toBe(true);
         expect(truncation.squeezed.withinLine).toBe(true);
 
-        // The card's one verb reaches its pane's `…` menu. Membership is the
-        // card's to publish; the row's label and enablement are the command
-        // table's, which at0392 asserts on the Text card's richer menu.
+        // The card's one verb stands in its pane's title bar as its own
+        // button. Membership is the card's to publish; the control's label
+        // and enablement are the command table's.
         expect(
           await app.evalJS<number>(
             `document.querySelectorAll(
-               '[data-testid="tug-pane-title-bar-menu-button"]').length`,
+               '[data-testid="tug-pane-title-bar-item-reveal-card-file"]').length`,
           ),
         ).toBe(1);
 
