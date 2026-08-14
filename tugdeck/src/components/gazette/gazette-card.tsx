@@ -117,6 +117,7 @@ import {
   removeAtomById,
 } from "@/components/tugways/tug-text-editor/atom-decoration";
 import { AnnotationScope } from "@/components/tugways/annotation-scope";
+import { clipboardOriginProps } from "@/lib/clipboard-origin";
 import { useAnnotationPortals } from "@/components/tugways/annotation-portals";
 import {
   ANNOTATION_CLASS,
