@@ -262,7 +262,11 @@ fn split_log_line(line: &str) -> Option<(&str, &str, &str)> {
     let _timestamp = fields.next()?;
     let dash = fields.next()?;
     let marker = fields.next()?;
-    Some((dash.trim(), marker.trim(), fields.next().unwrap_or("").trim()))
+    Some((
+        dash.trim(),
+        marker.trim(),
+        fields.next().unwrap_or("").trim(),
+    ))
 }
 
 /// Whether a log line ends a dash generation.

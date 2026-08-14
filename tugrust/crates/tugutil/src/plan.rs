@@ -50,8 +50,8 @@ fn run_lint(path: &Path, json: bool) -> Result<(), AppError> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| AppError::Exit2(format!("{}: {e}", path.display())))?;
 
-    let doc = plan::parse(&source)
-        .map_err(|e| AppError::Exit2(format!("{}: {e}", path.display())))?;
+    let doc =
+        plan::parse(&source).map_err(|e| AppError::Exit2(format!("{}: {e}", path.display())))?;
 
     let diagnostics = plan::lint(&doc);
     let errors = diagnostics
@@ -98,7 +98,13 @@ fn run_lint(path: &Path, json: bool) -> Result<(), AppError> {
                     d.severity,
                     d.message
                 ),
-                None => println!("{}: {} {} {}", path.display(), d.code, d.severity, d.message),
+                None => println!(
+                    "{}: {} {} {}",
+                    path.display(),
+                    d.code,
+                    d.severity,
+                    d.message
+                ),
             }
         }
         println!(
@@ -287,11 +293,11 @@ fn run_stamp(path: &Path, json: bool) -> Result<(), AppError> {
         )),
     })?;
 
-    let doc = plan::parse(&edited).map_err(|e| AppError::Exit1(format!("{}: {e}", path.display())))?;
-    let round = doc
-        .review_rounds
-        .last()
-        .ok_or_else(|| AppError::Exit1(format!("{}: the stamped round vanished", path.display())))?;
+    let doc =
+        plan::parse(&edited).map_err(|e| AppError::Exit1(format!("{}: {e}", path.display())))?;
+    let round = doc.review_rounds.last().ok_or_else(|| {
+        AppError::Exit1(format!("{}: the stamped round vanished", path.display()))
+    })?;
     let data = StampData {
         path: path.display().to_string(),
         stamp: round.stamp.clone().unwrap_or_default(),

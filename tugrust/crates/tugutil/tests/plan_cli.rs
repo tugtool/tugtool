@@ -249,15 +249,18 @@ fn status_reports_reviewed_then_stale_and_never_gates() {
     assert_eq!(value["command"], "plan status");
     assert_eq!(value["data"]["review"], "reviewed");
     assert_eq!(
-        value["data"]["last_round"]["stamp"],
-        value["data"]["content_hash"],
+        value["data"]["last_round"]["stamp"], value["data"]["content_hash"],
         "a reviewed plan's round stamp is today's content hash"
     );
 
     // One word of body prose, and the review no longer covers the document —
     // but the verdict is data, so the exit code does not move.
     let stamped = std::fs::read_to_string(&path).unwrap();
-    std::fs::write(&path, stamped.replace("Some context.", "Some other context.")).unwrap();
+    std::fs::write(
+        &path,
+        stamped.replace("Some context.", "Some other context."),
+    )
+    .unwrap();
     let (code, value) = status_json(&path);
     assert_eq!(code, 0, "a readout never gates: {value}");
     assert_eq!(value["data"]["review"], "stale");
@@ -325,9 +328,11 @@ fn stamp_json_names_the_round_it_wrote() {
     assert_eq!(value["data"]["round"], 1);
     let stamp = value["data"]["stamp"].as_str().unwrap();
     assert_eq!(stamp.len(), 16, "{stamp}");
-    assert!(std::fs::read_to_string(&path)
-        .unwrap()
-        .contains(&format!("Reviewed `plan:{stamp}`.")));
+    assert!(
+        std::fs::read_to_string(&path)
+            .unwrap()
+            .contains(&format!("Reviewed `plan:{stamp}`."))
+    );
 }
 
 #[test]

@@ -220,9 +220,12 @@ mod tests {
         let path = std::fs::canonicalize(dir.path()).unwrap();
         attach(&path, "assets");
 
-        let exclude = std::fs::read_to_string(path.join(".git").join("info").join("exclude"))
-            .unwrap();
-        assert!(exclude.contains("# tug:attachments\n/assets/\n# end tug:attachments\n"), "{exclude}");
+        let exclude =
+            std::fs::read_to_string(path.join(".git").join("info").join("exclude")).unwrap();
+        assert!(
+            exclude.contains("# tug:attachments\n/assets/\n# end tug:attachments\n"),
+            "{exclude}"
+        );
         // The point of all of it: the asset is invisible to git.
         assert_eq!(porcelain(&path), "");
     }
@@ -251,8 +254,8 @@ mod tests {
         attach(&path, "assets");
         attach(&path, "roadmap/assets");
 
-        let exclude = std::fs::read_to_string(path.join(".git").join("info").join("exclude"))
-            .unwrap();
+        let exclude =
+            std::fs::read_to_string(path.join(".git").join("info").join("exclude")).unwrap();
         assert!(exclude.contains("/assets/"), "{exclude}");
         assert!(exclude.contains("/roadmap/assets/"), "{exclude}");
         assert_eq!(exclude.matches(BLOCK_START).count(), 1, "{exclude}");
@@ -319,7 +322,10 @@ mod tests {
         let linked = main.join("wt");
         git(&main, &["worktree", "add", "-q", "wt"]);
         let linked = std::fs::canonicalize(&linked).unwrap();
-        assert!(linked.join(".git").is_file(), "worktree .git should be a file");
+        assert!(
+            linked.join(".git").is_file(),
+            "worktree .git should be a file"
+        );
 
         attach(&linked, "assets");
 
@@ -335,8 +341,8 @@ mod tests {
         let path = std::fs::canonicalize(dir.path()).unwrap();
         attach(&path, "assets");
 
-        let exclude = std::fs::read_to_string(path.join(".git").join("info").join("exclude"))
-            .unwrap();
+        let exclude =
+            std::fs::read_to_string(path.join(".git").join("info").join("exclude")).unwrap();
         for line in exclude.lines() {
             assert!(
                 line.trim() != "assets/" && line.trim() != "assets",
@@ -355,7 +361,10 @@ mod tests {
         // A second line joins the existing block rather than starting another.
         let twice = exclude_contents_with(&updated, "/roadmap/assets/").unwrap();
         assert_eq!(twice.matches(BLOCK_START).count(), 1, "{twice}");
-        assert!(twice.contains("/assets/") && twice.contains("/roadmap/assets/"), "{twice}");
+        assert!(
+            twice.contains("/assets/") && twice.contains("/roadmap/assets/"),
+            "{twice}"
+        );
 
         // And the same line again is a no-op.
         assert_eq!(exclude_contents_with(&twice, "/assets/"), None);

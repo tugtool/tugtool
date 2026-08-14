@@ -230,6 +230,14 @@ lint:
     cd tugrust && cargo clippy --workspace --all-targets -- -D warnings
     cd tugrust && cargo fmt --all -- --check
 
+# Apply clippy's machine-applicable fixes, then format. `lint` only reports
+# them; this is the recipe that edits the code. Rewrites files in place, so
+# review the diff afterwards. Lints clippy can't fix mechanically still fail
+# `lint` and need a human.
+fix:
+    cd tugrust && cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged
+    cd tugrust && cargo fmt --all
+
 # Full pre-merge gate (lint + test)
 ci: lint test
 

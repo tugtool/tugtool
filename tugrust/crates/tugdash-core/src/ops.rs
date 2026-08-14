@@ -19,9 +19,8 @@ use tugutil_core::paths::project_state_dir;
 use tugutil_core::{Config, find_repo_root, sanitize_branch_name};
 
 use crate::dash::{
-    DashDeclaration, DashRoundMeta, MarkStage, StepPhase, append_dash_log,
-    append_mark_declaration, append_step_declaration, detect_default_branch, read_declarations,
-    validate_dash_name,
+    DashDeclaration, DashRoundMeta, MarkStage, StepPhase, append_dash_log, append_mark_declaration,
+    append_step_declaration, detect_default_branch, read_declarations, validate_dash_name,
 };
 
 /// Outcome of [`create`].
@@ -1186,8 +1185,8 @@ fn step_in(
     let abs = worktree.join(&rel);
     let source = std::fs::read_to_string(&abs)
         .map_err(|e| format!("cannot read plan at {}: {e}", abs.display()))?;
-    let doc = tugutil_core::plan::parse(&source)
-        .map_err(|_| format!("{rel} is not a plan document"))?;
+    let doc =
+        tugutil_core::plan::parse(&source).map_err(|_| format!("{rel} is not a plan document"))?;
 
     let anchor = format!("step-{step}");
     let total = doc.ledger_rows.len() as u32;
@@ -2162,8 +2161,7 @@ Some context.
 
     /// The ledger row for `anchor`, as the plan on disk now reads.
     fn ledger_row(root: &Path, name: &str, anchor: &str) -> tugutil_core::plan::LedgerRow {
-        let source =
-            fs::read_to_string(worktree_path(root, name).join("roadmap/plan.md")).unwrap();
+        let source = fs::read_to_string(worktree_path(root, name).join("roadmap/plan.md")).unwrap();
         tugutil_core::plan::parse(&source)
             .unwrap()
             .ledger_rows
@@ -2181,7 +2179,10 @@ Some context.
         assert_eq!(started.plan_path, "roadmap/plan.md");
         assert_eq!((started.step, started.total), (1, 2));
         assert_eq!(started.status, "in progress");
-        assert_eq!(ledger_row(&root, "step-dash", "step-1").status, "in progress");
+        assert_eq!(
+            ledger_row(&root, "step-dash", "step-1").status,
+            "in progress"
+        );
         assert_eq!(
             crate::dash::read_declarations(&root, "step-dash").latest,
             Some(crate::dash::DashDeclaration::Step {
@@ -2203,7 +2204,10 @@ Some context.
         );
         let next = step_start("step-dash", 2, None).unwrap();
         assert_eq!(next.plan_path, "roadmap/plan.md");
-        assert_eq!(ledger_row(&root, "step-dash", "step-2").status, "in progress");
+        assert_eq!(
+            ledger_row(&root, "step-dash", "step-2").status,
+            "in progress"
+        );
     }
 
     #[serial]
@@ -2280,7 +2284,10 @@ Some context.
         step_start("status-dash", 1, Some("roadmap/plan.md")).unwrap();
         let stepping = status_in(&root, "status-dash").unwrap();
         assert_eq!(stepping.stage, "implementing");
-        assert_eq!((stepping.step_current, stepping.step_total), (Some(1), Some(2)));
+        assert_eq!(
+            (stepping.step_current, stepping.step_total),
+            (Some(1), Some(2))
+        );
         assert_eq!(stepping.plan_path.as_deref(), Some("roadmap/plan.md"));
 
         mark("status-dash", MarkStage::Built, None).unwrap();
@@ -2364,11 +2371,12 @@ Some context.
         let (_temp, root) = stepped_dash("resume-dash");
         step_start("resume-dash", 1, Some("roadmap/plan.md")).unwrap();
         let interrupted =
-            fs::read_to_string(worktree_path(&root, "resume-dash").join("roadmap/plan.md")).unwrap();
+            fs::read_to_string(worktree_path(&root, "resume-dash").join("roadmap/plan.md"))
+                .unwrap();
 
         step_start("resume-dash", 1, None).expect("a resumed run re-enters its own step");
-        let after =
-            fs::read_to_string(worktree_path(&root, "resume-dash").join("roadmap/plan.md")).unwrap();
+        let after = fs::read_to_string(worktree_path(&root, "resume-dash").join("roadmap/plan.md"))
+            .unwrap();
         assert_eq!(after, interrupted, "re-entry moves no byte of the plan");
     }
 

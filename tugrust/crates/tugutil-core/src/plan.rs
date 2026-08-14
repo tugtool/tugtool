@@ -574,7 +574,10 @@ pub fn lint(doc: &PlanDoc) -> Vec<Diagnostic> {
                 Diagnostic::at(
                     "PL018",
                     Severity::Warning,
-                    format!("ledger row `#{}` is done with no commit recorded", row.anchor),
+                    format!(
+                        "ledger row `#{}` is done with no commit recorded",
+                        row.anchor
+                    ),
                     row.line,
                 )
                 .anchored(row.anchor.clone()),
@@ -683,10 +686,7 @@ pub fn lint(doc: &PlanDoc) -> Vec<Diagnostic> {
 
         if let Some((line, body)) = &step.tests {
             for (needle, name) in BANNED_TEST_SHAPES {
-                if body
-                    .iter()
-                    .any(|l| l.to_ascii_lowercase().contains(needle))
-                {
+                if body.iter().any(|l| l.to_ascii_lowercase().contains(needle)) {
                     out.push(Diagnostic::at(
                         "PL020",
                         Severity::Error,
@@ -804,7 +804,7 @@ fn heading_level(line: &str) -> Option<usize> {
         return None;
     }
     let level = line.chars().take_while(|c| *c == '#').count();
-    if level < 2 || level > 6 {
+    if !(2..=6).contains(&level) {
         return None;
     }
     if line[level..].starts_with(' ') {
@@ -940,7 +940,8 @@ fn classify_label(id: &str) -> Option<Label> {
 /// Whether a references line cites a `path:line` pair.
 fn cites_line_numbers(text: &str) -> bool {
     text.split_whitespace().any(|token| {
-        let token = token.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '/' && c != ':');
+        let token =
+            token.trim_matches(|c: char| !c.is_alphanumeric() && c != '.' && c != '/' && c != ':');
         let Some((path, tail)) = token.rsplit_once(':') else {
             return false;
         };
@@ -1057,10 +1058,13 @@ fn read_stamp_token(line: &str) -> Option<String> {
 
 fn is_iso_date(text: &str) -> bool {
     text.len() == 10
-        && text
-            .chars()
-            .enumerate()
-            .all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() })
+        && text.chars().enumerate().all(|(i, c)| {
+            if i == 4 || i == 7 {
+                c == '-'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
 }
 
 /// The content identity of a plan: the first 16 hex characters of the SHA-256
@@ -1120,7 +1124,10 @@ fn is_thematic_break(line: &str) -> bool {
 fn untick(line: &str) -> String {
     let indent_len = line.len() - line.trim_start().len();
     let (indent, body) = line.split_at(indent_len);
-    match body.strip_prefix("- [x]").or_else(|| body.strip_prefix("- [X]")) {
+    match body
+        .strip_prefix("- [x]")
+        .or_else(|| body.strip_prefix("- [X]"))
+    {
         Some(rest) => format!("{indent}- [ ]{rest}"),
         None => line.to_string(),
     }
@@ -1479,13 +1486,15 @@ Some context.
 
     #[test]
     fn a_brief_is_not_a_plan() {
-        let brief = "## How we got here\n\nSome prose.\n\n## What I'd want decided\n\nMore prose.\n";
+        let brief =
+            "## How we got here\n\nSome prose.\n\n## What I'd want decided\n\nMore prose.\n";
         assert!(parse(brief).is_err(), "a brief is not a plan");
     }
 
     #[test]
     fn a_program_plan_without_steps_is_not_a_plan() {
-        let program = "## Plan Metadata {#plan-metadata}\n\n## Phases {#phases}\n\n### Phase 1 {#phase-1}\n";
+        let program =
+            "## Plan Metadata {#plan-metadata}\n\n## Phases {#phases}\n\n### Phase 1 {#phase-1}\n";
         assert!(parse(program).is_err(), "a program plan carries no steps");
     }
 
@@ -1521,7 +1530,10 @@ Some context.
 
     #[test]
     fn pl004_heading_without_anchor() {
-        let source = MINIMAL.replace("### Phase Overview {#phase-overview}", "### Phase Overview {#phase-overview}\n\n#### Bare Heading");
+        let source = MINIMAL.replace(
+            "### Phase Overview {#phase-overview}",
+            "### Phase Overview {#phase-overview}\n\n#### Bare Heading",
+        );
         let d = find(&source, "PL004");
         assert_eq!(d.severity, Severity::Warning);
         assert!(d.message.contains("Bare Heading"), "{}", d.message);
@@ -1569,7 +1581,10 @@ Some context.
 
     #[test]
     fn pl009_missing_references() {
-        let source = MINIMAL.replace("**References:** [P01] the decision, (#phase-overview)\n\n", "");
+        let source = MINIMAL.replace(
+            "**References:** [P01] the decision, (#phase-overview)\n\n",
+            "",
+        );
         assert_eq!(find(&source, "PL009").severity, Severity::Error);
     }
 
@@ -1626,18 +1641,28 @@ Some context.
 
     #[test]
     fn pl016_ledger_and_steps_disagree() {
-        let source = MINIMAL.replace("| #step-1 | The only step | pending | — |", "| #step-2 | Some other step | pending | — |");
+        let source = MINIMAL.replace(
+            "| #step-1 | The only step | pending | — |",
+            "| #step-2 | Some other step | pending | — |",
+        );
         let codes: Vec<&str> = diagnose(&source)
             .iter()
             .filter(|d| d.code == "PL016")
             .map(|_| "PL016")
             .collect();
-        assert_eq!(codes.len(), 2, "one for the orphan step, one for the orphan row");
+        assert_eq!(
+            codes.len(),
+            2,
+            "one for the orphan step, one for the orphan row"
+        );
     }
 
     #[test]
     fn pl017_unknown_ledger_status() {
-        let source = MINIMAL.replace("| #step-1 | The only step | pending | — |", "| #step-1 | The only step | started | — |");
+        let source = MINIMAL.replace(
+            "| #step-1 | The only step | pending | — |",
+            "| #step-1 | The only step | started | — |",
+        );
         let d = find(&source, "PL017");
         assert_eq!(d.severity, Severity::Error);
         assert!(d.message.contains("started"), "{}", d.message);
@@ -1645,13 +1670,19 @@ Some context.
 
     #[test]
     fn pl018_done_with_no_commit() {
-        let source = MINIMAL.replace("| #step-1 | The only step | pending | — |", "| #step-1 | The only step | done | — |");
+        let source = MINIMAL.replace(
+            "| #step-1 | The only step | pending | — |",
+            "| #step-1 | The only step | done | — |",
+        );
         assert_eq!(find(&source, "PL018").severity, Severity::Warning);
     }
 
     #[test]
     fn pl018_silent_when_the_commit_is_recorded() {
-        let source = MINIMAL.replace("| #step-1 | The only step | pending | — |", "| #step-1 | The only step | done | `95effa736` |");
+        let source = MINIMAL.replace(
+            "| #step-1 | The only step | pending | — |",
+            "| #step-1 | The only step | done | `95effa736` |",
+        );
         assert!(!codes(&source).contains(&"PL018".to_string()));
     }
 
@@ -1673,7 +1704,11 @@ Some context.
         );
         let d = find(&source, "PL020");
         assert_eq!(d.severity, Severity::Error);
-        assert!(d.message.contains("@testing-library/react"), "{}", d.message);
+        assert!(
+            d.message.contains("@testing-library/react"),
+            "{}",
+            d.message
+        );
     }
 
     #[test]
@@ -1698,7 +1733,10 @@ Some context.
     #[test]
     fn pl022_step_anchor_does_not_match_its_number() {
         let source = MINIMAL
-            .replace("#### Step 1: The only step {#step-1}", "#### Step 1: The only step {#step-one}")
+            .replace(
+                "#### Step 1: The only step {#step-1}",
+                "#### Step 1: The only step {#step-one}",
+            )
             .replace("| #step-1 |", "| #step-one |");
         let d = find(&source, "PL022");
         assert_eq!(d.severity, Severity::Warning);
@@ -1759,7 +1797,11 @@ Some context.
 
     #[test]
     fn has_errors_ignores_warnings() {
-        let warnings = vec![Diagnostic::whole_doc("PL023", Severity::Warning, "no record")];
+        let warnings = vec![Diagnostic::whole_doc(
+            "PL023",
+            Severity::Warning,
+            "no record",
+        )];
         assert!(!has_errors(&warnings));
         let errors = vec![Diagnostic::whole_doc("PL001", Severity::Error, "missing")];
         assert!(has_errors(&errors));
@@ -2036,7 +2078,14 @@ Some context.
         let rounds: Vec<(usize, &str, &str, Option<&str>)> = doc
             .review_rounds
             .iter()
-            .map(|r| (r.number, r.date.as_str(), r.model.as_str(), r.stamp.as_deref()))
+            .map(|r| {
+                (
+                    r.number,
+                    r.date.as_str(),
+                    r.model.as_str(),
+                    r.stamp.as_deref(),
+                )
+            })
             .collect();
         assert_eq!(
             rounds,
@@ -2141,12 +2190,18 @@ Some context.
         let source = freshly_stamped();
         let doc = parse(&source).expect("the stamped document is still a plan");
         let round = doc.review_rounds.last().expect("the round survived");
-        assert_eq!(round.stamp.as_deref(), Some(content_stamp(&doc, &source).as_str()));
+        assert_eq!(
+            round.stamp.as_deref(),
+            Some(content_stamp(&doc, &source).as_str())
+        );
         assert!(
             source.contains("**Round 1 — 2026-08-13, opus.** Reviewed `plan:"),
             "the stamp lands right after the lead-in: {source}"
         );
-        assert!(source.contains("`. Lint: 0 errors."), "the rest of the line is preserved");
+        assert!(
+            source.contains("`. Lint: 0 errors."),
+            "the rest of the line is preserved"
+        );
     }
 
     #[test]
@@ -2185,6 +2240,10 @@ Some context.
         let before = unstamped();
         let after = set_review_stamp(&before).unwrap();
         let diff = line_diff(&before, &after);
-        assert_eq!(diff.len(), 1, "only the round's lead-in line moves: {diff:?}");
+        assert_eq!(
+            diff.len(),
+            1,
+            "only the round's lead-in line moves: {diff:?}"
+        );
     }
 }

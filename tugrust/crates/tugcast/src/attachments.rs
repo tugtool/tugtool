@@ -387,10 +387,7 @@ fn attach_base(root: &Path, draft_id: &str) -> (StatusCode, Value) {
         warn!(error = %err, "attachments: draft home unavailable");
         return fs_error(StatusCode::INTERNAL_SERVER_ERROR, "internal");
     }
-    (
-        StatusCode::OK,
-        json!({ "base": home.to_string_lossy() }),
-    )
+    (StatusCode::OK, json!({ "base": home.to_string_lossy() }))
 }
 
 /// Query string for `POST /api/fs/attach/migrate`.
@@ -869,7 +866,11 @@ mod tests {
 
         for bad in ["..", "../elsewhere", "a/b", "", ".hidden", "/etc"] {
             let (status, body) = store_draft_doc_attachment(&root, bad, "photo.png", b"x");
-            assert_eq!(status, StatusCode::BAD_REQUEST, "id {bad:?} should be refused");
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "id {bad:?} should be refused"
+            );
             assert_eq!(body["error"], "bad_name");
         }
         assert!(!root.exists(), "nothing should have been created");
@@ -911,7 +912,11 @@ mod tests {
         // Reformatting the same instant the same way agrees — the name is a
         // function of the clock the caller passed, not of the wall clock.
         assert_eq!(mint_pasted_name("image/png", at).unwrap(), name);
-        assert!(mint_pasted_name("image/jpeg", at).unwrap().ends_with(".jpg"));
+        assert!(
+            mint_pasted_name("image/jpeg", at)
+                .unwrap()
+                .ends_with(".jpg")
+        );
         // An unmapped type has no name to mint; the caller answers 415.
         assert_eq!(mint_pasted_name("application/zip", at), None);
         assert_eq!(mint_pasted_name("", at), None);
