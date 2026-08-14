@@ -44,7 +44,6 @@ import {
   CalendarClock,
   CircleAlert,
   CircleCheck,
-  CircleDot,
   Clock,
   History,
   ListPlus,
@@ -52,6 +51,7 @@ import {
   Scissors,
   Search,
   Terminal,
+  Wrench,
 } from "lucide-react";
 
 import { BashToolBlock } from "./blocks/bash-tool-block";
@@ -140,7 +140,7 @@ const TASK_EVENTS: ReadonlyArray<EventDatum> = [
     tone: "primary",
   },
   {
-    icon: ic(CircleDot),
+    icon: ic(Wrench),
     label: "Started",
     subject: "Goal-turn lifecycle plumbing",
     tone: "primary",
@@ -219,7 +219,7 @@ const CATALOG_TASK: ReadonlyArray<EventDatum> = [
     tone: "primary",
   },
   {
-    icon: ic(CircleDot),
+    icon: ic(Wrench),
     label: "Started",
     subject: "Probe /loop modes and retest resume scheduler",
     tone: "primary",

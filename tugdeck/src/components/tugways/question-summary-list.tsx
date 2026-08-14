@@ -35,7 +35,7 @@
 import "./question-summary-list.css";
 
 import React from "react";
-import { Check, ChevronRight, Circle, CircleDot } from "lucide-react";
+import { Check, ChevronRight, Circle, Star } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -53,7 +53,7 @@ const ROW_MARKER_ICON_SIZE = 14;
  * the row stamps):
  *
  *  - `done`        → Check       (success-toned)
- *  - `recommended` → CircleDot   (info-toned — a "soft default")
+ *  - `recommended` → Star        (info-toned — a "soft default")
  *  - `current`     → ChevronRight (link-toned — "this row is open")
  *  - `pending`     → Circle      (muted ring)
  */
@@ -66,7 +66,7 @@ export function QuestionRowMarker({
     return <Check size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
   }
   if (status === "recommended") {
-    return <CircleDot size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
+    return <Star size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;
   }
   if (status === "current") {
     return <ChevronRight size={ROW_MARKER_ICON_SIZE} aria-hidden="true" />;

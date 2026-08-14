@@ -29,7 +29,7 @@
  * shape:
  *  - `TaskCreate` → `ListPlus` + `"Created"` + subject (subject is
  *    in the input — narrowed via `narrowTaskCreateInput`).
- *  - `TaskUpdate → in_progress` → `CircleDot` + `"Started"`.
+ *  - `TaskUpdate → in_progress` → `Wrench` + `"Started"`.
  *  - `TaskUpdate → completed` → `CircleCheck` + `"Completed"`.
  *  - `TaskUpdate → pending` → `RotateCcw` + `"Reset"` (rare —
  *    explicit revert from a non-pending status; defensive coverage
@@ -104,12 +104,12 @@ import React from "react";
 import {
   CircleAlert,
   CircleCheck,
-  CircleDot,
   CircleMinus,
   ListChecks,
   ListPlus,
   Pencil,
   RotateCcw,
+  Wrench,
 } from "lucide-react";
 
 import {
@@ -378,7 +378,7 @@ function markerIcon(state: TaskMarkerState): React.ReactNode {
     case "created":
       return <ListPlus size={MARKER_ICON_SIZE} aria-hidden="true" />;
     case "started":
-      return <CircleDot size={MARKER_ICON_SIZE} aria-hidden="true" />;
+      return <Wrench size={MARKER_ICON_SIZE} aria-hidden="true" />;
     case "completed":
       return <CircleCheck size={MARKER_ICON_SIZE} aria-hidden="true" />;
     case "reset":

@@ -237,13 +237,13 @@ describe("the shipped table", () => {
     }
   });
 
-  test("a pane-menu command IS listed — it has a door, just not one the host opens", () => {
+  test("a pane-chrome command IS listed — it has a door, just not one the host opens", () => {
     // The opposite case to `internal` below, and the reason the two are
-    // separate fields. A card's `…` menu already invokes these, so a reader
+    // separate fields. A card's title-bar button already invokes these, so a reader
     // can meet one and come here asking what it is bound to; the honest
     // answer is "nothing yet", which is a row with no chord — not silence.
     const rows = buildKeymapRows(NONE);
-    for (const entry of COMMANDS.filter((e) => e.paneMenu === true)) {
+    for (const entry of COMMANDS.filter((e) => e.paneChrome === true)) {
       const row = rows.find((r) => r.commandId === entry.id);
       expect(row, `${entry.id} is listed`).toBeDefined();
       expect(row?.group, `${entry.id} groups under Other Commands`).toBe(UNGROUPED);

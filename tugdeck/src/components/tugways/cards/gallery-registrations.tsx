@@ -1539,7 +1539,7 @@ export function registerGalleryCards(): void {
   registerCard({
     componentId: "gallery-radio-group",
     contentFactory: (_cardId) => <GalleryRadioGroup />,
-    defaultMeta: { title: "TugRadioGroup", icon: "CircleDot", closable: true },
+    defaultMeta: { title: "TugRadioGroup", icon: "CircleCheck", closable: true },
     family: "maker",
     acceptsFamilies: ["maker"],
     sizePolicy: GALLERY_COMPONENT_SIZE,

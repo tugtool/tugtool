@@ -711,7 +711,7 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
             <button
               type="button"
               className="session-card-transcript-shell-cwd"
-              title={`Open in Finder: ${message.cwd}`}
+              title={`Reveal in Finder: ${message.cwd}`}
               aria-label={`Open ${message.cwd} in Finder`}
               // Focus-refusing ([mousedown focus default]): a cwd click
               // opens Finder, it must never pull focus off an editor the

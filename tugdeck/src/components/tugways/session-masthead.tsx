@@ -697,7 +697,7 @@ export function SessionMasthead({
         is bound to a project, since there is nothing to open otherwise.
       */}
       {projectDir.length > 0 && (
-        <TugTooltip content={`Open in Finder: ${projectDir}`}>
+        <TugTooltip content={`Reveal in Finder: ${projectDir}`}>
           <TugButton
             subtype="icon"
             emphasis="ghost"
@@ -707,7 +707,7 @@ export function SessionMasthead({
             data-slot="session-masthead-reveal"
             tabIndex={-1}
             data-no-activate=""
-            aria-label="Open project folder in Finder"
+            aria-label="Reveal project folder in Finder"
             onClick={() => openPathInOS(projectDir, "folder")}
           />
         </TugTooltip>
