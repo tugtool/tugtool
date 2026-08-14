@@ -39,9 +39,38 @@ pub struct DraftRow {
 struct Owner {
     kind: String,
     id: String,
+    /// The pre-id key the same owner's rows were written under before dashes
+    /// had creation ids — `Some` only for a dash that has one ([P01], [P03]).
+    /// It rides every write so the server reads it as a fallback and
+    /// supersedes it, the same way `raw_project_dir` carries the spelling
+    /// axis.
+    legacy_id: Option<String>,
     /// `--owner`'s own grammar, so messages read the way the user typed
     /// it (or would have typed it, when it was derived).
     display: String,
+}
+
+impl Owner {
+    /// Every key this owner's rows may sit under, most-current first — the
+    /// probe order of Spec S02's owner-key axis.
+    fn keys(&self) -> Vec<&str> {
+        let mut keys = vec![self.id.as_str()];
+        if let Some(legacy) = self.legacy_id.as_deref() {
+            keys.push(legacy);
+        }
+        keys
+    }
+}
+
+/// The owner key for a dash, read from the project's git config ([P01]).
+/// A read path, so it never mints ([P02]): a dash with no `tugid` — one an
+/// older build created — resolves to its legacy branch-ref key with no
+/// legacy sibling to chase.
+fn dash_owner(name: &str, project_dir: &str) -> (String, Option<String>) {
+    let key = tugdash_core::ops::dash_owner_key(std::path::Path::new(project_dir), name);
+    let legacy = format!("tugdash/{name}");
+    let legacy = (key != legacy).then_some(legacy);
+    (key, legacy)
 }
 
 /// Resolve the owner of a draft: `--owner` when given, else derived.
@@ -54,17 +83,20 @@ struct Owner {
 /// `--session` to `$TUG_SESSION_ID` all along.
 fn resolve_owner(owner: Option<String>, project_dir: &str) -> Result<Owner, AppError> {
     if let Some(owner) = owner.filter(|o| !o.is_empty()) {
-        let (kind, id) = parse_owner(&owner)?;
+        let (kind, id, legacy_id) = parse_owner(&owner, project_dir)?;
         return Ok(Owner {
             kind,
             id,
+            legacy_id,
             display: owner,
         });
     }
     if let Some(name) = dash_branch_name(project_dir) {
+        let (id, legacy_id) = dash_owner(&name, project_dir);
         return Ok(Owner {
             kind: "dash".to_string(),
-            id: format!("tugdash/{name}"),
+            id,
+            legacy_id,
             display: format!("dash:{name}"),
         });
     }
@@ -80,6 +112,7 @@ fn resolve_owner(owner: Option<String>, project_dir: &str) -> Result<Owner, AppE
     Ok(Owner {
         kind: "session".to_string(),
         id: session.clone(),
+        legacy_id: None,
         display: format!("session:{session}"),
     })
 }
@@ -102,24 +135,30 @@ fn dash_branch_name(project_dir: &str) -> Option<String> {
 }
 
 /// Parse `--owner`: `session:<id>`, `dash:<name>`, or `unattributed`. A dash
-/// owner normalizes to the branch-ref id the ledger stores
-/// (`tugdash/<name>`), accepting either the bare name or the full ref.
-fn parse_owner(owner: &str) -> Result<(String, String), AppError> {
+/// owner normalizes to the owner key the ledger stores
+/// (`tugdash/<name>#<tugid>`, or the bare branch ref for an id-less dash),
+/// accepting either the bare name or the full ref, and reports the legacy key
+/// alongside it ([P01], [P03]).
+fn parse_owner(
+    owner: &str,
+    project_dir: &str,
+) -> Result<(String, String, Option<String>), AppError> {
     if owner == "unattributed" {
-        return Ok(("unattributed".to_string(), String::new()));
+        return Ok(("unattributed".to_string(), String::new(), None));
     }
     if let Some(id) = owner.strip_prefix("session:") {
         if id.is_empty() {
             return Err(AppError::Exit1("empty session id in --owner".to_string()));
         }
-        return Ok(("session".to_string(), id.to_string()));
+        return Ok(("session".to_string(), id.to_string(), None));
     }
     if let Some(name) = owner.strip_prefix("dash:") {
         let name = name.strip_prefix("tugdash/").unwrap_or(name);
         if name.is_empty() {
             return Err(AppError::Exit1("empty dash name in --owner".to_string()));
         }
-        return Ok(("dash".to_string(), format!("tugdash/{name}")));
+        let (id, legacy) = dash_owner(name, project_dir);
+        return Ok(("dash".to_string(), id, legacy));
     }
     Err(AppError::Exit1(format!(
         "invalid --owner '{owner}': expected session:<id>, dash:<name>, or unattributed"
@@ -258,9 +297,24 @@ fn open_changes_db() -> Result<Connection, AppError> {
     Ok(conn)
 }
 
-/// Read one draft row under the Spec S05 spelling contract: the primary
-/// spelling first, the fallback when it differs.
+/// Read one draft row across both migration axes, first hit wins: the owner
+/// key before its legacy form ([P03]), and within each, the primary spelling
+/// before the fallback (Spec S05). Up to four probes.
 fn read_row(
+    conn: &Connection,
+    owner: &Owner,
+    primary: &str,
+    fallback: &str,
+) -> Option<DraftRow> {
+    owner
+        .keys()
+        .into_iter()
+        .find_map(|id| read_row_for_key(conn, &owner.kind, id, primary, fallback))
+}
+
+/// Read one draft row under one owner key: the primary spelling first, the
+/// fallback when it differs.
+fn read_row_for_key(
     conn: &Connection,
     owner_kind: &str,
     owner_id: &str,
@@ -294,6 +348,27 @@ fn read_row(
     read(primary).or_else(|| (primary != fallback).then(|| read(fallback)).flatten())
 }
 
+/// Every `(kind, id, project_dir)` triple that is a stale sibling of the row
+/// keyed `(owner.id, primary)` — the same row under the legacy owner key, the
+/// legacy project spelling, or both. A `set` deletes these; a `clear` sweeps
+/// them.
+fn sibling_rows<'a>(
+    owner: &'a Owner,
+    primary: &'a str,
+    fallback: &'a str,
+) -> Vec<(&'a str, &'a str, &'a str)> {
+    let mut projects = vec![primary];
+    if primary != fallback {
+        projects.push(fallback);
+    }
+    owner
+        .keys()
+        .into_iter()
+        .flat_map(|id| projects.iter().map(move |p| (owner.kind.as_str(), id, *p)))
+        .filter(|(_, id, project)| !(*id == owner.id && *project == primary))
+        .collect()
+}
+
 fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -313,11 +388,13 @@ pub fn run_set(
     json: bool,
 ) -> Result<(), AppError> {
     let (project_dir, legacy) = resolve_project(project)?;
+    let owner_resolved = resolve_owner(owner, &project_dir)?;
     let Owner {
         kind: owner_kind,
         id: owner_id,
+        legacy_id,
         display: owner,
-    } = resolve_owner(owner, &project_dir)?;
+    } = &owner_resolved;
 
     if !isolated_changes_db() {
         let selection = (!include.is_empty() || !exclude.is_empty())
@@ -326,6 +403,7 @@ pub fn run_set(
             "op": "set",
             "owner_kind": owner_kind,
             "owner_id": owner_id,
+            "legacy_owner_id": legacy_id,
             "project_dir": project_dir,
             "raw_project_dir": legacy,
         });
@@ -350,7 +428,7 @@ pub fn run_set(
 
     let conn = open_changes_db()?;
 
-    let existing = read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy);
+    let existing = read_row(&conn, &owner_resolved, &project_dir, &legacy);
     let selection = if include.is_empty() && exclude.is_empty() {
         existing
             .as_ref()
@@ -391,18 +469,18 @@ pub fn run_set(
         ],
     )
     .map_err(|e| AppError::Exit1(format!("cannot write draft: {e}")))?;
-    // A legacy-spelling row for the same owner is now stale — the row
-    // just written supersedes it.
-    if project_dir != legacy {
+    // Every sibling of the row just written is now stale and superseded by
+    // it: the legacy *spelling* of the project dir, and — for a dash — every
+    // row under the legacy *owner key* ([P03]).
+    for (kind, id, project) in sibling_rows(&owner_resolved, &project_dir, &legacy) {
         let _ = conn.execute(
             "DELETE FROM changeset_drafts
              WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-            params![owner_kind, owner_id, legacy],
+            params![kind, id, project],
         );
     }
 
-    let row =
-        read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy).expect("row just written");
+    let row = read_row(&conn, &owner_resolved, &project_dir, &legacy).expect("row just written");
     if json {
         print_ok("draft set", &row);
     } else {
@@ -417,15 +495,12 @@ pub fn run_show(
     json: bool,
 ) -> Result<(), AppError> {
     let (project_dir, legacy) = resolve_project(project)?;
-    let Owner {
-        kind: owner_kind,
-        id: owner_id,
-        display: owner,
-    } = resolve_owner(owner, &project_dir)?;
+    let owner_resolved = resolve_owner(owner, &project_dir)?;
+    let owner = owner_resolved.display.clone();
     // Reads never need a writable ledger open; a missing file just means
     // no drafts exist yet.
     let Some(row) = open_changes_db_readonly()
-        .and_then(|conn| read_row(&conn, &owner_kind, &owner_id, &project_dir, &legacy))
+        .and_then(|conn| read_row(&conn, &owner_resolved, &project_dir, &legacy))
     else {
         return Err(AppError::Exit1(format!("no draft on file for {owner}")));
     };
@@ -482,11 +557,13 @@ pub fn run_clear(
     json: bool,
 ) -> Result<(), AppError> {
     let (project_dir, legacy) = resolve_project(project)?;
+    let owner_resolved = resolve_owner(owner, &project_dir)?;
     let Owner {
         kind: owner_kind,
         id: owner_id,
+        legacy_id,
         display: owner,
-    } = resolve_owner(owner, &project_dir)?;
+    } = &owner_resolved;
 
     if !isolated_changes_db() {
         let response = post_draft_api(
@@ -494,6 +571,7 @@ pub fn run_clear(
                 "op": "clear",
                 "owner_kind": owner_kind,
                 "owner_id": owner_id,
+                "legacy_owner_id": legacy_id,
                 "project_dir": project_dir,
                 "raw_project_dir": legacy,
             }),
@@ -504,7 +582,7 @@ pub fn run_clear(
             .get("deleted")
             .and_then(|d| d.as_bool())
             .unwrap_or(false);
-        print_clear(owner, deleted, json);
+        print_clear(owner.clone(), deleted, json);
         return Ok(());
     }
 
@@ -516,15 +594,15 @@ pub fn run_clear(
             params![owner_kind, owner_id, project_dir],
         )
         .map_err(|e| AppError::Exit1(format!("cannot clear draft: {e}")))?;
-    if project_dir != legacy {
+    for (kind, id, project) in sibling_rows(&owner_resolved, &project_dir, &legacy) {
         deleted += conn
             .execute(
                 "DELETE FROM changeset_drafts
                  WHERE owner_kind = ?1 AND owner_id = ?2 AND project_dir = ?3",
-                params![owner_kind, owner_id, legacy],
+                params![kind, id, project],
             )
             .unwrap_or(0);
     }
-    print_clear(owner, deleted > 0, json);
+    print_clear(owner.clone(), deleted > 0, json);
     Ok(())
 }

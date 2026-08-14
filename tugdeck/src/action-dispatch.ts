@@ -45,7 +45,10 @@ import { JOTS_CARD_ID } from "@/lib/jots-card-id";
 import { LENS_CARD_ID } from "@/lib/lens-card-id";
 import { GAZETTE_CARD_ID } from "@/lib/gazette-card-id";
 import { PERMISSION_MODE_CYCLE } from "./lib/permission-mode";
-import { cardSessionBindingStore } from "./lib/card-session-binding-store";
+import {
+  cardIdForSession,
+  cardSessionBindingStore,
+} from "./lib/card-session-binding-store";
 import { sessionNameStore } from "./lib/session-name-store";
 import { sessionTagStore } from "./lib/session-tag-store";
 import { sessionPrivateStore } from "./lib/session-private-store";
@@ -897,11 +900,21 @@ export function initActionDispatch(
       project_dir: projectDirResolved,
       session_mode: sessionModeResolved,
     });
+    // The dash this session is working on rides the ack beside
+    // `workspace_key`, and the server has already nulled it when the dash's
+    // branch is gone — so an absent pair is simply "not mated".
+    const ackDashId = typeof payload.dash_id === "string" ? payload.dash_id : null;
+    const ackDashName =
+      typeof payload.dash_name === "string" ? payload.dash_name : null;
     cardSessionBindingStore.setBinding(cardId, {
       tugSessionId,
       workspaceKey,
       projectDir: projectDirResolved,
       sessionMode: sessionModeResolved,
+      dash:
+        ackDashId && ackDashName
+          ? { id: ackDashId, name: ackDashName }
+          : undefined,
     });
     // Seed the chip's name/tag caches straight off the bind ack so a bound
     // card shows its identity immediately — never stranded on the id-hash
@@ -926,6 +939,41 @@ export function initActionDispatch(
     // Privacy is authoritative on the ack too: the row is read fresh, and a
     // resumed card must show the marker without waiting for a later push.
     sessionPrivateStore.setPrivate(tugSessionId, payload.private === true);
+  });
+
+  // bind_dash_ok / unbind_dash_ok: a session's dash mating changed while the
+  // card is open — a skill running `tugutil dash bind`, or the `dash bind`
+  // that follows a `dash create`. The store's record already exists (the
+  // spawn ack made it), so this merges the dash half in rather than replacing
+  // it: a `setBinding` here would clobber the `workspaceKey` the pane's feed
+  // filter is built from. `cardIdForSession` is the reverse walk from the
+  // session the broadcast names to the card holding it.
+  registerAction("bind_dash_ok", (payload) => {
+    const sessionId = payload.tug_session_id;
+    const dashId = payload.dash_id;
+    const dashName = payload.dash_name;
+    if (
+      typeof sessionId !== "string" ||
+      typeof dashId !== "string" ||
+      typeof dashName !== "string"
+    ) {
+      console.warn("bind_dash_ok: missing or invalid field", payload);
+      return;
+    }
+    const cardId = cardIdForSession(sessionId);
+    if (cardId) {
+      cardSessionBindingStore.setDashBinding(cardId, {
+        id: dashId,
+        name: dashName,
+      });
+    }
+  });
+
+  registerAction("unbind_dash_ok", (payload) => {
+    const sessionId = payload.tug_session_id;
+    if (typeof sessionId !== "string") return;
+    const cardId = cardIdForSession(sessionId);
+    if (cardId) cardSessionBindingStore.setDashBinding(cardId, null);
   });
 
   // session_updated: tugcast supervisor broadcasts these on every

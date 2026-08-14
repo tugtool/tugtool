@@ -2593,6 +2593,7 @@ name = "tugdash-core"
 version = "0.8.0"
 dependencies = [
  "dirs",
+ "rand 0.10.0",
  "rusqlite",
  "serde",
  "serde_json",

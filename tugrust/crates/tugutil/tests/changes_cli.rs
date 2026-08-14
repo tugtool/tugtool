@@ -814,6 +814,80 @@ fn draft_set_defaults_the_owner_to_the_dash_it_runs_in() {
     );
 }
 
+/// A dash with a creation id keys its draft row by the owner key, finds a
+/// pre-existing name-keyed row through the fallback, and supersedes it on the
+/// write — so a later dash of the same name inherits nothing ([P01], [P03],
+/// Spec S02).
+#[test]
+fn draft_rows_key_by_the_dash_owner_key_and_supersede_the_legacy_row() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    git(
+        &root,
+        &["config", "branch.tugdash/widgets.tugid", "1723500000000-a1b2c3"],
+    );
+    let owner_key = "tugdash/widgets#1723500000000-a1b2c3";
+
+    // A row an older build wrote, under the bare branch ref.
+    let changes = Connection::open(ledger.path().join("changes.db")).unwrap();
+    changes
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS changeset_drafts (
+                owner_kind   TEXT NOT NULL,
+                owner_id     TEXT NOT NULL,
+                project_dir  TEXT NOT NULL,
+                fingerprint  TEXT NOT NULL,
+                message      TEXT NOT NULL,
+                updated_at   INTEGER NOT NULL,
+                edited       INTEGER NOT NULL DEFAULT 0,
+                selection    TEXT,
+                PRIMARY KEY (owner_kind, owner_id, project_dir)
+            );",
+        )
+        .unwrap();
+    changes
+        .execute(
+            "INSERT INTO changeset_drafts
+                (owner_kind, owner_id, project_dir, fingerprint, message, updated_at, edited)
+             VALUES ('dash', 'tugdash/widgets', ?1, 'fp', 'Legacy message', 1, 1)",
+            [root.to_string_lossy().to_string()],
+        )
+        .unwrap();
+
+    // `show` reaches it through the legacy-key fallback.
+    let mut show = tug(ledger.path());
+    show.args(["draft", "show", "--owner", "dash:widgets"]);
+    show.args(project_arg(&root));
+    let (code, stdout, err) = run(show);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(stdout.contains("Legacy message"), "{stdout}");
+
+    // A write lands on the owner key and supersedes the legacy row.
+    let mut set = tug(ledger.path());
+    set.args(["draft", "set", "--owner", "dash:widgets", "--message", "Join the widgets work"]);
+    set.args(project_arg(&root));
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    assert_eq!(draft_column(ledger.path(), "owner_id"), owner_key);
+    let legacy_rows: i64 = changes
+        .query_row(
+            "SELECT COUNT(*) FROM changeset_drafts WHERE owner_id = 'tugdash/widgets'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(legacy_rows, 0, "the legacy-keyed row is superseded");
+
+    // And the id-keyed row reads back.
+    let mut show = tug(ledger.path());
+    show.args(["draft", "show", "--owner", "dash:widgets"]);
+    show.args(project_arg(&root));
+    let (code, stdout, _) = run(show);
+    assert_eq!(code, 0);
+    assert!(stdout.contains("Join the widgets work"), "{stdout}");
+}
+
 #[test]
 fn draft_set_falls_back_to_the_session_then_refuses() {
     let (_repo, root) = init_repo();

@@ -195,6 +195,13 @@ struct DraftApiRequest {
     op: String,
     owner_kind: String,
     owner_id: String,
+    /// The key the same owner's rows were written under before dashes had
+    /// creation ids ([P01]) — the exact mirror of `raw_project_dir` on the
+    /// owner-key axis: read as a fallback, superseded on set, swept on clear
+    /// ([P03]). Without it the name→id migration would exist only on the
+    /// CLI's test-isolated direct path and never in production.
+    #[serde(default)]
+    legacy_owner_id: Option<String>,
     /// Project path as the caller spelled it. The server is the
     /// canonicalization gateway ([L29]): this is resolved through
     /// `resolve_to_claude_form` and the *resolved* spelling is the row
@@ -283,15 +290,30 @@ fn apply_draft_request(
         .flatten()
         .filter(|s| *s != canonical)
         .collect();
+    // The owner key migrates on its own axis ([P03]), so the sibling set is
+    // the product of both: every legacy key × every legacy spelling. Ordered
+    // owner-key-major so a read prefers the current key's row.
+    let siblings: Vec<(&str, &str)> = std::iter::once(req.owner_id.as_str())
+        .chain(
+            req.legacy_owner_id
+                .as_deref()
+                .filter(|legacy| *legacy != req.owner_id),
+        )
+        .flat_map(|id| {
+            std::iter::once((id, canonical.as_str()))
+                .chain(alternates.iter().map(move |alt| (id, alt.as_str())))
+        })
+        .filter(|(id, project)| !(*id == req.owner_id && *project == canonical))
+        .collect();
     let read_existing = || {
         ledger
             .changeset_draft(&req.owner_kind, &req.owner_id, &canonical)
             .ok()
             .flatten()
             .or_else(|| {
-                alternates.iter().find_map(|alt| {
+                siblings.iter().find_map(|(id, project)| {
                     ledger
-                        .changeset_draft(&req.owner_kind, &req.owner_id, alt)
+                        .changeset_draft(&req.owner_kind, id, project)
                         .ok()
                         .flatten()
                 })
@@ -332,8 +354,8 @@ fn apply_draft_request(
             if let Err(e) = ledger.upsert_changeset_draft(&row) {
                 return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
             }
-            for alt in &alternates {
-                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, alt);
+            for (id, project) in &siblings {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, id, project);
             }
             (
                 StatusCode::OK,
@@ -348,8 +370,8 @@ fn apply_draft_request(
             {
                 return err(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
             }
-            for alt in &alternates {
-                let _ = ledger.delete_changeset_draft(&req.owner_kind, &req.owner_id, alt);
+            for (id, project) in &siblings {
+                let _ = ledger.delete_changeset_draft(&req.owner_kind, id, project);
             }
             (
                 StatusCode::OK,
@@ -358,6 +380,156 @@ fn apply_draft_request(
                 .into_response()
         }
         other => err(StatusCode::BAD_REQUEST, &format!("unknown op '{other}'")),
+    }
+}
+
+/// Request payload for POST /api/dash — the CLI's session↔dash binding
+/// write path (`tugutil dash bind|unbind`, and the `dash_gone` broadcast a
+/// terminal join fires). Spec S04, [P04].
+#[derive(serde::Deserialize)]
+struct DashApiRequest {
+    /// `bind` | `unbind` | `dash_gone`.
+    op: String,
+    #[serde(default)]
+    tug_session_id: Option<String>,
+    /// Project path as the caller spelled it — resolved through the [L29]
+    /// gateway here, exactly as `apply_draft_request` does. Absent for
+    /// `unbind`, which names only a session.
+    #[serde(default)]
+    project_dir: Option<String>,
+    /// The dash name, for `bind`.
+    #[serde(default)]
+    dash: Option<String>,
+    /// For `dash_gone`: the owner key captured **before** the teardown that
+    /// deleted the dash's branch ([P05]).
+    #[serde(default)]
+    dash_id: Option<String>,
+}
+
+/// Handle POST /api/dash. Loopback only, like every tugcast API; the ledger
+/// work runs on the blocking pool.
+///
+/// A successful binding write fires the process-global changeset bump, the
+/// same one a landing fires, so the Changes card recomposes with the new
+/// mating.
+async fn dash_handler(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    State(router): State<FeedRouter>,
+    body: Bytes,
+) -> Response {
+    fn err(status: StatusCode, message: &str) -> Response {
+        (
+            status,
+            axum::Json(serde_json::json!({ "status": "error", "message": message })),
+        )
+            .into_response()
+    }
+    if !addr.ip().is_loopback() {
+        return err(StatusCode::FORBIDDEN, "forbidden");
+    }
+    let Some(supervisor) = router.supervisor.as_ref() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "no supervisor");
+    };
+    let Some(ledger) = supervisor.session_ledger.clone() else {
+        return err(StatusCode::SERVICE_UNAVAILABLE, "no session ledger");
+    };
+    let registry = supervisor.registry.clone();
+    let req: DashApiRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => return err(StatusCode::BAD_REQUEST, &format!("invalid JSON: {e}")),
+    };
+    let outcome = match tokio::task::spawn_blocking(move || apply_dash_request(&ledger, &req)).await
+    {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("dash task failed: {e}"),
+            );
+        }
+    };
+    match outcome {
+        crate::dash_api::DashApiOutcome::Bound { dash_id, dash_name } => {
+            registry.changeset_all_bump().notify_one();
+            (
+                StatusCode::OK,
+                axum::Json(
+                    serde_json::json!({ "status": "ok", "dash_id": dash_id, "dash_name": dash_name }),
+                ),
+            )
+                .into_response()
+        }
+        crate::dash_api::DashApiOutcome::Unbound => {
+            registry.changeset_all_bump().notify_one();
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({ "status": "ok" })),
+            )
+                .into_response()
+        }
+        crate::dash_api::DashApiOutcome::Cleared(cleared) => {
+            if cleared > 0 {
+                registry.changeset_all_bump().notify_one();
+            }
+            (
+                StatusCode::OK,
+                axum::Json(serde_json::json!({ "status": "ok", "cleared": cleared })),
+            )
+                .into_response()
+        }
+        // Distinguishable by design: the CLI's try-each-instance loop reads
+        // this as "not mine" and moves on silently ([P04]).
+        crate::dash_api::DashApiOutcome::UnknownSession => {
+            err(StatusCode::NOT_FOUND, "unknown_session")
+        }
+        crate::dash_api::DashApiOutcome::Error(message) => {
+            err(StatusCode::INTERNAL_SERVER_ERROR, &message)
+        }
+    }
+}
+
+/// The ledger half of [`dash_handler`], run on the blocking pool. Every
+/// `project_dir` passes through the [L29] gateway before it opens a repo or
+/// is compared against anything persisted.
+fn apply_dash_request(
+    ledger: &crate::session_ledger::SessionLedger,
+    req: &DashApiRequest,
+) -> crate::dash_api::DashApiOutcome {
+    use crate::dash_api::DashApiOutcome;
+    let resolved_project = || {
+        req.project_dir.as_deref().map(|dir| {
+            crate::path_resolver::resolve_to_claude_form(std::path::Path::new(dir))
+        })
+    };
+    match req.op.as_str() {
+        "bind" => {
+            let (Some(session), Some(project), Some(dash)) = (
+                req.tug_session_id.as_deref(),
+                resolved_project(),
+                req.dash.as_deref(),
+            ) else {
+                return DashApiOutcome::Error(
+                    "bind needs tug_session_id, project_dir, and dash".to_string(),
+                );
+            };
+            crate::dash_api::bind(ledger, &project, session, dash)
+        }
+        "unbind" => {
+            let Some(session) = req.tug_session_id.as_deref() else {
+                return DashApiOutcome::Error("unbind needs tug_session_id".to_string());
+            };
+            crate::dash_api::unbind(ledger, session)
+        }
+        "dash_gone" => {
+            let (Some(project), Some(dash_id)) = (resolved_project(), req.dash_id.as_deref())
+            else {
+                return DashApiOutcome::Error(
+                    "dash_gone needs project_dir and dash_id".to_string(),
+                );
+            };
+            crate::dash_api::dash_gone(ledger, &project, dash_id)
+        }
+        other => DashApiOutcome::Error(format!("unknown op '{other}'")),
     }
 }
 
@@ -871,6 +1043,7 @@ pub(crate) fn build_app(
         .route("/api/host", get(crate::host::get_host))
         .route("/api/changesets", get(changesets_handler))
         .route("/api/draft", post(draft_handler))
+        .route("/api/dash", post(dash_handler))
         .route("/api/changes-write", post(changes_write_handler))
         .route(
             "/api/workspace/acquire",
@@ -984,6 +1157,118 @@ mod tests {
         assert_ne!("reload", "reset");
         assert_ne!("show-card", "restart");
         assert_ne!("show-card", "reset");
+    }
+
+    // --- /api/draft: the owner-key migration axis ([P03], Spec S02) --------
+
+    const ID_KEY: &str = "tugdash/demo#1723500000000-a1b2c3";
+    const LEGACY_KEY: &str = "tugdash/demo";
+
+    /// The row key the handler will write for `project_dir` — the [L29]
+    /// gateway's answer, computed the same way the handler computes it.
+    fn draft_project_key(project_dir: &str) -> String {
+        crate::path_resolver::resolve_to_claude_form(std::path::Path::new(project_dir))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn draft_request(op: &str, message: Option<&str>) -> DraftApiRequest {
+        DraftApiRequest {
+            op: op.to_string(),
+            owner_kind: "dash".to_string(),
+            owner_id: ID_KEY.to_string(),
+            legacy_owner_id: Some(LEGACY_KEY.to_string()),
+            project_dir: "/proj".to_string(),
+            raw_project_dir: None,
+            message: message.map(str::to_owned),
+            selection: None,
+        }
+    }
+
+    fn seed_legacy_draft(
+        ledger: &crate::session_ledger::SessionLedger,
+        project_key: &str,
+        message: &str,
+    ) {
+        ledger
+            .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                owner_kind: "dash".to_string(),
+                owner_id: LEGACY_KEY.to_string(),
+                project_dir: project_key.to_string(),
+                fingerprint: "fp".to_string(),
+                message: message.to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+    }
+
+    /// A `set` under the id key supersedes the legacy-keyed row — in
+    /// production, not only on the CLI's test-isolated direct path.
+    #[test]
+    fn draft_set_supersedes_the_legacy_owner_key_row() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let project = draft_project_key("/proj");
+        seed_legacy_draft(&ledger, &project, "Old message");
+
+        let _ = apply_draft_request(&ledger, &draft_request("set", Some("New message")));
+
+        assert_eq!(
+            ledger
+                .changeset_draft("dash", ID_KEY, &project)
+                .unwrap()
+                .map(|r| r.message),
+            Some("New message".to_string())
+        );
+        assert!(
+            ledger
+                .changeset_draft("dash", LEGACY_KEY, &project)
+                .unwrap()
+                .is_none(),
+            "the legacy-keyed row is superseded by the write"
+        );
+    }
+
+    /// A `set` that carries no message reads the legacy-keyed row through the
+    /// fallback instead of failing "nothing to set" — the failure mode the
+    /// owner-key axis exists to prevent.
+    #[test]
+    fn draft_set_without_a_message_reads_through_the_legacy_owner_key() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let project = draft_project_key("/proj");
+        seed_legacy_draft(&ledger, &project, "Carried forward");
+
+        let response = apply_draft_request(&ledger, &draft_request("set", None));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        assert_eq!(
+            ledger
+                .changeset_draft("dash", ID_KEY, &project)
+                .unwrap()
+                .map(|r| r.message),
+            Some("Carried forward".to_string())
+        );
+    }
+
+    /// A `clear` sweeps both keys, so a reused dash name inherits nothing.
+    #[test]
+    fn draft_clear_sweeps_both_owner_keys() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let project = draft_project_key("/proj");
+        seed_legacy_draft(&ledger, &project, "Old message");
+        let _ = apply_draft_request(&ledger, &draft_request("set", Some("New message")));
+        seed_legacy_draft(&ledger, &project, "Resurrected");
+
+        let response = apply_draft_request(&ledger, &draft_request("clear", None));
+        assert_eq!(response.status(), StatusCode::OK);
+
+        for key in [ID_KEY, LEGACY_KEY] {
+            assert!(
+                ledger.changeset_draft("dash", key, &project).unwrap().is_none(),
+                "row under {key} survived the clear"
+            );
+        }
     }
 
     // --- /api/ask ---------------------------------------------------------

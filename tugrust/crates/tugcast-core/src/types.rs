@@ -450,10 +450,35 @@ pub enum ChangesetEntry {
     /// A dash worktree branch (`refs/heads/tugdash/…`) and its accumulated
     /// `base..branch` changes.
     Dash {
-        /// The dash branch ref name (e.g. `tugdash/fix-join`).
+        /// The dash's **owner key** ([P01]) and its identity:
+        /// `tugdash/<name>#<tugid>`, or the bare branch ref for a dash created
+        /// before ids existed. Draft rows, session binding rows, and the deck's
+        /// `(workspace_key, owner_kind, owner_id)` draft-overlay key are all
+        /// this string, so entry, row, and overlay agree by construction.
+        ///
+        /// **Opaque — never a git ref.** Display uses `display_name`; anything
+        /// that needs a ref reads `branch` ([P09]).
         owner_id: String,
         /// The dash's short name (branch name without the `tugdash/` prefix).
         display_name: String,
+        /// The git ref (`tugdash/<name>`) — the one field a consumer may hand
+        /// to git ([P09]). Optional for wire compatibility with older senders;
+        /// absent means fall back to `tugdash/<display_name>`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        branch: Option<String>,
+        /// Derived lifecycle stage ([P06]): `created` | `working` |
+        /// `draft-ready` | `landing`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        stage: Option<String>,
+        /// Live sessions mated to this dash ([P08]) — this instance's view
+        /// ([Q02]). Empty is how *parked* reads.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        bound_sessions: Vec<String>,
+        /// Phase 3's declared step counters; always absent for now ([P06]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step_current: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        step_total: Option<u32>,
         /// The base branch the dash was created from.
         base: String,
         /// Number of commits on the dash branch past its base.
@@ -1264,8 +1289,13 @@ mod tests {
         assert!(!json.contains("draft"));
 
         let dash = ChangesetEntry::Dash {
-            owner_id: "tugdash/x".to_string(),
+            owner_id: "tugdash/x#1723500000000-a1b2c3".to_string(),
             display_name: "x".to_string(),
+            branch: Some("tugdash/x".to_string()),
+            stage: Some("working".to_string()),
+            bound_sessions: vec!["sess-1".to_string()],
+            step_current: None,
+            step_total: None,
             base: "main".to_string(),
             rounds: 0,
             worktree: ".tug/worktrees/tugdash__x".to_string(),
@@ -1284,6 +1314,33 @@ mod tests {
         assert!(json.contains(r#""kind":"dash""#));
         // A present draft rides the wire.
         assert!(json.contains(r#""message":"Do the thing""#));
+        // The identity is the owner key; the ref travels separately ([P09]).
+        assert!(json.contains(r#""owner_id":"tugdash/x#1723500000000-a1b2c3""#));
+        assert!(json.contains(r#""branch":"tugdash/x""#));
+        assert!(json.contains(r#""stage":"working""#));
+        assert!(json.contains(r#""bound_sessions":["sess-1"]"#));
+        // Phase 3's slots stay off the wire while they are empty.
+        assert!(!json.contains("step_current"));
+
+        // An older sender's entry — no new fields at all — still decodes.
+        let legacy = r#"{"kind":"dash","owner_id":"tugdash/y","display_name":"y",
+            "base":"main","rounds":0,"worktree":".tug/worktrees/y",
+            "worktree_dirty":false,"files":[]}"#;
+        let decoded: ChangesetEntry = serde_json::from_str(legacy).unwrap();
+        match decoded {
+            ChangesetEntry::Dash {
+                owner_id,
+                branch,
+                stage,
+                bound_sessions,
+                ..
+            } => {
+                assert_eq!(owner_id, "tugdash/y");
+                assert!(branch.is_none() && stage.is_none());
+                assert!(bound_sessions.is_empty());
+            }
+            _ => panic!("expected a dash entry"),
+        }
     }
 
     /// The draft's selection is opaque: every key the client wrote survives

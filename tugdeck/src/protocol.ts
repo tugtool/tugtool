@@ -307,6 +307,21 @@ export interface CardBinding {
    *  rebind (parity with `name`). Absent on older tugcast → treated as `null`.
    *  Keep in lockstep with the Rust binding row. */
   synopsis?: string | null;
+  /**
+   * The dash this session is working on — its owner key, and the dash's short
+   * name for display. Null when unbound, and also when the dash's branch no
+   * longer exists (the server nulls a binding to a dash that has been joined
+   * or released).
+   *
+   * **Decode only.** `session-restore.ts` writes no bindings: it matches these
+   * rows to cards and re-spawns, and the resulting `spawn_session_ok` ack is
+   * what populates `cardSessionBindingStore`. The store's single-writer
+   * contract is what the clear-then-restore reconnect order depends on, so
+   * these ride the row for completeness and reach the store the same way
+   * `workspace_key` does.
+   */
+  dash_id?: string | null;
+  dash_name?: string | null;
 }
 
 /** Frame flags */

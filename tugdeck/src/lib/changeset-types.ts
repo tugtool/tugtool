@@ -110,10 +110,29 @@ export interface SessionChangesetEntry {
 /** A dash worktree branch and its accumulated base..branch changes. */
 export interface DashChangesetEntry {
   kind: "dash";
-  /** The dash branch ref name (e.g. `tugdash/fix-join`). */
+  /**
+   * The dash's **owner key** and its identity: `tugdash/<name>#<tugid>`, or
+   * the bare branch ref for a dash created before ids existed.
+   *
+   * Opaque — never a git ref, never displayed. Draft rows, session bindings,
+   * and this entry's `(workspace_key, owner_kind, owner_id)` draft-overlay key
+   * are all this same string. Display uses `display_name`; anything needing a
+   * ref reads `branch`.
+   */
   owner_id: string;
   /** The dash's short name (branch name without the `tugdash/` prefix). */
   display_name: string;
+  /** The dash branch ref name (e.g. `tugdash/fix-join`). Absent from an older
+   *  sender, where `tugdash/${display_name}` is the fallback. */
+  branch?: string;
+  /** Derived lifecycle stage: `created` | `working` | `draft-ready` |
+   *  `landing`. */
+  stage?: string;
+  /** Live sessions mated to this dash. Empty is how *parked* reads. */
+  bound_sessions?: string[];
+  /** Declared step counters; not yet emitted. */
+  step_current?: number;
+  step_total?: number;
   /** The base branch the dash was created from. */
   base: string;
   /** Number of commits on the dash branch past its base. */
@@ -254,14 +273,19 @@ export function isChangesetEntry(value: unknown): value is ChangesetEntry {
     return typeof value.live === "boolean";
   }
   if (value.kind === "dash") {
+    // The added fields are all optional, so an entry from a sender that
+    // predates them still passes.
     return (
       typeof value.base === "string" &&
       typeof value.rounds === "number" &&
       typeof value.worktree === "string" &&
       typeof value.worktree_dirty === "boolean" &&
-      (value.round_subjects === undefined ||
-        (Array.isArray(value.round_subjects) &&
-          value.round_subjects.every((s) => typeof s === "string")))
+      isOptionalStringArray(value.round_subjects) &&
+      (value.branch === undefined || typeof value.branch === "string") &&
+      (value.stage === undefined || typeof value.stage === "string") &&
+      isOptionalStringArray(value.bound_sessions) &&
+      (value.step_current === undefined || typeof value.step_current === "number") &&
+      (value.step_total === undefined || typeof value.step_total === "number")
     );
   }
   return false;

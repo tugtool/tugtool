@@ -1339,6 +1339,10 @@ fn build_listed_union(
                     // So is the privacy flag, and an absent row reads as
                     // public everywhere the flag is enforced.
                     private: false,
+                    // A scanned session has no ledger row, so nothing has
+                    // ever bound it to a dash.
+                    dash_id: None,
+                    dash_name: None,
                 },
                 origin: "external",
                 terminal_live,
@@ -2060,6 +2064,44 @@ fn parse_set_session_private_payload(payload: &[u8]) -> Result<(String, bool), C
 /// Returning `MissingSessionId` matches the variant `parse_control_payload_owned`
 /// uses when its `tug_session_id` field is absent — same semantics, same
 /// wire-side error category.
+/// A `bind_dash` request: which session is taking up which dash, in which
+/// project (Spec S03).
+struct BindDashPayload {
+    tug_session_id: String,
+    project_dir: String,
+    dash: String,
+}
+
+fn parse_bind_dash_payload(payload: &[u8]) -> Result<BindDashPayload, ControlError> {
+    let value: serde_json::Value =
+        serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
+    let tug_session_id = value
+        .get("tug_session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::MissingSessionId)?
+        .to_string();
+    let project_dir = value
+        .get("project_dir")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::InvalidProjectDir {
+            reason: "missing_project_dir",
+        })?
+        .to_string();
+    let dash = value
+        .get("dash")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or(ControlError::Malformed)?
+        .to_string();
+    Ok(BindDashPayload {
+        tug_session_id,
+        project_dir,
+        dash,
+    })
+}
+
 fn parse_tug_session_id_payload(payload: &[u8]) -> Result<TugSessionId, ControlError> {
     let value: serde_json::Value =
         serde_json::from_slice(payload).map_err(|_| ControlError::Malformed)?;
@@ -2677,6 +2719,20 @@ impl AgentSupervisor {
                 self.do_list_card_bindings().await;
                 Ok(())
             }
+            "bind_dash" => match parse_bind_dash_payload(payload) {
+                Ok(parsed) => {
+                    self.do_bind_dash(&parsed).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
+            "unbind_dash" => match parse_tug_session_id_payload(payload) {
+                Ok(session_id) => {
+                    self.do_unbind_dash(session_id.as_str()).await;
+                    Ok(())
+                }
+                Err(e) => return ControlOutcome::Error(e),
+            },
             "resolve_sessions" => match parse_session_ids_payload(payload) {
                 Ok(ids) => {
                     self.do_resolve_sessions(&ids).await;
@@ -3582,20 +3638,35 @@ impl AgentSupervisor {
         // spawn's row doesn't exist yet (the bridge writes it on
         // `session_init`) — `None`/`false` here, which the client seeds
         // non-clobberingly so it can't wipe the optimistic tag.
-        let (row_name, row_name_user_set, row_tag, row_synopsis, row_private) = self
+        let row = self
             .session_ledger
             .as_ref()
-            .and_then(|ledger| ledger.get(tug_session_id.as_str()).ok().flatten())
+            .and_then(|ledger| ledger.get(tug_session_id.as_str()).ok().flatten());
+        let (row_name, row_name_user_set, row_tag, row_synopsis, row_private) = row
+            .as_ref()
             .map(|row| {
                 (
-                    row.name,
+                    row.name.clone(),
                     row.name_user_set,
-                    row.tag,
-                    row.synopsis,
+                    row.tag.clone(),
+                    row.synopsis.clone(),
                     row.private,
                 )
             })
             .unwrap_or((None, false, None, None, false));
+        // The dash binding rides the ack the same way `workspace_key` does —
+        // the spawn ack is the binding store's only writer ([P07]) — and reads
+        // as unbound when the dash's branch is gone ([P05]).
+        let (row_dash_id, row_dash_name) = match row.filter(|r| r.dash_id.is_some()) {
+            Some(row) => {
+                let project = row.project_dir.clone();
+                let live = tokio::task::spawn_blocking(move || Self::live_dash_branches(&project))
+                    .await
+                    .unwrap_or_default();
+                Self::reported_binding(&live, row.dash_id, row.dash_name)
+            }
+            None => (None, None),
+        };
         let ack = serde_json::json!({
             "action": "spawn_session_ok",
             "card_id": card_id,
@@ -3617,6 +3688,9 @@ impl AgentSupervisor {
             // Gazette privacy rides the ack for the same reason: a resumed card
             // must show the marker immediately, not wait for the next push.
             "private": row_private,
+            // The dash this session is working on, or null when unbound.
+            "dash_id": row_dash_id,
+            "dash_name": row_dash_name,
         });
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
@@ -4175,14 +4249,202 @@ impl AgentSupervisor {
     /// `project_dir` is whatever spelling the landing verb was called with, so
     /// it passes the [L29] gateway here — one call, at the boundary — to reach
     /// the key the row was written under.
-    fn clear_dash_draft(
+    /// Handle a `bind_dash` CONTROL request (Spec S03): mate a session to a
+    /// dash. Shares its ledger half with `POST /api/dash` so a bind issued
+    /// from a card and one issued from the CLI cannot diverge.
+    ///
+    /// Broadcasts `bind_dash_ok {tug_session_id, dash_id, dash_name}` or
+    /// `bind_dash_err {reason}`, and fires the aggregate changeset bump on
+    /// success — the same bump a landing fires, so the Changes card recomposes
+    /// with the new mating.
+    async fn do_bind_dash(&self, request: &BindDashPayload) {
+        let Some(ledger) = self.session_ledger.clone() else {
+            Self::send_bind_dash_err(&self.control_tx, &request.tug_session_id, "no_ledger");
+            return;
+        };
+        // The gateway ([L29]) — the same resolution `/api/dash` applies, so
+        // both surfaces open the same repo for the same spelling.
+        let project = crate::path_resolver::resolve_to_claude_form(std::path::Path::new(
+            &request.project_dir,
+        ));
+        let session = request.tug_session_id.clone();
+        let dash = request.dash.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            crate::dash_api::bind(&ledger, &project, &session, &dash)
+        })
+        .await;
+
+        match outcome {
+            Ok(crate::dash_api::DashApiOutcome::Bound { dash_id, dash_name }) => {
+                self.registry.changeset_all_bump().notify_one();
+                let body = serde_json::json!({
+                    "action": "bind_dash_ok",
+                    "tug_session_id": request.tug_session_id,
+                    "dash_id": dash_id,
+                    "dash_name": dash_name,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("bind_dash_ok serializes"),
+                ));
+            }
+            Ok(crate::dash_api::DashApiOutcome::UnknownSession) => {
+                Self::send_bind_dash_err(
+                    &self.control_tx,
+                    &request.tug_session_id,
+                    "unknown_session",
+                );
+            }
+            Ok(crate::dash_api::DashApiOutcome::Error(detail)) => {
+                Self::send_bind_dash_err(&self.control_tx, &request.tug_session_id, &detail);
+            }
+            Ok(_) => {}
+            Err(join_err) => {
+                Self::send_bind_dash_err(
+                    &self.control_tx,
+                    &request.tug_session_id,
+                    &format!("bind task failed: {join_err}"),
+                );
+            }
+        }
+    }
+
+    /// Handle an `unbind_dash` CONTROL request (Spec S03): drop the calling
+    /// session's binding. Broadcasts `unbind_dash_ok {tug_session_id}`.
+    async fn do_unbind_dash(&self, tug_session_id: &str) {
+        let Some(ledger) = self.session_ledger.clone() else {
+            Self::send_bind_dash_err(&self.control_tx, tug_session_id, "no_ledger");
+            return;
+        };
+        let session = tug_session_id.to_string();
+        let outcome =
+            tokio::task::spawn_blocking(move || crate::dash_api::unbind(&ledger, &session)).await;
+
+        match outcome {
+            Ok(crate::dash_api::DashApiOutcome::Unbound) => {
+                self.registry.changeset_all_bump().notify_one();
+                let body = serde_json::json!({
+                    "action": "unbind_dash_ok",
+                    "tug_session_id": tug_session_id,
+                });
+                let _ = self.control_tx.send(Frame::new(
+                    FeedId::CONTROL,
+                    serde_json::to_vec(&body).expect("unbind_dash_ok serializes"),
+                ));
+            }
+            Ok(crate::dash_api::DashApiOutcome::UnknownSession) => {
+                Self::send_bind_dash_err(&self.control_tx, tug_session_id, "unknown_session");
+            }
+            Ok(crate::dash_api::DashApiOutcome::Error(detail)) => {
+                Self::send_bind_dash_err(&self.control_tx, tug_session_id, &detail);
+            }
+            Ok(_) => {}
+            Err(join_err) => {
+                Self::send_bind_dash_err(
+                    &self.control_tx,
+                    tug_session_id,
+                    &format!("unbind task failed: {join_err}"),
+                );
+            }
+        }
+    }
+
+    fn send_bind_dash_err(
+        control_tx: &broadcast::Sender<Frame>,
+        tug_session_id: &str,
+        reason: &str,
+    ) {
+        let body = serde_json::json!({
+            "action": "bind_dash_err",
+            "tug_session_id": tug_session_id,
+            "reason": reason,
+        });
+        let _ = control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("bind_dash_err serializes"),
+        ));
+    }
+
+    /// The `tugdash/*` branch refs that still exist in `repo`.
+    ///
+    /// **One** `git for-each-ref` per repo, membership-tested in memory — not
+    /// a `rev-parse` per dash ([P05]). The callers are the startup restore
+    /// round-trip cards wait on behind `RESTORE_PASS_SETTLE_TIMEOUT_MS` and
+    /// the per-spawn ack; neither may grow subprocess fan-out proportional to
+    /// the dash count.
+    fn live_dash_branches(repo: &str) -> std::collections::HashSet<String> {
+        let Ok(out) = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args([
+                "for-each-ref",
+                "--format=%(refname:short)",
+                "refs/heads/tugdash/",
+            ])
+            .output()
+        else {
+            return std::collections::HashSet::new();
+        };
+        if !out.status.success() {
+            return std::collections::HashSet::new();
+        }
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// A stored binding as it should be *reported*: the pair as written, or
+    /// nulls when the dash's branch is gone ([P05]).
+    ///
+    /// The eager clear on a tugcast-side landing covers the card workflow;
+    /// this is the lazy half that keeps reads correct when tugcast was never
+    /// in the loop — a terminal join, or a crash between teardown and the
+    /// CLI's `dash_gone` broadcast.
+    fn reported_binding(
+        live_branches: &std::collections::HashSet<String>,
+        dash_id: Option<String>,
+        dash_name: Option<String>,
+    ) -> (Option<String>, Option<String>) {
+        match dash_id {
+            Some(id) if live_branches.contains(tugdash_core::ops::legacy_owner_key(&id)) => {
+                (Some(id), dash_name)
+            }
+            _ => (None, None),
+        }
+    }
+
+    /// Delete a landed dash's authored join draft, under every key it could
+    /// have been written with: the owner key and its legacy branch-ref form
+    /// ([P03]), each across the canonical and as-given project spellings.
+    ///
+    /// `owner_key` arrives **pre-resolved** and cannot be resolved here.
+    /// `git branch -D` takes the branch's whole config section with it,
+    /// `tugid` included, so by the time a landing returns, the only key this
+    /// function could derive is the legacy one — and the user's authored draft
+    /// would survive under a key nothing can name again ([L23], [P05],
+    /// Risk R02). The caller captures the key before the teardown.
+    pub(crate) fn clear_dash_draft(
         ledger: &crate::session_ledger::SessionLedger,
         project_dir: &str,
-        dash: &str,
+        owner_key: &str,
     ) {
-        let owner_id = format!("tugdash/{dash}");
-        let key = crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(project_dir));
-        let _ = ledger.delete_changeset_draft("dash", &owner_id, key.as_str());
+        let canonical =
+            crate::path_resolver::CanonicalPath::from_raw(std::path::Path::new(project_dir));
+        let legacy_key = tugdash_core::ops::legacy_owner_key(owner_key);
+        let keys = if legacy_key == owner_key {
+            vec![owner_key]
+        } else {
+            vec![owner_key, legacy_key]
+        };
+        for key in keys {
+            let _ = ledger.delete_changeset_draft("dash", key, canonical.as_str());
+            if canonical.as_str() != project_dir {
+                let _ = ledger.delete_changeset_draft("dash", key, project_dir);
+            }
+        }
     }
 
     /// Broadcast a `changeset_draft_state` error for a request that matched no
@@ -4579,6 +4841,13 @@ impl AgentSupervisor {
             return;
         }
 
+        // Resolve the dash's identity BEFORE the join runs. `join_in` ends in
+        // `git branch -D`, which deletes `branch.tugdash/<name>.tugid` along
+        // with the branch — a key read afterwards is the legacy one and names
+        // none of the id-keyed rows this landing has to sweep ([L23], [P05],
+        // Risk R02).
+        let owner_key = tugdash_core::ops::dash_owner_key(dir, &request.dash);
+
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
         let opts = tugdash_core::JoinOptions {
@@ -4600,7 +4869,10 @@ impl AgentSupervisor {
                 // dies with it ([P14]).
                 if !outcome.previewed && outcome.commit_hash.is_some() {
                     if let Some(ledger) = self.session_ledger.as_deref() {
-                        Self::clear_dash_draft(ledger, project_dir, &request.dash);
+                        Self::clear_dash_draft(ledger, project_dir, &owner_key);
+                        // The dash the sessions were mated to no longer
+                        // exists ([P05]) — release every binding to it.
+                        let _ = ledger.clear_dash_bindings_for_dash(&owner_key);
                     }
                     self.registry.changeset_all_bump().notify_one();
                 }
@@ -4797,6 +5069,11 @@ impl AgentSupervisor {
             return;
         }
 
+        // Resolved before the teardown, for the reason `do_changeset_join`
+        // states: `release_in` deletes the branch and its config with it
+        // ([L23], [P05], Risk R02).
+        let owner_key = tugdash_core::ops::dash_owner_key(dir, &request.dash);
+
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
         let result =
@@ -4807,7 +5084,10 @@ impl AgentSupervisor {
                 // The released dash's join draft dies with it ([P14]) — a
                 // reused name must never inherit the dead dash's message.
                 if let Some(ledger) = self.session_ledger.as_deref() {
-                    Self::clear_dash_draft(ledger, project_dir, &request.dash);
+                    Self::clear_dash_draft(ledger, project_dir, &owner_key);
+                    // As on the join path: the dash is gone, so its bindings
+                    // go with it ([P05]).
+                    let _ = ledger.clear_dash_bindings_for_dash(&owner_key);
                 }
                 self.registry.changeset_all_bump().notify_one();
                 let body = serde_json::json!({
@@ -5021,10 +5301,39 @@ impl AgentSupervisor {
         // per-card stats (not a boot walk) under a directory the app already
         // reads — no new TCC surface.
         let claude_root = ledger.claude_projects_root().to_path_buf();
+        // One `for-each-ref` per distinct repo among the bound rows, so a
+        // binding whose dash has since been joined or released reads as
+        // unbound ([P05]) without a git call per row.
+        let live_dashes_by_project: std::collections::HashMap<String, _> = {
+            let projects: std::collections::HashSet<String> = rows
+                .iter()
+                .filter(|row| row.dash_id.is_some())
+                .map(|row| row.project_dir.clone())
+                .collect();
+            tokio::task::spawn_blocking(move || {
+                projects
+                    .into_iter()
+                    .map(|project| {
+                        let live = Self::live_dash_branches(&project);
+                        (project, live)
+                    })
+                    .collect()
+            })
+            .await
+            .unwrap_or_default()
+        };
+        let no_dashes = std::collections::HashSet::new();
         let bindings: Vec<serde_json::Value> = rows
             .into_iter()
             .filter_map(|row| {
                 let card_id = row.card_id?;
+                let (dash_id, dash_name) = Self::reported_binding(
+                    live_dashes_by_project
+                        .get(&row.project_dir)
+                        .unwrap_or(&no_dashes),
+                    row.dash_id,
+                    row.dash_name,
+                );
                 let is_alive = live_session_ids.contains(&row.session_id);
                 let has_jsonl = {
                     let (dir, _canonical) =
@@ -5045,6 +5354,8 @@ impl AgentSupervisor {
                     "name_user_set": row.name_user_set,
                     "tag": row.tag,
                     "synopsis": row.synopsis,
+                    "dash_id": dash_id,
+                    "dash_name": dash_name,
                 }))
             })
             .collect();
@@ -7253,6 +7564,8 @@ mod tests {
             tag_lineage: None,
             private: false,
             synopsis: Some("Repair ligature fallback in monospace".to_owned()),
+            dash_id: None,
+            dash_name: None,
         };
         let frame = build_session_updated_frame(&row, None);
         let body: serde_json::Value = serde_json::from_slice(&frame.payload).expect("json");
@@ -7286,6 +7599,8 @@ mod tests {
             tag_lineage: None,
             synopsis: None,
             private: false,
+            dash_id: None,
+            dash_name: None,
         };
 
         // No scan-cache row: a null size, and the ledger's own count stands.
@@ -8338,31 +8653,399 @@ mod tests {
         );
     }
 
+    // --- session↔dash binding (Spec S03/S04, [P05], [P08]) ----------------
+
+    fn git_in(dir: &std::path::Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    /// A repo with one commit and one `tugdash/<name>` branch, plus the
+    /// creation id a bind would mint.
+    fn repo_with_dash(name: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git_in(&root, &["init", "-b", "main"]);
+        git_in(&root, &["config", "user.name", "t"]);
+        git_in(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("a.txt"), "base\n").unwrap();
+        git_in(&root, &["add", "-A"]);
+        git_in(&root, &["commit", "-m", "base"]);
+        git_in(&root, &["branch", &format!("tugdash/{name}")]);
+        (dir, root)
+    }
+
+    /// Insert a live session row bound to nothing yet.
+    fn seed_live_session(
+        ledger: &crate::session_ledger::SessionLedger,
+        session_id: &str,
+        card_id: &str,
+        project_dir: &str,
+    ) {
+        ledger
+            .record_spawn(
+                session_id,
+                project_dir,
+                project_dir,
+                card_id,
+                crate::session_ledger::now_millis(),
+                None,
+            )
+            .unwrap();
+    }
+
+    /// bind → the binding shows on the restore round-trip → unbind → nulls.
     #[tokio::test]
-    async fn releasing_or_joining_a_dash_clears_its_draft() {
+    async fn bind_dash_round_trips_through_the_card_bindings_listing() {
+        let (_dir, root) = repo_with_dash("demo");
+        let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        let ledger = sup.session_ledger.clone().unwrap();
+        let project = root.to_string_lossy().to_string();
+        seed_live_session(&ledger, "sess-1", "card-1", &project);
+
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "bind_dash",
+            "tug_session_id": "sess-1",
+            "project_dir": project,
+            "dash": "demo",
+        }))
+        .unwrap();
+        sup.handle_control("bind_dash", &payload, 1).await;
+
+        let dash_id = ledger.get("sess-1").unwrap().unwrap().dash_id.unwrap();
+        assert!(
+            dash_id.starts_with("tugdash/demo#"),
+            "bind is a write path, so it mints the id: {dash_id}"
+        );
+        while control_rx.try_recv().is_ok() {}
+
+        // The restore round-trip carries the pair.
+        sup.do_list_card_bindings().await;
+        let body = next_action(&mut control_rx, "list_card_bindings_ok").await;
+        assert_eq!(body["bindings"][0]["dash_id"], dash_id);
+        assert_eq!(body["bindings"][0]["dash_name"], "demo");
+
+        // Unbind nulls them.
+        let payload =
+            serde_json::to_vec(&serde_json::json!({"tug_session_id": "sess-1"})).unwrap();
+        sup.handle_control("unbind_dash", &payload, 1).await;
+        sup.do_list_card_bindings().await;
+        let body = next_action(&mut control_rx, "list_card_bindings_ok").await;
+        assert!(body["bindings"][0]["dash_id"].is_null());
+        assert!(body["bindings"][0]["dash_name"].is_null());
+    }
+
+    /// A binding whose dash branch is gone reads as unbound even when nothing
+    /// swept the row — the lazy half of [P05], which is what keeps reads
+    /// correct after a terminal join tugcast never saw.
+    #[tokio::test]
+    async fn a_binding_to_a_deleted_dash_reads_as_unbound() {
+        let (_dir, root) = repo_with_dash("demo");
+        let (mut sup, _state_rx, _meta_rx, mut control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        let ledger = sup.session_ledger.clone().unwrap();
+        let project = root.to_string_lossy().to_string();
+        seed_live_session(&ledger, "sess-1", "card-1", &project);
+        ledger
+            .set_dash_binding("sess-1", Some(("tugdash/demo#1-abc", "demo")))
+            .unwrap();
+
+        git_in(&root, &["branch", "-D", "tugdash/demo"]);
+
+        sup.do_list_card_bindings().await;
+        let body = next_action(&mut control_rx, "list_card_bindings_ok").await;
+        assert!(
+            body["bindings"][0]["dash_id"].is_null(),
+            "a dash that no longer exists is not a mating"
+        );
+    }
+
+    /// **The [L27] pin.** Closing a session returns the acquisition its bind
+    /// made, so a dash whose cards have all closed reports zero mated sessions
+    /// and reads as *parked* ([P08]).
+    #[test]
+    fn closing_a_bound_session_releases_its_binding() {
         let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        for (session, card) in [("sess-1", "card-1"), ("sess-2", "card-2")] {
+            seed_live_session(&ledger, session, card, "/proj");
+            ledger
+                .set_dash_binding(session, Some(("tugdash/demo#1-abc", "demo")))
+                .unwrap();
+        }
+
+        ledger.mark_closed("sess-1").unwrap();
+        assert!(ledger.get("sess-1").unwrap().unwrap().dash_id.is_none());
+        assert_eq!(
+            ledger.get("sess-2").unwrap().unwrap().dash_id.as_deref(),
+            Some("tugdash/demo#1-abc"),
+            "the other session's binding is untouched"
+        );
+
+        ledger.mark_closed("sess-2").unwrap();
+        assert!(
+            ledger.get("sess-2").unwrap().unwrap().dash_id.is_none(),
+            "with every card closed the dash is parked, not still mated"
+        );
+    }
+
+    /// **The [L29] pin.** `/api/dash` resolves `project_dir` through the
+    /// gateway, so a non-canonical spelling reaches the same session row as
+    /// the canonical one — the CLI never canonicalizes.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn api_dash_bind_resolves_a_non_canonical_project_spelling() {
+        let (_dir, root) = repo_with_dash("demo");
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        seed_live_session(&ledger, "sess-1", "card-1", &root.to_string_lossy());
+
+        let link_dir = tempfile::tempdir().unwrap();
+        let link = link_dir.path().join("linked-repo");
+        std::os::unix::fs::symlink(&root, &link).unwrap();
+
+        let canonical = crate::path_resolver::resolve_to_claude_form(&link);
+        let outcome = crate::dash_api::bind(&ledger, &canonical, "sess-1", "demo");
+        assert!(matches!(
+            outcome,
+            crate::dash_api::DashApiOutcome::Bound { .. }
+        ));
+
+        let dash_id = ledger.get("sess-1").unwrap().unwrap().dash_id.unwrap();
+        // The id was minted in the *real* repo, reachable through the link.
+        assert_eq!(
+            tugdash_core::ops::dash_owner_key(&root, "demo"),
+            dash_id,
+            "the symlink spelling resolved to the same repo the canonical one names"
+        );
+    }
+
+    /// A bind for a session this instance's ledger does not hold answers
+    /// `unknown_session`, so the CLI's try-each-instance loop continues
+    /// silently ([P04]).
+    #[test]
+    fn api_dash_bind_for_a_foreign_session_reports_unknown_session() {
+        let (_dir, root) = repo_with_dash("demo");
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        assert!(matches!(
+            crate::dash_api::bind(&ledger, &root, "not-mine", "demo"),
+            crate::dash_api::DashApiOutcome::UnknownSession
+        ));
+        assert!(matches!(
+            crate::dash_api::unbind(&ledger, "not-mine"),
+            crate::dash_api::DashApiOutcome::UnknownSession
+        ));
+    }
+
+    /// `dash_gone` sweeps the bindings and the id-keyed draft, and reports how
+    /// many bindings it cleared.
+    #[test]
+    fn api_dash_gone_clears_bindings_and_the_draft_and_counts_them() {
+        let (_dir, root) = repo_with_dash("demo");
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let project = root.to_string_lossy().to_string();
+        let owner_key = "tugdash/demo#1-abc";
+        for (session, card) in [("sess-1", "card-1"), ("sess-2", "card-2")] {
+            seed_live_session(&ledger, session, card, &project);
+            ledger
+                .set_dash_binding(session, Some((owner_key, "demo")))
+                .unwrap();
+        }
         ledger
             .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
                 owner_kind: "dash".to_string(),
-                owner_id: "tugdash/snippets".to_string(),
-                project_dir: "/proj".to_string(),
+                owner_id: owner_key.to_string(),
+                project_dir: crate::path_resolver::CanonicalPath::from_raw(&root)
+                    .as_str()
+                    .to_string(),
                 fingerprint: "fp".to_string(),
-                message: "Join the snippets work".to_string(),
+                message: "Land it".to_string(),
                 updated_at: 1,
                 edited: true,
                 selection: None,
             })
             .unwrap();
 
-        AgentSupervisor::clear_dash_draft(&ledger, "/proj", "snippets");
-
-        // A same-named future dash starts with no inherited draft ([P14]).
+        let outcome = crate::dash_api::dash_gone(&ledger, &root, owner_key);
+        assert!(matches!(
+            outcome,
+            crate::dash_api::DashApiOutcome::Cleared(2)
+        ));
+        assert!(ledger.get("sess-1").unwrap().unwrap().dash_id.is_none());
+        assert!(ledger.get("sess-2").unwrap().unwrap().dash_id.is_none());
         assert!(
             ledger
-                .changeset_draft("dash", "tugdash/snippets", "/proj")
+                .changeset_draft(
+                    "dash",
+                    owner_key,
+                    crate::path_resolver::CanonicalPath::from_raw(&root).as_str()
+                )
                 .unwrap()
                 .is_none()
         );
+    }
+
+    /// **The [L23] pin.** A join resolves the dash's owner key *before* the
+    /// teardown and sweeps with it, so the user's authored draft and every
+    /// binding row are gone once the branch — and with it the `tugid` in its
+    /// config — no longer exists (Risk R02).
+    ///
+    /// The ordering is the whole mitigation. Resolve the key after
+    /// `join_in` returns and `dash_owner_key` can only answer with the legacy
+    /// form, which matches neither row; the assertions below would then fail
+    /// on rows nothing left in the system is able to name.
+    #[tokio::test]
+    async fn joining_a_dash_sweeps_its_draft_and_bindings_after_the_branch_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        git_in(&root, &["init", "-b", "main"]);
+        git_in(&root, &["config", "user.name", "t"]);
+        git_in(&root, &["config", "user.email", "t@t"]);
+        std::fs::write(root.join("a.txt"), "base\n").unwrap();
+        git_in(&root, &["add", "-A"]);
+        git_in(&root, &["commit", "-m", "base"]);
+
+        // A real dash, with a round, so the join has something to land.
+        let worktree = root.join(".tug/worktrees/demo");
+        git_in(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "tugdash/demo",
+                worktree.to_str().unwrap(),
+            ],
+        );
+        std::fs::write(worktree.join("b.txt"), "work\n").unwrap();
+        git_in(&worktree, &["add", "-A"]);
+        git_in(&worktree, &["commit", "-m", "round"]);
+        let owner_key = tugdash_core::ops::ensure_dash_id(&root, "demo").unwrap();
+        assert!(owner_key.contains('#'), "id-qualified: {owner_key}");
+
+        let (mut sup, _state_rx, _meta_rx, _control_rx) = make_supervisor_with_store();
+        sup.session_ledger = Some(Arc::new(
+            crate::session_ledger::SessionLedger::open_in_memory().unwrap(),
+        ));
+        let ledger = sup.session_ledger.clone().unwrap();
+        let project = root.to_string_lossy().to_string();
+        seed_live_session(&ledger, "sess-1", "card-1", &project);
+        ledger
+            .set_dash_binding("sess-1", Some((&owner_key, "demo")))
+            .unwrap();
+        let draft_project = crate::path_resolver::CanonicalPath::from_raw(&root)
+            .as_str()
+            .to_string();
+        ledger
+            .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                owner_kind: "dash".to_string(),
+                owner_id: owner_key.clone(),
+                project_dir: draft_project.clone(),
+                fingerprint: "fp".to_string(),
+                message: "Land the demo work".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+
+        let cancel = CancellationToken::new();
+        let _entry = sup.registry.get_or_create(&root, cancel.clone()).unwrap();
+        let payload = serde_json::to_vec(&serde_json::json!({
+            "action": "changeset_join",
+            "project_dir": project,
+            "dash": "demo",
+        }))
+        .unwrap();
+        sup.handle_control("changeset_join", &payload, 1).await;
+
+        // The teardown really happened — the branch and its config are gone,
+        // so nothing could re-derive the key from here.
+        assert_eq!(
+            tugdash_core::ops::dash_owner_key(&root, "demo"),
+            "tugdash/demo",
+            "the branch config died with the branch"
+        );
+        assert!(
+            ledger
+                .changeset_draft("dash", &owner_key, &draft_project)
+                .unwrap()
+                .is_none(),
+            "the id-keyed draft was swept with the key captured before teardown"
+        );
+        assert!(
+            ledger.get("sess-1").unwrap().unwrap().dash_id.is_none(),
+            "the binding to the landed dash was released"
+        );
+    }
+
+    /// Read CONTROL frames until one carries `action`, or fail.
+    async fn next_action(
+        control_rx: &mut broadcast::Receiver<Frame>,
+        action: &str,
+    ) -> serde_json::Value {
+        for _ in 0..40 {
+            let frame = tokio::time::timeout(std::time::Duration::from_secs(5), control_rx.recv())
+                .await
+                .expect("a control frame")
+                .expect("sender alive");
+            let body: serde_json::Value = serde_json::from_slice(&frame.payload).unwrap();
+            if body["action"] == action {
+                return body;
+            }
+        }
+        panic!("no {action} frame");
+    }
+
+    #[tokio::test]
+    async fn releasing_or_joining_a_dash_clears_its_draft() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let seed = |owner_id: &str| {
+            ledger
+                .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                    owner_kind: "dash".to_string(),
+                    owner_id: owner_id.to_string(),
+                    project_dir: "/proj".to_string(),
+                    fingerprint: "fp".to_string(),
+                    message: "Join the snippets work".to_string(),
+                    updated_at: 1,
+                    edited: true,
+                    selection: None,
+                })
+                .unwrap();
+        };
+        // One row under each key: the id-qualified one this build writes, and
+        // the bare branch ref an older build left behind ([P03]).
+        seed("tugdash/snippets");
+        seed("tugdash/snippets#1723500000000-a1b2c3");
+
+        AgentSupervisor::clear_dash_draft(
+            &ledger,
+            "/proj",
+            "tugdash/snippets#1723500000000-a1b2c3",
+        );
+
+        // A same-named future dash starts with no inherited draft ([P14]) —
+        // under either key, or the haunting comes back in a form no
+        // `draft clear` can reach.
+        for key in [
+            "tugdash/snippets",
+            "tugdash/snippets#1723500000000-a1b2c3",
+        ] {
+            assert!(
+                ledger.changeset_draft("dash", key, "/proj").unwrap().is_none(),
+                "row under {key} survived the landing"
+            );
+        }
     }
 
     #[tokio::test]

@@ -445,14 +445,27 @@ Each law this phase touches, the hazard it names here, and the mechanism that re
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Dash id in tugdash-core | pending | — |
-| #step-2 | Draft rows key by owner key | pending | — |
-| #step-3 | Binding column + CONTROL verbs + `/api/dash` | pending | — |
-| #step-4 | CLI bind/unbind + create auto-bind + `dash_gone` | pending | — |
-| #step-5 | `tugutil dash status` | pending | — |
-| #step-6 | Extract `dash_entries`; snapshot additions | pending | — |
-| #step-7 | Deck plumbing | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Dash id in tugdash-core | done | `92598dcff` |
+| #step-2 | Draft rows key by owner key | done | `e8bc6d91f` (the pre-teardown owner-key capture on the tugcast landing paths landed here with `clear_dash_draft`'s signature change, rather than in #step-3, so no commit ever carries the resolve-after-teardown ordering) |
+| #step-3 | Binding column + CONTROL verbs + `/api/dash` | done | `78f8dfdfe` (`bound_sessions_by_dash` moved to #step-6, which carries its first non-test consumer — `-D warnings` rejects a method only tests call) |
+| #step-4 | CLI bind/unbind + create auto-bind + `dash_gone` | done | `4c1573c64` |
+| #step-5 | `tugutil dash status` | done | `160ef2452` |
+| #step-6 | Extract `dash_entries`; snapshot additions | done | `5505f149f` (carries `bound_sessions_by_dash`, deferred from #step-3) |
+| #step-7 | Deck plumbing | done | `966ab4cf3` |
+| #step-8 | Integration checkpoint | done | verification only — see (#lifecycle-walk-result) |
+
+#### Lifecycle walk result {#lifecycle-walk-result}
+
+Walked on a scratch fixture repo under `TUG_CHANGES_DB` isolation, against the built CLI:
+
+- `dash create walk` mints `tugdash/walk#<millis>-<hex>`; `dash status` reports it and every later verb agrees.
+- A pre-seeded legacy `tugdash/walk` draft row is found by `draft show` through the fallback, and a `draft set` supersedes it — one id-keyed row survives, zero legacy rows.
+- `dash status` walks `created` → `working` → `draft-ready` as the round and the draft land.
+- `dash join walk` lands with the authored draft as its squash message and deletes the branch.
+- With **no live instance to receive `dash_gone`**, the id-keyed draft row survives the join. This is Risk R02's stated residual, and it is inert rather than haunting: a second dash of the same name mints a *different* id, so `draft show` and `dash status` on it report no draft, and nothing will ever probe the dead key again. Verified directly. With an instance in the loop, the sweep is eager and complete — the #step-3 [L23] pin asserts zero surviving rows after a real join.
+- Auto-bind against an instance that predates `/api/dash` warns and never fails the create, as designed.
+
+Gates: `cargo nextest run` 2361 passed · `bun test` 6524 passed · `bunx vite build` · `just app-test-changed` (18/18 files, 35/35 tests) · core tier 20/20 after the Rust rebuild.
 
 #### Step 1: Dash id in tugdash-core {#step-1}
 

@@ -24,11 +24,21 @@ import { useCallback, useSyncExternalStore } from "react";
  */
 export type CardSessionMode = "new" | "resume";
 
+/** The dash a session is working on, as the server names it. */
+export interface CardDashBinding {
+  /** The dash's owner key — opaque identity, never a git ref. */
+  readonly id: string;
+  /** The dash's short name, for display. */
+  readonly name: string;
+}
+
 export interface CardSessionBinding {
   readonly tugSessionId: string;
   readonly workspaceKey: string;
   readonly projectDir: string;
   readonly sessionMode: CardSessionMode;
+  /** The dash this card's session is mated to, or absent when unbound. */
+  readonly dash?: CardDashBinding;
 }
 
 export class CardSessionBindingStore {
@@ -51,6 +61,28 @@ export class CardSessionBindingStore {
   setBinding = (cardId: string, binding: CardSessionBinding): void => {
     const next = new Map(this._bindings);
     next.set(cardId, binding);
+    this._bindings = next;
+    for (const listener of this._listeners) listener();
+  };
+
+  /**
+   * Set or clear only the dash half of a card's binding, **merging** into the
+   * existing record.
+   *
+   * A merge and not a `setBinding`: a bind can arrive mid-session (a skill
+   * running `tugutil dash bind`, or a `bind_dash_ok` broadcast), and replacing
+   * the whole record there would clobber the `workspaceKey` the spawn ack
+   * established — the value `useCardWorkspaceKey` builds the pane's feed
+   * filter from.
+   *
+   * A no-op for a card with no binding: there is nothing to merge into, and
+   * the spawn ack is the only thing allowed to create a record.
+   */
+  setDashBinding = (cardId: string, dash: CardDashBinding | null): void => {
+    const existing = this._bindings.get(cardId);
+    if (!existing) return;
+    const next = new Map(this._bindings);
+    next.set(cardId, { ...existing, dash: dash ?? undefined });
     this._bindings = next;
     for (const listener of this._listeners) listener();
   };

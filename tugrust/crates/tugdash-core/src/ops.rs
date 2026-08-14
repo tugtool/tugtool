@@ -24,6 +24,8 @@ use crate::dash::{DashRoundMeta, append_dash_log, detect_default_branch, validat
 #[derive(Debug, Clone, Serialize)]
 pub struct CreateOutcome {
     pub name: String,
+    /// The dash's owner key ([P01]) — `tugdash/<name>#<tugid>`.
+    pub id: Option<String>,
     pub description: Option<String>,
     pub branch: String,
     pub worktree: String,
@@ -36,6 +38,8 @@ pub struct CreateOutcome {
 #[derive(Debug, Clone, Serialize)]
 pub struct DashListItem {
     pub name: String,
+    /// The dash's owner key ([P01]); the legacy branch ref for an id-less dash.
+    pub id: Option<String>,
     pub description: Option<String>,
     pub status: String,
     pub round_count: i64,
@@ -47,6 +51,8 @@ pub struct DashListItem {
 #[derive(Debug, Clone, Serialize)]
 pub struct ShowOutcome {
     pub name: String,
+    /// The dash's owner key ([P01]); the legacy branch ref for an id-less dash.
+    pub id: Option<String>,
     pub description: Option<String>,
     pub branch: String,
     pub worktree: String,
@@ -390,6 +396,83 @@ pub(crate) fn dash_base(repo: &Path, name: &str) -> Result<String, String> {
     detect_default_branch(repo).map_err(|e| e.to_string())
 }
 
+// --- dash identity ---------------------------------------------------------
+
+/// A dash's creation id lives in its branch config, beside `tugbase`.
+fn tugid_config_key(name: &str) -> String {
+    format!("branch.tugdash/{}.tugid", name)
+}
+
+/// Mint a fresh `tugid`: unix-millis plus a 6-hex-char nonce ([P01]). Millis
+/// sort chronologically; the nonce keeps two mints in the same millisecond
+/// apart without any coordination.
+fn mint_tugid() -> String {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let mut nonce = [0u8; 3];
+    rand::fill(&mut nonce);
+    format!(
+        "{millis}-{:02x}{:02x}{:02x}",
+        nonce[0], nonce[1], nonce[2]
+    )
+}
+
+/// A dash's **owner key** — the identity every ledger row keys by: draft rows'
+/// `owner_id`, the sessions table's `dash_id`, and the snapshot entry's
+/// `owner_id` ([P01]).
+///
+/// `tugdash/<name>#<tugid>` when the dash has a creation id, else the bare
+/// branch ref `tugdash/<name>` — the legacy identity, byte-identical to the
+/// keys every pre-id build wrote.
+///
+/// **Read this before any teardown.** `git branch -D` deletes the branch's
+/// whole config section, `tugid` included, so a key resolved after a
+/// `join_in`/`release_in` returns can only ever be the legacy form — and every
+/// id-keyed row it should have swept becomes unnameable ([P05], Risk R02).
+pub fn dash_owner_key(repo: &Path, name: &str) -> String {
+    let branch = branch_name(name);
+    match config_get(repo, &tugid_config_key(name)) {
+        Some(id) => format!("{branch}#{id}"),
+        None => branch,
+    }
+}
+
+/// The owner key for a dash, minting its `tugid` when it has none ([P01]).
+///
+/// Only **write-path** verbs call this — `create`, `commit`, and the
+/// `/api/dash` bind handler ([P02]). Read paths use [`dash_owner_key`], which
+/// never mints: a read that wrote config would make every feed recompute a
+/// side-effecting multi-process race, and two racing mints would fork a dash's
+/// identity (Risk R01).
+pub fn ensure_dash_id(repo: &Path, name: &str) -> Result<String, String> {
+    let branch = branch_name(name);
+    if let Some(id) = config_get(repo, &tugid_config_key(name)) {
+        return Ok(format!("{branch}#{id}"));
+    }
+    let id = mint_tugid();
+    let out = git_output(repo, &["config", &tugid_config_key(name), &id])?;
+    if !out.status.success() {
+        return Err(format!(
+            "failed to record dash id for {}: {}",
+            name,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("{branch}#{id}"))
+}
+
+/// The legacy (pre-id) form of an owner key: everything before the `#`. A `#`
+/// cannot appear in a branch ref, so the split is unambiguous, and a key that
+/// is already legacy passes through unchanged.
+pub fn legacy_owner_key(owner_key: &str) -> &str {
+    match owner_key.split_once('#') {
+        Some((branch, _)) => branch,
+        None => owner_key,
+    }
+}
+
 /// Run the project's `[tugtool.dash].post_create` hooks from the worktree root.
 ///
 /// Each command runs via `sh -c`. The first non-zero exit aborts and returns
@@ -436,8 +519,12 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
         let description = description
             .or_else(|| config_get(&repo_root, &format!("branch.{}.description", branch)));
         let base = dash_base(&repo_root, name).unwrap_or(base_branch);
+        // A revisit is a write-path touch, so an id-less dash from an older
+        // build gains its id here ([P02]).
+        let id = ensure_dash_id(&repo_root, name).ok();
         return Ok(CreateOutcome {
             name: name.to_string(),
+            id,
             description,
             branch,
             worktree: worktree.to_string_lossy().into_owned(),
@@ -503,6 +590,10 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
         );
     }
 
+    // Mint the creation id ([P01]) beside the rest of the branch metadata, so
+    // it is torn down with the branch and needs no garbage collection.
+    let id = ensure_dash_id(&repo_root, name).ok();
+
     // Hydrate the worktree; on failure, roll it (and the branch) back so a
     // retry re-creates cleanly and the idempotent path never strands it.
     if let Err(hook_err) = run_post_create(&repo_root, &worktree) {
@@ -516,6 +607,7 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
 
     Ok(CreateOutcome {
         name: name.to_string(),
+        id,
         description,
         branch,
         worktree: worktree.to_string_lossy().into_owned(),
@@ -555,6 +647,7 @@ pub fn list() -> Result<Vec<DashListItem>, String> {
         let description = config_get(&repo_root, &format!("branch.{}.description", branch));
 
         items.push(DashListItem {
+            id: Some(dash_owner_key(&repo_root, &name)),
             name,
             description,
             status: "active".to_string(),
@@ -616,6 +709,7 @@ pub fn show(name: &str) -> Result<ShowOutcome, String> {
 
     Ok(ShowOutcome {
         name: name.to_string(),
+        id: Some(dash_owner_key(&repo_root, name)),
         description,
         branch,
         worktree: worktree.to_string_lossy().into_owned(),
@@ -624,6 +718,302 @@ pub fn show(name: &str) -> Result<ShowOutcome, String> {
         rounds,
         uncommitted_changes,
     })
+}
+
+/// One file in a dash's `base...branch` diff, as `git diff --name-status`
+/// reports it. The caller maps this into its own file row.
+#[derive(Debug, Clone, Serialize)]
+pub struct DashDetailFile {
+    /// Path relative to the repository root. A rename reports its destination.
+    pub path: String,
+    /// The name-status letter (`A`, `M`, `D`, `R`, …).
+    pub status: String,
+}
+
+/// Everything a display needs about one dash, composed from git in one place.
+///
+/// This is the shared composition [`dash_detail_entries_in`] returns — the
+/// single implementation the CLI and the Changes card's snapshot both read, so
+/// the two can no longer drift on what a dash's base, worktree, or round count
+/// is.
+#[derive(Debug, Clone, Serialize)]
+pub struct DashDetail {
+    pub name: String,
+    /// The owner key ([P01]) — the identity every ledger row keys by.
+    pub owner_key: String,
+    /// The git ref (`tugdash/<name>`). Anything that needs a *ref* reads this
+    /// and never `owner_key` ([P09]).
+    pub branch: String,
+    pub base: String,
+    pub rounds: u32,
+    /// Worktree path relative to the repo root.
+    pub worktree_rel: String,
+    pub worktree_dirty: bool,
+    pub files: Vec<DashDetailFile>,
+    /// Round commit subjects, newest first; empty when the dash has no rounds.
+    pub round_subjects: Vec<String>,
+    /// Derived stage ([P06]); `landing` requires the join journal, so callers
+    /// that can also see a draft recompute with [`derive_stage`].
+    pub stage: String,
+}
+
+/// Parse `git diff --name-status` output. Rename and copy lines
+/// (`R<score>\told\tnew`) report the destination path.
+fn parse_name_status(output: &str) -> Vec<DashDetailFile> {
+    let mut files = Vec::new();
+    for line in output.lines() {
+        let mut fields = line.split('\t');
+        let Some(status) = fields.next() else {
+            continue;
+        };
+        let Some(letter) = status.chars().next() else {
+            continue;
+        };
+        let path = if letter == 'R' || letter == 'C' {
+            fields.nth(1)
+        } else {
+            fields.next()
+        };
+        if let Some(path) = path.filter(|p| !p.is_empty()) {
+            files.push(DashDetailFile {
+                path: path.to_owned(),
+                status: status.to_owned(),
+            });
+        }
+    }
+    files
+}
+
+/// Every active dash in `repo_root`, with the per-dash detail a display needs.
+///
+/// The `_in` variant of [`list`] with detail: explicit repo root (the feed
+/// composing a snapshot has one and is not cwd-relative), the full
+/// `base...branch` file list, round subjects, and worktree dirt.
+///
+/// A **pure read path** — it resolves each dash's owner key with
+/// [`dash_owner_key`] and never mints ([P02]). tugcast's `compose_snapshot`
+/// calls this on every recompute, and a read that wrote git config would be a
+/// side-effecting read and a multi-process race.
+pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
+    let Ok(branches) = git_stdout(
+        repo_root,
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "refs/heads/tugdash/",
+        ],
+    ) else {
+        return Vec::new();
+    };
+
+    let mut entries = Vec::new();
+    for branch in branches.lines().filter(|l| !l.trim().is_empty()) {
+        let name = branch.trim_start_matches("tugdash/");
+        // `dash_base`'s detection fallback, deliberately, rather than the bare
+        // `"main"` default the feed's duplicate used: a repo whose default
+        // branch is not `main` was silently mis-based there.
+        let Ok(base) = dash_base(repo_root, name) else {
+            continue;
+        };
+
+        let rounds = git_stdout(
+            repo_root,
+            &["rev-list", "--count", &format!("{base}..{branch}")],
+        )
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+
+        let worktree_abs = worktree_path(repo_root, name);
+        let worktree_rel = worktree_abs
+            .strip_prefix(repo_root)
+            .unwrap_or(&worktree_abs)
+            .to_string_lossy()
+            .into_owned();
+        let worktree_dirty = worktree_abs.exists()
+            && git_stdout(&worktree_abs, &["status", "--porcelain"])
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+
+        let files = git_stdout(
+            repo_root,
+            &["diff", "--name-status", &format!("{base}...{branch}")],
+        )
+        .map(|out| parse_name_status(&out))
+        .unwrap_or_default();
+
+        // Round subjects, newest first — what the release discard preflight
+        // lists ([P14]). Empty when the dash has no rounds.
+        let round_subjects = if rounds > 0 {
+            git_stdout(
+                repo_root,
+                &["log", "--format=%s", &format!("{base}..{branch}")],
+            )
+            .map(|out| {
+                out.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+
+        entries.push(DashDetail {
+            owner_key: dash_owner_key(repo_root, name),
+            name: name.to_owned(),
+            branch: branch.to_owned(),
+            stage: derive_stage(
+                rounds as i64,
+                worktree_dirty,
+                false,
+                read_join_journal(repo_root, name).is_some(),
+            )
+            .to_owned(),
+            base,
+            rounds,
+            worktree_rel,
+            worktree_dirty,
+            files,
+            round_subjects,
+        });
+    }
+    entries
+}
+
+/// One dash's lifecycle readout (Spec S05) — the machine-readable answer to
+/// "where is this dash?".
+#[derive(Debug, Clone, Serialize)]
+pub struct DashStatus {
+    pub name: String,
+    /// The owner key ([P01]).
+    pub id: String,
+    pub branch: String,
+    pub base_branch: String,
+    /// Derived lifecycle stage ([P06]) — see [`derive_stage`].
+    pub stage: String,
+    pub rounds: i64,
+    pub worktree: String,
+    pub worktree_dirty: bool,
+    /// Whether a maintained join draft is on file.
+    pub draft: bool,
+    /// The join journal's phase when an interrupted landing left one.
+    pub join_journal_phase: Option<String>,
+    /// Live sessions mated to this dash ([P08]); empty when unresolvable, when
+    /// the binding column has not migrated in yet, or when every bound card
+    /// has closed — an empty list is how *parked* reads.
+    pub bound_sessions: Vec<String>,
+    /// Phase 3's slots ([P06]); always absent here.
+    pub step_current: Option<i64>,
+    pub step_total: Option<i64>,
+}
+
+/// The stage a dash is in, from what git and the ledgers can derive ([P06]).
+///
+/// Precedence is `landing > draft-ready > working > created`: a landing in
+/// flight outranks everything, an authored draft outranks mere activity, and
+/// any round or worktree dirt outranks a freshly created dash. Declared stages
+/// (`implementing (i/N)`, `built`, `audited`) arrive with the step verbs; this
+/// reports only what is already true on disk.
+pub fn derive_stage(rounds: i64, worktree_dirty: bool, has_draft: bool, landing: bool) -> &'static str {
+    if landing {
+        "landing"
+    } else if has_draft {
+        "draft-ready"
+    } else if rounds > 0 || worktree_dirty {
+        "working"
+    } else {
+        "created"
+    }
+}
+
+/// Live sessions bound to `owner_key`, read read-only from the per-instance
+/// `sessions.db` ([P08], [Q02] — this instance's view only).
+///
+/// **Live sessions only**, under the same predicate the tugcast-side query
+/// uses: bound-ness is defined over live sessions, so a row that outlived its
+/// card is never reported and a dash whose cards have all closed reads as
+/// parked. Best-effort throughout — no db, no table, no `dash_id` column (an
+/// unmigrated ledger) all read as an empty list.
+fn bound_sessions_for(owner_key: &str) -> Vec<String> {
+    let Some(db) = sessions_db_file() else {
+        return Vec::new();
+    };
+    let Ok(conn) =
+        rusqlite::Connection::open_with_flags(&db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return Vec::new();
+    };
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT session_id FROM sessions \
+         WHERE dash_id = ?1 AND state = 'live' ORDER BY last_used_at DESC",
+    ) else {
+        return Vec::new();
+    };
+    stmt.query_map(rusqlite::params![owner_key], |row| row.get::<_, String>(0))
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
+}
+
+/// One dash's lifecycle readout against `repo_root` (Spec S05).
+///
+/// A pure read path: it resolves the owner key without minting ([P02]).
+pub fn status_in(repo_root: &Path, name: &str) -> Result<DashStatus, String> {
+    let branch = branch_name(name);
+    if !branch_exists(repo_root, &branch) {
+        return Err(format!("Dash not found: {}", name));
+    }
+
+    let base_branch = dash_base(repo_root, name)?;
+    let id = dash_owner_key(repo_root, name);
+    let rounds = git_stdout(
+        repo_root,
+        &["rev-list", "--count", &format!("{}..{}", base_branch, branch)],
+    )
+    .ok()
+    .and_then(|s| s.parse::<i64>().ok())
+    .unwrap_or(0);
+
+    let worktree = worktree_path(repo_root, name);
+    let worktree_dirty = worktree.exists()
+        && git_stdout(&worktree, &["status", "--porcelain"])
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+
+    let draft = dash_draft_message(repo_root, &branch).is_some();
+    let join_journal_phase =
+        read_join_journal(repo_root, name).map(|journal| format!("{:?}", journal.phase));
+    let bound_sessions = bound_sessions_for(&id);
+
+    Ok(DashStatus {
+        stage: derive_stage(
+            rounds,
+            worktree_dirty,
+            draft,
+            join_journal_phase.is_some(),
+        )
+        .to_string(),
+        name: name.to_string(),
+        id,
+        branch,
+        base_branch,
+        rounds,
+        worktree: worktree.to_string_lossy().into_owned(),
+        worktree_dirty,
+        draft,
+        join_journal_phase,
+        bound_sessions,
+        step_current: None,
+        step_total: None,
+    })
+}
+
+/// [`status_in`] against the cwd's repo — the CLI's entry point.
+pub fn status(name: &str) -> Result<DashStatus, String> {
+    let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+    migrate_worktrees(&repo_root, &mut Vec::new());
+    status_in(&repo_root, name)
 }
 
 /// Commit the dash worktree (if dirty) and append a dash-log line. `round_meta`
@@ -642,6 +1032,10 @@ pub fn commit(
     if !branch_exists(&repo_root, &branch) || !worktree.exists() {
         return Err(format!("Dash not found or not active: {}", name));
     }
+
+    // A round is a write-path touch, so a dash created by an older build
+    // backfills its creation id here ([P02]).
+    let _ = ensure_dash_id(&repo_root, name);
 
     // Stage all changes.
     let stage = git_output(&worktree, &["add", "-A"])?;
@@ -872,6 +1266,12 @@ fn with_dash_trailers(repo: &Path, name: &str, branch: &str, message: &str) -> S
 /// working tree they describe. Spec S05 spelling contract: writers store
 /// `project_dir` canonical, so query the canonical spelling and fall back
 /// to the raw one when it differs.
+///
+/// The owner key migrates on a second axis ([P03]): rows land under
+/// `tugdash/<name>#<tugid>` once a dash has a creation id, and older rows sit
+/// under the bare branch ref. So the probe order is id key then legacy key,
+/// each across both spellings — four probes worst case, first hit wins. A read
+/// path, so it resolves the key without minting ([P02]).
 pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
     let db = tugcore::instance::changes_db_path();
     let conn =
@@ -882,17 +1282,25 @@ pub(crate) fn dash_draft_message(repo: &Path, branch: &str) -> Option<String> {
         .unwrap_or_else(|_| repo.to_path_buf())
         .to_string_lossy()
         .into_owned();
-    let read = |project: &str| -> Option<String> {
+    let read = |owner_id: &str, project: &str| -> Option<String> {
         conn.query_row(
             "SELECT message FROM changeset_drafts \
              WHERE owner_kind = 'dash' AND owner_id = ?1 AND project_dir = ?2",
-            rusqlite::params![branch, project],
+            rusqlite::params![owner_id, project],
             |row| row.get::<_, String>(0),
         )
         .ok()
         .filter(|m| !m.trim().is_empty())
     };
-    read(&canonical).or_else(|| (canonical != raw).then(|| read(&raw)).flatten())
+    let name = branch.trim_start_matches("tugdash/");
+    let owner_key = dash_owner_key(repo, name);
+    let mut keys = vec![owner_key.as_str()];
+    if owner_key != branch {
+        keys.push(branch);
+    }
+    keys.into_iter().find_map(|key| {
+        read(key, &canonical).or_else(|| (canonical != raw).then(|| read(key, &raw)).flatten())
+    })
 }
 
 /// The scoped integrate/join commit message: explicit override → maintained
@@ -1419,6 +1827,256 @@ mod tests {
         assert!(ok, "git {args:?} failed");
     }
 
+    #[test]
+    fn legacy_owner_key_strips_the_id_and_passes_legacy_keys_through() {
+        assert_eq!(legacy_owner_key("tugdash/x#1723500000000-a1b2c3"), "tugdash/x");
+        assert_eq!(legacy_owner_key("tugdash/x"), "tugdash/x");
+        // A name with a dash in it is not a split point — only `#` is.
+        assert_eq!(legacy_owner_key("tugdash/fix-join#1-abc"), "tugdash/fix-join");
+    }
+
+    #[test]
+    fn minted_ids_are_millis_dash_six_hex_and_do_not_repeat() {
+        let a = mint_tugid();
+        let b = mint_tugid();
+        assert_ne!(a, b, "the nonce keeps same-millisecond mints apart");
+        let (millis, nonce) = a.split_once('-').expect("millis-nonce shape");
+        assert!(millis.parse::<u128>().unwrap() > 0);
+        assert_eq!(nonce.len(), 6);
+        assert!(nonce.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+
+    /// `create` mints once and every later touch reports the same identity;
+    /// a dash with no `tugid` reads under its legacy branch-ref key until a
+    /// write verb backfills it ([P01], [P02], Risk R01).
+    #[serial]
+    #[test]
+    fn test_dash_id_minted_once_and_backfilled_on_write() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&temp.path().join("state"));
+        std::env::set_current_dir(repo).unwrap();
+
+        let first = create("id-dash", None).unwrap();
+        let id = first.id.clone().expect("create mints an id");
+        assert!(id.starts_with("tugdash/id-dash#"), "owner key shape: {id}");
+
+        // The idempotent revisit reports the same identity, not a fresh mint.
+        let second = create("id-dash", None).unwrap();
+        assert!(!second.created);
+        assert_eq!(second.id.as_deref(), Some(id.as_str()));
+
+        // Every read verb agrees.
+        assert_eq!(dash_owner_key(repo, "id-dash"), id);
+        assert_eq!(show("id-dash").unwrap().id.as_deref(), Some(id.as_str()));
+        let listed = list().unwrap();
+        let entry = listed.iter().find(|d| d.name == "id-dash").unwrap();
+        assert_eq!(entry.id.as_deref(), Some(id.as_str()));
+
+        // An id-less dash (an older build's) reads under the legacy key, and a
+        // read verb must not mint one ([P02]).
+        run_git(repo, &["config", "--unset", "branch.tugdash/id-dash.tugid"]);
+        assert_eq!(dash_owner_key(repo, "id-dash"), "tugdash/id-dash");
+        let _ = show("id-dash").unwrap();
+        assert_eq!(dash_owner_key(repo, "id-dash"), "tugdash/id-dash");
+
+        // A round is a write path: it backfills.
+        fs::write(repo.join(".tug/worktrees/id-dash/f.txt"), "x\n").unwrap();
+        commit("id-dash", "Add f", None).unwrap();
+        let backfilled = dash_owner_key(repo, "id-dash");
+        assert!(backfilled.starts_with("tugdash/id-dash#"));
+        assert_ne!(backfilled, id, "the backfill is a fresh mint, not the old id");
+    }
+
+    /// The stage precedence table ([P06]): landing outranks a draft, a draft
+    /// outranks activity, activity outranks a fresh dash.
+    #[test]
+    fn stage_derivation_follows_its_precedence() {
+        assert_eq!(derive_stage(0, false, false, false), "created");
+        assert_eq!(derive_stage(1, false, false, false), "working");
+        assert_eq!(derive_stage(0, true, false, false), "working");
+        assert_eq!(derive_stage(2, true, true, false), "draft-ready");
+        // A draft with no work yet is still draft-ready — the draft is the
+        // stronger signal.
+        assert_eq!(derive_stage(0, false, true, false), "draft-ready");
+        // A landing in flight outranks everything below it.
+        assert_eq!(derive_stage(3, true, true, true), "landing");
+        assert_eq!(derive_stage(0, false, false, true), "landing");
+    }
+
+    /// `status` walks a dash's whole lifecycle: fresh → a round → an authored
+    /// draft → an interrupted landing (Spec S05, [P06]).
+    #[serial]
+    #[test]
+    fn test_dash_status_reports_each_stage() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        let changes_db = temp.path().join("changes.db");
+        {
+            let conn = rusqlite::Connection::open(&changes_db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE changeset_drafts (
+                    owner_kind   TEXT NOT NULL,
+                    owner_id     TEXT NOT NULL,
+                    project_dir  TEXT NOT NULL,
+                    fingerprint  TEXT NOT NULL,
+                    message      TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    edited       INTEGER NOT NULL DEFAULT 0,
+                    selection    TEXT,
+                    PRIMARY KEY (owner_kind, owner_id, project_dir)
+                );",
+            )
+            .unwrap();
+        }
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::set_var("TUG_CHANGES_DB", &changes_db);
+        }
+
+        let created = create("status-dash", Some("Test".to_string())).unwrap();
+        let owner_key = created.id.clone().unwrap();
+
+        let fresh = status("status-dash").unwrap();
+        assert_eq!(fresh.stage, "created");
+        assert_eq!(fresh.id, owner_key);
+        assert_eq!(fresh.branch, "tugdash/status-dash");
+        assert_eq!(fresh.base_branch, "main");
+        assert_eq!(fresh.rounds, 0);
+        assert!(!fresh.draft);
+        assert!(fresh.join_journal_phase.is_none());
+        // Phase 3's slots stay empty here ([P06]).
+        assert!(fresh.step_current.is_none() && fresh.step_total.is_none());
+
+        // Uncommitted work is already `working`.
+        let worktree = repo.join(".tug/worktrees/status-dash");
+        fs::write(worktree.join("f.txt"), "x\n").unwrap();
+        let dirty = status("status-dash").unwrap();
+        assert_eq!(dirty.stage, "working");
+        assert!(dirty.worktree_dirty);
+
+        commit("status-dash", "Add f", None).unwrap();
+        let after_round = status("status-dash").unwrap();
+        assert_eq!(after_round.stage, "working");
+        assert_eq!(after_round.rounds, 1);
+        assert!(!after_round.worktree_dirty);
+
+        // An authored draft, under the id-qualified key writers use.
+        {
+            let conn = rusqlite::Connection::open(&changes_db).unwrap();
+            let project = fs::canonicalize(repo)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            conn.execute(
+                "INSERT INTO changeset_drafts
+                    (owner_kind, owner_id, project_dir, fingerprint, message, updated_at, edited)
+                 VALUES ('dash', ?1, ?2, 'fp', 'Land the work', 1, 1)",
+                rusqlite::params![owner_key, project],
+            )
+            .unwrap();
+        }
+        let drafted = status("status-dash").unwrap();
+        assert_eq!(drafted.stage, "draft-ready");
+        assert!(drafted.draft);
+
+        // An interrupted landing leaves a journal, and outranks the draft.
+        // Written against the canonical repo path, which is what
+        // `find_repo_root` (and so `status`) resolves — the state-dir slug
+        // must agree.
+        let canonical_repo = fs::canonicalize(repo).unwrap();
+        write_join_journal(
+            &canonical_repo,
+            &JoinJournal {
+                name: "status-dash".to_string(),
+                base_branch: "main".to_string(),
+                strategy: "squash".to_string(),
+                commit_hash: "abc1234".to_string(),
+                phase: JoinPhase::WorktreeRemoved,
+            },
+        )
+        .unwrap();
+        let landing = status("status-dash").unwrap();
+        assert_eq!(landing.stage, "landing");
+        assert_eq!(landing.join_journal_phase.as_deref(), Some("WorktreeRemoved"));
+
+        // No sessions.db with a binding, so the dash reads as parked ([P08]).
+        assert!(landing.bound_sessions.is_empty());
+
+        assert!(status("no-such-dash").is_err());
+
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::remove_var("TUG_CHANGES_DB");
+        }
+    }
+
+    /// `bound_sessions` counts **live** sessions only, so a dash whose only
+    /// bound card has closed reads as parked ([P08]) — the CLI-side face of
+    /// the [L27] pin.
+    #[serial]
+    #[test]
+    fn test_dash_status_bound_sessions_are_live_only() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&temp.path().join("state"));
+        std::env::set_current_dir(repo).unwrap();
+
+        let sessions_db = temp.path().join("sessions.db");
+        {
+            let conn = rusqlite::Connection::open(&sessions_db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE sessions (
+                    session_id   TEXT PRIMARY KEY,
+                    state        TEXT NOT NULL,
+                    last_used_at INTEGER NOT NULL,
+                    dash_id      TEXT
+                );",
+            )
+            .unwrap();
+        }
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::set_var("TUG_SESSIONS_DB", &sessions_db);
+        }
+
+        let owner_key = create("parked-dash", None).unwrap().id.unwrap();
+        {
+            let conn = rusqlite::Connection::open(&sessions_db).unwrap();
+            conn.execute(
+                "INSERT INTO sessions (session_id, state, last_used_at, dash_id)
+                 VALUES ('sess-live', 'live', 2, ?1), ('sess-closed', 'closed', 1, ?1)",
+                rusqlite::params![owner_key],
+            )
+            .unwrap();
+        }
+
+        assert_eq!(
+            status("parked-dash").unwrap().bound_sessions,
+            vec!["sess-live".to_string()],
+            "a closed session's row is never reported as a mating"
+        );
+
+        // With the last live session closed, the dash is parked.
+        {
+            let conn = rusqlite::Connection::open(&sessions_db).unwrap();
+            conn.execute("UPDATE sessions SET state = 'closed'", []).unwrap();
+        }
+        assert!(status("parked-dash").unwrap().bound_sessions.is_empty());
+
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::remove_var("TUG_SESSIONS_DB");
+        }
+    }
+
     #[serial]
     #[test]
     fn test_dash_create_basic() {
@@ -1792,6 +2450,86 @@ mod tests {
     /// Round commits and the join/squash commit carry the `Tug-Dash:` trailer
     /// ([P08], Spec S02). With no `TUG_SESSION_ID` in the environment the
     /// `Tug-Session:` trailer is omitted (no error).
+    /// A join reaches the dash's draft under the id-qualified owner key — the
+    /// key writers use once a dash has a creation id ([P01], [P03], Spec S02).
+    /// Same fixture as the legacy-key case above; only the key differs.
+    #[serial]
+    #[test]
+    fn test_dash_join_uses_id_keyed_draft_message() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        let changes_db = temp.path().join("changes.db");
+        {
+            let conn = rusqlite::Connection::open(&changes_db).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE changeset_drafts (
+                    owner_kind   TEXT NOT NULL,
+                    owner_id     TEXT NOT NULL,
+                    project_dir  TEXT NOT NULL,
+                    fingerprint  TEXT NOT NULL,
+                    message      TEXT NOT NULL,
+                    updated_at   INTEGER NOT NULL,
+                    edited       INTEGER NOT NULL DEFAULT 0,
+                    selection    TEXT,
+                    PRIMARY KEY (owner_kind, owner_id, project_dir)
+                );",
+            )
+            .unwrap();
+        }
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::set_var("TUG_CHANGES_DB", &changes_db);
+        }
+
+        let created = create("id-draft-dash", Some("Test".to_string())).unwrap();
+        let owner_key = created.id.expect("created dash has an owner key");
+        assert!(owner_key.contains('#'), "id-qualified: {owner_key}");
+
+        // Seed the draft under the owner key the writers now use.
+        {
+            let conn = rusqlite::Connection::open(&changes_db).unwrap();
+            let project = fs::canonicalize(repo)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            conn.execute(
+                "INSERT INTO changeset_drafts
+                    (owner_kind, owner_id, project_dir, fingerprint, message, updated_at, edited)
+                 VALUES ('dash', ?1, ?2, 'fp', 'Land the id-keyed work', 1, 1)",
+                rusqlite::params![owner_key, project],
+            )
+            .unwrap();
+        }
+
+        let worktree = repo.join(".tug/worktrees/id-draft-dash");
+        fs::write(worktree.join("f.txt"), "x\n").unwrap();
+        commit("id-draft-dash", "Add f", None).unwrap();
+
+        join("id-draft-dash", JoinOptions::default()).unwrap();
+
+        let log = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["log", "--format=%B", "-1"])
+            .output()
+            .unwrap();
+        let body = String::from_utf8_lossy(&log.stdout);
+        assert!(
+            body.contains("Land the id-keyed work"),
+            "the id-keyed draft is the squash message: {body}"
+        );
+
+        // SAFETY: serial test; see redirect_state_dir.
+        unsafe {
+            std::env::remove_var("TUG_CHANGES_DB");
+        }
+    }
+
     #[serial]
     #[test]
     fn test_dash_commits_carry_dash_trailer() {

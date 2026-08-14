@@ -300,6 +300,8 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                 }
                 ChangesetEntry::Dash {
                     owner_id,
+                    display_name,
+                    branch,
                     base,
                     rounds,
                     worktree,
@@ -309,8 +311,15 @@ fn eligible_entries(snapshot: WorkspacesChangesetSnapshot) -> Vec<PendingEntry> 
                     if rounds == 0 && !worktree_dirty {
                         continue;
                     }
-                    // The dash branch ref is the owner id.
-                    let branch = owner_id.clone();
+                    // The git ref comes from the entry's own `branch` field
+                    // ([P09]). `owner_id` is the dash's *identity* — an owner
+                    // key that carries the creation id — and deriving a ref
+                    // from it would fail silently: `rev-parse` and `log`
+                    // return empty, the fingerprint and prompt come out
+                    // degenerate, and dash draft generation just stops with no
+                    // error anywhere. An older sender that omits the field
+                    // falls back to the name, never to the identity.
+                    let branch = branch.unwrap_or_else(|| format!("tugdash/{display_name}"));
                     out.push(PendingEntry {
                         key: EntryKey {
                             workspace_key: workspace_key.clone(),
@@ -746,6 +755,75 @@ mod tests {
         git(&root, &["commit", "-q", "-m", "base"]);
         std::fs::write(root.join("a.txt"), "changed\n").unwrap();
         (dir, root)
+    }
+
+    /// **The [P09] regression pin.** An id-keyed dash entry still produces a
+    /// real fingerprint and a real prompt, because the git ref comes from the
+    /// entry's `branch` field.
+    ///
+    /// Deriving the ref from `owner_id` — which is what the code did before
+    /// the identity carried a creation id — fails *silently* against an
+    /// id-qualified key: `rev-parse` and `log` return empty, the fingerprint
+    /// degenerates, the prompt loses its diff, and nothing errors anywhere.
+    /// A non-empty assertion is the only thing that catches it.
+    #[tokio::test]
+    async fn gather_dash_uses_the_entry_branch_not_the_owner_key() {
+        let (_dir, root) = init_repo();
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-q", "-m", "second"]);
+        let worktree = root.join(".tug/worktrees/demo");
+        git(
+            &root,
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "tugdash/demo",
+                worktree.to_str().unwrap(),
+            ],
+        );
+        std::fs::write(worktree.join("dash-work.txt"), "round\n").unwrap();
+        git(&worktree, &["add", "."]);
+        git(&worktree, &["commit", "-q", "-m", "dash round"]);
+
+        let (fingerprint, prompt) = gather_dash(
+            &root,
+            "main",
+            // The ref, as the entry's `branch` field carries it.
+            "tugdash/demo",
+            ".tug/worktrees/demo",
+            "",
+            &[],
+        )
+        .await;
+        assert!(!fingerprint.is_empty(), "a real fingerprint");
+        assert!(
+            prompt.contains("dash round"),
+            "the prompt carries the dash's real history: {prompt}"
+        );
+        assert!(
+            prompt.contains("dash-work.txt"),
+            "and its real diff: {prompt}"
+        );
+
+        // The same call with the *owner key* in the ref slot is the silent
+        // failure: git resolves nothing, and the prompt comes out degenerate.
+        let (degenerate_fp, degenerate_prompt) = gather_dash(
+            &root,
+            "main",
+            "tugdash/demo#1723500000000-a1b2c3",
+            ".tug/worktrees/demo",
+            "",
+            &[],
+        )
+        .await;
+        assert_ne!(
+            degenerate_fp, fingerprint,
+            "an owner key is not a ref, and using one as one loses the history \
+             without raising anything"
+        );
+        assert!(!degenerate_prompt.contains("dash-work.txt"));
     }
 
     /// A one-session snapshot for `project_dir`, whose `workspace_key` is that

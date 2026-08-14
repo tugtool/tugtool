@@ -49,6 +49,9 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
         DashCommands::Release { name } => run_release(&name, json, quiet),
         DashCommands::List => run_list(json, quiet),
         DashCommands::Show { name } => run_show(&name, json, quiet),
+        DashCommands::Status { name } => run_status(&name, json, quiet),
+        DashCommands::Bind { name, project } => run_bind(&name, project, json, quiet),
+        DashCommands::Unbind { project } => run_unbind(project, json, quiet),
     };
 
     match result {
@@ -67,6 +70,14 @@ fn run_create(
     quiet: bool,
 ) -> Result<(), String> {
     let data = ops::create(name, description)?;
+    // The session that made the dash is working on it. Best-effort: a headless
+    // run with no live instance loses nothing (binding is a UI concept), so a
+    // failure warns and never fails the create.
+    if std::env::var("TUG_SESSION_ID").is_ok_and(|s| !s.is_empty())
+        && let Err(e) = run_bind(name, None, false, true)
+    {
+        eprintln!("warning: could not bind this session to dash '{name}': {e}");
+    }
     if json {
         print_ok("dash create", &data);
     } else if !quiet {
@@ -118,8 +129,29 @@ fn run_commit(name: &str, message: &str, json: bool, quiet: bool) -> Result<(), 
     Ok(())
 }
 
+/// The dash's owner key and the repo it lives in, resolved for a landing.
+///
+/// Called **before** the verb runs, always. `join`/`release` end in
+/// `git branch -D`, which deletes `branch.tugdash/<name>.tugid` with the
+/// branch — a key read afterwards is the legacy form and names none of the
+/// id-keyed rows the `dash_gone` sweep must reach ([L23], [P05], Risk R02).
+fn capture_owner_key(name: &str) -> Option<(std::path::PathBuf, String)> {
+    let repo = tugutil_core::find_repo_root().ok()?;
+    let key = tugdash_core::ops::dash_owner_key(&repo, name);
+    Some((repo, key))
+}
+
 fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<(), String> {
+    let previewing = opts.preview;
+    let captured = (!previewing).then(|| capture_owner_key(name)).flatten();
     let data = ops::join(name, opts)?;
+    // Only a real join that landed tore the dash down.
+    if !data.previewed
+        && data.conflicts.is_empty()
+        && let Some((repo, owner_key)) = captured
+    {
+        broadcast_dash_gone(&repo, &owner_key);
+    }
     if json {
         print_ok("dash join", &data);
     } else if !quiet {
@@ -208,6 +240,8 @@ fn run_join_resolve(
         ));
     };
 
+    // Captured before the teardown, for the reason `capture_owner_key` states.
+    let captured = capture_owner_key(name);
     let landed = ops::join(
         name,
         JoinOptions {
@@ -218,6 +252,11 @@ fn run_join_resolve(
             candidate: Some(candidate),
         },
     )?;
+    if landed.conflicts.is_empty()
+        && let Some((repo, owner_key)) = captured
+    {
+        broadcast_dash_gone(&repo, &owner_key);
+    }
 
     if json {
         // Report the ladder outcome and the landed join together.
@@ -244,7 +283,12 @@ fn run_join_resolve(
 }
 
 fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
+    // Captured before the teardown, for the reason `capture_owner_key` states.
+    let captured = capture_owner_key(name);
     let data = ops::release(name)?;
+    if let Some((repo, owner_key)) = captured {
+        broadcast_dash_gone(&repo, &owner_key);
+    }
     if json {
         print_ok("dash release", &data);
     } else if !quiet {
@@ -254,6 +298,225 @@ fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn run_status(name: &str, json: bool, quiet: bool) -> Result<(), String> {
+    let data = ops::status(name)?;
+    if json {
+        print_ok("dash status", &data);
+    } else if !quiet {
+        println!("Dash: {}", data.name);
+        println!("Id: {}", data.id);
+        println!("Stage: {}", data.stage);
+        println!("Branch: {}", data.branch);
+        println!("Base: {}", data.base_branch);
+        println!("Rounds: {}", data.rounds);
+        println!(
+            "Worktree: {}{}",
+            data.worktree,
+            if data.worktree_dirty {
+                " (uncommitted changes)"
+            } else {
+                ""
+            }
+        );
+        println!("Draft: {}", if data.draft { "yes" } else { "no" });
+        if let Some(phase) = &data.join_journal_phase {
+            println!("Landing interrupted at: {}", phase);
+        }
+        if data.bound_sessions.is_empty() {
+            println!("Sessions: none (parked)");
+        } else {
+            println!("Sessions: {}", data.bound_sessions.join(", "));
+        }
+    }
+    Ok(())
+}
+
+// --- session↔dash binding ([P04], Spec S04) --------------------------------
+
+/// Resolve `--project` (default cwd) to an absolute path, as the user spelled
+/// it. The CLI never canonicalizes ([L29]) — `/api/dash` is the gateway.
+fn binding_project(project: Option<std::path::PathBuf>) -> Result<std::path::PathBuf, String> {
+    let cwd = std::env::current_dir().map_err(|e| format!("cannot resolve cwd: {e}"))?;
+    Ok(match project {
+        Some(p) if p.is_absolute() => p,
+        Some(p) => cwd.join(p),
+        None => cwd,
+    })
+}
+
+/// POST one binding request to the instance that owns the session.
+///
+/// Unlike `/api/draft` — whose target is the machine-global changes ledger, so
+/// any live instance is a valid conduit — `sessions.db` is **per-instance**. A
+/// bind must land on the instance holding the session, so this tries the
+/// cwd-derived instance first (`find_for_cwd` reaches through a dash worktree
+/// to its main checkout, so it is usually right on the first try) and then
+/// walks every live instance, taking `unknown_session` as "not this one" and
+/// moving on.
+///
+/// `resolve_port_*` is deliberately not used here: it collapses the registry to
+/// a single port by design ([D09]), which is the right answer for a
+/// machine-global write and the wrong one for a per-instance ledger.
+fn post_dash_api(body: serde_json::Value) -> Result<serde_json::Value, String> {
+    let mut ports: Vec<u16> = Vec::new();
+    if let Ok(Some(instance)) =
+        std::env::current_dir().map_err(|_| ()).and_then(|cwd| {
+            tugcore::registry::find_for_cwd(&cwd).map_err(|_| ())
+        })
+    {
+        ports.push(instance.tugcast_port);
+    }
+    for instance in tugcore::registry::list_live().unwrap_or_default() {
+        if !ports.contains(&instance.tugcast_port) {
+            ports.push(instance.tugcast_port);
+        }
+    }
+    if ports.is_empty() {
+        return Err(
+            "dash binding goes through a running Tug instance, but none was found".to_string(),
+        );
+    }
+
+    // A non-2xx must stay readable: `unknown_session` arrives as a 404 whose
+    // *body* is the answer the loop branches on, and ureq's default turns a
+    // non-2xx into an error that discards it.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .build()
+        .into();
+
+    let mut last_error = None;
+    for port in ports {
+        let url = format!("http://127.0.0.1:{port}/api/dash");
+        let response = match agent.post(&url).send_json(body.clone()) {
+            Ok(r) => r,
+            Err(e) => {
+                last_error = Some(format!("cannot reach tugcast at {url}: {e}"));
+                continue;
+            }
+        };
+        let value: serde_json::Value = match response.into_body().read_json() {
+            Ok(v) => v,
+            Err(e) => {
+                last_error = Some(format!("bad response from tugcast: {e}"));
+                continue;
+            }
+        };
+        if value.get("status").and_then(|s| s.as_str()) == Some("ok") {
+            return Ok(value);
+        }
+        last_error = Some(
+            value
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown error")
+                .to_string(),
+        );
+    }
+    Err(last_error.unwrap_or_else(|| "no instance accepted the request".to_string()))
+}
+
+/// The calling session's id, or the actionable error naming what to do.
+fn calling_session_id() -> Result<String, String> {
+    std::env::var("TUG_SESSION_ID")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            "no session — dash binding names the calling session, so run this from a Session card or set TUG_SESSION_ID"
+                .to_string()
+        })
+}
+
+fn run_bind(
+    name: &str,
+    project: Option<std::path::PathBuf>,
+    json: bool,
+    quiet: bool,
+) -> Result<(), String> {
+    let session = calling_session_id()?;
+    let project = binding_project(project)?;
+    let response = post_dash_api(serde_json::json!({
+        "op": "bind",
+        "tug_session_id": session,
+        "project_dir": project.to_string_lossy(),
+        "dash": name,
+    }))?;
+    if json {
+        print_ok(
+            "dash bind",
+            serde_json::json!({
+                "dash": name,
+                "dash_id": response.get("dash_id"),
+                "tug_session_id": session,
+            }),
+        );
+    } else if !quiet {
+        println!("Bound this session to dash '{}'", name);
+    }
+    Ok(())
+}
+
+fn run_unbind(
+    project: Option<std::path::PathBuf>,
+    json: bool,
+    quiet: bool,
+) -> Result<(), String> {
+    let session = calling_session_id()?;
+    let _project = binding_project(project)?;
+    post_dash_api(serde_json::json!({
+        "op": "unbind",
+        "tug_session_id": session,
+    }))?;
+    if json {
+        print_ok(
+            "dash unbind",
+            serde_json::json!({ "tug_session_id": session }),
+        );
+    } else if !quiet {
+        println!("Unbound this session from its dash");
+    }
+    Ok(())
+}
+
+/// Tell every live instance that a dash is gone, so its bindings and its
+/// authored draft are swept ([P05]).
+///
+/// Best-effort by design: a landing must never fail because no instance was
+/// listening. Broadcast rather than try-until-owned — any instance may hold
+/// bindings to the dead dash.
+///
+/// `dash_id` is the owner key the caller captured **before** the landing.
+/// `git branch -D` takes the branch's config with it, so a key resolved after
+/// the verb returns is the legacy form and matches none of the id-keyed rows
+/// this sweep exists to remove ([L23], Risk R02).
+fn broadcast_dash_gone(project: &std::path::Path, dash_id: &str) {
+    let body = serde_json::json!({
+        "op": "dash_gone",
+        "project_dir": project.to_string_lossy(),
+        "dash_id": dash_id,
+    });
+    let live = tugcore::registry::list_live().unwrap_or_default();
+    if live.is_empty() {
+        // Nothing is running, so nothing holds a binding to sweep — not a
+        // condition worth a warning.
+        return;
+    }
+    let mut reached = false;
+    for instance in live {
+        let url = format!("http://127.0.0.1:{}/api/dash", instance.tugcast_port);
+        if ureq::post(&url).send_json(body.clone()).is_ok() {
+            reached = true;
+        }
+    }
+    if !reached {
+        eprintln!(
+            "warning: no running Tug instance was told that dash '{}' is gone; \
+             its bindings clear lazily on the next read",
+            dash_id
+        );
+    }
 }
 
 /// The list `--json` payload — `{ "dashes": [...] }`.

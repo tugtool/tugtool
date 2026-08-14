@@ -52,7 +52,12 @@ describe("deriveChangesRouteSnapshot", () => {
       "tugdeck/src/lib/changeset-types.ts",
       "tugrust/crates/tugcast/src/feeds/changeset.rs",
     ]);
-    expect(snap.dashes.map((d) => d.owner_id)).toEqual(["tugdash/fix-join"]);
+    // `owner_id` is the dash's opaque owner key, not a git ref — the ref is
+    // its own field.
+    expect(snap.dashes.map((d) => d.owner_id)).toEqual([
+      "tugdash/fix-join#1723500000000-a1b2c3",
+    ]);
+    expect(snap.dashes.map((d) => d.branch)).toEqual(["tugdash/fix-join"]);
   });
 
   it("passes the unattributed bucket through", () => {

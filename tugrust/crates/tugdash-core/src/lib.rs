@@ -20,9 +20,10 @@ pub mod resolve;
 
 pub use dash::{DashRoundMeta, append_dash_log, detect_default_branch, validate_dash_name};
 pub use ops::{
-    CommitOutcome, CreateOutcome, DashListItem, JoinOptions, JoinOutcome, JoinStrategy,
-    ReleaseOutcome, RoundItem, ShowOutcome, commit, create, join, join_in, list, release,
-    release_in, show,
+    CommitOutcome, CreateOutcome, DashDetail, DashDetailFile, DashListItem, DashStatus,
+    JoinOptions, JoinOutcome, JoinStrategy, ReleaseOutcome, RoundItem, ShowOutcome, commit, create,
+    dash_detail_entries_in, derive_stage, join, join_in, list, release, release_in, show, status,
+    status_in,
 };
 pub use resolve::{
     FileMergeRequest, FileMerger, FileResolution, JoinShape, ResolveOutcome, ResolvedBy,

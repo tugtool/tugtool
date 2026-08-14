@@ -4,6 +4,7 @@ mod changes_journal;
 mod changes_writer;
 mod cli;
 mod control;
+mod dash_api;
 mod dead_branch;
 mod defaults;
 mod dev;

@@ -403,6 +403,28 @@ pub enum DashCommands {
         /// Dash name.
         name: String,
     },
+    /// Report one dash's lifecycle: stage, rounds, worktree dirt, draft,
+    /// interrupted landing, and the sessions working on it.
+    Status {
+        /// Dash name.
+        name: String,
+    },
+    /// Mate the calling session to a dash, so surfaces can say which session
+    /// is working on which dash.
+    Bind {
+        /// Dash name.
+        name: String,
+        /// Project directory (default: cwd). Travels as your own spelling —
+        /// the server canonicalizes it ([L29]).
+        #[arg(long)]
+        project: Option<std::path::PathBuf>,
+    },
+    /// Drop the calling session's dash binding.
+    Unbind {
+        /// Project directory (default: cwd).
+        #[arg(long)]
+        project: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]

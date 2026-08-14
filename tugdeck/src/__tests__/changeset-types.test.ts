@@ -40,7 +40,50 @@ describe("changeset wire contract", () => {
       expect(dash.base).toBe("main");
       expect(dash.rounds).toBe(3);
       expect(dash.worktree_dirty).toBe(false);
+      // This fixture is deliberately an *older* sender's shape — no id in the
+      // key, none of the added fields — so the guard's tolerance for both is
+      // covered by a real payload rather than a hand-built one.
+      expect(dash.owner_id).toBe("tugdash/fix-join");
+      expect(dash.branch).toBeUndefined();
+      expect(dash.stage).toBeUndefined();
+      expect(dash.bound_sessions).toBeUndefined();
     }
+  });
+
+  test("the aggregate fixture carries the extended dash shape", () => {
+    const aggregate = aggregateGolden as WorkspacesChangesetSnapshot;
+    const dash = aggregate.projects[0].changesets.find((e) => e.kind === "dash");
+    expect(dash).toBeDefined();
+    if (dash?.kind !== "dash") throw new Error("expected a dash entry");
+    // `owner_id` is the opaque owner key; the git ref is its own field.
+    expect(dash.owner_id).toBe("tugdash/fix-join#1723500000000-a1b2c3");
+    expect(dash.branch).toBe("tugdash/fix-join");
+    expect(dash.stage).toBe("draft-ready");
+    expect(dash.bound_sessions).toEqual([
+      "sess-0197a2b4-c8d1-7e02-9f3a-b5c6d7e8f901",
+    ]);
+    // Phase 3's slots are declared but not yet sent.
+    expect(dash.step_current).toBeUndefined();
+    expect(dash.step_total).toBeUndefined();
+  });
+
+  test("the dash guard rejects wrong types on the added fields", () => {
+    const base = {
+      kind: "dash",
+      owner_id: "tugdash/x",
+      display_name: "x",
+      base: "main",
+      rounds: 0,
+      worktree: ".tug/worktrees/x",
+      worktree_dirty: false,
+      files: [],
+    };
+    expect(isChangesetEntry(base)).toBe(true);
+    expect(isChangesetEntry({ ...base, branch: 7 })).toBe(false);
+    expect(isChangesetEntry({ ...base, stage: {} })).toBe(false);
+    expect(isChangesetEntry({ ...base, bound_sessions: "sess-1" })).toBe(false);
+    expect(isChangesetEntry({ ...base, bound_sessions: [1] })).toBe(false);
+    expect(isChangesetEntry({ ...base, step_total: "3" })).toBe(false);
   });
 
   test("guards reject shape drift", () => {

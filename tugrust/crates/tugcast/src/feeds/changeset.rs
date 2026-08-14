@@ -515,7 +515,7 @@ pub(crate) async fn compose_snapshot(
             draft: None,
         })
         .collect();
-    changesets.extend(dash_entries(&repo_root).await);
+    changesets.extend(dash_entries(&repo_root, ledger).await);
 
     // Attach maintained drafts (Spec S10) to eligible entries: a session
     // entry with files, a dash with rounds or worktree dirt. The engine only
@@ -550,6 +550,28 @@ pub(crate) async fn compose_snapshot(
                 .entry((d.owner_kind.as_str(), d.owner_id.as_str()))
                 .or_insert(d);
         }
+        // A dash's rows migrate onto a second axis too — from the bare branch
+        // ref to `tugdash/<name>#<tugid>` ([P03]) — and writers reach the new
+        // key before every reader does. So index dash rows by their legacy
+        // form as well, preferring an id-qualified row when both exist, and
+        // probe it when the exact key misses. Without this the maintained
+        // draft would vanish from the Changes card for the whole window
+        // between the writers moving and the entries following.
+        let mut dash_by_legacy: HashMap<&str, &crate::session_ledger::ChangesetDraftRow> =
+            HashMap::new();
+        for d in drafts.iter().filter(|d| d.owner_kind == "dash") {
+            let legacy = tugdash_core::ops::legacy_owner_key(&d.owner_id);
+            match dash_by_legacy.entry(legacy) {
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    slot.insert(d);
+                }
+                std::collections::hash_map::Entry::Occupied(mut slot) => {
+                    if slot.get().owner_id == legacy && d.owner_id != legacy {
+                        slot.insert(d);
+                    }
+                }
+            }
+        }
         for entry in &mut changesets {
             match entry {
                 ChangesetEntry::Session {
@@ -571,6 +593,9 @@ pub(crate) async fn compose_snapshot(
                 } if *rounds > 0 || *worktree_dirty => {
                     *draft = by_owner
                         .get(&("dash", owner_id.as_str()))
+                        .or_else(|| {
+                            dash_by_legacy.get(tugdash_core::ops::legacy_owner_key(owner_id))
+                        })
                         .map(|row| draft_from_row(row));
                 }
                 _ => {}
@@ -961,158 +986,81 @@ async fn min_live_at_ms(repo_root: &Path, rel: &str) -> i64 {
     }
 }
 
-/// Derive one dash entry per `refs/heads/tugdash/` branch, the same way
-/// `tugutil dash list` does (branch config `tugbase`, `rev-list --count`
-/// rounds, worktree dirt) plus the `base...branch` name-status file list.
-/// Duplicated from the tug CLI until the dash core extracts into a
-/// shared crate.
-async fn dash_entries(repo_root: &Path) -> Vec<ChangesetEntry> {
-    let Some(branches) = git_stdout(
-        repo_root,
-        &[
-            "for-each-ref",
-            "--format=%(refname:short)",
-            "refs/heads/tugdash/",
-        ],
-    )
-    .await
+/// One `base...branch` name-status row as a changeset file row.
+///
+/// The letter is the whole status for every case but a rename or copy, where
+/// git appends a similarity score (`R100`); the entry carries the letter.
+fn dash_file_row(file: tugdash_core::DashDetailFile) -> ChangesetFile {
+    let letter = file.status.chars().next().unwrap_or('M');
+    let op = match letter {
+        'A' => "created",
+        'D' => "deleted",
+        'R' => "renamed",
+        _ => "modified",
+    };
+    ChangesetFile {
+        path: file.path,
+        git_status: letter.to_string(),
+        op: op.to_owned(),
+        origin: "dash".to_owned(),
+        shared: false,
+        last_touched: 0,
+        own_hunks: Vec::new(),
+        contested_hunks: Vec::new(),
+    }
+}
+
+/// Derive one dash entry per `refs/heads/tugdash/` branch.
+///
+/// The composition lives in `tugdash_core::dash_detail_entries_in` — the same
+/// code `tugutil dash list|status` reads — so the CLI and the Changes card can
+/// no longer disagree about a dash's base, worktree, or round count. This maps
+/// that shared detail onto the wire type and adds the one thing only tugcast
+/// knows: which live sessions are mated to each dash ([P08]).
+///
+/// tugdash-core is synchronous (git subprocesses), so the whole walk runs on
+/// the blocking pool in one hop — the same discipline `do_changeset_join`
+/// uses. `bound_sessions` comes from **one** ledger query for the repo, fanned
+/// out across entries; never a query per dash.
+async fn dash_entries(
+    repo_root: &Path,
+    ledger: Option<&crate::session_ledger::SessionLedger>,
+) -> Vec<ChangesetEntry> {
+    let bound_by_dash = ledger
+        .and_then(|l| l.bound_sessions_by_dash().ok())
+        .unwrap_or_default();
+
+    let root = repo_root.to_path_buf();
+    let Ok(details) =
+        tokio::task::spawn_blocking(move || tugdash_core::dash_detail_entries_in(&root)).await
     else {
         return Vec::new();
     };
 
-    let mut entries = Vec::new();
-    for branch in branches.lines().filter(|l| !l.trim().is_empty()) {
-        let name = branch.trim_start_matches("tugdash/");
-        let base = git_stdout(
-            repo_root,
-            &["config", "--get", &format!("branch.{branch}.tugbase")],
-        )
-        .await
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "main".to_owned());
-
-        let rounds = git_stdout(
-            repo_root,
-            &["rev-list", "--count", &format!("{base}..{branch}")],
-        )
-        .await
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(0);
-
-        // Worktree home convention (same sanitizer as the CLI: path
-        // separators → `__`, `:`/space → `_`, everything else non-alphanumeric
-        // dropped): the current `.tug/worktrees/<sanitized>` home, falling back
-        // to the legacy `.tugtree/tugdash__<sanitized>` path when a dash hasn't
-        // migrated yet — mirrors tugdash-core's `worktree_path` resolution.
-        let sanitized: String = name
-            .replace(['/', '\\'], "__")
-            .replace([':', ' '], "_")
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-            .collect();
-        let new_rel = format!(".tug/worktrees/{sanitized}");
-        let legacy_rel = format!(".tugtree/tugdash__{sanitized}");
-        let (worktree_rel, worktree_abs) = {
-            let new_abs = repo_root.join(&new_rel);
-            if new_abs.exists() {
-                (new_rel, new_abs)
-            } else {
-                let legacy_abs = repo_root.join(&legacy_rel);
-                if legacy_abs.exists() {
-                    (legacy_rel, legacy_abs)
-                } else {
-                    (new_rel, new_abs)
-                }
-            }
-        };
-        let worktree_dirty = if worktree_abs.exists() {
-            git_stdout(&worktree_abs, &["status", "--porcelain"])
-                .await
-                .map(|s| !s.is_empty())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        let files = git_stdout(
-            repo_root,
-            &["diff", "--name-status", &format!("{base}...{branch}")],
-        )
-        .await
-        .map(|out| parse_name_status(&out))
-        .unwrap_or_default();
-
-        // Round subjects, newest first — what the release discard
-        // preflight lists ([P14]). Empty when the dash has no rounds.
-        let round_subjects = if rounds > 0 {
-            git_stdout(
-                repo_root,
-                &["log", "--format=%s", &format!("{base}..{branch}")],
-            )
-            .await
-            .map(|out| {
-                out.lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .map(str::to_owned)
-                    .collect()
-            })
-            .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-
-        entries.push(ChangesetEntry::Dash {
-            owner_id: branch.to_owned(),
-            display_name: name.to_owned(),
-            base,
-            rounds,
-            worktree: worktree_rel,
-            worktree_dirty,
-            files,
-            round_subjects,
+    details
+        .into_iter()
+        .map(|detail| ChangesetEntry::Dash {
+            bound_sessions: bound_by_dash
+                .get(&detail.owner_key)
+                .cloned()
+                .unwrap_or_default(),
+            owner_id: detail.owner_key,
+            display_name: detail.name,
+            branch: Some(detail.branch),
+            stage: Some(detail.stage),
+            step_current: None,
+            step_total: None,
+            base: detail.base,
+            rounds: detail.rounds,
+            worktree: detail.worktree_rel,
+            worktree_dirty: detail.worktree_dirty,
+            files: detail.files.into_iter().map(dash_file_row).collect(),
+            round_subjects: detail.round_subjects,
             draft: None,
-        });
-    }
-    entries
+        })
+        .collect()
 }
 
-/// Parse `git diff --name-status` output into dash file rows. Rename lines
-/// (`R<score>\told\tnew`) report the destination path.
-fn parse_name_status(output: &str) -> Vec<ChangesetFile> {
-    let mut files = Vec::new();
-    for line in output.lines() {
-        let mut fields = line.split('\t');
-        let Some(status) = fields.next() else {
-            continue;
-        };
-        let Some(letter) = status.chars().next() else {
-            continue;
-        };
-        let path = if letter == 'R' || letter == 'C' {
-            fields.nth(1)
-        } else {
-            fields.next()
-        };
-        let Some(path) = path else { continue };
-        let op = match letter {
-            'A' => "created",
-            'D' => "deleted",
-            'R' => "renamed",
-            _ => "modified",
-        };
-        files.push(ChangesetFile {
-            path: path.to_owned(),
-            git_status: letter.to_string(),
-            op: op.to_owned(),
-            origin: "dash".to_owned(),
-            shared: false,
-            last_touched: 0,
-            own_hunks: Vec::new(),
-            contested_hunks: Vec::new(),
-        });
-    }
-    files
-}
 
 /// Commit exactly `files` (repo-relative) in `repo_dir` with `message`
 /// ([P15]), routed through `tugchanges_core::commit` ([P06]).
@@ -1920,22 +1868,51 @@ mod tests {
         git(&root, &["commit", "-q", "-m", "dash round"]);
         git(&root, &["switch", "-q", "main"]);
 
-        let snapshot = compose_snapshot(&root, None).await.expect("repo");
-        assert_eq!(snapshot.changesets.len(), 1);
+        // A creation id, and a live session mated to the dash under it.
+        let owner_key = tugdash_core::ops::ensure_dash_id(&root, "demo").unwrap();
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .record_spawn(
+                "sess-1",
+                &root.to_string_lossy(),
+                &root.to_string_lossy(),
+                "card-1",
+                crate::session_ledger::now_millis(),
+                None,
+            )
+            .unwrap();
+        ledger
+            .set_dash_binding("sess-1", Some((&owner_key, "demo")))
+            .unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let dash = snapshot
+            .changesets
+            .iter()
+            .find(|e| matches!(e, ChangesetEntry::Dash { .. }))
+            .expect("a dash entry");
         let ChangesetEntry::Dash {
             owner_id,
             display_name,
+            branch,
+            stage,
+            bound_sessions,
             base,
             rounds,
             worktree,
             worktree_dirty,
             files,
             ..
-        } = &snapshot.changesets[0]
+        } = dash
         else {
             panic!("expected dash entry");
         };
-        assert_eq!(owner_id, "tugdash/demo");
+        // The identity is the owner key; the ref is its own field ([P09]).
+        assert_eq!(owner_id, &owner_key);
+        assert!(owner_id.starts_with("tugdash/demo#"));
+        assert_eq!(branch.as_deref(), Some("tugdash/demo"));
+        assert_eq!(stage.as_deref(), Some("working"));
+        assert_eq!(bound_sessions, &vec!["sess-1".to_string()]);
         assert_eq!(display_name, "demo");
         assert_eq!(base, "main");
         assert_eq!(*rounds, 1);
@@ -1946,6 +1923,88 @@ mod tests {
         assert_eq!(files[0].git_status, "A");
         assert_eq!(files[0].op, "created");
         assert_eq!(files[0].origin, "dash");
+    }
+
+    /// A dash created by an older build has no `tugid`, so it composes under
+    /// its legacy branch-ref identity — and its legacy-keyed draft still
+    /// attaches ([P02], [P03], Risk R01).
+    #[tokio::test]
+    async fn compose_carries_an_id_less_dash_under_its_legacy_identity() {
+        let (_dir, root) = init_repo();
+        git(&root, &["branch", "tugdash/old"]);
+        git(&root, &["config", "branch.tugdash/old.tugbase", "main"]);
+        git(&root, &["switch", "-q", "tugdash/old"]);
+        std::fs::write(root.join("old-work.txt"), "round\n").unwrap();
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-q", "-m", "old round"]);
+        git(&root, &["switch", "-q", "main"]);
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        ledger
+            .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                owner_kind: "dash".to_string(),
+                owner_id: "tugdash/old".to_string(),
+                project_dir: CanonicalPath::from_raw(&root).as_str().to_string(),
+                fingerprint: "fp".to_string(),
+                message: "Land the old work".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let ChangesetEntry::Dash {
+            owner_id, draft, ..
+        } = snapshot
+            .changesets
+            .iter()
+            .find(|e| matches!(e, ChangesetEntry::Dash { .. }))
+            .expect("a dash entry")
+        else {
+            panic!("expected dash entry");
+        };
+        assert_eq!(owner_id, "tugdash/old", "no id on file, so no id in the key");
+        assert_eq!(
+            draft.as_ref().map(|d| d.message.as_str()),
+            Some("Land the old work"),
+            "the legacy-keyed draft still attaches"
+        );
+        // Composing is a read path and must not have minted one ([P02]).
+        assert_eq!(
+            tugdash_core::ops::dash_owner_key(&root, "old"),
+            "tugdash/old",
+            "compose stayed read-only on git config"
+        );
+    }
+
+    /// Dash entries sort by `owner_id`, and `#` (0x23) sorts below every
+    /// character valid in a dash name — so `demo` still precedes `demo2` once
+    /// both carry ids ([P09]). Asserted rather than assumed.
+    #[test]
+    fn entry_sort_key_orders_id_keyed_dashes_by_name() {
+        let dash = |owner_id: &str, name: &str| ChangesetEntry::Dash {
+            owner_id: owner_id.to_owned(),
+            display_name: name.to_owned(),
+            branch: Some(format!("tugdash/{name}")),
+            stage: None,
+            bound_sessions: Vec::new(),
+            step_current: None,
+            step_total: None,
+            base: "main".to_owned(),
+            rounds: 0,
+            worktree: String::new(),
+            worktree_dirty: false,
+            files: Vec::new(),
+            round_subjects: Vec::new(),
+            draft: None,
+        };
+        let demo = dash("tugdash/demo#1723500000000-a1b2c3", "demo");
+        let demo2 = dash("tugdash/demo2#1723500000001-d4e5f6", "demo2");
+        assert!(
+            entry_sort_key(&demo) < entry_sort_key(&demo2),
+            "`#` sorts below the `2` that distinguishes the names"
+        );
     }
 
     #[tokio::test]
@@ -1983,6 +2042,8 @@ mod tests {
             tag_lineage: None,
             synopsis: None,
             private: false,
+            dash_id: None,
+            dash_name: None,
         }
     }
 
@@ -1999,6 +2060,11 @@ mod tests {
                 ChangesetEntry::Dash {
                     owner_id: "tugdash/demo".to_owned(),
                     display_name: "demo".to_owned(),
+                    branch: Some("tugdash/demo".to_owned()),
+                    stage: Some("working".to_owned()),
+                    bound_sessions: Vec::new(),
+                    step_current: None,
+                    step_total: None,
                     base: "main".to_owned(),
                     rounds: 1,
                     worktree: ".tug/worktrees/demo".to_owned(),
@@ -2426,9 +2492,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_name_status_maps_letters_and_renames() {
-        let out = "A\tadded.txt\nM\tchanged.txt\nD\tgone.txt\nR100\told.txt\tnew.txt";
-        let files = parse_name_status(out);
+    fn dash_file_rows_map_letters_and_renames() {
+        // The parse now lives in tugdash-core (shared with the CLI); what this
+        // layer owns is the letter → op mapping and the score-stripped status.
+        let files: Vec<ChangesetFile> = [
+            ("added.txt", "A"),
+            ("changed.txt", "M"),
+            ("gone.txt", "D"),
+            ("new.txt", "R100"),
+        ]
+        .into_iter()
+        .map(|(path, status)| {
+            dash_file_row(tugdash_core::DashDetailFile {
+                path: path.to_owned(),
+                status: status.to_owned(),
+            })
+        })
+        .collect();
         let got: Vec<(&str, &str, &str)> = files
             .iter()
             .map(|f| (f.path.as_str(), f.git_status.as_str(), f.op.as_str()))

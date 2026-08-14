@@ -368,6 +368,20 @@ pub struct SessionRow {
     /// in the ack that set it. Keep in lockstep with the TS `SessionRow.private`.
     #[serde(default)]
     pub private: bool,
+    /// The dash this session is working on, as its **owner key** ([P01]) —
+    /// `tugdash/<name>#<tugid>`, or the bare branch ref for an id-less dash.
+    /// This is the authority; `dash_name` is denormalized display.
+    ///
+    /// A binding is live-session state ([P08]): it is written at bind, cleared
+    /// when the session closes ([L27]), and never reported for a row the
+    /// ledger no longer calls live — a dash whose cards have all closed is
+    /// *parked*, not still mated.
+    #[serde(default)]
+    pub dash_id: Option<String>,
+    /// The bound dash's name, denormalized so a display never needs a git
+    /// read. `dash_id` is the authority.
+    #[serde(default)]
+    pub dash_name: Option<String>,
 }
 
 /// One row of the `turns` submission journal. Authored by tugcast at
@@ -1463,6 +1477,7 @@ impl SessionLedger {
         Self::migrate_sessions_add_lineage(conn)?;
         Self::migrate_sessions_add_synopsis(conn)?;
         Self::migrate_sessions_add_private(conn)?;
+        Self::migrate_sessions_add_dash_binding(conn)?;
         Self::migrate_scan_cache_add_resume_columns(conn)?;
         Self::migrate_pulse_lines_add_intent(conn)?;
         Self::migrate_gazette_posts_add_elapsed_ms(conn)?;
@@ -1497,7 +1512,14 @@ impl SessionLedger {
                 -- Reporter post, and every Operator verb that reads sessions
                 -- skips it. From-now-on semantics — marking a session private
                 -- hides it going forward and scrubs nothing already written.
-                private           INTEGER NOT NULL DEFAULT 0
+                private           INTEGER NOT NULL DEFAULT 0,
+                -- The dash this session is working on ([P01]/[P08]):
+                -- `dash_id` is the owner key and the authority, `dash_name`
+                -- is denormalized for display. NULL when unbound, and
+                -- cleared when the session closes — bound-ness is defined
+                -- over live sessions ([L27]).
+                dash_id           TEXT,
+                dash_name         TEXT
             );
 
             CREATE INDEX IF NOT EXISTS sessions_workspace_recent
@@ -2407,6 +2429,31 @@ impl SessionLedger {
         Ok(())
     }
 
+    /// Self-healing add of the `sessions.dash_id` / `sessions.dash_name`
+    /// columns — the session↔dash binding ([P01], Spec S03). Pre-column rows
+    /// read `NULL` (unbound), which is exactly what they were. No-op on a
+    /// fresh DB (the CREATE TABLE defines both) or when already migrated.
+    fn migrate_sessions_add_dash_binding(conn: &Connection) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, "sessions")?;
+        if cols.is_empty() {
+            return Ok(());
+        }
+        for column in ["dash_id", "dash_name"] {
+            if cols.iter().any(|(n, _)| n == column) {
+                continue;
+            }
+            match conn.execute(
+                &format!("ALTER TABLE sessions ADD COLUMN {column} TEXT"),
+                [],
+            ) {
+                Ok(_) => {}
+                Err(err) if is_duplicate_column(&err) => {}
+                Err(err) => return Err(err.into()),
+            }
+        }
+        Ok(())
+    }
+
     /// Self-healing add of the `pulse_lines.intent` column — the retained
     /// high-level thought behind a low-level beat ("intent • action" in
     /// the strip). Pre-column rows read `NULL` (no intent), which is
@@ -2566,7 +2613,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name
              FROM sessions
              WHERE workspace_key = ?1
              ORDER BY last_used_at DESC",
@@ -2589,7 +2636,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name
              FROM sessions
              WHERE project_dir = ?1
              ORDER BY last_used_at DESC",
@@ -2621,7 +2668,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name
              FROM sessions
              WHERE card_id IS NOT NULL
                AND state != 'failed'
@@ -2651,7 +2698,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name
              FROM sessions
              WHERE (?1 IS NULL OR last_used_at >= ?1)
                AND (?2 IS NULL OR last_used_at <= ?2)
@@ -2690,7 +2737,7 @@ impl SessionLedger {
         let mut stmt = conn.prepare(
             "SELECT session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name
              FROM sessions
              WHERE session_id = ?1
              LIMIT 1",
@@ -2748,7 +2795,7 @@ impl SessionLedger {
     ) -> Result<Vec<(String, SessionRow)>, LedgerError> {
         const COLUMNS: &str = "session_id, workspace_key, project_dir, created_at, last_used_at,
                     turn_count, last_user_prompt, state, card_id, name, name_user_set, tag,
-                    root_tag, tag_lineage, synopsis, private";
+                    root_tag, tag_lineage, synopsis, private, dash_id, dash_name";
         // The scan cache's own columns, projected into the same row shape the
         // picker union synthesizes for an unadopted session.
         const SCAN_COLUMNS: &str = "session_id, project_dir, created_at, last_used_at,
@@ -2774,6 +2821,10 @@ impl SessionLedger {
                 // An unadopted scan row has no `sessions` row to carry a flag,
                 // and an absent row reads as public everywhere else too.
                 private: false,
+                // Nor a binding: a dash is bound by a live session, and this
+                // row has no session in the ledger at all.
+                dash_id: None,
+                dash_name: None,
             })
         }
         let conn = self.db.lock().expect("ledger mutex");
@@ -3409,11 +3460,16 @@ impl SessionLedger {
     /// several paths can call this for one ending (a close after a startup
     /// demote, a teardown after a crash), and each one recording would put two
     /// endings in the fact base for a session that ended once.
+    /// Closing also **releases the dash binding** ([L27], [P08]): the
+    /// acquisition a bind made is returned by the shorter-lived party. Without
+    /// it a `dash_id` written once would report a mated session forever, and
+    /// the *parked* state — a dash with rounds and no live session — could
+    /// never be reached.
     pub fn mark_closed(&self, session_id: &str) -> Result<bool, LedgerError> {
         let conn = self.db.lock().expect("ledger mutex");
         let affected = conn.execute(
             "UPDATE sessions
-             SET state = 'closed'
+             SET state = 'closed', dash_id = NULL, dash_name = NULL
              WHERE session_id = ?1
                AND state != 'closed'",
             params![session_id],
@@ -3421,6 +3477,85 @@ impl SessionLedger {
         drop(conn);
         self.notify_sessions_changed();
         Ok(affected > 0)
+    }
+
+    /// Bind a session to a dash, or clear its binding with `None` ([P08],
+    /// Spec S03). `dash_id` is the owner key ([P01]); `dash_name` rides along
+    /// so a display never needs a git read. Returns whether a row moved.
+    pub fn set_dash_binding(
+        &self,
+        session_id: &str,
+        dash: Option<(&str, &str)>,
+    ) -> Result<bool, LedgerError> {
+        let (dash_id, dash_name) = match dash {
+            Some((id, name)) => (Some(id), Some(name)),
+            None => (None, None),
+        };
+        let conn = self.db.lock().expect("ledger mutex");
+        let affected = conn.execute(
+            "UPDATE sessions SET dash_id = ?2, dash_name = ?3 WHERE session_id = ?1",
+            params![session_id, dash_id, dash_name],
+        )?;
+        drop(conn);
+        self.notify_sessions_changed();
+        Ok(affected > 0)
+    }
+
+    /// Drop every binding to one dash, keyed by its **owner key** — the
+    /// sweep a landing runs once the dash is gone ([P05]).
+    ///
+    /// Keyed by id and never by name: the column holds owner keys, so a name
+    /// would match nothing, and a prefix match would also sweep a live
+    /// successor dash that happens to reuse the name — the precise haunting
+    /// this design retires. The caller resolves the key **before** the
+    /// teardown that deletes the branch config it lives in ([L23], Risk R02).
+    pub fn clear_dash_bindings_for_dash(&self, dash_id: &str) -> Result<usize, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let affected = conn.execute(
+            "UPDATE sessions SET dash_id = NULL, dash_name = NULL WHERE dash_id = ?1",
+            params![dash_id],
+        )?;
+        drop(conn);
+        if affected > 0 {
+            self.notify_sessions_changed();
+        }
+        Ok(affected)
+    }
+
+    /// Every **live** session bound to a dash, grouped by the dash's owner
+    /// key — the one query every consumer of bound-ness uses ([P08]).
+    ///
+    /// One query rather than a per-dash accessor: `dash status` looks its dash
+    /// up in the map and the changeset feed fans the whole map out across
+    /// entries, so neither pays a query per dash and neither can drift from
+    /// the other on what "bound" means.
+    ///
+    /// The `state = 'live'` filter is where bound-ness is *defined*. The
+    /// release on close ([L27]) is the primary mechanism; this is the guard
+    /// that makes a row which escaped it harmless rather than wrong — and it
+    /// is what makes *parked* (rounds on file, no live session) reachable at
+    /// all.
+    pub fn bound_sessions_by_dash(
+        &self,
+    ) -> Result<std::collections::HashMap<String, Vec<String>>, LedgerError> {
+        let conn = self.db.lock().expect("ledger mutex");
+        let mut stmt = conn.prepare(
+            "SELECT dash_id, session_id
+             FROM sessions
+             WHERE dash_id IS NOT NULL AND state = 'live'
+             ORDER BY last_used_at DESC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut by_dash: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+        for (dash_id, session_id) in rows {
+            by_dash.entry(dash_id).or_default().push(session_id);
+        }
+        Ok(by_dash)
     }
 
     /// Transition a row to `failed`. Replaces the previous "remove on
@@ -6308,6 +6443,8 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
     let tag_lineage: Option<String> = row.get(13)?;
     let synopsis: Option<String> = row.get(14)?;
     let private: bool = row.get::<_, i64>(15)? != 0;
+    let dash_id: Option<String> = row.get(16)?;
+    let dash_name: Option<String> = row.get(17)?;
     let state = match state_str.parse::<SessionState>() {
         Ok(s) => s,
         Err(e) => return Ok(Err(e)),
@@ -6329,6 +6466,8 @@ fn row_from_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<SessionRow
         tag_lineage,
         synopsis,
         private,
+        dash_id,
+        dash_name,
     }))
 }
 
