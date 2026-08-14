@@ -84,7 +84,11 @@ export function parseSaveMode(entry: TaggedValue | undefined): SaveMode {
 /** The view settings a Text card uses when nothing else is configured. */
 export const DEFAULT_TEXT_CARD_SETTINGS: TextCardSettings = {
   lineNumbers: true,
-  lineWrap: false,
+  // A card is a column of text in a window the user sizes, not a terminal —
+  // reading it should never mean scrolling sideways. A markdown link to an
+  // attachment is routinely wider than the card, so with wrap off the very
+  // first thing an attachment does is push the document off the right edge.
+  lineWrap: true,
   softTabs: true,
   tabSize: 4,
   foldGutter: false,

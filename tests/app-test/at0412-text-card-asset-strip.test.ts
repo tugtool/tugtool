@@ -16,9 +16,9 @@
  *      PNG and a real non-image file. The document already links the PNG.
  *   2. The strip shows one tile, painted from the file's own path through
  *      `/api/fs/blob` — never from base64 the card would have to hold.
- *   3. A second link is typed by hand: a second tile appears, and it is a
- *      *file* tile — a glyph and a name, not an invisible slot where an image
- *      would be.
+ *   3. A second link is typed by hand: a second tile appears, and it shows the
+ *      file's real macOS QuickLook render — not an invisible slot where an
+ *      image would be, and not a generic document glyph either.
  *   4. ⌘Z takes the link away and the tile with it; ⌘⇧Z brings both back. The
  *      strip follows the text because it *is* the text.
  *   5. A link to a file that is not there renders a tile anyway, marked
@@ -30,6 +30,7 @@
  * destination directory, and ⌘V with image data.
  *
  * @covers tugdeck/src/lib/asset-projection.ts
+ * @covers tugdeck/src/lib/os-thumbnail-store.ts
  * @covers tugdeck/src/lib/asset-links.ts
  * @covers tugdeck/src/lib/attachment-upload.ts
  * @covers tugdeck/src/lib/text-card-store.ts
@@ -207,7 +208,11 @@ describe.skipIf(!SHOULD_RUN)(
         const assetsDir = path.join(dir, "assets");
         fs.mkdirSync(assetsDir);
         fs.copyFileSync(REPO_PNG_FIXTURE, path.join(assetsDir, "shown.png"));
-        fs.writeFileSync(path.join(assetsDir, "notes.zip"), "not really a zip");
+        fs.writeFileSync(
+          path.join(assetsDir, "notes.txt"),
+          "Real text, so QuickLook has a real page to draw.\n",
+          "utf8",
+        );
         fs.writeFileSync(
           docPath,
           "# Notes\n\nSEEDED ![shown](assets/shown.png)\n",
@@ -263,20 +268,29 @@ describe.skipIf(!SHOULD_RUN)(
             // ── A link typed by hand lights a tile ─────────────────────────
             // No attachment gesture involved: the strip is a projection, so
             // the text IS the interface.
-            await typeAtEnd(app, ["", "[notes](assets/notes.zip)"]);
+            await typeAtEnd(app, ["", "[notes](assets/notes.txt)"]);
             await app.waitForCondition<boolean>(tileCountIs(2), {
               timeoutMs: 15_000,
             });
-            expect(await tileCaptions(app)).toEqual(["shown.png", "notes.zip"]);
+            expect(await tileCaptions(app)).toEqual(["shown.png", "notes.txt"]);
 
-            // The non-image tile paints a glyph rather than an image — without
-            // that branch it would be an invisible slot with no affordance.
-            const fileGlyphs = await app.evalJS<number>(
-              `document.querySelectorAll(${JSON.stringify(
-                `${STRIP_SELECTOR} [data-slot="tug-attachment-preview__file"]`,
-              )}).length`,
+            // A non-image attachment has no pixels of its own, but macOS can
+            // draw it — so the tile shows the real QuickLook render (a page of
+            // this file's text) rather than a generic document glyph. The
+            // glyph is the fallback for a file QuickLook has nothing for, not
+            // the resting state for every non-image.
+            //
+            // A `data:` src is unambiguous here: the image tile beside it
+            // paints from `/api/fs/blob`, so only the thumbnail bridge can put
+            // an inline PNG in this strip.
+            await app.waitForCondition<boolean>(
+              `Array.from(document.querySelectorAll(${JSON.stringify(
+                `${STRIP_SELECTOR} img`,
+              )})).some(function(i){
+                return (i.getAttribute("src") || "").indexOf("data:image/png") === 0;
+              })`,
+              { timeoutMs: 15_000 },
             );
-            expect(fileGlyphs).toBe(1);
 
             // ── Undo takes the link away, and the tile with it ─────────────
             // The strip follows the text because it *is* the text — no
@@ -292,7 +306,7 @@ describe.skipIf(!SHOULD_RUN)(
             await app.waitForCondition<boolean>(tileCountIs(2), {
               timeoutMs: 15_000,
             });
-            expect(await tileCaptions(app)).toEqual(["shown.png", "notes.zip"]);
+            expect(await tileCaptions(app)).toEqual(["shown.png", "notes.txt"]);
           } finally {
             await app.close();
           }

@@ -39,6 +39,8 @@
  * @covers tugdeck/src/components/tugways/tug-text-card-editor.css
  * @covers tugdeck/src/components/tugways/cards/text-card.tsx
  * @covers tugdeck/src/lib/attachment-upload.ts
+ * @covers tugdeck/src/lib/open-attachment.ts
+ * @covers tugdeck/src/lib/os-open.ts
  * @covers tugrust/crates/tugcast/src/attachments.rs
  */
 
@@ -226,6 +228,51 @@ function viewerShowing(target: string): string {
   })()`;
 }
 
+/**
+ * Intercept the host's `openPath` bridge and record what is posted to it,
+ * WITHOUT calling through.
+ *
+ * Swallowing is the point, not a shortcut: calling through would open a real
+ * Finder window on the machine running the tests and steal the focus the
+ * harness depends on. What the deck asks the host for is the whole contract
+ * here — the host's side of `reveal` is `activateFileViewerSelecting`, which no
+ * test can observe anyway.
+ */
+async function captureOpenPathRequests(app: App): Promise<void> {
+  await app.evalJS<null>(
+    `(function(){
+      window.__at0410OpenPath = [];
+      var handler = window.webkit.messageHandlers.openPath;
+      handler.postMessage = function(payload){
+        window.__at0410OpenPath.push(payload);
+      };
+      return null;
+    })()`,
+  );
+}
+
+/** Everything posted to `openPath` since the capture was installed. */
+function openPathRequests(
+  app: App,
+): Promise<Array<{ path: string; kind: string }>> {
+  return app.evalJS<Array<{ path: string; kind: string }>>(
+    `window.__at0410OpenPath`,
+  );
+}
+
+/**
+ * A condition that holds once some Text card is showing `marker` — which is
+ * how the test names the document that had to open, without depending on how
+ * a card advertises its path.
+ */
+function textCardShowing(marker: string): string {
+  return `Array.from(document.querySelectorAll(
+    '[data-slot="tug-text-card-editor"] .cm-content'
+  )).some(function(el){ return (el.innerText || "").indexOf(${JSON.stringify(
+    marker,
+  )}) !== -1; })`;
+}
+
 describe.skipIf(!SHOULD_RUN)(
   "at0410: Text card file drops write assets and insert markdown links",
   () => {
@@ -368,6 +415,99 @@ describe.skipIf(!SHOULD_RUN)(
             const paths = await viewerPaths(app);
             expect(paths).toContain(path.join(assetsDir, "shown.png"));
             expect(paths).toContain(path.join(assetsDir, "plain.png"));
+          } finally {
+            await app.close();
+          }
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a link to a non-viewable file opens it, or reveals it when it cannot",
+      async () => {
+        // The gesture used to be gated on `isViewableFile`, so a `.md` sitting
+        // next to a `.png` was simply dead. What a link does is now decided
+        // from the file's own bytes, and every link does something.
+        const dir = fs.realpathSync(
+          fs.mkdtempSync(path.join(os.tmpdir(), "at0410-open-")),
+        );
+        const docPath = path.join(dir, "doc.md");
+        const assetsDir = path.join(dir, "assets");
+        fs.mkdirSync(assetsDir);
+
+        // Textual, and nothing in its name says so — `classifyFileKind` calls
+        // a `.md` and a `.zip` both "text", which is exactly why the name
+        // cannot be what decides this.
+        fs.writeFileSync(
+          path.join(assetsDir, "brief.md"),
+          "# Brief\n\nOPENEDBRIEF\n",
+          "utf8",
+        );
+        // Real binary: a zip's PK header and a NUL early on.
+        fs.writeFileSync(
+          path.join(assetsDir, "bundle.zip"),
+          Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x08, 0xff]),
+        );
+        fs.writeFileSync(
+          docPath,
+          "TEXTFORM [brief.md](assets/brief.md)\n\nBINARYFORM [bundle.zip](assets/bundle.zip)\n",
+          "utf8",
+        );
+
+        try {
+          const app = await launchTugApp({ testName: "at0410-asset-link-open" });
+          try {
+            await app.seedDeckState({
+              state: deckShape(),
+              cardStates: {
+                A: {
+                  content: { path: docPath, anchor: { line: 1, ch: 0 }, scrollTop: 0 },
+                },
+              },
+              focusCardId: "A",
+            });
+            await app.waitForCondition<boolean>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(EDITOR_CONTENT_SELECTOR)});
+                return el !== null && el.innerText.indexOf("TEXTFORM") !== -1;
+              })()`,
+              { timeoutMs: 15_000 },
+            );
+            await captureOpenPathRequests(app);
+
+            // ── Textual → a Text card ──────────────────────────────────────
+            expect(await accelClickText(app, "[brief.md]")).toBe(true);
+            await app.waitForCondition<boolean>(textCardShowing("OPENEDBRIEF"), {
+              timeoutMs: 15_000,
+            });
+            // Opened in the app, not handed to the OS.
+            expect(await openPathRequests(app)).toEqual([]);
+
+            // ── Binary → the Finder ────────────────────────────────────────
+            expect(await accelClickText(app, "[bundle.zip]")).toBe(true);
+            await app.waitForCondition<boolean>(
+              `window.__at0410OpenPath.length > 0`,
+              { timeoutMs: 15_000 },
+            );
+            expect(await openPathRequests(app)).toEqual([
+              {
+                path: path.join(assetsDir, "bundle.zip"),
+                // `reveal`, not `folder`: the file selected inside its folder,
+                // which is what reveal means everywhere else on the system.
+                kind: "reveal",
+              },
+            ]);
+
+            // And emphatically NOT opened as text — a zip in an editor paints
+            // its bytes as mojibake, which is the failure this replaces.
+            expect(
+              await app.evalJS<number>(
+                `document.querySelectorAll('[data-slot="tug-text-card-editor"]').length`,
+              ),
+            ).toBe(2);
           } finally {
             await app.close();
           }

@@ -74,3 +74,44 @@ export function isViewableFile(path: string): boolean {
 export function blobUrl(path: string): string {
   return `/api/fs/blob?path=${encodeURIComponent(path)}`;
 }
+
+/**
+ * The tugcast URL for a file's raw bytes, whatever its type.
+ *
+ * {@link blobUrl} types its response from an extension table and refuses
+ * anything outside it, because a viewer card points an `<img>` / `<embed>`
+ * straight at it. That table has no business in the way of a caller reading an
+ * attachment's bytes to copy it somewhere, and it was: a `.txt` in a document's
+ * `assets/` could be written but never read back, so copying one into another
+ * document silently did nothing.
+ *
+ * This route serves every type as an opaque download, which is exactly what
+ * makes serving every type safe. Use it for bytes; use `blobUrl` for pixels.
+ */
+export function bytesUrl(path: string): string {
+  return `/api/fs/bytes?path=${encodeURIComponent(path)}`;
+}
+
+/**
+ * `name` shortened to at most `max` characters, elided in the MIDDLE.
+ *
+ * A file name carries its identity at both ends — the subject at the front and
+ * the extension at the back — so the end-ellipsis every text overflow reaches
+ * for is exactly the wrong cut here: `Screenshot 2026-08-14 at 10.4…` tells a
+ * reader nothing the tile's own glyph didn't. Taking the middle out keeps both
+ * ends: `Screensh…5 AM.png`.
+ *
+ * Counts by code point, so an astral character is never split into half a
+ * surrogate pair. Returns `name` untouched when it already fits.
+ */
+export function elideFileName(name: string, max: number): string {
+  const chars = Array.from(name);
+  if (chars.length <= max) return name;
+  if (max <= 1) return "…";
+  // One character of the budget is the ellipsis itself. The tail is the half
+  // that gets rounded up, because that is the half holding the extension.
+  const keep = max - 1;
+  const tail = Math.ceil(keep / 2);
+  const head = keep - tail;
+  return `${chars.slice(0, head).join("")}…${chars.slice(chars.length - tail).join("")}`;
+}

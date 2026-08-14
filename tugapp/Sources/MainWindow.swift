@@ -1,4 +1,5 @@
 import Cocoa
+import QuickLookThumbnailing
 import WebKit
 
 /// Tug-private NSPasteboard type carrying the atom sidecar JSON for
@@ -448,6 +449,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.add(self, name: "openPath")
         contentController.add(self, name: "trashPath")
         contentController.add(self, name: "restorePath")
+        contentController.add(self, name: "thumbnailPath")
         contentController.add(self, name: "exportSession")
         contentController.add(self, name: "checkForUpdates")
 
@@ -891,23 +893,40 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
     /// valid JS string literal (U+2028 / U+2029 are legal in JSON and not in
     /// JS source text).
     func replyToTrashRequest(_ payload: [String: Any]) {
+        replyToBridgeRequest(payload, callback: "__tugTrashCallback")
+    }
+
+    /// Deliver a QuickLook thumbnail result to JavaScript. See `os-thumbnail.ts`.
+    func replyToThumbnailRequest(_ payload: [String: Any]) {
+        replyToBridgeRequest(payload, callback: "__tugThumbnailCallback")
+    }
+
+    /// Deliver a request/reply bridge result to the named JS callback.
+    private func replyToBridgeRequest(_ payload: [String: Any], callback: String) {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: payload, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8),
               let quotedData = try? JSONSerialization.data(withJSONObject: jsonString,
                                                           options: [.fragmentsAllowed]),
               let quotedString = String(data: quotedData, encoding: .utf8) else {
-            NSLog("MainWindow: JSON serialization failed for trash reply")
+            NSLog("MainWindow: JSON serialization failed for %@ reply", callback)
             return
         }
-        let script = "window.__tugTrashCallback?.(JSON.parse(\(quotedString)))"
+        let script = "window.\(callback)?.(JSON.parse(\(quotedString)))"
         DispatchQueue.main.async { [weak self] in
             self?.webView.evaluateJavaScript(script) { _, error in
                 if let error = error {
-                    NSLog("MainWindow: evaluateJavaScript failed for trash reply: %@",
-                          error.localizedDescription)
+                    NSLog("MainWindow: evaluateJavaScript failed for %@ reply: %@",
+                          callback, error.localizedDescription)
                 }
             }
         }
+    }
+
+    /// A PNG data URL for `image`, or nil when the encode fails.
+    static func pngDataURL(for image: CGImage) -> String? {
+        let rep = NSBitmapImageRep(cgImage: image)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return nil }
+        return "data:image/png;base64,\(png.base64EncodedString())"
     }
 
     /// Clean up WKScriptMessageHandler registrations to break retain cycle
@@ -927,6 +946,7 @@ class MainWindow: NSWindow, WKNavigationDelegate, WKUIDelegate {
         contentController.removeScriptMessageHandler(forName: "openPath")
         contentController.removeScriptMessageHandler(forName: "trashPath")
         contentController.removeScriptMessageHandler(forName: "restorePath")
+        contentController.removeScriptMessageHandler(forName: "thumbnailPath")
         contentController.removeScriptMessageHandler(forName: "exportSession")
         contentController.removeScriptMessageHandler(forName: "checkForUpdates")
         bridgeCleaned = true
@@ -1460,6 +1480,44 @@ extension MainWindow: WKScriptMessageHandler {
             } catch {
                 replyToTrashRequest(["requestId": requestId, "ok": false,
                                      "error": error.localizedDescription])
+            }
+        case "thumbnailPath":
+            // A QuickLook thumbnail for a non-image attachment. A .txt, a .pdf,
+            // a .key — the system already knows how to draw a preview of each,
+            // and QuickLook is the only way to ask: it runs the owning app's
+            // thumbnail extension out of process. Nothing in the web layer can
+            // do this, which is why it is a bridge rather than a route.
+            //
+            // `.all` rather than `.thumbnail`, so a file whose type has no
+            // content preview still comes back with its document icon instead
+            // of nothing — that icon names the file's kind, which is strictly
+            // more than the deck's generic glyph says.
+            //
+            // JS-side contract: post {requestId, path, size} and wait for
+            // window.__tugThumbnailCallback({requestId, dataUrl}). A file with
+            // no thumbnail at all replies with a null dataUrl rather than
+            // staying silent, so the caller settles instead of timing out.
+            guard let body = message.body as? [String: Any],
+                  let requestId = body["requestId"] as? String,
+                  let rawPath = body["path"] as? String, !rawPath.isEmpty else { return }
+            let points = (body["size"] as? Double) ?? 64
+            let url = URL(fileURLWithPath: (rawPath as NSString).expandingTildeInPath)
+            let scale = webView.window?.backingScaleFactor ?? 2
+            let request = QLThumbnailGenerator.Request(
+                fileAt: url,
+                size: CGSize(width: points, height: points),
+                scale: scale,
+                representationTypes: .all)
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) {
+                [weak self] representation, _ in
+                guard let self = self else { return }
+                let dataUrl = representation.flatMap { Self.pngDataURL(for: $0.cgImage) }
+                self.replyToThumbnailRequest([
+                    "requestId": requestId,
+                    // NSNull, not a nil Optional: JSONSerialization refuses the
+                    // latter outright and the reply would never be delivered.
+                    "dataUrl": dataUrl ?? NSNull(),
+                ])
             }
         case "checkForUpdates":
             // The update bulletin's action. Brings Sparkle's standard update

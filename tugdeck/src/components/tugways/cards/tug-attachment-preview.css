@@ -243,7 +243,13 @@
   font-size: var(--tugx-attachment-caption-size, 0.7rem);
   line-height: 1.2;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  /* One line, always. The caption is already elided in the middle to a
+     character budget (`CAPTION_MAX_CHARS`), which keeps a file name's two
+     informative ends; this clips whatever is still too wide for a tile
+     narrower than that budget — the fixed-width transcript tile. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--tugx-attachment-caption-color,
     var(--tug7-element-field-text-normal-label-rest, currentColor));
 }

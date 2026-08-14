@@ -162,7 +162,6 @@ import {
   fetchAttachBase,
   type AssetBaseDescriptor,
 } from "@/lib/attachment-upload";
-import { isViewableFile } from "@/lib/file-kinds";
 import { useOptionalResponder } from "./use-responder";
 import { useFocusable } from "./use-focusable";
 import { useCardId } from "./use-card-state-preservation";
@@ -892,23 +891,23 @@ export const TugTextCardEditor = React.forwardRef<
           // directory. The resolved path is handed straight to the same
           // guarded open path everything else uses — nothing assembled here
           // is persisted or compared ([L29]).
-          // Viewable kinds only — an image or a PDF opens in the viewer card.
-          // A dropped `.zip` writes a perfectly good link that any other tool
-          // will follow; it just is not a thing this card has a viewer for, so
-          // it stays inert rather than lighting up and doing nothing.
+          // Every link that resolves lights up. What the click DOES is decided
+          // from the file's own bytes at click time (`openAttachmentPath`) —
+          // viewer card, Text card, or the Finder for something with no in-app
+          // answer. This used to be gated on `isViewableFile`, which left a
+          // `.md` attachment sitting dead beside a `.png` that opened; and the
+          // gate could not be widened here anyway, because the name does not
+          // say whether a file is text (`classifyFileKind` returns `"text"` as
+          // its *default*, so a `.zip` and a `.md` look identical to it).
+          //
           // Resolved against the document's asset base rather than its path,
           // so a link in a not-yet-saved buffer opens like any other — an
           // untitled manual buffer has `path === null`, which used to make
           // ⌘-click dead there. `resolveRelativePath`, not `resolveAssetPath`:
           // ⌘-click follows *any* in-tree relative link, and narrowing it to
           // `assets/` would silently kill a hand-written `images/diagram.png`.
-          canOpenRelative: (destination) => {
-            const resolved = resolveRelativePath(
-              assetBaseRef.current,
-              destination,
-            );
-            return resolved !== null && isViewableFile(resolved);
-          },
+          canOpenRelative: (destination) =>
+            resolveRelativePath(assetBaseRef.current, destination) !== null,
           openRelative: (destination) => {
             const resolved = resolveRelativePath(
               assetBaseRef.current,

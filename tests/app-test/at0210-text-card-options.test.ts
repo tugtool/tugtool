@@ -232,13 +232,15 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () =
         );
         expect(caretCell).toContain("L: 1");
 
-        // Default settings: line-number gutter present, no wrap.
+        // Default settings: line-number gutter present, soft wrap on. A card
+        // is a column of text in a window the user sizes, so a fresh one never
+        // scrolls sideways — the first attachment link would put it there.
         expect(
           await app.evalJS<boolean>(
             `document.querySelector(${JSON.stringify(LINE_NUMBERS)}) !== null`,
           ),
         ).toBe(true);
-        expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(false);
+        expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(true);
 
         // Open the options through the pane's `…` menu.
         await chooseMenuRow(app, "Editor Options");
@@ -254,12 +256,12 @@ describe.skipIf(!SHOULD_RUN)("at0210: Text card masthead + editor options", () =
           { timeoutMs: 15000 },
         );
 
-        // Toggle Soft wrap on → the CM6 content gains cm-lineWrapping.
+        // Toggle Soft wrap off → the CM6 content loses cm-lineWrapping.
         await app.nativeClickAtElement(LINE_WRAP_SWITCH);
-        await app.waitForCondition<boolean>(`${WRAP_STATE} === true`, {
+        await app.waitForCondition<boolean>(`${WRAP_STATE} === false`, {
           timeoutMs: 15000,
         });
-        expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(true);
+        expect(await app.evalJS<boolean>(WRAP_STATE)).toBe(false);
       } finally {
         await app.close();
         fs.rmSync(dir, { recursive: true, force: true });

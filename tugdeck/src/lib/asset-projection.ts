@@ -41,7 +41,7 @@ import {
   resolveAssetPath,
   type AssetLinkRef,
 } from "./asset-links";
-import { classifyFileKind } from "./file-kinds";
+import { bytesUrl, classifyFileKind } from "./file-kinds";
 import { createAtomBytesStore, type AtomBytesStore } from "./atom-bytes-store";
 import type { AtomSegment } from "./tug-atom-img";
 
@@ -244,12 +244,19 @@ export class AssetProjection {
     // deliberately empty. That is an established shape — a restored draft
     // attachment carries exactly the same one until its bytes are read back.
     for (const tile of next) {
-      if (tile.kind !== "image") continue;
+      // A failed tile stands for a file that never landed — there is no path
+      // to carry.
+      if (tile.kind === "failed") continue;
       // A missing image still gets an entry — an empty marker, carrying
       // nothing paintable. That is what makes the component read it as
       // *broken* rather than as an image whose pixels have not arrived: with
       // no entry at all it would paint the transparent reserved slot forever,
       // and a link to a file that is not there would be invisible.
+      //
+      // A *non-image* tile gets one for its path alone. It has no pixels to
+      // paint from the path, but the path is how the tile asks macOS to draw
+      // the file — a page of the text, the first page of the PDF. Without an
+      // entry the tile knows only the file's name.
       this.bytesStore.put(tile.id, {
         content: "",
         mediaType: "",
@@ -309,9 +316,12 @@ export class AssetProjection {
    * Confirm a resolved path names a real file, once per path.
    *
    * A link to a file that is not there renders a *missing* tile rather than
-   * nothing, so a typo is visible instead of silent. The check is a `HEAD` on
-   * the blob route — the same route the tile would paint from, so a tile that
-   * survives the check is a tile that can paint.
+   * nothing, so a typo is visible instead of silent.
+   *
+   * The check is a `HEAD` on the **bytes** route, which answers for every type.
+   * Asking the blob route meant asking a question it could only answer about
+   * the handful of types a viewer card renders: it refused everything else, and
+   * every `.txt` and `.zip` a document linked came back as missing.
    */
   private checkExists(path: string): void {
     if (this.checking.has(path) || this.missing.has(path)) return;
@@ -319,10 +329,7 @@ export class AssetProjection {
     void (async () => {
       let absent = false;
       try {
-        const res = await fetch(
-          `/api/fs/blob?path=${encodeURIComponent(path)}`,
-          { method: "HEAD" },
-        );
+        const res = await fetch(bytesUrl(path), { method: "HEAD" });
         absent = res.status === 404;
       } catch {
         // A transport failure says nothing about the file; leave it alone

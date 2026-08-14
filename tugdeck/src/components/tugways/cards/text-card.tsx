@@ -112,7 +112,7 @@ import { useCycleMode } from "../use-cycle-mode";
 import { useCardDelegate, useCardLifecycle } from "@/lib/card-lifecycle";
 import { TUG_ACTIONS } from "../action-vocabulary";
 import { getDeckStore } from "@/lib/deck-store-registry";
-import { openFileInCard } from "@/lib/open-file-in-card";
+import { openAttachmentPath } from "@/lib/open-attachment";
 
 // ---------------------------------------------------------------------------
 // Keyboard-focus cycle ([P09]/[P10])
@@ -1171,11 +1171,13 @@ export function TextCardContent({ cardId }: { cardId: string }) {
             onStats={statsStore.set}
             assetProjection={assetProjection}
             onOpenPath={(p) => {
-              // The same routing every other open takes — a viewable kind
-              // lands in a file-view card, and a path already open is reused
-              // rather than duplicated.
+              // Decided by what the file *is*: a viewable kind lands in a
+              // file-view card, anything textual in a Text card, and anything
+              // else — a `.zip`, a `.sketch`, a file that is no longer there —
+              // in the Finder. A path already open is reused rather than
+              // duplicated, as with every other open.
               const deck = getDeckStore();
-              if (deck !== null) openFileInCard(deck, p);
+              if (deck !== null) void openAttachmentPath(deck, p);
             }}
           />
         </cycle.CycleScope>

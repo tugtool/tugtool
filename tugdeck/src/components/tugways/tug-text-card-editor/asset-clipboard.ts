@@ -29,7 +29,9 @@
  * reasons and were never meant to be what lands on disk. Writing a file from
  * `content` would store a degraded copy that renders convincingly and is
  * invisible until somebody opens their original expecting it. Every write here
- * reads the original through `/api/fs/blob`, from `assetPath` or `bytes.path`.
+ * reads the original through `/api/fs/bytes`, from `assetPath` or `bytes.path`
+ * — the bytes route rather than the blob route, because an attachment is any
+ * file at all and blob serves only what a viewer card can render.
  *
  * @module components/tugways/tug-text-card-editor/asset-clipboard
  */
@@ -45,7 +47,7 @@ import {
   uploadDocAttachment,
   type AssetBaseDescriptor,
 } from "@/lib/attachment-upload";
-import { blobUrl, classifyFileKind } from "@/lib/file-kinds";
+import { bytesUrl, classifyFileKind } from "@/lib/file-kinds";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import type {
   TugAtomsClipboardAssetRange,
@@ -124,13 +126,23 @@ export function buildAssetSidecar(
   return payload;
 }
 
-/** Read a file back through the blob route as a `File` the upload can send. */
+/**
+ * Read a file back as a `File` the upload can send.
+ *
+ * Through the **bytes** route, not the blob route: an attachment is any file at
+ * all, and blob refuses every type outside its viewer table. A `.txt` in a
+ * document's `assets/` could be written and never read back, so copying one
+ * into another document did nothing at all — and said nothing about it.
+ *
+ * The `File` carries no media type, and needs none: the document tier names the
+ * stored file from the name it is given, never from the type it is sent, so
+ * inventing one here would be a value nothing reads.
+ */
 async function fileAtPath(path: string): Promise<File | null> {
   try {
-    const res = await fetch(blobUrl(path));
+    const res = await fetch(bytesUrl(path));
     if (!res.ok) return null;
-    const blob = await res.blob();
-    return new File([blob], nameOf(path), { type: blob.type });
+    return new File([await res.blob()], nameOf(path));
   } catch {
     return null;
   }
@@ -160,15 +172,28 @@ export async function assetMarkdownForPaste(
   const ranges = payload.assets ?? [];
   if (attachments.length === 0 && ranges.length === 0) return null;
 
-  /** The destination this document should link `path` by, copying if needed. */
-  const destinationFor = async (path: string): Promise<string | null> => {
+  /**
+   * The destination this document should link `path` by, copying if needed.
+   *
+   * `name` is what the copy should be called: the file's own name when the
+   * attachment came from a document, and the *dropped* name when it came from
+   * the prompt entry — where the file on disk is a UUID in a flat per-instance
+   * folder and its real name lives only on the atom's bytes entry. `null` when
+   * there is no name to use, which is a pasted screenshot: the server mints a
+   * timestamped one where the write happens ([P11]). Falling back to the
+   * path's own name in that case would put a UUID in the user's directory.
+   */
+  const destinationFor = async (
+    path: string,
+    name: string | null,
+  ): Promise<string | null> => {
     // Already ours: reference it, never duplicate it.
     if (baseDir !== null && path.startsWith(`${baseDir}/assets/`)) {
       return `assets/${nameOf(path)}`;
     }
     const file = await fileAtPath(path);
     if (file === null) return null;
-    const stored = await uploadDocAttachment(base, file, nameOf(path));
+    const stored = await uploadDocAttachment(base, file, name);
     return stored === null ? null : stored.relativePath;
   };
 
@@ -178,23 +203,28 @@ export async function assetMarkdownForPaste(
 
   for (const atom of attachments) {
     const path = (atom.assetPath ?? atom.bytes?.path) as string;
-    const destination = await destinationFor(path);
+    // The name in preference order: the one a document copy states outright,
+    // then the one the prompt entry kept from the drop, then none at all.
+    const name = atom.assetName ?? atom.bytes?.name ?? null;
+    const destination = await destinationFor(path, name);
     if (destination === null) continue;
-    const label = atom.assetName ?? atom.segment.label;
+    // Label with the name the file actually ended up with, so the document
+    // reads as the file is called — including the `-2` a collision added, and
+    // the minted name a nameless paste was given.
     edits.push({
       from: atom.position,
       to: atom.position + 1,
-      insert: `![${label}](${encodeLinkDestination(destination)})`,
+      insert: `![${nameOf(destination)}](${encodeLinkDestination(destination)})`,
     });
   }
 
   for (const range of ranges) {
-    const destination = await destinationFor(range.assetPath);
+    const destination = await destinationFor(range.assetPath, range.assetName);
     if (destination === null) continue;
     edits.push({
       from: range.from,
       to: range.to,
-      insert: `[${range.assetName}](${encodeLinkDestination(destination)})`,
+      insert: `[${nameOf(destination)}](${encodeLinkDestination(destination)})`,
     });
   }
 

@@ -55,17 +55,21 @@ export function openPathInOS(path: string, kind: OsOpenKind = "file"): void {
  * reaching back into `window.opener`.
  */
 /**
- * Show a file in the Finder. The host's `openPath` bridge opens a
- * `folder` kind in Finder, so revealing a file means opening the
- * directory that contains it.
+ * Show a file in the Finder — the folder open *and the file selected*, which
+ * is what "reveal" means everywhere else on the system. Reveal a screenshot in
+ * a folder of screenshots and merely opening the folder leaves the user to
+ * find it again by name.
+ *
+ * The `reveal` kind is the host's `activateFileViewerSelecting`, and it falls
+ * back to the deepest existing ancestor when the file is gone — which is the
+ * right answer for a link to a file that used to be there.
  *
  * Shared by every surface that offers Show in Finder — the deck-level
  * chain handler and the transcript's file annotations — so they cannot
  * drift on what "reveal" means.
  */
 export function revealPathInFinder(path: string): void {
-  const parent = path.replace(/\/[^/]*$/, "");
-  openPathInOS(parent === "" ? "/" : parent, "folder");
+  openPathInOS(path === "" ? "/" : path, "reveal");
 }
 
 /**

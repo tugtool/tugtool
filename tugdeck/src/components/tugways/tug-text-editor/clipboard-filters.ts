@@ -57,6 +57,7 @@ import type { AtomBytesEntry, AtomBytesStore } from "@/lib/atom-bytes-store";
 import {
   hasNativeClipboardBridge,
   readClipboardViaNative,
+  writeClipboardViaNative,
 } from "@/lib/tug-native-clipboard";
 
 // ---------------------------------------------------------------------------
@@ -345,6 +346,12 @@ function parseBytesEntry(raw: unknown): AtomBytesEntry | null {
   if (typeof b.path === "string") {
     entry.path = b.path;
   }
+  // The dropped file's own name, which is what a destination writing it into a
+  // document's `assets/` names the file and labels the link by. Dropping it
+  // here would leave `path`'s UUID as the only name available.
+  if (typeof b.name === "string") {
+    entry.name = b.name;
+  }
   return entry;
 }
 
@@ -423,11 +430,19 @@ function fetchSidecarAssetBytes(
 // ---------------------------------------------------------------------------
 
 /**
- * Handle a copy/cut event on the editor. Writes the plain-text,
- * sidecar, and html payloads, then on cut dispatches a delete
- * transaction through the view. Returns `true` if the event was
- * fully handled (so the caller's `domEventHandlers` should
- * `preventDefault`).
+ * Handle a copy/cut event on the editor. Writes the plain-text and
+ * sidecar payloads, then on cut dispatches a delete transaction
+ * through the view. Returns `true` if the event was fully handled
+ * (so the caller's `domEventHandlers` should `preventDefault`).
+ *
+ * Inside Tug.app the sidecar goes on the **native** pasteboard, not on this
+ * event's `clipboardData`. ⌘C and ⌘X are `routing: "native"` commands, so
+ * AppKit performs them against the WKWebView and this DOM handler is what
+ * actually runs — the responder action's native write never fires for a
+ * keystroke. And a custom MIME type set on `clipboardData` does not survive
+ * WebKit's pasteboard normalization, which is the whole reason the bridge
+ * exists. Left to `setData` alone, every keyboard copy of an attachment
+ * arrived at its destination as the label text and nothing else.
  */
 function handleCopyOrCut(
   view: EditorView,
@@ -444,14 +459,20 @@ function handleCopyOrCut(
   const getBytes = store !== null ? (id: string) => store.get(id) : undefined;
   const payload = serializeClipboard(text, atoms, from, getBytes);
 
-  const dt = event.clipboardData;
-  if (dt === null) return false;
+  const wroteNatively =
+    payload.sidecar !== null &&
+    hasNativeClipboardBridge() &&
+    writeClipboardViaNative(payload.fallback, JSON.stringify(payload.sidecar));
 
-  if (payload.sidecar !== null) {
-    dt.setData("text/plain", payload.fallback);
-    dt.setData(TUG_ATOMS_MIME, JSON.stringify(payload.sidecar));
-  } else {
-    dt.setData("text/plain", payload.text);
+  if (!wroteNatively) {
+    const dt = event.clipboardData;
+    if (dt === null) return false;
+    if (payload.sidecar !== null) {
+      dt.setData("text/plain", payload.fallback);
+      dt.setData(TUG_ATOMS_MIME, JSON.stringify(payload.sidecar));
+    } else {
+      dt.setData("text/plain", payload.text);
+    }
   }
 
   event.preventDefault();

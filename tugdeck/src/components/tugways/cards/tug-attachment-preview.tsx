@@ -66,7 +66,12 @@ import { AlertTriangle, File as FileIcon, ImageOff, X } from "lucide-react";
 
 import type { AtomSegment } from "@/lib/tug-atom-img";
 import type { AtomBytesStore } from "@/lib/atom-bytes-store";
-import { blobUrl } from "@/lib/file-kinds";
+import { blobUrl, elideFileName } from "@/lib/file-kinds";
+import {
+  osThumbnailFor,
+  requestOSThumbnail,
+  subscribeToOSThumbnails,
+} from "@/lib/os-thumbnail-store";
 import { decorateChipLabel } from "./tug-atom-text-body";
 import type { TurnAddress } from "../tug-transcript-entry";
 import { useTugSheet } from "@/components/tugways/tug-sheet";
@@ -597,6 +602,28 @@ interface AttachmentPreviewTileProps {
 }
 
 /**
+ * How many characters of a caption are shown before it is elided.
+ *
+ * A prompt attachment's caption is the minted `image-N` and always fits. A
+ * document asset's is the file's real name, which routinely does not — and the
+ * compose cell is `width: auto`, so an un-elided one does not overflow, it
+ * makes the tile as wide as the name and shoves the rest of the strip off the
+ * end. This budget pairs with `--tugx-attachment-tile-max-width` (112px): at
+ * the caption's monospaced 0.7rem it comes to a hair under that cap, so the
+ * caption can never be what decides a tile's width. Retune the two together.
+ * The CSS clips as well, which is what covers the narrower transcript tile.
+ */
+const CAPTION_MAX_CHARS = 16;
+
+/**
+ * The edge, in points, a QuickLook thumbnail is asked for. Comfortably over
+ * both tile sizes (56px compose, 64px transcript) so the same cached render
+ * serves either without upscaling, and the host multiplies it by the window's
+ * backing factor on the way out.
+ */
+const QUICKLOOK_REQUEST_POINTS = 96;
+
+/**
  * One attachment thumbnail. A leaf in the focus language ([P10]): when the
  * strip authors a `focusGroup`, the tile registers as a cycle stop and the
  * engine drives DOM focus onto it during the walk; its own `role="button"`
@@ -639,6 +666,24 @@ function AttachmentPreviewTile({
   // renders a whole document's assets without holding any of their bytes.
   const isFile = tile.type !== "image";
   const isFailed = tile.type === "failed";
+  // A non-image attachment has no pixels of its own, but macOS can usually draw
+  // it: QuickLook renders a page of the text, the first page of the PDF, the
+  // slide of the deck. Asked for once per path and cached across mounts, so a
+  // strip that re-renders on every keystroke does not re-render the file
+  // ([L02] — external state through `useSyncExternalStore`, never an effect
+  // writing component state).
+  const quickLookPath = isFile && !isFailed && tile.path !== undefined
+    ? tile.path
+    : "";
+  const quickLook = React.useSyncExternalStore(
+    subscribeToOSThumbnails,
+    () => osThumbnailFor(quickLookPath),
+    () => null,
+  );
+  React.useEffect(() => {
+    if (quickLookPath === "") return;
+    requestOSThumbnail(quickLookPath, QUICKLOOK_REQUEST_POINTS);
+  }, [quickLookPath]);
   const hasThumb =
     tile.thumbnailDataUrl !== undefined && tile.thumbnailDataUrl.length > 0;
   const hasContent =
@@ -648,7 +693,7 @@ function AttachmentPreviewTile({
     tile.mediaType.length > 0;
   const hasPath = tile.path !== undefined && tile.path.length > 0;
   const src = isFile
-    ? undefined
+    ? (quickLook ?? undefined)
     : hasThumb
       ? tile.thumbnailDataUrl
       : hasContent
@@ -770,8 +815,11 @@ function AttachmentPreviewTile({
         <span
           data-slot="tug-attachment-preview__caption"
           className="tug-attachment-preview__caption"
+          // The full name where a reader can still get at it. The visible
+          // text is elided; the accessible name on the tile above is not.
+          title={caption}
         >
-          {caption}
+          {elideFileName(caption, CAPTION_MAX_CHARS)}
         </span>
       </div>
     </div>

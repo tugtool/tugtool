@@ -133,6 +133,21 @@ export interface AtomBytesEntry {
    * JPEG ladder), which is why the upload sends the `File`'s own type.
    */
   path?: string;
+  /**
+   * The name the file had when it was dropped.
+   *
+   * `path` names a file tugcast rested under a UUID, because a draft
+   * attachment lives in a flat per-instance folder where two `photo.png`
+   * would collide. The name the user knows it by is thrown away at that
+   * point unless it is kept here — and it is what a destination writing this
+   * attachment into a document's `assets/` should name the file and label the
+   * link. Without it, copying a chip out of the prompt entry and pasting it
+   * into a Text card leaves a UUID sitting in the user's own directory.
+   *
+   * Absent for a pasted screenshot, which genuinely has no name; the
+   * destination mints one where the write happens.
+   */
+  name?: string;
 }
 
 /**
@@ -303,6 +318,9 @@ export function createAtomBytesStore(): AtomBytesStore {
         if (entry.path !== undefined) {
           e.path = entry.path;
         }
+        if (entry.name !== undefined) {
+          e.name = entry.name;
+        }
         out[id] = e;
       }
       return out;
@@ -332,6 +350,9 @@ export function createAtomBytesStore(): AtomBytesStore {
         // disk rather than persisted, and this path is how they come back.
         if (typeof e.path === "string") {
           next.path = e.path;
+        }
+        if (typeof e.name === "string") {
+          next.name = e.name;
         }
         map.set(id, next);
         added += 1;

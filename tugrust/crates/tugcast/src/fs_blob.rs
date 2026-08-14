@@ -1,17 +1,34 @@
-//! HTTP handler for `GET /api/fs/blob` — raw byte serving for viewer cards.
+//! HTTP handlers for `GET /api/fs/blob` and `GET /api/fs/bytes` — raw byte
+//! serving.
 //!
-//! Where `fs_read` returns a file's text inside a JSON envelope, this route
-//! streams the bytes themselves so a viewer card can point an `<img>` or
-//! `<embed>` straight at a URL. The body is a stream over the open file, so
+//! Where `fs_read` returns a file's text inside a JSON envelope, these routes
+//! stream the bytes themselves. The body is a stream over the open file, so
 //! memory is constant regardless of file size and there is no size cap.
+//!
+//! The two differ in exactly one thing — how the response is typed — and that
+//! difference is what each is for:
+//!
+//! - **`blob`** types from the extension table, because a viewer card points an
+//!   `<img>` or `<embed>` straight at it. A type outside the table is refused
+//!   rather than guessed at.
+//! - **`bytes`** types everything as an opaque download. A caller reading an
+//!   attachment to copy it into a document's `assets/` is not rendering
+//!   anything, so the extension table is pure obstruction there — and it was:
+//!   a `.txt` attachment could be written but never read back, which made
+//!   copying one between documents silently do nothing. Serving every type is
+//!   safe *because* nothing renders it: `application/octet-stream`, `nosniff`,
+//!   and `Content-Disposition: attachment`.
 //!
 //! The response contract:
 //!
 //! - Loopback-only, path validated by `fs_read`'s shared guards (absolute or
 //!   `~`-anchored, no `..`, secret-filter denial).
-//! - `Content-Type` comes from an extension table, never from sniffing; an
-//!   extension outside the table is refused rather than served as
-//!   `application/octet-stream`.
+//! - `blob`'s `Content-Type` comes from an extension table, never from
+//!   sniffing; an extension outside it is refused with `415`. That refusal is
+//!   deliberately distinct from the `404` a missing file gets — a caller asking
+//!   whether an attachment is still on disk has to be able to tell them apart.
+//!   (`bytes` answers that question for every type, and is the better route to
+//!   ask it on.)
 //! - `ETag` is `"<mtime_ms>-<size>"`; a matching `If-None-Match` gets a bare
 //!   `304`, so a remounted card revalidates instead of re-pulling megabytes.
 //! - A single-range `Range: bytes=` request gets `206` with `Content-Range`;
@@ -28,8 +45,8 @@ use std::path::Path;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Query};
 use axum::http::header::{
-    ACCEPT_RANGES, CACHE_CONTROL, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, IF_NONE_MATCH,
-    RANGE,
+    ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE,
+    ETAG, IF_NONE_MATCH, RANGE,
 };
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -142,17 +159,38 @@ fn error_response((status, body): (StatusCode, Value)) -> Response {
     (status, axum::Json(body)).into_response()
 }
 
+/// How a served file is typed on the way out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Typing {
+    /// From the extension table, refusing anything outside it. This is what a
+    /// viewer card's `<img>` / `<embed>` needs: a real media type, and a hard
+    /// no for a type we would otherwise be guessing at.
+    ByExtension,
+    /// Opaquely — `application/octet-stream`, `nosniff`, and a download
+    /// disposition — which is safe for **every** type precisely because the
+    /// browser will never render it inline. A caller reading bytes to copy a
+    /// file somewhere is not rendering anything, so the extension table has no
+    /// business in its way.
+    Opaque,
+}
+
 /// Serve `canonical` per the module contract. Split from the handler so the
 /// response can be exercised directly in tests without a running server.
 pub(crate) async fn serve_blob(canonical: &Path, headers: &HeaderMap) -> Response {
-    let Some(mime) = canonical
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .and_then(mime_for_extension)
-    else {
-        return error_response(fs_error(StatusCode::NOT_FOUND, "unsupported_type"));
-    };
+    serve_file(canonical, headers, Typing::ByExtension).await
+}
 
+/// Serve `canonical`'s bytes opaquely, whatever its type. See {@link Typing}.
+pub(crate) async fn serve_bytes(canonical: &Path, headers: &HeaderMap) -> Response {
+    serve_file(canonical, headers, Typing::Opaque).await
+}
+
+async fn serve_file(canonical: &Path, headers: &HeaderMap, typing: Typing) -> Response {
+    // Existence is answered BEFORE servability, so the two refusals are
+    // distinguishable. They used to share a 404, which made "this file is not
+    // there" and "this file is there and I do not serve its type" the same
+    // answer — and a caller asking a `HEAD` whether an attachment still exists
+    // marked every `.txt` and `.zip` in a document as missing.
     let metadata = match tokio::fs::metadata(canonical).await {
         Ok(md) => md,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
@@ -166,6 +204,23 @@ pub(crate) async fn serve_blob(canonical: &Path, headers: &HeaderMap) -> Respons
     if !metadata.is_file() {
         return error_response(fs_error(StatusCode::BAD_REQUEST, "bad_path"));
     }
+
+    let mime = match typing {
+        Typing::Opaque => "application/octet-stream",
+        Typing::ByExtension => {
+            let Some(mime) = canonical
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .and_then(mime_for_extension)
+            else {
+                return error_response(fs_error(
+                    StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    "unsupported_type",
+                ));
+            };
+            mime
+        }
+    };
 
     let total = metadata.len();
     let etag = format!("\"{}-{}\"", mtime_ms(&metadata), total);
@@ -207,12 +262,20 @@ pub(crate) async fn serve_blob(canonical: &Path, headers: &HeaderMap) -> Respons
         Err(_) => return error_response(fs_error(StatusCode::INTERNAL_SERVER_ERROR, "internal")),
     };
 
-    let builder = Response::builder()
+    let mut builder = Response::builder()
         .header(CONTENT_TYPE, mime)
         .header(ETAG, &etag)
         .header(ACCEPT_RANGES, "bytes")
         .header(CACHE_CONTROL, "no-cache")
         .header("x-content-type-options", "nosniff");
+    if typing == Typing::Opaque {
+        // Belt to `nosniff`'s braces. These bytes are read by `fetch` into a
+        // Blob and never pointed at by a `src`, but a URL is a URL — and this
+        // route serves types (`.html`, `.svg`) that a navigation would happily
+        // execute at the deck's own origin. A download disposition is what
+        // makes serving *every* type the safe thing rather than the risky one.
+        builder = builder.header(CONTENT_DISPOSITION, "attachment");
+    }
 
     let built = match range {
         RangeRequest::Partial { start, end } => {
@@ -250,6 +313,27 @@ pub(crate) async fn get_fs_blob(
         Err(err) => return error_response(err),
     };
     serve_blob(&canonical, &headers).await
+}
+
+/// Handle `GET /api/fs/bytes?path=<abs>`. Restricted to loopback.
+///
+/// The same guards and the same streaming as the blob route, with no extension
+/// table: a caller reading an attachment's bytes to copy it somewhere needs
+/// every type, and the download disposition is what makes that safe.
+pub(crate) async fn get_fs_bytes(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Query(query): Query<BlobQuery>,
+) -> Response {
+    if !addr.ip().is_loopback() {
+        warn!("get_fs_bytes: rejected non-loopback connection from {addr}");
+        return error_response(fs_error(StatusCode::FORBIDDEN, "denied"));
+    }
+    let canonical = match guard_absolute_path(&query.path) {
+        Ok(canonical) => canonical,
+        Err(err) => return error_response(err),
+    };
+    serve_bytes(&canonical, &headers).await
 }
 
 // ── Unit tests ───────────────────────────────────────────────────────────────
@@ -444,13 +528,101 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unknown_extension_is_refused() {
+    async fn an_unservable_type_is_refused_but_not_reported_absent() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, b"text").unwrap();
 
+        // 415, not 404: the file is right there. A caller asking `HEAD` whether
+        // an attachment still exists reads a 404 as "gone and the link is
+        // broken", which every non-image attachment in a document would be.
         let response = serve_blob(&path, &HeaderMap::new()).await;
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+        // And a file of that same unservable type that is genuinely absent
+        // still answers 404 — the whole point of separating the two.
+        let response = serve_blob(&dir.path().join("gone.txt"), &HeaderMap::new()).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Every type the blob route refuses, and a few it never heard of. An
+    /// attachment can be any file at all, so "no file type left behind" is the
+    /// contract — not a longer table.
+    #[tokio::test]
+    async fn the_bytes_route_serves_every_type() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in [
+            "notes.txt",
+            "archive.zip",
+            "deck.key",
+            "sheet.xlsx",
+            "drawing.svg",
+            "page.html",
+            "raw.nef",
+            "script.sh",
+            "README",
+            ".env.example",
+            "photo.png",
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"bytes for everyone").unwrap();
+
+            let response = serve_bytes(&path, &HeaderMap::new()).await;
+            assert_eq!(response.status(), StatusCode::OK, "serving {name}");
+            let headers = response.headers().clone();
+            assert_eq!(
+                headers.get(CONTENT_TYPE).unwrap(),
+                "application/octet-stream",
+                "typing {name}",
+            );
+            // The two headers that make serving an arbitrary type safe: it is
+            // never sniffed into something renderable, and a navigation to the
+            // URL downloads rather than executes at the deck's own origin.
+            assert_eq!(headers.get("x-content-type-options").unwrap(), "nosniff");
+            assert_eq!(headers.get(CONTENT_DISPOSITION).unwrap(), "attachment");
+            assert_eq!(body_bytes(response).await, b"bytes for everyone");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_bytes_route_reports_absence_and_non_files() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // The existence question every asset projection asks, and it has to be
+        // answerable for a type the blob route would have refused outright.
+        let response = serve_bytes(&dir.path().join("gone.txt"), &HeaderMap::new()).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let subdir = dir.path().join("folder.txt");
+        std::fs::create_dir(&subdir).unwrap();
+        let response = serve_bytes(&subdir, &HeaderMap::new()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn the_bytes_route_keeps_the_blob_route_s_streaming_contract() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("archive.zip");
+        std::fs::write(&path, b"0123456789").unwrap();
+
+        let response = serve_bytes(&path, &headers_with(RANGE, "bytes=2-5")).await;
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            response.headers().get(CONTENT_RANGE).unwrap(),
+            "bytes 2-5/10"
+        );
+        assert_eq!(body_bytes(response).await, b"2345");
+
+        let etag = serve_bytes(&path, &HeaderMap::new())
+            .await
+            .headers()
+            .get(ETAG)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let response = serve_bytes(&path, &headers_with(IF_NONE_MATCH, &etag)).await;
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
     }
 
     #[tokio::test]

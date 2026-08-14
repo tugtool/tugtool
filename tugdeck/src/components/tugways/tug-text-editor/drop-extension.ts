@@ -890,7 +890,11 @@ export async function processAttachmentFiles(
       // can reach.
       const live = bytesStore.get(id);
       if (live === null) return;
-      bytesStore.put(id, { ...live, path });
+      // The name rides with the path: the stored file is a UUID, and the name
+      // the user knows this attachment by is only recoverable here.
+      const next = { ...live, path };
+      if (file.name.length > 0) next.name = file.name;
+      bytesStore.put(id, next);
     });
   }
 
