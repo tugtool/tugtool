@@ -16,6 +16,22 @@
 
 ---
 
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus.** Lint: 0 errors, 1 warning (PL023, discharged by this section). No content stamp: `tugutil plan stamp` does not exist yet, because this is the plan that builds it — so this document reads `never-reviewed` under its own machinery until Step 2 ships and a later round stamps it. That is the migration case (#rollout) describes, observed on the first document to hit it.
+
+Applied, holes and failure modes: the stale gate had a hole that reproduced the exact failure the phase exists to prevent — `dash-implement` reads the **worktree** copy ([P04]), but its Setup only copies a plan in when the plan was *not* already committed on base, so a plan edited-but-uncommitted on base leaves the worktree holding an older document whose stamp matches itself, and the gate reports `reviewed` while the run implements the wrong bytes. Neither copy can be blindly overwritten (the worktree copy holds ledger progress, the base copy holds the user's edits), so this became [Q02] rather than a silent decision; Step 6 now ships the cheap half (detect and report the divergence) and defers the policy. Also unstated: the review's fixups and stamp land **uncommitted in the dash worktree** and are swept into the next round's commit — recorded in [P04]'s implications, since a reviewer expecting a clean worktree would read the dirt as a bug.
+
+Applied, technical grounding verified against the real code rather than taken from the plan: `tugplug/` is `cp -R`'d into `Tug.app/Contents/Resources/tugplug` by the Xcode copy phase and tugcode resolves the plugin dir relative to its own binary — so a repo edit to a skill does nothing until a rebuild, which would have made every manual check in Steps 5–8 silently exercise the previous skill text and report a false pass; this is now a Constraint and is named in each affected step's Tests. `buildSlashCommandLine` reconstructs a plain command line from a draft carrying a command atom or `@`-mentions, and `RUN_SLASH_COMMAND` dispatches *before* the send-readiness gates — which is what actually makes [P06]'s "no `canSubmit` gate" correct, so the claim now cites the mechanism instead of asserting the outcome. Sequencing: Step 3's `**Depends on:** #step-1` was not a real dependency (feed plumbing over phase 3's `dash_plan_path`, sharing no code with the stamp) and was removed; Step 6 cited a doctrine section Step 7 wrote, so the never-ask list moved into Step 6 and no commit in this phase ships a dangling reference.
+
+Applied, mechanical and citation fixes: the proposed `at0410-plan-review-verb.test.ts` collided with the existing `at0410-text-card-file-drop.test.ts` (0411 is also taken) — renumbered to `at0412` at all eight references. `[D07]` was cited for per-card tugbank persistence in the State Zone Mapping, but D07 is the JSX-composition rule; the governing decision is **[D137]** (a borrowed model is live-only; persistence lives in the hook, never in the borrow), now cited there and in [P06], where it also records that the typed path inherits the no-persistence property for free by ending at the same controller. `ChangesetEntry::Dash` has 14 literal constructions across three files, not "two in that file" — Step 3 now scopes the sweep honestly. Spec S01 gained the ledger-cell indexing trap: `read_ledger_row` and `rewrite_ledger_line` index the same row differently (the latter carries a leading empty segment), which is exactly the kind of off-by-one that would produce a plausible, wrong hash.
+
+Tuglaws cross-check: the frontend work is one registry entry, one handler, and two persistence helpers — no new React state, so [L02] is satisfied by the existing `planReviewRequestStore` / controller subscriptions and [L06] by routing notices to the pane bulletin rather than state; [L27] holds because the phase adds no new subscription (the handler is a latch, not a listener); [L28] is upheld by [P06]'s choice to let the controller's park observe the turn lifecycle instead of the handler reaching into it. The State Zone Mapping is present and now correctly cited. Rust-side, [P03]'s exit-code split follows the shipped `plan lint` convention, and [P01]'s hash reuses `tugchanges_core::content_hash`'s 16-hex-of-SHA-256 shape rather than inventing a second content-identity convention. Confirmed `tugutil-core` is not a wasm crate (those live in `tugdeck/crates/`), so the new `sha2` dependency carries no bundle cost.
+
+Deferred: [Q01] (the stale mark before phase 5) stands as devised. [Q02] (base-vs-worktree divergence policy) is new and is the one item wanting the user's judgment before Step 6 is implemented — the plan ships detection either way, so it does not block starting.
+
+---
+
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}
@@ -80,6 +96,7 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 - **The deck cannot touch the filesystem.** Bare-form `/plan-review` resolution must be synchronous over data the card already holds — the `ChangesRouteController` snapshot and the tugbank cache — not a shell round-trip.
 - **No Web storage.** Per-card persistence goes through tugbank `/api/defaults/<domain>/<key>`, following `writePersistedModel` in `tugdeck/src/lib/use-model.ts`.
 - **`~/.local/bin/tugutil` is a symlink to the main checkout.** Any test that shells the CLI must use an absolute path into the build (`tugutilPath()` in `tests/app-test/dash-fixture.ts`), never a bare `tugutil`.
+- **Skills run from the app bundle, not from the repo.** The Xcode "Copy Rust binaries, tugdeck dist, capabilities, and tugplug" build phase does `cp -R` of `tugplug/` into `Tug.app/Contents/Resources/tugplug`, and tugcode resolves the global plugin dir relative to its own binary. **A repo edit under `tugplug/skills/` has no effect on any running instance until the app is rebuilt.** Every manual verification of a skill edit in steps 5–8 must run `just app-debug` from the dash worktree first, or it silently exercises the previous skill text and reports a false pass.
 - **App-test selection is derived.** Every new `*.test.ts` carries `@covers` lines; `just app-test-covers-check` fails on a missing or unresolvable declaration.
 
 #### Assumptions {#assumptions}
@@ -106,6 +123,21 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 **Plan to resolve:** Live with it for one phase. The gate covers the case that costs something (implementing against a stale review); the rest is cosmetic and belongs with the other Lens polish.
 
 **Resolution:** DEFERRED to phase 5, per the program plan's own sequencing. Revisit if the gate fires often enough to feel like a surprise.
+
+#### [Q02] Which copy wins when base and worktree diverge? (OPEN) {#q02-copy-divergence}
+
+**Question:** The stale gate reads the **worktree** copy ([P04]). `dash-implement`'s Setup says a plan committed on the base branch "already rode along" into the worktree at `dash create` time. So if the user edits the plan on base *after* the dash was created and does not commit, the worktree copy is an older document whose stamp still matches **itself** — `plan status` reports `reviewed`, the gate passes, and the run implements a plan that is missing the user's latest edits while the system reports everything is fine.
+
+**Why it matters:** This is the exact failure the phase exists to prevent — a review that does not cover the bytes that matter — reintroduced one level down, and the gate's green verdict makes it *less* visible than before. Neither copy can simply be overwritten: the worktree copy accumulates ledger progress written by `dash step`, and the base copy accumulates the user's edits. Copying either direction destroys real state.
+
+**Options (if known):**
+- **Detect and ask.** Compare the two files at Setup; when they differ, raise it as a [P09] fork alongside the stale gate — "Use the worktree copy / Refresh it from the base copy (loses ledger progress) / Stop and reconcile by hand".
+- **Merge the ledger.** Refresh the worktree copy's body from base while preserving its ledger rows — correct in principle, real machinery, and a new class of edit for `tugutil-core::plan` to own.
+- **Declare the base copy authoritative until the first `dash step`,** and the worktree copy authoritative after — a rule that is cheap but silently picks a side.
+
+**Plan to resolve:** [#step-6](#step-6) ships the **detection** only, because it is nearly free (compare the given path against the worktree copy) and because an undetected divergence is the part that does damage. The policy is the user's call and is not decided here.
+
+**Resolution:** OPEN — detection lands in this phase; the resolution policy is deferred pending the user's answer. If it is left open past this phase, the honest default is the first option, since it never destroys state without being asked.
 
 ---
 
@@ -191,6 +223,8 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 **Implications:**
 - The absolute path is composed in the deck as `projectDir` + the entry's `worktree` (repo-relative) + the entry's `plan_path` (worktree-relative), which requires carrying `plan_path` on the changeset entry ([#step-3](#step-3)).
 - A dash whose worktree was torn down but whose branch config survives resolves to a path that does not exist; the review turn reports that plainly rather than the card pre-validating it, since the card cannot stat.
+- **The review's fixups and its stamp land uncommitted in the dash worktree.** Nothing in the review commits them — the next `tugutil dash commit` sweeps them into that round. This is the correct outcome (the plan is one of the dash's own files and rides its rounds), but it must be stated, because a reviewer who expects a clean worktree afterwards will read the dirt as a bug. The review turn says which file it wrote.
+- It also means a review run against a bound dash is a **write into a worktree from a session whose cwd is the base checkout**. That is legal — the doctrine's one-and-only-working-root rule forbids the opposite direction, writing to the base from a dash run — but every path the review touches must be absolute, for the same reason the doctrine gives.
 
 #### [P05] Last-reviewed wins over the bound dash (DECIDED) {#p05-resolution-order}
 
@@ -218,6 +252,8 @@ Program decisions [P08] (review is stamped as-of content; re-review is additive)
 **Implications:**
 - The card's `slashCommandSurfaces` handler is a resolver plus a latch — no async, no submission, no gate of its own.
 - A `/plan-review` typed while a review is already running is refused by `evaluatePlanReviewGate`'s existing `already-reviewing` branch, with the existing caution.
+- **The typed path inherits [D137] for free.** Because it ends at the same controller, the borrow is still live-only and still never writes `dev.model/<cardId>` — the property `use-model-borrow.test.ts` pins with a throwing fake tugbank client, and `at0409` pins end to end. A handler that submitted its own turn would have had to re-earn that, and would have been the obvious place to get it wrong.
+- The new last-reviewed write is a **separate** durable value in its own domain, not a widening of the borrow: [D137]'s no-persistence rule is about the model selector, and nothing here routes the borrow through `setModel`.
 
 #### [P07] The stale gate covers "never reviewed" too (DECIDED) {#p07-gate-covers-never-reviewed}
 
@@ -309,7 +345,11 @@ Given a plan's source text and its `PlanDoc` parse, the extract is built line by
 2. **Trim** trailing whitespace from every surviving line.
 3. **Drop** lines that are empty after trimming.
 4. **Drop** thematic breaks — a line whose trimmed content is three or more characters, all of them `-`. (A markdown table separator such as `|---|---|` contains `|` and is therefore kept.)
-5. **Reduce ledger rows.** For each line whose number appears in `PlanDoc::ledger_rows`, emit only the first two cells: `| #step-1 | Title |`.
+5. **Reduce ledger rows.** For each line whose number appears in `PlanDoc::ledger_rows`, emit only the anchor and title cells: `| #step-1 | Title |`.
+
+   **Mind the indexing trap.** The two existing functions that read the same row index it differently: `read_ledger_row` splits after trimming the leading and trailing `|`, so its cells are `0`=anchor, `1`=title, `2`=status, `3`=commit — while `rewrite_ledger_line` splits the raw body and carries a leading empty segment, so *its* cells are `1`=anchor, `2`=title, `3`=status, `4`=commit. The extract keeps anchor and title in whichever convention it splits with; write it against `read_ledger_row`'s and say so at the definition.
+
+   The ledger's header row and its `|---|---|` separator are **not** in `ledger_rows` — `read_ledger_row` requires the first cell to start with `#`, which neither does — so both survive verbatim. That is fine and stable: neither changes as a run walks.
 6. **Normalize checkboxes.** Rewrite a leading `- [x]` or `- [X]` (after indentation) to `- [ ]`.
 7. **Join** the surviving lines with `\n` and hash: `Sha256::digest`, first 8 bytes, lowercase hex — 16 characters.
 
@@ -377,7 +417,7 @@ PL023 (no Review Record at all) is unchanged and stays a warning.
 
 | State | Zone (appearance / local-data / structure) | Mechanism | Law |
 |-------|--------------------------------------------|-----------|-----|
-| The card's last-reviewed plan path | local-data, durable | tugbank `dev.plan-review-last/<cardId>` via PUT + `setLocalValue`, written by `PlanReviewController` at submit; read synchronously through `getTugbankClient().get(…)` | [D07] per-card defaults; no Web storage |
+| The card's last-reviewed plan path | local-data, durable | tugbank `dev.plan-review-last/<cardId>` via PUT + `setLocalValue`, written by `PlanReviewController` at submit; read synchronously through `getTugbankClient().get(…)` | [D137] (persistence lives beside the borrow, never inside it); no Web storage |
 | The pending review request (typed or broadcast) | structure | `planReviewRequestStore` — an external store the controller subscribes to | [L02] |
 | The review phase (`idle`/`parked`/`armed`/`running`) | structure | `PlanReviewController`'s existing snapshot + `subscribe`; unchanged by this phase | [L02], [L27] |
 | The review notice (announce / caution) | appearance | pane bulletin via `setNotifier`, never React state | [L06] |
@@ -405,7 +445,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 | `tugplug/skills/plan-devise/SKILL.md` | renamed `devise`, plus its [P09] fork |
 | `tugplug/skills/plan-review/SKILL.md` | renamed `review-plan`, plus re-review semantics and its fork |
 | `tugplug/skills/dash-on/SKILL.md` | renamed `dash-run`, with the trimmed input grammar |
-| `tests/app-test/at0410-plan-review-verb.test.ts` | the typed `/plan-review` gesture end to end |
+| `tests/app-test/at0412-plan-review-verb.test.ts` | the typed `/plan-review` gesture end to end (0410 and 0411 are taken; 0412 is the next free id) |
 
 #### Symbols to add / modify {#symbols}
 
@@ -453,7 +493,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 | **Unit (Rust)** | the extract, the verdict, the stamp edit's round-trip refusal | `cargo nextest run` over fixture documents in `plan.rs`'s test module |
 | **Integration (Rust CLI)** | exit codes and JSON envelopes for `plan status` / `plan stamp` | `tugrust/crates/tugutil/tests/plan_cli.rs`, on the `plan lint` precedent |
 | **Unit (TypeScript)** | `resolvePlanReviewTarget`'s three-step order and its refusal | `tugdeck/src/lib/__tests__/plan-review-controller.test.ts` |
-| **App-test** | the typed `/plan-review` gesture, the borrow, and the release | `tests/app-test/at0410-plan-review-verb.test.ts`, on `at0409`'s pattern |
+| **App-test** | the typed `/plan-review` gesture, the borrow, and the release | `tests/app-test/at0412-plan-review-verb.test.ts`, on `at0409`'s pattern |
 | **Drift prevention** | the review-progress invariance — a ledger flip must not restamp | a unit test that runs `set_ledger_status` and re-hashes |
 
 #### What stays out of tests {#test-non-goals}
@@ -476,8 +516,8 @@ No new React state and no new component are introduced. The card's `slashCommand
 | #step-3 | `plan_path` on the dash changeset entry | pending | — |
 | #step-4 | `/plan-review` as a card verb | pending | — |
 | #step-5 | Re-review semantics in the review skill | pending | — |
-| #step-6 | The stale gate and dash-implement's forks | pending | — |
-| #step-7 | Dialog discipline and the never-ask list | pending | — |
+| #step-6 | The never-ask doctrine, the stale gate, and dash-implement's forks | pending | — |
+| #step-7 | Dialog discipline across the remaining skills | pending | — |
 | #step-8 | The roster rename | pending | — |
 | #step-9 | Integration checkpoint | pending | — |
 
@@ -549,7 +589,8 @@ No new React state and no new component are introduced. The card's `slashCommand
 
 #### Step 3: `plan_path` on the dash changeset entry {#step-3}
 
-**Depends on:** #step-1
+<!-- No dependency: this is feed plumbing over `dash_plan_path`, which phase 3
+     already shipped. It shares no code with the stamp work and could land first. -->
 
 **Commit:** `tugdash(plan-lane): carry each dash's recorded plan path through the changeset feed`
 
@@ -564,7 +605,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 **Tasks:**
 - [ ] Add `plan_path: Option<String>` to `DashDetail` and populate it in `dash_detail_entries_in` from `dash_plan_path(repo_root, name)` — the same read `status_in` already performs.
 - [ ] Add the matching optional field to `ChangesetEntry::Dash` with `#[serde(default, skip_serializing_if = "Option::is_none")]`, alongside `step_current` / `step_total`, and document it as worktree-relative.
-- [ ] Map it in `dash_entries` where the other `detail.*` fields are mapped, and update the two test-fixture constructions in that file that build the variant literally.
+- [ ] Map it in `dash_entries` where the other `detail.*` fields are mapped, then fix every literal `ChangesetEntry::Dash { … }` construction the compiler names. There are **14 at time of writing, spanning three files** — `tugcast-core/src/types.rs`, `tugcast/src/feeds/changeset.rs`, and `tugcast/src/feeds/draft_engine.rs` — because the variant has no `Default` and every site enumerates all fields. Budget for the sweep; it is mechanical but it is not two edits.
 - [ ] Add `plan_path?: string` to `DashChangesetEntry` in `changeset-types.ts` with a doc comment naming it worktree-relative, and extend the entry's type guard the way `step_current` is guarded (optional-or-string).
 
 **Tests:**
@@ -591,7 +632,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 - `tugdeck/src/settings-api.ts`: the new domain in `CARD_KEYED_DOMAINS`.
 - `tugdeck/src/lib/slash-commands.ts`: the registry entry.
 - `tugdeck/src/components/tugways/cards/session-card.tsx`: the surface handler.
-- `tests/app-test/at0410-plan-review-verb.test.ts`.
+- `tests/app-test/at0412-plan-review-verb.test.ts`.
 
 **Tasks:**
 - [ ] Add `PLAN_REVIEW_LAST_DOMAIN = "dev.plan-review-last"` to `model-domains.ts` (the dependency-free leaf that already holds `PLAN_REVIEW_DOMAIN`), and add it to `CARD_KEYED_DOMAINS` in `settings-api.ts` so `pruneOrphanedCardDefaults` sweeps it.
@@ -599,8 +640,10 @@ No new React state and no new component are introduced. The card's `slashCommand
 - [ ] Call `writeLastReviewedPlan` from `PlanReviewController.submit`, so both the broadcast path and the typed path record the card's last-reviewed plan.
 - [ ] Add `resolvePlanReviewTarget(input): { path: string } | { refused: true }` as a **pure** function taking the trimmed args, `projectDir`, the last-reviewed path, and the bound dash entry (`worktree`, `plan_path`). Order: explicit arg (absolute, else joined onto `projectDir`) → last-reviewed → `projectDir`/`worktree`/`plan_path` → refuse ([P05]).
 - [ ] Register `{ name: "plan-review", description: …, takesArgs: true }` in `LOCAL_SLASH_COMMANDS`. It becomes `supported-local` automatically — `slash-supported.ts` derives its set from the registry — and the `as const satisfies` narrowing makes the missing handler a compile error.
-- [ ] Write the `slashCommandSurfaces["plan-review"]` handler: read the binding (return silently when absent, the `/diff` precedent), find the bound dash's entry in `changesController.getSnapshot().dashes` by `display_name`, call the resolver, and on success `planReviewRequestStore.latch(cardId, path)` ([P06]). On refusal, `paneBulletinRef.current?.caution` naming the explicit form. Add no `canSubmit` gate — the controller's park is the correct mid-turn behavior.
-- [ ] Write `at0410-plan-review-verb.test.ts` on `at0409`'s pattern: type `/plan-review <abs path>` in card A, assert the AI chip moves to the review model, inject the turn's settle, assert the chip returns and `dev.model/A` is byte-identical. Assert the submitted turn carries a **command atom**, never a literal command string (`buildCommandSubmission` puts the name in the atom). Carry `@covers` lines for the controller, the registry, and the card.
+- [ ] Write the `slashCommandSurfaces["plan-review"]` handler: read the binding (return silently when absent, the `/diff` precedent), find the bound dash's entry in `changesController.getSnapshot().dashes` by `display_name`, call the resolver, and on success `planReviewRequestStore.latch(cardId, path)` ([P06]). On refusal, `paneBulletinRef.current?.caution` naming the explicit form. Add no `canSubmit` gate — verified in `tug-prompt-entry.tsx`, the `RUN_SLASH_COMMAND` dispatch deliberately runs **before** the send-readiness gates, so the handler is reached mid-turn and the controller's park is what waits.
+- [ ] Write `at0412-plan-review-verb.test.ts` on `at0409`'s pattern: type `/plan-review <abs path>` in card A, assert the AI chip moves to the review model, inject the turn's settle, assert the chip returns and `dev.model/A` is byte-identical. Assert the submitted turn carries a **command atom**, never a literal command string (`buildCommandSubmission` puts the name in the atom). Carry `@covers` lines for the controller, the registry, and the card.
+
+  **Typing the command is safe, and the reason is not obvious.** Submitting runs `editor.acceptActiveCompletion()` first, so a typed `/plan-review` may become a command *atom* rather than plain text — and `matchLocalSlashCommand` only inspects strings. It still matches, because `buildSlashCommandLine` reconstructs a plain `/name …` line from the draft first, expanding a leading command atom back to `/name` and any `@`-mention in the argument to its path. So `/plan-review @roadmap/some-plan.md` reaches the resolver as a normal path argument. Do not write the test to dodge the completion popup; the flattening is the shipped behavior and is worth exercising.
 
 **Tests:**
 - [ ] Unit: `resolvePlanReviewTarget` returns the explicit arg when given one, absolute or project-relative.
@@ -612,7 +655,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
 - [ ] `bun test tugdeck/src/lib/__tests__/plan-review-controller.test.ts`
-- [ ] `just app-test at0410-plan-review-verb.test.ts`
+- [ ] `just app-test at0412-plan-review-verb.test.ts`
 
 ---
 
@@ -639,7 +682,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 - [ ] Add a short re-review subsection to `tuglaws/plan-review-rubric.md` holding edits-are-decisions and done-rows-frozen, and have the skill cite it rather than restate it.
 
 **Tests:**
-- [ ] Manual: run `/tugplug:review-plan` by hand on a fixture plan copied into a scratch directory, confirm the round paragraph carries `Oriented on:` and that `tugutil plan status` reads `reviewed` afterwards. (Skill prose has no automated contract — see (#test-non-goals).)
+- [ ] Manual (**after `just app-debug` from the worktree** — the running instance reads skills from `Tug.app/Contents/Resources/tugplug`, not the repo; see (#constraints)): run `/tugplug:review-plan` by hand on a fixture plan copied into a scratch directory, confirm the round paragraph carries `Oriented on:` and that `tugutil plan status` reads `reviewed` afterwards. (Skill prose has no automated contract — see (#test-non-goals).)
 - [ ] Integration (Rust): a fixture round written in the Spec S02 grammar parses with its stamp, its date, and its model.
 
 **Checkpoint:**
@@ -648,59 +691,62 @@ No new React state and no new component are introduced. The card's `slashCommand
 
 ---
 
-#### Step 6: The stale gate and dash-implement's forks {#step-6}
+#### Step 6: The never-ask doctrine, the stale gate, and dash-implement's forks {#step-6}
 
 **Depends on:** #step-2
 
-**Commit:** `tugplug(plan-lane): dash-implement gates on plan staleness and raises its three forks`
+**Commit:** `tugplug(plan-lane): never-ask doctrine; dash-implement gates on plan staleness and raises its three forks`
 
-**References:** [P07] gate covers never-reviewed, [P03] readout not gate, List L01, Spec S03, (#dialog-forks)
+**References:** [P07] gate covers never-reviewed, [P03] readout not gate, [Q02] copy divergence, List L01, List L02, Spec S03, (#dialog-forks)
 
 **Artifacts:**
+- `tuglaws/dash-work-doctrine.md`: the never-ask section.
 - `tugplug/skills/dash-implement/SKILL.md`.
 
 **Tasks:**
+- [ ] **First**, add the "What never gets asked" section to `tuglaws/dash-work-doctrine.md` carrying List L02 verbatim, plus the closing rule: join's other stops (conflicts, a missing draft, a named blocker) are correct refusals with one right answer, not unasked questions. The doctrine lands **before** the first skill that cites it, so no commit in this phase ships a dangling reference.
 - [ ] In the Setup phase, after the plan is present inside the worktree (its existing task 3), add: run `tugutil plan status <worktree-plan-path> --json` and read `data.review`. This is deliberately after the copy — the worktree copy is what the run drives ([P04]).
+- [ ] Add the **divergence detection** for [Q02]: when the plan was given as a base-checkout path *and* a worktree copy already exists, compare the two files. If they differ, say so before the gate's verdict — naming both paths — because a `reviewed` verdict on a worktree copy that is missing the user's uncommitted base edits is the one wrong answer this gate can give. Detection only; the resolution policy is [Q02] and is not decided here.
 - [ ] Write the **stale gate** fork: on `stale` or `never-reviewed`, raise `AskUserQuestion` with "Review now (Recommended)" and "Proceed as-is", the message naming which verdict and, on `stale`, the last round's date and model from `data.last_round`. Never hard-refuse ([P07]). On "Review now", print `` `/tugplug:plan-review <path>` `` as its own backticked chip and stop.
 - [ ] Write the **step-refusal** fork: replace the current "fix the plan and re-run the verb; hand-edit only when the document genuinely cannot be made to parse" prose with a dialog — "Fix the plan and retry" / "Hand-edit the ledger this run" — since the wrong guess corrupts the durable record. Keep the existing description of *why* a refusal happens (a plan that does not strictly parse, a missing row, an anchor that is not `#step-<n>`, a `done` row reopened).
 - [ ] Write the **batch boundary** fork: on a run walking more than six steps in one invocation, ask once at the midpoint — "Continue" / "Stop here and report". Never per-step, and never on a short run. State the threshold explicitly so it is not re-invented per run.
-- [ ] Add a guardrail line pointing at the never-ask list in the doctrine ([#step-7](#step-7) writes it), so the licence and the boundary are cited together.
+- [ ] Add a guardrail line citing the doctrine's never-ask section written above, so the licence and the boundary travel together.
 
 **Tests:**
-- [ ] Manual: point `dash-implement` at a plan with no Review Record and confirm the gate dialog appears rather than the walk starting.
+- [ ] Manual (**after `just app-debug` from the worktree** — skills run from the app bundle, see (#constraints)): point `dash-implement` at a plan with no Review Record and confirm the gate dialog appears rather than the walk starting.
 - [ ] Integration (Rust): `plan status --json` on a plan with a `done` row and a stale stamp reports both `review: "stale"` and the step counts the gate's message quotes — the two fields the skill reads exist and are populated together.
 
 **Checkpoint:**
 - [ ] grep: `dash-implement/SKILL.md` names `tugutil plan status` exactly once, in Setup
 - [ ] grep: each of the three forks in List L01 attributed to `dash-implement` appears in the skill
+- [ ] grep: List L02's five rules live in `tuglaws/dash-work-doctrine.md` and in no skill file
 
 ---
 
-#### Step 7: Dialog discipline and the never-ask list {#step-7}
+#### Step 7: Dialog discipline across the remaining skills {#step-7}
 
 **Depends on:** #step-6
 
-**Commit:** `tuglaws(plan-lane): never-ask doctrine, and the remaining [P09] forks`
+**Commit:** `tugplug(plan-lane): the remaining [P09] forks — devise, dash-audit, dash-join`
 
 **References:** List L01, List L02, (#dialog-forks)
 
 **Artifacts:**
-- `tuglaws/dash-work-doctrine.md`: the never-ask section.
 - `tugplug/skills/devise/SKILL.md`, `dash-audit/SKILL.md`, `dash-join/SKILL.md`.
 
 **Tasks:**
-- [ ] Add a "What never gets asked" section to `tuglaws/dash-work-doctrine.md` carrying List L02 verbatim, plus the closing rule: join's other stops (conflicts, a missing draft, a named blocker) are correct refusals with one right answer, not unasked questions.
 - [ ] `devise`: it already declares `AskUserQuestion` and already says to clarify only design-changing unknowns. Add the [P09] framing — an Open Question the author cannot settle is **asked before the plan is declared ready**, so a `[Q##]` in a finished plan means asked and deferred.
 - [ ] `dash-audit`: add `AskUserQuestion` to `allowed-tools` and the disposition fork — "Carry the fixups now as rounds on this dash" / "Leave the list with you". The verdict itself stays read-only, and the existing `dash mark … audited` carve-out is unchanged.
 - [ ] `dash-join`: it already declares `AskUserQuestion`. Convert the empty-dash path from prose ("report it and offer release as the user's call") to the fork — "Release it" / "Leave it" — and keep the never-release-on-your-own-initiative guardrail, since a dialog *is* the user gesturing. Leave conflicts, draftless, and blockers as stops.
-- [ ] Have all four skills cite the doctrine's never-ask section rather than restating it.
+- [ ] Have these three skills cite the doctrine's never-ask section ([#step-6](#step-6) wrote it) rather than restating it.
 
 **Tests:**
-- [ ] Manual: read each of the four frontmatter blocks and confirm `AskUserQuestion` is present exactly where List L01 says a fork lives.
+- [ ] Manual: read each of the three frontmatter blocks and confirm `AskUserQuestion` is present exactly where List L01 says a fork lives.
+- [ ] Manual (**after `just app-debug`** — see (#constraints)): trigger `dash-join` on an empty dash and confirm the "Release it / Leave it" dialog appears instead of the old prose hand-back.
 
 **Checkpoint:**
-- [ ] grep: List L02's five rules live in `tuglaws/dash-work-doctrine.md` and in no skill file
 - [ ] grep: every skill named in List L01 declares `AskUserQuestion` in `allowed-tools`
+- [ ] grep: no skill file restates List L02; each cites the doctrine
 
 ---
 
@@ -732,7 +778,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
 - [ ] `cd tugrust && cargo nextest run -p tugutil`
-- [ ] `just app-test at0409-plan-review-borrow.test.ts at0410-plan-review-verb.test.ts`
+- [ ] `just app-test at0409-plan-review-borrow.test.ts at0412-plan-review-verb.test.ts`
 - [ ] grep: no live instruction anywhere names `/tugplug:review-plan`, `/tugplug:devise`, or `/tugplug:dash-run` outside a stub or a historical roadmap passage
 
 ---
@@ -779,7 +825,7 @@ No new React state and no new component are introduced. The card's `slashCommand
 **Acceptance tests:**
 - [ ] `cargo nextest run` green across the workspace, including the new `plan.rs` and `plan_cli.rs` cases.
 - [ ] `bun test` green, including `resolvePlanReviewTarget`'s resolution-order cases.
-- [ ] `just app-test at0409-plan-review-borrow.test.ts at0410-plan-review-verb.test.ts` green.
+- [ ] `just app-test at0409-plan-review-borrow.test.ts at0412-plan-review-verb.test.ts` green.
 - [ ] `tugutil plan lint` exit 0 on this document, with its own Review Record stamped.
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
@@ -792,6 +838,6 @@ No new React state and no new component are introduced. The card's `slashCommand
 |------------|--------------|
 | Stamp derivation is sound | `cargo nextest run -p tugutil-core` — including the progress-invariance test |
 | The verbs behave at the CLI boundary | `cargo nextest run -p tugutil` — exit codes and envelopes |
-| The gesture reaches the borrow | `just app-test at0410-plan-review-verb.test.ts` |
+| The gesture reaches the borrow | `just app-test at0412-plan-review-verb.test.ts` |
 | The rename left nothing dangling | grep for the three old command spellings outside stubs and history |
 | The document itself conforms | `tugutil plan lint roadmap/dash-integration-3.1-plan-lane.md` exit 0 |
