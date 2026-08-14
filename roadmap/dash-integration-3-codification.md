@@ -402,14 +402,14 @@ tugutil dash mark <name> <built|audited> [--note <text>] [--json]
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Ledger edit primitive | pending | — |
-| #step-2 | Dash-log declaration grammar | pending | — |
-| #step-3 | `dash step start` / `dash step done` | pending | — |
-| #step-4 | `dash mark` + stage/step derivation | pending | — |
-| #step-5 | Feed carries stage and step | pending | — |
-| #step-6 | The dash-work doctrine | pending | — |
-| #step-7 | Skill renames, rewrites, and stubs | pending | — |
-| #step-8 | Integration checkpoint | pending | — |
+| #step-1 | Ledger edit primitive | done | `23dfb86ef` |
+| #step-2 | Dash-log declaration grammar | done | `196e02ec3` |
+| #step-3 | `dash step start` / `dash step done` | done | `69b075613` |
+| #step-4 | `dash mark` + stage/step derivation | done | `bd041c9c6` |
+| #step-5 | Feed carries stage and step | done | `fd08f9f40` |
+| #step-6 | The dash-work doctrine | done | `f7b604673` |
+| #step-7 | Skill renames, rewrites, and stubs | done | `ad2fed815` |
+| #step-8 | Integration checkpoint | done | `52517c8e1` |
 
 #### Step 1: Ledger edit primitive {#step-1}
 

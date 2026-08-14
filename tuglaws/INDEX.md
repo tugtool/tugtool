@@ -48,6 +48,10 @@
 - [code-signing-mac.md](code-signing-mac.md) — The `Tug Dev` self-signed signing pipeline (macOS only). Why the app-test harness depends on it; procedures and failure modes.
 - [wasm-crates.md](wasm-crates.md) — WASM crates in tugdeck (`tugmark-wasm`, `tugdiff-wasm`). Per-crate layout, build pipeline, lazy-load convention, and the checklist for adding a new one.
 
+## Working on a dash
+
+- [dash-work-doctrine.md](dash-work-doctrine.md) — How an agent works on a dash worktree: the one-and-only-working-root rule, the verification bar, test discipline including the banned shapes, law discipline, round mechanics, the stop-before-landing obligation and its join draft, no plan numbers in durable artifacts. Cited by the dash-lane skills so the discipline lives in exactly one file.
+
 ## Templates
 
 - [devise-skeleton.md](devise-skeleton.md) — Template for plan documents (the format `/tugplug:devise` authors and `/tugplug:implement` walks). Kept here per user decision; it is a template, not a tuglaws law or architecture doc.

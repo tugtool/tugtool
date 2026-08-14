@@ -3947,11 +3947,11 @@ export function SessionCardBody({
       const message = args.trim();
       commitModeController.enter(message.length > 0 ? message : undefined);
     },
-    // `/join` — the dash lane's landing gesture, backed by the `tugplug:join`
+    // `/join` — the dash lane's landing gesture, backed by the `tugplug:dash-join`
     // skill (the same shape as the other dash verbs: the skill rides
     // `tugutil dash join`, which owns the preflight, the in-memory preview,
     // the journal, and the teardown). Forwarded as a leading `command` atom so
-    // the wire carries a clean `/tugplug:join …` and claude expands it as a
+    // the wire carries a clean `/tugplug:dash-join …` and claude expands it as a
     // USER invocation — the path that clears the skill's
     // `disable-model-invocation` guard (see `commandWireText`). Landing is a
     // turn, so it takes the same idle gate every mutating verb does ([P08]):
@@ -4029,8 +4029,8 @@ export function SessionCardBody({
       }
       // The typed args are a dash name (plus an optional message) — plain
       // text — so the composer's substrate carries nothing worth threading
-      // through; the row reads `/tugplug:join <name>`.
-      const submission = buildCommandSubmission("tugplug:join", args);
+      // through; the row reads `/tugplug:dash-join <name>`.
+      const submission = buildCommandSubmission("tugplug:dash-join", args);
       codeSessionStore.send(submission.text, submission.atoms);
     },
     // `/shell <command>` — the deliberate override under the shell

@@ -77,7 +77,7 @@ Prose, not a table — a table invites one-word entries, and the value is the sp
 
 Report what changed, in a few lines. Then give the next move as a literal command on its own line, **inside backticks**, command and path together in one span:
 
-`` `/tugplug:implement roadmap/my-plan.md` ``
+`` `/tugplug:dash-implement roadmap/my-plan.md` ``
 
 The Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text.
 

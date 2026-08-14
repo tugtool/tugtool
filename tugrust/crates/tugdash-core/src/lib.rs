@@ -18,12 +18,15 @@ pub mod ops;
 /// re-merge / structured-merge driver / AI seam, and the candidate builder.
 pub mod resolve;
 
-pub use dash::{DashRoundMeta, append_dash_log, detect_default_branch, validate_dash_name};
+pub use dash::{
+    DashDeclaration, DashDeclarations, DashRoundMeta, MarkStage, StepPhase, append_dash_log,
+    detect_default_branch, read_declarations, validate_dash_name,
+};
 pub use ops::{
     CommitOutcome, CreateOutcome, DashDetail, DashDetailFile, DashListItem, DashStatus,
-    JoinOptions, JoinOutcome, JoinStrategy, ReleaseOutcome, RoundItem, ShowOutcome, commit, create,
-    dash_detail_entries_in, derive_stage, join, join_in, list, release, release_in, show, status,
-    status_in,
+    JoinOptions, JoinOutcome, JoinStrategy, MarkOutcome, ReleaseOutcome, RoundItem, ShowOutcome,
+    StepOutcome, commit, create, dash_detail_entries_in, dash_plan_path, derive_stage, join,
+    join_in, list, mark, release, release_in, show, status, status_in, step_done, step_start,
 };
 pub use resolve::{
     FileMergeRequest, FileMerger, FileResolution, JoinShape, ResolveOutcome, ResolvedBy,

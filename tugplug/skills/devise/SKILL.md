@@ -1,6 +1,6 @@
 ---
 name: devise
-description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it, and hand it to the review turn — ready for /tugplug:implement
+description: Devise an implementation plan in-thread — clarify the idea, write it against the devise skeleton, validate it, and hand it to the review turn — ready for /tugplug:dash-implement
 argument-hint: "[idea] [→ output-path]"
 disable-model-invocation: true
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
@@ -9,9 +9,9 @@ disallowed-tools: Task
 
 ## What this is
 
-`devise` turns an idea into a concrete, implementable **plan** — a plan document **written by you, the main conversation, directly**. No agent swarm, no clarifier/author/critic/conformance/overviewer hand-offs. You investigate the codebase, ask the few questions that genuinely change the design, write the plan, and validate it. The result is a plan document — written to a path **you specify** — that `/tugplug:implement` can carry to a build.
+`devise` turns an idea into a concrete, implementable **plan** — a plan document **written by you, the main conversation, directly**. No agent swarm, no clarifier/author/critic/conformance/overviewer hand-offs. You investigate the codebase, ask the few questions that genuinely change the design, write the plan, and validate it. The result is a plan document — written to a path **you specify** — that `/tugplug:dash-implement` can carry to a build.
 
-(The skill is named `devise` to avoid colliding with Claude Code's built-in `plan`. The document it produces is a standard tugplan in the devise-skeleton format, so `/tugplug:implement` consumes it unchanged.)
+(The skill is named `devise` to avoid colliding with Claude Code's built-in `plan`. The document it produces is a standard tugplan in the devise-skeleton format, so `/tugplug:dash-implement` consumes it unchanged.)
 
 **You are the author.** Do not spawn sub-agents (`Task`). Do the research and the writing in-thread.
 
@@ -42,7 +42,7 @@ Author the plan at the output path you were given (or asked for) following the *
 - The skeleton's section order: Purpose, Plan Metadata, Phase Overview (Context / Strategy / Success Criteria / Scope / Non-goals / Dependencies / Constraints / Assumptions), then Open Questions, Risks, Design Decisions, optional Deep Dives / Specification / Rollout / Symbol Inventory, Test Plan Concepts, **Execution Steps** (with a **Step Status Ledger**), Deliverables.
 - Explicit `{#anchor}` headings; kebab-case; no phase numbers in anchors.
 - Stable labels: plan-local Design Decisions `[P01]` (use `P`, **never** `D` — `[D##]` is reserved for the global `tuglaws/design-decisions.md`, which a plan may cite by reference), Open Questions `[Q01]`, Specs `S01`, Tables `T01`, Lists `L01`, Risks `R01`, Milestones `M01` — always two digits, never reused.
-- **Execution Steps** each carry a `**Commit:**` message, `**References:**` (cite decisions/specs/anchors — never line numbers), `**Depends on:**` where applicable (anchor refs like `#step-1`), Tasks, Tests, and a falsifiable Checkpoint. This is the part `/tugplug:implement` walks. Seed the **Step Status Ledger** with every step marked `pending`.
+- **Execution Steps** each carry a `**Commit:**` message, `**References:**` (cite decisions/specs/anchors — never line numbers), `**Depends on:**` where applicable (anchor refs like `#step-1`), Tasks, Tests, and a falsifiable Checkpoint. This is the part `/tugplug:dash-implement` walks. Seed the **Step Status Ledger** with every step marked `pending`.
 - For tugdeck/tugways work, fill the **State Zone Mapping** table — map each new piece of state to its tuglaws zone before writing steps.
 - Resolve open questions where you can (spike them in-thread — read the code, check a fixture); explicitly defer the rest with a rationale.
 
@@ -84,7 +84,7 @@ If the verb fails — no reachable Tug instance — do not declare the plan read
 
 Tell the user the plan is written, name the exact path, and say the review turn is coming next and on which model. Do not tell them to implement yet — the review may still change the plan.
 
-The command after the review lands is `` `/tugplug:implement <plan-path>` ``, and `review-plan` prints it. Write any command you do print on its own line **inside backticks**, command and path together in one span, with the real path substituted in — the Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text.
+The command after the review lands is `` `/tugplug:dash-implement <plan-path>` ``, and `review-plan` prints it. Write any command you do print on its own line **inside backticks**, command and path together in one span, with the real path substituted in — the Session card only turns a command line into a clickable chip when it arrives as its own inline code span; written as bare prose it is dead text.
 
 Don't start reviewing or implementing from the devise skill — authoring, reviewing, and implementing are separate turns (as is committing the plan to git, which the user owns).
 
@@ -98,5 +98,5 @@ Don't start reviewing or implementing from the devise skill — authoring, revie
 - **Don't over-ask.** Clarify only design-changing unknowns.
 - **Lint before handing off.** `tugutil plan lint` exit 0 is the bar.
 - **Ask for the review from inside your own turn**, with an absolute path, and never declare the plan ready when that request fails.
-- **Don't auto-implement.** `devise` produces the document; the review turn improves it; `implement` runs it.
+- **Don't auto-implement.** `devise` produces the document; the review turn improves it; `dash-implement` runs it.
 - **Don't auto-enter Plan mode** (`EnterPlanMode`) — just write the plan document.

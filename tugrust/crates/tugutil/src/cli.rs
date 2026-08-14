@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-use tugdash_core::JoinStrategy;
+use tugdash_core::{JoinStrategy, MarkStage};
 
 use crate::commands::{GateCommands, InstanceCommands};
 
@@ -446,6 +446,32 @@ pub enum DashCommands {
         /// Dash name.
         name: String,
     },
+    /// Drive a plan's Step Status Ledger and the dash-log in one gesture.
+    ///
+    /// The ledger row and the log line move together, which is what lets
+    /// `dash status` and the Changes card report `implementing (i/N)` without
+    /// re-parsing markdown. A plan that does not strictly parse is refused,
+    /// never guessed at.
+    Step {
+        /// Dash name.
+        name: String,
+        #[command(subcommand)]
+        action: StepAction,
+    },
+    /// Declare a lifecycle stage git cannot see.
+    ///
+    /// One dash-log line and nothing else: `built` after a debug instance is
+    /// up, `audited` after an audit finds the work in good shape.
+    Mark {
+        /// Dash name.
+        name: String,
+        /// The stage to declare.
+        #[arg(value_enum)]
+        stage: CliMarkStage,
+        /// Free-form note recorded alongside the declaration.
+        #[arg(long)]
+        note: Option<String>,
+    },
     /// Mate the calling session to a dash, so surfaces can say which session
     /// is working on which dash.
     Bind {
@@ -461,6 +487,46 @@ pub enum DashCommands {
         /// Project directory (default: cwd).
         #[arg(long)]
         project: Option<std::path::PathBuf>,
+    },
+}
+
+/// Clap-facing mirror of {@link MarkStage} — the closed declaration vocabulary.
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum CliMarkStage {
+    Built,
+    Audited,
+}
+
+impl From<CliMarkStage> for MarkStage {
+    fn from(s: CliMarkStage) -> Self {
+        match s {
+            CliMarkStage::Built => MarkStage::Built,
+            CliMarkStage::Audited => MarkStage::Audited,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+pub enum StepAction {
+    /// Move the step's ledger row to `in progress`.
+    ///
+    /// Idempotent on a row already `in progress`, so an interrupted run
+    /// re-enters the step it was on.
+    Start {
+        /// Step number, matching the ledger's `#step-<n>` anchor.
+        step: u32,
+        /// The plan to drive, absolute or relative to the dash worktree.
+        /// Required the first time; recorded and reused after that.
+        #[arg(long)]
+        plan: Option<String>,
+    },
+    /// Move the step's ledger row to `done` and record its commit.
+    Done {
+        /// Step number, matching the ledger's `#step-<n>` anchor.
+        step: u32,
+        /// Commit to record (default: the dash branch's tip).
+        #[arg(long)]
+        commit: Option<String>,
     },
 }
 

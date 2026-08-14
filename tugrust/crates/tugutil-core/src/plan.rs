@@ -882,6 +882,174 @@ fn carries_citation(text: &str) -> bool {
     trimmed.contains('[') || trimmed.contains("(#") || trimmed.contains('`')
 }
 
+// --- ledger editing --------------------------------------------------------
+
+/// Why a Step Status Ledger edit was refused.
+///
+/// Every variant leaves the document untouched: the edit is computed in memory
+/// and only handed back to the caller once it has been re-parsed and verified.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LedgerEditError {
+    /// The document declares no `{#execution-steps}` section.
+    NotAPlan,
+    /// The document has no Step Status Ledger.
+    NoLedger,
+    /// The ledger carries no row for this step anchor.
+    NoRow { anchor: String },
+    /// The row's current status does not permit the requested one.
+    BadTransition {
+        anchor: String,
+        from: String,
+        to: String,
+    },
+    /// The rewritten document did not read back with the requested values.
+    RoundTrip { anchor: String },
+}
+
+impl fmt::Display for LedgerEditError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LedgerEditError::NotAPlan => f.write_str("not a plan document"),
+            LedgerEditError::NoLedger => f.write_str("no Step Status Ledger"),
+            LedgerEditError::NoRow { anchor } => {
+                write!(f, "no ledger row for #{anchor}")
+            }
+            LedgerEditError::BadTransition { anchor, from, to } => {
+                write!(f, "#{anchor} is '{from}'; it cannot become '{to}'")
+            }
+            LedgerEditError::RoundTrip { anchor } => {
+                write!(f, "the edited ledger row #{anchor} did not read back")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LedgerEditError {}
+
+/// Which statuses a row may move to, from where.
+///
+/// `in progress` is reachable from `in progress` so an interrupted run can
+/// re-enter the step it was on without a hand-edit; the rewrite is a no-op and
+/// the returned text is byte-identical. A `done` row is terminal.
+fn transition_allowed(from: &str, to: &str) -> bool {
+    match to {
+        "in progress" => from == "pending" || from == "in progress",
+        "done" => from == "pending" || from == "in progress",
+        _ => false,
+    }
+}
+
+/// Set one Step Status Ledger row's status, and its commit cell on `done`.
+///
+/// The row is located by the same parse `lint` runs, rewritten in place — only
+/// the status and commit cells' contents move, every other byte of the line and
+/// of the document is preserved — and the result is re-parsed before it is
+/// returned. Anything that does not read back exactly as asked is a refusal, so
+/// a caller that gets a string can write it knowing the ledger still parses.
+///
+/// `anchor` is spelled without the leading `#` (`"step-3"`).
+pub fn set_ledger_status(
+    source: &str,
+    anchor: &str,
+    status: &str,
+    commit: Option<&str>,
+) -> Result<String, LedgerEditError> {
+    let doc = parse(source).map_err(|_| LedgerEditError::NotAPlan)?;
+    if doc.ledger_line.is_none() {
+        return Err(LedgerEditError::NoLedger);
+    }
+    let row = doc
+        .ledger_rows
+        .iter()
+        .find(|r| r.anchor == anchor)
+        .ok_or_else(|| LedgerEditError::NoRow {
+            anchor: anchor.to_string(),
+        })?;
+
+    if !transition_allowed(&row.status, status) {
+        return Err(LedgerEditError::BadTransition {
+            anchor: anchor.to_string(),
+            from: row.status.clone(),
+            to: status.to_string(),
+        });
+    }
+
+    let edited = rewrite_ledger_line(source, row.line, status, commit).ok_or_else(|| {
+        LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        }
+    })?;
+
+    // The proof the edit did what it claimed: re-read the document it produced.
+    let reparsed = parse(&edited).map_err(|_| LedgerEditError::RoundTrip {
+        anchor: anchor.to_string(),
+    })?;
+    let back = reparsed
+        .ledger_rows
+        .iter()
+        .find(|r| r.anchor == anchor)
+        .ok_or_else(|| LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        })?;
+    let commit_reads_back = match commit {
+        Some(sha) => back.commit.as_deref() == Some(sha),
+        None => true,
+    };
+    if back.status != status || back.title != row.title || !commit_reads_back {
+        return Err(LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        });
+    }
+
+    Ok(edited)
+}
+
+/// Rewrite one table line's status cell (and commit cell, when a sha is given),
+/// preserving the line's indentation, cell padding, and line ending. `None`
+/// when the line does not have the cells to rewrite.
+fn rewrite_ledger_line(
+    source: &str,
+    line_no: usize,
+    status: &str,
+    commit: Option<&str>,
+) -> Option<String> {
+    let mut pieces: Vec<&str> = source.split_inclusive('\n').collect();
+    let piece = *pieces.get(line_no.checked_sub(1)?)?;
+    let (content, eol) = match piece.strip_suffix('\n') {
+        Some(rest) => (rest, "\n"),
+        None => (piece, ""),
+    };
+
+    let indent = &content[..content.len() - content.trim_start().len()];
+    let body_end = content.trim_end().len();
+    let (body, trailing) = content[indent.len()..].split_at(body_end - indent.len());
+
+    // `| #step-1 | Title | pending | — |` splits into a leading empty segment,
+    // then one segment per cell: anchor, title, status, commit.
+    let mut cells: Vec<String> = body.split('|').map(str::to_string).collect();
+    set_cell(cells.get_mut(3)?, status);
+    if let Some(sha) = commit {
+        set_cell(cells.get_mut(4)?, &format!("`{sha}`"));
+    }
+
+    let rebuilt = format!("{indent}{}{trailing}{eol}", cells.join("|"));
+    pieces[line_no - 1] = &rebuilt;
+    Some(pieces.concat())
+}
+
+/// Replace a cell's content, keeping whatever padding it wore.
+fn set_cell(cell: &mut String, value: &str) {
+    let lead = &cell[..cell.len() - cell.trim_start().len()];
+    let trail = &cell[cell.trim_end().len()..];
+    let (lead, trail) = if cell.trim().is_empty() {
+        (" ", " ")
+    } else {
+        (lead, trail)
+    };
+    let replaced = format!("{lead}{value}{trail}");
+    *cell = replaced;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1347,5 +1515,112 @@ Some context.
             );
         }
         assert!(linted >= 5, "expected the roadmap corpus to hold plans");
+    }
+
+    // --- ledger editing ----------------------------------------------------
+
+    /// The lines that differ between two documents, as `(line_no, before, after)`.
+    fn line_diff(before: &str, after: &str) -> Vec<(usize, String, String)> {
+        let a: Vec<&str> = before.lines().collect();
+        let b: Vec<&str> = after.lines().collect();
+        assert_eq!(a.len(), b.len(), "an edit must not add or drop a line");
+        a.iter()
+            .zip(b.iter())
+            .enumerate()
+            .filter(|(_, (x, y))| x != y)
+            .map(|(i, (x, y))| (i + 1, x.to_string(), y.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn ledger_edit_starts_a_step_changing_exactly_one_line() {
+        let out = set_ledger_status(MINIMAL, "step-1", "in progress", None)
+            .expect("pending starts cleanly");
+        let diff = line_diff(MINIMAL, &out);
+        assert_eq!(diff.len(), 1, "exactly one line moves: {diff:?}");
+        assert_eq!(diff[0].2, "| #step-1 | The only step | in progress | — |");
+    }
+
+    #[test]
+    fn ledger_edit_finishes_a_step_with_a_backticked_commit() {
+        let started = set_ledger_status(MINIMAL, "step-1", "in progress", None).unwrap();
+        let done = set_ledger_status(&started, "step-1", "done", Some("a4477d5")).unwrap();
+        let diff = line_diff(&started, &done);
+        assert_eq!(diff.len(), 1);
+        assert_eq!(diff[0].2, "| #step-1 | The only step | done | `a4477d5` |");
+
+        // The commit cell renders backticked and reads back through the parser.
+        let row = parse(&done).unwrap().ledger_rows.remove(0);
+        assert_eq!(row.status, "done");
+        assert_eq!(row.commit.as_deref(), Some("a4477d5"));
+    }
+
+    #[test]
+    fn ledger_edit_re_enters_an_in_progress_row_byte_identically() {
+        let started = set_ledger_status(MINIMAL, "step-1", "in progress", None).unwrap();
+        let again = set_ledger_status(&started, "step-1", "in progress", None)
+            .expect("an interrupted run re-enters its own step");
+        assert_eq!(again, started, "re-entry must not move a byte");
+    }
+
+    #[test]
+    fn ledger_edit_refuses_a_document_that_is_not_a_plan() {
+        let brief = "## How we got here\n\nSome prose.\n";
+        assert_eq!(
+            set_ledger_status(brief, "step-1", "in progress", None),
+            Err(LedgerEditError::NotAPlan)
+        );
+    }
+
+    #[test]
+    fn ledger_edit_refuses_a_plan_with_no_ledger() {
+        let source = MINIMAL.replace("#### Step Status Ledger {#step-status-ledger}", "#### Rows");
+        assert_eq!(
+            set_ledger_status(&source, "step-1", "in progress", None),
+            Err(LedgerEditError::NoLedger)
+        );
+    }
+
+    #[test]
+    fn ledger_edit_refuses_an_unknown_anchor() {
+        assert_eq!(
+            set_ledger_status(MINIMAL, "step-9", "in progress", None),
+            Err(LedgerEditError::NoRow {
+                anchor: "step-9".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn ledger_edit_refuses_moving_off_a_done_row() {
+        let done = set_ledger_status(MINIMAL, "step-1", "done", Some("a4477d5")).unwrap();
+        for target in ["in progress", "done"] {
+            let err = set_ledger_status(&done, "step-1", target, None).unwrap_err();
+            assert_eq!(
+                err,
+                LedgerEditError::BadTransition {
+                    anchor: "step-1".to_string(),
+                    from: "done".to_string(),
+                    to: target.to_string(),
+                }
+            );
+            // The message names the row's current status.
+            assert!(err.to_string().contains("is 'done'"), "{err}");
+        }
+    }
+
+    #[test]
+    fn ledger_edit_leaves_prose_and_fenced_samples_alone() {
+        let source = MINIMAL.replace(
+            "#### Step 1: The only step {#step-1}",
+            "Prose that mentions | #step-1 | The only step | pending | — | inline.\n\n\
+             ```\n| #step-1 | The only step | pending | — |\n```\n\n\
+             #### Step 1: The only step {#step-1}",
+        );
+        let out = set_ledger_status(&source, "step-1", "in progress", None).unwrap();
+        let diff = line_diff(&source, &out);
+        assert_eq!(diff.len(), 1, "only the ledger row moves: {diff:?}");
+        assert!(diff[0].1.contains("pending"));
+        assert!(out.contains("```\n| #step-1 | The only step | pending | — |\n```"));
     }
 }

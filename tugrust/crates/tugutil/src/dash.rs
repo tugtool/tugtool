@@ -8,9 +8,9 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, ops, resolve};
+use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, MarkStage, ops, resolve};
 
-use crate::cli::DashCommands;
+use crate::cli::{DashCommands, StepAction};
 use crate::output::print_ok;
 
 /// Dispatch a `dash` subcommand, mapping a `Result<(), String>` to an exit code
@@ -50,6 +50,10 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
         DashCommands::List => run_list(json, quiet),
         DashCommands::Show { name } => run_show(&name, json, quiet),
         DashCommands::Status { name } => run_status(&name, json, quiet),
+        DashCommands::Step { name, action } => run_step(&name, action, json, quiet),
+        DashCommands::Mark { name, stage, note } => {
+            run_mark(&name, stage.into(), note, json, quiet)
+        }
         DashCommands::Bind { name, project } => run_bind(&name, project, json, quiet),
         DashCommands::Unbind { project } => run_unbind(project, json, quiet),
     };
@@ -329,6 +333,47 @@ fn run_status(name: &str, json: bool, quiet: bool) -> Result<(), String> {
         } else {
             println!("Sessions: {}", data.bound_sessions.join(", "));
         }
+    }
+    Ok(())
+}
+
+/// Drive one ledger row and its dash-log line (Spec S02).
+///
+/// Every refusal — an unknown dash, an unrecorded plan, a document that does
+/// not parse, a row that cannot make the transition — exits 1 with the plan and
+/// the row named, and leaves the plan file untouched.
+fn run_step(name: &str, action: StepAction, json: bool, quiet: bool) -> Result<(), String> {
+    let data = match action {
+        StepAction::Start { step, plan } => ops::step_start(name, step, plan.as_deref())?,
+        StepAction::Done { step, commit } => ops::step_done(name, step, commit.as_deref())?,
+    };
+    if json {
+        print_ok("dash step", &data);
+    } else if !quiet {
+        println!(
+            "Step {}/{} of {} is {}",
+            data.step, data.total, data.plan_path, data.status
+        );
+        if let Some(commit) = &data.commit {
+            println!("Commit: {}", commit);
+        }
+    }
+    Ok(())
+}
+
+/// Declare a stage git cannot see ([P09]) — one dash-log line, nothing else.
+fn run_mark(
+    name: &str,
+    stage: MarkStage,
+    note: Option<String>,
+    json: bool,
+    quiet: bool,
+) -> Result<(), String> {
+    let data = ops::mark(name, stage, note.as_deref())?;
+    if json {
+        print_ok("dash mark", &data);
+    } else if !quiet {
+        println!("{} is {}", data.dash, data.stage);
     }
     Ok(())
 }
