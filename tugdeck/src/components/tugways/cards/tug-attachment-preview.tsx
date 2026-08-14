@@ -28,6 +28,12 @@
  * store) and performs the removal. The strip holds no delete state; it
  * re-renders from the shrunken atom array the responder produces.
  *
+ * Density: `compact` steps both faces down for a surface a few hundred pixels
+ * wide (the Gazette rail) — smaller tiles, and a sheet that opens at the
+ * narrow width tier well short of the host card's edges. It is a size, never a
+ * different design: same tiles, same captions, same sheet, same gestures. The
+ * default is the card's.
+ *
  * The bytes-store IS external state: its contents grow on the live path
  * (drop / paste / synthesize) and on the replay path (synthesizer mints
  * entries from JSONL content blocks; thumbnail bake fires fire-and-forget
@@ -79,6 +85,24 @@ import { registerAttachmentPreviewOpener } from "@/lib/attachment-preview-open";
 // Strip props
 // ---------------------------------------------------------------------------
 
+/** How much room the hosting surface can spare. See {@link TugAttachmentPreviewProps.density}. */
+export type TugAttachmentPreviewDensity = "comfortable" | "compact";
+
+/**
+ * What each density asks of the sheet: which width tier it opens at, and how
+ * much of the host card it may take. The comfortable pair is the shipped
+ * lightbox — the widest tier, 90% of the card. The compact pair is the
+ * decision width capped well short of the card's edges, because on a rail the
+ * margin IS the difference between a panel and a lid.
+ */
+const SHEET_GEOMETRY: Record<
+  TugAttachmentPreviewDensity,
+  { displayWidth: "sm" | "xl"; maxHostFraction: number }
+> = {
+  comfortable: { displayWidth: "xl", maxHostFraction: 0.9 },
+  compact: { displayWidth: "sm", maxHostFraction: 0.72 },
+};
+
 export interface TugAttachmentPreviewProps {
   /**
    * Transcript entry address, threaded through to each tile's caption so
@@ -113,6 +137,25 @@ export interface TugAttachmentPreviewProps {
    * @selector [data-deletable]
    */
   deletable?: boolean;
+  /**
+   * How much room the surface can spare for pictures.
+   *
+   * `comfortable` (the default) is the Session card's: a card read at a
+   * document's width, where a thumbnail can be big enough to recognize at a
+   * glance and the sheet can open near the card's full width.
+   *
+   * `compact` is for a RAIL — a surface a few hundred pixels wide, where the
+   * comfortable tile eats the composer and the sheet opens wall-to-wall with
+   * no margin left to read it as nested. It is one declaration and it carries
+   * both halves: the strip's tiles step down a size (`[data-density]` in
+   * `tug-attachment-preview.css`), and the sheet opens at the narrow tier with
+   * a tighter cap on the card, so it stays a panel ON the rail rather than a
+   * lid over it. Nothing else changes — same tiles, same captions, same sheet,
+   * same gestures.
+   * @selector [data-density="compact"]
+   * @default "comfortable"
+   */
+  density?: TugAttachmentPreviewDensity;
   /** Forwarded to the strip root element. */
   className?: string;
   /** Forwarded to the strip root element (for test anchoring). */
@@ -289,6 +332,7 @@ export const TugAttachmentPreview = React.forwardRef<
     atoms,
     bytesStore,
     deletable = false,
+    density = "comfortable",
     className,
     "data-testid": dataTestid,
     focusGroup,
@@ -353,20 +397,23 @@ export const TugAttachmentPreview = React.forwardRef<
         // The preview owns its own top bar (title + actions), so the
         // sheet's header is suppressed; `title` stays for aria-label. A
         // full-bleed lightbox is the one sanctioned exemption from the
-        // shared modal-header convention (tugx-header.css). `xl`
-        // + drag-resize gives the image real room; `aspectLockContent`
-        // locks the panel to the image's aspect so the margin stays
-        // uniform; `maxHostFraction` keeps it within 90% of the card.
+        // shared modal-header convention (tugx-header.css). The width tier
+        // and the cap are the DENSITY's (see `SHEET_GEOMETRY`): a card gets
+        // the widest tier at 90% of its frame, a rail the narrow tier well
+        // short of its edges. Drag-resize gives the image real room either
+        // way, and `aspectLockContent` locks the panel to the image's aspect
+        // so the margin around it stays uniform at every size.
         hideHeader: true,
-        displayWidth: "xl",
+        displayWidth: SHEET_GEOMETRY[density].displayWidth,
         resizable: true,
         aspectLockContent: true,
-        maxHostFraction: 0.9,
+        maxHostFraction: SHEET_GEOMETRY[density].maxHostFraction,
         content: (close) => (
           <AttachmentPreviewSheet
             atoms={atoms}
             startIndex={clickedIndex}
             bytesStore={bytesStore}
+            density={density}
             onClose={() => close()}
             onRemove={
               deletable
@@ -383,7 +430,7 @@ export const TugAttachmentPreview = React.forwardRef<
         ),
       });
     },
-    [showSheet, atoms, bytesStore, deletable, dispatchRemove],
+    [showSheet, atoms, bytesStore, deletable, density, dispatchRemove],
   );
 
   // A transcript image chip is an annotation, and its click reaches the
@@ -422,6 +469,7 @@ export const TugAttachmentPreview = React.forwardRef<
       ref={setStripEl}
       data-slot="tug-attachment-preview"
       data-deletable={deletable ? "" : undefined}
+      data-density={density === "compact" ? "compact" : undefined}
       className={className}
       data-testid={dataTestid}
     >
@@ -722,6 +770,12 @@ interface AttachmentPreviewSheetProps {
    * chain-dispatch ([L11]) lives in the owner.
    */
   onRemove?: (atom: AtomSegment) => void;
+  /**
+   * The strip's density, stamped on the sheet root so its own chrome — the
+   * title band, the footer's buttons — can tighten to the narrow tier it
+   * opens at on a rail.
+   */
+  density: TugAttachmentPreviewDensity;
 }
 
 /**
@@ -755,6 +809,7 @@ function AttachmentPreviewSheet({
   bytesStore,
   onClose,
   onRemove,
+  density,
 }: AttachmentPreviewSheetProps): React.ReactElement {
   const count = atoms.length;
   const clamp = React.useCallback(
@@ -912,6 +967,7 @@ function AttachmentPreviewSheet({
         ref={setRoot}
         data-slot="tug-attachment-preview-sheet"
         className="tug-attachment-preview-sheet"
+        data-density={density === "compact" ? "compact" : undefined}
         // The whole preview refuses first-responder promotion: a
         // pointer-down anywhere inside must NOT coarsen the key view onto
         // the sheet box and strip the Done button of its seeded default

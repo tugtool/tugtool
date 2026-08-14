@@ -62,7 +62,10 @@
  *     question's row, and the strip in the transcript reads them back through
  *     `/api/fs/blob`. A tile with `naturalWidth > 0` at each end is the
  *     assertion, because pixels are the only evidence that every link in that
- *     chain held.
+ *     chain held. And it is the RAIL'S tier of that strip: the Gazette asks
+ *     the Session card's own component for `compact`, so the tiles step down
+ *     a size and the sheet opens as a panel on the rail — with real margin at
+ *     both edges — rather than a lid over it.
  *
  *  5. **The rail's widths are the type's.** The Gazette's floor and preferred
  *     width are not pixel counts — they are 56 and 64 characters of the body
@@ -80,6 +83,7 @@
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-attachment-bytes.ts
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
+ * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.css
  * @covers tugdeck/src/lib/gazette-ref-resolve.ts
  * @covers tugdeck/src/lib/gazette-body-segments.ts
  * @covers tugdeck/src/components/tugways/entity-tips.tsx
@@ -886,6 +890,46 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         );
         note("composer tile", JSON.stringify(composeTile));
         expect(composeTile?.tiles, "one image, one tile").toBe(1);
+        // The rail's tier. The strip is the Session card's component and the
+        // Gazette asks it for `compact`, so the tile is the rail's size —
+        // measured against the comfortable slot the component declares at its
+        // own root, which is what a card gets. Reading BOTH is the point: a
+        // number alone would pass just as happily if the option stopped
+        // arriving and every surface silently went small.
+        const density = await app.evalJS<{
+          stamped: string | null;
+          tileHeight: number;
+          comfortable: number;
+        } | null>(
+          `(function () {
+            var strip = document.querySelector(${JSON.stringify(COMPOSE_STRIP)});
+            if (strip === null) return null;
+            var px = function (el, name) {
+              return parseFloat(getComputedStyle(el).getPropertyValue(name));
+            };
+            // The comfortable value, read off a surface that never asked for
+            // compact — the base declaration on any strip root, before the
+            // density block overrides it.
+            var probe = document.createElement("div");
+            probe.setAttribute("data-slot", "tug-attachment-preview");
+            document.body.appendChild(probe);
+            var comfortable = px(probe, "--tugx-attachment-tile-height-rest");
+            probe.remove();
+            return {
+              stamped: strip.getAttribute("data-density"),
+              tileHeight: px(strip, "--tugx-attachment-tile-height-rest"),
+              comfortable: comfortable,
+            };
+          })()`,
+        );
+        note("compose density", JSON.stringify(density));
+        expect(density?.stamped, "the Gazette asks for the rail's tier").toBe(
+          "compact",
+        );
+        expect(
+          density!.tileHeight,
+          "and the tier is genuinely smaller than a card's",
+        ).toBeLessThan(density!.comfortable);
         expect(composeTile?.caption).toContain("image-1");
         expect(
           composeTile?.deletable,
@@ -980,6 +1024,55 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
             })()`,
           ),
         );
+
+        // And it opens as a panel ON the rail, not a lid over it: the compact
+        // tier is capped well short of the card, so there is real margin on
+        // both sides. Measured against the card's own frame, because "narrow"
+        // is only meaningful relative to what it opened inside.
+        const sheetFit = await app.evalJS<{
+          density: string | null;
+          sheet: number;
+          card: number;
+          leading: number;
+          trailing: number;
+        } | null>(
+          `(function () {
+            var body = document.querySelector(
+              '[data-slot="tug-attachment-preview-sheet"]',
+            );
+            if (body === null) return null;
+            var panel = body.closest(".tug-sheet-content");
+            var card = document.querySelector(${JSON.stringify(CARD)});
+            if (panel === null || card === null) return null;
+            var p = panel.getBoundingClientRect();
+            var c = card.getBoundingClientRect();
+            return {
+              density: body.getAttribute("data-density"),
+              sheet: Math.round(p.width),
+              card: Math.round(c.width),
+              leading: Math.round(p.left - c.left),
+              trailing: Math.round(c.right - p.right),
+            };
+          })()`,
+        );
+        note("preview sheet fit", JSON.stringify(sheetFit));
+        expect(sheetFit?.density, "the sheet wears the strip's tier").toBe(
+          "compact",
+        );
+        // Stated as the MARGIN rather than as a fraction: the cap the sheet is
+        // given is a fraction of the pane's frame, which is wider than the
+        // card's content box by whatever chrome the pane wears — so a fraction
+        // asserted here would be asserting against the wrong denominator. What
+        // the reader actually sees is the gap at each edge, and that is what
+        // "smashing into the sides" names.
+        expect(
+          sheetFit!.leading,
+          "there is real margin at the leading edge",
+        ).toBeGreaterThanOrEqual(24);
+        expect(
+          sheetFit!.trailing,
+          "and the same at the trailing edge",
+        ).toBeGreaterThanOrEqual(24);
         await app.nativeKey("Escape");
         await app.waitForCondition<boolean>(
           `document.querySelector('[data-slot="tug-attachment-preview-sheet"]') === null`,

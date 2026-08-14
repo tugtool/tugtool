@@ -493,14 +493,22 @@ function GazettePostBody({
  * transcript's own attachment strip, on this channel's posts.
  *
  * It IS that component ({@link TugAttachmentPreview}), not a second one that
- * looks like it: the same tiles at the same size, the same `image-N` captions,
- * the same click-to-enlarge sheet with ←/→ paging and Copy. What differs is
- * only where the bytes come from. A session card's attachment lives in that
- * card's in-memory bytes store from the moment it was dropped; a Gazette post
- * is history, read back days later, so its bytes rest on disk and are fetched
+ * looks like it: the same tiles, the same `image-N` captions, the same
+ * click-to-enlarge sheet with ←/→ paging and Copy. Two things differ, and both
+ * are declarations rather than a second implementation.
+ *
+ * Where the bytes come from: a session card's attachment lives in that card's
+ * in-memory bytes store from the moment it was dropped; a Gazette post is
+ * history, read back days later, so its bytes rest on disk and are fetched
  * from there ({@link hydrateGazetteAttachments}) into the channel's own store,
- * keyed by the path itself. Read-only, so no `deletable`: a picture already in
- * the channel is as final as the sentence beside it.
+ * keyed by the path itself.
+ *
+ * And how much room the surface has: `compact`, because this is a rail. A tile
+ * sized for a card's measure is most of this column's width, and the
+ * comfortable sheet opens wall-to-wall on it.
+ *
+ * Read-only, so no `deletable`: a picture already in the channel is as final
+ * as the sentence beside it.
  *
  * The fetch is asked for in a layout effect rather than during the render that
  * needs it ([L03]) — the strip is already subscribed to the store, so a tile
@@ -536,6 +544,7 @@ function GazettePostAttachments({
     <TugAttachmentPreview
       atoms={atoms}
       bytesStore={bytesStore}
+      density="compact"
       className="gazette-post-attachments"
       data-testid="gazette-post-attachments"
     />
@@ -1476,6 +1485,9 @@ function GazetteComposer({
                 atoms={composeImageAtoms}
                 bytesStore={bytesStore}
                 deletable
+                // The rail's tier, the same one the posts above wear — a
+                // picture must not change size when it is sent.
+                density="compact"
                 data-testid="gazette-composer-attachment-strip"
                 focusGroup={GAZETTE_FOCUS_GROUP}
                 // After the field and the send button, which are the two

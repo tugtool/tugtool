@@ -18,6 +18,12 @@
  *    that height from the editor (see `tug-prompt-entry.css` / `session-card.css`).
  *    Each compose tile also carries a ✕ delete overlay.
  *
+ * Both layouts come in two DENSITIES, keyed on `[data-density]`: the
+ * comfortable default sized for a card, and `compact` for a rail (the
+ * Gazette). The density is expressed purely as the tile slots both layouts
+ * already read, plus the width tier the sheet opens at — never as a third
+ * layout.
+ *
  * Each tile has a small caption beneath; clicking opens the sheet. The
  * frame (border + fill) paints only once a tile has pixels (`[data-has-image]`),
  * so the pre-bake window shows a transparent slot, never a dark box.
@@ -393,6 +399,31 @@
 }
 
 /* ===========================================================================
+ * Compact density — the rail's step down
+ * ===========================================================================
+ * `[data-density="compact"]` is one declaration on the component (see
+ * `TugAttachmentPreviewProps.density`) and it is expressed entirely as the
+ * tile slots the base rules already read. Nothing here restates a layout: the
+ * transcript grid is still fixed-width and wrapping, the compose strip is
+ * still fixed-height and scrolling, and the scroll-bar trade still comes out
+ * of `tile-height-rest`. Only the numbers are the rail's.
+ *
+ * They are roughly three-quarters of the comfortable sizes, which is the
+ * smallest step at which a screenshot is still recognizable as WHICH
+ * screenshot — below that a tile is a colored rectangle and the caption is
+ * doing all the work. The caption steps down with them so it stays a caption
+ * rather than becoming the widest thing in the cell. */
+[data-slot="tug-attachment-preview"][data-density="compact"] {
+  --tugx-attachment-tile-size: 48px;
+  --tugx-attachment-tile-height-rest: 42px;
+  --tugx-attachment-tile-max-width: 84px;
+  --tugx-attachment-gap: 6px;
+  --tugx-attachment-caption-size: 0.65rem;
+  --tugx-attachment-delete-size: 15px;
+  --tugx-attachment-delete-glyph: 8px;
+}
+
+/* ===========================================================================
  * Sheet (full-resolution preview body)
  * ======================================================================== */
 
@@ -563,4 +594,27 @@
 
 .tug-attachment-preview-sheet__dot[data-active] {
   opacity: 1;
+}
+
+/* ---------------------------------------------------------------------------
+ * Compact density — the sheet as it opens on a rail
+ * ---------------------------------------------------------------------------
+ * The narrow tier is a third the width of the comfortable one, and the two
+ * rows that are not the image are the ones that feel it: the title band and
+ * the footer both run edge to edge, so a size tuned for a 1040px panel reads
+ * as crowding at 400. The image area is untouched — it is aspect-locked to
+ * the panel, so it has already scaled itself.
+ *
+ * The button floor drops rather than disappearing: DELETE and DONE still
+ * reserve a common width, because a footer whose buttons size to their own
+ * words puts them at two different widths on either end of the same row. */
+[data-slot="tug-attachment-preview-sheet"][data-density="compact"]
+  .tug-attachment-preview-sheet__title {
+  font-size: var(--tug-font-size-sm);
+}
+
+[data-slot="tug-attachment-preview-sheet"][data-density="compact"]
+  .tug-attachment-preview-sheet__footer
+  .tug-button {
+  min-width: 4rem;
 }

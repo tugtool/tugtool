@@ -153,6 +153,39 @@ export function GalleryAttachmentStrip(): React.ReactElement {
       <TugSeparator />
 
       <div>
+        <TugLabel>Compact density — the rail's tier</TugLabel>
+        <p style={descStyle}>
+          One declaration, <code>density=&quot;compact&quot;</code>, for a
+          surface a few hundred pixels wide (the Gazette). The tiles step down
+          a size and the preview sheet opens at the narrow width tier well
+          short of the card&apos;s edges — everything else is identical, both
+          phases included.
+        </p>
+        <div style={{
+          padding: "12px",
+          background: "var(--tug7-element-field-fill-rest)",
+          borderRadius: "6px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+        }}>
+          <TugAttachmentPreview
+            atoms={FIXTURE_ATOMS}
+            bytesStore={bytesStore}
+            density="compact"
+          />
+          <TugAttachmentPreview
+            atoms={FIXTURE_ATOMS}
+            bytesStore={bytesStore}
+            deletable
+            density="compact"
+          />
+        </div>
+      </div>
+
+      <TugSeparator />
+
+      <div>
         <TugLabel>No image atoms — strip renders nothing</TugLabel>
         <p style={descStyle}>
           A user message with no image atoms produces no strip; the
