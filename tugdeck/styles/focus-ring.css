@@ -245,13 +245,20 @@ body {
      so the caret is hairline-thin across the whole top of the row and reads as
      if it stops short of the row's top edge. Rows are not one height — a picker
      row is ~36px, a question-dialog option row is ten times that — and the mark
-     must read the same on both. Below `2 × -nose` the row is shorter than the
-     two tapers, they meet, and the shape is the plain point-at-both-ends
-     silhouette it has always been on a standard row. */
+     must read the same on both.
+
+     THE CARET IS A TRAPEZOID AT EVERY ROW HEIGHT. `-nose-max` is the ceiling
+     the taper may occupy as a share of the row, and it is deliberately under
+     50%: at 50% the two tapers meet on a short row, the flat segment vanishes,
+     and the caret becomes a POINT — a different mark from the one a tall row
+     wears, which is the thing this shape exists to avoid. Under the ceiling the
+     flat full-width segment always survives, so a 24px row and a 300px row wear
+     the same silhouette at two lengths. */
   --tugx-focus-cursor-bar-stem: 1px;
   --tugx-focus-cursor-bar-width: 3px;
   --tugx-focus-cursor-bar-point: 3px;
   --tugx-focus-cursor-bar-nose: 16px;
+  --tugx-focus-cursor-bar-nose-max: 30%;
   --tugx-focus-cursor-bar-color: var(--tug7-element-global-fill-normal-accent-rest);
 }
 

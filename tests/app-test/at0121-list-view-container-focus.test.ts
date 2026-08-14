@@ -217,8 +217,13 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         // to prevent: on a tall row — a question-dialog option is ~300px — the
         // taper spreads over half of it and the caret is hairline-thin across
         // the entire top of the row, reading as if it stops short of the row's
-        // top edge. Split at top level: each taper vertex carries a `min(50%,
-        // …)` whose own comma must not become a point boundary.
+        // top edge.
+        //
+        // The length is capped by a share of the row that must be UNDER half.
+        // At half the two tapers meet on a short row, the flat segment vanishes
+        // and the trapezoid becomes a point — one mark on a short row and
+        // another on a tall one. Split at top level: each taper vertex carries
+        // a `min()` whose own comma must not become a point boundary.
         const clip = bar?.clipPath ?? "";
         const points: string[] = [];
         let depth = 0;
@@ -236,11 +241,13 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         if (current.trim()) points.push(current.trim());
         expect(points.length).toBe(6);
         expect(parseFloat(points[1] ?? "")).toBeGreaterThan(0);
-        // Both taper vertices sit at the caret's full width, and each is capped
-        // by a fixed length rather than resting at a bare `50%`.
+        // Both taper vertices sit at the caret's full width, each capped by a
+        // fixed length against a share of the row strictly under 50%.
         for (const vertex of [points[2], points[3]]) {
           expect(vertex?.startsWith("100%")).toBe(true);
-          expect(/min\(50%,\s*\d+(\.\d+)?px\)/.test(vertex ?? "")).toBe(true);
+          const cap = /min\((\d+(?:\.\d+)?)%,\s*\d+(?:\.\d+)?px\)/.exec(vertex ?? "");
+          expect(cap).not.toBeNull();
+          expect(parseFloat(cap?.[1] ?? "100")).toBeLessThan(50);
         }
       } finally {
         await app.close();
