@@ -108,6 +108,7 @@ body {
   --tugx-list-view-cursor-bar-stem:    var(--tugx-focus-cursor-bar-stem);
   --tugx-list-view-cursor-bar-width:   var(--tugx-focus-cursor-bar-width);
   --tugx-list-view-cursor-bar-point:   var(--tugx-focus-cursor-bar-point);
+  --tugx-list-view-cursor-bar-nose:    var(--tugx-focus-cursor-bar-nose);
   --tugx-list-view-cursor-bar-color:   var(--tugx-focus-cursor-bar-color);
   /* `--tugx-list-view-cursor-bar-inset` — OPT-IN knob, deliberately not
      declared here. How far in from the row's leading edge the bar starts
@@ -406,7 +407,11 @@ body {
      leading edge, then the taper to the nose. Clipping one box rather than
      adding a second element keeps the caret one paint: an `::after` triangle
      would have to track the bar's colour, its inset, and the row's height
-     independently. */
+     independently.
+
+     The taper runs over `-nose`, a fixed length, and the caret is at its full
+     width for everything between the two. `min()` against 50% is what collapses
+     the two tapers into one point on a row shorter than `2 × -nose`. */
   width: calc(
     var(--tugx-list-view-cursor-bar-stem) + var(--tugx-list-view-cursor-bar-width) +
       var(--tugx-list-view-cursor-bar-point)
@@ -415,7 +420,8 @@ body {
   clip-path: polygon(
     0 0,
     var(--tugx-list-view-cursor-bar-stem) 0,
-    100% 50%,
+    100% min(50%, var(--tugx-list-view-cursor-bar-nose)),
+    100% calc(100% - min(50%, var(--tugx-list-view-cursor-bar-nose))),
     var(--tugx-list-view-cursor-bar-stem) 100%,
     0 100%
   );

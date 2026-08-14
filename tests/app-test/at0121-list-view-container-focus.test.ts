@@ -202,20 +202,46 @@ describe.skipIf(!SHOULD_RUN)("AT0121: list-view container is a single focus stop
         expect(parseFloat(bar?.width ?? "0")).toBeGreaterThan(0);
         expect(bar?.background).not.toBe("rgba(0, 0, 0, 0)");
 
-        // The caret is a triangle standing on a STEM: a stripe of constant
-        // width at the leading edge running the row's full height, with the
-        // taper starting where it ends. A pure triangle comes to nothing at
-        // the row's own top and bottom edges and reads lighter than it
-        // measures. The clip's second point is the stem's top corner — it
-        // must sit in from the leading edge, which is what a bare
-        // `polygon(0 0, 100% 50%, 0 100%)` would not do.
-        const points = (bar?.clipPath ?? "")
-          .replace(/^polygon\(/, "")
-          .replace(/\)$/, "")
-          .split(",")
-          .map((point) => point.trim());
-        expect(points.length).toBe(5);
+        // The caret is a taper standing on a STEM: a stripe of constant width
+        // at the leading edge running the row's full height, with the taper
+        // starting where it ends. A pure triangle comes to nothing at the row's
+        // own top and bottom edges and reads lighter than it measures. The
+        // clip's second point is the stem's top corner — it must sit in from
+        // the leading edge, which is what a bare `polygon(0 0, 100% 50%, 0
+        // 100%)` would not do.
+        //
+        // The taper's vertical extent is a LENGTH, and there are two of them —
+        // one per end — so the caret reaches full width a fixed distance in and
+        // holds it for everything between. Tying that extent to the row's own
+        // height (a single widest point at `50%`) is the bug this shape exists
+        // to prevent: on a tall row — a question-dialog option is ~300px — the
+        // taper spreads over half of it and the caret is hairline-thin across
+        // the entire top of the row, reading as if it stops short of the row's
+        // top edge. Split at top level: each taper vertex carries a `min(50%,
+        // …)` whose own comma must not become a point boundary.
+        const clip = bar?.clipPath ?? "";
+        const points: string[] = [];
+        let depth = 0;
+        let current = "";
+        for (const ch of clip.replace(/^polygon\(/, "").replace(/\)$/, "")) {
+          if (ch === "(") depth += 1;
+          if (ch === ")") depth -= 1;
+          if (ch === "," && depth === 0) {
+            points.push(current.trim());
+            current = "";
+            continue;
+          }
+          current += ch;
+        }
+        if (current.trim()) points.push(current.trim());
+        expect(points.length).toBe(6);
         expect(parseFloat(points[1] ?? "")).toBeGreaterThan(0);
+        // Both taper vertices sit at the caret's full width, and each is capped
+        // by a fixed length rather than resting at a bare `50%`.
+        for (const vertex of [points[2], points[3]]) {
+          expect(vertex?.startsWith("100%")).toBe(true);
+          expect(/min\(50%,\s*\d+(\.\d+)?px\)/.test(vertex ?? "")).toBe(true);
+        }
       } finally {
         await app.close();
       }

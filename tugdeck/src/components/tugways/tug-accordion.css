@@ -221,7 +221,9 @@
   inset-inline-start: 0;
   /* A full-height stem at the leading edge, then bar plus nose tapering to a
      point at the top and bottom edges — the same shape the list's cursor row
-     draws, from the same knobs. */
+     draws, from the same knobs. The taper runs over the fixed `-nose` length at
+     each end, so a tall trigger keeps the full width across everything between
+     them instead of thinning out over half its height. */
   width: calc(
     var(--tugx-focus-cursor-bar-stem) + var(--tugx-focus-cursor-bar-width) +
       var(--tugx-focus-cursor-bar-point)
@@ -230,7 +232,8 @@
   clip-path: polygon(
     0 0,
     var(--tugx-focus-cursor-bar-stem) 0,
-    100% 50%,
+    100% min(50%, var(--tugx-focus-cursor-bar-nose)),
+    100% calc(100% - min(50%, var(--tugx-focus-cursor-bar-nose))),
     var(--tugx-focus-cursor-bar-stem) 100%,
     0 100%
   );
