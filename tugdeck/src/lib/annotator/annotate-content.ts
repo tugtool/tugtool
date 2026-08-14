@@ -137,13 +137,19 @@ import {
 } from "./wrap-matches";
 
 /**
- * Tag names (uppercase — `linkify-element` compares against
- * `Element.tagName`) whose subtrees are left untouched by link
- * detection. `A` is already skipped internally by linkify; listing
- * `CODE`/`PRE` keeps URLs inside code spans and fenced blocks as
- * literal text.
+ * Tag names whose subtrees are left untouched by link detection. `A` is
+ * already skipped internally by linkify; listing `CODE`/`PRE` keeps URLs
+ * inside code spans and fenced blocks as literal text.
+ *
+ * `svg` is the same guard {@link collectTextNodes} applies for the same
+ * reason, in the vocabulary this library compares in: `linkify-element`
+ * matches against `Element.tagName`, which an SVG element reports in its
+ * own lowercase spelling, not the uppercased HTML one. An atom chip is an
+ * inline `<svg>` whose `<text>` holds a label — a link atom's is a URL —
+ * and rewriting a run of it into an HTML `<a>` inside the SVG paints
+ * nothing, leaving a chip sized for a label it no longer shows.
  */
-const IGNORE_TAGS = ["A", "CODE", "PRE"];
+const IGNORE_TAGS = ["A", "CODE", "PRE", "svg"];
 
 /**
  * The anchors this produces deliberately carry **no `target`** and no

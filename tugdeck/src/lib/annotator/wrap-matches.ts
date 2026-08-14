@@ -26,6 +26,9 @@ import { ANNOTATION_CLASS } from "./types";
 /** Marks an element this pass created, rather than the renderer. */
 export const WRAPPED_ATTRIBUTE = "data-tugx-wrapped";
 
+/** The namespace prose lives in. Everything else is a drawing. */
+const HTML_NAMESPACE = "http://www.w3.org/1999/xhtml";
+
 /** A run of a text node that should become its own element. */
 export interface TextRunMatch {
   /** Index of the run's first character in the text node's data. */
@@ -64,6 +67,13 @@ export interface TextRunMatch {
  *    made. (Inline `<code>` is *not* skipped: that is where paths live.)
  *  - anything already annotated — including this pass's own wrappers, so
  *    re-running never nests a wrapper inside a wrapper.
+ *  - anything outside the HTML namespace — an inline `<svg>` is a drawing,
+ *    not prose. Its `<text>` holds characters the renderer measured and
+ *    placed; wrapping a run of them splices an HTML `<span>` into the SVG,
+ *    where it paints nothing. The label disappears while the box keeps the
+ *    width it was measured at — an empty atom chip. An atom is a placed
+ *    value the host already speaks for; the mark belongs on that host, not
+ *    inside the drawing of it.
  *
  * Every collected node is scanned the same way. Whether the text sits
  * inside a `<code>` span decides how it is *painted*, never whether it is
@@ -80,6 +90,7 @@ export function collectTextNodes(root: HTMLElement): Text[] {
       }
       if (child.nodeType !== Node.ELEMENT_NODE) continue;
       const element = child as HTMLElement;
+      if (element.namespaceURI !== HTML_NAMESPACE) continue;
       if (element.tagName === "A" || element.tagName === "PRE") continue;
       if (element.classList.contains(ANNOTATION_CLASS)) continue;
       visit(element);
