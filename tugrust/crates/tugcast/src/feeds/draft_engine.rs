@@ -843,6 +843,7 @@ mod tests {
                 last_touched: 1,
                 own_hunks: Vec::new(),
                 contested_hunks: Vec::new(),
+                shared_with: Vec::new(),
             }],
             draft: None,
         };

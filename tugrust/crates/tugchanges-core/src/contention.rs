@@ -37,6 +37,28 @@
 //! several hunks (an import and its call site), so an anchor claims every
 //! hunk it matches; that is narrower than the whole file either way.
 //!
+//! # The widening presumes a live owner
+//!
+//! Evidence that fails to place widens because the owner might be mid-work —
+//! the content it describes could be about to reappear. A **dead** owner has
+//! no mid-work: its evidence failing to place means the content is gone,
+//! reverted, or superseded, and warning about it is noise that erodes trust in
+//! every real SHARED badge. So for a dead owner an unplaceable anchor
+//! contributes nothing rather than widening, and an owner whose every anchor
+//! fails claims nothing at all — it has retired from `shared` and `contested`
+//! without a row being deleted, which is what lets a `git stash pop` bring the
+//! content back and revive the claim ([P03]).
+//!
+//! What death does *not* touch is evidence that was never falsifiable to begin
+//! with: a bare [`Anchor::Whole`] — a claim row (the user's own testimony), a
+//! legacy row, an edit past the anchor cap — has nothing to fail, so it keeps
+//! claiming the file whether its owner is running or not, and retires only
+//! through a commit, a disclaim, or a sever ([Q02]).
+//!
+//! Liveness that cannot be resolved reads as live. Dead is the
+//! retirement-eligible state, so absence of an answer must widen like every
+//! other unresolvable input here.
+//!
 //! Anchors annotate; the diff decides.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -76,6 +98,18 @@ pub enum Anchor {
     /// A hunk named by its own [P06] id — the strongest anchor, since it is
     /// already the identity hunks are keyed by.
     Hunk { id: String },
+    /// A whole-file write that recorded what it wrote ([P04]). `file_hash`
+    /// answers the strong question — are the file's bytes still exactly the
+    /// ones this call produced — and `line_hashes`/`added_head` degrade to the
+    /// added-lines reading when the file has moved on since.
+    WholeFile {
+        /// [`content_hash`] of the entire text the call wrote.
+        file_hash: String,
+        /// [`content_hash`] of each distinctive line of that text.
+        line_hashes: Vec<String>,
+        /// Its head, capped at write time — the containment probe input.
+        added_head: String,
+    },
 }
 
 impl Anchor {
@@ -134,6 +168,31 @@ impl Anchor {
                     _ => Anchor::Whole,
                 }
             }
+            // A `whole` span that recorded its content is falsifiable; the bare
+            // `{}` shape (a cap overflow, a claim row, a legacy row) is not,
+            // and stays whole-file forever.
+            "whole" => match value.get("file_hash").and_then(|v| v.as_str()) {
+                Some(file_hash) => Anchor::WholeFile {
+                    file_hash: file_hash.to_owned(),
+                    line_hashes: value
+                        .get("line_hashes")
+                        .and_then(|v| v.as_array())
+                        .map(|hashes| {
+                            hashes
+                                .iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|s| s.to_owned())
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    added_head: value
+                        .get("added_head")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_owned(),
+                },
+                None => Anchor::Whole,
+            },
             _ => Anchor::Whole,
         }
     }
@@ -144,6 +203,12 @@ impl Anchor {
 pub struct OwnerAnchors {
     pub session: String,
     pub anchors: Vec<Anchor>,
+    /// Whether the owning session is still running ([P03]). A live owner may
+    /// be mid-edit, so evidence that fails to place widens its claim; a dead
+    /// owner cannot be, so the same failure retires the evidence instead.
+    /// Liveness that could not be resolved at all reads as `true` — absence of
+    /// an answer must never be read as death.
+    pub live: bool,
 }
 
 /// What one owner claims of a file.
@@ -181,6 +246,14 @@ impl Claim {
             Claim::Whole => None,
             Claim::Hunks { placed, .. } => Some(placed),
         }
+    }
+
+    /// Whether this claim reaches nothing at all — a dead owner every one of
+    /// whose anchors failed to place ([P03]). Such an owner has retired: it
+    /// cannot make a file shared, cannot contest a hunk, and should not be
+    /// named as a co-owner.
+    pub fn claims_nothing(&self) -> bool {
+        matches!(self, Claim::Hunks { placed, unplaced } if placed.is_empty() && !unplaced)
     }
 
     /// Whether this claim covers `id` — the widened reading.
@@ -245,13 +318,22 @@ impl ContentionVerdict {
 ///
 /// Pure by design: the two readers that call it obtain `hunks` on their own
 /// side of the sync/async line, and this function never touches git or the
-/// ledger.
-pub fn classify_contention(hunks: &[Hunk], owners: &[OwnerAnchors]) -> ContentionVerdict {
+/// ledger. `current_file_hash` is the [`content_hash`] of the working file's
+/// whole bytes, which a [`Anchor::WholeFile`] is tested against; `None` (the
+/// file could not be read) widens, like every other unresolvable input here.
+pub fn classify_contention(
+    hunks: &[Hunk],
+    owners: &[OwnerAnchors],
+    current_file_hash: Option<&str>,
+) -> ContentionVerdict {
     let added: Vec<HunkAdded> = hunks.iter().map(HunkAdded::of).collect();
 
     let mut claims: BTreeMap<String, Claim> = BTreeMap::new();
     for owner in owners {
-        claims.insert(owner.session.clone(), claim_for(&added, &owner.anchors));
+        claims.insert(
+            owner.session.clone(),
+            claim_for(&added, &owner.anchors, owner.live, current_file_hash),
+        );
     }
 
     let sessions: Vec<&String> = claims.keys().collect();
@@ -306,9 +388,18 @@ impl HunkAdded {
 /// Map one owner's anchors onto the file's hunks.
 ///
 /// Every anchor either places — contributing every hunk it matched — or
-/// fails to, setting `unplaced`. The two are kept apart because the SHARED
-/// bit and the election read them oppositely; see the module doc.
-fn claim_for(added: &[HunkAdded], anchors: &[Anchor]) -> Claim {
+/// fails to. For a live owner a failure sets `unplaced`; the two are kept
+/// apart because the SHARED bit and the election read them oppositely (see the
+/// module doc). For a dead owner a failure contributes nothing at all, and an
+/// owner whose every anchor fails accumulates `Hunks { placed: ∅, unplaced:
+/// false }` — a claim that covers nothing and intersects nothing, which is
+/// retirement without a row being touched ([P03]).
+fn claim_for(
+    added: &[HunkAdded],
+    anchors: &[Anchor],
+    live: bool,
+    current_file_hash: Option<&str>,
+) -> Claim {
     if anchors.is_empty() {
         return Claim::Whole;
     }
@@ -317,6 +408,22 @@ fn claim_for(added: &[HunkAdded], anchors: &[Anchor]) -> Claim {
     for anchor in anchors {
         let matched: Vec<&String> = match anchor {
             Anchor::Whole => return Claim::Whole,
+            Anchor::WholeFile {
+                file_hash,
+                line_hashes,
+                added_head,
+            } => {
+                // A live owner's whole-file write is whole, full stop — that
+                // call really did produce the file. A dead owner's is whole
+                // only while the file's bytes are still the ones it wrote;
+                // once they are not, what it can still claim is whichever of
+                // its lines survive. An unreadable file answers nothing, so it
+                // widens.
+                if live || current_file_hash.is_none_or(|current| current == file_hash) {
+                    return Claim::Whole;
+                }
+                added_lines_matches(added, line_hashes, added_head)
+            }
             Anchor::Hunk { id } => added
                 .iter()
                 .filter(|h| &h.id == id)
@@ -339,8 +446,10 @@ fn claim_for(added: &[HunkAdded], anchors: &[Anchor]) -> Claim {
         };
         if matched.is_empty() {
             // The hunk this call wrote is gone, or its text moved under it:
-            // we can no longer say which region is this owner's.
-            unplaced = true;
+            // we can no longer say which region is this owner's. For a live
+            // owner that is uncertainty and widens; for a dead one it is a
+            // settled answer — the content is gone — and the evidence drops.
+            unplaced |= live;
         } else {
             placed.extend(matched.into_iter().cloned());
         }
@@ -479,13 +588,28 @@ mod tests {
         OwnerAnchors {
             session: session.to_owned(),
             anchors,
+            live: true,
         }
+    }
+
+    /// Same owner, no longer running.
+    fn dead(session: &str, anchors: Vec<Anchor>) -> OwnerAnchors {
+        OwnerAnchors {
+            live: false,
+            ..owner(session, anchors)
+        }
+    }
+
+    /// The live-owner reading, with the working file's hash unread — the
+    /// verdict every case that predates liveness asserts, unchanged.
+    fn classify_live(hunks: &[Hunk], owners: &[OwnerAnchors]) -> ContentionVerdict {
+        classify_contention(hunks, owners, None)
     }
 
     #[test]
     fn disjoint_edits_are_not_shared() {
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![content("ALPHA-ADDED")]),
@@ -501,7 +625,7 @@ mod tests {
     #[test]
     fn edits_to_the_same_region_are_shared_and_contested() {
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![content("ALPHA-ADDED")]),
@@ -520,7 +644,7 @@ mod tests {
         // The pre-spans world, reproduced exactly: an owner with no evidence
         // of *where* it edited contends with everyone ([P12]).
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![content("ALPHA-ADDED")]),
@@ -535,7 +659,7 @@ mod tests {
     #[test]
     fn a_whole_anchor_claims_the_whole_file() {
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("writer", vec![Anchor::Whole]),
@@ -553,7 +677,7 @@ mod tests {
     #[test]
     fn an_anchor_matching_nothing_widens_the_badge_but_not_the_election() {
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("stale", vec![content("TEXT-THAT-IS-GONE")]),
@@ -586,7 +710,7 @@ mod tests {
 +SAME
 ";
         let hunks = parse_hunks(diff);
-        let verdict = classify_contention(&hunks, &[owner("a", vec![content("SAME")])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![content("SAME")])]);
         assert_eq!(
             verdict.claims["a"],
             Claim::Hunks {
@@ -610,7 +734,7 @@ mod tests {
 +SAME
 ";
         let hunks = parse_hunks(diff);
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![content("SAME")]),
@@ -627,13 +751,13 @@ mod tests {
         let live = Anchor::Hunk {
             id: hunks[1].id.clone(),
         };
-        let verdict = classify_contention(&hunks, &[owner("a", vec![live])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![live])]);
         assert_eq!(verdict.hunks_of("a", &hunks), vec![hunks[1].id.clone()]);
 
         let drifted = Anchor::Hunk {
             id: "deadbeefdeadbeef".to_owned(),
         };
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![drifted]),
@@ -650,7 +774,7 @@ mod tests {
     #[test]
     fn a_sole_owner_is_never_shared() {
         let hunks = hunks();
-        let verdict = classify_contention(&hunks, &[owner("a", vec![Anchor::Whole])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![Anchor::Whole])]);
         assert!(!verdict.shared);
         assert!(verdict.contested.is_empty());
     }
@@ -697,7 +821,7 @@ mod tests {
             new_head: long[..40].to_owned(),
             new_len: long.len(),
         };
-        let verdict = classify_contention(&hunks, &[owner("a", vec![anchor])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![anchor])]);
         assert_eq!(verdict.hunks_of("a", &hunks), vec![hunks[0].id.clone()]);
     }
 
@@ -721,7 +845,7 @@ mod tests {
             Some("            glyphPosition=\"both\"\n            size={12}"),
             "            glyphPosition=\"both\"\n            size={14}",
         );
-        let verdict = classify_contention(&hunks, &[owner("a", vec![anchor])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![anchor])]);
         assert_eq!(verdict.hunks_of("a", &hunks), vec![hunks[0].id.clone()]);
     }
 
@@ -741,7 +865,7 @@ mod tests {
             "    // context line 7 rewritten with padding to make this a long replacement";
         let diff = format!("--- a/f.rs\n+++ b/f.rs\n@@ -1,2 +1,3 @@\n alpha\n+{changed}\n bravo\n");
         let hunks = parse_hunks(&diff);
-        let verdict = classify_contention(&hunks, &[owner("a", vec![edit(Some(&old), &new)])]);
+        let verdict = classify_live(&hunks, &[owner("a", vec![edit(Some(&old), &new)])]);
         assert_eq!(verdict.hunks_of("a", &hunks), vec![hunks[0].id.clone()]);
     }
 
@@ -764,7 +888,7 @@ mod tests {
             Some("use std::io;\n    let x = 1;"),
             "use std::io;\nuse std::fmt::Debug;\n    let x = 1;\n    debug_print(x);",
         );
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![spanning]),
@@ -787,7 +911,7 @@ mod tests {
     #[test]
     fn one_unplaceable_anchor_widens_the_badge_and_leaves_the_election_alone() {
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner(
@@ -819,7 +943,7 @@ mod tests {
         // so this owner still lands its co-owner's work. Closing that needs a
         // wire signal for "evidence that failed to place".
         let hunks = hunks();
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![edit(None, "GONE-ONE"), edit(None, "GONE-TWO")]),
@@ -845,7 +969,7 @@ mod tests {
 +});
 ";
         let hunks = parse_hunks(diff);
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![edit(None, "});")]),
@@ -877,7 +1001,7 @@ mod tests {
 +            weight={700}
 ";
         let hunks = parse_hunks(diff);
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[owner("a", vec![edit(Some("size={12}"), "size={14}")])],
         );
@@ -899,7 +1023,7 @@ mod tests {
         let hunks = parse_hunks(diff);
         // `beta` is contained in the second hunk's added line, but the first
         // hunk already matched by hash, so the fallback never runs.
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[owner("a", vec![edit(None, "let alpha = 1;\nbeta")])],
         );
@@ -923,7 +1047,7 @@ mod tests {
 +  <Icon size={14} />
 ";
         let hunks = parse_hunks(diff);
-        let verdict = classify_contention(
+        let verdict = classify_live(
             &hunks,
             &[
                 owner("a", vec![edit(Some("size={12}"), "size={14}")]),
@@ -979,5 +1103,276 @@ mod tests {
                 added_head: "});".to_owned(),
             }
         );
+    }
+
+    // -----------------------------------------------------------------
+    // Whole-file anchors and the liveness rule
+    // -----------------------------------------------------------------
+
+    /// A `whole` span that recorded what it wrote. The JSON is spelled out
+    /// here because the decode contract *is* the JSON shape; the writer that
+    /// produces it round-trips through this same decoder in `anchors`.
+    fn whole_file(content: &str, lines: &[&str]) -> Anchor {
+        let json = serde_json::json!({
+            "file_hash": content_hash(content),
+            "line_hashes": lines.iter().map(|l| content_hash(l)).collect::<Vec<_>>(),
+            "added_lines": lines.len(),
+            "added_head": lines.join("\n"),
+        });
+        Anchor::from_span("whole", &json.to_string())
+    }
+
+    #[test]
+    fn a_whole_span_decodes_as_wholefile_only_when_it_recorded_content() {
+        assert!(matches!(
+            whole_file("body", &["ALPHA-ADDED"]),
+            Anchor::WholeFile { .. }
+        ));
+        // The shapes with nothing to falsify: a cap overflow, a claim row, a
+        // legacy row, and a row carrying fields this decoder does not know.
+        assert_eq!(Anchor::from_span("whole", "{}"), Anchor::Whole);
+        assert_eq!(
+            Anchor::from_span("whole", r#"{"line_hashes":["aa"],"added_lines":1}"#),
+            Anchor::Whole,
+            "without file_hash there is no whole-file test to run"
+        );
+        assert_eq!(Anchor::from_span("whole", "not json"), Anchor::Whole);
+    }
+
+    #[test]
+    fn a_dead_owner_whose_evidence_places_nowhere_retires() {
+        // The headline: A is running and its edit is right there in hunk one;
+        // B is closed and the content it wrote is gone. B stops warning.
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                dead("b", vec![edit(None, "LONG-GONE-LINE-FROM-B")]),
+            ],
+        );
+        assert!(!verdict.shared, "{verdict:?}");
+        assert!(verdict.contested.is_empty());
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: BTreeSet::new(),
+                unplaced: false,
+            },
+            "a retired owner claims nothing, and no row was touched to say so"
+        );
+        assert!(verdict.hunks_of("b", &hunks).is_empty());
+    }
+
+    #[test]
+    fn the_same_owner_still_running_widens_exactly_as_before() {
+        // The live floor, pinned against the case above: nothing about the
+        // widening changed for a session that could be mid-work.
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                owner("b", vec![edit(None, "LONG-GONE-LINE-FROM-B")]),
+            ],
+        );
+        assert!(verdict.shared);
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: BTreeSet::new(),
+                unplaced: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_dead_owners_drifted_hunk_anchor_contributes_nothing() {
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner(
+                    "a",
+                    vec![Anchor::Hunk {
+                        id: hunks[0].id.clone(),
+                    }],
+                ),
+                dead(
+                    "b",
+                    vec![Anchor::Hunk {
+                        id: "drifted".to_owned(),
+                    }],
+                ),
+            ],
+        );
+        assert!(!verdict.shared);
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: BTreeSet::new(),
+                unplaced: false,
+            }
+        );
+    }
+
+    #[test]
+    fn a_dead_owner_still_contends_where_its_evidence_places() {
+        // One anchor of B's is gone, the other is still in hunk two. B keeps
+        // the hunk it can prove and loses the one it cannot — the retirement
+        // is per-evidence, not per-owner.
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "TANGO-ADDED")]),
+                dead(
+                    "b",
+                    vec![edit(None, "TANGO-ADDED"), edit(None, "GONE-FROM-B")],
+                ),
+            ],
+        );
+        assert!(verdict.shared);
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: [hunks[1].id.clone()].into_iter().collect(),
+                unplaced: false,
+            }
+        );
+        assert_eq!(
+            verdict.contested,
+            [hunks[1].id.clone()].into_iter().collect()
+        );
+    }
+
+    #[test]
+    fn a_dead_owners_unfalsifiable_anchor_keeps_contending() {
+        // A claim row is the user's testimony, made without content evidence
+        // on purpose. There is nothing for the diff to falsify, so death
+        // changes nothing about it.
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                dead("b", vec![Anchor::Whole]),
+            ],
+        );
+        assert!(verdict.shared);
+        assert_eq!(verdict.claims["b"], Claim::Whole);
+    }
+
+    #[test]
+    fn a_dead_owner_with_no_evidence_at_all_keeps_contending() {
+        // No anchors is not falsified anchors — the span-less rows the ledger
+        // already holds keep today's reading.
+        let hunks = hunks();
+        let verdict = classify_live(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                dead("b", Vec::new()),
+            ],
+        );
+        assert!(verdict.shared);
+        assert_eq!(verdict.claims["b"], Claim::Whole);
+    }
+
+    #[test]
+    fn a_dead_wholefile_owner_contends_while_the_bytes_are_still_its_own() {
+        let hunks = hunks();
+        let written = "alpha\nALPHA-ADDED\nbravo\n";
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "TANGO-ADDED")]),
+                dead("b", vec![whole_file(written, &["ALPHA-ADDED"])]),
+            ],
+            Some(&content_hash(written)),
+        );
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Whole,
+            "the file is byte-for-byte what B wrote, so B wrote all of it"
+        );
+        assert!(verdict.shared);
+    }
+
+    #[test]
+    fn a_dead_wholefile_owner_degrades_to_the_lines_that_survive() {
+        // The file moved on since B wrote it, so B no longer owns the whole
+        // of it — only whichever of its lines are demonstrably still there.
+        let hunks = hunks();
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "TANGO-ADDED")]),
+                dead("b", vec![whole_file("what B wrote", &["ALPHA-ADDED"])]),
+            ],
+            Some(&content_hash("the file as it is now")),
+        );
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: [hunks[0].id.clone()].into_iter().collect(),
+                unplaced: false,
+            }
+        );
+        assert!(!verdict.shared, "A is in hunk two, B in hunk one");
+    }
+
+    #[test]
+    fn a_dead_wholefile_owner_whose_lines_are_all_gone_retires() {
+        let hunks = hunks();
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                dead("b", vec![whole_file("what B wrote", &["NOTHING-LIKE-IT"])]),
+            ],
+            Some(&content_hash("the file as it is now")),
+        );
+        assert!(!verdict.shared);
+        assert_eq!(
+            verdict.claims["b"],
+            Claim::Hunks {
+                placed: BTreeSet::new(),
+                unplaced: false,
+            }
+        );
+    }
+
+    #[test]
+    fn an_unreadable_file_leaves_a_wholefile_anchor_whole() {
+        // No hash to test against is no answer, and no answer widens.
+        let hunks = hunks();
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                dead("b", vec![whole_file("what B wrote", &["NOTHING-LIKE-IT"])]),
+            ],
+            None,
+        );
+        assert!(verdict.shared);
+        assert_eq!(verdict.claims["b"], Claim::Whole);
+    }
+
+    #[test]
+    fn a_live_wholefile_owner_is_whole_whatever_the_file_says() {
+        // A Write really did produce the file; for a running session that
+        // remains true no matter how the bytes have moved since.
+        let hunks = hunks();
+        let verdict = classify_contention(
+            &hunks,
+            &[
+                owner("a", vec![edit(None, "ALPHA-ADDED")]),
+                owner("b", vec![whole_file("what B wrote", &["NOTHING-LIKE-IT"])]),
+            ],
+            Some(&content_hash("the file as it is now")),
+        );
+        assert!(verdict.shared);
+        assert_eq!(verdict.claims["b"], Claim::Whole);
     }
 }

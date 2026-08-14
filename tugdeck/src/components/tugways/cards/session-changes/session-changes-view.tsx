@@ -283,6 +283,7 @@ export function SessionChangesView({
           onClaimAllOrphaned={(paths) => changesController.claim(paths)}
           claimPending={claimPending}
           sessionLabel="this session's changes"
+          onReleaseShared={(path) => changesController.claim([path])}
           onDisclaimFile={(path) => changesController.disclaim([path])}
           onDisclaimAllFiles={(paths) => changesController.disclaim(paths)}
           disclaimPending={disclaimPending}

@@ -11,7 +11,7 @@
 | Field | Value |
 |------|-------|
 | Owner | Ken Kocienda |
-| Status | draft |
+| Status | implemented (on dash `robustify-file-tracking`, awaiting join) |
 | Target branch | main |
 | Last updated | 2026-08-13 |
 
@@ -384,14 +384,14 @@ Deck-side, the rule that decides the shape: `tug-changes-list.test.ts` is pure-l
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | shell-ops: Restore kind | pending | |
-| #step-2 | attribution: promotion split + Restore exclusion | pending | |
-| #step-3 | contention: WholeFile decode + dead-owner retirement | pending | |
-| #step-4 | writers: whole anchors with content, cmd rows with hunk spans | pending | |
-| #step-5 | compose: liveness into contention + shared_with | pending | |
-| #step-6 | sync engine: liveness into paths_contend | pending | |
-| #step-7 | deck: SHARED co-owners + release gesture | pending | |
-| #step-8 | integration checkpoint | pending | |
+| #step-1 | shell-ops: Restore kind | done | `da0b44831` |
+| #step-2 | attribution: promotion split + Restore exclusion | done | `d19468018` |
+| #step-3 | contention: WholeFile decode + dead-owner retirement | done | `6dc8a8b69` |
+| #step-4 | writers: whole anchors with content, cmd rows with hunk spans | done | `62a986f7d` |
+| #step-5 | compose: liveness into contention + shared_with | done | `44e9d0709` |
+| #step-6 | sync engine: liveness into paths_contend | done | `a20b892d0` |
+| #step-7 | deck: SHARED co-owners + release gesture | done | `7d701f1f4` |
+| #step-8 | integration checkpoint | done | (verification only) |
 
 #### Step 1: shell-ops — Restore kind {#step-1}
 
@@ -568,9 +568,9 @@ Deck-side, the rule that decides the shape: `tug-changes-list.test.ts` is pure-l
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] Spec S01/S02/S03 pinned by unit tests with production-built fixtures.
-- [ ] The incident replay (#incident-replay) passes at both the attribution layer and both contention readers.
-- [ ] `cd tugrust && cargo nextest run` fully green; `bunx vite build` green; `just app-test-changed` selection green.
+- [x] Spec S01/S02/S03 pinned by unit tests with production-built fixtures.
+- [x] The incident replay (#incident-replay) passes at both the attribution layer and both contention readers.
+- [x] `cd tugrust && cargo nextest run` fully green (2366 passed, up from a 2337 baseline); `bunx vite build` green; the derived app-test selection over the whole dash diff green (11/11 files, 12/12 tests).
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 

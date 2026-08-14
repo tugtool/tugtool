@@ -41,7 +41,7 @@ use std::time::SystemTime;
 
 // The anchor's shape is the matcher's business, so it is built beside the
 // matcher in tugchanges-core — the relay only decides which edits get one.
-use tugchanges_core::anchors::edit_anchor;
+use tugchanges_core::anchors::{edit_anchor, whole_anchor};
 
 use serde::Deserialize;
 use tugchanges_core::shell_ops::{DeclaredKind, DeclaredOp, ParseOutcome, parse_shell_ops};
@@ -221,6 +221,21 @@ pub fn whole_span() -> crate::session_ledger::FileEventSpan {
     }
 }
 
+/// The same `whole` span, recording what the call actually wrote ([P04]).
+///
+/// A whole-file write knows its own output exactly, and recording nothing
+/// about it is what makes a ghost `Write` unfalsifiable: the row asserts the
+/// file forever, with nothing the diff can ever contradict. With the content's
+/// identity on the row, a dead owner's claim can be tested against the bytes
+/// that are actually there.
+pub fn whole_span_for(content: &str) -> crate::session_ledger::FileEventSpan {
+    crate::session_ledger::FileEventSpan {
+        seq: 0,
+        kind: "whole".to_owned(),
+        anchor: whole_anchor(content).to_string(),
+    }
+}
+
 /// The content anchors an exact tool's input yields ([P11], Spec S04).
 ///
 /// What the call *added*, never where it added it: line numbers die the
@@ -229,9 +244,10 @@ pub fn whole_span() -> crate::session_ledger::FileEventSpan {
 /// [`edit_anchor`]'s business — an `Edit`'s strings carry unchanged context
 /// lines the diff will render as context, so the evidence recorded is the
 /// lines the edit actually added. `Write` and `NotebookEdit` replace
-/// the file wholesale and so carry a single `whole` anchor; `Edit` and
-/// `MultiEdit` carry one anchor per edit — `replace` when it named an
-/// `old_string`, `insert` when it did not.
+/// the file wholesale and so carry a single `whole` anchor — carrying the
+/// written content's identity when the input holds it, so the assertion is
+/// falsifiable ([P04]); `Edit` and `MultiEdit` carry one anchor per edit —
+/// `replace` when it named an `old_string`, `insert` when it did not.
 ///
 /// An empty result means this tool contributes no sub-file evidence, which
 /// widens its owner to a whole-file claim by rule ([P12]) — the same answer
@@ -241,7 +257,14 @@ pub fn spans_for_tool_input(
     input: &serde_json::Value,
 ) -> Vec<crate::session_ledger::FileEventSpan> {
     match tool_name {
-        "Write" | "NotebookEdit" => vec![whole_span()],
+        "Write" => vec![match input.get("content").and_then(|v| v.as_str()) {
+            Some(content) => whole_span_for(content),
+            None => whole_span(),
+        }],
+        "NotebookEdit" => vec![match input.get("new_source").and_then(|v| v.as_str()) {
+            Some(content) => whole_span_for(content),
+            None => whole_span(),
+        }],
         "Edit" => edit_spans(std::slice::from_ref(input)),
         "MultiEdit" => match input.get("edits").and_then(|v| v.as_array()) {
             Some(edits) => edit_spans(edits),
@@ -498,19 +521,18 @@ impl OpenBracket {
     /// `repo_root`), matching the exact-tool path's capture-time projection.
     ///
     /// `declared` holds the canonical absolute paths the command literally
-    /// named. A delta path **equal to or beneath** one of them was both named
-    /// by the tool input and observed to change, which is proof — that row is
-    /// promoted to `origin: "cmd"`. (Equal-or-*under* is what lets `rm -rf dir/`
-    /// promote the per-file rows `-uall` expands the directory into.) Everything
-    /// else keeps the caller's correlation origin; the turn bracket passes an
-    /// empty set.
+    /// named, split by how far the naming reaches ([P02]). A delta path the
+    /// declaration covers was both named by the tool input and observed to
+    /// change, which is proof — that row is promoted to `origin: "cmd"`.
+    /// Everything else keeps the caller's correlation origin; the turn bracket
+    /// passes an empty set.
     pub fn into_delta_rows(
         self,
         post: &HashMap<PathBuf, FileState>,
         project_dir: &CanonicalPath,
         tool_name: &str,
         origin: &str,
-        declared: &HashSet<PathBuf>,
+        declared: &DeclaredPromotions,
         at: i64,
     ) -> Vec<FileEventRow> {
         let mut paths: HashSet<&PathBuf> = HashSet::new();
@@ -534,7 +556,7 @@ impl OpenBracket {
             let Some(file_path) = repo_relative_key(Some(&self.repo_root), path) else {
                 continue;
             };
-            let row_origin = if declared_covers(declared, path) {
+            let row_origin = if declared.covers(path) {
                 CMD_ORIGIN
             } else {
                 origin
@@ -560,21 +582,57 @@ impl OpenBracket {
 /// the same footing as an exact tool's `file_path`.
 pub const CMD_ORIGIN: &str = "cmd";
 
-/// Whether a declared (canonical, absolute) path names `path` — equal to it, or
-/// an ancestor directory of it. A recursive operation declares the directory
-/// while the status universe reports the files inside it.
-pub fn declared_covers(declared: &HashSet<PathBuf>, path: &Path) -> bool {
-    declared
-        .iter()
-        .any(|d| path == d.as_path() || path.starts_with(d))
+/// The canonical absolute paths a command declared, split by how far the
+/// declaration reaches into the tree ([P02]).
+///
+/// Reaching beneath a declared path is a **lifecycle** privilege: `rm -rf dir/`
+/// names the directory while `--untracked-files=all` reports the files inside
+/// it, so the removal's proof has to descend to meet them. An edit-class verb
+/// names files — `sed -i`, `perl -i`, `tugutil file edit`, a redirect target all
+/// require a literal file operand — so an edit declaration promotes on path
+/// equality only. A directory operand reaching an edit-class declaration is the
+/// checkout-pathspec shape that minted proof over a whole subtree on
+/// 2026-08-13; keeping the sets apart makes that structurally impossible rather
+/// than incidentally avoided.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeclaredPromotions {
+    /// Promote a delta path only when it equals one of these.
+    pub exact: HashSet<PathBuf>,
+    /// Promote a delta path equal to or beneath one of these.
+    pub subtree: HashSet<PathBuf>,
 }
 
-/// Canonicalize the paths a parse declared, so they join against delta keys —
-/// which live in canonical space (the bracket's `repo_root` comes through the
-/// `CanonicalPath` gateway). An operand spelled through a firmlink or symlinked
-/// checkout root would otherwise silently miss.
-pub fn canonical_declared_paths<'a>(paths: impl Iterator<Item = &'a Path>) -> HashSet<PathBuf> {
-    paths.map(canonicalize_declared).collect()
+impl DeclaredPromotions {
+    /// Partition a parse's declared operations by promotion reach, in canonical
+    /// space so the paths join against delta keys. Lifecycle kinds
+    /// (`Remove`/`Move`/`Copy`) reach into subtrees; edit kinds
+    /// (`EditInPlace`/`WriteTarget`/`Touch`) promote on equality only; `Restore`
+    /// contributes to neither — restored bytes are the repository's ([P01]).
+    pub fn from_ops<'a>(ops: impl Iterator<Item = &'a DeclaredOp>) -> Self {
+        let mut promotions = Self::default();
+        for op in ops {
+            let path = canonicalize_declared(op.path.as_path());
+            match op.kind {
+                DeclaredKind::Remove | DeclaredKind::Move { .. } | DeclaredKind::Copy => {
+                    promotions.subtree.insert(path);
+                }
+                DeclaredKind::EditInPlace | DeclaredKind::WriteTarget | DeclaredKind::Touch => {
+                    promotions.exact.insert(path);
+                }
+                DeclaredKind::Restore => {}
+            }
+        }
+        promotions
+    }
+
+    /// Whether a declaration names `path` closely enough to promote its row.
+    pub fn covers(&self, path: &Path) -> bool {
+        self.exact.contains(path)
+            || self
+                .subtree
+                .iter()
+                .any(|d| path == d.as_path() || path.starts_with(d))
+    }
 }
 
 /// Canonicalize a declared path that may no longer exist. The gateway resolves
@@ -697,7 +755,10 @@ pub fn op_for_declared_kind(kind: &DeclaredKind) -> &'static str {
         DeclaredKind::Remove => "deleted",
         DeclaredKind::Move { .. } => "renamed",
         DeclaredKind::Copy => "created",
-        DeclaredKind::EditInPlace | DeclaredKind::WriteTarget | DeclaredKind::Touch => "modified",
+        DeclaredKind::EditInPlace
+        | DeclaredKind::WriteTarget
+        | DeclaredKind::Touch
+        | DeclaredKind::Restore => "modified",
     }
 }
 
@@ -1166,8 +1227,21 @@ mod tests {
 
     /// A bracket whose command named nothing this grammar reads — every row
     /// stays correlation.
-    fn nothing_declared() -> HashSet<PathBuf> {
-        HashSet::new()
+    fn nothing_declared() -> DeclaredPromotions {
+        DeclaredPromotions::default()
+    }
+
+    /// Promotions as a real parse would build them, so the test exercises the
+    /// kind → reach mapping rather than restating it.
+    fn promotions(ops: &[(DeclaredKind, &str)]) -> DeclaredPromotions {
+        let ops: Vec<DeclaredOp> = ops
+            .iter()
+            .map(|(kind, path)| DeclaredOp {
+                kind: kind.clone(),
+                path: PathBuf::from(path),
+            })
+            .collect();
+        DeclaredPromotions::from_ops(ops.iter())
     }
 
     #[test]
@@ -1278,7 +1352,7 @@ mod tests {
             repo_root: PathBuf::from("/r"),
             pre: HashMap::new(),
         };
-        let declared: HashSet<PathBuf> = [PathBuf::from("/r/named.rs")].into_iter().collect();
+        let declared = promotions(&[(DeclaredKind::EditInPlace, "/r/named.rs")]);
         let project_dir = CanonicalPath::from_test_str("/r");
         let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &declared, 1);
         let by_path: HashMap<&str, &str> = rows
@@ -1307,7 +1381,7 @@ mod tests {
             repo_root: PathBuf::from("/r"),
             pre: HashMap::new(),
         };
-        let declared: HashSet<PathBuf> = [PathBuf::from("/r/out")].into_iter().collect();
+        let declared = promotions(&[(DeclaredKind::Remove, "/r/out")]);
         let project_dir = CanonicalPath::from_test_str("/r");
         let rows = bracket.into_delta_rows(&post, &project_dir, "Bash", "bash", &declared, 1);
         let by_path: HashMap<&str, &str> = rows
@@ -1318,6 +1392,76 @@ mod tests {
         assert_eq!(by_path.get("out/nested/b.rs"), Some(&"cmd"));
         // A sibling whose name merely shares the prefix is not beneath it.
         assert_eq!(by_path.get("outside.rs"), Some(&"bash"));
+    }
+
+    /// Reaching beneath a declared path is a lifecycle privilege. An
+    /// edit-class verb names files, so a directory operand promotes nothing
+    /// under it — the shape that minted proof over a whole subtree.
+    #[test]
+    fn an_edit_class_directory_promotes_nothing_beneath_it() {
+        let mut post = HashMap::new();
+        post.insert(PathBuf::from("/r/dir/a.ts"), state(".M"));
+        post.insert(PathBuf::from("/r/dir"), state(".M"));
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "tu-bash".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: PathBuf::from("/r"),
+            pre: HashMap::new(),
+        };
+        let project_dir = CanonicalPath::from_test_str("/r");
+        let rows = bracket.into_delta_rows(
+            &post,
+            &project_dir,
+            "Bash",
+            "bash",
+            &promotions(&[(DeclaredKind::EditInPlace, "/r/dir")]),
+            1,
+        );
+        let by_path: HashMap<&str, &str> = rows
+            .iter()
+            .map(|r| (r.file_path.as_str(), r.origin.as_str()))
+            .collect();
+        assert_eq!(by_path.get("dir/a.ts"), Some(&"bash"));
+        // The declared path itself still promotes on equality.
+        assert_eq!(by_path.get("dir"), Some(&"cmd"));
+    }
+
+    /// The 2026-08-13 incident: `git checkout <sha> -- tugdeck` observed a
+    /// whole subtree change and minted proof over all of it. A restore
+    /// declares its operands for the gate but promotes nothing.
+    #[test]
+    fn a_restore_promotes_nothing_even_over_the_paths_it_named() {
+        let mut post = HashMap::new();
+        post.insert(PathBuf::from("/r/tugdeck/src/a.tsx"), state(".M"));
+        post.insert(PathBuf::from("/r/tugdeck/src/b.css"), state(".M"));
+        post.insert(PathBuf::from("/r/tugdeck"), state(".M"));
+        let bracket = OpenBracket {
+            tug_session_id: "tug-1".to_owned(),
+            tool_use_id: "tu-bash".to_owned(),
+            parent_tool_use_id: None,
+            opened_at: 0,
+            repo_root: PathBuf::from("/r"),
+            pre: HashMap::new(),
+        };
+        let project_dir = CanonicalPath::from_test_str("/r");
+        let rows = bracket.into_delta_rows(
+            &post,
+            &project_dir,
+            "Bash",
+            "bash",
+            &promotions(&[(DeclaredKind::Restore, "/r/tugdeck")]),
+            1,
+        );
+        assert!(!rows.is_empty(), "the delta is still observed");
+        for row in &rows {
+            assert_eq!(
+                row.origin, "bash",
+                "{} is a bracket hint, not authorship",
+                row.file_path
+            );
+        }
     }
 
     #[test]
@@ -1397,18 +1541,71 @@ mod tests {
     }
 
     #[test]
-    fn a_write_asserts_the_whole_file() {
-        let input = serde_json::json!({"file_path": "/p/a.rs", "content": "hello"});
+    fn a_write_asserts_the_whole_file_and_records_what_it_wrote() {
+        let content = "fn main() {\n    println!(\"distinctive\");\n}\n";
+        let input = serde_json::json!({"file_path": "/p/a.rs", "content": content});
+        let spans = spans_for_tool_input("Write", &input);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].kind, "whole");
+        // The assertion is whole-file, but it says which bytes it is about,
+        // so a later diff can contradict it ([P04]).
+        let anchor = anchor_of(&spans[0]);
+        assert_eq!(
+            anchor["file_hash"],
+            serde_json::json!(tugchanges_core::content_hash(content))
+        );
+        assert_eq!(
+            anchor["line_hashes"],
+            serde_json::json!(vec![
+                tugchanges_core::content_hash("fn main() {"),
+                tugchanges_core::content_hash("    println!(\"distinctive\");"),
+            ]),
+            "the closing-brace line is not distinctive and contributes no hash"
+        );
+        assert_eq!(anchor["added_lines"], serde_json::json!(3));
+
+        // A notebook edit replaces its cell wholesale, same reading.
+        let notebook = serde_json::json!({
+            "notebook_path": "/p/a.ipynb",
+            "new_source": "import distinctive\n",
+        });
+        let notebook_spans = spans_for_tool_input("NotebookEdit", &notebook);
+        assert_eq!(notebook_spans[0].kind, "whole");
+        assert_eq!(
+            anchor_of(&notebook_spans[0])["file_hash"],
+            serde_json::json!(tugchanges_core::content_hash("import distinctive\n"))
+        );
+    }
+
+    #[test]
+    fn a_write_with_no_content_to_record_keeps_the_bare_shape() {
+        // Nothing to be falsified by, so nothing is claimed about the bytes —
+        // the unfalsifiable floor, decoded as a plain whole-file claim.
+        let input = serde_json::json!({"file_path": "/p/a.rs"});
         let spans = spans_for_tool_input("Write", &input);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].kind, "whole");
         assert_eq!(anchor_of(&spans[0]), serde_json::json!({}));
-
-        // A notebook edit replaces its cell wholesale, same reading.
-        let notebook = serde_json::json!({"notebook_path": "/p/a.ipynb"});
         assert_eq!(
-            spans_for_tool_input("NotebookEdit", &notebook)[0].kind,
-            "whole"
+            tugchanges_core::Anchor::from_span(&spans[0].kind, &spans[0].anchor),
+            tugchanges_core::Anchor::Whole
+        );
+    }
+
+    #[test]
+    fn a_recorded_write_decodes_as_the_falsifiable_shape() {
+        // Writer and decoder are two crates apart; pin the round trip rather
+        // than the JSON on either side alone.
+        let content = "the distinctive line\n";
+        let input = serde_json::json!({"file_path": "/p/a.rs", "content": content});
+        let span = &spans_for_tool_input("Write", &input)[0];
+        assert_eq!(
+            tugchanges_core::Anchor::from_span(&span.kind, &span.anchor),
+            tugchanges_core::Anchor::WholeFile {
+                file_hash: tugchanges_core::content_hash(content),
+                line_hashes: vec![tugchanges_core::content_hash("the distinctive line")],
+                added_head: "the distinctive line".to_owned(),
+            }
         );
     }
 

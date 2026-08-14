@@ -347,7 +347,7 @@ describe("GazetteStore", () => {
         { path: "relative.png", media_type: "image/png" },
         { path: "/tmp/gz/b.png", media_type: "" },
       ],
-    } as GazettePostWire);
+    });
     const post = store.getSnapshot().posts[0]!;
     expect(post.attachments.length).toBe(1);
     expect(post.attachments[0]!.path).toBe("/tmp/gz/a.png");

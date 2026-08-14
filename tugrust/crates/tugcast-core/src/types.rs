@@ -353,6 +353,25 @@ pub struct ChangesetFile {
     /// The hunks another owner claims too — where the contention actually is.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contested_hunks: Vec<String>,
+    /// Who else is claiming this file, when `shared` ([P06]). The badge
+    /// carries its own evidence: naming the co-owner turns an inexplicable
+    /// SHARED into a recognizable one, and a row whose co-owners are all
+    /// closed is one the user can release. Absent on non-shared files and
+    /// from pre-plan servers — an older deck ignores it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_with: Vec<SharedOwner>,
+}
+
+/// One co-owner named on a shared file's badge.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SharedOwner {
+    /// The co-owning session's id.
+    pub id: String,
+    /// Its display name, the same one its own changeset entry carries.
+    pub name: String,
+    /// Whether that session is still running. All-dead co-owners are what
+    /// make the row releasable by hand.
+    pub live: bool,
 }
 
 /// A file the attribution engine has no owner for (hand edits, detached

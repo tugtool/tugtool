@@ -13,6 +13,7 @@
 //! and `tugcast/src/session_ledger.rs` (the table DDL). A schema change there
 //! must update this query; the contract test in `changes.rs` guards the shape.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OpenFlags};
@@ -250,6 +251,46 @@ pub(crate) fn session_exists(conn: &Connection, session: &str) -> Result<bool, S
         )
         .map_err(|e| e.to_string())?;
     Ok(count > 0)
+}
+
+/// Which of `ids` are running, against the **`sessions.db`** connection.
+///
+/// `sessions` is a per-instance table while `file_events` is machine-global
+/// ([D112]), so a session belonging to another app instance has no row here
+/// and reads as not-live — the same blind spot compose's `owner_live` join
+/// already has, inherited deliberately ([Q01]). An id absent from the returned
+/// map is *unanswered*, not dead: callers take the live default for it, since
+/// dead is the retirement-eligible state ([P03]).
+pub(crate) fn session_states(
+    conn: &Connection,
+    ids: &[&str],
+) -> Result<HashMap<String, bool>, String> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let placeholders = (1..=ids.len())
+        .map(|n| format!("?{n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql =
+        format!("SELECT session_id, state FROM sessions WHERE session_id IN ({placeholders})");
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(ids), |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut out = HashMap::new();
+    for row in rows {
+        let (id, state) = row.map_err(|e| e.to_string())?;
+        out.insert(id, state == "live");
+    }
+    // A session this instance has never heard of is answered, and the answer
+    // is "not running here".
+    for id in ids {
+        out.entry((*id).to_owned()).or_insert(false);
+    }
+    Ok(out)
 }
 
 /// Resolve the on-disk `sessions.db` path, mirroring

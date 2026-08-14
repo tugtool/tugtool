@@ -4,12 +4,15 @@ import {
   diffablePathsOf,
   entryDiffDescriptor,
   fileExpandKey,
+  sharedIsReleasable,
+  sharedWithTitle,
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
 import type {
   ChangesetFile,
   ProjectChangeset,
   SessionChangesetEntry,
+  SharedOwner,
   UnattributedFile,
 } from "@/lib/changeset-types";
 
@@ -84,5 +87,82 @@ describe("entryDiffDescriptor", () => {
   it("returns null for a non-repo project", () => {
     const item = sessionItem([file("a.ts", ".M")], project({ no_repo: true }));
     expect(entryDiffDescriptor(item)).toBeNull();
+  });
+});
+
+function sharedFile(shared_with: SharedOwner[] | undefined, shared = true) {
+  return { shared, shared_with };
+}
+
+describe("sharedWithTitle", () => {
+  it("names one co-owner", () => {
+    expect(sharedWithTitle(sharedFile([{ id: "s1", name: "alpha", live: true }]))).toBe(
+      "shared with alpha",
+    );
+  });
+
+  it("names several, in the order the server sent them", () => {
+    expect(
+      sharedWithTitle(
+        sharedFile([
+          { id: "s1", name: "alpha", live: true },
+          { id: "s2", name: "beta", live: true },
+        ]),
+      ),
+    ).toBe("shared with alpha, beta");
+  });
+
+  it("marks a closed co-owner — the whole point of naming it", () => {
+    expect(
+      sharedWithTitle(
+        sharedFile([
+          { id: "s1", name: "alpha", live: true },
+          { id: "s2", name: "probe", live: false },
+        ]),
+      ),
+    ).toBe("shared with alpha, probe (closed)");
+  });
+
+  it("has nothing to say without the field — a pre-plan server", () => {
+    expect(sharedWithTitle(sharedFile(undefined))).toBeNull();
+    expect(sharedWithTitle(sharedFile([]))).toBeNull();
+  });
+
+  it("has nothing to say about an unshared file", () => {
+    expect(
+      sharedWithTitle(sharedFile([{ id: "s1", name: "alpha", live: true }], false)),
+    ).toBeNull();
+  });
+});
+
+describe("sharedIsReleasable", () => {
+  it("is true when every co-owner is closed", () => {
+    expect(
+      sharedIsReleasable(
+        sharedFile([
+          { id: "s1", name: "probe", live: false },
+          { id: "s2", name: "older", live: false },
+        ]),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false while any co-owner is running — releasing would sever it", () => {
+    expect(
+      sharedIsReleasable(
+        sharedFile([
+          { id: "s1", name: "probe", live: false },
+          { id: "s2", name: "alpha", live: true },
+        ]),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false with no co-owners named and false when unshared", () => {
+    expect(sharedIsReleasable(sharedFile(undefined))).toBe(false);
+    expect(sharedIsReleasable(sharedFile([]))).toBe(false);
+    expect(
+      sharedIsReleasable(sharedFile([{ id: "s1", name: "probe", live: false }], false)),
+    ).toBe(false);
   });
 });

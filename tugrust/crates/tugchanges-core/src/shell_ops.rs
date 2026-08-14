@@ -13,6 +13,12 @@
 //! are resolved lexically against `base_dir` (plus any leading literal `cd`);
 //! consumers that join against canonical-space keys canonicalize at the join.
 //!
+//! Declaring a path is not the same as claiming authorship of its content. A
+//! restore-class command (`git restore`, `git checkout <rev> -- <pathspec>`)
+//! declares its operands — the gate must see it as file-mutating — but the
+//! bytes it writes are the repository's recorded content, so it carries
+//! `DeclaredKind::Restore` and consumers keep it out of proof class.
+//!
 //! Two consumers share it so the grammar cannot fork: tugcast's relay (live and
 //! replay minting) and `tugutil file gate` (the PreToolUse hook's decision).
 
@@ -30,6 +36,12 @@ pub enum DeclaredKind {
     EditInPlace,
     WriteTarget,
     Touch,
+    /// The command puts the repository's recorded bytes back into the tree
+    /// (`git restore`, `git checkout <rev> -- <pathspec>`). The path is
+    /// declared — the gate sees a file-mutating command — but the resulting
+    /// content is the repository's, not the session's, so consumers never
+    /// promote it to proof class.
+    Restore,
 }
 
 /// One file operation a command literally declared. `path` is absolute but not
@@ -828,7 +840,7 @@ fn git_ops(words: &[&Word], cwd: &Option<PathBuf>, mut ops: Vec<DeclaredOp>) -> 
         "restore" => {
             let paths = operands(rest, &cwd, &["-"]).unwrap_or_default();
             ops.extend(paths.into_iter().map(|path| DeclaredOp {
-                kind: DeclaredKind::EditInPlace,
+                kind: DeclaredKind::Restore,
                 path,
             }));
             finish(ops)
@@ -841,7 +853,7 @@ fn git_ops(words: &[&Word], cwd: &Option<PathBuf>, mut ops: Vec<DeclaredOp>) -> 
             };
             let paths = operands(&rest[sep + 1..], &cwd, &[]).unwrap_or_default();
             ops.extend(paths.into_iter().map(|path| DeclaredOp {
-                kind: DeclaredKind::EditInPlace,
+                kind: DeclaredKind::Restore,
                 path,
             }));
             finish(ops)
@@ -1052,23 +1064,42 @@ mod tests {
     }
 
     #[test]
-    fn git_restore_and_checkout_pathspecs_are_in_place_edits() {
+    fn git_restore_and_checkout_pathspecs_are_restores() {
         assert_eq!(
             ops("git restore src/a.ts"),
             vec![DeclaredOp {
-                kind: DeclaredKind::EditInPlace,
+                kind: DeclaredKind::Restore,
                 path: PathBuf::from("/repo/src/a.ts")
             }]
         );
         assert_eq!(
-            ops("git checkout -- src/a.ts src/b.ts")
-                .into_iter()
-                .map(|op| op.path)
-                .collect::<Vec<_>>(),
+            ops("git restore --staged src/a.ts"),
+            vec![DeclaredOp {
+                kind: DeclaredKind::Restore,
+                path: PathBuf::from("/repo/src/a.ts")
+            }]
+        );
+        assert_eq!(
+            ops("git checkout -- src/a.ts src/b.ts"),
             vec![
-                PathBuf::from("/repo/src/a.ts"),
-                PathBuf::from("/repo/src/b.ts")
+                DeclaredOp {
+                    kind: DeclaredKind::Restore,
+                    path: PathBuf::from("/repo/src/a.ts")
+                },
+                DeclaredOp {
+                    kind: DeclaredKind::Restore,
+                    path: PathBuf::from("/repo/src/b.ts")
+                }
             ]
+        );
+        // A directory operand from an arbitrary rev — the shape that minted
+        // proof over a whole subtree before this kind existed.
+        assert_eq!(
+            ops("git checkout 69ed16ce2 -- tugdeck"),
+            vec![DeclaredOp {
+                kind: DeclaredKind::Restore,
+                path: PathBuf::from("/repo/tugdeck")
+            }]
         );
         assert_no_file_ops("git checkout main");
     }

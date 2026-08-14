@@ -36,6 +36,18 @@ export interface ChangesetFile {
   own_hunks?: string[];
   /** The hunks another owner claims too — where the contention actually is. */
   contested_hunks?: string[];
+  /** Who else is claiming this file, when `shared` ([P06]). Absent on
+   *  non-shared files and from pre-plan servers. */
+  shared_with?: SharedOwner[];
+}
+
+/** One co-owner named on a shared file's badge. */
+export interface SharedOwner {
+  id: string;
+  name: string;
+  /** Whether that session is still running. All-dead co-owners are what make
+   *  the row releasable by hand. */
+  live: boolean;
 }
 
 /** A dirty file no owner claims (hand edits, detached background writes). */
@@ -188,7 +200,24 @@ export function isChangesetFile(value: unknown): value is ChangesetFile {
     typeof value.shared === "boolean" &&
     typeof value.last_touched === "number" &&
     isOptionalStringArray(value.own_hunks) &&
-    isOptionalStringArray(value.contested_hunks)
+    isOptionalStringArray(value.contested_hunks) &&
+    isOptionalSharedOwnerArray(value.shared_with)
+  );
+}
+
+function isOptionalSharedOwnerArray(
+  value: unknown,
+): value is SharedOwner[] | undefined {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (owner) =>
+          isRecord(owner) &&
+          typeof owner.id === "string" &&
+          typeof owner.name === "string" &&
+          typeof owner.live === "boolean",
+      ))
   );
 }
 

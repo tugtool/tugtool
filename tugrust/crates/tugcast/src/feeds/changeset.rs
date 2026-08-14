@@ -14,7 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tugcast_core::types::{
-    ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, OrphanedFile,
+    ChangesetDraft, ChangesetEntry, ChangesetFile, ChangesetSnapshot, OrphanedFile, SharedOwner,
     UnattributedFile,
 };
 
@@ -306,6 +306,7 @@ pub(crate) async fn compose_snapshot(
                 last_touched: pfe.event.at,
                 own_hunks: Vec::new(),
                 contested_hunks: Vec::new(),
+                shared_with: Vec::new(),
             });
         // Provenance display follows proof rows: a later bracket sweep never
         // overwrites the op/origin a proof row established.
@@ -392,6 +393,17 @@ pub(crate) async fn compose_snapshot(
     // The diffs run concurrently, bounded by `CONTENTION_DIFF_CONCURRENCY`:
     // each one is a subprocess, and a workspace where many paths genuinely
     // contend would otherwise pay for them end to end.
+    //
+    // A closed session's evidence that no longer places is a ghost, and this
+    // is where it stops warning ([P03]). The set is the ids the owner
+    // aggregation positively resolved as not-live; a proof id missing from
+    // `owners` entirely would read as live, which over-warns rather than
+    // retiring something real.
+    let dead_ids: HashSet<String> = owners
+        .iter()
+        .filter(|(_, agg)| !agg.live)
+        .map(|(id, _)| id.clone())
+        .collect();
     let mut verdicts = Vec::with_capacity(contended_paths.len());
     for batch in contended_paths.chunks(CONTENTION_DIFF_CONCURRENCY) {
         verdicts.extend(
@@ -399,12 +411,40 @@ pub(crate) async fn compose_snapshot(
                 // Present in `live_cuts` by construction: a path only becomes
                 // contended through rows that already passed its cut.
                 let min_live = live_cuts.get(path).copied().unwrap_or(i64::MIN);
-                contention_verdict(&repo_root, path, proof_ids, min_live, ledger)
+                debug_assert!(
+                    proof_ids.iter().all(|id| owners.contains_key(id)),
+                    "a contended path's proof owners come from the owner aggregation itself; \
+                     an id missing from it would silently take the live default"
+                );
+                contention_verdict(&repo_root, path, proof_ids, &dead_ids, min_live, ledger)
             }))
             .await,
         );
     }
     for ((path, proof_ids), verdict) in contended_paths.iter().zip(verdicts) {
+        // Who each owner is sharing with: the *other* proof owners whose
+        // claim survived retirement, named so the badge carries its own
+        // evidence ([P06]). Built once per path, from the owner aggregation
+        // the ids came from.
+        // With no verdict to be had, nobody retired: every proof owner is
+        // still claiming the file, which is exactly what the file-level
+        // SHARED is saying.
+        let mut survivors: Vec<SharedOwner> = proof_ids
+            .iter()
+            .filter(|id| {
+                verdict.as_ref().is_none_or(|(verdict, _)| {
+                    !verdict.claims.get(*id).is_some_and(|c| c.claims_nothing())
+                })
+            })
+            .filter_map(|id| {
+                owners.get(id).map(|agg| SharedOwner {
+                    id: id.clone(),
+                    name: agg.display_name.clone(),
+                    live: agg.live,
+                })
+            })
+            .collect();
+        survivors.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         for id in proof_ids {
             let Some(file) = owners.get_mut(id).and_then(|agg| agg.files.get_mut(path)) else {
                 continue;
@@ -423,6 +463,13 @@ pub(crate) async fn compose_snapshot(
                 // No verdict to be had (no spans, no readable diff): the
                 // file-level answer stands, which is what it always was.
                 None => file.shared = true,
+            }
+            if file.shared {
+                file.shared_with = survivors
+                    .iter()
+                    .filter(|owner| &owner.id != id)
+                    .cloned()
+                    .collect();
             }
         }
     }
@@ -686,6 +733,7 @@ async fn contention_verdict(
     repo_root: &Path,
     path: &str,
     proof_ids: &HashSet<String>,
+    dead_ids: &HashSet<String>,
     min_live: i64,
     ledger: Option<&SessionLedger>,
 ) -> Option<(
@@ -732,9 +780,20 @@ async fn contention_verdict(
         .map(|id| tugchanges_core::OwnerAnchors {
             session: id.clone(),
             anchors: by_session.get(id.as_str()).cloned().unwrap_or_default(),
+            // Dead is the retirement-eligible state, so only an id the owner
+            // aggregation positively resolved as not-live reads dead ([P03]).
+            live: !dead_ids.contains(id),
         })
         .collect();
-    let verdict = tugchanges_core::classify_contention(&hunks, &owners);
+    // The strong test a `WholeFile` anchor answers: are the file's bytes still
+    // exactly the ones that write produced. Unreadable answers nothing, which
+    // widens.
+    let current_file_hash = std::fs::read(repo_root.join(path))
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .map(|text| tugchanges_core::content_hash(&text));
+    let verdict =
+        tugchanges_core::classify_contention(&hunks, &owners, current_file_hash.as_deref());
     Some((verdict, hunks))
 }
 
@@ -1007,6 +1066,7 @@ fn dash_file_row(file: tugdash_core::DashDetailFile) -> ChangesetFile {
         last_touched: 0,
         own_hunks: Vec::new(),
         contested_hunks: Vec::new(),
+        shared_with: Vec::new(),
     }
 }
 
@@ -1418,6 +1478,174 @@ mod tests {
             seen += 1;
         }
         assert_eq!(seen, 2, "both sessions own the file");
+    }
+
+    /// Seed one long tracked file edited in two places, and give each session
+    /// an `Edit`'s worth of spans for the region named. Returns the repo.
+    async fn compose_two_owners(
+        placements: [(&str, &str, &str); 2],
+    ) -> (tempfile::TempDir, PathBuf, SessionLedger) {
+        let (dir, root) = init_repo();
+        let original: String = (1..=60).map(|n| format!("line{n:03}\n")).collect();
+        std::fs::write(root.join("both.txt"), &original).unwrap();
+        git(&root, &["add", "both.txt"]);
+        git(&root, &["commit", "-q", "-m", "long file"]);
+        let edited = original
+            .replace("line005\n", "TOP-EDIT\n")
+            .replace("line050\n", "BOTTOM-EDIT\n");
+        std::fs::write(root.join("both.txt"), &edited).unwrap();
+
+        let ledger = SessionLedger::open_in_memory().unwrap();
+        for (i, (session, old, new)) in placements.into_iter().enumerate() {
+            ledger
+                .record_spawn(session, "ws", &root.to_string_lossy(), "card", 0, None)
+                .unwrap();
+            let mut row = event(session, &format!("tu-{i}"), &root.join("both.txt"), &root);
+            row.at = 9_000_000_000_000;
+            let spans = edit_spans_for(&root.join("both.txt"), old, new);
+            ledger.record_file_event_with_spans(&row, &spans).unwrap();
+        }
+        (dir, root, ledger)
+    }
+
+    /// The file's row as each session sees it, by owner id.
+    fn files_by_owner(snapshot: &ChangesetSnapshot) -> BTreeMap<String, ChangesetFile> {
+        snapshot
+            .changesets
+            .iter()
+            .filter_map(|entry| match entry {
+                ChangesetEntry::Session {
+                    owner_id, files, ..
+                } => files.first().map(|f| (owner_id.clone(), f.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Placements for the retirement cases: alpha's edit is right there in the
+    /// current diff, beta's names text nothing in the file carries.
+    const ALPHA_PLACES_BETA_DOES_NOT: [(&str, &str, &str); 2] = [
+        (
+            "sess-alpha",
+            "line004\nline005\nline006",
+            "line004\nTOP-EDIT\nline006",
+        ),
+        (
+            "sess-beta",
+            "line029\nline030\nline031",
+            "line029\nSINCE-OVERWRITTEN\nline031",
+        ),
+    ];
+
+    /// The plan's headline, end to end through compose: a closed session whose
+    /// content is gone stops making a live session's file SHARED.
+    #[tokio::test]
+    async fn compose_retires_a_dead_owner_whose_evidence_places_nowhere() {
+        let (_dir, root, ledger) = compose_two_owners(ALPHA_PLACES_BETA_DOES_NOT).await;
+        ledger.mark_closed("sess-beta").unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let files = files_by_owner(&snapshot);
+        let alpha = &files["sess-alpha"];
+        assert!(!alpha.shared, "the ghost co-owner stopped warning");
+        assert!(alpha.shared_with.is_empty());
+        assert!(alpha.contested_hunks.is_empty());
+    }
+
+    /// The live floor, same fixture: while beta is running its unplaceable
+    /// evidence still widens, exactly as before this plan.
+    #[tokio::test]
+    async fn compose_keeps_sharing_while_the_same_owner_is_live() {
+        let (_dir, root, ledger) = compose_two_owners(ALPHA_PLACES_BETA_DOES_NOT).await;
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let files = files_by_owner(&snapshot);
+        let alpha = &files["sess-alpha"];
+        assert!(alpha.shared, "a live session may be mid-work");
+        assert_eq!(
+            alpha
+                .shared_with
+                .iter()
+                .map(|o| (o.id.as_str(), o.live))
+                .collect::<Vec<_>>(),
+            vec![("sess-beta", true)],
+            "and the badge says who with"
+        );
+    }
+
+    /// Death alone retires nothing: a closed session whose content is still in
+    /// the tree keeps contending, and the badge names it as closed — which is
+    /// what makes the row recognizable, and releasable by hand.
+    #[tokio::test]
+    async fn compose_names_a_dead_owner_that_still_places() {
+        let (_dir, root, ledger) = compose_two_owners([
+            (
+                "sess-alpha",
+                "line004\nline005\nline006",
+                "line004\nTOP-EDIT\nline006",
+            ),
+            (
+                "sess-beta",
+                "line004\nline005\nline006",
+                "line004\nTOP-EDIT\nline006",
+            ),
+        ])
+        .await;
+        ledger.mark_closed("sess-beta").unwrap();
+
+        let snapshot = compose_snapshot(&root, Some(&ledger)).await.expect("repo");
+        let files = files_by_owner(&snapshot);
+        let alpha = &files["sess-alpha"];
+        assert!(alpha.shared, "the content is right there");
+        assert_eq!(
+            alpha
+                .shared_with
+                .iter()
+                .map(|o| (o.id.as_str(), o.live))
+                .collect::<Vec<_>>(),
+            vec![("sess-beta", false)]
+        );
+    }
+
+    /// Absence of an answer is not death. An owner the liveness resolution
+    /// never reached is missing from `dead_ids`, and the verdict must read it
+    /// as live — the over-warning direction. Asserted at the verdict rather
+    /// than through compose, where the owner aggregation the ids come from
+    /// makes the gap unconstructible (and `debug_assert`ed for that reason).
+    #[tokio::test]
+    async fn an_unresolved_owner_reads_as_live() {
+        let (_dir, root, ledger) = compose_two_owners(ALPHA_PLACES_BETA_DOES_NOT).await;
+        let proof_ids: HashSet<String> = ["sess-alpha", "sess-beta"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+
+        let (unresolved, _) = contention_verdict(
+            &root,
+            "both.txt",
+            &proof_ids,
+            &HashSet::new(),
+            i64::MIN,
+            Some(&ledger),
+        )
+        .await
+        .expect("a verdict");
+        assert!(unresolved.shared, "an unresolved owner widens");
+
+        let (resolved_dead, _) = contention_verdict(
+            &root,
+            "both.txt",
+            &proof_ids,
+            &["sess-beta".to_owned()].into_iter().collect(),
+            i64::MIN,
+            Some(&ledger),
+        )
+        .await
+        .expect("a verdict");
+        assert!(
+            !resolved_dead.shared,
+            "only a positively-resolved death retires"
+        );
     }
 
     /// Risk R09's bound, structurally: a dirty set nobody contends spends no

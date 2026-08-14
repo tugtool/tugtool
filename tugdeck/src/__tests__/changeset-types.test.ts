@@ -109,6 +109,29 @@ describe("changeset wire contract", () => {
     expect(isChangesetSnapshot(missingUnattributed)).toBe(false);
   });
 
+  test("file guard is tolerant of shared_with's absence and strict about its shape", () => {
+    const base = {
+      path: "a",
+      git_status: ".M",
+      op: "edit",
+      origin: "exact",
+      shared: true,
+      last_touched: 1,
+    };
+    // A pre-plan server sends no `shared_with` at all.
+    expect(isChangesetFile(base)).toBe(true);
+    expect(
+      isChangesetFile({
+        ...base,
+        shared_with: [{ id: "s1", name: "probe", live: false }],
+      }),
+    ).toBe(true);
+    expect(
+      isChangesetFile({ ...base, shared_with: [{ id: "s1", name: "probe" }] }),
+    ).toBe(false);
+    expect(isChangesetFile({ ...base, shared_with: "probe" })).toBe(false);
+  });
+
   test("draft guard accepts old and new shapes", () => {
     // Pre-edited/selection shape (legacy wire) is still valid.
     expect(

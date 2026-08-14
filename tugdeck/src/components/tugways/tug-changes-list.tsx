@@ -87,6 +87,7 @@ import type {
   OrphanedFile,
   ProjectChangeset,
   SessionChangesetEntry,
+  SharedOwner,
   UnattributedFile,
 } from "@/lib/changeset-types";
 
@@ -547,9 +548,45 @@ export interface FileBlockData {
   own_hunks?: readonly string[];
   /** The hunks another session claims too, marked in the expanded diff. */
   contested_hunks?: readonly string[];
+  /** Who else claims this file ([P06]) — the SHARED badge's own evidence. */
+  shared_with?: readonly SharedOwner[];
+}
+
+/**
+ * What the SHARED badge says about who it is shared with, or `null` when it
+ * has nothing to add — an unshared file, or a server that does not send
+ * `shared_with`.
+ *
+ * A closed co-owner is marked as such: "shared with probe (closed)" is the
+ * whole difference between an inexplicable badge and a recognizable one, and
+ * it is also the cue that the row can be released by hand.
+ */
+export function sharedWithTitle(
+  file: Pick<FileBlockData, "shared" | "shared_with">,
+): string | null {
+  if (!file.shared) return null;
+  const owners = file.shared_with ?? [];
+  if (owners.length === 0) return null;
+  const names = owners.map((o) => (o.live ? o.name : `${o.name} (closed)`));
+  return `shared with ${names.join(", ")}`;
+}
+
+/**
+ * Whether this row's share can be released by claiming it: every co-owner is
+ * closed, so nobody running is about to be severed. Claiming severs the
+ * co-owners ([D120]), which is the remedy for the unfalsifiable residue —
+ * claim rows and legacy span-less rows that retirement cannot reach.
+ */
+export function sharedIsReleasable(
+  file: Pick<FileBlockData, "shared" | "shared_with">,
+): boolean {
+  if (!file.shared) return false;
+  const owners = file.shared_with ?? [];
+  return owners.length > 0 && owners.every((o) => !o.live);
 }
 
 export function changesetFileData(file: ChangesetFile): FileBlockData {
+  const sharedWith = file.shared_with ?? [];
   return {
     path: file.path,
     git_status: file.git_status,
@@ -558,6 +595,23 @@ export function changesetFileData(file: ChangesetFile): FileBlockData {
     shared: file.shared === true,
     own_hunks: file.own_hunks,
     contested_hunks: file.contested_hunks,
+    shared_with: sharedWith,
+    // The co-owner rides the row as a citation chip, the same reference shape
+    // an orphaned row's prior owner uses — so "who is this shared with" is
+    // answerable at a glance and followable in a click.
+    hint:
+      file.shared === true && sharedWith.length > 0 ? (
+        <span className="tug-changes-list-file-hint-from">
+          with{" "}
+          {sharedWith.map((owner, index) => (
+            <React.Fragment key={owner.id}>
+              {index > 0 ? ", " : null}
+              <TugSessionCitation citedId={owner.id} recordedTag={owner.name} />
+              {owner.live ? null : " (closed)"}
+            </React.Fragment>
+          ))}
+        </span>
+      ) : undefined,
   };
 }
 
@@ -653,6 +707,20 @@ function FileIdentity({
     provenance !== null ||
     file.hint !== undefined ||
     election !== null;
+  // The badge names its co-owners when the server sent them; against an older
+  // server it renders bare, exactly as before.
+  const sharedTitle = sharedWithTitle(file);
+  const sharedMark = (
+    <span className="tug-changes-list-badge tug-changes-list-badge-shared">
+      shared
+    </span>
+  );
+  const sharedBadge =
+    sharedTitle !== null ? (
+      <TugTooltip content={sharedTitle}>{sharedMark}</TugTooltip>
+    ) : (
+      sharedMark
+    );
   return (
     <span className="tug-changes-list-file-identity">
       <FilePathLink
@@ -690,11 +758,7 @@ function FileIdentity({
               </TugTooltip>
             )
           ) : null}
-          {file.shared ? (
-            <span className="tug-changes-list-badge tug-changes-list-badge-shared">
-              shared
-            </span>
-          ) : null}
+          {file.shared ? sharedBadge : null}
           {provenance !== null ? (
             <span className="tug-changes-list-file-provenance">{provenance}</span>
           ) : null}
@@ -731,6 +795,7 @@ export function ChangesFileRow({
   popOut,
   body,
   onClaim,
+  claimKind = "claim",
   claimPending = false,
   onDisclaim,
   disclaimPending = false,
@@ -756,6 +821,10 @@ export function ChangesFileRow({
   /** When set, a Claim affordance leads the trailing cluster — the row's
    *  file is unattributed-but-likely and this session can claim it ([D1xx]). */
   onClaim?: () => void;
+  /** What that affordance is *for*. The gesture is the same `changeset_claim`
+   *  either way; on a shared row whose co-owners are all closed it reads as a
+   *  release, because what it does there is sever them ([P06]). */
+  claimKind?: "claim" | "release";
   /** A claim round trip is in flight — the affordance disables rather than
    *  re-sending, so a slow reply reads as "working", not as a dead button. */
   claimPending?: boolean;
@@ -819,7 +888,11 @@ export function ChangesFileRow({
               {onClaim !== undefined ? (
                 <TugTooltip
                   content={
-                    claimPending ? "Claiming…" : "Claim this file for this session"
+                    claimPending
+                      ? "Claiming…"
+                      : claimKind === "release"
+                        ? "Release this file from its closed co-owners"
+                        : "Claim this file for this session"
                   }
                 >
                   <TugPushButton
@@ -830,7 +903,11 @@ export function ChangesFileRow({
                     emphasis="outlined"
                     role="action"
                     disabled={claimPending}
-                    aria-label={`Claim ${file.path} for this session`}
+                    aria-label={
+                      claimKind === "release"
+                        ? `Release ${file.path} from its closed co-owners`
+                        : `Claim ${file.path} for this session`
+                    }
                     data-testid="tug-changes-list-claim"
                     onClick={(event) => {
                       event?.stopPropagation();
@@ -913,6 +990,7 @@ function EntryFiles({
   onToggleFile,
   ownSessionId,
   onClaim,
+  onRelease,
   claimPending,
   onDisclaim,
   disclaimPending,
@@ -924,8 +1002,12 @@ function EntryFiles({
   onToggleFile: (entryId: string, path: string, collapsed: boolean) => void;
   /** The card session's id — distinguishes own vs foreign bracket hints ([P13]). */
   ownSessionId?: string;
-  /** Per-path claim, wired only for the unattributed entry. */
+  /** Per-path claim, wired only for the unattributed and orphaned entries. */
   onClaim?: (path: string) => void;
+  /** Per-path release, wired only for the session entry: claiming a file whose
+   *  every co-owner is closed severs them ([D120]), which is the one remedy
+   *  the unfalsifiable rows have. */
+  onRelease?: (path: string) => void;
   /** A claim round trip is in flight. */
   claimPending?: boolean;
   /** Per-path disclaim, wired only for the session entry. */
@@ -1005,7 +1087,14 @@ function EntryFiles({
             onToggle={(next) => onToggleFile(entry.id, file.path, !next)}
             popOut={filePopOutDescriptor(entry.project, file.path)}
             body={expanded ? fileBlockBody(diffSnapshot, file.path, election) : null}
-            onClaim={onClaim !== undefined ? () => onClaim(file.path) : undefined}
+            onClaim={
+              onClaim !== undefined
+                ? () => onClaim(file.path)
+                : onRelease !== undefined && sharedIsReleasable(file)
+                  ? () => onRelease(file.path)
+                  : undefined
+            }
+            claimKind={onClaim === undefined ? "release" : "claim"}
             claimPending={claimPending}
             onDisclaim={
               onDisclaim !== undefined ? () => onDisclaim(file.path) : undefined
@@ -1049,6 +1138,11 @@ export interface TugChangesListProps {
   /** Optional label rendered above the session entry. Present only when the
    *  section needs a header — which is what carries "Disclaim all". */
   sessionLabel?: string;
+  /** When set, a session-entry row shared only with *closed* sessions shows a
+   *  release affordance — the same `changeset_claim`, which severs them
+   *  ([D120]). It is the only remedy for shares no evidence can falsify:
+   *  claim rows and legacy span-less rows ([P06]). */
+  onReleaseShared?: (path: string) => void;
   /** When set, session-entry rows show a Disclaim affordance that removes the
    *  path from this session's changeset — claim's inverse. */
   onDisclaimFile?: (path: string) => void;
@@ -1080,6 +1174,7 @@ export function TugChangesList({
   onClaimAllOrphaned,
   claimPending,
   sessionLabel,
+  onReleaseShared,
   onDisclaimFile,
   onDisclaimAllFiles,
   disclaimPending,
@@ -1105,6 +1200,7 @@ export function TugChangesList({
             : entry.kind === "orphaned"
               ? onClaimOrphaned
               : undefined;
+        const onRelease = entry.kind === "session" ? onReleaseShared : undefined;
         const onClaimAll =
           entry.kind === "unattributed"
             ? onClaimAllUnattributed
@@ -1188,6 +1284,7 @@ export function TugChangesList({
               onToggleFile={onToggleFile}
               ownSessionId={entry.kind === "unattributed" ? ownSessionId : undefined}
               onClaim={onClaim}
+              onRelease={onRelease}
               claimPending={claimPending}
               onDisclaim={entry.kind === "session" ? onDisclaimFile : undefined}
               disclaimPending={disclaimPending}

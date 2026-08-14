@@ -30,10 +30,10 @@ use super::agent_supervisor::{
     LedgerEntry, SessionRecord, SessionsRecorder, SpawnState, build_session_state_frame,
 };
 use super::attribution::{
-    CMD_ORIGIN, InspectedReplayBatch, InspectedToolResult, InspectedToolUse, OpenBracket,
-    PendingCalls, PendingCmd, PendingCmds, RECEIPT_MARKER, bash_command_for_tool,
-    canonical_declared_paths, canonicalize_declared, declared_ops_for_command, exact_op_for_tool,
-    file_path_for_tool, file_repo_root, op_for_declared_kind, op_for_receipt, parse_receipt_line,
+    CMD_ORIGIN, DeclaredPromotions, InspectedReplayBatch, InspectedToolResult, InspectedToolUse,
+    OpenBracket, PendingCalls, PendingCmd, PendingCmds, RECEIPT_MARKER, bash_command_for_tool,
+    canonicalize_declared, declared_ops_for_command, exact_op_for_tool, file_path_for_tool,
+    file_repo_root, hunk_spans, op_for_declared_kind, op_for_receipt, parse_receipt_line,
     repo_root_for, snapshot_worktree, spans_for_tool_input, top_level_type,
 };
 use super::code::{parse_code_input, splice_tug_session_id};
@@ -1161,6 +1161,37 @@ async fn record_cmd_event(
     }
 }
 
+/// The evidence a bracket row promoted to proof records ([P05]).
+///
+/// The bracket itself knows only fingerprints — a status letter and an mtime,
+/// never content — so an edit-precise anchor is out of reach here. What is in
+/// reach is the path's working diff at the moment the command finished, which
+/// is exactly the content state the promotion asserts authorship over, and
+/// whose hunk ids are the identity the whole contention system is keyed on.
+/// Recording them is what makes a promotion falsifiable: revert the content
+/// and the ids drift, the evidence stops placing, and the claim narrows or
+/// retires instead of asserting the file forever.
+///
+/// Best-effort by construction. A diff that will not read, or a path with no
+/// hunks to read (an untracked file's tracked diff is empty), yields no spans
+/// and the row records in today's span-less shape — never a blocked frame.
+async fn promoted_row_spans(
+    repo_root: &Path,
+    file_path: &str,
+) -> Vec<crate::session_ledger::FileEventSpan> {
+    let Some(diff) = super::git::fetch_git_diff(repo_root, &[file_path.to_owned()]).await else {
+        return Vec::new();
+    };
+    let ids: Vec<String> = tugchanges_core::parse_hunks(&diff)
+        .into_iter()
+        .map(|hunk| hunk.id)
+        .collect();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    hunk_spans(&ids)
+}
+
 /// Mint `cmd` rows straight from a replayed command's declared operations —
 /// the replay half of the rule, where no fingerprint survives to intersect
 /// with. The command text replays even though the pre-command tree state is
@@ -1184,6 +1215,11 @@ async fn mint_replayed_cmd_rows(
         .unwrap_or_else(crate::session_ledger::now_millis);
     let mut recorded = false;
     for op in &cmd.ops {
+        // A restore writes the repository's recorded bytes; the session
+        // authored none of them, so it mints no proof row.
+        if matches!(op.kind, DeclaredKind::Restore) {
+            continue;
+        }
         // A rename records both names under one tool_use_id: the destination,
         // and the takeoff point the file left.
         let mut targets: Vec<(&Path, &str)> =
@@ -1966,7 +2002,7 @@ pub async fn relay_session_io(
                                         // A turn spans arbitrarily many commands;
                                         // no single command's operands can speak
                                         // for its delta.
-                                        &std::collections::HashSet::new(),
+                                        &DeclaredPromotions::default(),
                                         at,
                                     ) {
                                         if turn_recorded_paths.contains(&row.file_path) {
@@ -2505,19 +2541,16 @@ pub async fn relay_session_io(
                                         // parse ∩ delta: a path the command
                                         // named AND the tree observed change is
                                         // proof, and its row is minted `cmd`
-                                        // instead of `bash`. Canonicalize first
-                                        // — the delta keys live in canonical
-                                        // space, so an alt spelling of the repo
-                                        // root would otherwise miss.
+                                        // instead of `bash`. How far the naming
+                                        // reaches depends on the verb, so the
+                                        // ops are partitioned into exact and
+                                        // subtree promotions ([P02]).
                                         let declared_cmd = pending_cmds.take(&tr.tool_use_id);
                                         let declared = declared_cmd
                                             .as_ref()
-                                            .map(|cmd| {
-                                                canonical_declared_paths(
-                                                    cmd.ops.iter().map(|op| op.path.as_path()),
-                                                )
-                                            })
+                                            .map(|cmd| DeclaredPromotions::from_ops(cmd.ops.iter()))
                                             .unwrap_or_default();
+                                        let bracket_root = bracket.repo_root.clone();
                                         for row in bracket.into_delta_rows(
                                             &post,
                                             &canonical_project_dir,
@@ -2526,7 +2559,24 @@ pub async fn relay_session_io(
                                             &declared,
                                             at,
                                         ) {
-                                            if let Err(err) = ledger.record_file_event(&row) {
+                                            // A promotion asserts authorship;
+                                            // it records what it is asserting
+                                            // over so the diff can later
+                                            // contradict it ([P05]). A hint
+                                            // asserts nothing and carries no
+                                            // spans.
+                                            let spans = if row.origin == CMD_ORIGIN {
+                                                promoted_row_spans(&bracket_root, &row.file_path)
+                                                    .await
+                                            } else {
+                                                Vec::new()
+                                            };
+                                            let recording = if spans.is_empty() {
+                                                ledger.record_file_event(&row)
+                                            } else {
+                                                ledger.record_file_event_with_spans(&row, &spans)
+                                            };
+                                            if let Err(err) = recording {
                                                 crate::ledger_integrity::health::note_error(
                                                     "changes", &err,
                                                 );
@@ -3713,6 +3763,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_replayed_restore_backfills_nothing_but_its_siblings_still_mint() {
+        // `git checkout <rev> -- <path>` writes the repository's recorded
+        // bytes; the session authored none of them. The `git mv` on the same
+        // line still names files this session did author.
+        let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
+        let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-mix","input":{"command":"git mv old.rs new.rs && git checkout 69ed16c -- restored.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-mix","output":"","is_error":false,"timestamp":1753460000500}],"ipc_version":2}"#;
+
+        drive_relay(ledger.clone(), "tug-replay-restore", "/proj", &[batch]).await;
+
+        let rows = ledger
+            .file_events_for_session("tug-replay-restore")
+            .unwrap();
+        let paths: std::collections::HashSet<&str> =
+            rows.iter().map(|r| r.file_path.as_str()).collect();
+        assert_eq!(
+            paths,
+            ["/proj/new.rs", "/proj/old.rs"].into_iter().collect(),
+            "the move's two names mint; the restored path does not"
+        );
+    }
+
+    #[tokio::test]
     async fn a_failed_replayed_command_backfills_nothing() {
         let ledger = Arc::new(crate::session_ledger::SessionLedger::open_in_memory().unwrap());
         let batch = r#"{"type":"replay_batch","frames":[{"type":"tool_use","tool_name":"Bash","tool_use_id":"tu-bad","input":{"command":"rm a.rs"},"timestamp":1753460000000},{"type":"tool_result","tool_use_id":"tu-bad","output":"No such file","is_error":true,"timestamp":1753460000500}],"ipc_version":2}"#;
@@ -4017,6 +4089,18 @@ mod tests {
         command: &str,
         mutate: impl FnOnce(),
     ) -> Vec<crate::session_ledger::FileEventRow> {
+        let ledger = bash_bracket_ledger(root, session, command, mutate).await;
+        ledger.file_events_for_session(session).unwrap()
+    }
+
+    /// The same bracket, handing back the whole ledger — for the cases that
+    /// need to read a row's spans, not just the row.
+    async fn bash_bracket_ledger(
+        root: &Path,
+        session: &str,
+        command: &str,
+        mutate: impl FnOnce(),
+    ) -> Arc<crate::session_ledger::SessionLedger> {
         use crate::feeds::agent_supervisor::NoopSessionsRecorder;
         use crate::feeds::workspace_registry::WorkspaceKey;
         use tokio::io::AsyncWriteExt;
@@ -4088,7 +4172,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(300)).await;
         drop(feed_w);
         let _ = relay.await.expect("relay task");
-        ledger.file_events_for_session(session).unwrap()
+        ledger
     }
 
     #[tokio::test]
@@ -4122,6 +4206,139 @@ mod tests {
             .find(|r| r.file_path == "doomed.txt")
             .expect("the removed path is still recorded");
         assert_eq!(row.origin, "bash", "a glob operand proves nothing");
+    }
+
+    /// Spans a session recorded for one repo-relative path, as `(kind,
+    /// anchor)` pairs.
+    fn spans_for(
+        ledger: &crate::session_ledger::SessionLedger,
+        root: &Path,
+        path: &str,
+    ) -> Vec<(String, String)> {
+        ledger
+            .file_event_spans_for_paths(root.to_str().unwrap(), &[path.to_owned()])
+            .unwrap()
+            .into_iter()
+            .map(|row| (row.span.kind, row.span.anchor))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn a_promoted_row_records_the_hunks_it_claims_authorship_over() {
+        // A promotion asserts this session wrote what is in the file. What it
+        // is asserting over is the path's working diff at close, and its hunk
+        // ids are what a later read can find gone.
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let named = root.join("a.txt");
+        let unnamed = root.join("b.txt");
+        let ledger = bash_bracket_ledger(
+            &root,
+            "tug-spans",
+            "sed -i '' 's/one/two/' a.txt",
+            move || {
+                std::fs::write(&named, "two\n").unwrap();
+                std::fs::write(&unnamed, "hand-saved\n").unwrap();
+            },
+        )
+        .await;
+
+        let rows = ledger.file_events_for_session("tug-spans").unwrap();
+        let promoted = rows
+            .iter()
+            .find(|r| r.file_path == "a.txt")
+            .expect("the named path is recorded");
+        assert_eq!(promoted.origin, "cmd");
+
+        let spans = spans_for(&ledger, &root, "a.txt");
+        assert!(!spans.is_empty(), "a promoted row carries evidence");
+        // The ids name the file's real hunks — the same identity the readers
+        // key contention on.
+        let live_ids: std::collections::HashSet<String> =
+            tugchanges_core::file_hunks(&root, "a.txt")
+                .unwrap()
+                .into_iter()
+                .map(|h| h.id)
+                .collect();
+        for (kind, anchor) in &spans {
+            assert_eq!(kind, "hunk");
+            let tugchanges_core::Anchor::Hunk { id } =
+                tugchanges_core::Anchor::from_span(kind, anchor)
+            else {
+                panic!("a promoted row's evidence is hunk-kind");
+            };
+            assert!(
+                live_ids.contains(&id),
+                "{id} is not a hunk the file actually has: {live_ids:?}"
+            );
+        }
+
+        // A bracket hint asserts nothing, so it records nothing to falsify.
+        assert!(spans_for(&ledger, &root, "b.txt").is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_promoted_row_on_a_created_file_records_no_evidence() {
+        // An untracked file has no tracked diff to read ids from, and ids
+        // minted from a synthesized one would be unreproducible by either
+        // read side. It records span-less, the unfalsifiable floor.
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let fresh = root.join("fresh.txt");
+        let ledger = bash_bracket_ledger(&root, "tug-fresh", "echo hi > fresh.txt", move || {
+            std::fs::write(&fresh, "hi\n").unwrap();
+        })
+        .await;
+
+        let rows = ledger.file_events_for_session("tug-fresh").unwrap();
+        let row = rows
+            .iter()
+            .find(|r| r.file_path == "fresh.txt")
+            .expect("the created path is recorded");
+        assert_eq!(row.origin, "cmd");
+        assert!(spans_for(&ledger, &root, "fresh.txt").is_empty());
+    }
+
+    #[tokio::test]
+    async fn promoted_ids_place_against_the_sync_engines_spelling() {
+        // The whole payoff rests on this: the writer mints ids through the
+        // async diff spelling (`fetch_git_diff` + `parse_hunks`) while the
+        // sync engine reads them through `file_hunks`
+        // (`std::process::Command`). Both carry HUNK_DIFF_FLAGS by contract,
+        // but this is the first writer to depend on it, so pin it.
+        let repo = init_bracket_repo();
+        let root = repo.path().to_path_buf();
+        let named = root.join("a.txt");
+        let ledger = bash_bracket_ledger(
+            &root,
+            "tug-agree",
+            "sed -i '' 's/one/rewritten/' a.txt",
+            move || {
+                std::fs::write(&named, "rewritten\n").unwrap();
+            },
+        )
+        .await;
+
+        let written: Vec<tugchanges_core::Anchor> = spans_for(&ledger, &root, "a.txt")
+            .iter()
+            .map(|(kind, anchor)| tugchanges_core::Anchor::from_span(kind, anchor))
+            .collect();
+        assert!(!written.is_empty());
+        let hunks = tugchanges_core::file_hunks(&root, "a.txt").unwrap();
+        let verdict = tugchanges_core::classify_contention(
+            &hunks,
+            &[tugchanges_core::OwnerAnchors {
+                session: "tug-agree".to_owned(),
+                anchors: written,
+                live: true,
+            }],
+            None,
+        );
+        assert_eq!(
+            verdict.hunks_of("tug-agree", &hunks),
+            hunks.iter().map(|h| h.id.clone()).collect::<Vec<_>>(),
+            "evidence written by one spelling places under the other"
+        );
     }
 
     #[tokio::test]

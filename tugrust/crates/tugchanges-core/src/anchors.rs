@@ -114,6 +114,22 @@ pub fn edit_anchor(old: Option<&str>, new: &str) -> serde_json::Value {
     })
 }
 
+/// The anchor body a whole-file write records ([P04]): everything an edit
+/// anchor records, computed over the written text as one big insert, plus the
+/// hash of the text entire.
+///
+/// The two fields answer two different questions. `file_hash` is the strong
+/// one — are the file's bytes still exactly what this call produced, in which
+/// case the call really did write all of it. `line_hashes` is the graceful
+/// degradation for when they are not: whichever of the written lines are still
+/// in the diff are still demonstrably this call's, and they place through the
+/// same added-lines path an edit's do.
+pub fn whole_anchor(content: &str) -> serde_json::Value {
+    let mut anchor = edit_anchor(None, content);
+    anchor["file_hash"] = serde_json::Value::String(content_hash(content));
+    anchor
+}
+
 /// Whether an `added_head` read back from a span may have lost its last line
 /// to the cap.
 ///
@@ -256,6 +272,37 @@ mod tests {
             containment_probes("});\nreal line\n};", false),
             vec!["real line"]
         );
+    }
+
+    #[test]
+    fn a_whole_anchor_is_an_edit_anchor_plus_the_files_identity() {
+        let content = "use std::fmt;\n});\nfn distinctive() {}\n";
+        let anchor = whole_anchor(content);
+        assert_eq!(
+            anchor["file_hash"].as_str().unwrap(),
+            content_hash(content),
+            "the strong test: are the bytes still exactly these"
+        );
+        // The rest is the edit reading of the same text as one big insert —
+        // same distinctiveness rule, same caps, so it places through the same
+        // matcher an edit's evidence does.
+        assert_eq!(
+            hashes(&anchor),
+            vec![
+                content_hash("use std::fmt;"),
+                content_hash("fn distinctive() {}")
+            ]
+        );
+        assert_eq!(anchor["added_lines"], serde_json::json!(3));
+        assert_eq!(anchor["added_head"], serde_json::json!(content.trim_end()));
+    }
+
+    #[test]
+    fn a_whole_anchors_line_hashes_obey_the_cap() {
+        let long: String = (0..ANCHOR_LINE_HASH_CAP + 10)
+            .map(|n| format!("distinct line {n}\n"))
+            .collect();
+        assert_eq!(hashes(&whole_anchor(&long)).len(), ANCHOR_LINE_HASH_CAP);
     }
 
     #[test]
