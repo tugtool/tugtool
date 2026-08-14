@@ -241,6 +241,13 @@ body {
   gap: var(--tugx-transcript-header-gap);
   padding-block: var(--tugx-transcript-header-padding-block);
   background: var(--tugx-transcript-header-bg);
+  /* The header takes the column's width, not its own content's. As a grid
+     item its automatic minimum is `min-content`, which for a flex row is the
+     sum of what its parts ask for — so a wide trailing chip made the header
+     itself grow past the column and hang out of it, and no part ever saw a
+     deficit to shrink against. Zeroed, the row is exactly as wide as the
+     column and the squeeze reaches the parts that can absorb it. */
+  min-width: 0;
 }
 
 /* Obscuring strip — paints the small pin-stack tier gap (4 px below
@@ -273,9 +280,13 @@ body {
   color: var(--tugx-transcript-identifier-color);
 }
 
+/* A clock reading is one word. `nowrap` also fixes its flex minimum at the
+   whole string, so a wide neighbor in the trailing slot has to compress
+   itself rather than breaking "4:13:57 PM" across two lines. */
 .tug-transcript-entry__timestamp {
   font-size: var(--tugx-transcript-timestamp-font-size);
   color: var(--tugx-transcript-timestamp-color);
+  white-space: nowrap;
 }
 
 /* Sequence-number badge (e.g. `#042`) — same muted color AND same

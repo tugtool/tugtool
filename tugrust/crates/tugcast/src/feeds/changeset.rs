@@ -1121,7 +1121,6 @@ async fn dash_entries(
         .collect()
 }
 
-
 /// Commit exactly `files` (repo-relative) in `repo_dir` with `message`
 /// ([P15]), routed through `tugchanges_core::commit` ([P06]).
 ///
@@ -2192,7 +2191,10 @@ mod tests {
         else {
             panic!("expected dash entry");
         };
-        assert_eq!(owner_id, "tugdash/old", "no id on file, so no id in the key");
+        assert_eq!(
+            owner_id, "tugdash/old",
+            "no id on file, so no id in the key"
+        );
         assert_eq!(
             draft.as_ref().map(|d| d.message.as_str()),
             Some("Land the old work"),

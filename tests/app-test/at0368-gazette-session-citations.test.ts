@@ -33,12 +33,21 @@
  * frame reaches. Everything downstream of it is production: the citation
  * store, the verdict batch, the re-mark, the portal.
  *
+ * And one geometry claim about the OTHER place a session shows up in this card
+ * — the header citation, which shares a flex row with the author and the clock:
+ * a session name is the one run whose length the user chooses, so the atom has
+ * to be able to compress to any width the row leaves it. It gives way in a
+ * declared order (the minted handle first, the user's own words last) but it
+ * always gives way, and the clock beside it never breaks onto a second line.
+ *
  * @covers tugdeck/src/lib/annotator/detect-session-ref.ts
  * @covers tugdeck/src/lib/annotator/session-resolution.ts
  * @covers tugdeck/src/lib/annotator/annotate-content.ts
  * @covers tugdeck/src/lib/annotator/wrap-matches.ts
  * @covers tugdeck/src/components/tugways/session-citation-portals.tsx
  * @covers tugdeck/src/components/tugways/tug-markdown-block.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-identity.css
+ * @covers tugdeck/src/components/tugways/tug-transcript-entry.css
  */
 
 import { describe, expect, test } from "bun:test";
@@ -127,6 +136,93 @@ interface Runs {
   path: Run | null;
   text: string;
   awaiting: boolean;
+}
+
+/* ── The header-citation claim's fixtures. ─────────────────────────────── */
+
+const NAMED_SHORT = "c4d5e6f7-1a2b-4c3d-8e4f-5a6b7c8d9e03";
+const NAMED_LONG = "d5e6f7a8-1a2b-4c3d-8e4f-5a6b7c8d9e04";
+
+/** A name the rail can hold whole beside a clock — the screenshot's own. */
+const SHORT_NAME = "dash-integration-1";
+/** A name no rail could hold, so the run that carries it has to elide. */
+const LONG_NAME =
+  "dash-integration-phase-two-attachment-parity-and-composer-metrics";
+/** Long minted handles, so both atoms are genuinely over-wide. */
+const SHORT_TAG = "violet-mesa-plateau-of-considerable-length";
+const LONG_TAG = "amber-thicket-escarpment-of-similar-length";
+
+/** One resolvable row, as the ledger's answer carries it. */
+function namedRow(sessionId: string, name: string, tag: string): unknown {
+  return {
+    queried: sessionId,
+    session: {
+      session_id: sessionId,
+      workspace_key: "ws-1",
+      project_dir: REPO_ROOT,
+      created_at: 1_754_600_000_000,
+      last_used_at: 1_754_600_100_000,
+      turn_count: 2,
+      last_user_prompt: null,
+      state: "closed",
+      card_id: null,
+      // `name_user_set` is what makes the name the user's own word rather
+      // than a synopsis — only then does it lead the atom's title.
+      name,
+      name_user_set: true,
+      tag,
+    },
+  };
+}
+
+function resolveNamedSessions(): string {
+  return `window.__tug.dispatchControlAction("resolve_sessions_ok", ${JSON.stringify(
+    {
+      sessions: [
+        namedRow(NAMED_SHORT, SHORT_NAME, SHORT_TAG),
+        namedRow(NAMED_LONG, LONG_NAME, LONG_TAG),
+      ],
+      unknown: [],
+    },
+  )})`;
+}
+
+/**
+ * Each post header's geometry, in document order.
+ *
+ * "Elided" is `scrollWidth > clientWidth` on the run itself — the run's text
+ * is wider than the box it was given, which is exactly the condition
+ * `text-overflow: ellipsis` paints. Reading the rendered string instead would
+ * not work: the ellipsis is painted, never inserted, so `textContent` is the
+ * whole name either way.
+ */
+const HEADERS_JS = `Array.from(
+  document.querySelectorAll(${JSON.stringify(`${CARD} .tug-transcript-entry__header`)}),
+)
+  .filter(function (h) { return h.querySelector(".gazette-post-session") !== null; })
+  .map(function (h) {
+    var clock = h.querySelector(".tug-transcript-entry__timestamp time");
+    var chip = h.querySelector(".gazette-post-session");
+    var name = chip.querySelector(".tug-session-identity-name");
+    var callsign = chip.querySelector(".tug-session-identity-callsign");
+    return {
+      clockLines: clock === null ? 0 : clock.getClientRects().length,
+      headerRight: Math.round(h.getBoundingClientRect().right),
+      chipRight: Math.round(chip.getBoundingClientRect().right),
+      nameText: name === null ? "" : (name.textContent || "").trim(),
+      nameElided: name !== null && name.scrollWidth > name.clientWidth,
+      callsignElided:
+        callsign !== null && callsign.scrollWidth > callsign.clientWidth,
+    };
+  })`;
+
+interface Header {
+  clockLines: number;
+  headerRight: number;
+  chipRight: number;
+  nameText: string;
+  nameElided: boolean;
+  callsignElided: boolean;
 }
 
 describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () => {
@@ -218,6 +314,112 @@ describe.skipIf(!SHOULD_RUN)("at0368 — sessions named in Gazette prose", () =>
         // And the path is still a path: a session scan that stole path runs
         // would show here.
         expect(settled.path?.kind).toBe("file-path");
+      } finally {
+        await app.close();
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "the header citation compresses to the row it is in, and the clock never wraps",
+    async () => {
+      const app = await launchTugApp({ testName: "at0368-gazette-header-atom" });
+      try {
+        await app.nativeKey("g", ["cmd", "ctrl"]);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(CARD)}) !== null`,
+          { timeoutMs: 10_000 },
+        );
+
+        // Two posts, two narrated sessions, one difference: how long a name
+        // the user gave. Both are wider than the rail can spell in full, so
+        // both atoms are under a squeeze — the question each answers is WHICH
+        // run pays for it.
+        for (const post of [
+          {
+            id: 9301,
+            at_ms: 1_754_600_000_000,
+            author: "reporter",
+            body: "A short custom name, on a session whose minted handle is long.",
+            refs: [],
+            session_id: NAMED_SHORT,
+            project_dir: REPO_ROOT,
+          },
+          {
+            id: 9302,
+            at_ms: 1_754_600_060_000,
+            author: "reporter",
+            body: "A name long enough that nothing else on the row could fit beside it.",
+            refs: [],
+            session_id: NAMED_LONG,
+            project_dir: REPO_ROOT,
+          },
+        ]) {
+          expect(
+            await app.evalJS<boolean>(
+              `window.__tug.publishGazettePost(${JSON.stringify(JSON.stringify(post))})`,
+            ),
+          ).toBe(true);
+        }
+
+        // The atoms mount inert and ask the ledger; this is the ledger
+        // answering, through the production handler.
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(`${CARD} .gazette-post-session`)}).length === 2`,
+          { timeoutMs: 15_000 },
+        );
+        await app.evalJS<unknown>(resolveNamedSessions());
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var runs = document.querySelectorAll(
+              ${JSON.stringify(`${CARD} .gazette-post-session .tug-session-identity-name`)});
+            return runs.length === 2 && (runs[1].textContent || "").length > 0;
+          })()`,
+          { timeoutMs: 15_000 },
+        );
+
+        const headers = await app.evalJS<Header[]>(HEADERS_JS);
+        note("header atoms", JSON.stringify(headers));
+        expect(headers.length, "one header per post").toBe(2);
+
+        for (const header of headers) {
+          // THE bug this pins: an atom that could not compress pushed the
+          // clock into a second line. A wrapped inline element reports one
+          // client rect per line, so this is the wrap itself, measured — not a
+          // height compared against a guess.
+          expect(
+            header.clockLines,
+            "the clock reads on one line",
+          ).toBe(1);
+          // And the atom stayed inside the row rather than overhanging it —
+          // compression, not overflow. One pixel of slack for subpixel layout.
+          expect(
+            header.chipRight - header.headerRight,
+            "the atom ends inside the header",
+          ).toBeLessThanOrEqual(1);
+        }
+
+        // The order the two runs give way in, read off the two rows. Short
+        // name: the minted handle is the run that elides, and the user's own
+        // words are whole. This is the shipped rule for the citation register.
+        expect(
+          headers[0]!.callsignElided,
+          "the minted handle gives way first",
+        ).toBe(true);
+        expect(
+          headers[0]!.nameElided,
+          "and a name this row can hold is shown whole",
+        ).toBe(false);
+        expect(headers[0]!.nameText).toBe(SHORT_NAME);
+
+        // Long name: the handle has already given everything it had, so the
+        // name elides too. It has to be ABLE to — a run that refuses to
+        // shrink is what breaks the row it sits in.
+        expect(
+          headers[1]!.nameElided,
+          "a name past the row's width elides rather than pushing",
+        ).toBe(true);
       } finally {
         await app.close();
       }

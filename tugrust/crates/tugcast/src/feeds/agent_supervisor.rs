@@ -8735,8 +8735,7 @@ mod tests {
         assert_eq!(body["bindings"][0]["dash_name"], "demo");
 
         // Unbind nulls them.
-        let payload =
-            serde_json::to_vec(&serde_json::json!({"tug_session_id": "sess-1"})).unwrap();
+        let payload = serde_json::to_vec(&serde_json::json!({"tug_session_id": "sess-1"})).unwrap();
         sup.handle_control("unbind_dash", &payload, 1).await;
         sup.do_list_card_bindings().await;
         let body = next_action(&mut control_rx, "list_card_bindings_ok").await;
@@ -9038,12 +9037,12 @@ mod tests {
         // A same-named future dash starts with no inherited draft ([P14]) —
         // under either key, or the haunting comes back in a form no
         // `draft clear` can reach.
-        for key in [
-            "tugdash/snippets",
-            "tugdash/snippets#1723500000000-a1b2c3",
-        ] {
+        for key in ["tugdash/snippets", "tugdash/snippets#1723500000000-a1b2c3"] {
             assert!(
-                ledger.changeset_draft("dash", key, "/proj").unwrap().is_none(),
+                ledger
+                    .changeset_draft("dash", key, "/proj")
+                    .unwrap()
+                    .is_none(),
                 "row under {key} survived the landing"
             );
         }

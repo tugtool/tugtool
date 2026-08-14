@@ -413,10 +413,7 @@ fn mint_tugid() -> String {
         .unwrap_or(0);
     let mut nonce = [0u8; 3];
     rand::fill(&mut nonce);
-    format!(
-        "{millis}-{:02x}{:02x}{:02x}",
-        nonce[0], nonce[1], nonce[2]
-    )
+    format!("{millis}-{:02x}{:02x}{:02x}", nonce[0], nonce[1], nonce[2])
 }
 
 /// A dash's **owner key** — the identity every ledger row keys by: draft rows'
@@ -916,7 +913,12 @@ pub struct DashStatus {
 /// any round or worktree dirt outranks a freshly created dash. Declared stages
 /// (`implementing (i/N)`, `built`, `audited`) arrive with the step verbs; this
 /// reports only what is already true on disk.
-pub fn derive_stage(rounds: i64, worktree_dirty: bool, has_draft: bool, landing: bool) -> &'static str {
+pub fn derive_stage(
+    rounds: i64,
+    worktree_dirty: bool,
+    has_draft: bool,
+    landing: bool,
+) -> &'static str {
     if landing {
         "landing"
     } else if has_draft {
@@ -969,7 +971,11 @@ pub fn status_in(repo_root: &Path, name: &str) -> Result<DashStatus, String> {
     let id = dash_owner_key(repo_root, name);
     let rounds = git_stdout(
         repo_root,
-        &["rev-list", "--count", &format!("{}..{}", base_branch, branch)],
+        &[
+            "rev-list",
+            "--count",
+            &format!("{}..{}", base_branch, branch),
+        ],
     )
     .ok()
     .and_then(|s| s.parse::<i64>().ok())
@@ -987,13 +993,8 @@ pub fn status_in(repo_root: &Path, name: &str) -> Result<DashStatus, String> {
     let bound_sessions = bound_sessions_for(&id);
 
     Ok(DashStatus {
-        stage: derive_stage(
-            rounds,
-            worktree_dirty,
-            draft,
-            join_journal_phase.is_some(),
-        )
-        .to_string(),
+        stage: derive_stage(rounds, worktree_dirty, draft, join_journal_phase.is_some())
+            .to_string(),
         name: name.to_string(),
         id,
         branch,
@@ -1829,10 +1830,16 @@ mod tests {
 
     #[test]
     fn legacy_owner_key_strips_the_id_and_passes_legacy_keys_through() {
-        assert_eq!(legacy_owner_key("tugdash/x#1723500000000-a1b2c3"), "tugdash/x");
+        assert_eq!(
+            legacy_owner_key("tugdash/x#1723500000000-a1b2c3"),
+            "tugdash/x"
+        );
         assert_eq!(legacy_owner_key("tugdash/x"), "tugdash/x");
         // A name with a dash in it is not a split point — only `#` is.
-        assert_eq!(legacy_owner_key("tugdash/fix-join#1-abc"), "tugdash/fix-join");
+        assert_eq!(
+            legacy_owner_key("tugdash/fix-join#1-abc"),
+            "tugdash/fix-join"
+        );
     }
 
     #[test]
@@ -1843,7 +1850,11 @@ mod tests {
         let (millis, nonce) = a.split_once('-').expect("millis-nonce shape");
         assert!(millis.parse::<u128>().unwrap() > 0);
         assert_eq!(nonce.len(), 6);
-        assert!(nonce.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            nonce
+                .chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
     }
 
     /// `create` mints once and every later touch reports the same identity;
@@ -1886,7 +1897,10 @@ mod tests {
         commit("id-dash", "Add f", None).unwrap();
         let backfilled = dash_owner_key(repo, "id-dash");
         assert!(backfilled.starts_with("tugdash/id-dash#"));
-        assert_ne!(backfilled, id, "the backfill is a fresh mint, not the old id");
+        assert_ne!(
+            backfilled, id,
+            "the backfill is a fresh mint, not the old id"
+        );
     }
 
     /// The stage precedence table ([P06]): landing outranks a draft, a draft
@@ -2004,7 +2018,10 @@ mod tests {
         .unwrap();
         let landing = status("status-dash").unwrap();
         assert_eq!(landing.stage, "landing");
-        assert_eq!(landing.join_journal_phase.as_deref(), Some("WorktreeRemoved"));
+        assert_eq!(
+            landing.join_journal_phase.as_deref(),
+            Some("WorktreeRemoved")
+        );
 
         // No sessions.db with a binding, so the dash reads as parked ([P08]).
         assert!(landing.bound_sessions.is_empty());
@@ -2067,7 +2084,8 @@ mod tests {
         // With the last live session closed, the dash is parked.
         {
             let conn = rusqlite::Connection::open(&sessions_db).unwrap();
-            conn.execute("UPDATE sessions SET state = 'closed'", []).unwrap();
+            conn.execute("UPDATE sessions SET state = 'closed'", [])
+                .unwrap();
         }
         assert!(status("parked-dash").unwrap().bound_sessions.is_empty());
 

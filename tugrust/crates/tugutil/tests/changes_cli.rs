@@ -824,7 +824,11 @@ fn draft_rows_key_by_the_dash_owner_key_and_supersede_the_legacy_row() {
     let ledger = seed_ledger(&root);
     git(
         &root,
-        &["config", "branch.tugdash/widgets.tugid", "1723500000000-a1b2c3"],
+        &[
+            "config",
+            "branch.tugdash/widgets.tugid",
+            "1723500000000-a1b2c3",
+        ],
     );
     let owner_key = "tugdash/widgets#1723500000000-a1b2c3";
 
@@ -864,7 +868,14 @@ fn draft_rows_key_by_the_dash_owner_key_and_supersede_the_legacy_row() {
 
     // A write lands on the owner key and supersedes the legacy row.
     let mut set = tug(ledger.path());
-    set.args(["draft", "set", "--owner", "dash:widgets", "--message", "Join the widgets work"]);
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "dash:widgets",
+        "--message",
+        "Join the widgets work",
+    ]);
     set.args(project_arg(&root));
     let (code, _, err) = run(set);
     assert_eq!(code, 0, "stderr: {err}");

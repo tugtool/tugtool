@@ -97,9 +97,5 @@ pub(crate) fn dash_gone(
 /// Whether this instance's ledger holds the session — the ownership check
 /// that makes try-each-instance terminate on the right instance.
 fn owns_session(ledger: &SessionLedger, tug_session_id: &str) -> bool {
-    ledger
-        .get(tug_session_id)
-        .ok()
-        .flatten()
-        .is_some()
+    ledger.get(tug_session_id).ok().flatten().is_some()
 }

@@ -107,21 +107,36 @@
   opacity: 0.72;
 }
 
-/* The atom: the name never gives way beside a callsign. Standing alone — an
-   unnamed session, where the callsign fills this span — it may elide, since it
-   is then the only run there is. */
-.tug-session-identity[data-tier="chip"] .tug-session-identity-name {
-  flex: none;
-}
+/* The atom: the callsign gives way FIRST, and it gives way ALL the way — the
+   name is the only run that does not shrink, so every pixel of a squeeze
+   lands on the handle until the handle has none left.
 
-.tug-session-identity[data-tier="chip"] .tug-session-identity-name:only-child {
-  flex: initial;
+   `max-width: 100%` is what lets the name elide anyway, once that happens. A
+   shrink factor could not do this job: flex splits a deficit in proportion to
+   `shrink × basis`, so however lopsided the factors, the name always loses a
+   sliver — and a sliver is enough to paint an ellipsis on a name that fits.
+   The cap is not a share of the deficit, it is a ceiling: the name is left
+   entirely alone while the callsign can still pay, and is clamped to the run
+   it sits in when it cannot.
+
+   The name must be able to elide at all, because it is the one run whose
+   length the user chooses: with `flex: none` and no cap the atom was
+   incompressible, and an incompressible atom pushes its neighbors — a Gazette
+   header's clock was breaking onto a second line to make room for a name.
+   Which run the reader loses first is a rule; the atom refusing to fit is a
+   bug. Standing alone — an unnamed session, where the callsign fills this
+   span — the name elides for the ordinary reason: it is the only run there
+   is. */
+.tug-session-identity[data-tier="chip"] .tug-session-identity-name {
+  flex: 0 0 auto;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .tug-session-identity[data-tier="chip"] .tug-session-identity-callsign {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

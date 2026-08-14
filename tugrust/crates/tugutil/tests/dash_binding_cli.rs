@@ -145,11 +145,7 @@ fn repo_with_dash(root: &Path, name: &str) -> String {
 
     git(
         root,
-        &[
-            "config",
-            &format!("branch.tugdash/{name}.tugbase"),
-            "main",
-        ],
+        &["config", &format!("branch.tugdash/{name}.tugbase"), "main"],
     );
     git(
         root,

@@ -497,9 +497,9 @@ fn apply_dash_request(
 ) -> crate::dash_api::DashApiOutcome {
     use crate::dash_api::DashApiOutcome;
     let resolved_project = || {
-        req.project_dir.as_deref().map(|dir| {
-            crate::path_resolver::resolve_to_claude_form(std::path::Path::new(dir))
-        })
+        req.project_dir
+            .as_deref()
+            .map(|dir| crate::path_resolver::resolve_to_claude_form(std::path::Path::new(dir)))
     };
     match req.op.as_str() {
         "bind" => {
@@ -1265,7 +1265,10 @@ mod tests {
 
         for key in [ID_KEY, LEGACY_KEY] {
             assert!(
-                ledger.changeset_draft("dash", key, &project).unwrap().is_none(),
+                ledger
+                    .changeset_draft("dash", key, &project)
+                    .unwrap()
+                    .is_none(),
                 "row under {key} survived the clear"
             );
         }

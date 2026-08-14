@@ -361,10 +361,9 @@ fn binding_project(project: Option<std::path::PathBuf>) -> Result<std::path::Pat
 /// machine-global write and the wrong one for a per-instance ledger.
 fn post_dash_api(body: serde_json::Value) -> Result<serde_json::Value, String> {
     let mut ports: Vec<u16> = Vec::new();
-    if let Ok(Some(instance)) =
-        std::env::current_dir().map_err(|_| ()).and_then(|cwd| {
-            tugcore::registry::find_for_cwd(&cwd).map_err(|_| ())
-        })
+    if let Ok(Some(instance)) = std::env::current_dir()
+        .map_err(|_| ())
+        .and_then(|cwd| tugcore::registry::find_for_cwd(&cwd).map_err(|_| ()))
     {
         ports.push(instance.tugcast_port);
     }
@@ -458,11 +457,7 @@ fn run_bind(
     Ok(())
 }
 
-fn run_unbind(
-    project: Option<std::path::PathBuf>,
-    json: bool,
-    quiet: bool,
-) -> Result<(), String> {
+fn run_unbind(project: Option<std::path::PathBuf>, json: bool, quiet: bool) -> Result<(), String> {
     let session = calling_session_id()?;
     let _project = binding_project(project)?;
     post_dash_api(serde_json::json!({

@@ -300,12 +300,7 @@ fn open_changes_db() -> Result<Connection, AppError> {
 /// Read one draft row across both migration axes, first hit wins: the owner
 /// key before its legacy form ([P03]), and within each, the primary spelling
 /// before the fallback (Spec S05). Up to four probes.
-fn read_row(
-    conn: &Connection,
-    owner: &Owner,
-    primary: &str,
-    fallback: &str,
-) -> Option<DraftRow> {
+fn read_row(conn: &Connection, owner: &Owner, primary: &str, fallback: &str) -> Option<DraftRow> {
     owner
         .keys()
         .into_iter()
