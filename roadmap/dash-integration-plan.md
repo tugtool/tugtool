@@ -40,11 +40,23 @@ The markdown ledger table in the plan document stays the single durable record o
 
 ### [P05] Naming: `dash-*` skills, `dash-run`, `/dash` gesture {#p05-naming}
 
-Dash-lane-only skills take the prefix: `implement`→`dash-implement`, `dash`→`dash-run`, `join`→`dash-join`, `audit`→`dash-audit`, with the old names kept as aliases for one release. `devise` and `vet` stay unprefixed — they are plan skills, lane-agnostic. `/dash <name>` becomes a card gesture: create (if needed) + bind *this card* to the dash. `/join` remains the landing gesture.
+Dash-lane-only skills take the prefix: `implement`→`dash-implement`, `dash`→`dash-run`, `join`→`dash-join`, `audit`→`dash-audit`, with the old names kept as aliases for one release. `devise` stays unprefixed — it is a plan skill, lane-agnostic. `/dash <name>` becomes a card gesture: create (if needed) + bind *this card* to the dash. `/join` remains the landing gesture.
+
+*(Amended by [P07]: the original ruling read "`devise` and `vet` stay unprefixed." There is no `vet` to keep unprefixed once phase 2.1 lands.)*
 
 ### [P06] Derive, don't record {#p06-derive}
 
 A dash is git. Lifecycle stage is **derived** wherever git can answer (branch existence, rounds, journal phase, draft row, worktree dirt) and **declared** only for transitions git cannot see (step start, built, audited), recorded as structured dash-log lines by the verbs that cause them. No dash database is introduced by any phase.
+
+### [P07] A plan is devised *and* vetted in one gesture; `/vet` is retired {#p07-devise-absorbs-vet}
+
+`/tugplug:vet` is read-only by construction, so its verdict can only ever be handed back to the user, and in practice the user's answer is invariably "do the fixups" — a hand-off round that exists only because the skill was forbidden to act on what it found. That is a workflow seam, not a safety property: nothing was protected by making the author and the reviewer two separate invocations, because it was the same conversation both times.
+
+`devise` therefore absorbs the assessment. One invocation produces a plan that has been **written, adversarially reviewed against the real code and the tuglaws, and revised** — with the fixups already applied and recorded in the document. The `vet` skill is deleted; its rubric survives as durable doctrine (`tuglaws/plan-review-rubric.md`), which is where the judgment actually lived. Re-review of a plan `devise` did not write (hand-authored, stale, or edited after devising) is a **re-entry mode of `devise`**, not a second skill: `/tugplug:devise <existing-plan-path>` skips authoring and runs the review-and-revise loop on what is already there.
+
+Two halves, split by what each is good for: the **mechanical** half of vetting (skeleton conformance, anchor uniqueness, `Depends on:` resolution, ledger seeding, banned test frameworks) becomes a verb — `tugutil plan lint` — because a checker that always runs beats a rule the model must remember, the same reasoning as [P04]. The **judgment** half (design soundness, sequencing, tuglaws adherence, "does the codebase want this") stays with the model, which is the only thing that can do it.
+
+The stage vocabulary loses the `vetted ⊙` declaration: after phase 2.1 there is no devised-but-unvetted plan to distinguish. `devised` means reviewed.
 
 ---
 
@@ -52,7 +64,7 @@ A dash is git. Lifecycle stage is **derived** wherever git can answer (branch ex
 
 This is the shared vocabulary for `dash status`, the feed, the Lens section, and the join-mode presentation. States marked ⊕ are derived; ⊙ are declared via dash-log lines.
 
-**Shaping** (no worktree yet): idea → brief → devised ⊕(plan file exists) → vetted ⊙.
+**Shaping** (no worktree yet): idea → brief → devised ⊕(plan file exists — and, per [P07], reviewed: `devise` does not emit an unvetted plan).
 
 **Working:** created ⊕(branch + worktree) → implementing ⊙(step *i* of *N*; rounds accrete ⊕) → built ⊙(`just app-debug` reported) → audited ⊙ → draft-ready ⊕(non-empty `dash:<id>` draft).
 
@@ -97,6 +109,24 @@ Dashes become visible everywhere they should be, with zero landing-path stakes.
 3. **Lens "Dashes" section**: new registered section (registry entry + `main.tsx` + `setSectionContent`/`collapsedSummary`), one row per inflight dash: name, stage, step *i*/*N*, mated session(s) with the `focus-session-card` jump, and a live in-progress indicator as a leaf subscription (the `SessionPhaseDot` pattern — never a high-churn field in the row projection). Parked dashes render with their own mark.
 4. **`/dash <name>` gesture** ([P05]): local slash verb — resolve name; existing dash → bind this card; new name → `dash create` (which auto-binds). Bare `/dash` with dashes inflight opens the lane/section for discovery.
 
+### Phase 2.1 — One-gesture planning: `devise` absorbs `vet` {#phase-2-1}
+
+Implements [P07]. Sequenced here deliberately: it must land **before** phase 3's skill renames and rewrites, so phase 3 rewrites one merged plan skill rather than rewriting `vet` and then deleting it. It is otherwise independent of phases 1, 2, and 4 — no Rust binding work, no deck work — and could run as a parallel dash alongside phase 2.
+
+1. **`tuglaws/plan-review-rubric.md`** — the vet skill's substance, promoted to doctrine: the five assessment axes (quality/coherence, technical choices, sequencing, holes and failure modes, test-plan sanity), the tuglaws cross-check obligation including the State Zone Mapping for tugdeck work, the "does this leave the architecture better" test, and the banned-test-shapes list (fake-DOM/RTL, mock-store assertions). Written as a rubric a reviewer applies, not as skill prose. `devise`, `audit`, and any future review surface cite it instead of each carrying a private copy — the same de-duplication phase 3 does for the `dash-run`/`dash-implement` doctrine text.
+
+2. **`tugutil plan lint <path> [--json]`** — the mechanical conformance checker, in `tugutil` over a `tugplan-core` parse of the devise skeleton. Checks: required sections present and in skeleton order; `{#anchor}` uniqueness and kebab-case; label discipline (`[P##]` two-digit and never reused, `[D##]` only as a citation into `tuglaws/design-decisions.md`, `[Q##]`/`S##`/`T##`/`L##`/`R##`/`M##`); every `**Depends on:**` resolving to a real step anchor; every Execution Step carrying a `**Commit:**`, `**References:**`, Tasks, Tests, and a Checkpoint; the Step Status Ledger present, seeded, and listing exactly the steps that exist; no banned test framework named in any Test Plan. Exit non-zero with a located diagnostic per violation. This is the same parse `dash step` ([P04]) needs for its strict ledger edit — one grammar, two consumers, so a plan that lints is a plan the step verbs can drive.
+
+3. **`devise` gains a mandatory review-and-revise round.** After authoring, the skill: re-reads the plan **from disk** (not from its own drafting memory), runs `tugutil plan lint` and fixes every diagnostic, then applies the rubric adversarially against the real code — reading the files the plan claims to touch and checking the plan's assertions about them are true. Material findings are **applied, not reported**; the loop repeats until a round yields no material fixup, capped at three rounds. Anything unresolved at the cap is written into the plan's Open Questions or Risks with its rationale — never dropped, and never silently downgraded to "fine". The read-from-disk re-entry is the only bias defense available to an agentless skill, and it is the real one: it forces the reviewer to judge the artifact a cold implementer will get rather than the intent the author remembers.
+
+4. **The plan records its own review.** The skeleton gains a **Review Record** section: the round count, the fixups applied (one line each, citing the axis or law that motivated them), the lint result, and anything deferred. This is what makes the merge safe to trust — the assessment does not evaporate just because no human read it in a verdict message, and a later reader can see what was already considered.
+
+5. **Re-entry mode.** `/tugplug:devise <path-to-existing-plan>` — when the argument resolves to an existing plan document rather than an idea, skip authoring and run steps 3–4 on it, appending to the Review Record. This is the entire replacement for standalone `/vet`: hand-written plans, plans edited after devising, and plans devised before this phase all have a way in.
+
+6. **Delete `vet`; rewire the hand-offs.** Remove `tugplug/skills/vet/`, with a one-release stub that prints the `devise` re-entry command and exits (matching the alias window phase 3 uses for the renamed dash skills). `devise`'s hand-off now offers exactly one next move — `` `/tugplug:implement <path>` `` — instead of the two-command fork that created the seam. Update `tugplug/CLAUDE.md`'s lifecycle listing and its `devise → vet → implement` flow line, and the repo `CLAUDE.md` where the skill roster is named. `audit` is untouched: it is the *post*-implementation pass over real code, a genuinely different artifact at a genuinely different time, and it retains its verdict because its findings become a build's fixup round, not a document edit.
+
+**Contract to phase 3:** `tugplan-core`'s skeleton parse and ledger grammar (shared with `dash step`), `tuglaws/plan-review-rubric.md` as the citable review doctrine, and a single plan skill for phase 3's rename pass to consider.
+
 ### Phase 3 — Lifecycle codification (CLI + skills) {#phase-3}
 
 The improvised workflow becomes verbs; the skills shrink to policy.
@@ -135,9 +165,14 @@ The twin of commit mode, over server machinery that already exists. No new Rust 
 | Ledger-table editing by `dash step` mangles a hand-edited plan | med | strict parse of the skeleton's ledger grammar; refuse (exit 1) rather than fuzzy-match; the skill falls back to hand-editing on refusal |
 | Dash lane re-destabilizes the shipped Changes surface | med | phase 2 is view-layer only over unchanged stores; dash grammar kept visually distinct; app-test coverage per surface |
 | Join mode diverges from commit mode conventions | low | mirror `commit-mode-controller` structurally; shared gate-evaluation shape; name the tuglaws in each dash commit |
+| Self-review is weaker than a separate `/vet` invocation — the author grades its own paper | med | the review round re-reads the plan **from disk** and re-reads the code it claims, so it judges the artifact rather than the intent; `tugutil plan lint` moves the mechanical half out of model attention entirely; the Review Record makes a weak round visible instead of invisible. The user retains a strictly stronger move than old `/vet` — re-entry on the finished plan, from a *fresh* session with no authoring context |
+| The revise loop churns or never converges | low | hard cap of three rounds; unresolved findings land in Open Questions/Risks rather than driving another pass |
+| Losing `vet` loses the deliberate pause before a build | low | the pause was never load-bearing — the answer was always "do the fixups". `devise` still ends by handing off rather than implementing, and re-entry mode is the pause for anyone who wants it |
 
 ---
 
 ## Sequencing note {#sequencing}
 
 Phases 2 and 3 are independent of each other (both depend only on phase 1) and could run as parallel dashes. Phase 4 depends on 1 and benefits from 2's lane rendering. Visibility-first is deliberate: it de-risks the binding concept with zero landing-path stakes before the landing surface is built on it.
+
+Phase 2.1 depends on **nothing in this program** — it touches plan skills and a new `tugutil plan` verb, not bindings or deck surfaces — so it can run as a parallel dash at any time. Its one ordering constraint is that it must precede phase 3, which rewrites the skill roster and would otherwise rewrite a skill 2.1 deletes; phase 3 also inherits 2.1's skeleton parse for its `dash step` ledger edits ([P04]) rather than growing a second one.
