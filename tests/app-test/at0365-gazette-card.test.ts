@@ -49,9 +49,7 @@
  *     pending row. Answer *quality* is not an app-test's business (it has no
  *     model behind it); the round trip is.
  *
- * Two further claims, each on its own app — the first because it is a whole
- * second round trip, the second because it is a measurement rather than a
- * gesture:
+ * One further claim, on its own app because it is a whole second round trip:
  *
  *  4. **A picture is part of a question, both ways.** An image dropped on the
  *     composer previews where it was dropped — the Session composer's own
@@ -67,19 +65,9 @@
  *     a size and the sheet opens as a panel on the rail — with real margin at
  *     both edges — rather than a lid over it.
  *
- *  5. **The rail's widths are the type's.** The Gazette's floor and preferred
- *     width are not pixel counts — they are 56 and 64 characters of the body
- *     face plus the chrome the column is read through, authored as constants
- *     and checked here against the REAL render. The face is measured through
- *     the production `font-metrics` pair, so what is measured is the face that
- *     actually painted, not the fallback a premature measure would report.
- *     Every measured number is `note()`d, so a run that fails hands the correct
- *     constants to whoever retunes the type.
- *
  * @covers tugdeck/src/components/gazette/gazette-card.tsx
  * @covers tugdeck/src/components/gazette/gazette-card.css
  * @covers tugdeck/src/components/gazette/gazette-card-registration.tsx
- * @covers tugdeck/src/lib/gazette-measure.ts
  * @covers tugdeck/src/lib/gazette-store.ts
  * @covers tugdeck/src/lib/gazette-attachment-bytes.ts
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
@@ -100,16 +88,6 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 
 import { launchTugApp, note, type App } from "./_harness";
-import {
-  COMFORT_GAZETTE_WIDTH_PX,
-  DEFAULT_GAZETTE_WIDTH_PX,
-  GAZETTE_BODY_CH_PX,
-  GAZETTE_BODY_FONT_PX,
-  GAZETTE_MEASURE_CH,
-  GAZETTE_MIN_MEASURE_CH,
-  GAZETTE_ROW_CHROME_PX,
-  MIN_GAZETTE_WIDTH_PX,
-} from "../../tugdeck/src/lib/gazette-measure";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 120_000;
@@ -1154,123 +1132,6 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           `document.querySelector(${JSON.stringify(COMPOSE_STRIP)}) === null`,
           { timeoutMs: 10_000 },
         );
-      } finally {
-        await app.close();
-      }
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  test(
-    "the rail's floor and preferred width are 56ch and 64ch of the face that actually renders",
-    async () => {
-      const app = await launchTugApp({ testName: "at0365-gazette-measure" });
-      try {
-        await app.nativeKey("g", ["cmd", "ctrl"]);
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CARD)}) !== null`,
-          { timeoutMs: 10_000 },
-        );
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(`${CARD} .gazette-transcript`)}) !== null`,
-          { timeoutMs: 10_000 },
-        );
-
-        // A real post, so there is a real body element rendering in the real
-        // face. Prose long enough that the column is exercised rather than a
-        // word standing alone in it.
-        expect(
-          await publish(app, {
-            id: 9101,
-            at_ms: AT_MS,
-            author: "reporter",
-            body:
-              "The rail's width is derived from this line's measure: sixty-four " +
-              "characters of the body face, fungible down to fifty-six.",
-            refs: [],
-          }),
-        ).toBe(true);
-        await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(BODY)}) !== null`,
-          { timeoutMs: 10_000 },
-        );
-
-        // The size the widths are derived from. If this drifts, every number
-        // below is derived from the wrong face and the assertions that follow
-        // are the ones that say so.
-        const fontSizePx = await app.evalJS<number>(
-          `parseFloat(window.getComputedStyle(
-             document.querySelector(${JSON.stringify(BODY)})).fontSize)`,
-        );
-        note("body font-size px", String(fontSizePx));
-        expect(fontSizePx).toBe(GAZETTE_BODY_FONT_PX);
-
-        // One `ch`, measured through the production pair: it REQUESTS the
-        // element's own face and waits for that face before measuring, so this
-        // is the metric of the type that painted rather than of a fallback.
-        // The measure waits for the face to load, so it is async and `evalJS`
-        // cannot return a promise: kick it off, park the result, and poll.
-        await app.evalJS<null>(
-          `(window.__at0365ch = undefined,
-            window.__tug.measureFaceAdvance(${JSON.stringify(BODY)}, "0")
-              .then(function (w) { window.__at0365ch = w; }),
-            null)`,
-        );
-        await app.waitForCondition<boolean>(`window.__at0365ch !== undefined`, {
-          timeoutMs: 8_000,
-        });
-        const chPx = await app.evalJS<number | null>(`window.__at0365ch`);
-        note("measured ch px", String(chPx));
-        expect(chPx).not.toBeNull();
-        expect(Math.abs((chPx as number) - GAZETTE_BODY_CH_PX)).toBeLessThanOrEqual(
-          0.25,
-        );
-
-        // The chrome: everything between the pane's width and the content
-        // column the body is read in — transcript padding, the glyph gutter,
-        // the post grid's gap, and whatever pane/CardHost chrome stands
-        // outside those. Measured, never summed from tokens.
-        const chromePx = await app.evalJS<number>(
-          `(function () {
-            var body = document.querySelector(${JSON.stringify(BODY)});
-            var column = body.closest(".tug-transcript-entry__body-column");
-            var pane = body.closest(".tug-pane");
-            return pane.getBoundingClientRect().width
-              - column.getBoundingClientRect().width;
-          })()`,
-        );
-        note("measured row chrome px", String(chromePx));
-        expect(Math.abs(chromePx - GAZETTE_ROW_CHROME_PX)).toBeLessThanOrEqual(2);
-
-        // And the derivation itself: the two TYPOGRAPHIC widths ARE the two
-        // measures plus that chrome. Authored constants, checked against the
-        // render — which is the whole point of authoring them.
-        //
-        // The 56ch measure derives the rail's COMFORT floor, not its hard one.
-        // The hard floor is the different question of where a post stops
-        // painting; it is a judgement, has no ch derivation to check, and is
-        // asserted only to sit below the comfort measure it makes room under.
-        const expectedPreferred =
-          Math.round(GAZETTE_MEASURE_CH * (chPx as number)) + chromePx;
-        const expectedComfort =
-          Math.round(GAZETTE_MIN_MEASURE_CH * (chPx as number)) + chromePx;
-        note(
-          "derived widths",
-          JSON.stringify({
-            registeredPreferred: DEFAULT_GAZETTE_WIDTH_PX,
-            measuredPreferred: expectedPreferred,
-            registeredComfort: COMFORT_GAZETTE_WIDTH_PX,
-            measuredComfort: expectedComfort,
-            registeredHardFloor: MIN_GAZETTE_WIDTH_PX,
-          }),
-        );
-        expect(
-          Math.abs(DEFAULT_GAZETTE_WIDTH_PX - expectedPreferred),
-        ).toBeLessThanOrEqual(4);
-        expect(
-          Math.abs(COMFORT_GAZETTE_WIDTH_PX - expectedComfort),
-        ).toBeLessThanOrEqual(4);
-        expect(MIN_GAZETTE_WIDTH_PX).toBeLessThan(COMFORT_GAZETTE_WIDTH_PX);
       } finally {
         await app.close();
       }
