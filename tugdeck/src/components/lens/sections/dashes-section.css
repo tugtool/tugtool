@@ -11,29 +11,10 @@
   min-width: 0;
 }
 
-/* The row's one line: the name reads first, everything after it is context. */
-.lens-dashes-facts {
-  display: flex;
-  align-items: baseline;
-  gap: var(--tug-space-sm);
-  min-width: 0;
-  overflow: hidden;
-}
-
-.lens-dashes-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--tug-font-size-sm);
-  color: var(--tug7-element-global-text-normal-rest);
-}
-
-.lens-dashes-stage,
-.lens-dashes-step {
-  flex: 0 0 auto;
-  font-size: var(--tug-font-size-2xs);
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
+/* The row's one line: the name reads first, everything after it is context.
+   That run — name, stage, steps, review mark — is shared with the Cards
+   section's dash sub-row and lives in `dash-facts.css`. Only the project
+   suffix below is this section's own. */
 
 /* The project suffix appears only when more than one project has dashes, and
    it is the quietest run in the row when it does — it disambiguates, it does
@@ -47,30 +28,6 @@
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
-/* The stale-review mark. Advisory, so it takes the caution tone rather than
-   the danger one: nothing is broken, a document has drifted. It renders only
-   for `stale` and `never-reviewed`, and the two are told apart by their glyph
-   and their tooltip; `never-reviewed` is the quieter of the pair, because a
-   plan that nothing ever vouched for is a state to notice, not to fix. */
-.lens-dashes-review {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  color: var(
-    --lens-dashes-review-color,
-    var(--tug7-element-tone-icon-normal-caution-rest)
-  );
-}
-
-.lens-dashes-review[data-review="never-reviewed"] {
-  color: var(
-    --lens-dashes-review-never-color,
-    var(--tug7-element-global-text-normal-subtle-rest)
-  );
-}
-
 /* The parked mark. Toned down from the live dot's palette on purpose: a dash
    nobody is working must not read as a dash at rest between turns. */
 .lens-dashes-parked {
@@ -81,19 +38,7 @@
   opacity: 0.7;
 }
 
-.lens-dashes-jumps {
-  display: flex;
-  align-items: center;
-  gap: var(--tug-space-2xs);
-}
-
-.lens-dashes-jump {
-  cursor: pointer;
-}
-
-/* A bound session no open card holds: still stated, with nowhere to go. */
-.lens-dashes-jump-inert {
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-2xs);
-  color: var(--tug7-element-global-text-normal-subtle-rest);
-}
+/* The per-session jump chips are gone. They were this section's way of getting
+   TO the session working a dash; the dash sub-row in the Cards section is
+   already there, so they said the same thing at one remove. What is left is the
+   roster: what dashes exist, and which of them need attention. */

@@ -50,6 +50,7 @@ import {
   File,
   FileText,
   Image as ImageIcon,
+  GitBranch,
   LayoutGrid,
   MessageSquareText,
   Wrench,
@@ -73,6 +74,7 @@ import {
 } from "@/components/lens/lens-section-content";
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
+import { DashFactsRun } from "@/components/lens/sections/dash-facts";
 import { SlotPicker } from "@/components/lens/slot-picker";
 import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
@@ -93,6 +95,7 @@ import { useFocusManager } from "@/components/tugways/use-focusable";
 import { renderIcon } from "@/components/tugways/tug-tab-bar";
 import { getCardCloseGuard } from "@/lib/card-close-guard";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { useChangesetAll } from "@/lib/changeset-all-store";
 import { classifyFileKind } from "@/lib/file-kinds";
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { sessionNameStore } from "@/lib/session-name-store";
@@ -132,6 +135,10 @@ const GROUP_RUN_ATTR = "data-lens-group-run";
  *  within-row ordering. ArrowRight on the cursor row descends onto it, ahead of
  *  the slot picker. */
 const ROW_ACTION_FOCUS_GROUP = "lens-cards-row-actions";
+
+/** The dash sub-row's glyph box, in px — its leading mark and its review mark
+ *  are the same size, so the row reads as one line of marks. */
+const DASH_SUBROW_GLYPH = 14;
 
 // The section's remembered selection — the last-touched row id, mapped to a
 // cursor seed on the next Cmd-L / Tab. Module-level so it outlives a collapse
@@ -590,6 +597,55 @@ const SubcardCell: TugListViewCellRenderer<LensCardsDataSource> = ({
   );
 };
 
+/**
+ * The dash a session is working, nested under its row.
+ *
+ * It is where a dash belongs in a section organized by CARDS: the reader is
+ * looking at the session, and the dash is what that session is doing. The
+ * Dashes section answers the other question — what dashes exist, which need
+ * attention — account-globally, including the parked ones no session nests
+ * under, so a worked dash appearing in both places is two surfaces answering
+ * two questions rather than a duplication.
+ *
+ * It carries what the title's own dash run cannot: the stage, the step
+ * counters, and the review mark. That is why the row above suppresses its run
+ * ({@link CardsSessionRow}) — the same fact twice within one row's height, and
+ * the fuller of the two wins.
+ *
+ * Activating it fronts the session's card, the same `focus-session-card`
+ * dispatch the row above it makes ([L30]), because that is where the dash is
+ * being worked. It is not a drag handle and never enters the reorder.
+ */
+const DashSubrowCell: TugListViewCellRenderer<LensCardsDataSource> = ({
+  index,
+  dataSource,
+}: TugListViewCellProps<LensCardsDataSource>) => {
+  const row = dataSource.rowAt(index);
+  if (row.type !== "dash-subrow") return null;
+  const { dash } = row;
+  return (
+    <TugListRow
+      className="lens-cards-oneline lens-cards-subrow lens-cards-dash-subrow"
+      data-slot="lens-cards-dash-subrow"
+      data-lens-group-run={row.group}
+      data-dash={dash.name}
+      leading={
+        <span className="lens-cards-dash-glyph" aria-hidden="true">
+          <GitBranch size={DASH_SUBROW_GLYPH} />
+        </span>
+      }
+    >
+      <DashFactsRun
+        name={dash.name}
+        stage={dash.stage}
+        steps={dash.steps}
+        review={dash.review}
+        markSize={DASH_SUBROW_GLYPH}
+      />
+    </TugListRow>
+  );
+};
+
 const CARDS_CELL_RENDERERS: Record<
   string,
   TugListViewCellRenderer<LensCardsDataSource>
@@ -600,6 +656,7 @@ const CARDS_CELL_RENDERERS: Record<
   "tool-pane": ToolPaneCell,
   "stack-pane": StackPaneCell,
   subcard: SubcardCell,
+  "dash-subrow": DashSubrowCell,
 };
 
 // ---------------------------------------------------------------------------
@@ -669,6 +726,10 @@ function useCardsInputs(filterQuery: string): {
     sessionNameStore.subscribe,
     sessionNameStore.getVersion,
   );
+  // The account-global aggregate, for the dash sub-rows. A whole snapshot
+  // rather than a version token: the projection needs the dash's facts, and the
+  // index it builds from them is memoized on this snapshot's identity.
+  const changesets = useChangesetAll();
   const dataSource = useLensCardsDataSource({
     cardsRowOrder,
     groupOrder,
@@ -677,6 +738,7 @@ function useCardsInputs(filterQuery: string): {
     bindings,
     tagVersion,
     nameVersion,
+    changesets,
   });
   return { dataSource };
 }
@@ -919,7 +981,12 @@ function CardsSectionBody({
         return;
       }
       lastSelectedRowId = dataSource.idForIndex(index);
-      dispatchCommand("focus-session-card", { cardId: row.identity.cardId });
+      // A dash sub-row fronts the card of the session working it — the row
+      // above's card, which is where the dash is being worked.
+      dispatchCommand("focus-session-card", {
+        cardId:
+          row.type === "dash-subrow" ? row.cardId : row.identity.cardId,
+      });
     };
     return { onSelect: activate, onActivate: activate };
   }, [dataSource, onToggleGroup]);

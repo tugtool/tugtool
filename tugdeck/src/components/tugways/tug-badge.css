@@ -205,6 +205,17 @@ body {
   cursor: default;
 }
 
+/* The badge's text box. The root is a flex container, so `text-overflow`
+   applied there never reaches the text — the label rides this span instead,
+   which shrinks and ellipsizes when a mount site constrains the badge and is
+   otherwise shrink-to-fit, leaving unconstrained badges untouched. */
+.tug-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Disabled: dim to the shared control disabled-opacity and drop interaction.
    Matches the treatment TugButton and the other controls use for disabled
    ([L06]). The badge is display-only, so this is opacity + pointer-events;
@@ -355,6 +366,10 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* Flex items floor at their content width unless told otherwise; the
+     column and its rows have to be shrinkable for the text span inside
+     them to reach its ellipsis. */
+  min-width: 0;
   /* Separate the two rows by an em-relative gap so they neither touch (too
      scrunched) nor fling to the chip's edges (too loose). At `lg` this lands
      the inter-row spacing about halfway between a flush centre and an even
@@ -397,6 +412,11 @@ body {
   letter-spacing: var(--tugx-badge-label-tracking);
   line-height: 1;
   color: var(--tug7-element-field-text-normal-label-rest);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tug-badge-content {
@@ -405,6 +425,8 @@ body {
   justify-content: center;
   gap: 0.1875rem; /* 3px — keeps the optional icon snug against the value */
   line-height: 1;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ============================================================================

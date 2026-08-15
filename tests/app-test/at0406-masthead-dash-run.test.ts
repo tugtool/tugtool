@@ -1,30 +1,43 @@
 /**
- * at0406-masthead-dash-chip.test.ts — the bound dash's name in the Session
- * card's masthead, bound and unbound by the real CLI through the card's own
- * shell route.
+ * at0406-masthead-dash-run.test.ts — the bound dash as a run in the Session
+ * card's masthead title, bound and unbound by the real CLI through the card's
+ * own shell route.
  *
  * The whole loop is real. `tugutil dash bind` resolves the calling session
  * from `TUG_SESSION_ID` — which is exactly what the `$` shell route stamps on
  * the child — and POSTs `/api/dash` to the instance whose ledger owns that
  * session, so the session is seeded into this instance's ledger first
- * (`seedLedger`) or the command exits with `no session`. The chip that
- * appears is driven by the `bind_dash_ok` broadcast coming back, with no
- * reload and no card involvement; `dash unbind` takes it away the same way.
+ * (`seedLedger`) or the command exits with `no session`. The run that appears
+ * is driven by the dash's `bound_sessions` moving in the account-global
+ * changeset aggregate, with no reload and no card involvement; `dash unbind`
+ * takes it away the same way.
  *
- * Two things are pinned besides the name. The chip rides the title line's
- * trailing slot — inside the row's content box, i.e. inside the width the
- * masthead already reserves against the pane's control cluster — so it cannot
- * collide with pane chrome by construction. And the 72px chrome tier does not
- * change height when the chip arrives: a card that reflows when a dash is
- * bound would move the transcript under the reader's eyes.
+ * The run is the identity's, not the masthead's — the masthead renders no
+ * dash chrome of its own, which is why the pins here are all on the title's
+ * grammar. Two things are pinned besides the name. The run sits inside the
+ * title line's content box, i.e. inside the width the masthead already
+ * reserves against the pane's control cluster, so it cannot collide with pane
+ * chrome by construction. And the 72px chrome tier does not change height when
+ * the run arrives: a card that reflows when a dash is bound would move the
+ * transcript under the reader's eyes.
  *
- * The chip also carries the dash plan's review state, as its own tone rather
- * than as an element inside it — one line has no room for a glyph. The dash
- * drives a real stamped plan, so the chip arrives unmarked; editing the plan
- * past its stamp is what makes the mark appear.
+ * The run also carries the dash plan's review state, as its own tone rather
+ * than as a second glyph beside the first — neither register has room for two
+ * marks. The dash drives a real stamped plan, so the run arrives unmarked;
+ * editing the plan past its stamp is what makes the mark appear.
+ *
+ * The dash name is deliberately wider than the run's `max-inline-size` cap, so
+ * it is always over-constrained and its elision is under test on every run.
+ * What that pins is the *direction* of the truncation: text with no elidable
+ * box of its own overflows a centred flex row in both directions and clips off
+ * both ends, which shows up as a first character painting outside the box it
+ * is supposed to be inside. This is the pin the retired masthead badge carried;
+ * it lives here now, on the one surface in the app where a capped run is
+ * actually observable.
  *
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
- * @covers tugdeck/src/lib/card-session-binding-store.ts
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
+ * @covers tugdeck/src/lib/dash-session-index.ts
  * @covers tugdeck/src/lib/dash-review.ts
  */
 
@@ -50,11 +63,13 @@ const PROMPT = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 // The masthead renders in the pane title bar, ABOVE the card host — not
 // inside the card element.
 const MASTHEAD = '[data-slot="session-masthead"]';
-const CHIP = `${MASTHEAD} [data-slot="session-masthead-dash-chip"]`;
+const RUN = `${MASTHEAD} [data-slot="session-identity-dash"]`;
 const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
 
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
-const DASH_NAME = "at0406-chip";
+// Wider than the run's `ch` cap — the name is always constrained, so the
+// elision path is exercised rather than skipped.
+const DASH_NAME = "at0406-run-elides-wide";
 let planPath = "";
 
 beforeAll(() => {
@@ -117,11 +132,11 @@ const mastheadHeight = (app: App): Promise<number> =>
     `Math.round(document.querySelector(${JSON.stringify(MASTHEAD)}).getBoundingClientRect().height)`,
   );
 
-describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
+describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash run", () => {
   test(
-    "a real dash bind paints the chip on the title line and unbind takes it away",
+    "a real dash bind paints the run on the title line and unbind takes it away",
     async () => {
-      const app = await launchTugApp({ testName: "at0406-masthead-dash-chip" });
+      const app = await launchTugApp({ testName: "at0406-masthead-dash-run" });
       try {
         await app.enableDeckTrace(true);
         await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
@@ -154,7 +169,7 @@ describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
           { timeoutMs: 10000 },
         );
         expect(await app.evalJS<number>(
-          `document.querySelectorAll(${JSON.stringify(CHIP)}).length`,
+          `document.querySelectorAll(${JSON.stringify(RUN)}).length`,
         )).toBe(0);
         const bareHeight = await mastheadHeight(app);
 
@@ -167,48 +182,91 @@ describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
           ),
         );
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHIP)}) !== null`,
+          `document.querySelector(${JSON.stringify(RUN)}) !== null`,
           { timeoutMs: 15000 },
         );
 
-        const chip = await app.evalJS<{
+        const run = await app.evalJS<{
           text: string;
-          inSlot: boolean;
+          inIdentity: boolean;
           title: string | null;
-          overflowsRow: boolean;
+          overflowsLine: boolean;
         }>(
           `(() => {
-             const chip = document.querySelector(${JSON.stringify(CHIP)});
-             const slot = chip.closest(".tug-session-row-slots");
-             const line = chip.closest(".tug-session-row-name-line");
-             const c = chip.getBoundingClientRect();
+             const run = document.querySelector(${JSON.stringify(RUN)});
+             const identity = run.closest('[data-slot="tug-session-identity"]');
+             const line = run.closest(".tug-session-row-name-line");
+             const r = run.getBoundingClientRect();
              const l = line.getBoundingClientRect();
              return {
-               text: (chip.textContent ?? "").trim(),
-               inSlot: slot !== null,
-               title: chip.getAttribute("title"),
-               overflowsRow: c.right > l.right + 1,
+               text: (run.textContent ?? "").trim(),
+               inIdentity: identity !== null,
+               title: run.getAttribute("title"),
+               overflowsLine: r.right > l.right + 1,
              };
            })()`,
         );
-        expect(chip.text).toBe(DASH_NAME);
-        // Inside the title line's trailing slot — the geometry that makes a
-        // collision with the pane's control cluster impossible.
-        expect(chip.inSlot).toBe(true);
-        expect(chip.overflowsRow).toBe(false);
-        expect(chip.title).toBe(`Working on dash ${DASH_NAME}`);
-        // The chrome tier does not grow to make room for the chip.
+        expect(run.text).toBe(DASH_NAME);
+        // Inside the identity itself — the run is part of the title's grammar,
+        // not a slot beside it, which is what keeps it inside the width the
+        // masthead reserves against the pane's control cluster.
+        expect(run.inIdentity).toBe(true);
+        expect(run.overflowsLine).toBe(false);
+        expect(run.title).toBe(`Working on dash ${DASH_NAME}`);
+        // The chrome tier does not grow to make room for the run.
         expect(await mastheadHeight(app)).toBe(bareHeight);
 
-        const shot = await app.screenshot();
-        note("at0406 masthead with the dash chip", shot.path);
+        // ── The name is wider than the cap; it must elide, not clip ───────
+        // `firstGlyphInside` is where the name's first character actually
+        // paints. Text with no elidable box of its own overflows a centred
+        // flex row in both directions, putting that glyph to the LEFT of the
+        // box it is supposed to be inside — the both-ends clip.
+        const elision = await app.evalJS<{
+          hasNameSpan: boolean;
+          overflows: boolean;
+          textOverflow: string;
+          whiteSpace: string;
+          firstGlyphInside: boolean;
+        }>(
+          `(() => {
+             const run = document.querySelector(${JSON.stringify(RUN)});
+             const span = run.querySelector(".tug-session-identity-dash-name");
+             if (span === null) {
+               return { hasNameSpan: false, overflows: false, textOverflow: "",
+                        whiteSpace: "", firstGlyphInside: false };
+             }
+             const cs = getComputedStyle(span);
+             const node = span.firstChild;
+             const r = document.createRange();
+             r.setStart(node, 0);
+             r.setEnd(node, 1);
+             const glyph = r.getBoundingClientRect();
+             const box = span.getBoundingClientRect();
+             return {
+               hasNameSpan: true,
+               overflows: span.scrollWidth > span.clientWidth,
+               textOverflow: cs.textOverflow,
+               whiteSpace: cs.whiteSpace,
+               firstGlyphInside: glyph.left >= box.left - 1,
+             };
+           })()`,
+        );
+        note("at0406 dash run elision", JSON.stringify(elision));
+        expect(elision.hasNameSpan).toBe(true);
+        expect(elision.overflows).toBe(true);
+        expect(elision.textOverflow).toBe("ellipsis");
+        expect(elision.whiteSpace).toBe("nowrap");
+        expect(elision.firstGlyphInside).toBe(true);
 
-        // ── The plan drifts past its review; the chip says so ─────────────
-        // The mark is the chip's own tone rather than an element inside it —
-        // the chip is one line tall — so the contract is the attribute.
+        const shot = await app.screenshot();
+        note("at0406 masthead with the dash run", shot.path);
+
+        // ── The plan drifts past its review; the run says so ──────────────
+        // The mark is the run's own tone rather than a second glyph beside the
+        // first, so the contract is the attribute.
         expect(
           await app.evalJS<string | null>(
-            `document.querySelector(${JSON.stringify(CHIP)}).getAttribute("data-review")`,
+            `document.querySelector(${JSON.stringify(RUN)}).getAttribute("data-review")`,
           ),
         ).toBeNull();
         makePlanStale(planPath);
@@ -216,7 +274,7 @@ describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
         writeFileSync(nudge, "at0406 recompose nudge\n");
         try {
           await app.waitForCondition<boolean>(
-            `document.querySelector(${JSON.stringify(CHIP)})?.getAttribute("data-review") === "stale"`,
+            `document.querySelector(${JSON.stringify(RUN)})?.getAttribute("data-review") === "stale"`,
             { timeoutMs: 30000 },
           );
         } finally {
@@ -224,16 +282,16 @@ describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
         }
         expect(
           await app.evalJS<string | null>(
-            `document.querySelector(${JSON.stringify(CHIP)}).getAttribute("title")`,
+            `document.querySelector(${JSON.stringify(RUN)}).getAttribute("title")`,
           ),
         ).toContain("changed since");
-        // A tinted chip is still the same chip: no reflow of the chrome tier.
+        // A tinted run is still the same run: no reflow of the chrome tier.
         expect(await mastheadHeight(app)).toBe(bareHeight);
 
         // ── Unbind, for real ──────────────────────────────────────────────
         await shellAndSettle(app, `${tugutilPath(PROJECT_DIR)} dash unbind`, 1);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHIP)}) === null`,
+          `document.querySelector(${JSON.stringify(RUN)}) === null`,
           { timeoutMs: 15000 },
         );
         expect(await mastheadHeight(app)).toBe(bareHeight);

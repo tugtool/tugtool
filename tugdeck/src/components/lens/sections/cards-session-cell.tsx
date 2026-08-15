@@ -84,6 +84,10 @@ export function CardsSessionRow({
       // somewhere else, and it is the surface with the least room to show the
       // description it holds.
       identityMenu
+      // The dash rides the sub-row directly beneath this one, which carries
+      // the stage, the steps, and the review mark the title's run cannot. The
+      // same fact twice within one row's height is what this suppresses.
+      dashRun={false}
       highlight={filterQuery}
       slots={<SlotPicker cardId={cardId} />}
       // The row is its own reorder handle — a vertical drag from anywhere on

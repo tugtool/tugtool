@@ -324,12 +324,12 @@ Built by walking `snapshot.projects`, then each project's `changesets` filtered 
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | TugBadge learns to elide | pending | — |
-| #step-2 | The session-keyed dash index | pending | — |
-| #step-3 | The dash run in the identity grammar | pending | — |
-| #step-4 | Lens dash sub-rows | pending | — |
-| #step-5 | The Dashes section diet | pending | — |
-| #step-6 | Integration checkpoint | pending | — |
+| #step-1 | TugBadge learns to elide | done | `85ed6dd09` |
+| #step-2 | The session-keyed dash index | done | `2a640526d` |
+| #step-3 | The dash run in the identity grammar | done | `4253a837c` |
+| #step-4 | Lens dash sub-rows | done | `a903b6ad8` |
+| #step-5 | The Dashes section diet | done | `eb2d075f6` |
+| #step-6 | Integration checkpoint | done | `1dcd0d93e` |
 
 #### Step 1: TugBadge learns to elide {#step-1}
 

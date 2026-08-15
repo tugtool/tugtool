@@ -1,6 +1,7 @@
 /* @tug-pairings {
  * --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-default-rest | content
  * --tug7-element-global-text-normal-muted-rest | --tug7-surface-global-primary-normal-default-rest | informational
+ * --tug7-element-tone-text-normal-caution-rest | --tug7-surface-global-primary-normal-default-rest | caution
  * } */
 
 /**
@@ -8,7 +9,8 @@
  * | Element                                        | Surface                                          | Role        | Context                                   |
  * |------------------------------------------------|--------------------------------------------------|-------------|-------------------------------------------|
  * | --tug7-element-global-text-normal-default-rest | --tug7-surface-global-primary-normal-default-rest| content     | both tiers (color)                        |
- * | --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-default-rest| informational | the missing chip (color)                |
+ * | --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-default-rest| informational | the missing chip, the dash marker (color) |
+ * | --tug7-element-tone-text-normal-caution-rest   | --tug7-surface-global-primary-normal-default-rest| caution     | the dash marker's review mark (color)     |
  *
  * The theme's session-color tokens are deliberately absent: the atom paints in
  * text ink and the dot is its only color channel. The dot's own tones come from
@@ -66,6 +68,50 @@
 .tug-session-identity-private > svg {
   width: 1em;
   height: 1em;
+}
+
+/* The dash marker. A third run in the same grammar as the callsign, in the
+   same quieted ink — a dash says where the session is working, which is the
+   kind of thing the project already says.
+
+   It is the run that gives way FIRST under a squeeze, on both registers: the
+   binding is temporary and the tooltip carries it whole, while the name and
+   the callsign are the durable handles a reader scans by. `flex: 0 1 auto`
+   with a `ch` ceiling is what buys that ordering — the ceiling keeps a long
+   dash name from setting the identity's natural width in the first place, and
+   the shrink factor spends the deficit here before the title's own runs are
+   asked for any. The glyph never shrinks; only the name beside it elides. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity-dash {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.tug-session-identity-dash > svg {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+
+.tug-session-identity-dash-name {
+  min-width: 0;
+  max-inline-size: var(--tugx-session-identity-dash-max, 14ch);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The plan's review state, as the marker's own tone rather than a second glyph
+   beside the first — neither register has room for two marks, and only `stale`
+   and `never-reviewed` paint at all ([L06], `lib/dash-review.ts`). Advisory,
+   so it borrows the caution tone and never the danger one. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.tug-session-identity-dash[data-review] {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
 /* The two title runs share a baseline, so the quieter callsign sits on the

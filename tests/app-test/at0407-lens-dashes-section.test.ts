@@ -1,18 +1,20 @@
 /**
  * at0407-lens-dashes-section.test.ts — the Lens's Dashes section over a real
- * dash, through the parked → worked transition and out the jump.
+ * dash, through the parked → worked transition and out to the card.
  *
  * A dash with no live session mated to it is *parked*, and the section says so
  * with a quiet glyph rather than a dot at rest — "nobody is working this" is
  * not a state of work, and a pulsing dot on an abandoned dash is the lie this
  * pins against. Binding a real session through the card's `$` shell route
- * turns the mark into a phase dot and grows a jump chip, live, on the
- * `bind_dash_ok` broadcast plus the aggregate recompose it fires.
+ * turns the mark into a phase dot, live, on the `bind_dash_ok` broadcast plus
+ * the aggregate recompose it fires.
  *
- * The jump is the section's only gesture in this era: it dispatches
- * `focus-session-card`, and the card working the dash becomes the active one.
- * The Lens is the active card until then, which is what makes the assertion
- * mean something.
+ * The section is the roster now, and carries no per-session jump chips: those
+ * were how a reader got TO the session working a dash, and the Cards section's
+ * dash sub-row is already there. Activating the ROW is the one gesture left —
+ * it dispatches `focus-session-card`, and the card working the dash becomes
+ * the active one. The Lens is the active card until then, which is what makes
+ * the assertion mean something.
  *
  * And back again: `dash unbind` returns the row to the parked mark. The round
  * trip is the point — the mark is derived from the live bindings on every
@@ -61,7 +63,7 @@ const SECTION = '.lens-section[data-lens-section="dashes"]';
 const DASH_NAME = "at0407-lens";
 const ROW = `${SECTION} [data-slot="lens-dashes-row"][data-dash="${DASH_NAME}"]`;
 const PARKED = `${ROW} [data-slot="lens-dashes-parked"]`;
-const JUMP = `${ROW} [data-slot="lens-dashes-jump"]`;
+const DOT = `${ROW} [data-slot="tug-progress-indicator"]`;
 
 /** The review mark's own dash — a second one, so the parked/worked test above
  *  keeps reading a dash with no plan at all (which paints nothing, ever). */
@@ -128,7 +130,7 @@ async function shellAndSettle(
 
 describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
   test(
-    "a parked dash wears the quiet mark; binding a session gives it a dot and a jump that fronts the card",
+    "a parked dash wears the quiet mark; binding a session gives it a dot, and the row fronts the card",
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
@@ -173,7 +175,7 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
         const parked = await app.evalJS<{
           text: string;
           marks: number;
-          jumps: number;
+          dots: number;
           flag: string | null;
         }>(
           `(() => {
@@ -181,7 +183,7 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
              return {
                text: (row.querySelector(".lens-dashes-facts")?.textContent ?? "").trim(),
                marks: row.querySelectorAll('[data-slot="lens-dashes-parked"]').length,
-               jumps: row.querySelectorAll('[data-slot="lens-dashes-jump"]').length,
+               dots: row.querySelectorAll('[data-slot="tug-progress-indicator"]').length,
                flag: row.getAttribute("data-parked"),
              };
            })()`,
@@ -190,19 +192,19 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
         // A freshly created dash with no round and no dirt is `created`.
         expect(parked.text).toContain("created");
         expect(parked.marks).toBe(1);
-        expect(parked.jumps).toBe(0);
+        expect(parked.dots).toBe(0);
         expect(parked.flag).toBe("true");
 
         // The Lens is the active card — so a later "A" reading can only come
-        // from the jump.
+        // from the row activation.
         expect(await app.evalJS<string | null>(`window.__tug.getActiveCardId()`)).not.toBe(
           "A",
         );
 
-        // ── Bind for real: the mark becomes a dot and a jump appears ───────
+        // ── Bind for real: the parked mark becomes a phase dot ─────────────
         await shellAndSettle(app, `${tugutilPath(PROJECT_DIR)} dash bind ${DASH_NAME}`);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(JUMP)}) !== null`,
+          `document.querySelector(${JSON.stringify(DOT)}) !== null`,
           { timeoutMs: 30000 },
         );
         const worked = await app.evalJS<{ marks: number; flag: string | null; dots: number }>(
@@ -219,11 +221,13 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
         expect(worked.flag).toBeNull();
         expect(worked.dots).toBe(1);
 
-        // ── The jump fronts the card working the dash ─────────────────────
+        // ── Activating the ROW fronts the card working the dash ───────────
+        // The section's one gesture now that the jump chips are retired: the
+        // row IS the dash, so the row is what acts on it.
         // The shell exchange put the first responder back in the card's
         // composer, so re-raise the Lens before clicking inside it.
         await app.dispatchControlAction("focus-lens");
-        await app.nativeClickAtElement(JUMP);
+        await app.nativeClickAtElement(ROW);
         await app.waitForCondition<boolean>(
           `window.__tug.getActiveCardId() === "A"`,
           { timeoutMs: 8000 },
@@ -239,7 +243,7 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
           { timeoutMs: 30000 },
         );
         expect(await app.evalJS<number>(
-          `document.querySelectorAll(${JSON.stringify(JUMP)}).length`,
+          `document.querySelectorAll(${JSON.stringify(DOT)}).length`,
         )).toBe(0);
       } finally {
         await app.close();

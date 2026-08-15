@@ -60,7 +60,11 @@ const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
 const ROUTE_GROUP = `${TOOLBAR} .tug-prompt-entry-route-group`;
 const SHEET = `${CARD} .session-view-pane[data-view="changes"] [data-slot="tug-sheet"]`;
 const BULLETIN = ".tug-pane-bulletin";
-const CHIP = '[data-slot="session-masthead-dash-chip"]';
+// The dash marker on the masthead's title line — the identity's own run
+// since the masthead badge was retired. Scoped to the masthead, because a
+// line-tier identity anywhere else (a Lens row, a picker row) wears it too.
+const CHIP =
+  '[data-slot="session-masthead"] [data-slot="session-identity-dash"]';
 
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 

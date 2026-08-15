@@ -29,6 +29,18 @@
  * places it — and a session with no known project degrades to the callsign
  * alone.
  *
+ * **A dash is a third run, not a badge beside the name.** A dash says where the
+ * session is working, which is the same *kind* of fact as the project already
+ * riding the callsign — so it joins the grammar rather than competing with the
+ * mount site's chrome for a slot. Its loudness inverts with the register for
+ * the same reason the elision rules do: on the line tier there is room for the
+ * `git-branch` glyph and the dash name, quiet, elided first under a squeeze; on
+ * the atom the glyph alone marks it and the name rides the tooltip, because a
+ * citation is compact by definition and the binding is temporary while the
+ * citation is not. The dash never enters {@link sessionCitation} at all — the
+ * flat string outlives the binding in pastes and commits, and one carrying a
+ * dash would rot.
+ *
  * **The atom paints in text ink.** The pill's run and border take the ordinary
  * text color and a `currentcolor` mix; the dot is its only color channel,
  * because a colored pill around a colored dot was two tints saying one thing.
@@ -66,7 +78,7 @@
 import "./tug-session-identity.css";
 
 import React, { useSyncExternalStore } from "react";
-import { EyeOff } from "lucide-react";
+import { EyeOff, GitBranch } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
@@ -79,6 +91,11 @@ import { sessionTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useSessionIdentityMenu } from "@/components/tugways/session-identity-menu";
 import { useCardIdForSession } from "@/lib/card-session-binding-store";
+import { dashReviewPaints, dashReviewTooltip } from "@/lib/dash-review";
+import {
+  useDashForSession,
+  type DashSessionFact,
+} from "@/lib/dash-session-index";
 import { sessionSessionPhaseVisual } from "@/lib/code-session-store/session-phase-visual";
 import { useCitedSession } from "@/lib/session-citation-store";
 import {
@@ -183,6 +200,17 @@ export interface TugSessionIdentityProps
    * @default true
    */
   tooltip?: boolean;
+  /**
+   * Whether the title carries the bound dash's run.
+   *
+   * Off where the mount site states the same fact more fully directly beneath
+   * the title — the Lens Cards rows nest a dash sub-row carrying the stage,
+   * the step counters, and the review mark, and the run above it would be the
+   * same fact twice within one row's height. The default says on, so a surface
+   * that adds nothing of its own inherits it.
+   * @default true
+   */
+  dashRun?: boolean;
 }
 
 /**
@@ -220,15 +248,78 @@ function SessionPrivacyMarker({
 }
 
 /**
+ * The dash marker: a leaf subscription, like {@link SessionPrivacyMarker} and
+ * for the same reason. A dash binding is a mode the session is in, not part of
+ * its identity, so folding it into the identity record would wake every
+ * identity surface in the app whenever any session bound or unbound.
+ *
+ * `name` is what the tier asks for: the line tier passes it and gets the glyph
+ * plus the dash name, the atom passes nothing and gets the glyph alone. The
+ * review state paints as a `data-review` attribute the CSS reads ([L06]) — the
+ * mark is the run's own tone, since neither register has room for a second
+ * glyph beside the first.
+ */
+function SessionDashMarker({
+  sessionId,
+  withName,
+}: {
+  sessionId: string;
+  withName: boolean;
+}): React.ReactElement | null {
+  const dash = useDashForSession(sessionId);
+  if (dash === null) return null;
+  const marked = dashReviewPaints(dash.review);
+  return (
+    <span
+      className="tug-session-identity-dash"
+      data-slot="session-identity-dash"
+      data-review={marked ? dash.review : undefined}
+      title={dashMarkerTitle(dash)}
+    >
+      <GitBranch aria-label={`On dash ${dash.name}`} />
+      {withName ? (
+        <span className="tug-session-identity-dash-name">{dash.name}</span>
+      ) : null}
+    </span>
+  );
+}
+
+/** One sentence for the dash marker, review state folded in when it paints. */
+function dashMarkerTitle(dash: DashSessionFact): string {
+  const lead = `Working on dash ${dash.name}`;
+  return dashReviewPaints(dash.review)
+    ? `${lead} — ${dashReviewTooltip(dash.review!, null)}`
+    : lead;
+}
+
+/**
+ * The hover's dash row — a leaf of its own rather than a value threaded in, so
+ * the identity that mounts this does not subscribe to the changeset aggregate
+ * just to describe itself. The same reason the marker beside the runs is one.
+ *
+ * It wears `entity-tips`' own meta class, because it is a row in that tip and
+ * not a thing this component styles.
+ */
+function SessionDashTipLine({
+  sessionId,
+}: {
+  sessionId: string;
+}): React.ReactElement | null {
+  const dash = useDashForSession(sessionId);
+  if (dash === null) return null;
+  return <span className="tugx-tip-meta">{dashMarkerTitle(dash)}</span>;
+}
+
+/**
  * The identity's hover content: what the run cannot show — the description,
- * the lineage, and the citation, which is the flat-text form a reader would
- * paste elsewhere.
+ * the lineage, where the session is working, and the citation, which is the
+ * flat-text form a reader would paste elsewhere.
  *
  * The rows are {@link sessionTip}'s, because a session is an entity and an
  * entity has one hover wherever it is pointed at (`entity-tips.tsx`). This
- * once drew its own four rows in its own class names — the same four rows in
- * the same order, one bubble variant narrower — so a session and the commit
- * beside it described themselves in two different shapes.
+ * once drew its own rows in its own class names — the same rows in the same
+ * order, one bubble variant narrower — so a session and the commit beside it
+ * described themselves in two different shapes.
  */
 function identityTooltip(identity: SessionIdentity): React.ReactNode {
   return sessionTip({
@@ -236,6 +327,9 @@ function identityTooltip(identity: SessionIdentity): React.ReactNode {
     description: identity.description,
     lineage: identity.lineage,
     citation: sessionCitation(identity, { project: true }),
+    // A leaf, so the surface holding this identity does not subscribe to the
+    // changeset aggregate just to be able to describe itself.
+    extra: <SessionDashTipLine sessionId={identity.id} />,
   });
 }
 
@@ -253,6 +347,7 @@ export const TugSessionIdentity = React.forwardRef<
     onOpen,
     hostCardId,
     tooltip = true,
+    dashRun = true,
     className,
     ...rest
   },
@@ -344,6 +439,12 @@ export const TugSessionIdentity = React.forwardRef<
           </span>
         ) : null}
       </span>
+      {/* A citation that resolved to nothing has no live binding to report —
+          the ledger does not hold the session, so it holds no dash for it
+          either. Same rule as the privacy marker directly below. */}
+      {isMissing || !dashRun ? null : (
+        <SessionDashMarker sessionId={identity.id} withName={!isChip} />
+      )}
       {isMissing ? null : <SessionPrivacyMarker sessionId={identity.id} />}
     </span>
   );

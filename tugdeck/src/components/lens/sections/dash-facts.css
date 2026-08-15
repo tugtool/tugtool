@@ -1,0 +1,62 @@
+/**
+ * @tug-pairings
+ * | Element                                        | Surface                                           | Role    | Context                         |
+ * |------------------------------------------------|---------------------------------------------------|---------|---------------------------------|
+ * | --tug7-element-global-text-normal-rest         | --tug7-surface-global-primary-normal-default-rest | content | the dash name (color)           |
+ * | --tug7-element-global-text-normal-muted-rest   | --tug7-surface-global-primary-normal-default-rest | informational | stage and steps (color)   |
+ * | --tug7-element-tone-icon-normal-caution-rest   | --tug7-surface-global-primary-normal-default-rest | caution | the stale mark (color)          |
+ * | --tug7-element-global-text-normal-subtle-rest  | --tug7-surface-global-primary-normal-default-rest | subtle  | the never-reviewed mark (color) |
+ */
+
+/* The name is the only run that gives way: the stage and the counters are
+   short and fixed-length, and losing them would cost the reader the state
+   while leaving a name they can already see in full. */
+.lens-dashes-facts {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-sm);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.lens-dashes-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--tug-font-size-sm);
+  color: var(--tug7-element-global-text-normal-rest);
+}
+
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.lens-dashes-stage,
+.lens-dashes-step {
+  flex: 0 0 auto;
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The review mark. Advisory, so it takes the caution tone rather than the
+   danger one: nothing is broken, a document has drifted. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.lens-dashes-review {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  color: var(
+    --lens-dashes-review-color,
+    var(--tug7-element-tone-icon-normal-caution-rest)
+  );
+}
+
+/* Quieter than `stale`: nothing has MOVED there, so nothing is out of date —
+   nothing has vouched either, which is the smaller claim. */
+/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
+.lens-dashes-review[data-review="never-reviewed"] {
+  color: var(
+    --lens-dashes-review-never-color,
+    var(--tug7-element-global-text-normal-subtle-rest)
+  );
+}

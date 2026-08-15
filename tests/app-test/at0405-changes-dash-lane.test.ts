@@ -21,8 +21,16 @@
  *
  * The lane's two binding gestures live here too, and are driven for real:
  * Leave on the fronted row sends `unbind_dash`, Adopt on a non-fronted row
- * sends `bind_dash`, and both the masthead chip and the lane's fronting move
- * on the broadcast that comes back rather than on the click.
+ * sends `bind_dash`, and the lane's fronting moves on the broadcast that comes
+ * back rather than on the click.
+ *
+ * What the masthead says about the binding is NOT asserted here, and that is
+ * deliberate. The dash rides the title's own grammar now, derived from the
+ * dash's `bound_sessions` in the account-global aggregate — so it answers to
+ * server state, and the initial bind in this file is a synthesized
+ * `bind_dash_ok` rather than a real one. at0406 drives that whole loop through
+ * the real CLI and pins the run against it; asserting it here would have meant
+ * asserting it against a fabricated frame.
  *
  * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-lane.tsx
  * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-view.tsx
@@ -60,7 +68,6 @@ const ROW = `${LANE} [data-slot="session-changes-dash-row"][data-dash="${DASH_NA
 const ROW_FOLD = `${ROW} [data-slot="session-changes-dash-fold"]`;
 const LEAVE = `${ROW} [data-slot="session-changes-dash-leave"]`;
 const ADOPT = `${ROW} [data-slot="session-changes-dash-adopt"]`;
-const CHIP = '[data-slot="session-masthead-dash-chip"]';
 
 /** The checkout this file sits in — the project the aggregate composes, per
  *  at0332's rule. */
@@ -369,26 +376,16 @@ describe.skipIf(!SHOULD_RUN)("AT0405: the Changes shade's dash lane", () => {
         );
         expect(affordances.leave).toBe(1);
         expect(affordances.adopt).toBe(0);
-        expect(
-          await app.evalJS<number>(
-            `document.querySelectorAll(${JSON.stringify(CHIP)}).length`,
-          ),
-        ).toBe(1);
 
         // ── Leave: the real `unbind_dash` round trip ──────────────────────
-        // The chip and the fronting both move on the `unbind_dash_ok`
-        // broadcast, never on the click — nothing here writes the binding
-        // store optimistically, so these assertions are about the round trip.
+        // The fronting moves on the `unbind_dash_ok` broadcast, never on the
+        // click — nothing here writes the binding store optimistically, so
+        // this assertion is about the round trip.
         await app.nativeClickAtElement(LEAVE);
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(FRONTED_LABEL)}) === null`,
           { timeoutMs: 15000 },
         );
-        expect(
-          await app.evalJS<number>(
-            `document.querySelectorAll(${JSON.stringify(CHIP)}).length`,
-          ),
-        ).toBe(0);
 
         // ── Adopt: and back again, the same way ───────────────────────────
         // The row fell back into the collapsed rest group when it stopped
@@ -402,8 +399,8 @@ describe.skipIf(!SHOULD_RUN)("AT0405: the Changes shade's dash lane", () => {
         // double-bind.
         await clickUntil(app, ADOPT, FRONTED_LABEL);
         expect(
-          await app.evalJS<string>(
-            `(document.querySelector(${JSON.stringify(CHIP)})?.textContent ?? "").trim()`,
+          await app.evalJS<string | null>(
+            `document.querySelector(${JSON.stringify(`${LANE} [data-slot="session-changes-dash-row"]`)})?.getAttribute("data-dash") ?? null`,
           ),
         ).toBe(DASH_NAME);
       } finally {

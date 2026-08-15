@@ -14,6 +14,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import type { CardSessionBinding } from "@/lib/card-session-binding-store";
+import type { WorkspacesChangesetSnapshot } from "@/lib/changeset-types";
 
 import {
   assignDisambiguators,
@@ -123,6 +124,7 @@ function inputs(
     bindings: new Map(),
     tagVersion: 0,
     nameVersion: 0,
+    changesets: null,
     ...over,
   };
 }
@@ -134,6 +136,7 @@ function shape(rows: readonly CardsRow[]): string[] {
       return `header:${row.group}(${row.count})${row.collapsed ? "-collapsed" : ""}`;
     }
     if (row.type === "pane") return `pane:${row.rowKind}:${row.identity.title}`;
+    if (row.type === "dash-subrow") return `  dash:${row.dash.name}`;
     return `  card:${row.identity.title}${row.active ? "*" : ""}`;
   });
 }
@@ -983,5 +986,205 @@ describe("summarizeGroup", () => {
       file("/x/g.rs"),
     ]);
     expect(summary).toBe("2 Images · 2 Markdown · 1 CSS · +2 more");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dash sub-rows
+// ---------------------------------------------------------------------------
+
+describe("dash sub-rows", () => {
+  const SESSION_GROUPS = { session: "sessions" as const, lens: "none" as const };
+
+  /** A snapshot whose one dash binds `sessions`. */
+  function snapshotWith(
+    sessions: string[],
+    extra: Partial<{
+      name: string;
+      ownerId: string;
+      stage: string;
+      review: string;
+      stepCurrent: number;
+      stepTotal: number;
+    }> = {},
+  ): WorkspacesChangesetSnapshot {
+    return {
+      projects: [
+        {
+          workspace_key: "ws",
+          project_dir: "/Users/k/src/proj",
+          display_name: "proj",
+          no_repo: false,
+          branch: "main",
+          ahead: 0,
+          behind: 0,
+          head_sha: "abc",
+          head_message: "head",
+          unattributed: [],
+          changesets: [
+            {
+              kind: "dash",
+              owner_id: extra.ownerId ?? "tugdash/fix#1",
+              display_name: extra.name ?? "fix",
+              stage: extra.stage ?? "working",
+              review: extra.review,
+              step_current: extra.stepCurrent,
+              step_total: extra.stepTotal,
+              bound_sessions: sessions,
+              base: "main",
+              rounds: 0,
+              worktree: "/tmp/wt",
+              worktree_dirty: false,
+              files: [],
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  const oneSession = deck(
+    [card("s1", "session")],
+    [pane("p1", ["s1"])],
+  );
+
+  it("nests under the session it is bound to", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"]),
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(shape(rows)).toEqual([
+      "header:sessions(1)",
+      "pane:session-pane:session sess-1",
+      "  dash:fix",
+    ]);
+  });
+
+  it("emits nothing for a session no dash claims", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["someone-else"]),
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(rows.some((row) => row.type === "dash-subrow")).toBe(false);
+  });
+
+  it("emits nothing before the aggregate has said anything", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: null,
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(rows.some((row) => row.type === "dash-subrow")).toBe(false);
+  });
+
+  it("one dash on two sessions renders under each, with distinct ids", () => {
+    // The sub-row states a fact about the row ABOVE it, and both facts are
+    // true — so the owner key alone could not be the list id.
+    const two = deck(
+      [card("s1", "session"), card("s2", "session")],
+      [pane("p1", ["s1"]), pane("p2", ["s2"])],
+    );
+    const rows = buildCardsRows(
+      inputs(two, {
+        bindings: new Map([
+          ["s1", binding("sess-1")],
+          ["s2", binding("sess-2")],
+        ]),
+        changesets: snapshotWith(["sess-1", "sess-2"]),
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    const subrows = rows.filter((row) => row.type === "dash-subrow");
+    expect(subrows.length).toBe(2);
+    expect(subrows.map(idOfRow)).toEqual([
+      "dash:tugdash/fix#1:p1",
+      "dash:tugdash/fix#1:p2",
+    ]);
+    expect(subrows.map(kindOfRow)).toEqual(["dash-subrow", "dash-subrow"]);
+  });
+
+  it("a collapsed group emits neither the pane row nor its sub-row", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"]),
+        collapsedGroups: ["sessions"],
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(shape(rows)).toEqual(["header:sessions(1)-collapsed"]);
+  });
+
+  it("filtering by the dash name keeps the session and its sub-row", () => {
+    // The session's own text says nothing about the dash, so this passes only
+    // because the dash name joined the pane row's match fields.
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"], { name: "marmalade" }),
+        filterQuery: "marmal",
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(shape(rows)).toEqual([
+      "header:sessions(1)",
+      "pane:session-pane:session sess-1",
+      "  dash:marmalade",
+    ]);
+  });
+
+  it("a filtered-out session takes its sub-row with it", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"]),
+        filterQuery: "nothing-matches-this",
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it("carries the stage, the counters, and the review state", () => {
+    const rows = buildCardsRows(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"], {
+          stage: "implementing",
+          review: "stale",
+          stepCurrent: 2,
+          stepTotal: 5,
+        }),
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    const sub = rows.find((row) => row.type === "dash-subrow");
+    expect(sub?.type).toBe("dash-subrow");
+    if (sub?.type !== "dash-subrow") throw new Error("no sub-row");
+    expect(sub.dash.stage).toBe("implementing");
+    expect(sub.dash.steps).toBe("step 2/5");
+    expect(sub.dash.review).toBe("stale");
+    expect(sub.cardId).toBe("s1");
+  });
+
+  it("never enters the reorder's visible order", () => {
+    // `useBlockReorder` walks pane rows only; a sub-row appearing here would
+    // be handed to `beginDrag` with no matching element and abort the drag.
+    const source = new LensCardsDataSource(
+      inputs(oneSession, {
+        bindings: new Map([["s1", binding("sess-1")]]),
+        changesets: snapshotWith(["sess-1"]),
+      }),
+      resolvers({ groups: SESSION_GROUPS }),
+    );
+    expect(source.visibleOrder()).toEqual(["sess-1"]);
   });
 });

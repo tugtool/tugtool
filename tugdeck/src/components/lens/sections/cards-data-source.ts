@@ -44,6 +44,11 @@ import type {
 import type { CardState, DeckState, TugPaneState } from "@/layout-tree";
 import { findLensPane } from "@/deck-store-selectors";
 import type { CardSessionBinding } from "@/lib/card-session-binding-store";
+import type { WorkspacesChangesetSnapshot } from "@/lib/changeset-types";
+import {
+  dashSessionIndex,
+  type DashSessionFact,
+} from "@/lib/dash-session-index";
 import { getDeckStore } from "@/lib/deck-store-registry";
 import {
   countedFileType,
@@ -238,12 +243,31 @@ export type CardsRow =
       readonly identity: CardIdentity;
       /** This card is its pane's active tab. */
       readonly active: boolean;
+    }
+  | {
+      /**
+       * The dash the row above is working on, nested under it.
+       *
+       * It states a fact ABOUT the pane row directly above it, which is why a
+       * dash bound to two sessions truthfully emits one under each rather than
+       * picking a winner. It is not a pane row: it never appears in
+       * {@link LensCardsDataSource.visibleOrder}, carries no reorder key, and
+       * is never a drag handle.
+       */
+      readonly type: "dash-subrow";
+      readonly group: LensCardsGroup;
+      /** The pane row this sits under — half of the row's list id. */
+      readonly paneId: string;
+      /** The card to front when the sub-row is activated. */
+      readonly cardId: string;
+      readonly dash: DashSessionFact;
     };
 
 /** The cell renderer key `TugListView` dispatches on. */
 export function kindOfRow(row: CardsRow): string {
   if (row.type === "group-header") return "group-header";
   if (row.type === "card") return "subcard";
+  if (row.type === "dash-subrow") return "dash-subrow";
   return row.rowKind;
 }
 
@@ -256,6 +280,10 @@ export function idOfRow(row: CardsRow): string {
       return `pane:${row.paneId}`;
     case "card":
       return `card:${row.identity.cardId}`;
+    // Keyed by BOTH: one dash bound to two sessions renders under each, so the
+    // owner key alone would collide.
+    case "dash-subrow":
+      return `dash:${row.dash.ownerId}:${row.paneId}`;
   }
 }
 
@@ -343,6 +371,17 @@ export interface LensCardsInputs {
    * before the user changed it.
    */
   readonly nameVersion: unknown;
+  /**
+   * The account-global changeset aggregate, for the dash sub-rows. Null before
+   * the connection is up, which emits none — the same as no dash at all, and
+   * the honest reading of "nothing has said yet".
+   *
+   * A whole snapshot rather than a version token because the projection needs
+   * the dash's facts, not just notice that something moved; it is memoized per
+   * snapshot identity ({@link dashSessionIndex}), so a recompute costs one map
+   * lookup per session row.
+   */
+  readonly changesets: WorkspacesChangesetSnapshot | null;
 }
 
 /** Which cell renders a single-card pane of this group. */
@@ -514,6 +553,17 @@ export function buildCardsRows(
   const deck = inputs.deck;
   if (deck === null) return [];
 
+  // Session → dash, memoized on the snapshot, so every row's lookup is a map
+  // hit rather than a walk of the aggregate.
+  const dashes =
+    inputs.changesets === null
+      ? null
+      : dashSessionIndex(inputs.changesets);
+  const dashFor = (identity: CardIdentity): DashSessionFact | null =>
+    dashes === null || identity.tugSessionId === null
+      ? null
+      : dashes.get(identity.tugSessionId) ?? null;
+
   const cardsById = new Map(deck.cards.map((c) => [c.id, c]));
   const cardSeq = new Map(deck.cards.map((c, i) => [c.id, i]));
   const lensPaneId = findLensPane(deck)?.id;
@@ -587,9 +637,13 @@ export function buildCardsRows(
     //    show depends on which side matched: when the pane's own text matched,
     //    all of them (the user found the pane, so they get the pane); when only
     //    children matched, just those children.
+    // The dash NAME joins the pane's match fields: a reader who types a dash
+    // name is looking for the session working it, and the sub-row that would
+    // answer only shows under a pane row that survived.
     const survivors = filtering
       ? filterAndRank(ordered, query, (entry) => [
           ...matchFields(entry.identity),
+          dashFor(entry.identity)?.name ?? null,
           ...entry.cards.flatMap((c) => matchFields(c)),
         ])
       : ordered;
@@ -621,6 +675,21 @@ export function buildCardsRows(
         rowKind: multi ? "stack-pane" : PANE_KIND_FOR_GROUP[group],
         disambiguator: disambiguatorByPane.get(entry.pane.id) ?? null,
       });
+
+      // The dash nests directly under the row it is a fact about. Emitted only
+      // after a SURVIVING pane row, so it inherits every rule the row above it
+      // is subject to — a collapsed group emits neither, and a filtered-out
+      // pane takes its sub-row with it.
+      const dash = dashFor(entry.identity);
+      if (dash !== null) {
+        rows.push({
+          type: "dash-subrow",
+          group,
+          paneId: entry.pane.id,
+          cardId: entry.identity.cardId,
+          dash,
+        });
+      }
       if (!multi) continue;
 
       const paneMatched =
@@ -748,7 +817,8 @@ export class LensCardsDataSource implements TugListViewDataSource {
       this.inputs.registryVersion === next.registryVersion &&
       this.inputs.bindings === next.bindings &&
       this.inputs.tagVersion === next.tagVersion &&
-      this.inputs.nameVersion === next.nameVersion
+      this.inputs.nameVersion === next.nameVersion &&
+      this.inputs.changesets === next.changesets
     ) {
       return false;
     }

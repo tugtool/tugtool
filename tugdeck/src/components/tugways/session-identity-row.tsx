@@ -512,6 +512,13 @@ export interface SessionIdentityRowProps
    */
   identityMenu?: boolean;
   /**
+   * Whether the title carries the bound dash's run. See
+   * {@link TugSessionIdentityProps.dashRun} — off where the mount site states
+   * the dash more fully somewhere else in the same row.
+   * @default true
+   */
+  dashRun?: boolean;
+  /**
    * The card this row is MOUNTED IN, for the menu's go-to item. Only a surface
    * that is a card's own chrome needs to say — the masthead renders in the
    * pane title bar, above the card host whose context every other mount reads.
@@ -539,6 +546,7 @@ export function SessionIdentityRow({
   activityClassName,
   nameProps,
   identityMenu = false,
+  dashRun = true,
   hostCardId,
   className,
   ...rest
@@ -681,6 +689,7 @@ export function SessionIdentityRow({
       identity={identity}
       tier="line"
       dot={false}
+      dashRun={dashRun}
       highlight={highlight}
       // Where the row answers a right-click, the hover says nothing. Both were
       // showing the session's name and description over a row already showing

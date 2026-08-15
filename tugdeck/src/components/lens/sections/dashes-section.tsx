@@ -8,12 +8,25 @@
  * Rows key on the dash's **owner key**, which makes two incarnations of a
  * reused name distinct for free.
  *
- * A dash reads in dash grammar here too — name, stage, and who is working it —
- * never in the grammar of a card or a file. What the row answers that no other
- * surface does is *whether anyone is on it*: a dash with live bound sessions
- * wears a phase dot and offers a jump to the card holding one; a dash with
- * none wears the parked mark, which is a quiet glyph rather than a dot,
- * because "nobody is working this" is not a state of work.
+ * A dash reads in dash grammar here too — name, stage, and whether anyone is
+ * on it — never in the grammar of a card or a file. A dash with live bound
+ * sessions wears a phase dot; a dash with none wears the parked mark, which is
+ * a quiet glyph rather than a dot, because "nobody is working this" is not a
+ * state of work.
+ *
+ * **This is the roster, not the workbench.** The Cards section nests a dash
+ * sub-row under the session working it — that is where a reader asks "what is
+ * this session doing". This section answers the other question, account-
+ * globally: what dashes exist, and which of them need attention. A worked dash
+ * therefore appears in both places, and that is two surfaces answering two
+ * questions rather than a duplication. It is also why this section is the one
+ * that cannot be dropped: a **parked** dash has no session to nest under, and
+ * every dash has to stay findable in the Lens.
+ *
+ * The per-session jump chips this row used to carry are gone for the same
+ * reason: they were how you got TO the session working a dash, and the sub-row
+ * is already there. The facts run — name, stage, steps, review mark — is shared
+ * with that sub-row ({@link DashFactsRun}), so the two cannot drift.
  *
  * **Liveness is a leaf.** Phase lives on per-card `codeSessionStore` snapshots
  * that move on every transcript event; a row projection subscribed to that
@@ -32,7 +45,7 @@
  * Laws: [L02] the aggregate and the bindings enter React through
  * `useSyncExternalStore`; [L03] the section's content declaration is a
  * `useLayoutEffect`; [L06] the parked mark and the row's tone are CSS on DOM
- * attributes, never React state; [L11] the jump dispatches
+ * attributes, never React state; [L11] row activation dispatches
  * `focus-session-card` rather than reaching into a card; [L13] the dot's
  * motion is the progress indicator's; [L19] rows compose `TugListView` /
  * `TugListRow` rather than hand-rolling list focus.
@@ -43,15 +56,15 @@
 import "./dashes-section.css";
 
 import React, { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { CircleDashed, FileClock, FileQuestion, GitBranch } from "lucide-react";
+import { CircleDashed, GitBranch } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import { setSectionContent } from "@/components/lens/lens-section-content";
+import { DashFactsRun } from "@/components/lens/sections/dash-facts";
 import { registerLensSection } from "@/components/lens/lens-section-registry";
 import type { LensSectionHost } from "@/components/lens/lens-section-registry";
 import { SessionPhaseDot } from "@/components/tugways/session-phase-dot";
-import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugListView } from "@/components/tugways/tug-list-view";
 import type {
@@ -61,12 +74,8 @@ import type {
   TugListViewDelegate,
 } from "@/components/tugways/tug-list-view";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
-import {
-  cardIdForSession,
-  useCardIdForSession,
-} from "@/lib/card-session-binding-store";
+import { cardIdForSession } from "@/lib/card-session-binding-store";
 import { useChangesetAll } from "@/lib/changeset-all-store";
-import { dashReviewPaints, dashReviewTooltip } from "@/lib/dash-review";
 import type {
   DashChangesetEntry,
   WorkspacesChangesetSnapshot,
@@ -238,64 +247,6 @@ function DashParkedMark(): React.ReactElement {
   );
 }
 
-/**
- * The stale-review mark ([P03], [P07]): advisory, and absent unless there is
- * something to say. The Lens row spans projects on one line, so the tooltip
- * names the state and not the plan's path — the path is the shade's to show.
- */
-function DashReviewMark({ review }: { review: string }): React.ReactElement {
-  const Glyph = review === "stale" ? FileClock : FileQuestion;
-  return (
-    <TugTooltip content={dashReviewTooltip(review, null)}>
-      <span
-        className="lens-dashes-review"
-        data-slot="lens-dashes-review"
-        data-review={review}
-        aria-label={dashReviewTooltip(review, null)}
-      >
-        <Glyph size={DASH_DOT_SIZE + 2} />
-      </span>
-    </TugTooltip>
-  );
-}
-
-/**
- * A jump to the card holding one of this dash's sessions.
- *
- * Subscribed (`useCardIdForSession`) rather than resolved once, because this
- * decides whether to OFFER the gesture: a chip that kept offering a click into
- * a card that has closed is worse than no chip. A session with no open card
- * renders as inert muted text — the fact is still true, there is just nowhere
- * to go.
- */
-function DashSessionJump({ sessionId }: { sessionId: string }): React.ReactElement {
-  const cardId = useCardIdForSession(sessionId);
-  const label = sessionId.slice(0, 8);
-  if (cardId === null) {
-    return (
-      <span className="lens-dashes-jump-inert" data-slot="lens-dashes-jump-inert">
-        {label}
-      </span>
-    );
-  }
-  return (
-    <TugBadge
-      emphasis="tinted"
-      role="action"
-      size="2xs"
-      className="lens-dashes-jump"
-      data-slot="lens-dashes-jump"
-      title="Front the card working this dash"
-      onClick={(event) => {
-        event.stopPropagation();
-        dispatchCommand("focus-session-card", { cardId });
-      }}
-    >
-      {label}
-    </TugBadge>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // The list
 // ---------------------------------------------------------------------------
@@ -342,31 +293,19 @@ const DashCell: TugListViewCellRenderer<DashRowsDataSource> = ({
           <DashPhaseDot sessionId={row.boundSessions[0]!} />
         )
       }
-      trailing={
-        row.boundSessions.length > 0 ? (
-          <span className="lens-dashes-jumps">
-            {row.boundSessions.map((sessionId) => (
-              <DashSessionJump key={sessionId} sessionId={sessionId} />
-            ))}
-          </span>
-        ) : undefined
-      }
     >
-      <span className="lens-dashes-facts">
-        <span className="lens-dashes-name">{row.name}</span>
-        {row.stage !== null ? (
-          <span className="lens-dashes-stage">{row.stage}</span>
-        ) : null}
-        {row.steps !== null ? (
-          <span className="lens-dashes-step">{row.steps}</span>
-        ) : null}
-        {dashReviewPaints(row.review) ? (
-          <DashReviewMark review={row.review!} />
-        ) : null}
-        {row.projectLabel !== null ? (
-          <span className="lens-dashes-project">{row.projectLabel}</span>
-        ) : null}
-      </span>
+      <DashFactsRun
+        name={row.name}
+        stage={row.stage}
+        steps={row.steps}
+        review={row.review}
+        markSize={DASH_DOT_SIZE + 2}
+        trailing={
+          row.projectLabel !== null ? (
+            <span className="lens-dashes-project">{row.projectLabel}</span>
+          ) : undefined
+        }
+      />
     </TugListRow>
   );
 };
@@ -399,9 +338,8 @@ function DashesSectionBody({ host }: { host: LensSectionHost }): React.ReactElem
       setSectionContent(host.focusGroup, { navigable: false, populated: false });
   }, [host.focusGroup, populated]);
 
-  // Activating a row is the same gesture as its jump chip: front the card
-  // working this dash. A dash nobody's card holds has nowhere to go, so
-  // activation is a no-op rather than a guess.
+  // Activating a row fronts the card working this dash. A dash nobody's card
+  // holds has nowhere to go, so activation is a no-op rather than a guess.
   const delegate = useMemo<TugListViewDelegate>(() => {
     const activate = (index: number): void => {
       const row = rows[index];

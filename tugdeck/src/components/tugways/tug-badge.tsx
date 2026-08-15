@@ -210,6 +210,13 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
     // `.tug-badge-stack` column; single layout keeps the icon + children
     // inline. DOM order is stable (caption first); `content-top` reverses
     // only the visual order.
+    //
+    // The text always rides its own `.tug-badge-text` span. The badge root
+    // and the two-line content row are flex containers, and `text-overflow`
+    // is inert on a flex container — its text is an anonymous flex item with
+    // no box to elide, so a constrained badge clips instead of ellipsizing
+    // (and a centred one clips off both ends). The span gives the text an
+    // elidable box wherever a mount site constrains the badge.
     const buildFace = (
       faceLabel: React.ReactNode,
       faceContent: React.ReactNode,
@@ -219,13 +226,13 @@ export const TugBadge = React.forwardRef<HTMLSpanElement, TugBadgeProps>(
           <span className="tug-badge-label">{faceLabel}</span>
           <span className="tug-badge-content">
             {icon && <span className="tug-badge-icon">{icon}</span>}
-            {faceContent}
+            <span className="tug-badge-text">{faceContent}</span>
           </span>
         </span>
       ) : (
         <>
           {icon && <span className="tug-badge-icon">{icon}</span>}
-          {faceContent}
+          <span className="tug-badge-text">{faceContent}</span>
         </>
       );
 

@@ -122,11 +122,21 @@ export interface SessionTipFacts {
   lineage?: readonly string[];
   /** The flat-text citation — the form a reader would paste elsewhere. */
   citation: string;
+  /**
+   * A further meta row the caller renders itself, after the lineage.
+   *
+   * A node rather than a string because the fact it states may be LIVE: the
+   * dash a session is bound to comes from a store, and the caller mounts a
+   * subscribed leaf for it so pointing at a session does not put the surface
+   * that drew it on that store's beat. Anything static should be a named
+   * field here instead.
+   */
+  extra?: React.ReactNode;
 }
 
 /**
  * The session hover: what the run cannot show — the description, the
- * lineage, and the citation.
+ * lineage, where it is working, and the citation.
  */
 export function sessionTip(facts: SessionTipFacts): React.ReactNode {
   const lineage = facts.lineage ?? [];
@@ -141,6 +151,7 @@ export function sessionTip(facts: SessionTipFacts): React.ReactNode {
           {`forked at ${lineage.join(" → ")}`}
         </span>
       ) : null}
+      {facts.extra}
       <span className="tugx-tip-mono">{facts.citation}</span>
     </span>
   );
