@@ -160,11 +160,13 @@ The doubled subject prefix is understood and mechanical: `integrate_message` pre
 
 **The other one is not understood, and that makes it the most urgent single item in this brief.** `tugutil draft set --owner dash:dash-ui` wrote one message; the commit carries a different, auto-generated summary. Something regenerated a maintained draft between the write and the join. If the draft is the thing a landing commits, a scribe silently replacing it is a correctness bug, not a polish item — and it is the only defect here whose *mechanism* is still unknown. Reproduce it before building anything on top of the draft.
 
+**Both addressed, and the name above was wrong.** Nothing regenerated the draft — the join never read it. `tugutil draft set` keyed the row by its **cwd**, which for a planned run is the dash worktree, while the join's reader probes only base-repository-root spellings; the row could never match, so `integrate_message` fell through to a different body. The authored draft survived untouched in the ledger, which is how it was proved. The write now keys by the base root through a single resolver, legacy worktree-keyed rows are read through a bounded probe that one authored write retires, the wrap is idempotent, and a string-equality test at the `join_in` layer pins the landed message to the authored draft byte for byte. See `roadmap/draft-contract-plan.md` for the full reconstruction.
+
 ### Suggested order
 
-1. **The draft regeneration bug** — smallest, and the only open unknown.
-2. **Clean base at creation** — cheap, has a shipped precedent, and removes one of the three sources of divergence outright.
-3. **Base-motion replay** — the real program, and the one that deserves its own design brief.
+1. ~~**The draft regeneration bug**~~ — **addressed**; it was a keying defect, not regeneration. See above.
+2. ~~**Clean base at creation**~~ — **addressed**. `dash create` reports the base's uncommitted working set and warns when the checkout is off the base branch; `--carry` moves that work into the dash, and `dash release` returns uncommitted worktree work to the base rather than destroying it. The doctrine is in [`tuglaws/dash-work-doctrine.md`](../tuglaws/dash-work-doctrine.md#starting-from-a-dirty-base).
+3. **Base-motion replay** — the real program, and the one that deserves its own design brief. **Next.**
 4. **The tactical layer** — after the surfaces have settled.
 
 ## Starting again from cold
@@ -197,7 +199,7 @@ State of the world at the last update (2026-08-15): `main` is at `a36ec60f6`, wh
 
 No dashes exist and no debug instances are running; the fixtures leave no `tugdash.mergedriver` config, `rr-cache` entry, worktree, or `tugdash/*` branch behind. Green at that commit: `cargo nextest run` (2621 tests), `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed` (20 files, 32 tests). `bun test` is 6759/1, the one red being the pre-existing `layout-imposer-solutions` golden table — red on `main`, not ours. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
 
-Next piece of work: the **suggested order** above — the draft regeneration bug, then a clean base at creation, then the base-motion replay brief.
+Next piece of work: the **base-motion replay** design brief. The first two items of the suggested order are addressed — see [The two message defects](#the-two-message-defects).
 
 ## Working on this — the landmines
 

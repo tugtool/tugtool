@@ -23,11 +23,11 @@ pub use dash::{
     detect_default_branch, read_declarations, validate_dash_name,
 };
 pub use ops::{
-    CommitOutcome, CreateOutcome, DashDetail, DashDetailFile, DashListItem, DashStatus,
-    JoinBlocker, JoinOptions, JoinOutcome, JoinStrategy, MarkOutcome, ReleaseOutcome, RoundItem,
-    ShowOutcome, StepOutcome, commit, create, dash_detail_entries_in, dash_plan_path, derive_stage,
-    join, join_in, join_preflight_in, list, mark, release, release_in, show, status, status_in,
-    step_done, step_start,
+    BaseDirtPath, CommitOutcome, CreateOutcome, DashDetail, DashDetailFile, DashDraftKey,
+    DashListItem, DashStatus, JoinBlocker, JoinOptions, JoinOutcome, JoinStrategy, MarkOutcome,
+    ReleaseOutcome, RoundItem, ShowOutcome, StepOutcome, commit, create, dash_detail_entries_in,
+    dash_draft_key, dash_plan_path, derive_stage, join, join_in, join_preflight_in, list, mark,
+    release, release_in, show, status, status_in, step_done, step_start,
 };
 pub use resolve::{
     FileMergeRequest, FileMerger, FileResolution, JoinShape, ResolveOutcome, ResolvedBy,

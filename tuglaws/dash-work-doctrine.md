@@ -15,6 +15,16 @@ A dash *is* a git branch (`tugdash/<name>`) plus a worktree. `tugutil dash creat
 
 There is no canonical directory for anything. `roadmap/`, `.tugtool/`, and every other home are derived from what you were handed, never assumed.
 
+## Starting from a dirty base
+
+A dash is cut from the base *branch tip*, so the worktree always starts clean no matter what the base checkout holds. What it holds is still your problem: uncommitted work left on the base is either invisible divergence for the length of the run, or the join's `base-dirt` refusal at the end of it.
+
+So `dash create` ends by saying what it left behind — the uncommitted paths, classified, and a warning when the checkout is not on the base branch (creation does not care; the join's preflight does). It is a report, not a veto. Most creates happen over some unrelated dirt, and a create that refused over it would be intolerable. **Read the census; taking nothing is the default and usually the right one.**
+
+When the work on the base *is* the work the dash is for — the "I was half-way through this before I realised it should be a dash" case — `--carry` moves it into the new worktree, uncommitted, and cleans the base. Uncommitted because it is in progress by definition: the dash's first round commits it with intent, rather than a machine writing a message for work it did not do. Content is carried, not index state, so a staged edit arrives unstaged.
+
+`dash release` is the inverse and needs no flag: it returns the worktree's uncommitted work to the base before teardown, the same way it already returns an adopted plan. If the base has since acquired its own uncommitted edit to one of those paths, release refuses and leaves the dash standing — the work stays reachable rather than being destroyed to complete a teardown. Commit or stash the base changes and release again.
+
 ## Verify before every commit
 
 **Warnings are errors.** The Rust workspace enforces `-D warnings`; treat a type error, a lint finding, or a failing test the same way.

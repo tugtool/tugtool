@@ -400,6 +400,13 @@ pub enum DashCommands {
         /// branch and the base copy is cleaned, so there is one live copy.
         #[arg(long)]
         plan: Option<String>,
+        /// Move the base checkout's uncommitted work into the new worktree,
+        /// leaving it uncommitted there — for when work already under way on
+        /// the base turns out to belong to this dash. Content is carried, not
+        /// index state: a staged edit arrives unstaged. Without this flag the
+        /// base is reported and left exactly as it is.
+        #[arg(long)]
+        carry: bool,
     },
     /// Adopt a plan into an existing dash: the worktree copy becomes the only
     /// live one, with the worktree's ledger progress replayed onto it.

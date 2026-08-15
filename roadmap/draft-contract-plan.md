@@ -305,15 +305,15 @@ All Rust tests build their own repos in tempdirs (the `resolve.rs` `init()` patt
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Prefix idempotence in `integrate_message` | pending | — |
-| #step-2 | The canonical key resolver, and the reader over it | pending | — |
-| #step-3 | The CLI writes the base-root key | pending | — |
-| #step-4 | The byte-for-byte landing invariant | pending | — |
-| #step-5 | The base-dirt census at create | pending | — |
-| #step-6 | The `--carry` transplant | pending | — |
-| #step-7 | Release hands the working set back | pending | — |
-| #step-8 | Doctrine prose | pending | — |
-| #step-9 | Integration checkpoint | pending | — |
+| #step-1 | Prefix idempotence in `integrate_message` | done | `0b3e230e6` |
+| #step-2 | The canonical key resolver, and the reader over it | done | `cfb5e344e` |
+| #step-3 | The CLI writes the base-root key | done | `ec57a34d7` |
+| #step-4 | The byte-for-byte landing invariant | done | `674512653` |
+| #step-5 | The base-dirt census at create | done | `abb4c5697` |
+| #step-6 | The `--carry` transplant | done | `52caa9b59` |
+| #step-7 | Release hands the working set back | done | `fc2c6f426` |
+| #step-8 | Doctrine prose | done | `d835ea3f2` |
+| #step-9 | Integration checkpoint | done | `6f8bf9419` |
 
 #### Step 1: Prefix idempotence in `integrate_message` {#step-1}
 

@@ -214,6 +214,15 @@ struct DraftApiRequest {
     /// superseded on set and swept on clear.
     #[serde(default)]
     raw_project_dir: Option<String>,
+    /// Directories a caller is *migrating off* — not other spellings of
+    /// `project_dir` but a different directory entirely, whose rows this write
+    /// retires. A dash draft written from inside the dash worktree sends the
+    /// worktree here while keying on the base repository root, which is where
+    /// the join reads. `project_dir` and `raw_project_dir` are both spoken for
+    /// by the base root, so a third slot is what the sweep needs to reach the
+    /// old rows at all.
+    #[serde(default)]
+    superseded_project_dirs: Vec<String>,
     /// New message; on set, `None` keeps the existing draft's message.
     #[serde(default)]
     message: Option<String>,
@@ -288,6 +297,7 @@ fn apply_draft_request(
     let alternates: Vec<String> = [Some(req.project_dir.clone()), req.raw_project_dir.clone()]
         .into_iter()
         .flatten()
+        .chain(req.superseded_project_dirs.iter().cloned())
         .filter(|s| *s != canonical)
         .collect();
     // The owner key migrates on its own axis ([P03]), so the sibling set is
@@ -1220,6 +1230,7 @@ mod tests {
             legacy_owner_id: Some(LEGACY_KEY.to_string()),
             project_dir: "/proj".to_string(),
             raw_project_dir: None,
+            superseded_project_dirs: Vec::new(),
             message: message.map(str::to_owned),
             selection: None,
         }
@@ -1267,6 +1278,53 @@ mod tests {
                 .unwrap()
                 .is_none(),
             "the legacy-keyed row is superseded by the write"
+        );
+    }
+
+    /// A dash draft written from inside the dash worktree keys on the base
+    /// repository root and names the worktree as superseded. Both request
+    /// spelling slots are spoken for by the base root, so without the third
+    /// slot the sweep could not reach the worktree row at all — and it is the
+    /// worktree rows that made every planned run's authored draft invisible to
+    /// its join.
+    #[test]
+    fn draft_set_supersedes_a_row_under_a_superseded_directory() {
+        let ledger = crate::session_ledger::SessionLedger::open_in_memory().unwrap();
+        let base = draft_project_key("/proj");
+        let worktree = draft_project_key("/proj/.tug/worktrees/demo");
+        ledger
+            .upsert_changeset_draft(&crate::session_ledger::ChangesetDraftRow {
+                owner_kind: "dash".to_string(),
+                owner_id: ID_KEY.to_string(),
+                project_dir: worktree.clone(),
+                fingerprint: "fp".to_string(),
+                message: "The invisible draft".to_string(),
+                updated_at: 1,
+                edited: true,
+                selection: None,
+            })
+            .unwrap();
+
+        let mut req = draft_request("set", None);
+        req.superseded_project_dirs = vec![worktree.clone()];
+        let response = apply_draft_request(&ledger, &req);
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // The worktree row was read through as the fallback, so its message
+        // survives — under the base root, where the join looks.
+        assert_eq!(
+            ledger
+                .changeset_draft("dash", ID_KEY, &base)
+                .unwrap()
+                .map(|r| r.message),
+            Some("The invisible draft".to_string())
+        );
+        assert!(
+            ledger
+                .changeset_draft("dash", ID_KEY, &worktree)
+                .unwrap()
+                .is_none(),
+            "the worktree-keyed row is superseded by the write"
         );
     }
 

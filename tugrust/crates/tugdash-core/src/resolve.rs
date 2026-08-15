@@ -309,12 +309,7 @@ fn resolution_report(
 /// the built candidate rather than the blobs, so an add, a delete, and a mode
 /// change all come out in the form git already renders them. Best-effort — a
 /// diff git declines to produce is `None`, never a failed resolve.
-fn resolution_diff(
-    repo: &Path,
-    base_head: &str,
-    candidate: &str,
-    path: &str,
-) -> Option<String> {
+fn resolution_diff(repo: &Path, base_head: &str, candidate: &str, path: &str) -> Option<String> {
     let text = git_stdout(
         repo,
         &["diff", "--no-color", base_head, candidate, "--", path],

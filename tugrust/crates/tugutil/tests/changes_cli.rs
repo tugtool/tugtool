@@ -899,6 +899,208 @@ fn draft_rows_key_by_the_dash_owner_key_and_supersede_the_legacy_row() {
     assert!(stdout.contains("Join the widgets work"), "{stdout}");
 }
 
+/// A repo with a real linked worktree at the conventional dash location, and
+/// the dash's creation id recorded — the shape `dash create` leaves behind.
+/// Returns the worktree path.
+fn add_dash_worktree(root: &Path, name: &str) -> PathBuf {
+    let worktree = root.join(".tug/worktrees").join(name);
+    std::fs::create_dir_all(worktree.parent().unwrap()).unwrap();
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            &format!("tugdash/{name}"),
+            worktree.to_str().unwrap(),
+        ],
+    );
+    git(
+        root,
+        &[
+            "config",
+            &format!("branch.tugdash/{name}.tugid"),
+            "1723500000000-a1b2c3",
+        ],
+    );
+    worktree
+}
+
+/// The defect this contract closes: `dash-implement` runs `tugutil draft set`
+/// from inside the dash worktree, so a cwd-derived project key put every
+/// planned run's authored draft under the worktree — while the join reads with
+/// the base repository root in hand. The row could never match, and the landing
+/// committed a message nobody wrote.
+#[test]
+fn a_dash_draft_written_from_the_worktree_keys_by_the_base_root() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree = add_dash_worktree(&root, "widgets");
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "dash:widgets",
+        "--message",
+        "Join the widgets work",
+    ]);
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    assert_eq!(
+        draft_column(ledger.path(), "project_dir"),
+        root.to_str().unwrap()
+    );
+    assert_eq!(
+        draft_column(ledger.path(), "owner_id"),
+        "tugdash/widgets#1723500000000-a1b2c3"
+    );
+}
+
+/// The ordering is load-bearing: `resolve_owner`'s derivation reads the
+/// checked-out branch of the directory it is handed, and only the worktree has
+/// `tugdash/<name>` there. Substituting the base root *before* owner resolution
+/// would read `main`, and an ownerless `draft set` from inside a worktree —
+/// precisely what `dash-implement` runs — would land on the session instead.
+#[test]
+fn an_ownerless_set_from_the_worktree_still_resolves_the_dash() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree = add_dash_worktree(&root, "widgets");
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.env("TUG_SESSION_ID", "work");
+    set.args(["draft", "set", "--message", "tugdash(widgets): the round"]);
+    let (code, stdout, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+    assert!(stdout.contains("dash:widgets"), "{stdout}");
+
+    assert_eq!(draft_column(ledger.path(), "owner_kind"), "dash");
+    assert_eq!(
+        draft_column(ledger.path(), "project_dir"),
+        root.to_str().unwrap()
+    );
+}
+
+/// One authored write retires the dash's pre-fix rows, so the reader's legacy
+/// probe decays to nothing instead of accreting another permanent axis.
+#[test]
+fn a_dash_set_supersedes_the_worktree_keyed_row() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree = add_dash_worktree(&root, "widgets");
+    let owner_key = "tugdash/widgets#1723500000000-a1b2c3";
+
+    let changes = Connection::open(ledger.path().join("changes.db")).unwrap();
+    changes
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS changeset_drafts (
+                owner_kind   TEXT NOT NULL,
+                owner_id     TEXT NOT NULL,
+                project_dir  TEXT NOT NULL,
+                fingerprint  TEXT NOT NULL,
+                message      TEXT NOT NULL,
+                updated_at   INTEGER NOT NULL,
+                edited       INTEGER NOT NULL DEFAULT 0,
+                selection    TEXT,
+                PRIMARY KEY (owner_kind, owner_id, project_dir)
+            );",
+        )
+        .unwrap();
+    changes
+        .execute(
+            "INSERT INTO changeset_drafts
+                (owner_kind, owner_id, project_dir, fingerprint, message, updated_at, edited)
+             VALUES ('dash', ?1, ?2, 'fp', 'The invisible draft', 1, 1)",
+            rusqlite::params![owner_key, worktree.to_string_lossy()],
+        )
+        .unwrap();
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "dash:widgets",
+        "--message",
+        "Join the widgets work",
+    ]);
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    let rows: i64 = changes
+        .query_row("SELECT COUNT(*) FROM changeset_drafts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1, "the worktree-keyed row is superseded, not doubled");
+    assert_eq!(
+        draft_column(ledger.path(), "project_dir"),
+        root.to_str().unwrap()
+    );
+}
+
+#[test]
+fn a_dash_draft_reads_back_from_either_side_of_the_worktree_boundary() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree = add_dash_worktree(&root, "widgets");
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "dash:widgets",
+        "--message",
+        "Join the widgets work",
+    ]);
+    assert_eq!(run(set).0, 0);
+
+    for dir in [root.as_path(), worktree.as_path()] {
+        let mut show = tug(ledger.path());
+        show.current_dir(dir);
+        show.args(["draft", "show", "--owner", "dash:widgets"]);
+        let (code, stdout, err) = run(show);
+        assert_eq!(code, 0, "from {dir:?}: {err}");
+        assert!(stdout.contains("Join the widgets work"), "{stdout}");
+    }
+}
+
+/// The substitution is scoped to dash owners. A session's draft describes the
+/// working tree it was typed in, so it stays keyed by that directory even when
+/// the directory happens to be a linked worktree.
+#[test]
+fn a_session_draft_from_a_worktree_stays_keyed_by_the_worktree() {
+    let (_repo, root) = init_repo();
+    let ledger = seed_ledger(&root);
+    let worktree = add_dash_worktree(&root, "widgets");
+
+    let mut set = tug(ledger.path());
+    set.current_dir(&worktree);
+    set.args([
+        "draft",
+        "set",
+        "--owner",
+        "session:work",
+        "--message",
+        "Land the feature",
+    ]);
+    let (code, _, err) = run(set);
+    assert_eq!(code, 0, "stderr: {err}");
+
+    assert_eq!(draft_column(ledger.path(), "owner_kind"), "session");
+    assert_eq!(
+        draft_column(ledger.path(), "project_dir"),
+        worktree.to_str().unwrap()
+    );
+}
+
 #[test]
 fn draft_set_falls_back_to_the_session_then_refuses() {
     let (_repo, root) = init_repo();

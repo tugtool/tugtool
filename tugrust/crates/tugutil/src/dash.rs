@@ -21,7 +21,8 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
             name,
             description,
             plan,
-        } => run_create(&name, description, plan.as_deref(), json, quiet),
+            carry,
+        } => run_create(&name, description, plan.as_deref(), carry, json, quiet),
         DashCommands::AdoptPlan { name, plan } => {
             run_adopt_plan(&name, plan.as_deref(), json, quiet)
         }
@@ -115,10 +116,11 @@ fn run_create(
     name: &str,
     description: Option<String>,
     plan: Option<&str>,
+    carry: bool,
     json: bool,
     quiet: bool,
 ) -> Result<(), String> {
-    let data = ops::create(name, description, plan)?;
+    let data = ops::create(name, description, plan, carry)?;
     // The session that made the dash is working on it. Best-effort: a headless
     // run with no live instance loses nothing (binding is a UI concept), so a
     // failure warns and never fails the create.
@@ -141,8 +143,41 @@ fn run_create(
         if let Some(adopted) = data.plan.as_ref() {
             print_adopt_receipt(adopted);
         }
+        print_base_census(&data);
     }
     Ok(())
+}
+
+/// What create leaves behind on the base checkout ([P05]). Reported, never
+/// acted on: taking the work is the explicit `--carry` gesture, and the default
+/// is to take nothing.
+fn print_base_census(data: &ops::CreateOutcome) {
+    if let Some(branch) = data.off_base.as_deref() {
+        println!(
+            "  warning: the base checkout is on '{branch}', not '{}' — \
+             the join will refuse until it is back on the base branch",
+            data.base_branch
+        );
+    }
+    if data.base_dirt.is_empty() {
+        return;
+    }
+    let carried = data.base_dirt.iter().filter(|d| d.carried).count();
+    let left = data.base_dirt.len() - carried;
+    if carried > 0 {
+        println!("  Carried {carried} uncommitted path(s) into the worktree:");
+        for entry in data.base_dirt.iter().filter(|d| d.carried) {
+            let note = if entry.deleted { " (deleted)" } else { "" };
+            println!("    {} [{}]{note}", entry.path, entry.state);
+        }
+    }
+    if left > 0 {
+        println!("  Base checkout holds {left} uncommitted path(s), left untouched:");
+        for entry in data.base_dirt.iter().filter(|d| !d.carried) {
+            let note = if entry.deleted { " (deleted)" } else { "" };
+            println!("    {} [{}]{note}", entry.path, entry.state);
+        }
+    }
 }
 
 fn run_commit(name: &str, message: &str, json: bool, quiet: bool) -> Result<(), String> {
@@ -351,6 +386,15 @@ fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
         print_ok("dash release", &data);
     } else if !quiet {
         println!("Released dash '{}'", data.name);
+        if let Some(plan) = data.plan_restored.as_deref() {
+            println!("  Plan returned to the base checkout: {plan}");
+        }
+        if !data.work_restored.is_empty() {
+            println!(
+                "  Uncommitted work returned to the base checkout: {}",
+                data.work_restored.join(", ")
+            );
+        }
         for warning in &data.warnings {
             println!("  Warning: {}", warning);
         }
