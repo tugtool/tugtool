@@ -1007,15 +1007,37 @@ export class SparklineTape {
    */
   private enterFlatDormancy(): void {
     if (this.state === "flat-dormant") return;
-    // Coming from a hidden pause the scroll is ALREADY stopped, and pausing a
-    // paused animation a second time would show up in the trace as churn the
-    // tape did not actually cause. What changes here is only the state: the
-    // picture, which was arbitrary, is now known to be flat.
     const wasLive = this.state === "live";
     this.transition("flat-dormant");
     this.stopSettle();
     this.stopFlatOff();
-    if (wasLive) this.stopScroll();
+    if (wasLive) {
+      // A live tape earned its flatness: the settle burst only stops once the
+      // value has held still AND the last event's whole window has drained, so
+      // the pen is already down at the level the data supports and the picture
+      // is flat at it. Nothing to redraw — just retire the scroll.
+      this.stopScroll();
+      return;
+    }
+    // From a HIDDEN PAUSE it did not. That pause stopped the settle burst
+    // wherever it happened to be — mid-decay, or clamped at full scale — and
+    // the pen has been frozen there ever since. The picture is indeed flat
+    // now; it is flat AT THE FROZEN LEVEL, and the geometry holds that last
+    // value out to the canvas edge, so the tape rests as a solid full-width
+    // bar at a height the meters stopped supporting seconds ago. Coming to
+    // rest is exactly when that stops being a transient and becomes what the
+    // instrument says.
+    //
+    // Only when it actually disagrees, and judged the way every other change
+    // on this tape is judged — the deadband, in PLOT PIXELS. A tape that went
+    // off screen holding the level the meters still hold is already resting on
+    // its data, and rebuilding it would move nothing while putting a paint, an
+    // origin write and a pause into the trace for every hidden tape that
+    // crosses its deadline. That is most of the Lens, most of the time.
+    const now = this.opts.now();
+    const held = this.tape.length > 0 ? this.tape[this.tape.length - 1].v : 0;
+    if (Math.abs(this.sampleRate(now) - held) < this.deadband) return;
+    this.restOnData(now);
   }
 
   /**
@@ -1100,14 +1122,33 @@ export class SparklineTape {
       // explicitly, because the fresh paint assumes the clock and the paused
       // scroll was held at some older reading.
       this.transition("flat-dormant");
-      this.rebuildTape(now);
-      if (!this.rollover(now)) {
-        this.paint();
-        this.parkScroll();
-      }
+      this.restOnData(now);
       return;
     }
     this.wakeLive(now);
+  }
+
+  /**
+   * Come to rest on the DATA, not on wherever the pen was left.
+   *
+   * Both roads into flat dormancy from a hidden pause end here. The tape is
+   * about to stop entirely — no settle burst, no flat-off timer, no scroll —
+   * so whatever is on the canvas when this returns is what the tape shows
+   * until something wakes it, which may be never. That makes this the one
+   * place the picture has to be re-derived rather than inherited.
+   *
+   * The origin may be many epochs stale after a long spell off screen, and a
+   * paint against a stale origin lands the ink entirely off the canvas — so
+   * the rebase runs first and, when it moves the origin, its own ack-gated
+   * paint is the one that stands. The no-rollover path parks explicitly,
+   * because the fresh paint assumes the clock while the paused scroll is still
+   * held at some older reading.
+   */
+  private restOnData(now: number): void {
+    this.rebuildTape(now);
+    if (this.rollover(now)) return;
+    this.paint();
+    this.parkScroll();
   }
 
   private flatPastWindow(now: number): boolean {

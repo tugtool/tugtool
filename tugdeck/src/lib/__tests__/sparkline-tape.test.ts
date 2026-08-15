@@ -459,6 +459,61 @@ describe("SparklineTape — the rate decay the wall-clock seam protects", () => 
   });
 });
 
+describe("SparklineTape — what a dormant tape rests on", () => {
+  test("a hidden pause that outlives the drain rests at baseline, not at the frozen pen", () => {
+    // A hidden pause stops the settle burst wherever it happens to be, so the
+    // pen freezes at whatever the burst had reached — mid-decay, or clamped at
+    // full scale. That is correct while nothing is looking.
+    //
+    // What is NOT correct is where it ends up. The flat-off finisher stays
+    // armed through the pause, and when it fires it promotes the tape to
+    // `flat-dormant` — a state whose whole premise is that the picture is
+    // "provably flat". It is flat; it is flat at the FROZEN LEVEL. The
+    // geometry holds the last point's value out to the canvas edge, so a pen
+    // frozen at 0.5 draws a solid full-width bar at half height, and the tape
+    // rests there — no timers, nothing running — until something else happens
+    // to rebuild it.
+    //
+    // The data says otherwise: the meter drained to zero seconds ago. A
+    // settled tape must show what the store holds.
+    const meter = new RateMeter(ACTIVITY_BIN_MS);
+    const h = makeHarness({
+      getSeries: (nowMs) => meter.series(nowMs),
+      binMs: ACTIVITY_BIN_MS,
+    });
+    const wallBase = Date.now();
+    const wallAt = (t: number): number => wallBase + (t - CLOCK_BASE);
+
+    h.tape.start(h.clock.now());
+
+    // Real work, enough to put the pen up near full scale.
+    for (let i = 0; i < 8; i++) {
+      meter.record(FULL_SCALE / 2, wallAt(h.clock.now()));
+      h.tape.onActivity();
+      h.clock.advance(ACTIVITY_BIN_MS);
+    }
+    expect(h.tape.debugState().state).toBe("live");
+    const lastPaint = (): SurfaceCall | undefined => {
+      const paints = h.paints();
+      return paints[paints.length - 1];
+    };
+    expect(lastPaint()?.lastV ?? 0).toBeGreaterThan(0.25);
+
+    // Off screen, mid-burst: the settle burst dies with the pen up here.
+    hide(h);
+    expect(h.tape.debugState().state).toBe("hidden-paused");
+
+    // Nothing more is recorded. Long past the point where the rolling window
+    // has emptied and the flat-off finisher has run.
+    h.clock.advance(DORMANT_AFTER_MS + SAMPLE_MS * 4);
+    expect(h.tape.debugState().state).toBe("flat-dormant");
+
+    // The meter agrees there is nothing to show — every bin the burst touched
+    // has aged out — so the resting picture must be a baseline flatline.
+    expect(lastPaint()?.lastV).toBe(0);
+  });
+});
+
 describe("SparklineTape — a rebuild reads back everything the screen showed", () => {
   test("the meters' window covers the tape's reconstruction span", () => {
     // `rebuildTape` reaches back DORMANT_AFTER_MS and zero-seeds whatever the
