@@ -47,6 +47,17 @@ export interface LocalSlashCommandSpec {
    * Defaults to `false`.
    */
   readonly takesArgs?: boolean;
+  /**
+   * A retired spelling kept alive so muscle memory still lands ([P08]): it
+   * runs the same handler as the name it points at, and raises a one-time
+   * bulletin naming the new one. Aliases are deliberately excluded from the
+   * command picker — an alias is for muscle memory, not for discovery.
+   *
+   * They cannot simply be deleted: a `/verb` that stops matching the registry
+   * is submitted to Claude as a prompt, which is the one outcome worse than a
+   * rename.
+   */
+  readonly deprecatedFor?: string;
 }
 
 /**
@@ -193,15 +204,33 @@ export const LOCAL_SLASH_COMMANDS = [
     description: "Open the commit dialog to author a message and land this session's changes",
     takesArgs: true,
   },
+  // An operation is spelled the same on every surface a user can see it, and
+  // that spelling is its `tugutil` verb path ([P08]): `tugutil dash bind` ⇒
+  // `/dash-bind`, `tugutil dash join` ⇒ `/dash-join`. `/commit` above keeps its
+  // bare name because it rides `tugutil commit` — and `/dash-commit` is
+  // reserved for `tugutil dash commit`, the round verb, which ships no card
+  // verb yet.
   {
-    name: "dash",
+    name: "dash-bind",
     description: "Work on a dash — bind this card to it, creating it if needed",
     takesArgs: true,
   },
   {
-    name: "join",
-    description: "Land a dash into its base branch — preview, then squash with its join draft",
+    name: "dash-join",
+    description: "Land a dash — opens the join editor over a previewed merge",
     takesArgs: true,
+  },
+  {
+    name: "dash",
+    description: "Retired spelling of /dash-bind",
+    takesArgs: true,
+    deprecatedFor: "dash-bind",
+  },
+  {
+    name: "join",
+    description: "Retired spelling of /dash-join",
+    takesArgs: true,
+    deprecatedFor: "dash-join",
   },
   {
     name: "plan-review",

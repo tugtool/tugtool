@@ -1,6 +1,6 @@
 ## Join mode — the landing surface {#join-mode}
 
-**Purpose:** Give the dash lane the landing surface the main lane already has: `/join` turns the composer into the join-message editor over a previewed merge, the Changes shade's dash lane fronts the four landing outcomes with the act that unblocks each, and a landed or discarded dash leaves a durable receipt in the transcript. Implements [phase 4](dash-integration-plan.md#phase-4) of the dash integration program.
+**Purpose:** Give the dash lane the landing surface the main lane already has: `/dash-join` turns the composer into the join-message editor over a previewed merge, the Changes shade's dash lane fronts the four landing outcomes with the act that unblocks each, and a landed or discarded dash leaves a durable receipt in the transcript. Implements [phase 4](dash-integration-plan.md#phase-4) of the dash integration program.
 
 ---
 
@@ -19,13 +19,25 @@
 
 <!-- Appended by /tugplug:plan-review; the stamp is written by `tugutil plan stamp`. -->
 
+**Round 1 — 2026-08-14, opus.** Reviewed `plan:12802870531d07f8`. Lint: 0 errors, 0 warnings, clean before and after. Oriented on: the whole document — a first pass, no prior round.
+
+Applied, naming: the user settled that an operation carries one name on every surface a user can see, and that the name is its `tugutil` verb path — now [P08], with the two card-verb renames it forces (`/join` → `/dash-join`, `/dash` → `/dash-bind`), the two receipt command strings it corrects (`/dash-join`, `/dash-release`), the deprecated-alias rule that keeps a retired spelling from submitting the user's line to Claude as a prompt, and the `tugutil commit` / `tugutil dash commit` collision the rule exposed. `/dash-commit` is reserved and deliberately unshipped this phase; `/commit` keeps its base-branch meaning on bound cards. Step 5 grew the rename tasks and an alias assertion; the scope list, documentation plan, and symbol inventory follow.
+
+Applied, correctness — three defects that would each have failed during implementation. Step 1 named a test that could not pass: `join_in` returns `Err` on a stale journal at `ops.rs:1651`, *before* the `opts.preview` arm at `1659`, so `join_preflight_in` could never report `stale-journal`; the step now reorders the guard, states the resulting `--preview` behavior change plainly, and corrects two error strings that instruct the user to run `tugdash join …`, a binary that does not exist (the verb is `tugutil dash join`). Step 6 would have rendered one dash's blockers under another dash's name: `JoinState` is keyed by `entryKey`, which is `session:<tugSessionId>` — one slot per card, not per dash — so two previewing rows clobber each other; only the fronted row previews now, and the keying is recorded so a later re-key is a deliberate act. Step 7's release receipt had nowhere to live: `ReleasePhase` is `idle|pending|error` and `changeset_release_ok` resets to a shared frozen `RELEASE_IDLE`, leaving no terminal edge and no field, so the step now adds a `done` phase; it also names `dash_detail_entries_in` as the only round-subject accessor and pins the capture before `release_in`.
+
+Applied, smaller: the three new app-tests were renumbered `at0417`–`at0419` because `at0410` and `at0411` are live files and the tree already carries one accidental `at0412` collision. [P07]'s [L30] rationale claimed a uniformity the registry does not have — `select-composer-route:changes` is deliberately unregistered, for a reason the file records — so the decision now names that precedent and says why Join differs. [P01]'s interface list was missing `kind` and `setLandHook`, which step 3 already assumed.
+
+Deferred: nothing new. [Q01] and [Q02] stand as the author left them. Left alone: step 3's hedge about renaming `commitReady`/`commitPhase`/`commitError` only if mechanical — it states its own tiebreak (keep `commit-mode-controller.test.ts` unmodified) and that tiebreak is right.
+
+Not verified by this review: the alias policy in [P08] is settled from the tree's own precedent (`tugplug/skills/join/SKILL.md` keeps a retired spelling alive rather than deleting it) rather than from an existing card-verb alias mechanism — there is none today, so step 5 builds the first one.
+
 ---
 
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}
 
-Phases 1–3.1 built everything a dash landing needs except the room it happens in. A dash has an identity, a session binding, a derived stage, a maintained join draft, and a lane in the Changes shade that renders all of it — **read-only**. The one gesture that lands it, `/join`, currently submits a `/tugplug:dash-join` skill turn: the model shells out to `tugutil dash join`, reads the output, and reports back in prose. That works, and it will keep working as the headless path, but it is the wrong shape for the gesture a user reaches for most: it spends a turn, it puts the preview in the transcript instead of in front of the button, and it gives the join message no editor.
+Phases 1–3.1 built everything a dash landing needs except the room it happens in. A dash has an identity, a session binding, a derived stage, a maintained join draft, and a lane in the Changes shade that renders all of it — **read-only**. The one gesture that lands it, `/dash-join`, currently submits a `/tugplug:dash-join` skill turn: the model shells out to `tugutil dash join`, reads the output, and reports back in prose. That works, and it will keep working as the headless path, but it is the wrong shape for the gesture a user reaches for most: it spends a turn, it puts the preview in the transcript instead of in front of the button, and it gives the join message no editor.
 
 Meanwhile the machinery a real landing surface would need is **already built and entirely unconsumed**, which is the single most important fact for anyone implementing this plan:
 
@@ -40,15 +52,15 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 
 - **Land the truth-telling Rust first.** A landing surface that offers a button it cannot honor is worse than no surface. Step 1 makes `--preview` report the blockers the execute path checks, so beat 1 shows exactly what beat 2 will do.
 - **Share the composer machinery rather than copy it.** `tug-prompt-entry.tsx` holds ~250 lines of commit-mode composer plumbing. Join needs all of it with different verbs, so the composer learns one `landingMode` slot over an interface both controllers satisfy ([P01]) — written once, and mutual exclusion becomes structural.
-- **Build the mode before the room.** The composer + controller (steps 3–5) is what makes `/join` real; the lane's four-outcome face (step 6) is what makes it discoverable. In that order the mode is testable before the presentation exists.
+- **Build the mode before the room.** The composer + controller (steps 3–5) is what makes `/dash-join` real; the lane's four-outcome face (step 6) is what makes it discoverable. In that order the mode is testable before the presentation exists.
 - **Receipts after there is something to receipt.** Join and release receipts (steps 7–8) fire only from the card, so they cannot be verified end to end until the card can land. They come after the UI, not before it.
 - **The destructive act comes last and alone.** Release plus its discard preflight (the consolidation plan's [release ruling](archive/changes-commit-dash-consolidation.md#p14-release)) is its own step, at the end, so no earlier step's checkpoint can destroy a dash by accident.
 
 #### Success Criteria (Measurable) {#success-criteria}
 
-- Typing `/join` on a card bound to a dash puts the composer into join mode seeded with the dash's maintained join draft, with the Z4A route group showing three segments and `Join` selected (app-test asserts the seeded document text and the segment's selected state).
+- Typing `/dash-join` on a card bound to a dash puts the composer into join mode seeded with the dash's maintained join draft, with the Z4A route group showing three segments and `Join` selected (app-test asserts the seeded document text and the segment's selected state).
 - `tugutil dash join <name> --preview --json` on a dash whose repo root is checked out to a non-base branch reports a `blockers` array containing `{"kind":"off-base", …}` and exits 0 (Rust test + CLI run).
-- With a clean preview, pressing the join affordance lands a squash on the base branch and appends exactly one `/join` receipt row to the transcript; the row survives Maker ▸ Reload byte-identically (app-test asserts the row before and after a reload).
+- With a clean preview, pressing the join affordance lands a squash on the base branch and appends exactly one `/dash-join` receipt row to the transcript; the row survives Maker ▸ Reload byte-identically (app-test asserts the row before and after a reload).
 - A dash with zero commits past base and a clean worktree renders `empty` in the lane with the release affordance fronted, and offers **no** Join button (app-test over a `createDash` with no round).
 - A dash whose `stage` is `landing` renders a "Resume teardown" affordance that sends `changeset_join { continue: true }` (unit test over the verb store's frame; app-test over the affordance's presence).
 - `bun test` (7.5k+), `cargo nextest run` (2.5k+), `bunx tsc --noEmit`, `bunx vite build`, and the derived `just app-test-changed` selection are all green at every step boundary.
@@ -59,7 +71,8 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 2. `blockers`, `continue`, and `session_id` through the `changeset_join` / `changeset_release` CONTROL verbs and the deck's verb store.
 3. A `LandingMode` interface, `CommitModeController` conforming to it unchanged, and a new `JoinModeController` with `evaluateJoinLandGate`.
 4. One `landingMode` slot in `tug-prompt-entry.tsx`; a third Z4A route segment, present only while a dash is bound.
-5. `/join` as a local mode-entering verb (replacing today's skill submission), with the session card's coupling, staged land, and menu-state publication.
+5. `/dash-join` as a local mode-entering verb (replacing today's skill submission), with the session card's coupling, staged land, and menu-state publication.
+5a. The card-verb renames [P08] requires — `/join` → `/dash-join`, `/dash` → `/dash-bind` — with the retired spellings kept as deprecated aliases, and `/dash-commit` reserved but unshipped.
 6. The dash lane's four-outcome face: join, blocked, empty→release, conflicted, and resume-teardown.
 7. Server-formatted join and release summaries persisted to the shell ledger, and a bespoke receipt renderer for them.
 8. The conflict-resolution lane over the existing `changeset-join-store` overlay, ending in a candidate land.
@@ -69,8 +82,8 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 
 - **Strategy selection in the UI.** The card always sends `squash`. `merge` and `rebase` stay CLI-only ([Q01]).
 - **Retrofitting commit's turn gate.** `evaluateCommitLandGate` reads `codeSessionStore.canInterrupt`; the consolidation plan's [landing-gate ruling](archive/changes-commit-dash-consolidation.md#p08-gates) asked for a lifecycle-idle predicate. Join's gate matches commit's shipped shape so the two agree; correcting both is deferred ([Q02]).
-- **A chord for the Join route.** The segment, `/join`, and the lane affordance are the entrances; no key equivalent is assigned ([P07]).
-- **The `tugplug:dash-join` skill.** It survives byte-unchanged as the headless/agentic path over the same `tugutil dash join` verb. Only the card's local `/join` handler changes.
+- **A chord for the Join route.** The segment, `/dash-join`, and the lane affordance are the entrances; no key equivalent is assigned ([P07]).
+- **The `tugplug:dash-join` skill.** It survives byte-unchanged as the headless/agentic path over the same `tugutil dash join` verb. Only the card's local `/dash-join` handler changes.
 - **The Lens's dash section and the card chrome chip.** Phase 2's surfaces are untouched; phase 5 adds the stale-review mark to them.
 - **Relocation.** A bound card's shell, cwd, and primary `workspace_key` binding stay in the base checkout (the program plan's [binding-is-an-overlay ruling](dash-integration-plan.md#p01-overlay)).
 
@@ -127,7 +140,7 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 | The `landingMode` refactor destabilizes the shipped commit surface | high | med | The interface is extracted from `CommitModeController`'s existing public shape, so the class is unchanged; `commit-mode-controller.test.ts` (37 assertions) is the regression net and must stay green untouched | any edit to `CommitModeController`'s body in #step-3 |
 | A preview races the tree and the land is refused anyway | med | med | Blockers are re-derived at land time by `join_in` itself, unchanged; the card treats a `_err` on execute as a blocked presentation and re-previews | a land refusal reaching the user as an unexplained error string |
 | Landing from the card leaves a stale binding or draft | med | low | Already handled server-side and verified in this plan's reading; #step-11 asserts it end to end rather than assuming it | any change to `do_changeset_join`'s success arm |
-| Release destroys work from a mis-click | high | low | Shade-only, two-beat, with the discard preflight listing round subjects ([release ruling](archive/changes-commit-dash-consolidation.md#p14-release)); no prompt-entry verb, no chord | any proposal to add `/release` |
+| Release destroys work from a mis-click | high | low | Shade-only, two-beat, with the discard preflight listing round subjects ([release ruling](archive/changes-commit-dash-consolidation.md#p14-release)); no prompt-entry verb, no chord | any proposal to add `/dash-release` |
 | The join receipt and the commit receipt drift | med | med | One renderer module per receipt kind, both parsing a server-formatted string, both pinned by a Rust test asserting the exact bytes and a deck test parsing them back | any hand-formatted receipt string appearing client-side |
 
 **Risk R01: The composer's mode swap regresses commit** {#r01-composer-swap}
@@ -151,7 +164,7 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 
 #### [P01] One `LandingMode` interface; two controllers (DECIDED) {#p01-landing-mode}
 
-**Decision:** Extract the interface `tug-prompt-entry` needs from a landing mode — `subscribe`, `getSnapshot`, `setMessageProvider`, `notifyMessageChanged`, `persistMessage`, `requestDraft`, `cancelDraft`, `land`, `leave`, `exit`, plus a snapshot shape — into `tugdeck/src/lib/landing-mode.ts`. `CommitModeController` conforms to it **with no change to its body**. A new `JoinModeController` conforms to it too, with its own gate, its own draft owner key, and its own land verb. The prompt entry holds exactly one `landingMode` prop.
+**Decision:** Extract the interface `tug-prompt-entry` needs from a landing mode — `kind`, `subscribe`, `getSnapshot`, `setMessageProvider`, `notifyMessageChanged`, `persistMessage`, `requestDraft`, `cancelDraft`, `land`, `leave`, `exit`, `setLandHook`, plus a snapshot shape — into `tugdeck/src/lib/landing-mode.ts`. `CommitModeController` conforms to it **with no change to its body**. A new `JoinModeController` conforms to it too, with its own gate, its own draft owner key, and its own land verb. The prompt entry holds exactly one `landingMode` prop.
 
 **Rationale:**
 - The composer owns one document, so at most one landing mode can be active. A single slot makes that structural rather than a rule two controllers must both remember.
@@ -192,9 +205,9 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 - The group's `value` derivation becomes: join mode active → `"join"`, commit mode active → `"changes"`, else `"prompt"`.
 - Entering one landing mode exits the other (enforced in the controllers' `enter()`, not in the view).
 
-#### [P04] `/join` enters the mode; it no longer submits a turn (DECIDED) {#p04-join-verb}
+#### [P04] `/dash-join` enters the mode; it no longer submits a turn (DECIDED) {#p04-join-verb}
 
-**Decision:** The session card's local `join` slash handler stops calling `buildCommandSubmission("tugplug:dash-join", args)` and instead resolves a target dash and calls `joinModeController.enter()`. Grammar: bare `/join` = the bound dash; `/join <name>` = an explicit dash in this project; `/join <name> <message…>` seeds the join message as an edited draft, exactly as `/commit <message>` does. An unresolvable name is a pane-bulletin caution, never a silent no-op.
+**Decision:** The session card's local `join` slash handler stops calling `buildCommandSubmission("tugplug:dash-join", args)` and instead resolves a target dash and calls `joinModeController.enter()`. Grammar: bare `/dash-join` = the bound dash; `/dash-join <name>` = an explicit dash in this project; `/dash-join <name> <message…>` seeds the join message as an edited draft, exactly as `/commit <message>` does. An unresolvable name is a pane-bulletin caution, never a silent no-op.
 
 **Rationale:**
 - The landing is the user's act and belongs in front of the button, not in a turn. Spending a model turn to run a git command the card can run directly is the seam this phase closes.
@@ -202,9 +215,9 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 - Seeding from args mirrors `/commit`'s shipped semantics, so the two landings are learned once.
 
 **Implications:**
-- `/join`'s current `canSubmit` hard refusal goes away: entering a mode mid-turn is harmless (drafting stays live mid-turn per the consolidation doctrine); only the *land* is gated.
+- `/dash-join`'s current `canSubmit` hard refusal goes away: entering a mode mid-turn is harmless (drafting stays live mid-turn per the consolidation doctrine); only the *land* is gated.
 - `slash-commands.ts`'s `join` description is rewritten to name the mode rather than the skill.
-- The unbound-and-nameless case ("`/join` with no dash anywhere") cautions with the same shape `/dash` uses: *"No dash bound — /join &lt;name&gt;"*.
+- The unbound-and-nameless case ("`/dash-join` with no dash anywhere") cautions with the same shape `/dash-bind` uses: *"No dash bound — /dash-join &lt;name&gt;"*.
 
 #### [P05] Join's land gate mirrors commit's, field for field (DECIDED) {#p05-gate-parity}
 
@@ -220,12 +233,12 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 
 #### [P06] Join and release receipts are server-formatted shell-ledger ink (DECIDED) {#p06-receipts}
 
-**Decision:** On a landed join, `do_changeset_join` formats an S01 join summary in Rust, writes it to the shell ledger as `NewShellExchange { command: "/join", output: summary, exit_code: Some(0), cwd: project_dir }`, and adds `summary` to `changeset_join_ok`. Release does the same with `command: "/release"` and an S02 release summary. The deck's `use-landing-receipts.ts` grows a join arm and a release arm; a new `session-join-receipt-block.tsx` registers both commands and parses the summaries.
+**Decision:** On a landed join, `do_changeset_join` formats an S01 join summary in Rust, writes it to the shell ledger as `NewShellExchange { command: "/dash-join", output: summary, exit_code: Some(0), cwd: project_dir }`, and adds `summary` to `changeset_join_ok`. Release does the same with `command: "/dash-release"` and an S02 release summary. The deck's `use-landing-receipts.ts` grows a join arm and a release arm; a new `session-join-receipt-block.tsx` registers both commands and parses the summaries.
 
 **Rationale:**
 - This is the shipped commit-receipt pattern applied unchanged (one Rust formatter, durable through the ledger, restored on reload via `list_shell_exchanges`, non-context per the shell-route doctrine). The client-side `formatJoinReceiptInk` / `formatReleaseReceiptInk` were deleted when commit moved server-side; this is their honest replacement.
 - One formatter per receipt kind means the live row and the restored row cannot drift.
-- `/release` as the receipt's command string names what happened even though no such typed verb exists — the row records the *act*, and the release gesture is shade-only by ruling.
+- `/dash-release` as the receipt's command string names what happened even though no such typed verb exists — the row records the *act*, and the release gesture is shade-only by ruling.
 
 **Implications:**
 - `changeset_join` and `changeset_release` payloads gain an optional `session_id` (neither carries one today), because the ledger row is keyed by it. Absent, the receipt is skipped and the landing still succeeds — the same "a ledger error never fails the verb" rule the commit path follows.
@@ -236,11 +249,35 @@ A search of `tugdeck/src` for `useChangesetJoin`, `useChangesetRelease`, and `us
 **Decision:** Register `select-composer-route:join` in `command-registry.ts` with a title, `key-card` routing, and **no bindings**. Assign no key equivalent in this phase.
 
 **Rationale:**
-- Every user-invocable command is a registry entry ([L30]); the segment is user-invocable, so it gets one whether or not it carries a chord.
-- The obvious chord is taken: `⌃⌘J` is **Show Jots**, and `⌘J` is **New Jot**. Displacing either for a gesture that already has three entrances (the segment, `/join`, the lane affordance) would be a bad trade.
+- Every user-invocable command is a registry entry ([L30]); the segment is user-invocable, so it gets one whether or not it carries a chord. Note the precedent is *not* uniform and the implementer will notice: `select-composer-route:prompt` is registered, but `:changes` deliberately is not — the comment above the prompt entry in `command-registry.ts` explains that the Changes route's door is the Session menu's Show/Hide Changes toggle, so a second entry would name a control's internal state as a command. Join has no such menu twin, which is why it takes an entry of its own rather than following Changes.
+- The obvious chord is taken: `⌃⌘J` is **Show Jots**, and `⌘J` is **New Jot**. Displacing either for a gesture that already has three entrances (the segment, `/dash-join`, the lane affordance) would be a bad trade.
 - A binding can be added later with no structural change — the entry is already there for the keymap pane and the collision lint to see.
 
 **Implications:** the group's Join segment renders no `tooltipShortcut`, unlike Prompt (`⌃⌘P`) and Changes (`⌃⌘C`). That asymmetry is visible and intended.
+
+#### [P08] One operation, one name: the name is the `tugutil` verb path (DECIDED) {#p08-one-name}
+
+**Decision:** An operation is spelled the same way on every surface a user can see it — CLI, card verb, skill, receipt row, menu label — and that spelling is its `tugutil` verb path, hyphenated. `tugutil dash join` ⇒ `dash-join` ⇒ `/dash-join`. This phase renames the card verbs that violate it and ships no new name that does.
+
+| Surface | Was | Is | Rides |
+|---|---|---|---|
+| Card verb | `/join` | `/dash-join` | `tugutil dash join` |
+| Card verb | `/dash` | `/dash-bind` | `tugutil dash bind` (minting on a missing dash stays its behavior) |
+| Receipt row | `/join` | `/dash-join` | `tugutil dash join` |
+| Receipt row | `/release` | `/dash-release` | `tugutil dash release` |
+| Card verb | `/commit` | `/commit` | `tugutil commit` |
+| Card verb | `/plan-review` | `/plan-review` | `tugutil plan` |
+| Skill | `dash-join` | `dash-join` | `tugutil dash join` |
+
+**Rationale:**
+- A user who has seen an operation once should be able to type it, read it in a receipt, and find it in `--help` without learning three spellings. `/join` / `dash-join` / `tugutil dash join` was three.
+- The rule is mechanical, so it settles the next name before anyone argues about it — there is no taste left in the decision.
+- It is also a collision detector. Applying it surfaced that `tugutil commit` (land this session's changes on the base) and `tugutil dash commit` (record a round on a dash worktree) are two operations wearing one word, which phase 4 puts in front of a dash-bound card for the first time.
+
+**Implications:**
+- `/dash-commit` is **reserved** for the round verb and ships no card verb in this phase. `/commit` keeps its meaning — land on the base branch — on bound and unbound cards alike ([P03]'s second rationale). Naming the reservation is what keeps a later phase from spending the word twice.
+- The retired card spellings (`/join`, `/dash`) stay registered as deprecated aliases that run the new handler and raise a one-time pane-bulletin naming the new verb. This is the shape `tugplug/skills/join/SKILL.md` already uses for the retired skill spellings; a verb that silently stops matching would submit the user's line to Claude as a prompt, which is the one outcome worse than a rename.
+- `LocalCommandName` is a literal union derived from `LOCAL_SLASH_COMMANDS`, and the session card keys an exhaustive `Record<LocalCommandName, …>` off it, so a rename is compiler-enforced across every handler — `bunx tsc --noEmit` is the completeness check, not a grep.
 
 ---
 
@@ -367,13 +404,15 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 | `tugdeck/src/lib/landing-mode.ts` | The `LandingMode` interface + `LandingSnapshot` supertype ([P01]) |
 | `tugdeck/src/lib/join-mode-controller.ts` | `JoinModeController`, `evaluateJoinLandGate`, `JoinLandGate` |
 | `tugdeck/src/lib/__tests__/join-mode-controller.test.ts` | Gate table + controller lifecycle |
-| `tugdeck/src/components/tugways/cards/session-join-receipt-block.tsx` | The `/join` + `/release` receipt renderer ([P06]) |
+| `tugdeck/src/components/tugways/cards/session-join-receipt-block.tsx` | The `/dash-join` + `/dash-release` receipt renderer ([P06]) |
 | `tugdeck/src/components/tugways/cards/session-join-receipt-block.css` | Its slot styles |
 | `tugdeck/src/components/tugways/cards/__tests__/session-join-receipt-block.test.ts` | Summary parse round-trip |
 | `tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-landing.tsx` | The lane row's landing face: outcome, blockers, affordances |
-| `tests/app-test/at0409-join-mode.test.ts` | `/join` enters the mode, seeds the draft, shows the third segment |
-| `tests/app-test/at0410-join-outcomes.test.ts` | Empty → release fronted; blocked → named act; `landing` → resume |
-| `tests/app-test/at0411-join-receipt.test.ts` | A real land leaves one `/join` row that survives a reload |
+| `tests/app-test/at0417-join-mode.test.ts` | `/dash-join` enters the mode, seeds the draft, shows the third segment |
+| `tests/app-test/at0418-join-outcomes.test.ts` | Empty → release fronted; blocked → named act; `landing` → resume |
+| `tests/app-test/at0419-join-receipt.test.ts` | A real land leaves one `/dash-join` row that survives a reload |
+
+The numbers are `at0417`–`at0419` because `at0410`–`at0416` are taken and a contiguous run beats reusing `at0409` (free only because `at0409-plan-review-borrow.test.ts` was deleted in `b15d1a629`, so the number still names something else in old transcripts). `at0410-text-card-file-drop.test.ts` and `at0411-atom-chip-label-survives-annotator.test.ts` are live files; the tree already carries one accidental collision (`at0412-plan-review-verb.test.ts` and `at0412-text-card-asset-strip.test.ts`), which is exactly the confusion a fresh number avoids. `ls tests/app-test/` before creating a file, and take the next free number if the corpus has grown since this plan was written.
 
 #### Symbols to add / modify {#symbols}
 
@@ -392,6 +431,8 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 | `JoinModeController`, `evaluateJoinLandGate` | class/fn | `tugdeck/src/lib/join-mode-controller.ts` | [P05] |
 | `TugPromptEntryProps.landingMode` | prop | `tugdeck/src/components/tugways/tug-prompt-entry.tsx` | replaces `commitMode` |
 | `select-composer-route:join` | registry entry | `tugdeck/src/components/tugways/command-registry.ts` | [P07], no bindings |
+| `LOCAL_SLASH_COMMANDS` `dash-join` / `dash-bind` | entries | `tugdeck/src/lib/slash-commands.ts` | [P08]; `join` / `dash` survive as deprecated aliases |
+| `ReleaseState.phase` `"done"` | variant | `tugdeck/src/lib/changeset-verb-store.ts` | the release receipt's terminal edge ([P06]) |
 | `SELECT_COMPOSER_ROUTE` payload doc | comment | `tugdeck/src/components/tugways/action-vocabulary.ts` | widen to three values |
 | `useLandingReceipts` | fn | `tugdeck/src/components/tugways/cards/use-landing-receipts.ts` | join + release arms |
 | `SessionChangesDashLane` | component | `session-changes-dash-lane.tsx` | takes the landing props; delegates the face |
@@ -400,10 +441,10 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 ### Documentation Plan {#documentation-plan}
 
-- [ ] `tuglaws/tracking-changes.md` — the landing section gains join mode beside commit mode, and the four outcomes table.
-- [ ] `tuglaws/slash-commands.md` — `/join`'s entry stops describing a skill submission.
-- [ ] `tugplug/skills/dash-join/SKILL.md` — one paragraph naming the card's join mode as the interactive twin, so the skill says which path it is.
-- [ ] `tuglaws/design-decisions.md` — a `[D##]` for "a landing mode owns the composer's document; there is one slot" if the review judges [P01] to be a global rule rather than a plan-local one.
+- [x] `tuglaws/tracking-changes.md` — the landing section gains the one-slot landing mode, the outcomes table (five rows: the four plus the interrupted teardown), and the server-formats-once receipt rule.
+- [x] `tuglaws/slash-commands.md` — the recipes section gains "Name a command" ([P08]'s rule) and "Retire a spelling" (the alias mechanism and why an unmatched verb is worse than a rename).
+- [x] `tugplug/skills/dash-join/SKILL.md` — a paragraph naming the card's join mode as the interactive twin over the same verb.
+- [ ] `tuglaws/design-decisions.md` — **not written.** The `[D##]` was conditional on the review judging [P01] to be a global rule; round 1 did not, so it stays plan-local. The rule is stated in `tracking-changes.md`'s landing section, which is where a reader looking for it would be.
 
 ---
 
@@ -420,7 +461,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 #### What stays out of tests {#test-non-goals}
 
-- **Render tests over the composer's mode swap** — banned shape (fake-DOM/RTL). The swap is covered where it is real: an app-test asserting the composer's document text after `/join`.
+- **Render tests over the composer's mode swap** — banned shape (fake-DOM/RTL). The swap is covered where it is real: an app-test asserting the composer's document text after `/dash-join`.
 - **Mock-store assertions** — banned. The controller tests drive real store singletons reset per case, the way `commit-mode-controller.test.ts` does.
 - **A real interrupted join** — the teardown's crash window is not reproducible from a test; the journal is written directly and the derivation is exercised for real ([#landing-fixture]).
 - **The resolve ladder's AI rung** — it runs a scribe child; the lane's presentation is tested against injected `changeset_join_resolve_*` frames through the store's existing `_ingestJoinFrameForTest` hook, and the ladder itself is already covered in `tugdash-core::resolve`.
@@ -434,17 +475,17 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Preview reports blockers | pending | — |
-| #step-2 | Blockers, continue, and session id on the wire | pending | — |
-| #step-3 | The `LandingMode` interface and `JoinModeController` | pending | — |
-| #step-4 | The composer takes one landing mode | pending | — |
-| #step-5 | `/join` enters join mode | pending | — |
-| #step-6 | The dash lane's four-outcome face | pending | — |
-| #step-7 | Server-formatted join and release summaries | pending | — |
-| #step-8 | The join receipt block | pending | — |
-| #step-9 | The resolve lane | pending | — |
-| #step-10 | Release, with the discard preflight | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | Preview reports blockers | done | `4c625a170` |
+| #step-2 | Blockers, continue, and session id on the wire | done | `b11137fac` |
+| #step-3 | The `LandingMode` interface and `JoinModeController` | done | `1efdd2955` |
+| #step-4 | The composer takes one landing mode | done | `112a039e5` |
+| #step-5 | `/dash-join` enters join mode | done | `36df48ea8` |
+| #step-6 | The dash lane's four-outcome face | done | `3f6048cc9` |
+| #step-7 | Server-formatted join and release summaries | done | `9b482233c` |
+| #step-8 | The join receipt block | done | `85ffb8b14` |
+| #step-9 | The resolve lane | done | `3c835119b` |
+| #step-10 | Release, with the discard preflight | done | `bdd71a2a0` |
+| #step-11 | Integration checkpoint | done | `bc36cdc89` |
 
 ---
 
@@ -463,6 +504,9 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 - [ ] Add `JoinBlocker` per Spec S03. Keep `kind` a `String` on the struct (matching `JoinOutcome.strategy`'s existing shape) rather than a serialized enum, so the JSON is stable and additive.
 - [ ] Write `join_preflight_in(repo_root, name) -> Result<Vec<JoinBlocker>, String>`: resolve the branch and base via `branch_name` / `dash_base`, then check, in this order — `StaleJournal` (`read_join_journal(...).is_some()`), `OffBase` (`rev-parse --abbrev-ref HEAD` in the repo root ≠ base), `BaseDirt` (`dirty_tracked_paths(repo_root)` ∩ (`diff --name-only base...branch` ∪ `dirty_tracked_paths(worktree)`)), `Empty` (`rev-list --count base..branch == 0` **and** the worktree is clean). Each `detail` is the same sentence the execute path's `Err` returns, so the two surfaces read identically.
 - [ ] Do **not** include the cwd guard ([R02]); leave `join_in`'s inline check exactly where it is and add a one-line comment at the guard naming why it is absent from the preflight.
+- [ ] **Move the `opts.preview` arm above the stale-journal guard** (or gate that guard on `!opts.preview`). Today `join_in` returns `Err("A previous join of dash '…' is incomplete…")` *before* it reaches the preview arm, so a preview of a journalled dash never previews at all — and `join_preflight_in` called from the preview arm could never report `StaleJournal`, which would make the test below unpassable. Read the order in `join_in` before editing: branch-exists → `continue_join` → stale-journal `Err` → `opts.preview` → cwd guard → off-base → base-dirt → `commit_worktree_dirt` → `ahead == 0`.
+- [ ] This is a deliberate **preview** behavior change, and the only one in this step: `--preview` on a journalled dash stops erroring and starts returning a preview carrying a `stale-journal` blocker. That is [P02]'s whole point — the execute path is still what refuses, and it is untouched.
+- [ ] Correct the two stale CLI names in these strings while you are here: `join_in` tells the user to run `tugdash join <name> --continue` and the merge-tree guard says `tugdash join --preview requires git >= 2.38`. There is no `tugdash` binary — the verb is `tugutil dash join`. Because the blocker's `detail` is this same sentence, leaving it would put a nonexistent command in front of the user in the card.
 - [ ] Call `join_preflight_in` from the `opts.preview` arm of `join_in` and put the result on the returned `JoinOutcome`. The conflict computation is unchanged and still runs — a blocked dash can also conflict, and the card wants both.
 - [ ] Leave the execute path's inline checks untouched ([P02] rationale).
 - [ ] `run_join` in `tugutil/src/dash.rs`: under the preview arm, after the clean/conflict lines, print `Blocked:` and one indented `kind — detail` line per blocker.
@@ -470,7 +514,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 **Tests:**
 - [ ] `preview_reports_off_base_when_the_root_is_on_another_branch` — create a dash, check the root out to a scratch branch, preview, assert one `off-base` blocker.
 - [ ] `preview_reports_intersecting_base_dirt_and_names_the_paths` — dirty a file in the base that the dash also changed; assert `base-dirt` with that path in `paths`. Dirty a *disjoint* file; assert no blocker.
-- [ ] `preview_reports_a_stale_journal` — write a journal, preview, assert `stale-journal`.
+- [ ] `preview_reports_a_stale_journal` — write a journal, preview, assert `stale-journal`. This is the test that pins the reordering above; it fails with an `Err` rather than a blocker if the guard is left in front of the preview arm.
 - [ ] `preview_reports_empty_for_a_dash_with_no_rounds` — a fresh dash, clean worktree; assert `empty`. Add a round; assert no `empty`.
 - [ ] `a_clean_dash_previews_with_no_blockers` — the happy path stays empty.
 - [ ] `preflight_and_the_execute_path_agree` — for each blocker kind, assert that `join_in` with `preview: false` returns an `Err` whose string equals the blocker's `detail`.
@@ -573,7 +617,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 - [ ] Parameterize the user-facing strings on `landingMode.kind`: the Z5 land button's label and tooltip ("Commit" / "Join"), the cancel labels, the route segment's tooltip ("Write a commit message" / "Write the join message"), and the Auto-Message tooltip (unchanged text, both kinds).
 - [ ] Z5's land button reads `landReady` / `canLandIgnoringMessage` from the shared snapshot; the unavailable tooltip becomes kind-specific ("Unavailable while a turn is running or the changeset is empty" / "Unavailable until the preview is clean").
 - [ ] Add the third route segment, rendered only when the host passes `joinAvailable` (the session card derives it from the binding, [P03]). Its `value` is `"join"`, it carries no `tooltipShortcut` ([P07]), and the group's `value` derivation becomes the three-way one.
-- [ ] Register `select-composer-route:join` in `command-registry.ts` with `routing: "key-card"`, a title of `Join Route`, and no `bindings`; widen the payload comment in `action-vocabulary.ts` to three values.
+- [ ] Register `select-composer-route:join` in `command-registry.ts` with `routing: "key-card"`, a title of `Join Route`, and no `bindings` (about half the table's entries carry none, so this is ordinary); widen the payload comment in `action-vocabulary.ts` to three values. If a registry lint refuses an entry with no door, `__tests__/command-routing-drift.test.ts` and `__tests__/keybinding-map.test.ts` are where it will fire — read [P07] before appeasing it.
 - [ ] The Component Gallery's prompt entry passes no landing mode and renders an empty leading slot, exactly as today.
 
 **Tests:**
@@ -587,37 +631,40 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 ---
 
-#### Step 5: `/join` enters join mode {#step-5}
+#### Step 5: `/dash-join` enters join mode {#step-5}
 
 **Depends on:** #step-4
 
-**Commit:** `tugdash(join-lane): /join enters join mode instead of submitting a turn`
+**Commit:** `tugdash(join-lane): /dash-join enters join mode instead of submitting a turn`
 
-**References:** [P04] join verb, [P03] third segment, [P05] gate parity, (#outcome-derivation)
+**References:** [P04] join verb, [P08] one name, [P03] third segment, [P05] gate parity, (#outcome-derivation)
 
 **Artifacts:**
 - The session card's `JoinModeController` instance and its coupling
-- The rewritten `join` slash handler
-- `at0409-join-mode.test.ts`
+- The renamed + rewritten `dash-join` slash handler, and `/dash-bind`
+- `at0417-join-mode.test.ts`
 
 **Tasks:**
 - [ ] Instantiate `JoinModeController` in `session-card.tsx` beside `commitModeController`, disposing it on unmount ([L27]).
-- [ ] Rewrite the `join` slash handler per [P04]: parse `[name] [message…]`; resolve the target — an explicit name against `changesController.getSnapshot().dashes` by `display_name`, a bare invocation against `cardSessionBindingStore.getBinding(cardId)?.dash?.id` matched by `owner_id`; caution on no match; otherwise `joinModeController.enter(target, seed)`. Drop the `canSubmit` refusal.
+- [ ] Rename the card verbs per [P08]: in `LOCAL_SLASH_COMMANDS` (`tugdeck/src/lib/slash-commands.ts`) `join` → `dash-join` and `dash` → `dash-bind`. `LocalCommandName` is a literal union over that array and the session card keys an exhaustive `Record<LocalCommandName, Surface>` off it, so `bunx tsc --noEmit` names every handler that has to move — do not hunt them by grep.
+- [ ] Keep `join` and `dash` registered as deprecated aliases ([P08]): same handler, plus a one-time pane-bulletin naming the new spelling. Mark them so the composer's command picker does not list them — an alias is for muscle memory, not for discovery. An unmatched verb submits the user's line to Claude as a prompt, which is why they cannot simply be deleted.
+- [ ] Rewrite the `dash-join` handler per [P04]: parse `[name] [message…]`; resolve the target — an explicit name against `changesController.getSnapshot().dashes` by `display_name`, a bare invocation against `cardSessionBindingStore.getBinding(cardId)?.dash?.id` matched by `owner_id`; caution on no match; otherwise `joinModeController.enter(target, seed)`. Drop the `canSubmit` refusal.
 - [ ] Extend the `SELECT_COMPOSER_ROUTE` handler with a `join` arm entering join mode on the bound dash (a no-op when unbound, which is also when the segment is absent).
 - [ ] Mode ↔ shade coupling: entering join mode shows the Changes shade and closes the find bar, exactly as commit mode does; exiting hides it unless the shade has swapped to History. Reuse the existing effect by observing an `anyLandingActive` derivation rather than writing a second one.
 - [ ] The staged land: install a land hook on `JoinModeController` that parks the callback and exits the mode, so `sheetDidHide` fires the join after the shade animates out — the same shape as the staged commit.
 - [ ] Pass `landingMode = joinActive ? joinModeController : commitModeController` and `joinAvailable = binding.dash !== undefined` to the prompt entry.
-- [ ] `slash-commands.ts`: rewrite `join`'s description to *"Land a dash — opens the join editor over a previewed merge"*.
+- [ ] `slash-commands.ts`: rewrite `dash-join`'s description to *"Land a dash — opens the join editor over a previewed merge"*.
 - [ ] `use-menu-state-publication.ts`: publish join-mode readiness alongside commit's, so the Session menu's landing item can gate on the active mode rather than assuming commit.
 
 **Tests:**
-- [ ] `at0409-join-mode.test.ts` (`@covers` the controller, the prompt entry, the session card, `slash-commands.ts`): create a real dash with a round via `dash-fixture`, bind it, type `/join`, and assert — the composer's document equals the dash's maintained join draft, the Z4A group shows three segments with Join selected, the Changes shade is up, and Escape returns the composer to the prompt with the message preserved on re-entry.
-- [ ] Same file: `/join <name> some message` seeds `some message`.
-- [ ] Same file: on an unbound card the third segment is absent and bare `/join` cautions.
+- [ ] `at0417-join-mode.test.ts` (`@covers` the controller, the prompt entry, the session card, `slash-commands.ts`): create a real dash with a round via `dash-fixture`, bind it, type `/dash-join`, and assert — the composer's document equals the dash's maintained join draft, the Z4A group shows three segments with Join selected, the Changes shade is up, and Escape returns the composer to the prompt with the message preserved on re-entry.
+- [ ] Same file: `/dash-join <name> some message` seeds `some message`.
+- [ ] Same file: on an unbound card the third segment is absent and bare `/dash-join` cautions.
+- [ ] Same file: typing the retired `/join` enters the same mode and raises the bulletin naming `/dash-join` ([P08]) — the alias is the one part of the rename a user can hit by accident, so it is the part that gets an assertion.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0409-join-mode.test.ts`
+- [ ] `just app-test at0417-join-mode.test.ts`
 - [ ] `just app-test-changed`
 
 ---
@@ -633,7 +680,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 **Artifacts:**
 - `session-changes-dash-landing.tsx`
 - The lane row's landing face and its Join / Resume affordances
-- `at0410-join-outcomes.test.ts`
+- `at0418-join-outcomes.test.ts`
 
 **Tasks:**
 - [ ] Write `SessionChangesDashLanding`: takes the entry, the `JoinState`, and callbacks; renders the outcome word and, per [#blocker-acts], one line per blocker naming the unblocking act. Compose `TugBadge` / `TugListRow` / `TugPushButton`; hand-rolled chrome is a law violation ([L19]).
@@ -641,15 +688,15 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 - [ ] `stage === "landing"` renders "Resume teardown", sending `changeset_join { continue: true }`. It renders regardless of outcome, because a stale journal blocks everything else.
 - [ ] The empty outcome renders the "nothing to join — release this dash?" line **without a button**. The release affordance itself lands in #step-10; a disabled placeholder would be a dead control shipping for one step, which is worse than a line of prose that is already true.
 - [ ] Non-fronted dash rows stay read-only: landing is a gesture on *this card's* dash (the [overlay rule](dash-integration-plan.md#p01-overlay)), and offering it on a stranger's dash would land work from a card that never touched it.
-- [ ] The row previews on expand, not on render: a lane with six dashes must not fire six `merge-tree` runs on open.
+- [ ] **Only the fronted row previews, and only on expand.** `JoinState` is keyed by `entryKey`, which `ChangesRouteController` builds as `session:<tugSessionId>` — one slot per *card*, not per dash (`_joins` / `_joinInflight` in `changeset-verb-store.ts`). Two rows previewing therefore overwrite each other, and the loser renders the winner's blockers under its own dash name. Non-fronted rows show the entry's static facts and no outcome face at all, which is also what [the overlay rule](dash-integration-plan.md#p01-overlay) wants. Previewing on expand rather than on render is then a cost win on top — a lane with six dashes fires no `merge-tree` runs on open — but the correctness reason is the keying, and a later change that re-keys `JoinState` by `(project_dir, dash)` is what would unlock a per-row face.
 
 **Tests:**
-- [ ] `at0410-join-outcomes.test.ts` (`@covers` the landing component, the lane, the verb store): a dash with a round and a clean base → clean, Join enabled. Dirty an intersecting file in the base → `base-dirt` named with the path, Join disabled. A dash with no rounds → empty, release line, no Join. A written join journal → "Resume teardown" ([#landing-fixture]); remove the journal in `afterAll`.
+- [ ] `at0418-join-outcomes.test.ts` (`@covers` the landing component, the lane, the verb store): a dash with a round and a clean base → clean, Join enabled. Dirty an intersecting file in the base → `base-dirt` named with the path, Join disabled. A dash with no rounds → empty, release line, no Join. A written join journal → "Resume teardown" ([#landing-fixture]); remove the journal in `afterAll`.
 - [ ] bun: the outcome derivation is a pure function with its own table test (clean / conflicted / blocked / empty / landing), so the component is not where that logic is proved.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0410-join-outcomes.test.ts`
+- [ ] `just app-test at0418-join-outcomes.test.ts`
 - [ ] `just app-test-changed`
 
 ---
@@ -668,11 +715,12 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 **Tasks:**
 - [ ] Write both formatters beside `format_commit_summary`, following its construction exactly (fixed header, U+00B7 / U+2212, verbatim message tail).
-- [ ] `do_changeset_join`: on a landed join (`!previewed && commit_hash.is_some()`), format the summary and — when the payload carried a `session_id` and a shell ledger is present — write a `NewShellExchange { command: "/join", output: summary, exit_code: Some(0), cwd: project_dir }`. A ledger error warns; it never fails the join.
+- [ ] `do_changeset_join`: on a landed join (`!previewed && commit_hash.is_some()`), format the summary and — when the payload carried a `session_id` and a shell ledger is present — write a `NewShellExchange { command: "/dash-join", output: summary, exit_code: Some(0), cwd: project_dir }`. A ledger error warns; it never fails the join.
 - [ ] The join message the receipt shows must be the one `join_in` actually used. `JoinOutcome` does not carry it, so add `message: Option<String>` to `JoinOutcome`, set from `final_msg` on the integrate paths and from the journal on the teardown-resume path. Additive and skip-if-none.
-- [ ] `do_changeset_release`: the same, with `command: "/release"` and the S02 summary. The round subjects come from the dash detail read **before** `release_in` tears the branch down — capture them alongside `dash_owner_key`, for the same reason that capture exists.
+- [ ] `do_changeset_release`: the same, with `command: "/dash-release"` and the S02 summary. The round subjects come from the dash detail read **before** `release_in` tears the branch down — capture them alongside `dash_owner_key`, for the same reason that capture exists.
 - [ ] Add `"summary"` to both `_ok` bodies.
-- [ ] Deck: `JoinState.summary`, `ReleaseState.summary`, populated on the terminal transitions.
+- [ ] Deck: `JoinState.summary` populates on the existing `done` transition. **Release has no terminal state to hang one on** — `ReleasePhase` is `"idle" | "pending" | "error"`, and `changeset_release_ok` calls `_setRelease(entryKey, RELEASE_IDLE)`, which deletes the map entry and hands back a shared frozen object. Add a `"done"` phase carrying `summary`, set it on the `_ok` arm, and leave `clearRelease` as the way back to idle. Without this, step 8's release arm has no edge to observe (pending → idle is indistinguishable from a manual clear) and nowhere to read the summary from.
+- [ ] The release summary's round subjects need a `DashDetail`, and the only accessor is `dash_detail_entries_in(repo_root)` — there is no single-dash variant. Call it and filter by name **before** `release_in` runs, alongside the existing `dash_owner_key` capture; after the teardown the branch is gone and the subjects are unrecoverable.
 
 **Tests:**
 - [ ] Rust: `format_join_summary_names_the_dash_the_base_and_the_rounds` — assert the exact string, the way the commit formatter's tests do.
@@ -690,29 +738,29 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 **Depends on:** #step-6, #step-7
 
-**Commit:** `tugdash(join-lane): the /join and /release receipts render as transcript ink`
+**Commit:** `tugdash(join-lane): the /dash-join and /dash-release receipts render as transcript ink`
 
 **References:** [P06] receipts, Spec S01, Spec S02
 
 **Artifacts:**
 - `session-join-receipt-block.tsx` + `.css` + its parse test
 - `use-landing-receipts.ts`'s join and release arms
-- `at0411-join-receipt.test.ts`
+- `at0419-join-receipt.test.ts`
 
 **Tasks:**
 - [ ] Write `parseJoinReceipt` / `parseReleaseReceipt` against Specs S01/S02, each returning `null` on a non-matching first line so the generic `ShellExchangeBlock` renders raw output — the same fallback discipline the commit block uses.
 - [ ] `SessionJoinReceiptBlock` composes `BlockChrome` with `CommitShaText` for the landing sha, the dash name and base as the identity line, `resultSummary` badges for the round count, and the message body via `CommitMessage`. The release variant has no sha: its identity is the dash name and the discard count, and its body is the round subjects.
-- [ ] Register both matchers (`/join`, `/release`) with `registerCommandBlock` at import time, and add the side-effect import beside the commit block's in `session-card-transcript.tsx`.
-- [ ] `use-landing-receipts.ts`: add a join arm (`phase` reaching `"done"` with a non-null `summary`) and a release arm. Update the module docblock, which currently states that join/release leave no receipts.
+- [ ] Register both matchers (`/dash-join`, `/dash-release`) with `registerCommandBlock` at import time, and add the side-effect import beside the commit block's in `session-card-transcript.tsx`.
+- [ ] `use-landing-receipts.ts`: add a join arm (`phase` reaching `"done"` with a non-null `summary`) and a release arm. Update the module docblock, which currently states that join and release leave no receipts.
 
 **Tests:**
 - [ ] bun: `parseJoinReceipt` round-trips the exact string the Rust test asserts (copy it verbatim — that is what keeps the two ends pinned to one format).
 - [ ] bun: a legacy or truncated output parses to `null`.
-- [ ] `at0411-join-receipt.test.ts` (`@covers` the receipt block, the receipts hook, `agent_supervisor.rs`): create a dash with a round, `/join` it from the card, land it, assert exactly one `/join` receipt row with the landing sha and the dash name — then Maker ▸ Reload and assert the row is byte-identical. Release the dash in `afterAll` only if the join did not already tear it down.
+- [ ] `at0419-join-receipt.test.ts` (`@covers` the receipt block, the receipts hook, `agent_supervisor.rs`): create a dash with a round, `/dash-join` it from the card, land it, assert exactly one `/dash-join` receipt row with the landing sha and the dash name — then Maker ▸ Reload and assert the row is byte-identical. Release the dash in `afterAll` only if the join did not already tear it down.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0411-join-receipt.test.ts`
+- [ ] `just app-test at0419-join-receipt.test.ts`
 - [ ] `just app-test-changed`
 
 ---
@@ -767,11 +815,11 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 **Tests:**
 - [ ] bun: the preflight's summary line is a pure function — table-test `(rounds, dirtyCount) → line` including the singular forms and the clean case.
-- [ ] app-test: extend `at0410-join-outcomes.test.ts` with a release of a **purpose-created** dash (never the one another case is using), asserting the preflight lists the round subject and that the entry is gone after the confirm.
+- [ ] app-test: extend `at0418-join-outcomes.test.ts` with a release of a **purpose-created** dash (never the one another case is using), asserting the preflight lists the round subject and that the entry is gone after the confirm.
 
 **Checkpoint:**
 - [ ] `cd tugdeck && bun test && bunx tsc --noEmit && bunx vite build`
-- [ ] `just app-test at0410-join-outcomes.test.ts`
+- [ ] `just app-test at0418-join-outcomes.test.ts`
 - [ ] `just app-test-changed`
 
 ---
@@ -785,7 +833,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 **References:** (#success-criteria, #documentation-plan, #outcome-derivation)
 
 **Tasks:**
-- [ ] Land a real dash end to end from the card: `/dash <name>`, a round, `/join`, edit the message, land. Verify the receipt, the History badge reading the `Tug-Dash` trailer, and that the dash's draft row **and** every session binding for it are gone afterwards (the server already does this; this is the first time it is checked from the surface that triggers it).
+- [ ] Land a real dash end to end from the card: `/dash-bind <name>`, a round, `/dash-join`, edit the message, land. Verify the receipt, the History badge reading the `Tug-Dash` trailer, and that the dash's draft row **and** every session binding for it are gone afterwards (the server already does this; this is the first time it is checked from the surface that triggers it).
 - [ ] Verify the composer returns to the prompt route with the pre-mode draft intact.
 - [ ] Write the documentation-plan updates.
 - [ ] Confirm `just app-test-covers-check` passes for the three new test files.
@@ -803,20 +851,20 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 
 ### Deliverables and Checkpoints {#deliverables}
 
-**Deliverable:** The dash lane's landing surface — `/join` opens the join-message editor over a previewed merge, the Changes shade fronts the outcome and the act that clears it, and every landing or discard leaves a durable receipt.
+**Deliverable:** The dash lane's landing surface — `/dash-join` opens the join-message editor over a previewed merge, the Changes shade fronts the outcome and the act that clears it, and every landing or discard leaves a durable receipt.
 
 #### Phase Exit Criteria ("Done means…") {#exit-criteria}
 
-- [ ] `/join` never submits a turn; the `tugplug:dash-join` skill is unchanged and still works (invoke it once by hand).
+- [ ] `/dash-join` never submits a turn; the `tugplug:dash-join` skill is unchanged and still works (invoke it once by hand).
 - [ ] Each of the five outcomes — clean, conflicted, blocked, empty, interrupted teardown — is reachable and named in the lane, with an affordance that does something.
 - [ ] A join or release receipt survives Maker ▸ Reload byte-identically.
 - [ ] `commit-mode-controller.test.ts` and `at0253-commit-dialog.test.ts` pass unmodified.
 - [ ] `cargo nextest run`, `bun test`, `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed`, and `just app-test-covers-check` all green.
 
 **Acceptance tests:**
-- [ ] `at0409-join-mode.test.ts`
-- [ ] `at0410-join-outcomes.test.ts`
-- [ ] `at0411-join-receipt.test.ts`
+- [ ] `at0417-join-mode.test.ts`
+- [ ] `at0418-join-outcomes.test.ts`
+- [ ] `at0419-join-receipt.test.ts`
 
 #### Roadmap / Follow-ons (Explicitly Not Required for Phase Close) {#roadmap}
 
@@ -829,7 +877,7 @@ Carried on `JoinOutcome.blockers` and echoed verbatim into `changeset_join_ok` a
 | Checkpoint | Verification |
 |------------|--------------|
 | Preview tells the truth | `tugutil dash join <name> --preview --json` reports blockers matching what a real land refuses on |
-| The mode is real | `at0409-join-mode.test.ts` |
-| The outcomes are reachable | `at0410-join-outcomes.test.ts` |
-| The receipt is durable | `at0411-join-receipt.test.ts` |
+| The mode is real | `at0417-join-mode.test.ts` |
+| The outcomes are reachable | `at0418-join-outcomes.test.ts` |
+| The receipt is durable | `at0419-join-receipt.test.ts` |
 | Commit is undisturbed | `at0253-commit-dialog.test.ts` + `commit-mode-controller.test.ts`, both unmodified |

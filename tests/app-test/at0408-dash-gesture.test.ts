@@ -1,5 +1,5 @@
 /**
- * at0408-dash-gesture.test.ts — `/dash`, all four ways it can go.
+ * at0408-dash-gesture.test.ts — `/dash-bind`, all four ways it can go.
  *
  * The command means "work on this dash, making it if needed", and it takes
  * each of its two paths for what that path is. A name the card's snapshot
@@ -9,14 +9,14 @@
  * through the shell route and leaves a receipt saying what was made, and
  * `dash create`'s own auto-bind is what ends the card bound.
  *
- * The other two ways are the ones that must not mutate anything: bare `/dash`
+ * The other two ways are the ones that must not mutate anything: bare `/dash-bind`
  * opens the Changes shade where the card's own dash facts live, and a name
  * that could not be passed through a shell unquoted is refused with a caution
  * naming the constraint rather than turned into a quoting adventure.
  *
  * The run waits for the aggregate to answer before typing anything. That is
  * not politeness: before the first compose every name misses the snapshot
- * match, and `/dash <known-name>` would fall through to the create path and
+ * match, and `/dash-bind <known-name>` would fall through to the create path and
  * cut a second branch for a dash that already exists.
  *
  * @covers tugdeck/src/lib/slash-commands.ts
@@ -53,7 +53,7 @@ const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 /** Already there when the gesture runs — the bind path. */
 const KNOWN_DASH = "at0408-known";
-/** Does not exist until `/dash` makes it — the create path. */
+/** Does not exist until `/dash-bind` makes it — the create path. */
 const MADE_DASH = "at0408-made";
 
 beforeAll(() => {
@@ -103,7 +103,7 @@ async function runCommand(app: App, line: string): Promise<void> {
 const count = (selector: string): string =>
   `document.querySelectorAll(${JSON.stringify(selector)}).length`;
 
-describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
+describe.skipIf(!SHOULD_RUN)("AT0408: the /dash-bind gesture", () => {
   test(
     "a known name binds silently, an unknown one is created through the shell, bare opens the shade, and a shell-unsafe name is refused",
     async () => {
@@ -141,7 +141,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
         // The Lens's Dashes section reads the same `ChangesetAllStore` the
         // card's controller does, so a row for the fixture dash there is proof
         // the snapshot has composed this project's dashes. Typing before that
-        // would send `/dash <known>` down the CREATE path.
+        // would send `/dash-bind <known>` down the CREATE path.
         await app.dispatchControlAction("toggle-lens");
         await app.waitForCondition<boolean>(
           `document.querySelector('${LENS_SECTION} [data-slot="lens-dashes-row"][data-dash="${KNOWN_DASH}"]') !== null`,
@@ -154,7 +154,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
         );
 
         // ── A known name binds, with no shell row behind it ───────────────
-        await runCommand(app, `/dash ${KNOWN_DASH}`);
+        await runCommand(app, `/dash-bind ${KNOWN_DASH}`);
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(KNOWN_DASH)}`,
           { timeoutMs: 15000 },
@@ -163,7 +163,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
         expect(await app.evalJS<number>(count(SHELL_ROWS))).toBe(0);
 
         // ── An unknown name is created, with a receipt ────────────────────
-        await runCommand(app, `/dash ${MADE_DASH}`);
+        await runCommand(app, `/dash-bind ${MADE_DASH}`);
         await app.waitForCondition<boolean>(
           `(function(){
              var rows = document.querySelectorAll(${JSON.stringify(SHELL_ROWS)});
@@ -185,7 +185,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
         );
 
         // ── A shell-unsafe name is refused, and nothing is made ───────────
-        await runCommand(app, "/dash two words");
+        await runCommand(app, "/dash-bind two words");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(BULLETIN)}) !== null`,
           { timeoutMs: 8000 },
@@ -197,9 +197,9 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash gesture", () => {
         // Still exactly the one create; the refusal ran no command.
         expect(await app.evalJS<number>(count(SHELL_ROWS))).toBe(1);
 
-        // ── Bare `/dash` opens the Changes shade ──────────────────────────
+        // ── Bare `/dash-bind` opens the Changes shade ──────────────────────────
         expect(await app.evalJS<number>(count(SHEET))).toBe(0);
-        await runCommand(app, "/dash");
+        await runCommand(app, "/dash-bind");
         await app.waitForCondition<boolean>(
           `document.querySelector(${JSON.stringify(SHEET)}) !== null`,
           { timeoutMs: 8000 },

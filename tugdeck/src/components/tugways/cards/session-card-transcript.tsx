@@ -189,6 +189,9 @@ import { resolveCommandBlock } from "./session-command-block-registry";
 // `matchesCommitReceipt` is the same predicate the registry matches on, reused
 // here so the row's git attribution and the block renderer never disagree.
 import { matchesCommitReceipt } from "./session-commit-receipt-block";
+// The dash lane's landings register the same way ([P06]) — a join and a
+// release each render as their own receipt rather than as raw shell output.
+import "./session-join-receipt-block";
 import { composeShellShareText } from "./shell-exchange-view";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";

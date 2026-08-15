@@ -26,6 +26,7 @@
 
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
+import type { LandingMode, LandingSnapshot } from "@/lib/landing-mode";
 import {
   getChangesetVerbStore,
   type CommitPhase,
@@ -66,18 +67,12 @@ export function evaluateCommitLandGate(input: CommitLandGateInput): CommitLandGa
   return { ok: true };
 }
 
-/** The controller's subscribable snapshot — everything the composer + Z5 read. */
-export interface CommitModeSnapshot {
-  /** Whether commit mode is active (sheet up, composer in message mode). */
-  active: boolean;
-  /** The `/commit <message>` seed carried into the mode, or null. */
-  seedMessage: string | null;
-  /**
-   * The land gate ignoring message emptiness (turn / pending / changeset). The
-   * Commit button's JS-disabled state; message-empty is CSS-gated on the
-   * entry's `data-empty` so per-keystroke React state is avoided ([L22]).
-   */
-  canLandIgnoringMessage: boolean;
+/**
+ * The controller's subscribable snapshot — everything the composer + Z5 read.
+ * The shared half is {@link LandingSnapshot} ([P01]); the fields below it are
+ * commit's own.
+ */
+export interface CommitModeSnapshot extends LandingSnapshot {
   /** Number of files the commit would land (0 ⇒ the "No changes" state). */
   fileCount: number;
   /**
@@ -86,29 +81,8 @@ export interface CommitModeSnapshot {
    * points at the claimable work ("claim N") instead of a dead-end "0 files".
    */
   claimableCount: number;
-  /** The auto-message draft overlay phase (drives the pencil pose + pulse). */
-  draftPhase: DraftOverlayPhase;
-  /** Live draft text — streaming while drafting, the settled message otherwise. */
-  draftText: string;
-  /** The settled persisted message from the changeset entry (the seed source). */
-  persistedMessage: string;
-  /** Whether the persisted draft was user-edited (guards the Replace confirm). */
-  edited: boolean;
-  /**
-   * Every land gate satisfied right now, message included — the fact the
-   * Session ▸ Commit Changes menu item is gated on. Distinct from
-   * {@link canLandIgnoringMessage}, which deliberately omits the message so the
-   * composer's Commit button can CSS-gate emptiness per keystroke ([L22]). This
-   * one folds the message back in, and only ever changes on the empty ↔
-   * non-empty edge, so the menu-state push it feeds stays edge-driven too.
-   */
-  commitReady: boolean;
   /** Commit round-trip phase — `"pending"` drives the Committing… button label. */
-  commitPhase: CommitPhase;
-  /** Commit error detail to surface, or null. */
-  commitError: string | null;
-  /** Draft error detail to surface, or null. */
-  draftError: string | null;
+  landPhase: CommitPhase;
 }
 
 export interface CommitModeControllerDeps {
@@ -116,7 +90,10 @@ export interface CommitModeControllerDeps {
   codeSessionStore: CodeSessionStore;
 }
 
-export class CommitModeController {
+export class CommitModeController implements LandingMode {
+  /** The landing this mode performs ([P01]) — the composer's labels read it. */
+  readonly kind = "commit" as const;
+
   private readonly deps: CommitModeControllerDeps;
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribes: (() => void)[] = [];
@@ -218,15 +195,15 @@ export class CommitModeController {
       active: this.active,
       seedMessage: this.seedMessage,
       canLandIgnoringMessage: gate.ok,
-      commitReady: this.active && gate.ok && messagePresent,
+      landReady: this.active && gate.ok && messagePresent,
       fileCount,
       claimableCount,
       draftPhase,
       draftText,
       persistedMessage,
       edited: changes.entry?.draft?.edited === true,
-      commitPhase,
-      commitError,
+      landPhase: commitPhase,
+      landError: commitError,
       draftError,
     };
   }
@@ -280,7 +257,7 @@ export class CommitModeController {
 
   /**
    * The composer telling the controller its message crossed the empty ↔
-   * non-empty line, so {@link CommitModeSnapshot.commitReady} can move. Called
+   * non-empty line, so {@link CommitModeSnapshot.landReady} can move. Called
    * from the same substrate update listener that writes `data-commit-empty`;
    * `recompute` fires only when the snapshot actually differs, so the keystrokes
    * between the edges cost a comparison and nothing else ([L22]).
@@ -416,15 +393,15 @@ function snapshotsEqual(a: CommitModeSnapshot, b: CommitModeSnapshot): boolean {
     a.active === b.active &&
     a.seedMessage === b.seedMessage &&
     a.canLandIgnoringMessage === b.canLandIgnoringMessage &&
-    a.commitReady === b.commitReady &&
+    a.landReady === b.landReady &&
     a.fileCount === b.fileCount &&
     a.claimableCount === b.claimableCount &&
     a.draftPhase === b.draftPhase &&
     a.draftText === b.draftText &&
     a.persistedMessage === b.persistedMessage &&
     a.edited === b.edited &&
-    a.commitPhase === b.commitPhase &&
-    a.commitError === b.commitError &&
+    a.landPhase === b.landPhase &&
+    a.landError === b.landError &&
     a.draftError === b.draftError
   );
 }

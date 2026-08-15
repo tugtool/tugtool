@@ -43,10 +43,20 @@ import {
   fileExpandKey,
   type TugChangesListEntry,
 } from "@/components/tugways/tug-changes-list";
-import { SessionChangesDashLane } from "./session-changes-dash-lane";
+import {
+  SessionChangesDashLane,
+  type DashLaneLanding,
+} from "./session-changes-dash-lane";
+import type { DashLandingActions } from "./session-changes-dash-landing";
+import type { JoinOutcome } from "@/lib/join-mode-controller";
+import { useChangesetJoinResolve } from "@/lib/changeset-join-store";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
-import { useChangesetClaim, useChangesetDisclaim } from "@/lib/changeset-verb-store";
+import {
+  useChangesetClaim,
+  useChangesetDisclaim,
+  useChangesetJoin,
+} from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 
@@ -68,6 +78,22 @@ export interface SessionChangesViewProps {
    * is free; only the durable git-init waits.
    */
   codeSessionStore: CodeSessionStore;
+  /**
+   * The half of the fronted row's landing face only the join-mode controller
+   * knows — the derived outcome, the ladder's candidate, and the gestures.
+   * The view supplies the rest from its own store reads. Absent leaves the
+   * lane read-only, which is what an unbound card shows.
+   */
+  dashLanding?: DashLandingSource;
+}
+
+/** What the card hands the view for the fronted dash row's landing face. */
+export interface DashLandingSource {
+  /** The derived landing outcome ([#outcome-derivation]). */
+  outcome: JoinOutcome;
+  /** A candidate commit from the resolution ladder, if one was built. */
+  candidateCommit: string | null;
+  actions: DashLandingActions;
 }
 
 export function SessionChangesView({
@@ -75,6 +101,7 @@ export function SessionChangesView({
   projectDir,
   changesController,
   codeSessionStore,
+  dashLanding,
 }: SessionChangesViewProps): React.ReactElement {
   const snap = useSyncExternalStore(
     changesController.subscribe,
@@ -103,6 +130,21 @@ export function SessionChangesView({
   // Claim's inverse, read the same way and for the same reason.
   const disclaim = useChangesetDisclaim(changesController.entryKey);
   const disclaimPending = disclaim.phase === "pending";
+  // The card's one join round trip ([L02]). It is keyed by the card's entry,
+  // not by dash, which is exactly why the landing face belongs to the fronted
+  // row alone — two rows previewing would share this slot.
+  const join = useChangesetJoin(changesController.entryKey);
+  // The resolution ladder's overlay, keyed by dash rather than by card. The
+  // fronted dash is resolved from the same snapshot the lane orders by; an
+  // unbound card watches the empty key, which is idle by construction.
+  const frontedDash =
+    boundDashId !== null
+      ? (snap.dashes.find((entry) => entry.owner_id === boundDashId) ?? null)
+      : null;
+  const resolveState = useChangesetJoinResolve(
+    project.project_dir,
+    frontedDash?.display_name ?? "",
+  );
 
   const sessionFiles = snap.entry?.files ?? [];
 
@@ -262,6 +304,18 @@ export function SessionChangesView({
       </>
     ) : undefined;
 
+  const laneLanding: DashLaneLanding | undefined =
+    dashLanding !== undefined
+      ? {
+          join,
+          outcome: dashLanding.outcome,
+          candidateCommit: dashLanding.candidateCommit,
+          turnInProgress,
+          resolve: resolveState,
+          actions: dashLanding.actions,
+        }
+      : undefined;
+
   return shell(
     <div className="session-changes-view-body">
       {isCleanAllClear ? (
@@ -319,6 +373,7 @@ export function SessionChangesView({
         dashes={snap.dashes}
         boundDashId={boundDashId}
         projectRoot={project.project_dir}
+        landing={laneLanding}
       />
     </div>,
     headerActions,

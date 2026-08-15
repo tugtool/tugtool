@@ -46,6 +46,7 @@ import React, {
 import {
   ArrowUp,
   GitCommitHorizontal,
+  GitMerge,
   MessageSquareText,
   Plus,
   Square,
@@ -157,7 +158,7 @@ import {
 import { useSharedAgentReady } from "@/lib/shared-agent-store";
 import type { ShellClassifyStore } from "@/lib/shell-classify-store";
 import type { FindSession } from "@/lib/find-session";
-import type { CommitModeController } from "@/lib/commit-mode-controller";
+import type { LandingKind, LandingMode } from "@/lib/landing-mode";
 import { hasJotDrag, readJotDrag } from "@/lib/jot-drag";
 import { resolveAtomFilePath } from "@/lib/atom-file-path";
 import { rehydrateDraftAttachments } from "@/lib/attachment-upload";
@@ -176,6 +177,40 @@ const NOOP_SUBSCRIBE = (): (() => void) => () => {};
  * recognize its group without threading the id through.
  */
 const ROUTE_CHOICE_SENDER_ID = "tug-prompt-entry-route";
+
+/**
+ * The chrome's words, per landing kind ([P01]). The composer's controls are
+ * identical for both landings; only what they are called moves, so the two
+ * vocabularies sit here side by side rather than as branches at each use.
+ */
+const LANDING_WORDS: Record<
+  LandingKind,
+  {
+    cancel: string;
+    autoMessage: string;
+    land: string;
+    landUnavailable: string;
+    routeTooltip: string;
+    emptyHint: string;
+  }
+> = {
+  commit: {
+    cancel: "Cancel commit",
+    autoMessage: "Generate a commit message",
+    land: "Commit",
+    landUnavailable: "Unavailable while a turn is running or the changeset is empty",
+    routeTooltip: "Write a commit message",
+    emptyHint: "Write a commit message, or use Auto-Message.",
+  },
+  join: {
+    cancel: "Cancel join",
+    autoMessage: "Generate a join message",
+    land: "Join",
+    landUnavailable: "Unavailable until the preview is clean",
+    routeTooltip: "Write the join message",
+    emptyHint: "Write the join message, or use Auto-Message.",
+  },
+};
 
 /**
  * Empty editing state — the draft a freshly-cleared editor holds.
@@ -749,13 +784,27 @@ export interface TugPromptEntryProps {
    */
   findSession?: FindSession;
   /**
-   * Commit mode ([P03]): when active, this entry becomes the commit-message
-   * editor — the editor content swaps to the changeset draft, Z5 shows
-   * cancel / auto-message / commit, and submit lands the commit instead of
-   * sending to Claude. Optional; hosts without a changeset (the gallery) omit it
-   * and the entry behaves exactly as before.
+   * The active landing mode ([P01]): when one is up, this entry becomes its
+   * message editor — the editor content swaps to that landing's draft, Z5
+   * shows cancel / auto-message / land, and submit lands instead of sending to
+   * Claude. One slot, because the composer holds one document, so commit mode
+   * and join mode cannot both be up. Optional; hosts without a changeset (the
+   * gallery) omit it and the entry behaves exactly as before.
    */
-  commitMode?: CommitModeController;
+  landingMode?: LandingMode;
+  /**
+   * Whether this card is bound to a dash, which is what puts the Join segment
+   * in the Z4A route group ([P03]). An unbound card renders the two-segment
+   * group it always has.
+   */
+  joinAvailable?: boolean;
+  /**
+   * Route selection the host must resolve: entering a landing means choosing
+   * *which* controller to enter, and only the host holds both. Leaving to the
+   * prompt is handled here, because it has to persist the typed message first.
+   * Omit for hosts with a single landing mode and no Join segment.
+   */
+  onSelectRoute?: (route: "changes" | "join") => void;
   /**
    * Host handler for an attachment that could not be accepted (drop or
    * paste of an unsupported / oversize / undecodable image, or a submit
@@ -1082,7 +1131,9 @@ export const TugPromptEntry = React.forwardRef<
     shellGrammarStore,
     shellClassifyStore,
     findSession,
-    commitMode,
+    landingMode,
+    joinAvailable,
+    onSelectRoute,
     onAttachmentError,
     sessionMetadataStore,
     historyStore,
@@ -1491,25 +1542,25 @@ export const TugPromptEntry = React.forwardRef<
   // mode rides one subscribable snapshot ([L02]); the live message is read on
   // demand (submit / cancel / auto-message / debounced save) rather than
   // mirrored, so no per-keystroke React state is introduced ([L22]).
-  const commitSnap = useSyncExternalStore(
-    commitMode?.subscribe ?? NOOP_SUBSCRIBE,
-    () => commitMode?.getSnapshot() ?? null,
+  const landingSnap = useSyncExternalStore(
+    landingMode?.subscribe ?? NOOP_SUBSCRIBE,
+    () => landingMode?.getSnapshot() ?? null,
   );
-  const commitActive = commitSnap?.active === true;
-  const commitDrafting = commitActive && commitSnap?.draftPhase === "drafting";
-  const inCommitModeRef = useRef(false);
-  const prevCommitActiveRef = useRef(false);
-  const commitModeRef = useRef(commitMode);
-  commitModeRef.current = commitMode;
-  const commitSnapRef = useRef(commitSnap);
-  commitSnapRef.current = commitSnap;
-  const commitDraftingRef = useRef(commitDrafting);
-  commitDraftingRef.current = commitDrafting;
+  const landingActive = landingSnap?.active === true;
+  const landingDrafting = landingActive && landingSnap?.draftPhase === "drafting";
+  const inLandingModeRef = useRef(false);
+  const prevLandingActiveRef = useRef(false);
+  const landingModeRef = useRef(landingMode);
+  landingModeRef.current = landingMode;
+  const landingSnapRef = useRef(landingSnap);
+  landingSnapRef.current = landingSnap;
+  const commitDraftingRef = useRef(landingDrafting);
+  commitDraftingRef.current = landingDrafting;
   // Mirror `active` for the CANCEL_DIALOG responder (built fresh each render,
   // but read a ref so the handler never sees a stale flag): while commit mode
   // is up, Escape / Cmd-. dismiss the mode, never a running turn.
-  const commitActiveRef = useRef(commitActive);
-  commitActiveRef.current = commitActive;
+  const landingActiveRef = useRef(landingActive);
+  landingActiveRef.current = landingActive;
   // The in-progress prompt stashed on mode entry, restored verbatim on exit —
   // opening Changes over a typed draft never clobbers it ([P03]).
   const preCommitDraftRef = useRef<TugTextEditingState | null>(null);
@@ -1538,8 +1589,8 @@ export const TugPromptEntry = React.forwardRef<
     clearCommitPersistTimer();
     commitPersistTimerRef.current = setTimeout(() => {
       commitPersistTimerRef.current = null;
-      const controller = commitModeRef.current;
-      if (controller === undefined || !inCommitModeRef.current) return;
+      const controller = landingModeRef.current;
+      if (controller === undefined || !inLandingModeRef.current) return;
       controller.persistMessage(readCommitMessage());
     }, COMMIT_PERSIST_DEBOUNCE_MS);
   }, [clearCommitPersistTimer, readCommitMessage]);
@@ -1557,10 +1608,10 @@ export const TugPromptEntry = React.forwardRef<
   useLayoutEffect(() => {
     const editor = textEditorRef.current;
     if (editor === null) return;
-    const prev = prevCommitActiveRef.current;
-    prevCommitActiveRef.current = commitActive;
-    if (commitActive && !prev) {
-      inCommitModeRef.current = true;
+    const prev = prevLandingActiveRef.current;
+    prevLandingActiveRef.current = landingActive;
+    if (landingActive && !prev) {
+      inLandingModeRef.current = true;
       preCommitDraftRef.current = editor.captureState();
       // Borrow the composer's current rendered height: a switch to commit mode
       // over a tall, in-progress prompt swaps the doc to the (usually empty)
@@ -1571,8 +1622,8 @@ export const TugPromptEntry = React.forwardRef<
       const scroller = editor.view()?.scrollDOM ?? null;
       const borrowedHeight = scroller?.getBoundingClientRect().height ?? 0;
       const seed =
-        commitSnapRef.current?.seedMessage ??
-        commitSnapRef.current?.persistedMessage ??
+        landingSnapRef.current?.seedMessage ??
+        landingSnapRef.current?.persistedMessage ??
         "";
       editor.restoreState(buildCommitModeState(seed));
       if (scroller !== null && borrowedHeight > 0) {
@@ -1586,8 +1637,8 @@ export const TugPromptEntry = React.forwardRef<
         String(seed.trim().length === 0),
       );
       editor.focus();
-    } else if (!commitActive && prev) {
-      inCommitModeRef.current = false;
+    } else if (!landingActive && prev) {
+      inLandingModeRef.current = false;
       clearCommitPersistTimer();
       const restored = preCommitDraftRef.current ?? EMPTY_EDIT_STATE;
       preCommitDraftRef.current = null;
@@ -1601,7 +1652,7 @@ export const TugPromptEntry = React.forwardRef<
       editor.view()?.dispatch({ effects: setWaveCaretActive.of(false) });
       editor.focus();
     }
-  }, [commitActive, clearCommitPersistTimer]);
+  }, [landingActive, clearCommitPersistTimer]);
 
   // Auto-Message stream ([P06]): the scribe's draft fills the editor live while
   // `drafting`. The editor is read-only
@@ -1610,18 +1661,18 @@ export const TugPromptEntry = React.forwardRef<
   // (`drafting → ready`) the generated message becomes editable; on a cancel
   // (`→ idle`) or failure (`→ error`) the field reverts to the persisted
   // pre-draft message. Either way the caret is re-claimed and the wave cleared.
-  const prevCommitDraftPhaseRef = useRef(commitSnap?.draftPhase ?? "idle");
+  const prevLandingDraftPhaseRef = useRef(landingSnap?.draftPhase ?? "idle");
   // The message being replaced, captured at drafting start so the whole
   // generation collapses to one undo step ([P06]).
   const preDraftMessageRef = useRef("");
   useLayoutEffect(() => {
-    const phase = commitSnap?.draftPhase ?? "idle";
-    const prevPhase = prevCommitDraftPhaseRef.current;
-    prevCommitDraftPhaseRef.current = phase;
-    if (!commitActive) return;
+    const phase = landingSnap?.draftPhase ?? "idle";
+    const prevPhase = prevLandingDraftPhaseRef.current;
+    prevLandingDraftPhaseRef.current = phase;
+    if (!landingActive) return;
     const editor = textEditorRef.current;
     if (editor === null) return;
-    const streamState = buildCommitModeState(commitSnap?.draftText ?? "");
+    const streamState = buildCommitModeState(landingSnap?.draftText ?? "");
     if (phase === "drafting") {
       // Stream ephemerally — no per-delta undo events; the settle folds the
       // whole generation into one. On the first delta, remember what we're
@@ -1646,24 +1697,24 @@ export const TugPromptEntry = React.forwardRef<
         editor.restoreState(buildCommitModeState(preDraftMessageRef.current), {
           addToHistory: false,
         });
-        editor.restoreState(buildCommitModeState(commitSnap?.draftText ?? ""));
+        editor.restoreState(buildCommitModeState(landingSnap?.draftText ?? ""));
         // Show the START of the generated message, not its tail.
         const view = editor.view();
         if (view !== null) view.scrollDOM.scrollTop = 0;
       } else {
         // Cancel / error: revert to the persisted message, leaving no undo
         // trace (the ephemeral stream never entered history).
-        editor.restoreState(buildCommitModeState(commitSnap?.persistedMessage ?? ""), {
+        editor.restoreState(buildCommitModeState(landingSnap?.persistedMessage ?? ""), {
           addToHistory: false,
         });
       }
       editor.focus();
     }
   }, [
-    commitActive,
-    commitSnap?.draftPhase,
-    commitSnap?.draftText,
-    commitSnap?.persistedMessage,
+    landingActive,
+    landingSnap?.draftPhase,
+    landingSnap?.draftText,
+    landingSnap?.persistedMessage,
     readCommitMessage,
   ]);
 
@@ -1672,7 +1723,7 @@ export const TugPromptEntry = React.forwardRef<
   // through the controller's own path (which clears the draft first), so it
   // never routes here — the persist below only ever runs on a user cancel.
   const exitCommitMode = useCallback(() => {
-    commitModeRef.current?.leave();
+    landingModeRef.current?.leave();
   }, []);
 
   // The composer owns the document, so it is the only thing that can read the
@@ -1680,16 +1731,16 @@ export const TugPromptEntry = React.forwardRef<
   // composer (⌘F, which leaves Changes) persists the draft the same way
   // Cancel and the Z4A tab do.
   useLayoutEffect(() => {
-    if (commitMode === undefined) return;
-    commitMode.setMessageProvider(() => readCommitMessage());
-    return () => commitMode.setMessageProvider(null);
-  }, [commitMode, readCommitMessage]);
+    if (landingMode === undefined) return;
+    landingMode.setMessageProvider(() => readCommitMessage());
+    return () => landingMode.setMessageProvider(null);
+  }, [landingMode, readCommitMessage]);
 
   // Auto-Message ([P06]): a typed message is protected by the Replace confirm;
   // an empty field drafts straight away. Read the editor live rather than the
   // persisted `edited` flag so unsaved typing is guarded too.
   const handleCommitAutoMessage = useCallback(() => {
-    const controller = commitModeRef.current;
+    const controller = landingModeRef.current;
     if (controller === undefined) return;
     // Already streaming — the button is lit but inert; ignore a re-trigger.
     if (commitDraftingRef.current) return;
@@ -1707,7 +1758,7 @@ export const TugPromptEntry = React.forwardRef<
   // composer and drops the wave caret. Distinct from `exitCommitMode`, which
   // exits the whole mode when nothing is drafting.
   const cancelCommitDraft = useCallback(() => {
-    commitModeRef.current?.cancelDraft();
+    landingModeRef.current?.cancelDraft();
   }, []);
 
   // ⌃⌘M invokes Auto-Message ([P06]) while commit mode is up — the keyboard
@@ -1727,7 +1778,7 @@ export const TugPromptEntry = React.forwardRef<
   // an action this responder does not claim falls through to the card below
   // it on the chain.
   const commitKeybindings = useMemo<KeyBinding[]>(() => {
-    if (!commitActive) return [];
+    if (!landingActive) return [];
     const COMMIT_SCOPED_COMMANDS = [
       TUG_ACTIONS.COMMIT_AUTO_MESSAGE,
       TUG_ACTIONS.CLAIM_ALL_CHANGES,
@@ -1746,7 +1797,7 @@ export const TugPromptEntry = React.forwardRef<
       })),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitActive, keymapRegistry.getSnapshot()]);
+  }, [landingActive, keymapRegistry.getSnapshot()]);
   useKeybindings(commitKeybindings);
 
   // Command insert ([P03]/[P04]). A click on a known slash command in the
@@ -2131,7 +2182,7 @@ export const TugPromptEntry = React.forwardRef<
         // button, [L22]) and schedule a debounced durable save of real edits —
         // skipping our own programmatic seeds / scribe stream (guarded on a
         // user event + non-drafting phase).
-        if (inCommitModeRef.current) {
+        if (inLandingModeRef.current) {
           const message = update.state.doc.toString();
           if (root !== null) {
             root.setAttribute(
@@ -2141,8 +2192,8 @@ export const TugPromptEntry = React.forwardRef<
           }
           // Same edge, told to the controller: the Session ▸ Commit Changes
           // gate is a menu fact, and the menu cannot read a DOM attribute.
-          commitModeRef.current?.notifyMessageChanged();
-          const drafting = commitSnapRef.current?.draftPhase === "drafting";
+          landingModeRef.current?.notifyMessageChanged();
+          const drafting = landingSnapRef.current?.draftPhase === "drafting";
           const userEdit = update.transactions.some(
             (tr) => tr.isUserEvent("input") || tr.isUserEvent("delete"),
           );
@@ -2414,8 +2465,8 @@ export const TugPromptEntry = React.forwardRef<
     // here and the draft is left intact; success clears the draft and exits
     // the mode (the active-transition effect clears the editor). Nothing else
     // in this function runs.
-    if (inCommitModeRef.current) {
-      commitModeRef.current?.land(view.state.doc.toString());
+    if (inLandingModeRef.current) {
+      landingModeRef.current?.land(view.state.doc.toString());
       return;
     }
 
@@ -2944,13 +2995,14 @@ export const TugPromptEntry = React.forwardRef<
       },
       // The Z4A route group. `TugChoiceGroup` dispatches `selectValue` up to
       // the parent responder ([L11]), and this entry is that parent — it owns
-      // the document the route selects. `exitCommitMode` (not a bare
-      // `exit()`) persists a typed message first, so leaving Changes and
-      // coming back resumes it.
+      // the document the route selects. Entering goes back out to the host,
+      // which holds both landing controllers; leaving stays here, because
+      // `exitCommitMode` (not a bare `exit()`) persists a typed message first,
+      // so leaving a landing and coming back resumes it.
       [TUG_ACTIONS.SELECT_VALUE]: (event: ActionEvent) => {
         if (event.sender !== ROUTE_CHOICE_SENDER_ID) return;
-        if (event.value === "changes") {
-          commitMode?.enter();
+        if (event.value === "changes" || event.value === "join") {
+          onSelectRoute?.(event.value);
         } else if (event.value === "prompt") {
           exitCommitMode();
         }
@@ -3004,7 +3056,7 @@ export const TugPromptEntry = React.forwardRef<
       // why the condition is a union rather than the interrupt gate alone —
       // in commit mode with no turn running, Escape still has to drop the
       // shade rather than fall through to the engine's ladder.
-      ...(commitActive || (snap.canInterrupt && !snap.interruptInFlight)
+      ...(landingActive || (snap.canInterrupt && !snap.interruptInFlight)
         ? {
             [TUG_ACTIONS.CANCEL_DIALOG]: (_event: ActionEvent) => {
               // While the Auto-Message scribe streams ([P06]), Escape / ⌘.
@@ -3019,7 +3071,7 @@ export const TugPromptEntry = React.forwardRef<
               // In commit mode the Changes shade is up: Escape / ⌘. dismiss
               // the mode (drop the shade), NEVER the running turn — so the
               // shade-dismiss outranks the interrupt.
-              if (commitActiveRef.current) {
+              if (landingActiveRef.current) {
                 exitCommitMode();
                 return;
               }
@@ -3438,24 +3490,28 @@ export const TugPromptEntry = React.forwardRef<
             </div>
     ) : undefined;
 
-  // Z4A leading slot — the composer's two routes. A route is a mode that owns
-  // the composer's whole document, and there are exactly two things that do:
-  // typing a prompt, and authoring a commit message. Everything else is a
-  // one-shot verb (a slash command) or lives outside the composer.
+  // Z4A leading slot — the composer's routes. A route is a mode that owns the
+  // composer's whole document, and the things that do are: typing a prompt,
+  // authoring a commit message, and — on a card bound to a dash — authoring a
+  // join message. Everything else is a one-shot verb (a slash command) or
+  // lives outside the composer.
   //
-  // The group is a VIEW of `CommitModeController`, not a second home for the
-  // selection: `value` reads `commitActive`, and the segments dispatch into
-  // `enter()` / `exit()`. That is what makes every existing entry and exit
-  // path — ⌃⌘C, `/commit`, the Session menu, a successful land, Cancel ✕,
-  // Escape, the shade's self-close — move the visible tab with no extra
-  // wiring.
+  // The group is a VIEW of whichever landing mode is up, not a second home for
+  // the selection: `value` is derived from `landingActive` and the mode's
+  // `kind`, and the segments route through the host, which owns both
+  // controllers and so is the only place that can decide which one to enter.
+  // That is what makes every existing entry and exit path — ⌃⌘C, `/commit`,
+  // `/dash-join`, the Session menu, a successful land, Cancel ✕, Escape, the
+  // shade's self-close — move the visible tab with no extra wiring.
   //
-  // No controller means no group. Hosts without commit mode (the Component
-  // Gallery's prompt entry) render an empty leading slot rather than a
-  // Changes segment that cannot act. It is deliberately NOT disabled while
-  // commit mode is active — the group is how you leave Changes.
+  // No controller means no group. Hosts without a landing mode (the Component
+  // Gallery's prompt entry) render an empty leading slot rather than a Changes
+  // segment that cannot act. The Join segment additionally requires a bound
+  // dash ([P03]), so an unbound card's chrome is byte-identical to before.
+  // The group is deliberately NOT disabled while a landing is active — it is
+  // how you leave one.
   const entryRouteChoice =
-    commitMode !== undefined ? (
+    landingMode !== undefined ? (
       <TugChoiceGroup
         className="tug-prompt-entry-route-group"
         items={[
@@ -3470,11 +3526,23 @@ export const TugPromptEntry = React.forwardRef<
             value: "changes",
             label: "Changes",
             icon: <GitCommitHorizontal strokeWidth={2} />,
-            tooltip: "Write a commit message",
+            tooltip: LANDING_WORDS.commit.routeTooltip,
             tooltipShortcut: commandShortcut(TUG_ACTIONS.TOGGLE_CHANGES_VIEW),
           },
+          // No `tooltipShortcut`: the Join route carries no key equivalent this
+          // phase ([P07]). The asymmetry with its two neighbours is intended.
+          ...(joinAvailable === true
+            ? [
+                {
+                  value: "join",
+                  label: "Join",
+                  icon: <GitMerge strokeWidth={2} />,
+                  tooltip: LANDING_WORDS.join.routeTooltip,
+                },
+              ]
+            : []),
         ]}
-        value={commitActive ? "changes" : "prompt"}
+        value={landingActive ? (landingMode.kind === "join" ? "join" : "changes") : "prompt"}
         senderId={ROUTE_CHOICE_SENDER_ID}
         size="xs"
         aria-label="Route"
@@ -3606,9 +3674,12 @@ export const TugPromptEntry = React.forwardRef<
   // while drafting), Commit lands — JS-disabled on the turn/pending/changeset
   // gate, and additionally dimmed by CSS when the message is empty
   // (`data-empty`, so no per-keystroke React state, [L22]).
-  const commitPending = commitSnap?.commitPhase === "pending";
+  const landingPending = landingSnap?.landPhase === "pending";
   const commitCanLand =
-    commitSnap !== null && commitSnap.canLandIgnoringMessage;
+    landingSnap !== null && landingSnap.canLandIgnoringMessage;
+  // The rail's words are functions of which landing this is ([P01]). Only the
+  // words move — every control, gate, and ordering below is shared.
+  const landingWords = LANDING_WORDS[landingMode?.kind ?? "commit"];
   // The rail's three consecutive cycle stops. Undefined base means a
   // non-cycling host, and `undefined + n` would be `NaN` — so the whole rail
   // stays off the walk together, the way the single submit does.
@@ -3623,7 +3694,7 @@ export const TugPromptEntry = React.forwardRef<
           someone rebinds Cancel. */}
       <TugActionTooltip
         action={TUG_ACTIONS.CANCEL_DIALOG}
-        content={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+        content={landingDrafting ? "Cancel auto-message" : landingWords.cancel}
       >
         <TugPushButton
           className="tug-prompt-entry-commit-cancel"
@@ -3633,8 +3704,8 @@ export const TugPromptEntry = React.forwardRef<
           role="danger"
           // While drafting, the X cancels the Auto-Message (not the whole mode);
           // otherwise it exits commit mode ([P06]).
-          onClick={commitDrafting ? cancelCommitDraft : exitCommitMode}
-          aria-label={commitDrafting ? "Cancel auto-message" : "Cancel commit"}
+          onClick={landingDrafting ? cancelCommitDraft : exitCommitMode}
+          aria-label={landingDrafting ? "Cancel auto-message" : landingWords.cancel}
           focusGroup={submitFocusGroup}
           focusOrder={commitOrder(0)}
           icon={<X size={16} strokeWidth={2.5} />}
@@ -3642,7 +3713,7 @@ export const TugPromptEntry = React.forwardRef<
       </TugActionTooltip>
       <TugActionTooltip
         action={TUG_ACTIONS.COMMIT_AUTO_MESSAGE}
-        content={commitDrafting ? "Composing…" : "Generate a commit message"}
+        content={landingDrafting ? "Composing…" : landingWords.autoMessage}
       >
         <TugPushButton
           className="tug-prompt-entry-commit-auto"
@@ -3652,16 +3723,16 @@ export const TugPromptEntry = React.forwardRef<
           // real filled accent button while the scribe streams (its own tokens,
           // not a hand-rolled pose), and `data-drafting` neutralizes pointer
           // input (CSS) so a click can't re-request.
-          emphasis={commitDrafting ? "filled" : "outlined"}
+          emphasis={landingDrafting ? "filled" : "outlined"}
           role="accent"
           // The sparkles twinkle for as long as the scribe is writing. A lit
           // button says "pressed"; it does not say "still going" — and this
           // wait is long enough (a model reading a diff) that a still button
           // is the one thing that would read as stuck. The pencil holds still
           // underneath: the tool is steady, the magic is what flickers.
-          activity={commitDrafting ? "twinkle" : undefined}
-          data-drafting={commitDrafting ? "" : undefined}
-          aria-pressed={commitDrafting || undefined}
+          activity={landingDrafting ? "twinkle" : undefined}
+          data-drafting={landingDrafting ? "" : undefined}
+          aria-pressed={landingDrafting || undefined}
           onClick={handleCommitAutoMessage}
           aria-label="Auto-message"
           focusGroup={submitFocusGroup}
@@ -3672,9 +3743,7 @@ export const TugPromptEntry = React.forwardRef<
       </TugActionTooltip>
       <TugTooltip
         content={
-          commitCanLand
-            ? "Commit"
-            : "Unavailable while a turn is running or the changeset is empty"
+          commitCanLand ? landingWords.land : landingWords.landUnavailable
         }
         // Authored, and deliberately so: the composer's submit key is the
         // editor's own, text-editing currency handled by the CM6 keymap rather
@@ -3697,9 +3766,9 @@ export const TugPromptEntry = React.forwardRef<
           // lights exactly one default ([#chord-ring]).
           data-tug-entry-default=""
           data-default-chord={submitChord}
-          disabled={commitDrafting || commitPending || !commitCanLand}
+          disabled={landingDrafting || landingPending || !commitCanLand}
           onClick={performSubmit}
-          aria-label="Commit"
+          aria-label={landingWords.land}
           focusGroup={submitFocusGroup}
           focusOrder={commitOrder(2)}
           data-testid="tug-prompt-entry-commit-button"
@@ -3767,7 +3836,7 @@ export const TugPromptEntry = React.forwardRef<
           toolbarClassName="tug-prompt-entry-toolbar"
           toolbarLeading={entryRouteChoice}
           toolbarCenter={indicatorsContent}
-          toolbarTrailing={commitActive ? commitToolbarTrailing : entryToolbarTrailing}
+          toolbarTrailing={landingActive ? commitToolbarTrailing : entryToolbarTrailing}
         >
             <TugTextEditor
               ref={textEditorRef}
@@ -3784,23 +3853,23 @@ export const TugPromptEntry = React.forwardRef<
               // read-only while the scribe streams a draft, and the slash /
               // mention / argument machinery stands down (submit lands the
               // commit; a `/` popup would be nonsense).
-              disabled={deactivated || commitDrafting}
+              disabled={deactivated || landingDrafting}
               placeholder={
-                commitActive
+                landingActive
                   ? // While Auto-Message drafts, the wave caret owns the field —
                     // drop the placeholder the instant drafting starts so the
                     // two never overlap. It returns on exit only if the field
                     // is still empty (an empty doc re-shows it for free).
-                    commitDrafting
+                    landingDrafting
                     ? ""
-                    : "Write a commit message, or use Auto-Message."
+                    : landingWords.emptyHint
                   : placeholder ?? ""
               }
-              completionProviders={commitActive ? undefined : completionProviders}
-              argumentHintResolver={commitActive ? undefined : argumentHintResolver}
+              completionProviders={landingActive ? undefined : completionProviders}
+              argumentHintResolver={landingActive ? undefined : argumentHintResolver}
               argumentHintRefresh={argumentHintRefresh}
-              pastedCommandResolver={commitActive ? undefined : pastedCommandResolver}
-              inlineCommandMatcher={commitActive ? undefined : inlineCommandMatcher}
+              pastedCommandResolver={landingActive ? undefined : pastedCommandResolver}
+              inlineCommandMatcher={landingActive ? undefined : inlineCommandMatcher}
               resolveAtomPath={resolveAtomPath}
               dropHandler={dropHandler}
               attachmentBytesStore={attachmentBytesStore}
@@ -3830,7 +3899,7 @@ export const TugPromptEntry = React.forwardRef<
         </TugEntryShell>
         {/* Replace-message confirm ([P03]): guards a typed commit message from
             an Auto-Message overwrite, anchored on the pencil-sparkles button. */}
-        {commitActive ? (
+        {landingActive ? (
           <TugConfirmPopover
             open={commitConfirmOpen}
             anchorEl={
@@ -3847,7 +3916,7 @@ export const TugPromptEntry = React.forwardRef<
             confirmRole="danger"
             onConfirm={() => {
               setCommitConfirmOpen(false);
-              commitModeRef.current?.requestDraft(true);
+              landingModeRef.current?.requestDraft(true);
             }}
             onCancel={() => setCommitConfirmOpen(false)}
           />

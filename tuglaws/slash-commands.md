@@ -147,6 +147,22 @@ prevent — classify on evidence, not on guesswork (see the probe discipline bel
 3. If the command was previously hidden, remove it from `HIDDEN_SLASH_COMMANDS`
    and update the mirror doc.
 
+**Name a command**: an operation is spelled the same on every user-visible
+surface, and that spelling is its `tugutil` verb path, hyphenated. `tugutil dash
+join` is `/dash-join`; `tugutil dash bind` is `/dash-bind`. The rule exists
+because a card verb and a CLI verb that do the same thing under two names make
+the pair unlearnable, and because it decides collisions without argument:
+`/commit` is `tugutil commit` (the base branch's landing), so `tugutil dash
+commit` can only ever be `/dash-commit` — reserved, and deliberately unshipped.
+
+**Retire a spelling**: keep the old name registered as an alias rather than
+deleting it. An unmatched `/verb` is not an error — it is submitted to claude as
+a prompt, which spends a turn on a line the user meant as a command, and that is
+worse than a rename. An alias runs the new handler, raises a one-time bulletin
+naming the new spelling, and carries `deprecatedFor` so the `/` picker offers
+only the name the operation actually has. `/join` → `/dash-join` and `/dash` →
+`/dash-bind` are the first two.
+
 **Hide a command**:
 1. Add the bare name (no leading slash) to `HIDDEN_SLASH_COMMANDS` in
    `slash-supported.ts`, in the group whose comment states the reason. Aliases

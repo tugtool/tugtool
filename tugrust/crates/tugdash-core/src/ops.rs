@@ -135,7 +135,30 @@ pub struct JoinOutcome {
     pub conflicts: Vec<String>,
     /// Whether this was a `--preview` (nothing was mutated).
     pub previewed: bool,
+    /// What would refuse this join, from [`join_preflight_in`] — populated on
+    /// the preview path only. Additive: absent from the JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blockers: Vec<JoinBlocker>,
+    /// The squash/merge message the join actually landed with — the maintained
+    /// draft, the caller's override, or the candidate's own subject. Present
+    /// only on a landed join, because it is the receipt's body and a receipt
+    /// that paraphrased the message would be a different document from the
+    /// commit. Additive: absent from the JSON when there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     pub warnings: Vec<String>,
+}
+
+/// One reason a join would be refused, as reported by a `--preview`.
+#[derive(Debug, Clone, Serialize)]
+pub struct JoinBlocker {
+    /// `off-base` | `base-dirt` | `stale-journal` | `empty`.
+    pub kind: String,
+    /// The human line — the same sentence the execute path returns as its `Err`.
+    pub detail: String,
+    /// The offending paths, for `base-dirt`; empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub paths: Vec<String>,
 }
 
 /// Outcome of [`release`].
@@ -802,6 +825,11 @@ fn parse_name_status(output: &str) -> Vec<DashDetailFile> {
 /// calls this on every recompute, and a read that wrote git config would be a
 /// side-effecting read and a multi-process race.
 pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
+    // The same normalization the join verbs do: a card whose project is a
+    // linked worktree must be told about the repository's dashes, keyed the
+    // way every other reader keys them — the derived `landing` stage reads the
+    // join journal out of the main root's state dir.
+    let repo_root = &main_repo_root(repo_root);
     let Ok(branches) = git_stdout(
         repo_root,
         &[
@@ -1369,6 +1397,11 @@ struct JoinJournal {
     strategy: String,
     commit_hash: String,
     phase: JoinPhase,
+    /// The message the integrate committed with, carried so a `--continue`
+    /// finishing the teardown can still report it. Defaulted rather than
+    /// required: a journal written before this field existed must still read.
+    #[serde(default)]
+    message: Option<String>,
 }
 
 fn join_journal_path(repo: &Path, name: &str) -> PathBuf {
@@ -1611,6 +1644,151 @@ pub(crate) fn commit_worktree_dirt(worktree: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn stale_journal_detail(name: &str) -> String {
+    format!(
+        "A previous join of dash '{}' is incomplete. Resume it with: tugutil dash join {} --continue",
+        name, name
+    )
+}
+
+fn off_base_detail(current_branch: &str, base_branch: &str) -> String {
+    format!(
+        "Cannot join: repo root worktree is on branch '{}' but dash targets '{}'. Check out '{}' first.",
+        current_branch, base_branch, base_branch
+    )
+}
+
+fn base_dirt_detail(paths: &[String]) -> String {
+    format!(
+        "Cannot join: the base worktree has uncommitted changes to files this dash also changed ({}). Commit or stash them first.",
+        paths.join(", ")
+    )
+}
+
+fn empty_detail(name: &str, base_branch: &str) -> String {
+    format!(
+        "Nothing to join: dash '{}' has no commits past '{}'. Release it to discard.",
+        name, base_branch
+    )
+}
+
+/// The base dirt that would block a join of `branch`: the base's dirty tracked
+/// paths intersected with the dash's changed set (`base...branch` ∪ the dash
+/// worktree's own dirt). Disjoint base dirt is fine — the integration only
+/// writes the dash's files.
+fn blocking_base_dirt(
+    repo_root: &Path,
+    worktree: &Path,
+    base_branch: &str,
+    branch: &str,
+) -> Vec<String> {
+    let base_dirt = dirty_tracked_paths(repo_root);
+    if base_dirt.is_empty() {
+        return vec![];
+    }
+    let mut dash_changed: Vec<String> = git_stdout(
+        repo_root,
+        &[
+            "diff",
+            "--name-only",
+            &format!("{}...{}", base_branch, branch),
+        ],
+    )
+    .unwrap_or_default()
+    .lines()
+    .map(|l| l.trim().to_string())
+    .filter(|l| !l.is_empty())
+    .collect();
+    if worktree.exists() {
+        dash_changed.extend(dirty_tracked_paths(worktree));
+    }
+    base_dirt
+        .into_iter()
+        .filter(|p| dash_changed.contains(p))
+        .collect()
+}
+
+/// The repository root a dash operation works against.
+///
+/// A dash's branch, its worktree, and its join journal all live in the main
+/// repository, so a caller that names a *linked worktree* means the same repo —
+/// and must be answered about the same one. The CLI already resolves this way
+/// (`join` → `find_repo_root`); without this, tugcast serving a card whose
+/// project is itself a worktree would read every dash as `off-base` against
+/// that worktree's own branch while `tugutil dash join` beside it reports a
+/// clean bill. Idempotent: a main root resolves to itself.
+fn main_repo_root(start: &Path) -> PathBuf {
+    tugutil_core::find_repo_root_from(start).unwrap_or_else(|_| start.to_path_buf())
+}
+
+/// What would refuse a join of `name` right now ([P02]) — the preflight the
+/// execute path checks inline, reported rather than returned as an `Err` so a
+/// `--preview` can show every blocker at once and name the act that clears it.
+///
+/// The cwd guard is deliberately not here ([R02]): it reads the process cwd,
+/// which is the server's when the call comes from tugcast.
+pub fn join_preflight_in(repo_root: &Path, name: &str) -> Result<Vec<JoinBlocker>, String> {
+    let repo_root = &main_repo_root(repo_root);
+    let branch = branch_name(name);
+    if !branch_exists(repo_root, &branch) {
+        return Err(format!("Dash not found: {}", name));
+    }
+    let base_branch = dash_base(repo_root, name)?;
+    let worktree = worktree_path(repo_root, name);
+    let mut blockers = Vec::new();
+
+    if read_join_journal(repo_root, name).is_some() {
+        blockers.push(JoinBlocker {
+            kind: "stale-journal".to_string(),
+            detail: stale_journal_detail(name),
+            paths: vec![],
+        });
+    }
+
+    let current_branch = git_stdout(repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if current_branch != base_branch {
+        blockers.push(JoinBlocker {
+            kind: "off-base".to_string(),
+            detail: off_base_detail(&current_branch, &base_branch),
+            paths: vec![],
+        });
+    }
+
+    let intersect = blocking_base_dirt(repo_root, &worktree, &base_branch, &branch);
+    if !intersect.is_empty() {
+        blockers.push(JoinBlocker {
+            kind: "base-dirt".to_string(),
+            detail: base_dirt_detail(&intersect),
+            paths: intersect,
+        });
+    }
+
+    // Empty is a *finding* on the preview path, not a refusal: the card's answer
+    // to it is the release affordance. The execute path auto-commits worktree
+    // dirt before testing `ahead`, so dirt makes a dash non-empty here too.
+    let ahead = git_stdout(
+        repo_root,
+        &[
+            "rev-list",
+            "--count",
+            &format!("{}..{}", base_branch, branch),
+        ],
+    )
+    .ok()
+    .and_then(|s| s.trim().parse::<i64>().ok())
+    .unwrap_or(0);
+    let worktree_dirty = worktree.exists() && !dirty_tracked_paths(&worktree).is_empty();
+    if ahead == 0 && !worktree_dirty {
+        blockers.push(JoinBlocker {
+            kind: "empty".to_string(),
+            detail: empty_detail(name, &base_branch),
+            paths: vec![],
+        });
+    }
+
+    Ok(blockers)
+}
+
 /// Join a dash into its base branch ([P14]): `--strategy squash|merge|rebase`,
 /// a `--preview` (in-memory `git merge-tree`, nothing touched), an
 /// intersection-aware preflight (base dirt blocks only when it overlaps the
@@ -1626,7 +1804,7 @@ pub fn join(name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
 /// from the process cwd — for callers such as tugcast that serve many projects
 /// and must never depend on `current_dir`.
 pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOutcome, String> {
-    let repo_root = repo_root.to_path_buf();
+    let repo_root = main_repo_root(repo_root);
     let mut warnings = Vec::new();
     migrate_worktrees(&repo_root, &mut warnings);
     // Pre-feature dashes get rerere enabled here so a recorded resolution
@@ -1647,22 +1825,18 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
     }
 
-    // A stale journal means a prior join half-finished — require --continue.
-    if read_join_journal(&repo_root, name).is_some() {
-        return Err(format!(
-            "A previous join of dash '{}' is incomplete. Resume it with: tugdash join {} --continue",
-            name, name
-        ));
-    }
-
-    // --preview: report conflicts in memory; nothing is mutated.
+    // --preview: report conflicts and blockers in memory; nothing is mutated.
+    // This sits above the stale-journal guard because a preview of a journalled
+    // dash reports `stale-journal` as a blocker rather than refusing — the
+    // execute path below is still what refuses.
     if opts.preview {
         if !git_supports_merge_tree(&repo_root) {
             return Err(
-                "tugdash join --preview requires git >= 2.38 (git merge-tree --write-tree)."
+                "tugutil dash join --preview requires git >= 2.38 (git merge-tree --write-tree)."
                     .to_string(),
             );
         }
+        let blockers = join_preflight_in(&repo_root, name)?;
         let conflicts = merge_tree_conflicts(&repo_root, &base_branch, &branch)?;
         return Ok(JoinOutcome {
             name: name.to_string(),
@@ -1671,11 +1845,21 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
             commit_hash: None,
             conflicts,
             previewed: true,
+            blockers,
+            message: None,
             warnings,
         });
     }
 
-    // Must run from the base worktree, not inside the dash worktree.
+    // A stale journal means a prior join half-finished — require --continue.
+    if read_join_journal(&repo_root, name).is_some() {
+        return Err(stale_journal_detail(name));
+    }
+
+    // Must run from the base worktree, not inside the dash worktree. Deliberately
+    // absent from `join_preflight_in`: it reads the *process* cwd, which from
+    // tugcast is the server's and has nothing to do with the calling card.
+
     let current_dir =
         std::env::current_dir().map_err(|e| format!("failed to get current directory: {}", e))?;
     if current_dir.starts_with(&worktree) {
@@ -1687,44 +1871,15 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     // Current branch must be the dash's base.
     let current_branch = git_stdout(&repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if current_branch != base_branch {
-        return Err(format!(
-            "Cannot join: repo root worktree is on branch '{}' but dash targets '{}'. Check out '{}' first.",
-            current_branch, base_branch, base_branch
-        ));
+        return Err(off_base_detail(&current_branch, &base_branch));
     }
 
     // Intersection preflight ([P14]): base dirt blocks only when it touches a
     // file this dash also changed (`base...branch` diff ∪ worktree dirt).
     // Disjoint base dirt is fine — the squash-merge only writes the dash's files.
-    let base_dirt = dirty_tracked_paths(&repo_root);
-    if !base_dirt.is_empty() {
-        let mut dash_changed: Vec<String> = git_stdout(
-            &repo_root,
-            &[
-                "diff",
-                "--name-only",
-                &format!("{}...{}", base_branch, branch),
-            ],
-        )
-        .unwrap_or_default()
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
-        if worktree.exists() {
-            dash_changed.extend(dirty_tracked_paths(&worktree));
-        }
-        let intersect: Vec<String> = base_dirt
-            .iter()
-            .filter(|p| dash_changed.contains(p))
-            .cloned()
-            .collect();
-        if !intersect.is_empty() {
-            return Err(format!(
-                "Cannot join: the base worktree has uncommitted changes to files this dash also changed ({}). Commit or stash them first.",
-                intersect.join(", ")
-            ));
-        }
+    let intersect = blocking_base_dirt(&repo_root, &worktree, &base_branch, &branch);
+    if !intersect.is_empty() {
+        return Err(base_dirt_detail(&intersect));
     }
 
     // Auto-commit outstanding dash-worktree changes — FATAL on error now ([P14]).
@@ -1745,10 +1900,7 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     if ahead == 0 {
         // Names the release verb generically ([P14]) — no raw terminal
         // instruction; each surface fronts its own release affordance.
-        return Err(format!(
-            "Nothing to join: dash '{}' has no commits past '{}'. Release it to discard.",
-            name, base_branch
-        ));
+        return Err(empty_detail(name, &base_branch));
     }
 
     // Land a pre-built candidate from the resolution ladder ([P31]) instead of
@@ -1765,12 +1917,17 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
             ));
         }
         let commit_hash = git_stdout(&repo_root, &["rev-parse", "HEAD"])?;
+        // The candidate carries its own message — the ladder wrote it when it
+        // built the resolution — so the receipt reports that rather than a
+        // message this path never composed.
+        let message = git_stdout(&repo_root, &["log", "-1", "--format=%B", &commit_hash]).ok();
         let journal = JoinJournal {
             name: name.to_string(),
             base_branch: base_branch.clone(),
             strategy: opts.strategy.as_str().to_string(),
             commit_hash,
             phase: JoinPhase::Integrated,
+            message,
         };
         write_join_journal(&repo_root, &journal)?;
         return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
@@ -1787,6 +1944,8 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         commit_hash: None,
         conflicts,
         previewed: false,
+        blockers: vec![],
+        message: None,
         warnings,
     };
 
@@ -1847,6 +2006,7 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         strategy: opts.strategy.as_str().to_string(),
         commit_hash: commit_hash.clone(),
         phase: JoinPhase::Integrated,
+        message: Some(final_msg.clone()),
     };
     write_join_journal(&repo_root, &journal)?;
 
@@ -1900,6 +2060,8 @@ fn finish_join_teardown(
         commit_hash: Some(journal.commit_hash),
         conflicts: vec![],
         previewed: false,
+        blockers: vec![],
+        message: journal.message,
         warnings,
     })
 }
@@ -1913,7 +2075,7 @@ pub fn release(name: &str) -> Result<ReleaseOutcome, String> {
 /// Like [`release`], but against an explicit repo root instead of the process
 /// cwd — for callers such as tugcast.
 pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String> {
-    let repo_root = repo_root.to_path_buf();
+    let repo_root = main_repo_root(repo_root);
     let mut warnings = Vec::new();
     migrate_worktrees(&repo_root, &mut warnings);
     let branch = branch_name(name);
@@ -2585,6 +2747,7 @@ Some context.
                 strategy: "squash".to_string(),
                 commit_hash: "abc1234".to_string(),
                 phase: JoinPhase::WorktreeRemoved,
+                message: None,
             },
         )
         .unwrap();
@@ -3368,6 +3531,241 @@ Some context.
         assert!(!branch_present(repo, "tugdash/isect"));
     }
 
+    /// Seed a repo with one commit and a dash carrying one round, returning the
+    /// repo path's owner so it outlives the call. The shared fixture for the
+    /// preview-blocker tests ([P02]).
+    fn seed_dash_with_a_round(temp: &TempDir, name: &str) {
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&temp.path().join("state"));
+        std::env::set_current_dir(repo).unwrap();
+        fs::write(repo.join("shared.txt"), "base\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "seed"]).unwrap();
+        create(name, None).unwrap();
+        let worktree = repo.join(".tug/worktrees").join(name);
+        fs::write(worktree.join("shared.txt"), "base\ndash change\n").unwrap();
+        commit(name, "touch shared", None).unwrap();
+    }
+
+    fn preview(name: &str) -> JoinOutcome {
+        join(
+            name,
+            JoinOptions {
+                preview: true,
+                ..Default::default()
+            },
+        )
+        .unwrap()
+    }
+
+    fn blocker<'a>(outcome: &'a JoinOutcome, kind: &str) -> Option<&'a JoinBlocker> {
+        outcome.blockers.iter().find(|b| b.kind == kind)
+    }
+
+    #[serial]
+    #[test]
+    fn preview_reports_off_base_when_the_root_is_on_another_branch() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "offbase");
+        let repo = temp.path();
+
+        assert!(preview("offbase").blockers.is_empty());
+
+        git_output(repo, &["checkout", "-b", "scratch"]).unwrap();
+        let out = preview("offbase");
+        let b = blocker(&out, "off-base").expect("off-base blocker");
+        assert!(b.detail.contains("Check out"), "{}", b.detail);
+        assert!(b.paths.is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn join_outcome_carries_the_message_it_committed() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "msg");
+        let repo = temp.path();
+
+        let landed = join(
+            "msg",
+            JoinOptions {
+                message: Some("the override the card sent".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // The receipt's body is the message the commit actually carries —
+        // `integrate_message`'s composition, trailer and all, not the raw
+        // override the caller passed. The two are read off one landing rather
+        // than composed twice, so the receipt cannot describe a commit that
+        // says something else.
+        let sha = landed.commit_hash.expect("a landed join has a commit");
+        let committed = git_stdout(repo, &["log", "-1", "--format=%B", &sha]).unwrap();
+        assert_eq!(landed.message.as_deref(), Some(committed.as_str()));
+        assert!(
+            committed.contains("the override the card sent"),
+            "{committed}"
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn preflight_asked_from_a_linked_worktree_answers_about_the_main_root() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "linked");
+        let repo = temp.path();
+        let worktree = repo.join(".tug/worktrees/linked");
+
+        // The dash's own worktree is checked out on `tugdash/linked`, which is
+        // not the base. Asking from there must still answer about the
+        // repository — a card whose project *is* a worktree would otherwise
+        // read every dash as off-base while the CLI beside it reports clean.
+        let from_worktree = join_preflight_in(&worktree, "linked").unwrap();
+        assert!(from_worktree.is_empty(), "{from_worktree:?}");
+        assert!(join_preflight_in(repo, "linked").unwrap().is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn preview_reports_intersecting_base_dirt_and_names_the_paths() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "dirt");
+        let repo = temp.path();
+        fs::write(repo.join("other.txt"), "base\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "second"]).unwrap();
+
+        // Dirt on a file the dash also changed → blocked, and named.
+        fs::write(repo.join("shared.txt"), "base\nlocal edit\n").unwrap();
+        let out = preview("dirt");
+        let b = blocker(&out, "base-dirt").expect("base-dirt blocker");
+        assert_eq!(b.paths, vec!["shared.txt".to_string()]);
+        assert!(b.detail.contains("shared.txt"), "{}", b.detail);
+
+        // Disjoint dirt → no blocker.
+        git_output(repo, &["checkout", "--", "shared.txt"]).unwrap();
+        fs::write(repo.join("other.txt"), "base\nlocal edit\n").unwrap();
+        assert!(blocker(&preview("dirt"), "base-dirt").is_none());
+    }
+
+    /// Pins the ordering: the preview arm sits above the stale-journal guard,
+    /// so a journalled dash previews with a blocker instead of erroring.
+    #[serial]
+    #[test]
+    fn preview_reports_a_stale_journal() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "journalled");
+        let repo = temp.path();
+
+        // The journal's state dir is slugged from the repo's *canonical* path,
+        // which on macOS is `/private/var/…` where a TempDir reads `/var/…`.
+        let root = std::fs::canonicalize(repo).unwrap();
+        write_join_journal(
+            &root,
+            &JoinJournal {
+                name: "journalled".to_string(),
+                base_branch: dash_base(repo, "journalled").unwrap(),
+                strategy: "squash".to_string(),
+                commit_hash: git_stdout(repo, &["rev-parse", "HEAD"]).unwrap(),
+                phase: JoinPhase::Integrated,
+                message: None,
+            },
+        )
+        .unwrap();
+
+        let out = preview("journalled");
+        let b = blocker(&out, "stale-journal").expect("stale-journal blocker");
+        assert!(b.detail.contains("--continue"), "{}", b.detail);
+        assert!(
+            !b.detail.contains("tugdash join"),
+            "the detail must name the real verb: {}",
+            b.detail
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn preview_reports_empty_for_a_dash_with_no_rounds() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&temp.path().join("state"));
+        std::env::set_current_dir(repo).unwrap();
+        fs::write(repo.join("shared.txt"), "base\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "seed"]).unwrap();
+        create("hollow", None).unwrap();
+
+        assert!(blocker(&preview("hollow"), "empty").is_some());
+
+        let worktree = repo.join(".tug/worktrees/hollow");
+        fs::write(worktree.join("shared.txt"), "base\nround\n").unwrap();
+        commit("hollow", "a round", None).unwrap();
+        assert!(blocker(&preview("hollow"), "empty").is_none());
+    }
+
+    #[serial]
+    #[test]
+    fn a_clean_dash_previews_with_no_blockers() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "clean");
+        let out = preview("clean");
+        assert!(out.previewed);
+        assert!(out.conflicts.is_empty());
+        assert!(out.blockers.is_empty(), "{:?}", out.blockers);
+    }
+
+    /// Every blocker's `detail` is the sentence the execute path refuses with,
+    /// so the preview and the land read identically ([P02]).
+    #[serial]
+    #[test]
+    fn preflight_and_the_execute_path_agree() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "agree");
+        let repo = temp.path();
+
+        let assert_agrees = |kind: &str| {
+            let out = preview("agree");
+            let b = blocker(&out, kind).unwrap_or_else(|| panic!("expected a {kind} blocker"));
+            let err = join("agree", JoinOptions::default()).unwrap_err();
+            assert_eq!(err, b.detail, "{kind}");
+        };
+
+        // off-base
+        git_output(repo, &["checkout", "-b", "scratch"]).unwrap();
+        assert_agrees("off-base");
+        git_output(repo, &["checkout", "main"]).unwrap();
+
+        // base-dirt
+        fs::write(repo.join("shared.txt"), "base\nlocal edit\n").unwrap();
+        assert_agrees("base-dirt");
+        git_output(repo, &["checkout", "--", "shared.txt"]).unwrap();
+
+        // stale-journal
+        let root = std::fs::canonicalize(repo).unwrap();
+        write_join_journal(
+            &root,
+            &JoinJournal {
+                name: "agree".to_string(),
+                base_branch: dash_base(repo, "agree").unwrap(),
+                strategy: "squash".to_string(),
+                commit_hash: git_stdout(repo, &["rev-parse", "HEAD"]).unwrap(),
+                phase: JoinPhase::Integrated,
+                message: None,
+            },
+        )
+        .unwrap();
+        assert_agrees("stale-journal");
+        clear_join_journal(&root, "agree");
+
+        // empty — a dash of its own, since the one above has a round.
+        create("agree2", None).unwrap();
+        let out = preview("agree2");
+        let b = blocker(&out, "empty").expect("empty blocker");
+        let err = join("agree2", JoinOptions::default()).unwrap_err();
+        assert_eq!(err, b.detail);
+    }
+
     #[serial]
     #[test]
     fn test_dash_join_wrong_branch_fails() {
@@ -3659,6 +4057,7 @@ Some context.
                 strategy: "squash".to_string(),
                 commit_hash: head.clone(),
                 phase: JoinPhase::Integrated,
+                message: None,
             },
         )
         .unwrap();

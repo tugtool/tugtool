@@ -213,6 +213,15 @@ export function attachChangesetJoinStore(conn: TugConnection): ChangesetJoinStor
   return _activeStore;
 }
 
+/**
+ * The attached store, or null outside the app (gallery / fixtures) — the same
+ * accessor shape `changeset-verb-store` publishes, for non-React readers like
+ * the join mode controller.
+ */
+export function getChangesetJoinStore(): ChangesetJoinStore | null {
+  return _activeStore;
+}
+
 /** Test-only: detach the singleton between cases. */
 export function _resetChangesetJoinStoreForTest(): void {
   _activeStore?.dispose();

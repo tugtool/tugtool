@@ -1,0 +1,134 @@
+/* SessionChangesDashLanding — the fronted dash row's landing face.
+
+   Sits inside the row's expanded detail, above the facts it is a verdict
+   about. Appearance only ([L06]); the outcome's tone dispatches off
+   `data-outcome` so no React state carries a color. */
+
+.session-changes-dash-landing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  padding: var(--tug-space-xs) var(--tug-space-sm);
+}
+
+.session-changes-dash-landing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tug-space-sm);
+}
+
+.session-changes-dash-landing-acts {
+  display: flex;
+  align-items: center;
+  gap: var(--tug-space-2xs);
+}
+
+/* The empty outcome's one line of prose. It asks the question the release
+   affordance answers, and asks it in words because a dead control would be
+   worse than a sentence that is already true. */
+.session-changes-dash-landing-note {
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+/* The discard's first beat: what the second one destroys, listed. Marked off
+   by a danger-toned rule, because this is the one act in the lane that cannot
+   be undone. */
+.session-changes-dash-landing-discard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  padding-left: var(--tug-space-sm);
+  border-left: 2px solid var(--tug7-element-tone-border-normal-danger-rest);
+}
+
+.session-changes-dash-landing-discard-subjects {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-landing-blockers,
+.session-changes-dash-landing-conflicts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tug-space-2xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--tug-font-size-xs);
+}
+
+.session-changes-dash-landing-blockers > li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* The server's own sentence — the same bytes the execute path would refuse
+   with, so the preview and the refusal read identically. */
+.session-changes-dash-landing-detail {
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
+/* The act that clears it. Quieter than the finding: the reader has already
+   been told what is wrong, and this is only what to do about it. */
+.session-changes-dash-landing-act {
+  font-family: var(--tug-font-family-sans);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-landing-conflicts > li {
+  font-family: var(--tug-font-family-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+/* The resolution ladder's per-file lane: the path, then the rung that is
+   working it (or the one that settled it). One row per file, so a run reads as
+   progress rather than as a wall of streamed text. */
+.session-changes-dash-landing-rungs {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--tug-font-size-xs);
+  font-family: var(--tug-font-family-mono);
+}
+
+.session-changes-dash-landing-rungs > li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--tug-space-2xs);
+  min-width: 0;
+}
+
+.session-changes-dash-landing-rung-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tug7-element-global-text-normal-subtle-rest);
+}
+
+.session-changes-dash-landing-rung-word {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-landing-error {
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}

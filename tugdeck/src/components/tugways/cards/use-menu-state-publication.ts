@@ -22,6 +22,7 @@ import { useEffect } from "react";
 
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
+import type { JoinModeController } from "@/lib/join-mode-controller";
 import type { TurnEntry } from "@/lib/code-session-store/types";
 import type { SessionMetadataStore } from "@/lib/session-metadata-store";
 import type { ShadeViewController } from "@/lib/shade-view-controller";
@@ -58,6 +59,7 @@ export function useMenuStatePublication(
   sessionMetadataStore: SessionMetadataStore,
   shadeViewController: ShadeViewController,
   commitModeController: CommitModeController,
+  joinModeController: JoinModeController,
 ): void {
   useEffect(() => {
     let cachedTranscript: ReadonlyArray<TurnEntry> | null = null;
@@ -108,7 +110,13 @@ export function useMenuStatePublication(
         }),
         changesVisible: shadeView === "changes",
         historyVisible: shadeView === "history",
-        commitReady: commitModeController.getSnapshot().commitReady,
+        // Whichever landing is up is the one the menu item acts on ([P01]), so
+        // the published bit is the active mode's readiness rather than
+        // commit's alone — a menu that assumed commit would read as dead the
+        // whole time a join is being authored.
+        commitReady: joinModeController.getSnapshot().active
+          ? joinModeController.getSnapshot().landReady
+          : commitModeController.getSnapshot().landReady,
         ...cachedFacts,
       });
     };
@@ -122,6 +130,7 @@ export function useMenuStatePublication(
       // as on the turn / changeset stores, and only the controller sees the
       // first of those.
       commitModeController.subscribe(publish),
+      joinModeController.subscribe(publish),
     ];
     publish();
 

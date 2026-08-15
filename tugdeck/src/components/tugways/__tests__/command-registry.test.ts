@@ -234,7 +234,7 @@ describe("the vocabulary is fully accounted for", () => {
   test("every entry with no host door declares which case it is", () => {
     // The lint is only honest if the declaration is a deliberate row rather
     // than a catch-all. Two cases, and they are opposites: `internal` says
-    // nothing opens this yet, `paneChrome` says a card's title-bar control does and the
+    // nothing opens this yet, `paneChrome` says a card's own chrome (a title-bar control, or a composer route segment) does and the
     // lint simply cannot see that door. An entry that said neither would be
     // invocable by nobody with no one having noticed.
     const doorless = COMMANDS.filter(

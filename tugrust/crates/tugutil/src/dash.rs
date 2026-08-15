@@ -176,6 +176,12 @@ fn run_join(name: &str, opts: JoinOptions, json: bool, quiet: bool) -> Result<()
                     println!("  {}", path);
                 }
             }
+            if !data.blockers.is_empty() {
+                println!("Blocked:");
+                for blocker in &data.blockers {
+                    println!("  {} — {}", blocker.kind, blocker.detail);
+                }
+            }
         } else if data.conflicts.is_empty() {
             println!(
                 "Joined dash '{}' to branch '{}'",

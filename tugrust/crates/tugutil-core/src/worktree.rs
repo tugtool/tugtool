@@ -25,7 +25,7 @@ pub fn find_repo_root() -> Result<PathBuf, TugError> {
 /// If `start` has a `.git` file (linked worktree), resolves to the main repo
 /// via `git rev-parse --path-format=absolute --git-common-dir`.
 /// Returns `TugError::NotAGitRepository` if no `.git` is found.
-pub(crate) fn find_repo_root_from(start: &Path) -> Result<PathBuf, TugError> {
+pub fn find_repo_root_from(start: &Path) -> Result<PathBuf, TugError> {
     let git_path = start.join(".git");
 
     // If .git is a directory, we're in the main repo

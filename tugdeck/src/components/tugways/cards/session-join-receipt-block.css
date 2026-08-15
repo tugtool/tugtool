@@ -1,0 +1,39 @@
+/* SessionJoinReceiptBlock — the `/dash-join` and `/dash-release` receipt
+   headers ([P06]). Deliberately the commit receipt's skeleton: a landing is a
+   commit on the base, and a reader should not have to learn a second shape for
+   it. Appearance only ([L06]). */
+
+/* Plain inline text in the detail column, for the reason the commit receipt's
+   header states: a flex container establishes its own vertical alignment and
+   would float the sha off the header's line box. The hanging indent lines
+   wrapped identity text under the dash name — 8 sha characters plus a space. */
+.join-receipt-header {
+  display: block;
+  min-width: 0;
+  padding-left: 9ch;
+  text-indent: -9ch;
+}
+
+/* A release has no sha to hang under, so it hangs under nothing. */
+.join-receipt-header-release {
+  padding-left: 0;
+  text-indent: 0;
+}
+
+.join-receipt-summary {
+  min-width: 0;
+}
+
+/* Override the header's `code { color: inherit }`, which would drain the dash
+   name to the muted command tone. The dash is the subject of this row, not an
+   incidental command. */
+.join-receipt-header .join-receipt-summary {
+  color: var(--tugx-block-text-color);
+}
+
+/* The chrome's body region carries no padding of its own — each body kind owns
+   its spacing. The inline inset comes from the shared `.tugx-commit-message`. */
+[data-slot="join-receipt-detail"],
+[data-slot="release-receipt-detail"] {
+  padding-block: var(--tug-space-sm);
+}

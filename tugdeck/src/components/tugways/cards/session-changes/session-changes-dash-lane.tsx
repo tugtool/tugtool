@@ -13,8 +13,12 @@
  * The fold is view-scope state: the shade is a glance surface, dismiss and
  * forget, so nothing here is persisted.
  *
- * Read-only by design in this era: the maintained join draft renders as ink,
- * never as an editor, and the lane offers no landing verb.
+ * The fronted row — and only it — carries a landing face: the outcome of a
+ * live `--preview` plus the act that clears it. `JoinState` is one slot per
+ * card rather than per dash, so a second row previewing would overwrite the
+ * first and render its blockers under the wrong name; landing is a gesture on
+ * this card's own dash regardless. Every other row stays what it has always
+ * been — facts, subjects, files, and the maintained join draft as ink.
  *
  * Laws: [L02] the lane takes its data as props from the view's
  * `useSyncExternalStore` reads; [L06] tone and state paint through CSS and
@@ -26,15 +30,22 @@
 
 import "./session-changes-dash-lane.css";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugStatusMark } from "@/components/tugways/tug-status-mark";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { PopOutDiffButton } from "@/components/tugways/tug-changes-list";
+import {
+  SessionChangesDashLanding,
+  type DashLandingActions,
+} from "./session-changes-dash-landing";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
 import type { DashChangesetEntry } from "@/lib/changeset-types";
+import type { JoinState } from "@/lib/changeset-verb-store";
+import type { ResolveState } from "@/lib/changeset-join-store";
+import type { JoinOutcome } from "@/lib/join-mode-controller";
 
 // ---------------------------------------------------------------------------
 // Ordering
@@ -79,6 +90,25 @@ function roundsLabel(rounds: number): string {
   return rounds === 1 ? "1 round" : `${rounds} rounds`;
 }
 
+/**
+ * Everything the fronted row's landing face needs, read once by the view and
+ * handed down. Absent on every other row — see the module docblock for why the
+ * face is the fronted row's alone.
+ */
+export interface DashLaneLanding {
+  /** The card's one join round trip ([L02], read by the view). */
+  join: JoinState;
+  /** The derived outcome ([#outcome-derivation]). */
+  outcome: JoinOutcome;
+  /** A candidate commit from the resolution ladder, if one was built. */
+  candidateCommit: string | null;
+  /** A Claude turn is in flight — durable acts wait. */
+  turnInProgress: boolean;
+  /** The resolution ladder's live state for the fronted dash. */
+  resolve: ResolveState;
+  actions: DashLandingActions;
+}
+
 // ---------------------------------------------------------------------------
 // The row
 // ---------------------------------------------------------------------------
@@ -89,13 +119,28 @@ function DashRow({
   fronted,
   expanded,
   onToggle,
+  landing,
 }: {
   entry: DashChangesetEntry;
   projectRoot: string;
   fronted: boolean;
   expanded: boolean;
   onToggle: (next: boolean) => void;
+  landing: DashLaneLanding | null;
 }): React.ReactElement {
+  // Previewing costs a `merge-tree` run, so it is spent on the expand gesture
+  // rather than on every lane render: the effect fires on the closed → open
+  // edge (and on mount, since the fronted row opens with the shade). Reopening
+  // a row is a deliberate re-ask, and answers for the repository as it is now.
+  const preview = landing?.actions.preview ?? null;
+  const wasExpandedRef = useRef(false);
+  useEffect(() => {
+    const wasExpanded = wasExpandedRef.current;
+    wasExpandedRef.current = expanded;
+    if (preview === null || !expanded || wasExpanded) return;
+    preview(entry);
+  }, [preview, expanded, entry]);
+
   const descriptor: DiffDescriptor = {
     kind: "range",
     root: projectRoot,
@@ -178,6 +223,20 @@ function DashRow({
       </TugListRow>
       {expanded ? (
         <div className="session-changes-dash-detail">
+          {landing !== null ? (
+            <SessionChangesDashLanding
+              entry={entry}
+              outcome={landing.outcome}
+              joinPhase={landing.join.phase}
+              conflicts={landing.join.conflicts}
+              blockers={landing.join.blockers}
+              error={landing.join.error}
+              candidateCommit={landing.candidateCommit}
+              turnInProgress={landing.turnInProgress}
+              resolve={landing.resolve}
+              actions={landing.actions}
+            />
+          ) : null}
           {subjects.length > 0 ? (
             <ul
               className="session-changes-dash-subjects"
@@ -229,12 +288,15 @@ export interface SessionChangesDashLaneProps {
   boundDashId: string | null;
   /** Absolute checkout root — the range descriptor's `root`. */
   projectRoot: string;
+  /** The fronted row's landing face; omitted leaves the lane read-only. */
+  landing?: DashLaneLanding;
 }
 
 export function SessionChangesDashLane({
   dashes,
   boundDashId,
   projectRoot,
+  landing,
 }: SessionChangesDashLaneProps): React.ReactElement | null {
   // Per-dash expansion overrides. The default is "expanded exactly when this
   // is the card's own dash", so a bind that arrives while the shade is open
@@ -266,11 +328,16 @@ export function SessionChangesDashLane({
             This card&rsquo;s dash
           </div>
           <DashRow
+            // Keyed so a rebind swaps the row rather than reusing it: the
+            // landing face's preview fires on mount, and a reused instance
+            // would show the new dash under the old dash's verdict.
+            key={fronted.owner_id}
             entry={fronted}
             projectRoot={projectRoot}
             fronted
             expanded={isExpanded(fronted)}
             onToggle={(next) => toggle(fronted, next)}
+            landing={landing ?? null}
           />
         </>
       ) : null}
@@ -303,6 +370,7 @@ export function SessionChangesDashLane({
                   fronted={false}
                   expanded={isExpanded(entry)}
                   onToggle={(next) => toggle(entry, next)}
+                  landing={null}
                 />
               ))
             : null}

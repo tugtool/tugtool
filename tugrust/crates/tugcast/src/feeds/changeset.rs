@@ -1209,6 +1209,51 @@ pub(crate) fn format_commit_summary(
     )
 }
 
+/// The `/dash-join` receipt's durable summary (Spec S01).
+///
+/// Built like [`format_commit_summary`] and for the same reason: the header is
+/// fixed so the deck's parser can claim it, `·` is U+00B7, and the message is
+/// the one the join actually landed with — trimmed, never truncated, so the
+/// receipt is the squash message rather than a description of it.
+pub(crate) fn format_join_summary(
+    sha: &str,
+    dash: &str,
+    base: &str,
+    rounds: u32,
+    message: &str,
+) -> String {
+    let short = &sha[..sha.len().min(10)];
+    let message = message.trim();
+    format!("joined {short} · {dash} → {base} · {rounds} round(s)\n{message}")
+}
+
+/// The `/dash-release` receipt's durable summary (Spec S02).
+///
+/// A release has no commit to name, so its identity is the dash and the size
+/// of what it destroyed; the body is the round subjects the discard preflight
+/// showed, which makes the receipt a record of exactly what the confirm took.
+/// A clean dash renders the header line alone.
+///
+/// `files` is the dash's **range** diff (`base...branch`), which is what
+/// `DashDetail.files` holds — the files the dash touched, committed or not.
+/// The word is plain `file(s)` for that reason: calling them dirty would name
+/// a worktree state most of them are not in.
+pub(crate) fn format_release_summary(
+    dash: &str,
+    rounds: u32,
+    files: u32,
+    round_subjects: &[String],
+) -> String {
+    let mut header = format!("released {dash} · discarded {rounds} round(s)");
+    if files > 0 {
+        header.push_str(&format!(", {files} file(s)"));
+    }
+    if round_subjects.is_empty() {
+        return header;
+    }
+    format!("{header}\n{}", round_subjects.join("\n"))
+}
+
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
 /// on any failure.
 async fn git_stdout(dir: &Path, args: &[&str]) -> Option<String> {
@@ -2721,6 +2766,61 @@ mod tests {
              files: [{\"path\":\"assets/logo.png\",\"status\":\"created\",\"added\":0,\"removed\":0},\
              {\"path\":\"src/a.rs\",\"status\":\"modified\",\"added\":5,\"removed\":3}]\n\
              Add an image"
+        );
+    }
+
+    #[test]
+    fn format_join_summary_names_the_dash_the_base_and_the_rounds() {
+        let s = format_join_summary(
+            "0123456789abcdef",
+            "join-lane",
+            "main",
+            5,
+            "tugdash(join-lane): land the join surface",
+        );
+        assert_eq!(
+            s,
+            "joined 0123456789 · join-lane → main · 5 round(s)\n\
+             tugdash(join-lane): land the join surface"
+        );
+    }
+
+    #[test]
+    fn format_join_summary_keeps_the_full_multi_line_message() {
+        let s = format_join_summary(
+            "abcdef0123456789",
+            "d",
+            "trunk",
+            1,
+            "  Subject line\n\nA longer body paragraph.\n",
+        );
+        assert_eq!(
+            s,
+            "joined abcdef0123 · d → trunk · 1 round(s)\n\
+             Subject line\n\nA longer body paragraph."
+        );
+    }
+
+    #[test]
+    fn format_release_summary_lists_the_round_subjects() {
+        let s = format_release_summary(
+            "spike",
+            2,
+            3,
+            &["first round".to_string(), "second round".to_string()],
+        );
+        assert_eq!(
+            s,
+            "released spike · discarded 2 round(s), 3 file(s)\n\
+             first round\nsecond round"
+        );
+    }
+
+    #[test]
+    fn format_release_summary_of_a_clean_dash_is_one_line() {
+        assert_eq!(
+            format_release_summary("spike", 0, 0, &[]),
+            "released spike · discarded 0 round(s)"
         );
     }
 

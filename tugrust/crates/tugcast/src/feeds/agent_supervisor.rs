@@ -1878,6 +1878,11 @@ struct ChangesetJoinPayload {
     /// present the join fast-forwards the base onto it (staleness-guarded)
     /// instead of integrating per strategy.
     candidate: Option<String>,
+    /// Resume an interrupted teardown from the journal (Spec S04).
+    continue_join: bool,
+    /// The calling card's tug session id, for the receipt's shell-ledger row
+    /// ([P06]). Absent, the landing still succeeds and leaves no receipt.
+    session_id: Option<String>,
 }
 
 fn parse_changeset_join_payload(payload: &[u8]) -> Result<ChangesetJoinPayload, ControlError> {
@@ -1917,6 +1922,11 @@ fn parse_changeset_join_payload(payload: &[u8]) -> Result<ChangesetJoinPayload, 
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty())
         .map(str::to_string);
+    let continue_join = value
+        .get("continue")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let session_id = parse_optional_session_id(&value);
     Ok(ChangesetJoinPayload {
         project_dir,
         dash,
@@ -1924,7 +1934,19 @@ fn parse_changeset_join_payload(payload: &[u8]) -> Result<ChangesetJoinPayload, 
         message,
         preview,
         candidate,
+        continue_join,
+        session_id,
     })
+}
+
+/// The optional `session_id` the landing verbs carry for their receipt row
+/// ([P06]). Missing or empty is not an error — the receipt is simply skipped.
+fn parse_optional_session_id(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string)
 }
 
 /// Parsed `changeset_join_resolve` request (Spec S12): the project checkout and
@@ -1960,6 +1982,8 @@ fn parse_changeset_join_resolve_payload(
 struct ChangesetReleasePayload {
     project_dir: String,
     dash: String,
+    /// The calling card's tug session id, for the receipt's row ([P06]).
+    session_id: Option<String>,
 }
 
 fn parse_changeset_release_payload(
@@ -1981,7 +2005,12 @@ fn parse_changeset_release_payload(
         .filter(|s| !s.is_empty())
         .ok_or(ControlError::Malformed)?
         .to_string();
-    Ok(ChangesetReleasePayload { project_dir, dash })
+    let session_id = parse_optional_session_id(&value);
+    Ok(ChangesetReleasePayload {
+        project_dir,
+        dash,
+        session_id,
+    })
 }
 
 fn parse_session_id_payload(payload: &[u8]) -> Result<String, ControlError> {
@@ -4877,6 +4906,14 @@ impl AgentSupervisor {
         // none of the id-keyed rows this landing has to sweep ([L23], [P05],
         // Risk R02).
         let owner_key = tugdash_core::ops::dash_owner_key(dir, &request.dash);
+        // The round count belongs to the receipt, and a landed join deletes the
+        // branch it is counted from — so it is read here, for the same reason
+        // the owner key is.
+        let rounds = tugdash_core::dash_detail_entries_in(dir)
+            .into_iter()
+            .find(|d| d.name == request.dash)
+            .map(|d| d.rounds)
+            .unwrap_or(0);
 
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
@@ -4884,7 +4921,7 @@ impl AgentSupervisor {
             strategy: request.strategy,
             message: request.message.clone(),
             preview: request.preview,
-            continue_join: false,
+            continue_join: request.continue_join,
             candidate: request.candidate.clone(),
         };
         let result =
@@ -4906,7 +4943,29 @@ impl AgentSupervisor {
                     }
                     self.registry.changeset_all_bump().notify_one();
                 }
-                let body = serde_json::json!({
+                // The landing's receipt (Spec S01) — server-formatted, so the
+                // durable row and the live one are the same bytes.
+                let summary = match (&outcome.commit_hash, outcome.previewed) {
+                    (Some(sha), false) => {
+                        let summary = crate::feeds::changeset::format_join_summary(
+                            sha,
+                            &outcome.name,
+                            &outcome.base_branch,
+                            rounds,
+                            outcome.message.as_deref().unwrap_or(""),
+                        );
+                        Self::record_landing_receipt(
+                            self.shell_ledger.as_ref(),
+                            request.session_id.as_deref(),
+                            "/dash-join",
+                            &summary,
+                            project_dir,
+                        );
+                        Some(summary)
+                    }
+                    _ => None,
+                };
+                let mut body = serde_json::json!({
                     "action": "changeset_join_ok",
                     "project_dir": project_dir,
                     "dash": request.dash,
@@ -4916,8 +4975,16 @@ impl AgentSupervisor {
                     "commit_hash": outcome.commit_hash,
                     "conflicts": outcome.conflicts,
                     "previewed": outcome.previewed,
+                    "summary": summary,
                     "warnings": outcome.warnings,
                 });
+                // Additive, exactly as `JoinOutcome` serializes it: the key is
+                // absent rather than `[]` when nothing blocks (Spec S03).
+                if !outcome.blockers.is_empty()
+                    && let Ok(blockers) = serde_json::to_value(&outcome.blockers)
+                {
+                    body["blockers"] = blockers;
+                }
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
                     serde_json::to_vec(&body).expect("changeset_join_ok serializes"),
@@ -4939,6 +5006,40 @@ impl AgentSupervisor {
                     &format!("join task failed: {join_err}"),
                 );
             }
+        }
+    }
+
+    /// Persist a landing receipt to the shell ledger ([P06]), the same way the
+    /// commit landing does: the row is what makes the transcript's receipt
+    /// survive Maker ▸ Reload and cold boot. A missing `session_id` or a
+    /// missing ledger skips it — the receipt records the verb, it never gates
+    /// it — and a ledger error warns rather than failing the landing.
+    fn record_landing_receipt(
+        ledger: Option<&Arc<crate::shell_ledger::ShellLedger>>,
+        session_id: Option<&str>,
+        command: &str,
+        summary: &str,
+        cwd: &str,
+    ) {
+        let (Some(session_id), Some(ledger)) = (session_id.filter(|s| !s.is_empty()), ledger)
+        else {
+            return;
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        if let Err(e) = ledger.record_exchange(&crate::shell_ledger::NewShellExchange {
+            tug_session_id: session_id.to_string(),
+            command: command.to_string(),
+            output: summary.to_string(),
+            exit_code: Some(0),
+            cwd: cwd.to_string(),
+            cwd_after: None,
+            started_at_ms: now,
+            settled_at_ms: now,
+        }) {
+            warn!(error = %e, command, "failed to persist a landing to the shell ledger");
         }
     }
 
@@ -5103,6 +5204,15 @@ impl AgentSupervisor {
         // states: `release_in` deletes the branch and its config with it
         // ([L23], [P05], Risk R02).
         let owner_key = tugdash_core::ops::dash_owner_key(dir, &request.dash);
+        // What the discard is about to destroy, read while it still exists —
+        // `dash_detail_entries_in` is the only accessor and after the teardown
+        // the branch is gone and the subjects are unrecoverable (Spec S02).
+        let detail = tugdash_core::dash_detail_entries_in(dir)
+            .into_iter()
+            .find(|d| d.name == request.dash);
+        let discarded_rounds = detail.as_ref().map(|d| d.rounds).unwrap_or(0);
+        let discarded_files = detail.as_ref().map(|d| d.files.len() as u32).unwrap_or(0);
+        let round_subjects = detail.map(|d| d.round_subjects).unwrap_or_default();
 
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
@@ -5120,11 +5230,27 @@ impl AgentSupervisor {
                     let _ = ledger.clear_dash_bindings_for_dash(&owner_key);
                 }
                 self.registry.changeset_all_bump().notify_one();
+                // The discard's receipt (Spec S02): the header names what was
+                // destroyed, the body lists the subjects the preflight showed.
+                let summary = crate::feeds::changeset::format_release_summary(
+                    &outcome.name,
+                    discarded_rounds,
+                    discarded_files,
+                    &round_subjects,
+                );
+                Self::record_landing_receipt(
+                    self.shell_ledger.as_ref(),
+                    request.session_id.as_deref(),
+                    "/dash-release",
+                    &summary,
+                    project_dir,
+                );
                 let body = serde_json::json!({
                     "action": "changeset_release_ok",
                     "project_dir": project_dir,
                     "dash": request.dash,
                     "name": outcome.name,
+                    "summary": summary,
                     "warnings": outcome.warnings,
                 });
                 let _ = self.control_tx.send(Frame::new(
@@ -7522,6 +7648,84 @@ mod tests {
             parse_changeset_commit_payload(stray),
             Err(ControlError::Malformed)
         ));
+    }
+
+    #[test]
+    fn changeset_join_payload_defaults_continue_to_false() {
+        let bare = br#"{"project_dir":"/p","dash":"d"}"#;
+        let parsed = parse_changeset_join_payload(bare).expect("parse");
+        assert!(!parsed.continue_join);
+        assert_eq!(parsed.session_id, None);
+        assert!(!parsed.preview);
+    }
+
+    #[test]
+    fn changeset_join_payload_reads_continue_and_session_id() {
+        let payload =
+            br#"{"project_dir":"/p","dash":"d","continue":true,"session_id":"sess-1","preview":true}"#;
+        let parsed = parse_changeset_join_payload(payload).expect("parse");
+        assert!(parsed.continue_join);
+        assert_eq!(parsed.session_id.as_deref(), Some("sess-1"));
+        assert!(parsed.preview);
+    }
+
+    #[test]
+    fn changeset_release_payload_session_id_is_optional() {
+        let bare = br#"{"project_dir":"/p","dash":"d"}"#;
+        assert_eq!(
+            parse_changeset_release_payload(bare).expect("parse").session_id,
+            None
+        );
+        let tagged = br#"{"project_dir":"/p","dash":"d","session_id":"sess-1"}"#;
+        assert_eq!(
+            parse_changeset_release_payload(tagged)
+                .expect("parse")
+                .session_id
+                .as_deref(),
+            Some("sess-1")
+        );
+        // Whitespace is not a session id.
+        let blank = br#"{"project_dir":"/p","dash":"d","session_id":"  "}"#;
+        assert_eq!(
+            parse_changeset_release_payload(blank)
+                .expect("parse")
+                .session_id,
+            None
+        );
+    }
+
+    /// The `blockers` key is additive: absent, not `[]`, when nothing blocks
+    /// (Spec S03), so every shipped `changeset_join_ok` consumer is unaffected.
+    #[test]
+    fn changeset_join_ok_omits_blockers_when_there_are_none() {
+        let outcome = tugdash_core::JoinOutcome {
+            name: "d".to_string(),
+            base_branch: "main".to_string(),
+            strategy: "squash".to_string(),
+            commit_hash: None,
+            conflicts: vec![],
+            previewed: true,
+            blockers: vec![],
+            message: None,
+            warnings: vec![],
+        };
+        let mut body = serde_json::json!({ "action": "changeset_join_ok" });
+        if !outcome.blockers.is_empty()
+            && let Ok(blockers) = serde_json::to_value(&outcome.blockers)
+        {
+            body["blockers"] = blockers;
+        }
+        assert!(body.get("blockers").is_none());
+
+        let blocked = tugdash_core::JoinBlocker {
+            kind: "off-base".to_string(),
+            detail: "Check out 'main' first.".to_string(),
+            paths: vec![],
+        };
+        let value = serde_json::to_value(vec![blocked]).expect("serializes");
+        assert_eq!(value[0]["kind"], "off-base");
+        // `paths` is skip-if-empty too.
+        assert!(value[0].get("paths").is_none());
     }
 
     #[test]

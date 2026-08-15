@@ -38,12 +38,18 @@ import { TugPromptEntry, type TugPromptEntryDelegate } from "../tug-prompt-entry
 import { ShadeViewController } from "@/lib/shade-view-controller";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import { getChangesetVerbStore } from "@/lib/changeset-verb-store";
+import { getChangesetJoinStore } from "@/lib/changeset-join-store";
 import { getChangesetDraftStore } from "@/lib/changeset-draft-store";
 import { CommitModeController } from "@/lib/commit-mode-controller";
+import { JoinModeController, joinTargetFromEntry } from "@/lib/join-mode-controller";
 import { SessionTranscriptHost, type SessionTranscriptHandle } from "./session-card-transcript";
 import { AppTestAskDialog } from "../chrome/session-app-test-ask-dialog";
 import { pendingAskStore } from "@/lib/pending-ask-store";
-import { SessionChangesView } from "./session-changes/session-changes-view";
+import {
+  SessionChangesView,
+  type DashLandingSource,
+} from "./session-changes/session-changes-view";
+import type { DashLandingActions } from "./session-changes/session-changes-dash-landing";
 import { SessionHistoryView } from "./session-history/session-history-view";
 import { useSessionPlacementSlots } from "./session-card-placement-experiment";
 import type { SessionTelemetryStatusRowHandle } from "./session-card-telemetry-renderers";
@@ -2503,6 +2509,59 @@ export function SessionCardBody({
     [commitModeController],
   );
 
+  // Join mode ([P01]/[P04]) — commit mode's twin for the dash lane, rebuilt on
+  // the same session-swap boundary and for the same reason: a new session has
+  // its own bindings and its own dash.
+  const joinModeControllerRef = useRef<JoinModeController | null>(null);
+  const joinModeStoresRef = useRef<CommitModeController | null>(null);
+  if (
+    joinModeControllerRef.current === null ||
+    joinModeStoresRef.current !== commitModeController
+  ) {
+    joinModeControllerRef.current = new JoinModeController({
+      changesController,
+      codeSessionStore,
+      commitModeController,
+    });
+    joinModeStoresRef.current = commitModeController;
+  }
+  const joinModeController = joinModeControllerRef.current;
+  useEffect(() => () => joinModeController.dispose(), [joinModeController]);
+
+  const joinSnapshot = useSyncExternalStore(
+    joinModeController.subscribe,
+    joinModeController.getSnapshot,
+  );
+  const joinActive = joinSnapshot.active;
+
+  /** Retired verb spellings this card has already named ([P08]). */
+  const retiredVerbsSeenRef = useRef(new Set<string>());
+
+  /**
+   * The Z4A route group's entering half ([P03]). The composer holds one
+   * landing-mode slot and cannot know which controller a segment means, so the
+   * card — which holds them all — resolves it. Leaving to the prompt stays in
+   * the composer, which has to persist the typed message first.
+   */
+  const handleSelectComposerRoute = useCallback(
+    (route: "changes" | "join") => {
+      if (route === "changes") {
+        commitModeController.enter();
+        return;
+      }
+      // A no-op when unbound, which is also when the segment is absent.
+      const binding = cardSessionBindingStore.getBinding(cardId);
+      const dashId = binding?.dash?.id;
+      if (dashId === undefined) return;
+      const entry = changesController
+        .getSnapshot()
+        .dashes.find((row) => row.owner_id === dashId);
+      if (entry === undefined) return;
+      joinModeController.enter(joinTargetFromEntry(entry));
+    },
+    [cardId, changesController, commitModeController, joinModeController],
+  );
+
   // Find bar: open/closed is structural (the bar mounts/unmounts above Z2),
   // mirroring the Text card's `findOpen`. The session outlives the bar here —
   // the transcript host binds its engine to it at card scope — so the bar
@@ -2575,6 +2634,7 @@ export function SessionCardBody({
     sessionMetadataStore,
     shadeViewController,
     commitModeController,
+    joinModeController,
   );
 
   // Imperative handle to the transcript pane. `handleAfterSubmit`
@@ -2640,31 +2700,33 @@ export function SessionCardBody({
   // exclusion `openFindBar` owns. Reading the flag rather than wiring each
   // door is what makes every entrance agree: ⌃⌘C, `/commit`, the Z4A tab, the
   // Session menu, and the failed-land re-entry.
-  const prevCommitModeActiveRef = useRef(commitModeActive);
+  // Either landing counts ([P01]): the shade is the room both modes happen in,
+  // so the coupling observes whether *a* landing is up rather than naming one.
+  const anyLandingActive = commitModeActive || joinActive;
+  const prevCommitModeActiveRef = useRef(anyLandingActive);
   useEffect(() => {
     const prev = prevCommitModeActiveRef.current;
-    prevCommitModeActiveRef.current = commitModeActive;
-    if (!prev && commitModeActive) {
+    prevCommitModeActiveRef.current = anyLandingActive;
+    if (!prev && anyLandingActive) {
       if (findBarOpenRef.current) closeFindBar();
       shadeViewController.show("changes");
-    } else if (prev && !commitModeActive) {
+    } else if (prev && !anyLandingActive) {
       if (shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
       }
     }
-  }, [commitModeActive, shadeViewController, closeFindBar]);
+  }, [anyLandingActive, shadeViewController, closeFindBar]);
   const handleChangesSheetOpenChange = useCallback(
     (open: boolean) => {
       if (!open && shadeViewController.getSnapshot() === "changes") {
         shadeViewController.hide();
-        // A passive-shade self-close while commit mode is active also exits
-        // the mode ([P03]) so the composer returns to the prompt.
-        if (commitModeController.getSnapshot().active) {
-          commitModeController.exit();
-        }
+        // A passive-shade self-close while a landing is active also exits
+        // that mode ([P03]) so the composer returns to the prompt.
+        if (commitModeController.getSnapshot().active) commitModeController.exit();
+        if (joinModeController.getSnapshot().active) joinModeController.exit();
       }
     },
-    [shadeViewController, commitModeController],
+    [shadeViewController, commitModeController, joinModeController],
   );
   const handleHistorySheetOpenChange = useCallback(
     (open: boolean) => {
@@ -2680,18 +2742,23 @@ export function SessionCardBody({
   // The land-hook (installed on the controller) parks the commit callback and
   // dismisses the shade by exiting the mode; the `sheetDidHide` delegate below
   // runs the parked callback once the exit animation completes.
+  // A join stages the same way, for the same reason ([P01]) — one hook shape,
+  // installed on both controllers.
   const stagedCommitRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    commitModeController.setLandHook((runCommit) => {
-      stagedCommitRef.current = runCommit;
-      if (commitModeController.getSnapshot().active) {
-        commitModeController.exit();
-      } else {
-        shadeViewController.hide();
-      }
-    });
-    return () => commitModeController.setLandHook(null);
-  }, [commitModeController, shadeViewController]);
+    const stage = (mode: { getSnapshot: () => { active: boolean }; exit: () => void }) =>
+      (runLand: () => void) => {
+        stagedCommitRef.current = runLand;
+        if (mode.getSnapshot().active) mode.exit();
+        else shadeViewController.hide();
+      };
+    commitModeController.setLandHook(stage(commitModeController));
+    joinModeController.setLandHook(stage(joinModeController));
+    return () => {
+      commitModeController.setLandHook(null);
+      joinModeController.setLandHook(null);
+    };
+  }, [commitModeController, joinModeController, shadeViewController]);
   useSheetDelegate(cardId, {
     sheetDidHide: () => {
       const staged = stagedCommitRef.current;
@@ -3549,6 +3616,24 @@ export function SessionCardBody({
     ),
   });
 
+  /**
+   * Run a retired verb's replacement, saying the new name the first time this
+   * card sees it ([P08]). Once per card, not once per press: a rename is worth
+   * one sentence, and a bulletin on every use would be a scold.
+   */
+  const runRetiredVerb = (
+    from: string,
+    to: LocalCommandName,
+    args: string,
+    draft?: SlashCommandDraft,
+  ): void => {
+    if (!retiredVerbsSeenRef.current.has(from)) {
+      retiredVerbsSeenRef.current.add(from);
+      paneBulletinRef.current?.caution(`/${from} is now /${to}`);
+    }
+    slashCommandSurfaces[to](args, draft);
+  };
+
   const slashCommandSurfaces: Record<
     LocalCommandName,
     (args: string, draft?: SlashCommandDraft) => void
@@ -3911,17 +3996,7 @@ export function SessionCardBody({
       const message = args.trim();
       commitModeController.enter(message.length > 0 ? message : undefined);
     },
-    // `/join` — the dash lane's landing gesture, backed by the `tugplug:dash-join`
-    // skill (the same shape as the other dash verbs: the skill rides
-    // `tugutil dash join`, which owns the preflight, the in-memory preview,
-    // the journal, and the teardown). Forwarded as a leading `command` atom so
-    // the wire carries a clean `/tugplug:dash-join …` and claude expands it as a
-    // USER invocation — the path that clears the skill's
-    // `disable-model-invocation` guard (see `commandWireText`). Landing is a
-    // turn, so it takes the same idle gate every mutating verb does ([P08]):
-    // mid-flight it refuses with a caution rather than queueing behind the
-    // running turn.
-    // `/dash <name>` — work on a dash, making it if needed ([P06]).
+    // `/dash-bind <name>` — work on a dash, making it if needed ([P06]).
     //
     // Two paths, each using the thing for what it is. An existing name is a
     // pure UI-concept write, so it goes over the `bind_dash` CONTROL verb:
@@ -3940,11 +4015,11 @@ export function SessionCardBody({
     // of a snapshot that has not answered yet.
     //
     // A mistyped name therefore creates a dash. That is `tugutil dash
-    // create`'s semantics and this gesture inherits it on purpose: `/dash`
-    // means "work on this dash, making it if needed", so there is no name it
-    // can refuse for being unfamiliar. The shell receipt is what makes the
-    // outcome legible.
-    dash: (args) => {
+    // create`'s semantics and this gesture inherits it on purpose:
+    // `/dash-bind` means "work on this dash, making it if needed", so there is
+    // no name it can refuse for being unfamiliar. The shell receipt is what
+    // makes the outcome legible.
+    "dash-bind": (args) => {
       const notify = paneBulletinRef.current;
       // The `/diff` precedent: a surface that needs a binding returns silently
       // when the store has none.
@@ -4026,18 +4101,48 @@ export function SessionCardBody({
       const submission = buildCommandSubmission(REVIEW_PLAN_COMMAND, target.path);
       codeSessionStore.send(submission.text, submission.atoms);
     },
-    join: (args) => {
+    // `/dash-join [name] [message…]` — the dash lane's landing gesture ([P04]).
+    // It no longer submits a turn: the landing is the user's act and belongs in
+    // front of the button, so this enters join mode and the card runs the git
+    // itself. The `tugplug:dash-join` skill survives untouched as the agentic
+    // path over the same `tugutil dash join` verb; the two entrances differ in
+    // who is driving.
+    //
+    // Bare = the bound dash; a name = that dash in this project; a name plus a
+    // message seeds the join message as an edited draft, exactly as `/commit
+    // <message>` does. There is no turn gate: entering a mode mid-turn is
+    // harmless — only the *land* is gated ([P05]).
+    "dash-join": (args) => {
       const notify = paneBulletinRef.current;
-      if (!codeSessionStore.getSnapshot().canSubmit) {
-        notify?.caution("Can't join a dash while a turn is in flight");
+      const snap = changesController.getSnapshot();
+      const rest = args.trim();
+      const [first = "", ...tail] = rest.length === 0 ? [] : rest.split(/\s+/);
+      const binding = cardSessionBindingStore.getBinding(cardId);
+
+      // A leading word that names a dash is the target; otherwise the whole
+      // argument is a message for the bound dash.
+      const named = snap.dashes.find((entry) => entry.display_name === first);
+      const entry =
+        named ??
+        (binding?.dash === undefined
+          ? undefined
+          : snap.dashes.find((row) => row.owner_id === binding.dash?.id));
+      if (entry === undefined) {
+        notify?.caution(
+          first.length > 0
+            ? `No dash named '${first}' in this project`
+            : "No dash bound — /dash-join <name>",
+        );
         return;
       }
-      // The typed args are a dash name (plus an optional message) — plain
-      // text — so the composer's substrate carries nothing worth threading
-      // through; the row reads `/tugplug:dash-join <name>`.
-      const submission = buildCommandSubmission("tugplug:dash-join", args);
-      codeSessionStore.send(submission.text, submission.atoms);
+      const seed = (named === undefined ? rest : tail.join(" ")).trim();
+      joinModeController.enter(joinTargetFromEntry(entry), seed.length > 0 ? seed : undefined);
     },
+    // The retired spellings ([P08]). They run the new handler and say the new
+    // name once — deleting them would send the user's line to Claude as a
+    // prompt, which is worse than either.
+    dash: (args, draft) => runRetiredVerb("dash", "dash-bind", args, draft),
+    join: (args, draft) => runRetiredVerb("join", "dash-join", args, draft),
     // `/shell <command>` — the deliberate override under the shell
     // auto-router: the classifier decides by default, and a user who knows
     // better forces one exchange against the card's shell session (the row
@@ -4159,10 +4264,11 @@ export function SessionCardBody({
       // `CommitModeController`, which is where the selection lives, so the
       // Z4A group follows without being told.
       [TUG_ACTIONS.SELECT_COMPOSER_ROUTE]: (event: ActionEvent) => {
-        if (event.value === "changes") {
-          commitModeController.enter();
+        if (event.value === "changes" || event.value === "join") {
+          handleSelectComposerRoute(event.value);
         } else if (event.value === "prompt") {
           commitModeController.exit();
+          joinModeController.exit();
         }
       },
       // ⌃⌥⌘P cycles the permission mode. Only the session card registers this
@@ -4327,6 +4433,55 @@ export function SessionCardBody({
       () => cardSessionBindingStore.getBinding(cardId)?.tugSessionId ?? null,
       [cardId],
     ),
+  );
+  // Whether this card is bound to a dash — what puts the Join segment in the
+  // composer's route group ([P03]). Read as the dash's id rather than the
+  // binding object so an unrelated binding write is not a re-render.
+  const boundDashId = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () => cardSessionBindingStore.getBinding(cardId)?.dash?.id ?? null,
+      [cardId],
+    ),
+  );
+  // The dash lane's landing face. Only the join-mode controller can say what a
+  // landing would do, so the card hands the shade the derivation and the three
+  // gestures; the view supplies the round trip and the turn gate from its own
+  // reads. Aiming previews without entering, so opening the row costs a
+  // `merge-tree` run and not the composer.
+  const dashLandingActions = useMemo<DashLandingActions>(
+    () => ({
+      preview: (entry) => joinModeController.aim(joinTargetFromEntry(entry)),
+      join: (entry) => joinModeController.enter(joinTargetFromEntry(entry)),
+      resumeTeardown: (entry) =>
+        joinModeController.resumeTeardown(joinTargetFromEntry(entry)),
+      // The ladder runs against the dash, not the card, so it is addressed by
+      // name — and it lands nothing: the candidate it builds is landed by the
+      // ordinary Join gesture, which is why the store never joins.
+      resolve: (entry) =>
+        getChangesetJoinStore()?.resolve(
+          changesController.projectDir,
+          entry.display_name,
+        ),
+      // The session id is what gives the discard a receipt ([P06]); without it
+      // the release still runs and simply leaves no row.
+      release: (entry) =>
+        getChangesetVerbStore()?.release(
+          changesController.entryKey,
+          changesController.projectDir,
+          entry.display_name,
+          changesController.tugSessionId,
+        ),
+    }),
+    [changesController, joinModeController],
+  );
+  const dashLanding = useMemo<DashLandingSource>(
+    () => ({
+      outcome: joinSnapshot.outcome,
+      candidateCommit: joinSnapshot.candidateCommit,
+      actions: dashLandingActions,
+    }),
+    [joinSnapshot.outcome, joinSnapshot.candidateCommit, dashLandingActions],
   );
   // A question put to the developer by a process outside the turn stream, with
   // that process blocked on the answer. The snapshot's `pendingAsk` reference
@@ -4778,6 +4933,7 @@ export function SessionCardBody({
                     projectDir={projectDir}
                     changesController={changesController}
                     codeSessionStore={codeSessionStore}
+                    dashLanding={boundDashId !== null ? dashLanding : undefined}
                   />
                 </TugSheetContent>
               </TugSheet>
@@ -4849,7 +5005,9 @@ export function SessionCardBody({
               shellGrammarStore={shellGrammarStore}
               shellClassifyStore={shellClassifyStore}
               findSession={findSession}
-              commitMode={commitModeController}
+              landingMode={joinActive ? joinModeController : commitModeController}
+              joinAvailable={boundDashId !== null}
+              onSelectRoute={handleSelectComposerRoute}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a
               // session fault. Surface it as a calm, dismissible bulletin

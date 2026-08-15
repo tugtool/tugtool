@@ -11,6 +11,8 @@ disallowed-tools: Task
 
 `dash-join` is the **dash lane's landing gesture** — the twin of `/commit` on the main lane. A dash has been worked (by `/tugplug:dash-implement` or `/tugplug:dash-on`), the user has vetted the build, and this run lands it: preview the merge in memory, land the squash onto the base branch with the dash's join draft as the message, tear down the worktree + branch, clear the draft, and report.
 
+**This is the agentic entrance; the card has its own.** Typing `/dash-join` in the Session card no longer submits a turn — it opens **join mode**: the composer becomes the join-message editor over a merge the card previewed on entry, the Changes shade's dash row shows the outcome and whatever blocks it, and Z5's Join button lands it. Same `tugutil dash join` verb, same preflight, same receipt; what differs is who is driving. Reach for this skill when the landing is part of a run you are already carrying out. Its interactive twin is one keystroke away for the user, and neither entrance knows or cares about the other.
+
 **You do not decide whether to land.** The user invoked this skill; that invocation is the byline. Your job is to land it correctly, or to stop with a clear reading of why it cannot land yet.
 
 Every git operation goes through **`tugutil dash join`**. Never `git merge`, never `git cherry-pick`, never a hand-rolled squash — the CLI owns the preflight, the in-memory preview, the journal, the trailers, and the teardown.

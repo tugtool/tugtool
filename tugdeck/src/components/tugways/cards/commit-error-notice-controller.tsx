@@ -35,7 +35,7 @@ export function CommitErrorNoticeController({
 
   useLayoutEffect(() => {
     const apply = (): void => {
-      const detail = controller.getSnapshot().commitError;
+      const detail = controller.getSnapshot().landError;
       if (detail === postedRef.current) return;
       postedRef.current = detail;
       if (detail === null) {

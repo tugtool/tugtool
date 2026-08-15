@@ -11,9 +11,13 @@
  * the row survives reload + cold boot from the ledger.
  *
  * The summary string is the single source ([P07]): this hook ingests it
- * verbatim, and `session-commit-receipt-block` parses the identical string
- * live and on restore, so the two rows are byte-identical. Join/release have
- * no UI initiators left ([P10]), so they leave no receipts here.
+ * verbatim, and the receipt blocks parse the identical string live and on
+ * restore, so the two rows are byte-identical.
+ *
+ * Join and release ride the same mechanism ([P06]). Each has one terminal edge
+ * to hang a row off — join's `done`, release's `done` — and each appends only
+ * when the server actually sent a summary, so a landing this card merely
+ * watched leaves no ink here.
  *
  * Laws: [L22] store→store wiring observes the verb store's own subscription
  * directly (no useSyncExternalStore → useEffect round-trip).
@@ -26,6 +30,8 @@ import { useEffect } from "react";
 import {
   getChangesetVerbStore,
   type CommitPhase,
+  type JoinPhase,
+  type ReleasePhase,
 } from "@/lib/changeset-verb-store";
 import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -39,26 +45,49 @@ export function useLandingReceipts(
     if (verbStore === null) return;
     const commitKey = changesController.entryKey;
     let prevCommit: CommitPhase = verbStore.commitState(commitKey).phase;
+    let prevJoin: JoinPhase = verbStore.joinState(commitKey).phase;
+    let prevRelease: ReleasePhase = verbStore.releaseState(commitKey).phase;
+
+    /** Append one landing's summary as a shell-exchange row ([D111]). */
+    const append = (command: string, output: string): void => {
+      const now = Date.now();
+      codeSessionStore.ingestShellExchange({
+        phase: "complete",
+        exchangeId: `landing-${now}-${Math.random().toString(36).slice(2, 8)}`,
+        command,
+        output,
+        exitCode: 0,
+        cwd: changesController.projectDir,
+        cwdAfter: null,
+        startedAtMs: now,
+        settledAtMs: now,
+      });
+    };
 
     const onChange = (): void => {
       // Commit: pending → done appends the server summary once. No fiction —
       // if the server sent no summary, nothing is appended.
       const commit = verbStore.commitState(commitKey);
       if (commit.phase === "done" && prevCommit !== "done" && commit.summary !== null) {
-        const now = Date.now();
-        codeSessionStore.ingestShellExchange({
-          phase: "complete",
-          exchangeId: `landing-${now}-${Math.random().toString(36).slice(2, 8)}`,
-          command: "/commit",
-          output: commit.summary,
-          exitCode: 0,
-          cwd: changesController.projectDir,
-          cwdAfter: null,
-          startedAtMs: now,
-          settledAtMs: now,
-        });
+        append("/commit", commit.summary);
       }
       prevCommit = commit.phase;
+
+      // Join: the same edge, on the dash lane's landing. A preview settles in
+      // `preview` and never here, so only a real land leaves ink.
+      const joined = verbStore.joinState(commitKey);
+      if (joined.phase === "done" && prevJoin !== "done" && joined.summary !== null) {
+        append("/dash-join", joined.summary);
+      }
+      prevJoin = joined.phase;
+
+      // Release: a discard is a landing too — it is the other way a dash stops
+      // existing, and the receipt is the only record of what it took.
+      const released = verbStore.releaseState(commitKey);
+      if (released.phase === "done" && prevRelease !== "done" && released.summary !== null) {
+        append("/dash-release", released.summary);
+      }
+      prevRelease = released.phase;
     };
 
     return verbStore.subscribe(onChange);
