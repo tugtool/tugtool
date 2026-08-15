@@ -428,11 +428,25 @@
    transcript height. The subtree is never unmounted ([L06] — paint is
    gated via a data-attr + CSS, never by conditional rendering; [L26] —
    the host keeps its mount identity across the window). */
-.session-card-transcript[data-replaying] .tug-list-view {
+.session-card-transcript[data-replaying] .tug-list-view[data-tug-scroll-key="session-card-transcript"] {
   visibility: hidden;
 }
 
-.session-card-transcript .tug-list-view {
+/* ---- Scoped to the transcript's OWN scroller, never a nested list ----
+   These rules describe the transcript scroller: its reserved scrollbar track,
+   the gap BETWEEN transcript entries, and the breathing room above the first
+   entry / below the last. A descendant selector (`.session-card-transcript
+   .tug-list-view`) also matched every `TugListView` a transcript row renders
+   INSIDE itself — a tool block's result list, the AskUserQuestion options —
+   handing each of them entry-sized spacing meant for the column that holds
+   them. The nested consumers each grew a higher-specificity re-assertion to
+   push the values back off, and the one that didn't win outright showed it:
+   the option list's top breathing spacer stayed 8px tall on a `data-no-z0`
+   session, so the cursor bar on the first option started 8px below the row it
+   marks. `data-tug-scroll-key` is the scroller's own identity (written by
+   `TugListView` from the consumer's `scrollKey`), so the tokens now reach the
+   one list they were written for and stop at every list inside it. */
+.tug-list-view[data-tug-scroll-key="session-card-transcript"] {
   /* Never let the scrollbar's arrival reflow the column. `overflow-y:
      scroll` reserves the classic-scrollbar track at all times (works on
      every WebKit), so the content width is constant whether or not the bar
@@ -484,7 +498,7 @@
    `margin-block-end` was carrying comes back to the list itself here, or the
    first entry butts against the masthead. The host mirrors the strip's
    absence onto the transcript root as `data-no-z0` ([L06]). */
-.session-card-transcript[data-no-z0] .tug-list-view {
+.session-card-transcript[data-no-z0] .tug-list-view[data-tug-scroll-key="session-card-transcript"] {
   --tugx-list-view-padding-block-start: var(--tug-space-md);
 }
 

@@ -156,16 +156,7 @@ body {
  * `height` is overridden to `auto` and the host row-gap / padding
  * tokens are zeroed so rows stack flush. The rows' own padding
  * provides the inset. [L20]
- *
- * Specificity note: `session-card.css` sets `--tugx-list-view-row-gap`
- * (and the padding tokens) on `.session-card-transcript .tug-list-view`
- * to space transcript *entries* apart. This `SearchResultBlock` is a
- * tool-block body rendered *inside* the transcript, so its nested
- * `.tug-list-view` also matches that selector and would inherit the
- * entry-sized gap — a bare `.tugx-search-list` (0,0,2,0) ties it and
- * loses on source order. The three-class form below (0,0,3,0) wins
- * outright, so the row-gap is genuinely zero regardless of bundle
- * order. (Same guard `PathListBlock` carries — see [#step-15].) */
+ */
 .tugx-search .tug-list-view.tugx-search-list {
   height: auto;
   --tugx-list-view-row-gap: 0;

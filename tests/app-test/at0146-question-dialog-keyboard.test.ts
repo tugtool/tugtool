@@ -295,6 +295,30 @@ describe.skipIf(!SHOULD_RUN)("AT0146: QuestionDialog is card-modal", () => {
           { timeoutMs: 4000 },
         );
 
+        // (2a) The cursor bar reaches the top of the row it marks. The bar is the
+        // cursor cell's `::before` at `inset-block: 0`, so this is really a claim
+        // about the list's leading edge: the transcript's own list-view tokens
+        // (`session-card.css`) must not reach this nested option list, or its top
+        // breathing spacer takes `--tugx-list-view-padding-block-start` and pushes
+        // the first cell — and its bar — down off the list's inner top edge.
+        const caretGeometry = await app.evalJS<{ gap: number; spacer: number }>(
+          `(function(){
+            var list=document.querySelector(${JSON.stringify(OPTIONS)});
+            var cell=list.querySelector(".tug-list-view-cell");
+            var spacer=list.querySelector(".tug-list-view-top-spacer");
+            var border=parseFloat(getComputedStyle(list).borderTopWidth)||0;
+            return {
+              gap: cell.getBoundingClientRect().top - list.getBoundingClientRect().top - border,
+              spacer: spacer ? spacer.getBoundingClientRect().height : -1,
+            };
+          })()`,
+        );
+        expect(caretGeometry.spacer, "the option list keeps no top breathing spacer").toBe(0);
+        expect(
+          caretGeometry.gap,
+          "the first option's cell — and so its cursor bar — starts at the list's inner top edge",
+        ).toBe(0);
+
         // (3) ArrowDown moves the cursor to the second option (no commit on move).
         await app.nativeKey("ArrowDown");
         await sleep(150);

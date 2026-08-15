@@ -134,11 +134,9 @@ body {
 
 /* ---------- List ---------- */
 
-/* `inline`-mode `TugListView`. Same specificity guard as
- * `path-list-block.css`: a nested `.tug-list-view` inside the
- * transcript would otherwise inherit the entry-sized row gap from
- * `.session-card-transcript .tug-list-view`. The three-class form ties
- * specificity and source-order is no longer load-bearing. */
+/* `inline`-mode `TugListView` — same shape as `path-list-block.css`:
+ * natural content height, host row-gap / padding tokens zeroed so the
+ * rows stack flush and the row's own padding provides the inset. [L20] */
 .tugx-todo .tug-list-view.tugx-todo-list {
   height: auto;
   --tugx-list-view-row-gap: 0;

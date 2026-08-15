@@ -141,16 +141,7 @@ body {
  * `height` is overridden to `auto` and the host row-gap / padding
  * tokens are zeroed so path rows stack flush. The row's own
  * `--tugx-paths-row-padding` provides the inset. [L20]
- *
- * Specificity note: `session-card.css` sets `--tugx-list-view-row-gap`
- * (and the padding tokens) on `.session-card-transcript .tug-list-view`
- * to space transcript *entries* apart. This `PathListBlock` is a
- * tool-block body rendered *inside* the transcript, so its nested
- * `.tug-list-view` also matches that selector and would inherit the
- * entry-sized gap — a bare `.tugx-paths-list` (0,0,2,0) ties it and
- * loses on source order. The three-class form below (0,0,3,0) wins
- * outright, so the row-gap is genuinely zero regardless of bundle
- * order. Any future list-shaped body kind needs the same guard. */
+ */
 .tugx-paths .tug-list-view.tugx-paths-list {
   height: auto;
   --tugx-list-view-row-gap: 0;

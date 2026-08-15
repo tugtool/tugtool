@@ -439,28 +439,6 @@ body {
  * perimeter ring marks that the list holds the keyboard; the commit-advance
  * flash (see the dialog's flash effect) blinks each selected row's glyph. */
 
-/* The dialog renders inside `.session-card-transcript`, whose own list-view rule
- * (`session-card.css`) sets a large inter-TURN `--tugx-list-view-row-gap` and a 24px
- * bottom `--tugx-list-view-padding-block-end`. Those custom properties target
- * every `.tug-list-view` descendant — including this nested option list — and the
- * bottom spacer in particular padded an empty band INSIDE the option list's
- * frame, under the last row. Re-assert ALL the flush spacing values (block,
- * row-gap, and BOTH block-end / block-start) one level more specific so the list
- * hugs its rows with no gap. */
-.session-card-transcript .session-question-dialog-options-list.tug-list-view {
-  --tugx-list-view-padding-block: 0;
-  --tugx-list-view-padding-block-start: 0;
-  --tugx-list-view-padding-block-end: 0;
-  --tugx-list-view-row-gap: 0;
-  /* The transcript forces `overflow-y: scroll` on every list-view so a
-     scrollbar's arrival never reflows the column. But this option list is
-     `height: auto` and never scrolls (the whole dialog scrolls in the
-     transcript), so that reserved gutter is dead space on the right — the
-     selection fill and rows stop short of the frame. Opt out: no scroll
-     container, no reserved gutter, so rows + fill run flush to the right edge. */
-  overflow-y: visible;
-}
-
 /* ---- Card-modal dialog ([P16]/[P17]/[P18]) ---- */
 /* Mirrors the PermissionDialog treatment. The dialog is card-modal: inline
  * display, trapped focus, archetype-decomposed controls. The focused action
