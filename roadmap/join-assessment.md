@@ -35,15 +35,28 @@ The bug is therefore invisible to the whole suite and appears only in a repo tha
 
 **Half one — stop fabricating. Done.** The predicate the rung was missing already existed: `RawStages::load()` returns `None` for exactly the non-content conflicts (a missing ours-or-theirs stage ⇒ delete/modify, differing modes ⇒ mode conflict, a NUL byte ⇒ binary). `rerere_rung` iterated `stages.keys()` and never consulted the value; it now iterates the pairs and skips any path whose `RawStages` is non-content, so those reach the per-file short-circuit that already handled them. Gating inside the rung rather than at the call site keeps the rung's returned map meaning "rerere really resolved this", which is what the `ResolvedBy::Rerere` label claims downstream. It also now consults `git rerere remaining` in the scratch worktree and skips anything rerere itself still lists — a direct answer alongside the inference from "the file has no conflict markers". An unreadable answer restricts nothing, so the cross-check can only tighten the harvest, never widen it.
 
-**Half two — show the product.** Still open, and it belongs with the tactical-layer pass. Even a correct rerere resolution is a *replayed* one, and the incident's hand merge proved a cached resolution can be stale and wrong. Any path resolved by rung 2 has to be visible — and reviewable — before it lands. The `resolved` array already carries `resolved_by` per file and the landing face already renders it; what is missing is that a rerere-resolved candidate arms **Join** identically to a clean preview, with no diff of what was replayed.
+**Half two — show the product. Done.** Even a correct rerere resolution is a *replayed* one, and the incident's hand merge proved a cached resolution can be stale and wrong. What shipped generalises that past rerere, because the argument does: every rung above the replay probe decides a file by machine, and rung 4 and rung 5 are outright guesses. So the gate is *any candidate built out of per-file resolutions*.
+
+- **The server sends what it decided.** `FileResolution` carries `diff` — the unified diff from the base head to the candidate for that path alone, capped at 400 lines. It is read off the built candidate rather than the blobs, so an add, a delete and a mode change all arrive in the form git already renders. A partial outcome has no candidate and therefore no diffs: there is nothing to review when nothing can land.
+- **The review is a state of the resolve round, not of a component.** `ResolveState.reviewed` lives in `changeset-join-store` keyed by dash, because both landing routes have to honour it — the lane's Join button and the composer's `/join <name>`. A review held in the landing face would gate one and not the other. Every fresh ladder run resets it; a new resolution is a new decision.
+- **The gate is the shared one.** `evaluateJoinLandGate` grew a required `unreviewedResolution` input and an `unreviewed` reason, placed immediately after `outcome` — the same question one level finer: not *is* there something to land, but *has anyone looked at what the machine decided to land*. Making the field required rather than optional is what proved every call site had been updated; the compiler found all three.
+- **The face shows the diffs and asks for a beat.** The resolved face renders the resolutions through the shared `TugDiffDocument` — the same surface the Changes shade and the Diff card use — and Join stays refused, reading *"Review what the ladder resolved first"*, until `Reviewed` is pressed. The document is passed a new `openAllByDefault` prop: its default expansion is line-budgeted, and a 100-line resolution would have arrived folded shut, which would have made the acknowledgement a checkbox over hidden content — the exact thing this replaces.
+
+What this deliberately does **not** gate: a rung-1 replay and a clean one-shot squash, whose `resolved` list is empty. No file was decided by machine, so they land as they always did.
 
 **The regression test.** `delete_modify_is_not_claimed_by_rerere`, alongside the older `delete_modify_short_circuits_to_unresolved`. Same conflict, but it seeds an `rr-cache` first — a real recorded resolution over an unrelated file on a throwaway branch, then `reset --hard` back to the base (`rr-cache` survives a reset) — so rung 2 actually runs. It asserts `resolved.is_empty()`, `unresolved == ["f.txt"]`, and `candidate_commit.is_none()`. Before the fix it failed exactly as predicted: `[("f.txt", Rerere)]`, with a candidate equal to the base tree.
 
 **⚠️ Never probe this with `tugutil dash join <name> --resolve`.** That verb does not stop at the candidate — it lands. That is how the empty `ebee1d49f` reached `main` while this was being diagnosed. `--preview` is the safe CLI probe (it touches nothing and is what at0425 drives); everything else belongs in the Rust tests above, which build their own scratch repos in tempdirs.
 
-### What at0425 asserts now
+### What the tests assert now
 
 `tests/app-test/at0425-dash-conflicted-landing.test.ts` used to accept **any** terminal face — `resolved`, `partial`, or `error` — because the false positive made a delete/modify report `resolved`. It now pins the face to `partial` and requires it to name the conflicting file, and it passes: *"Still conflicting — resolve by hand: roadmap/join-assessment.md"*. It also declares `@covers … resolve.rs`, so a future edit to the ladder selects this test through `just app-test-changed` — nothing did before, which is part of why the ladder's behavior went unwatched at the UI layer.
+
+`tests/app-test/at0426-dash-resolution-review.test.ts` is the review gate's, and it drives the *other* half of the ladder: a genuine content conflict (the dash rewrites a base-modified file wholesale), resolved by rung 4 via a stub `tugdash.mergedriver`, so a candidate arrives deterministically without the AI rung or this repo's `rr-cache`. It asserts the shape the incident lacked — the outcome reads `clean`, and Join is *still* refused with *"Review what the ladder resolved first"*; the diff of what the driver chose is on screen; `Reviewed` is what arms Join. The join itself is never fired: landing would rewrite the developer's `main`.
+
+Both fixtures run against the live repository, so two things are deliberate in them. The raw-`git` helper retries past an `index.lock`, because test files run in parallel and both fixtures build dashes in the same repo. And at0426 records the `rr-cache` entries it found and removes any the run added — rung 4 teaches rerere what it resolved, and while a fixture conflict's preimage can never match real work, the run still leaves the developer's repo as it found it.
+
+One fragility worth knowing before it bites again: the dash lane renders *below* the changed-file list, so on a busy working tree the row starts under the composer and a bare `nativeClickAtElement` lands on the editor. Both tests now `scrollIntoView({ block: "center" })` before pressing a row control. The symptom is a "dead click" that is nothing of the kind — `elementFromPoint` at the button's centre returns `DIV.cm-line`.
 
 ## Two defects the landing did establish
 
@@ -65,7 +78,7 @@ That is the chicken-and-egg named at the time, and it is worth stating plainly: 
 ## Where to take this
 
 1. ~~Reproduce the dead lane~~ **Done — at0425.** The wiring is sound; the causes worth fixing are the ladder's false resolution and the presentation failures below.
-2. ~~Fix `rerere_rung`'s marker-free harvest~~ **Half done.** Non-content conflicts now reach the per-file short-circuit. Still owed: surfacing every rerere-resolved file for review before anything lands (half two above).
+2. ~~Fix `rerere_rung`'s marker-free harvest, and surface every machine-resolved file for review before anything lands~~ **Done, both halves.**
 3. **Then decide what a turn should legitimately block.** The blanket `turnInProgress` gate on every control — `Join`, `Resolve`, `Release`, `Adopt`/`Leave` — was not what broke this run, but it is still wrong on its own terms: a landing mutates the base while an agent may be mid-edit, so some gate is right, but `Resolve` touches only the dash and blocking it locks the one escape hatch a conflicted dash has.
 4. **A refused control must state its reason without a hover.** Each button carries its reason as a native `title`, and `.tug-button:disabled` sets `pointer-events: none` — an element with no pointer events never hovers, so that reason can never render. This is dead code wherever it appears, independent of what caused this incident.
 5. **Make disabled look disabled.** `--tugx-control-disabled-opacity` is `0.65` in the dark themes, `0.7` in the light. A filled action button at that strength reads as live, and when a whole cluster is disabled at once there is no full-strength control adjacent to calibrate against.
@@ -81,11 +94,12 @@ Everything named above, by path:
 | The lane, `orderDashLane`, `DashRow`, the "This card's dash" label | `tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-lane.tsx` |
 | The `Resolve` / `Join` / `Release` face | `.../session-changes/session-changes-dash-landing.tsx` |
 | `boundDashId`, `turnInProgress`, `laneBinding`, the adopt/leave frames | `.../session-changes/session-changes-view.tsx` |
-| `evaluateJoinLandGate`, `joinDisabledReason` | `tugdeck/src/lib/join-mode-controller.ts` |
+| `evaluateJoinLandGate`, `joinDisabledReason`, `resolutionAwaitsReview` | `tugdeck/src/lib/join-mode-controller.ts` |
+| The shared diff surface the review renders through (`openAllByDefault`) | `tugdeck/src/components/tugways/tug-diff-document.tsx` |
 | `.tug-button:disabled` (`pointer-events: none`, the opacity) | `tugdeck/src/components/tugways/internal/tug-button.css` |
 | `--tugx-control-disabled-opacity` | `tugdeck/styles/themes/*.css` |
 | The dash entry's shape (`bound_sessions`, `stage`, `review`) | `tugdeck/src/lib/changeset-types.ts` |
-| App-tests over this lane | `tests/app-test/at0405-changes-dash-lane.test.ts`, `at0417-join-mode.test.ts`, `at0418-join-outcomes.test.ts`, `at0425-dash-conflicted-landing.test.ts` |
+| App-tests over this lane | `tests/app-test/at0405-changes-dash-lane.test.ts`, `at0417-join-mode.test.ts`, `at0418-join-outcomes.test.ts`, `at0425-dash-conflicted-landing.test.ts`, `at0426-dash-resolution-review.test.ts` |
 | Dash fixtures for tests (`createDash`, `releaseDash`, `commitRound`) | `tests/app-test/dash-fixture.ts` |
 | **The resolution ladder** — `resolve_conflicts`, `rerere_rung`, `RawStages::load`, `has_rr_cache`, and the inline `mod tests` | `tugrust/crates/tugdash-core/src/resolve.rs` |
 | `integrate_message` (the unconditional `tugdash(<name>): ` prefix), `join_in` | `tugrust/crates/tugdash-core/src/ops.rs` |
@@ -93,9 +107,9 @@ Everything named above, by path:
 | The AI rung's scribe seam and the progress deltas | `tugrust/crates/tugcast/src/feeds/join_resolve.rs` |
 | The client's resolve overlay store (`ResolveState`, the delta/ok/err frames) | `tugdeck/src/lib/changeset-join-store.ts` |
 
-State of the world at the last update (2026-08-15): `main` is at `e98683647`, which carries the reproduction. The `dash-ui` dash is joined and torn down; no debug instances are running. Uncommitted and belonging to this line of work: this brief, `resolve.rs` (the half-one fix and its regression test), and at0425 (tightened assertion, `@covers` on the ladder). `cargo nextest run` is green across the workspace (2620 tests); at0425 passes in ~9s. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
+State of the world at the last update (2026-08-15): `main` is at `25567b165`, which carries the reproduction and the half-one fix. No dashes exist, no debug instances are running, and the fixtures leave no `tugdash.mergedriver` config or `rr-cache` entry behind. Uncommitted and belonging to this line of work: this brief, and the review gate — `resolve.rs` (the per-file `diff`), `changeset-join-store.ts`, `join-mode-controller.ts`, the landing face and its CSS, `tug-diff-document.tsx`, `session-card.tsx`, their unit tests, and the new `at0426`. Green: `cargo nextest run` (2621), `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed` (20 files, 32 tests). `bun test` is 6759/1 — the one red is the pre-existing `layout-imposer-solutions` golden table, which is red on `main` and untouched here. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
 
-Next piece of work: **the tactical layer** — items 3–7 below, with half two of the ladder fix (showing a replayed resolution before it can arm Join) folded in, since it is the same surface.
+Next piece of work: **the tactical layer** — items 3–7 above, none of which the review gate paid down. Note in particular that the gate's own refusal, *"Review what the ladder resolved first"*, still reaches the user only as a `title` on a `pointer-events: none` button — unreachable by hover, exactly as item 4 describes. What saves it in practice is that the review block sitting under the button says the same thing in prose. Every other refusal in the lane has no such luck.
 
 ## Open questions
 

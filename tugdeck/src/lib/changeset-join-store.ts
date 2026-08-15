@@ -37,6 +37,12 @@ export interface FileProgress {
 export interface ResolvedFile {
   path: string;
   resolvedBy: string;
+  /**
+   * What this resolution would land on the base — the server's unified diff for
+   * this path. `null` when the ladder built no candidate, so there is nothing to
+   * review. This is the artifact the review gate exists to put on screen.
+   */
+  diff: string | null;
 }
 
 /** The live resolve state for one dash. */
@@ -54,6 +60,18 @@ export interface ResolveState {
   shape: string | null;
   /** Error detail when `phase === "error"`. */
   error: string | null;
+  /**
+   * Whether the user has acknowledged what the ladder decided. Every rung above
+   * the replay probe resolves files by machine — rerere replays a cached
+   * resolution that may be stale, the driver and the AI rung guess — so a
+   * candidate built that way stays unlandable until this is true ([P31]).
+   *
+   * It lives here, keyed by dash, rather than in the landing face, because both
+   * landing routes have to honour it: the lane's Join button and the composer's
+   * `/join <name>`. A review held in a component would gate one and not the
+   * other. Every fresh ladder run resets it — a new resolution is a new decision.
+   */
+  reviewed: boolean;
 }
 
 const IDLE: ResolveState = Object.freeze({
@@ -64,6 +82,7 @@ const IDLE: ResolveState = Object.freeze({
   candidateCommit: null,
   shape: null,
   error: null,
+  reviewed: false,
 });
 
 function key(projectDir: string, dash: string): string {
@@ -137,6 +156,7 @@ export class ChangesetJoinStore {
         .map((r) => ({
           path: typeof r.path === "string" ? r.path : "",
           resolvedBy: typeof r.resolved_by === "string" ? r.resolved_by : "",
+          diff: typeof r.diff === "string" ? r.diff : null,
         }));
       const unresolved = readStringArray(body.unresolved);
       const candidateCommit =
@@ -150,6 +170,8 @@ export class ChangesetJoinStore {
         candidateCommit,
         shape,
         error: null,
+        // A terminal frame is a new decision, whatever the last one was.
+        reviewed: false,
       });
       return;
     }
@@ -178,6 +200,7 @@ export class ChangesetJoinStore {
       candidateCommit: null,
       shape: null,
       error: null,
+      reviewed: false,
     });
     this._connection.sendControlFrame("changeset_join_resolve", {
       project_dir: projectDir,
@@ -187,6 +210,18 @@ export class ChangesetJoinStore {
 
   state(projectDir: string, dash: string): ResolveState {
     return this._states.get(key(projectDir, dash)) ?? IDLE;
+  }
+
+  /**
+   * Record that the user has read what the ladder decided — the second beat of
+   * the review that {@link ResolveState.reviewed} gates. A no-op on a dash with
+   * no terminal state: there is nothing to have reviewed.
+   */
+  markReviewed(projectDir: string, dash: string): void {
+    const k = key(projectDir, dash);
+    const prev = this._states.get(k);
+    if (prev === undefined || prev.reviewed) return;
+    this._set(k, { ...prev, reviewed: true });
   }
 
   /** Clear a dash's resolve state (cancel / after landing). */
@@ -242,7 +277,7 @@ export function _ingestJoinFrameForTest(body: unknown): void {
 export function useChangesetJoinResolve(
   projectDir: string,
   dash: string,
-): ResolveState & { resolve: () => void; clear: () => void } {
+): ResolveState & { resolve: () => void; clear: () => void; markReviewed: () => void } {
   const state = useSyncExternalStore(
     (listener) => {
       const store = _activeStore;
@@ -258,5 +293,8 @@ export function useChangesetJoinResolve(
   const clear = (): void => {
     _activeStore?.clear(projectDir, dash);
   };
-  return { ...state, resolve, clear };
+  const markReviewed = (): void => {
+    _activeStore?.markReviewed(projectDir, dash);
+  };
+  return { ...state, resolve, clear, markReviewed };
 }

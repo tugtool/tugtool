@@ -84,13 +84,22 @@ const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 /** The base-tip file the dash's round deletes — the conflict's subject. */
 let conflictFile = "";
 
-/** `git`, in a directory, throwing on failure. */
+/**
+ * `git`, in a directory, throwing on failure — retrying past an `index.lock`.
+ * Test files run in parallel and the dash fixtures share one repository, so a
+ * sibling test's `dash create` can still be holding the lock when this one
+ * starts. `dash-fixture`'s `tugutil` wrapper retries for the same reason.
+ */
 function git(cwd: string, ...args: string[]): string {
-  const out = Bun.spawnSync(["git", "-C", cwd, ...args], {});
-  if (out.exitCode !== 0) {
-    throw new Error(`git ${args.join(" ")} failed: ${out.stderr.toString()}`);
+  let last = "";
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const out = Bun.spawnSync(["git", "-C", cwd, ...args], {});
+    if (out.exitCode === 0) return out.stdout.toString();
+    last = out.stderr.toString();
+    if (!last.includes("index.lock")) break;
+    Bun.sleepSync(250);
   }
-  return out.stdout.toString();
+  throw new Error(`git ${args.join(" ")} failed: ${last}`);
 }
 
 beforeAll(() => {
@@ -280,6 +289,19 @@ describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its co
             })()`,
           ),
         ).toBe(true);
+        // Scroll it into the shade's scrollport first. The dash lane renders
+        // below the changed-file list, whose length is whatever the developer's
+        // working tree happens to be, so on a busy tree the row starts under
+        // the composer and a bare click lands on the editor instead.
+        await app.evalJS<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(RESOLVE)});
+            if (el === null) return false;
+            el.scrollIntoView({ block: "center" });
+            return true;
+          })()`,
+        );
+        await settle(250);
         await app.nativeClickAtElement(RESOLVE);
         // The store flips to resolving synchronously on click, before any
         // server frame — the offer face leaves at once. A Resolve still on

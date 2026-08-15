@@ -71,6 +71,16 @@ pub trait FileMerger: Send + Sync {
 pub struct FileResolution {
     pub path: String,
     pub resolved_by: ResolvedBy,
+    /// What this resolution would land on the base: the unified diff from the
+    /// base head to the candidate, for this path alone ([P31]). `None` when
+    /// there is no candidate to diff against — a partial outcome lands nothing,
+    /// so there is nothing to review.
+    ///
+    /// Every rung above the replay probe is a *machine decision the user never
+    /// saw*: rerere replays a cached resolution that may be stale, the driver
+    /// and the AI rung guess. This is what makes the decision reviewable before
+    /// it lands rather than after.
+    pub diff: Option<String>,
 }
 
 /// The shape the join will land as.
@@ -249,18 +259,10 @@ pub fn resolve_conflicts(
         record_rerere(repo, &base_head, &branch, &taught, &mut warnings);
     }
 
-    let resolved_report: Vec<FileResolution> = resolved
-        .iter()
-        .map(|r| FileResolution {
-            path: r.path.clone(),
-            resolved_by: r.by,
-        })
-        .collect();
-
     if !unresolved.is_empty() {
         return Ok(ResolveOutcome {
             shape: JoinShape::Squash,
-            resolved: resolved_report,
+            resolved: resolution_report(repo, &base_head, None, &resolved),
             unresolved,
             candidate_commit: None,
             base_branch,
@@ -274,12 +276,65 @@ pub fn resolve_conflicts(
 
     Ok(ResolveOutcome {
         shape: JoinShape::Squash,
-        resolved: resolved_report,
+        resolved: resolution_report(repo, &base_head, Some(&candidate), &resolved),
         unresolved: Vec::new(),
         candidate_commit: Some(candidate),
         base_branch,
         warnings,
     })
+}
+
+/// How much of one file's diff rides the resolve frame. A review needs the shape
+/// of what changed, not an unbounded payload on a CONTROL broadcast.
+const DIFF_LINE_CAP: usize = 400;
+
+/// The per-file report, each entry carrying the diff its resolution would land.
+fn resolution_report(
+    repo: &Path,
+    base_head: &str,
+    candidate: Option<&str>,
+    resolved: &[ResolvedFile],
+) -> Vec<FileResolution> {
+    resolved
+        .iter()
+        .map(|r| FileResolution {
+            path: r.path.clone(),
+            resolved_by: r.by,
+            diff: candidate.and_then(|c| resolution_diff(repo, base_head, c, &r.path)),
+        })
+        .collect()
+}
+
+/// The unified diff one resolved path would land: base head → candidate. Reads
+/// the built candidate rather than the blobs, so an add, a delete, and a mode
+/// change all come out in the form git already renders them. Best-effort — a
+/// diff git declines to produce is `None`, never a failed resolve.
+fn resolution_diff(
+    repo: &Path,
+    base_head: &str,
+    candidate: &str,
+    path: &str,
+) -> Option<String> {
+    let text = git_stdout(
+        repo,
+        &["diff", "--no-color", base_head, candidate, "--", path],
+    )
+    .ok()?;
+    if text.is_empty() {
+        return None;
+    }
+    let mut lines = text.lines();
+    let head: Vec<&str> = lines.by_ref().take(DIFF_LINE_CAP).collect();
+    let rest = lines.count();
+    if rest == 0 {
+        return Some(head.join("\n"));
+    }
+    Some(format!(
+        "{}\n… {} more line{}",
+        head.join("\n"),
+        rest,
+        if rest == 1 { "" } else { "s" }
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,6 +1170,46 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&show.stdout), "DRIVER\n");
+    }
+
+    #[test]
+    fn a_resolution_carries_the_diff_it_would_land() {
+        // The driver stub resolves f.txt to DRIVER; main is at C. The review the
+        // landing face gates on is this diff, so the outcome has to carry it.
+        let temp = init(&[("f.txt", "B\n", "r1")]);
+        let repo = temp.path();
+        set(repo, "f.txt", "C\n");
+        git(repo, &["commit", "-am", "main to C"]);
+        let stub = repo.join("stub-driver.sh");
+        std::fs::write(&stub, "#!/bin/sh\nprintf 'DRIVER\\n' > \"$4\"\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        git(
+            repo,
+            &["config", "tugdash.mergedriver", &stub.to_string_lossy()],
+        );
+
+        let outcome = resolve_conflicts(repo, "demo", None).unwrap();
+        let diff = outcome.resolved[0]
+            .diff
+            .as_deref()
+            .expect("a landable resolution carries its diff");
+        // What landing does to this file, both sides of it: C leaves, DRIVER lands.
+        assert!(diff.contains("-C"), "the base's line leaving: {diff}");
+        assert!(diff.contains("+DRIVER"), "the resolution landing: {diff}");
+        assert!(diff.contains("f.txt"), "the path in the header: {diff}");
+
+        // A partial outcome lands nothing, so it has nothing to review.
+        let temp2 = init(&[("f.txt", "B\n", "r1")]);
+        let repo2 = temp2.path();
+        set(repo2, "f.txt", "C\n");
+        git(repo2, &["commit", "-am", "main to C"]);
+        let partial = resolve_conflicts(repo2, "demo", None).unwrap();
+        assert!(partial.candidate_commit.is_none());
+        assert!(partial.resolved.iter().all(|r| r.diff.is_none()));
     }
 
     #[test]

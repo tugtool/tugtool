@@ -4496,6 +4496,14 @@ export function SessionCardBody({
           changesController.projectDir,
           entry.display_name,
         ),
+      // The review's second beat ([P31]). It moves only the client's read of
+      // the ladder's result — nothing is sent and nothing lands; arming Join is
+      // the whole effect.
+      markReviewed: (entry) =>
+        getChangesetJoinStore()?.markReviewed(
+          changesController.projectDir,
+          entry.display_name,
+        ),
       // The session id is what gives the discard a receipt ([P06]); without it
       // the release still runs and simply leaves no row.
       release: (entry) =>

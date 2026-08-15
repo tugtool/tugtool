@@ -90,6 +90,14 @@ export interface TugDiffDocumentProps {
    */
   fileTrailing?: (file: GitDiffFile) => React.ReactNode;
   /**
+   * Open every file regardless of length, instead of the default line-budgeted
+   * expansion. For a host whose whole reason to render a diff is that the
+   * content must be *seen* — the dash lane's resolution review, where a
+   * collapsed file would let a machine's merge decision be acknowledged
+   * unread. The reader can still collapse from here; this only seeds.
+   */
+  openAllByDefault?: boolean;
+  /**
    * Key for the persisted inline ↔ side-by-side preference (the tugbank
    * `diff-view-pref.ts` channel). Omitted → the toggle is ephemeral local
    * state, not persisted.
@@ -123,7 +131,11 @@ const AUTO_EXPAND_TOTAL_LINES = 400;
  * collapsed) but doesn't stop the walk — the shorter files after it still open.
  * Binary files have no textual diff, so they never auto-expand.
  */
-function defaultOpenKeys(files: readonly GitDiffFile[]): string[] {
+function defaultOpenKeys(
+  files: readonly GitDiffFile[],
+  openAll = false,
+): string[] {
+  if (openAll) return files.filter((f) => !f.binary).map(fileKey);
   const keys: string[] = [];
   let budget = AUTO_EXPAND_TOTAL_LINES;
   for (const file of files) {
@@ -250,6 +262,7 @@ export function TugDiffDocument({
   label,
   headerActions,
   fileTrailing,
+  openAllByDefault = false,
   cardId,
   className,
 }: TugDiffDocumentProps): React.ReactElement {
@@ -277,7 +290,7 @@ export function TugDiffDocument({
   const accordionSenderId = useId();
   const viewToggleSenderId = useId();
   const [openKeys, setOpenKeys] = useState<string[]>(() =>
-    defaultOpenKeys(files),
+    defaultOpenKeys(files, openAllByDefault),
   );
 
   // A new change set (first payload, a refresh that moved, a re-pointed card)
@@ -287,7 +300,7 @@ export function TugDiffDocument({
   const [lastSignature, setLastSignature] = useState(signature);
   if (signature !== lastSignature) {
     setLastSignature(signature);
-    setOpenKeys(defaultOpenKeys(files));
+    setOpenKeys(defaultOpenKeys(files, openAllByDefault));
   }
 
   const { ResponderScope, responderRef } = useResponderForm({

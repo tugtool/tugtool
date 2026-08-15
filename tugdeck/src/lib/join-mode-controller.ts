@@ -63,6 +63,11 @@ export interface JoinLandGateInput {
   outcome: JoinOutcome;
   /** A candidate commit from the resolution ladder, if one was built. */
   candidateCommit: string | null;
+  /**
+   * The ladder resolved files by machine and the user has not yet read what it
+   * decided ({@link resolutionAwaitsReview}).
+   */
+  unreviewedResolution: boolean;
   /** The trimmed join message. */
   message: string;
 }
@@ -70,7 +75,25 @@ export interface JoinLandGateInput {
 /** The land-gate verdict — `ok`, or the first failing reason. */
 export type JoinLandGate =
   | { ok: true }
-  | { ok: false; reason: "turn" | "pending" | "outcome" | "empty-message" };
+  | { ok: false; reason: "turn" | "pending" | "outcome" | "unreviewed" | "empty-message" };
+
+/**
+ * Whether the ladder's per-file decisions still await the user's eyes ([P31]).
+ *
+ * Only a candidate built out of *per-file* resolutions asks for this. A rung-1
+ * replay and a clean one-shot squash resolve nothing by machine — their
+ * `resolved` list is empty — so they land as they always did. Everything above
+ * that rung is a guess or a replayed cache entry: the 2026-08-15 landing proved
+ * a stale rerere resolution can keep one side wholesale and discard the other,
+ * build green, and break at runtime.
+ */
+export function resolutionAwaitsReview(resolve: {
+  candidateCommit: string | null;
+  resolved: readonly unknown[];
+  reviewed: boolean;
+}): boolean {
+  return resolve.candidateCommit !== null && resolve.resolved.length > 0 && !resolve.reviewed;
+}
 
 /**
  * Whether a join may land, and if not, why ([P05]). Pure; exported so the Join
@@ -81,13 +104,16 @@ export type JoinLandGate =
  *
  * `outcome` passes on a clean preview, or on any state carrying a candidate
  * commit: a resolved conflict is a landable join even though its history is
- * `conflicted`.
+ * `conflicted`. `unreviewed` sits immediately after it, because it is the same
+ * question one level finer — not *is* there something to land, but *has anyone
+ * looked at what the machine decided to land*.
  */
 export function evaluateJoinLandGate(input: JoinLandGateInput): JoinLandGate {
   if (input.turnInProgress) return { ok: false, reason: "turn" };
   if (input.joinPhase === "pending") return { ok: false, reason: "pending" };
   const landable = input.outcome === "clean" || input.candidateCommit !== null;
   if (!landable) return { ok: false, reason: "outcome" };
+  if (input.unreviewedResolution) return { ok: false, reason: "unreviewed" };
   if (input.message.trim().length === 0) return { ok: false, reason: "empty-message" };
   return { ok: true };
 }
@@ -102,11 +128,14 @@ export function evaluateJoinLandGate(input: JoinLandGateInput): JoinLandGate {
  * is worse than one that reads tersely in both.
  */
 export function joinDisabledReason(
-  reason: "turn" | "pending" | "outcome" | "empty-message",
+  reason: "turn" | "pending" | "outcome" | "unreviewed" | "empty-message",
   outcome: JoinOutcome,
 ): string {
   if (reason === "turn") return "Wait for the turn to finish";
   if (reason === "pending") return "Previewing…";
+  // Named as the act that clears it, and it says *where*: the composer's Join
+  // shows this sentence too, and the diffs it points at live on the dash row.
+  if (reason === "unreviewed") return "Review what the ladder resolved first";
   switch (outcome) {
     case "unknown":
       return "Not previewed yet";
@@ -259,6 +288,9 @@ export class JoinModeController implements LandingMode {
       joinPhase,
       outcome,
       candidateCommit,
+      unreviewedResolution: resolve !== null && resolve !== undefined
+        ? resolutionAwaitsReview(resolve)
+        : false,
       message: "x", // ignore message emptiness here (CSS-gated on data-commit-empty)
     });
     // The same sentence the fronted row's landing face shows, carried to the
@@ -464,11 +496,18 @@ export class JoinModeController implements LandingMode {
   private liveGate(message: string): JoinLandGate {
     const { changesController, codeSessionStore } = this.deps;
     const snapshot = this.snapshot;
+    // The review is read live, not off the snapshot: the land path fires a beat
+    // after the shade dismisses, and an unreviewed resolution must not slip
+    // through that gap.
+    const resolve = this.target
+      ? getChangesetJoinStore()?.state(changesController.projectDir, this.target.name) ?? null
+      : null;
     return evaluateJoinLandGate({
       turnInProgress: codeSessionStore.getSnapshot().canInterrupt === true,
       joinPhase: getChangesetVerbStore()?.joinState(changesController.entryKey).phase ?? "idle",
       outcome: snapshot.outcome,
       candidateCommit: snapshot.candidateCommit,
+      unreviewedResolution: resolve !== null ? resolutionAwaitsReview(resolve) : false,
       message,
     });
   }

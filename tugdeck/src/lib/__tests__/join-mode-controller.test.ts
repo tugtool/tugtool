@@ -20,6 +20,7 @@ import {
   deriveJoinOutcome,
   evaluateJoinLandGate,
   joinDisabledReason,
+  resolutionAwaitsReview,
   joinTargetFromEntry,
   type JoinTarget,
 } from "@/lib/join-mode-controller";
@@ -55,6 +56,17 @@ describe("joinDisabledReason", () => {
     expect(joinDisabledReason("pending", "blocked")).toBe("Previewing…");
   });
 
+  it("names the review as the act that clears it, whatever the outcome reads", () => {
+    // The outcome word is `clean` here — a resolved candidate derives clean —
+    // so the sentence has to come from the reason, not from the outcome.
+    expect(joinDisabledReason("unreviewed", "clean")).toBe(
+      "Review what the ladder resolved first",
+    );
+    expect(joinDisabledReason("unreviewed", "conflicted")).toBe(
+      "Review what the ladder resolved first",
+    );
+  });
+
   it("distinguishes conflicted, empty, and never-previewed", () => {
     expect(joinDisabledReason("outcome", "conflicted")).toBe(
       "Resolve the conflicts first",
@@ -64,12 +76,35 @@ describe("joinDisabledReason", () => {
   });
 });
 
+describe("resolutionAwaitsReview", () => {
+  it("asks for a review only where the ladder decided per file", () => {
+    // A rung-1 replay and a clean one-shot squash resolve nothing by machine:
+    // their `resolved` list is empty, and they land as they always did.
+    expect(
+      resolutionAwaitsReview({ candidateCommit: "abc", resolved: [], reviewed: false }),
+    ).toBe(false);
+    // No candidate ⇒ nothing to land ⇒ nothing to review.
+    expect(
+      resolutionAwaitsReview({ candidateCommit: null, resolved: ["a"], reviewed: false }),
+    ).toBe(false);
+    // A candidate built out of per-file resolutions, unread.
+    expect(
+      resolutionAwaitsReview({ candidateCommit: "abc", resolved: ["a"], reviewed: false }),
+    ).toBe(true);
+    // …and read.
+    expect(
+      resolutionAwaitsReview({ candidateCommit: "abc", resolved: ["a"], reviewed: true }),
+    ).toBe(false);
+  });
+});
+
 describe("evaluateJoinLandGate", () => {
   const base = {
     turnInProgress: false,
     joinPhase: "preview" as const,
     outcome: "clean" as const,
     candidateCommit: null,
+    unreviewedResolution: false,
     message: "land it",
   };
 
@@ -114,6 +149,36 @@ describe("evaluateJoinLandGate", () => {
     expect(
       evaluateJoinLandGate({ ...base, outcome: "conflicted", candidateCommit: "cafe1234" }),
     ).toEqual({ ok: true });
+  });
+
+  it("refuses a candidate whose per-file resolutions nobody has read", () => {
+    // The 2026-08-15 failure: a stale rerere replay built a candidate that
+    // armed Join exactly as a clean preview would ([P31]).
+    expect(
+      evaluateJoinLandGate({
+        ...base,
+        outcome: "conflicted",
+        candidateCommit: "cafe1234",
+        unreviewedResolution: true,
+      }),
+    ).toEqual({ ok: false, reason: "unreviewed" });
+  });
+
+  it("fails on the outcome before the review — nothing to land outranks unread", () => {
+    expect(
+      evaluateJoinLandGate({ ...base, outcome: "blocked", unreviewedResolution: true }),
+    ).toEqual({ ok: false, reason: "outcome" });
+  });
+
+  it("fails on the unread review before the message check", () => {
+    expect(
+      evaluateJoinLandGate({
+        ...base,
+        candidateCommit: "cafe1234",
+        unreviewedResolution: true,
+        message: "",
+      }),
+    ).toEqual({ ok: false, reason: "unreviewed" });
   });
 
   it("fails on an empty (whitespace) message when everything else is ready", () => {

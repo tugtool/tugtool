@@ -51,7 +51,9 @@ describe("changeset join resolve overlay", () => {
     _ingestJoinFrameForTest({
       action: "changeset_join_resolve_ok",
       ...K,
-      resolved: [{ path: "a.rs", resolved_by: "ai" }],
+      resolved: [
+        { path: "a.rs", resolved_by: "ai", diff: "@@ -1 +1 @@\n-old\n+new\n" },
+      ],
       unresolved: [],
       candidate_commit: "abc123",
       shape: "squash",
@@ -60,7 +62,39 @@ describe("changeset join resolve overlay", () => {
     expect(done.phase).toBe("resolved");
     expect(done.candidateCommit).toBe("abc123");
     expect(done.shape).toBe("squash");
-    expect(done.resolved).toEqual([{ path: "a.rs", resolvedBy: "ai" }]);
+    expect(done.resolved).toEqual([
+      { path: "a.rs", resolvedBy: "ai", diff: "@@ -1 +1 @@\n-old\n+new\n" },
+    ]);
+    // The ladder's decision arrives unread, whatever the last one was ([P31]).
+    expect(done.reviewed).toBe(false);
+  });
+
+  test("markReviewed arms the candidate, and a fresh ladder run disarms it", () => {
+    const store = attachChangesetJoinStore(fakeConn);
+    const ok = {
+      action: "changeset_join_resolve_ok",
+      ...K,
+      resolved: [{ path: "a.rs", resolved_by: "rerere", diff: "@@ -1 +1 @@\n-x\n+y\n" }],
+      unresolved: [],
+      candidate_commit: "abc123",
+      shape: "squash",
+    };
+    _ingestJoinFrameForTest(ok);
+    expect(store.state("/p", "demo").reviewed).toBe(false);
+
+    store.markReviewed("/p", "demo");
+    expect(store.state("/p", "demo").reviewed).toBe(true);
+
+    // A second run over the same dash is a second decision — the review it
+    // carries is not the one the user read.
+    _ingestJoinFrameForTest(ok);
+    expect(store.state("/p", "demo").reviewed).toBe(false);
+  });
+
+  test("markReviewed is a no-op on a dash the ladder has not touched", () => {
+    const store = attachChangesetJoinStore(fakeConn);
+    store.markReviewed("/p", "never-resolved");
+    expect(store.state("/p", "never-resolved").reviewed).toBe(false);
   });
 
   test("ok with unresolved files → partial, no candidate", () => {

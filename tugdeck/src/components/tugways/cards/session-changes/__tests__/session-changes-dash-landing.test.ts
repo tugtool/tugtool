@@ -11,9 +11,12 @@ import { describe, expect, it } from "bun:test";
 import {
   blockerAct,
   discardPreflightLine,
+  resolutionDiffPayload,
+  resolutionReviewLine,
 } from "@/components/tugways/cards/session-changes/session-changes-dash-landing";
 import { joinDisabledReason } from "@/lib/join-mode-controller";
 import type { JoinBlocker } from "@/lib/changeset-verb-store";
+import type { ResolvedFile } from "@/lib/changeset-join-store";
 
 const blocker = (kind: string, paths: readonly string[] = []): JoinBlocker => ({
   kind,
@@ -79,5 +82,79 @@ describe("joinDisabledReason", () => {
       "Clear what blocks this join first",
     );
     expect(joinDisabledReason("outcome", "empty")).toBe("Nothing to join");
+  });
+});
+
+describe("resolutionDiffPayload", () => {
+  const file = (
+    path: string,
+    resolvedBy: string,
+    diff: string | null,
+  ): ResolvedFile => ({ path, resolvedBy, diff });
+
+  const modified = [
+    "diff --git a/a.ts b/a.ts",
+    "index 111..222 100644",
+    "--- a/a.ts",
+    "+++ b/a.ts",
+    "@@ -1,3 +1,3 @@",
+    " keep",
+    "-was",
+    "+is",
+    "+extra",
+  ].join("\n");
+
+  it("counts the body lines without counting the +++/--- headers", () => {
+    const payload = resolutionDiffPayload([file("a.ts", "rerere", modified)], "ws");
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files[0]).toMatchObject({
+      path: "a.ts",
+      status: "modified",
+      added: 2,
+      removed: 1,
+      binary: false,
+      unified: modified,
+    });
+    expect(payload.total_added).toBe(2);
+    expect(payload.total_removed).toBe(1);
+    expect(payload.file_count).toBe(1);
+  });
+
+  it("reads create and delete off the header git already wrote", () => {
+    const created = "diff --git a/n.ts b/n.ts\nnew file mode 100644\n--- /dev/null\n+++ b/n.ts\n+one\n";
+    const deleted = "diff --git a/g.ts b/g.ts\ndeleted file mode 100644\n--- a/g.ts\n+++ /dev/null\n-one\n";
+    const payload = resolutionDiffPayload(
+      [file("n.ts", "ai", created), file("g.ts", "driver", deleted)],
+      "ws",
+    );
+    expect(payload.files.map((f) => f.status)).toEqual(["added", "deleted"]);
+  });
+
+  it("drops a resolution with no diff rather than showing an empty row", () => {
+    // A file the ladder resolved to exactly what the base already has changes
+    // nothing; an accordion row for it would read as though it did.
+    const payload = resolutionDiffPayload(
+      [file("a.ts", "rerere", modified), file("b.ts", "rerere", null)],
+      "ws",
+    );
+    expect(payload.files.map((f) => f.path)).toEqual(["a.ts"]);
+  });
+});
+
+describe("resolutionReviewLine", () => {
+  it("names the count and every rung that decided, deduplicated", () => {
+    expect(
+      resolutionReviewLine([
+        { path: "a.ts", resolvedBy: "rerere", diff: "d" },
+        { path: "b.ts", resolvedBy: "ai", diff: "d" },
+        { path: "c.ts", resolvedBy: "rerere", diff: "d" },
+      ]),
+    ).toBe("3 files resolved by ai, rerere — read this before it lands");
+  });
+
+  it("agrees with itself in the singular", () => {
+    expect(resolutionReviewLine([{ path: "a.ts", resolvedBy: "rerere", diff: "d" }])).toBe(
+      "1 file resolved by rerere — read this before it lands",
+    );
   });
 });

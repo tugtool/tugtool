@@ -127,6 +127,26 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* The review ([P31]): what the ladder decided, before it can land. Marked off
+   by an accent rule — the same "read this" grammar as the discard's danger
+   rule, one tone down, because this asks for attention rather than warning of
+   loss. The diff document is bounded and scrolls: a merge the ladder resolved
+   across several files must not push the lane's own controls off screen. */
+.session-changes-dash-landing-review {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tug-space-2xs);
+  padding-left: var(--tug-space-sm);
+  border-left: 2px solid var(--tug7-element-tone-border-normal-accent-rest);
+}
+
+.session-changes-dash-landing-review .tug-diff-document {
+  align-self: stretch;
+  max-height: var(--session-changes-dash-review-max-height, 22rem);
+  overflow-y: auto;
+}
+
 .session-changes-dash-landing-error {
   font-family: var(--tug-font-family-sans);
   font-size: var(--tug-font-size-xs);

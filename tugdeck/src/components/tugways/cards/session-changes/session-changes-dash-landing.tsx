@@ -25,12 +25,15 @@ import React from "react";
 
 import { TugBadge, type TugBadgeRole } from "@/components/tugways/tug-badge";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
+import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
 import type { DashChangesetEntry } from "@/lib/changeset-types";
 import type { JoinBlocker, JoinPhase } from "@/lib/changeset-verb-store";
-import type { ResolvePhase, ResolveState } from "@/lib/changeset-join-store";
+import type { ResolvedFile, ResolvePhase, ResolveState } from "@/lib/changeset-join-store";
+import type { GitDiffFile, GitDiffPayload } from "@/lib/git-diff-store";
 import {
   evaluateJoinLandGate,
   joinDisabledReason,
+  resolutionAwaitsReview,
   type JoinOutcome,
 } from "@/lib/join-mode-controller";
 
@@ -44,6 +47,8 @@ export interface DashLandingActions {
   resumeTeardown: (entry: DashChangesetEntry) => void;
   /** Run the resolution ladder over a conflicted join. */
   resolve: (entry: DashChangesetEntry) => void;
+  /** Acknowledge what the ladder decided — the beat that arms Join ([P31]). */
+  markReviewed: (entry: DashChangesetEntry) => void;
   /** Discard the dash — branch, worktree, and dirt. The confirm's second beat. */
   release: (entry: DashChangesetEntry) => void;
 }
@@ -163,6 +168,75 @@ export function discardPreflightLine(rounds: number, files: number): string {
   return `Discards ${parts.join(" · ")}`;
 }
 
+/**
+ * The status a resolution's own diff header declares. git says so explicitly for
+ * a create and a delete; everything else is a modification.
+ */
+function resolutionStatus(unified: string): GitDiffFile["status"] {
+  if (/^new file mode /m.test(unified)) return "added";
+  if (/^deleted file mode /m.test(unified)) return "deleted";
+  return "modified";
+}
+
+/** Body `+`/`−` counts, excluding the `+++`/`---` file headers. */
+function countStat(unified: string): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of unified.split("\n")) {
+    if (line.startsWith("+++") || line.startsWith("---")) continue;
+    if (line.startsWith("+")) added += 1;
+    else if (line.startsWith("-")) removed += 1;
+  }
+  return { added, removed };
+}
+
+/**
+ * The ladder's resolutions as one diff document — what landing this candidate
+ * would do to each file it decided ([P31]).
+ *
+ * The server sends one unified chunk per resolved path, which is exactly
+ * `GitDiffFile.unified`, so the review renders through the same
+ * {@link TugDiffDocument} the Changes shade and the Diff card use rather than a
+ * private diff surface. Pure, so what the review shows is testable without
+ * mounting the shade. A resolution with no diff is dropped: it changes nothing
+ * on the base, and an empty accordion row would read as one that does.
+ */
+export function resolutionDiffPayload(
+  resolved: readonly ResolvedFile[],
+  workspaceKey: string,
+): GitDiffPayload {
+  const files: GitDiffFile[] = resolved
+    .filter((file): file is ResolvedFile & { diff: string } => file.diff !== null)
+    .map((file) => {
+      const { added, removed } = countStat(file.diff);
+      return {
+        path: file.path,
+        status: resolutionStatus(file.diff),
+        added,
+        removed,
+        binary: false,
+        unified: file.diff,
+      };
+    });
+  return {
+    request_id: "dash-resolution-review",
+    workspace_key: workspaceKey,
+    base: "candidate",
+    no_repo: false,
+    file_count: files.length,
+    total_added: files.reduce((sum, f) => sum + f.added, 0),
+    total_removed: files.reduce((sum, f) => sum + f.removed, 0),
+    files,
+  };
+}
+
+/** The review's own header line — what the ladder did, and by which rungs. */
+export function resolutionReviewLine(resolved: readonly ResolvedFile[]): string {
+  const count = resolved.length;
+  const rungs = [...new Set(resolved.map((f) => f.resolvedBy))].sort();
+  return `${count} file${count === 1 ? "" : "s"} resolved by ${rungs.join(", ")} — read this before it lands`;
+}
+
 export function SessionChangesDashLanding({
   entry,
   outcome,
@@ -183,6 +257,7 @@ export function SessionChangesDashLanding({
     joinPhase,
     outcome,
     candidateCommit,
+    unreviewedResolution: resolutionAwaitsReview(resolve),
     message: "x",
   });
   const disabledReason = gate.ok ? null : joinDisabledReason(gate.reason, outcome);
@@ -193,6 +268,10 @@ export function SessionChangesDashLanding({
   // The discard's first beat. View-scope state ([L24]): the shade is a glance
   // surface, and a half-armed confirm is not something to remember.
   const [confirmingDiscard, setConfirmingDiscard] = React.useState(false);
+  const reviewPayload = React.useMemo(
+    () => resolutionDiffPayload(resolve.resolved, entry.owner_id),
+    [resolve.resolved, entry.owner_id],
+  );
   const releaseHint = turnInProgress ? "Wait for the turn to finish" : null;
 
   return (
@@ -349,6 +428,44 @@ export function SessionChangesDashLanding({
             </li>
           ))}
         </ul>
+      ) : null}
+      {/* The review ([P31]). A candidate built out of per-file resolutions is a
+          machine decision nobody has read: rerere replays a cache that can be
+          stale, the driver and the AI rung guess. So the diffs render, and Join
+          stays refused until the second beat acknowledges them — the same
+          shape as the discard above, for the same reason. A rung-1 replay
+          resolves no files and never lands here. */}
+      {resolveFace === "resolved" && resolve.resolved.length > 0 ? (
+        <div
+          className="session-changes-dash-landing-review"
+          data-slot="session-changes-dash-landing-review"
+          data-reviewed={resolve.reviewed ? "true" : "false"}
+        >
+          {resolve.reviewed ? (
+            <div className="session-changes-dash-landing-note">
+              Reviewed — {resolve.resolved.length} resolved file
+              {resolve.resolved.length === 1 ? "" : "s"} ready to land.
+            </div>
+          ) : (
+            <>
+              <div className="session-changes-dash-landing-note">
+                {resolutionReviewLine(resolve.resolved)}
+              </div>
+              {/* Open, not collapsed: an acknowledgement over a folded-away
+                  diff is a checkbox, which is the thing this replaces. */}
+              <TugDiffDocument payload={reviewPayload} openAllByDefault />
+              <TugPushButton
+                size="xs"
+                emphasis="filled"
+                role="action"
+                onClick={() => actions.markReviewed(entry)}
+                data-slot="session-changes-dash-landing-reviewed"
+              >
+                Reviewed
+              </TugPushButton>
+            </>
+          )}
+        </div>
       ) : null}
       {resolveFace === "partial" ? (
         <div
