@@ -43,6 +43,8 @@ mod workspace_api;
 
 #[cfg(test)]
 mod integration_tests;
+#[cfg(test)]
+mod live_corpus;
 
 use std::collections::HashMap;
 use std::path::PathBuf;

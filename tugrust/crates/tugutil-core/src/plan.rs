@@ -1889,6 +1889,7 @@ Some context.
             return;
         };
         let mut linted = 0usize;
+        let mut claimed = 0usize;
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("md") {
@@ -1897,6 +1898,18 @@ Some context.
             let Ok(source) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            // A document whose *heading* declares the anchor claims to be a
+            // plan, so the parser owes it a parse. (Prose may mention the
+            // anchor — the program plan does, to say it declares none.)
+            // Counting claims rather than a fixed floor keeps the walker
+            // honest without pinning the test to a corpus size that landing a
+            // program changes.
+            if source
+                .lines()
+                .any(|l| l.starts_with('#') && l.trim_end().ends_with("{#execution-steps}"))
+            {
+                claimed += 1;
+            }
             let Ok(doc) = parse(&source) else {
                 continue;
             };
@@ -1912,7 +1925,14 @@ Some context.
                 path.display()
             );
         }
-        assert!(linted >= 5, "expected the roadmap corpus to hold plans");
+        // The live corpus shrinks to nothing as programs land and their plans
+        // move to `roadmap/archive/` — an empty corpus is nothing to check,
+        // not a failure. What must hold is that every document *claiming* to
+        // be a plan was parsed as one.
+        assert_eq!(
+            linted, claimed,
+            "{claimed} roadmap document(s) declare {{#execution-steps}} but only {linted} parsed"
+        );
     }
 
     // --- ledger editing ----------------------------------------------------

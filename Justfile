@@ -53,9 +53,10 @@ fetch-fonts *ARGS:
 # Run all tests (Rust + TypeScript)
 test: test-rust test-ts
 
-# Run Rust tests
+# Run Rust tests. `--no-fail-fast`: one pass names every failure, so a red
+# gate is one round of fixing rather than one round per broken test.
 test-rust:
-    cd tugrust && cargo nextest run --workspace
+    cd tugrust && cargo nextest run --workspace --no-fail-fast
 
 # Run TypeScript tests (tugdeck frontend + tugcode bridge)
 test-ts:
@@ -230,13 +231,16 @@ lint:
     cd tugrust && cargo clippy --workspace --all-targets -- -D warnings
     cd tugrust && cargo fmt --all -- --check
 
-# Apply clippy's machine-applicable fixes, then format. `lint` only reports
-# them; this is the recipe that edits the code. Rewrites files in place, so
-# review the diff afterwards. Lints clippy can't fix mechanically still fail
-# `lint` and need a human.
+# Apply clippy's machine-applicable fixes, format, then run the full gate.
+# `lint` only reports; this is the recipe that edits the code. Rewrites files
+# in place, so review the diff afterwards. It ends in `ci` on purpose: a green
+# `fix` means commit-ready, and anything it could not fix mechanically — a
+# hand-only lint, a failing test — is named right here instead of on the next
+# `just ci`.
 fix:
     cd tugrust && cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged
     cd tugrust && cargo fmt --all
+    just ci
 
 # Full pre-merge gate (lint + test)
 ci: lint test

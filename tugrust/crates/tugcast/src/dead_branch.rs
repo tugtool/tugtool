@@ -441,20 +441,10 @@ mod tests {
         assert_eq!(effective.len(), 6);
     }
 
-    /// The user's real local session corpus for this project. Local-only,
-    /// like the turn engine's corpus tests: these sessions live outside the
-    /// repo, so the sweep skips gracefully when absent.
-    fn reference_corpus_dir() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_default();
-        PathBuf::from(home).join(".claude/projects/-Users-kocienda-Mounts-u-src-tugtool")
-    }
-
-    fn tugcode_bin() -> PathBuf {
-        if let Ok(p) = std::env::var("TUGCODE_BIN") {
-            return PathBuf::from(p);
-        }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tugcode")
-    }
+    // The corpus sessions live outside the repo and are written while the
+    // suite runs, so the sweep both skips gracefully when absent and drops
+    // any file that moves mid-run (`StillFiles`).
+    use crate::live_corpus::{StillFiles, reference_corpus_dir, tugcode_bin};
 
     /// The dead-branch parity contract: for every session in the real local
     /// corpus, this port's dead set equals tugcode's (`tugcode dead <dir>`),
@@ -475,6 +465,8 @@ mod tests {
             );
             return;
         }
+
+        let mut still = StillFiles::stamp(&dir);
 
         let output = std::process::Command::new(&bin)
             .arg("dead")
@@ -497,9 +489,13 @@ mod tests {
         let mut compared = 0usize;
         let mut non_empty = 0usize;
         for (base, tugcode_dead) in &tugcode_map {
-            let Ok(jsonl) = std::fs::read_to_string(dir.join(base)) else {
+            let path = dir.join(base);
+            let Ok(jsonl) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            if !still.still(&path) {
+                continue;
+            }
             let records = parse_chain_records(&jsonl);
             let mut ours: Vec<usize> = compute_dead_entry_indices(&records).into_iter().collect();
             ours.sort_unstable();
@@ -519,8 +515,9 @@ mod tests {
         }
 
         eprintln!(
-            "dead-branch parity: compared {compared} sessions ({non_empty} with a non-empty dead set), {} divergent",
-            divergences.len()
+            "dead-branch parity: compared {compared} sessions ({non_empty} with a non-empty dead set), {} divergent, {} skipped (written during the run)",
+            divergences.len(),
+            still.skipped()
         );
         assert!(
             divergences.is_empty(),

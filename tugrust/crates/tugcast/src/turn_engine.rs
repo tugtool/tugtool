@@ -336,21 +336,7 @@ mod tests {
         reference_corpus_dir().join("49e9aec6-7c3a-4c0c-9f74-5a9a0551812e.jsonl")
     }
 
-    /// The user's real local session corpus for this project ([P07]).
-    fn reference_corpus_dir() -> PathBuf {
-        let home = std::env::var("HOME").unwrap_or_default();
-        PathBuf::from(home).join(".claude/projects/-Users-kocienda-Mounts-u-src-tugtool")
-    }
-
-    /// The bun-compiled `tugcode` binary — the contract's tugcode side
-    /// (`tugcode segment <dir>`). `TUGCODE_BIN` overrides; else the
-    /// workspace `target/debug/tugcode` next to this crate.
-    fn tugcode_bin() -> PathBuf {
-        if let Ok(p) = std::env::var("TUGCODE_BIN") {
-            return PathBuf::from(p);
-        }
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/debug/tugcode")
-    }
+    use crate::live_corpus::{StillFiles, reference_corpus_dir, tugcode_bin};
 
     fn origin_str(o: TurnOrigin) -> &'static str {
         match o {
@@ -583,6 +569,10 @@ mod tests {
             return;
         }
 
+        // The corpus is live: stamp it before the spawn so a session written
+        // during the run is skipped rather than read as a divergence.
+        let mut still = StillFiles::stamp(&dir);
+
         // One spawn: tugcode segments the whole directory to a
         // `{ basename: ["user" | "assistant", …] }` map on stdout.
         let output = std::process::Command::new(&bin)
@@ -605,9 +595,13 @@ mod tests {
         let mut divergences: Vec<String> = Vec::new();
         let mut compared = 0usize;
         for (base, tugcode_origins) in &tugcode_map {
-            let Ok(jsonl) = std::fs::read_to_string(dir.join(base)) else {
+            let path = dir.join(base);
+            let Ok(jsonl) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            if !still.still(&path) {
+                continue;
+            }
             let engine_origins: Vec<&str> = segment_str(&jsonl)
                 .turns
                 .into_iter()
@@ -632,8 +626,10 @@ mod tests {
         }
 
         eprintln!(
-            "real-corpus contract: compared {compared} sessions, {} divergent",
-            divergences.len()
+            "real-corpus contract: compared {compared} sessions, {} divergent, \
+             {} skipped (written during the run)",
+            divergences.len(),
+            still.skipped()
         );
         assert!(
             divergences.is_empty(),
