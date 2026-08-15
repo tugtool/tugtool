@@ -717,8 +717,15 @@ describe.skipIf(!SHOULD_RUN)(
           await ingest(replayComplete());
 
           const MARK = `[data-card-id="A"] span[data-tugx-wrapped][data-tug-annotation="file-path"]`;
+          // The mark's own words come back one render after the mark does:
+          // the file tip portals into the run, and hosting a portal means
+          // emptying the span first (`file-tip-portals.tsx`). Waiting on the
+          // element alone would read the empty host mid-flight.
           await app.waitForCondition<boolean>(
-            `document.querySelector('${MARK}') !== null`,
+            `(function () {
+              var el = document.querySelector('${MARK}');
+              return el !== null && (el.textContent || "") !== "";
+            })()`,
             { timeoutMs: 20_000 },
           );
           const mark = JSON.parse(

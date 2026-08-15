@@ -560,9 +560,12 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           stripOrder!.strip < stripOrder!.z1b,
           "the strip precedes the Z1B",
         ).toBe(true);
-        expect(fileChip?.title).toBe("file: tugdeck/src/lib/layout-imposer.ts");
         expect(fileChip?.annotation).toBe("file-path");
         expect(fileChip?.path?.startsWith("/")).toBe(true);
+        // A file ref carries NO native title: its hover is the house file tip
+        // in the app's own bubble, the same one the commit beside it uses.
+        // This post used to show one of each.
+        expect(fileChip?.title).toBeNull();
 
         // ── 2c. The body is MARKDOWN, rendered by the transcript's own
         // primitive. A backticked name is a code span rather than three

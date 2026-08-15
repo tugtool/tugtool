@@ -48,6 +48,8 @@ import {
   type TugChoiceItem,
 } from "@/components/tugways/tug-choice-group";
 import { TugAccordion, TugAccordionItem } from "@/components/tugways/tug-accordion";
+import { fileTip } from "@/components/tugways/entity-tips";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useResponderForm } from "@/components/tugways/use-responder-form";
 import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import {
@@ -153,17 +155,29 @@ function FileTrigger({
       : file.path;
   return (
     <span className="tug-diff-document-file-trigger">
-      <span
-        className="tug-diff-document-file-status"
-        data-status={file.status}
-        aria-label={diffStatusLabel(file.status)}
-        title={diffStatusLabel(file.status)}
+      <TugTooltip content={diffStatusLabel(file.status)}>
+        <span
+          className="tug-diff-document-file-status"
+          data-status={file.status}
+          aria-label={diffStatusLabel(file.status)}
+        >
+          {diffStatusLetter(file.status)}
+        </span>
+      </TugTooltip>
+      {/* The house file tip, which states a rename as both ends itself — so
+          the hover carries the pair even when the row elides it. */}
+      <TugTooltip
+        variant="entity"
+        align="start"
+        content={fileTip({
+          path: file.path,
+          renamedFrom:
+            file.status === "renamed" ? file.old_path : undefined,
+          status: diffStatusLabel(file.status),
+        })}
       >
-        {diffStatusLetter(file.status)}
-      </span>
-      <span className="tug-diff-document-file-path" title={pathLabel}>
-        {pathLabel}
-      </span>
+        <span className="tug-diff-document-file-path">{pathLabel}</span>
+      </TugTooltip>
       <span className="tug-diff-document-file-stat" aria-label={fileStatLabel(file)}>
         {file.binary ? (
           <span className="tug-diff-document-stat-binary">binary</span>
@@ -305,11 +319,15 @@ export function TugDiffDocument({
             first) when narrow while the controls never wrap. */}
         <div className="tug-diff-document-header">
           {label !== undefined ? (
-            <span className="tug-diff-document-header-label" title={label}>
-              <TugLabel emphasis="shout" size="3xs">
-                {label}
-              </TugLabel>
-            </span>
+            // `truncated` — the header label ellipsizes when narrow, and the
+            // whole of it is the only thing the hover has to add.
+            <TugTooltip content={label} truncated>
+              <span className="tug-diff-document-header-label">
+                <TugLabel emphasis="shout" size="3xs">
+                  {label}
+                </TugLabel>
+              </span>
+            </TugTooltip>
           ) : null}
           <span
             className="tug-diff-document-summary"

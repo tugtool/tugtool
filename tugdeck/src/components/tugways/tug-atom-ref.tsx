@@ -37,6 +37,16 @@
  * the host's resolver has, so `annotate` is offered on the file arm alone
  * rather than as a prop that would be silently ignored.
  *
+ * **The hover follows the stamping.** A self-stamping file skin owns its
+ * hover too, and it is the house {@link fileTip} in a {@link TugTooltip} —
+ * not the `title` attribute this used to hand the OS. A path is an entity,
+ * and an entity gets one answer wherever it is pointed at
+ * (`entity-tips.tsx`); an OS-drawn box in the system font is not that
+ * answer, and it cannot be themed, delayed, or dismissed with the chain.
+ * In presentational mode the skin mounts nothing, because the host that
+ * owns the contract owns the hover with it — the Gazette has a pending and
+ * an unresolvable state to say, and a tip here would shadow them.
+ *
  * Born confirmed. A placed value arrived in a field: the tool this header
  * describes just read or wrote this file, which is stronger evidence than
  * any probe. The skin carries no existence check and never waits on one.
@@ -66,6 +76,8 @@ import React from "react";
 import { FileText, GitCommit } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { fileTip } from "@/components/tugways/entity-tips";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { ANNOTATION_CLASS } from "@/lib/annotator/types";
 import { datasetForPayload } from "@/lib/annotator/payloads";
 import { COMMIT_LABEL_LENGTH } from "@/lib/commit-format";
@@ -75,8 +87,8 @@ export type TugAtomRefEntity =
   | {
       kind: "file";
       /**
-       * Full file path. The basename is shown; the full path surfaces as
-       * the native hover tooltip.
+       * Full file path. The basename is shown; the full path surfaces on
+       * the hover, as the house file tip.
        */
       path: string;
       /**
@@ -114,13 +126,6 @@ export interface TugAtomRefProps {
   label?: React.ReactNode;
   /** Leading glyph. Defaults to `FileText` / `GitCommit` by kind. */
   icon?: React.ReactNode;
-  /**
-   * Native hover tooltip. Defaults to the full path for a self-stamping
-   * file skin, and to nothing in presentational mode — a host that owns the
-   * annotation contract owns the hover with it, and a `title` here would
-   * shadow the richer message it wants to show.
-   */
-  title?: string;
   "data-slot"?: string;
   className?: string;
 }
@@ -188,7 +193,6 @@ export function TugAtomRef({
   entity,
   label,
   icon,
-  title,
   "data-slot": dataSlot = "tug-atom-ref",
   className,
 }: TugAtomRefProps): React.ReactElement {
@@ -200,12 +204,10 @@ export function TugAtomRef({
     entity.kind === "file"
       ? fileRefBasename(entity.path)
       : commitAtomLabel(entity.sha);
-  const defaultTitle = stamps ? (entity as { path: string }).path : undefined;
 
-  return (
+  const skin = (
     <span
       className={cn("tug-atom-ref", stamps && ANNOTATION_CLASS, className)}
-      title={title ?? defaultTitle}
       data-slot={dataSlot}
       {...marks}
     >
@@ -214,5 +216,18 @@ export function TugAtomRef({
       </span>
       {label ?? defaultLabel}
     </span>
+  );
+
+  // Only the self-stamping arm speaks: a presentational skin's host owns the
+  // hover along with the rest of the contract.
+  if (!stamps) return skin;
+  return (
+    <TugTooltip
+      variant="entity"
+      align="start"
+      content={fileTip({ path: (entity as { path: string }).path })}
+    >
+      {skin}
+    </TugTooltip>
   );
 }

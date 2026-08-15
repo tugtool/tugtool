@@ -2,12 +2,13 @@
  * `useAnnotationPortals` — every React surface the annotator's marks earn,
  * collected in one pass.
  *
- * The annotator marks runs in DOM it walks; two kinds of mark then want a
- * React component mounted into them — a session run wants the live citation
- * chip, a commit run wants the app's own hover. Both are portal hosts
- * discovered by the same walk, so they are collected together: a surface
- * hands `onAnnotated` to its markdown block once, and renders `portals`
- * once, rather than knowing how many kinds currently earn a component.
+ * The annotator marks runs in DOM it walks; every entity kind it can mark
+ * then wants a React component mounted into it — a session run wants the
+ * live citation chip, a commit and a path run want the app's own hover.
+ * They are portal hosts discovered by the same walk, so they are collected
+ * together: a surface hands `onAnnotated` to its markdown block once, and
+ * renders `portals` once, rather than knowing how many kinds currently earn
+ * a component.
  *
  * @module components/tugways/annotation-portals
  */
@@ -16,6 +17,7 @@ import React from "react";
 
 import { useAnnotationScope } from "@/components/tugways/annotation-scope";
 import { useCommitTipPortals } from "@/components/tugways/commit-tip-portals";
+import { useFileTipPortals } from "@/components/tugways/file-tip-portals";
 import { useSessionCitationPortals } from "@/components/tugways/session-citation-portals";
 import type { AnnotationContext } from "@/lib/annotator/types";
 
@@ -38,15 +40,18 @@ export function useAnnotationPortals(
   const scoped = useAnnotationScope();
   const sessions = useSessionCitationPortals();
   const commits = useCommitTipPortals((annotation ?? scoped)?.resolveCommit);
+  const files = useFileTipPortals();
 
   const sessionsAnnotated = sessions.onAnnotated;
   const commitsAnnotated = commits.onAnnotated;
+  const filesAnnotated = files.onAnnotated;
   const onAnnotated = React.useCallback(
     (container: HTMLElement): void => {
       sessionsAnnotated(container);
       commitsAnnotated(container);
+      filesAnnotated(container);
     },
-    [sessionsAnnotated, commitsAnnotated],
+    [sessionsAnnotated, commitsAnnotated, filesAnnotated],
   );
 
   return {
@@ -55,6 +60,7 @@ export function useAnnotationPortals(
       <>
         {sessions.portals}
         {commits.portals}
+        {files.portals}
       </>
     ),
   };

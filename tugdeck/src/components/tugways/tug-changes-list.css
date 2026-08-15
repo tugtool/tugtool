@@ -85,6 +85,11 @@
 .tug-changes-list-file-path--link:hover {
   text-decoration: underline;
 }
+/* The context-menu anchor around a hovered path — a trigger, not a box. The
+   path span must stay the flex item, or its ellipsis stops working. */
+.tug-changes-list-file-path-menu {
+  display: contents;
+}
 
 /* The row's metadata cluster — shared badge, provenance, hint — behind one
    leading divider. The rule lives on the wrapper rather than on any one child

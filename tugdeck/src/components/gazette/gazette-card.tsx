@@ -128,7 +128,7 @@ import {
   commitResolverFor,
   NO_COMMIT_VERDICT,
 } from "@/lib/annotator/commit-resolution";
-import { commitTip } from "@/components/tugways/entity-tips";
+import { commitTip, fileTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { fileNameResolverFor } from "@/lib/annotator/file-name-resolution";
 import { annotationEntryFor } from "@/lib/annotator/registry";
@@ -259,21 +259,49 @@ function annotationProps(
       // Opening a card must not move DOM focus with the press.
       "data-tug-focus": "refuse",
       "data-no-activate": "",
-      // A commit's hover is the entity tip, mounted by {@link RefAtom} — the
-      // same bubble the transcript shows for the same sha. Everything else is
-      // named by its label already, so the target is all its hover adds.
-      ...(resolution.facts === undefined
-        ? { title: `${ref.kind}: ${ref.target}` }
-        : {}),
     };
   }
-  return {
-    ...marks,
-    title:
-      resolution.state === "pending"
-        ? `${ref.kind}: ${ref.target} — checking…`
-        : `${ref.kind}: ${ref.target} — ${resolution.reason}`,
-  };
+  return marks;
+}
+
+/**
+ * What a ref's hover says, and in which bubble — never the OS's.
+ *
+ * A resolved ref is an entity and gets the entity tip its kind already has:
+ * a commit's is {@link commitTip}, everything else names a path and gets
+ * {@link fileTip}. An unresolved one is not describing an entity at all —
+ * it is reporting on a lookup — so it speaks in the plain label bubble, the
+ * same one every other hint in the app uses.
+ */
+function refTip(
+  ref: GazetteRef,
+  resolution: GazetteRefResolution,
+): { content: React.ReactNode; variant: "label" | "entity" } {
+  if (resolution.state === "pending") {
+    return {
+      content: `${ref.kind}: ${ref.target} — checking…`,
+      variant: "label",
+    };
+  }
+  if (resolution.state !== "actionable") {
+    return {
+      content: `${ref.kind}: ${ref.target} — ${resolution.reason}`,
+      variant: "label",
+    };
+  }
+  if (ref.kind === "commit" && resolution.facts !== undefined) {
+    return {
+      content: commitTip({
+        sha: ref.target,
+        subject: resolution.facts.subject,
+        author: resolution.facts.author,
+        date: resolution.facts.date,
+        files: resolution.facts.files,
+      }),
+      variant: "entity",
+    };
+  }
+  return { content: fileTip({ path: ref.target }), variant: "entity" };
 }
 
 /**
@@ -340,23 +368,11 @@ function RefAtom({
     // has its own shape and its own hover, exactly as in a transcript body.
     <span {...annotationProps(chipRef, resolution)}>{skin}</span>
   );
-  // A confirmed commit describes itself in the app's own bubble, not the
-  // OS's — the same tip the transcript shows for the same sha.
-  if (resolution.state !== "actionable" || resolution.facts === undefined) {
-    return marked;
-  }
+  // Every ref describes itself in the app's own bubble, not the OS's —
+  // whichever kind it is and whichever state its lookup is in.
+  const tip = refTip(chipRef, resolution);
   return (
-    <TugTooltip
-      variant="entity"
-      align="start"
-      content={commitTip({
-        sha: chipRef.target,
-        subject: resolution.facts.subject,
-        author: resolution.facts.author,
-        date: resolution.facts.date,
-        files: resolution.facts.files,
-      })}
-    >
+    <TugTooltip variant={tip.variant} align="start" content={tip.content}>
       {marked}
     </TugTooltip>
   );

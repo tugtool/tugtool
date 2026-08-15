@@ -198,26 +198,7 @@
 }
 
 /* ── Hover content ──────────────────────────────────────────────────────
-   Rendered inside TugTooltip's bubble, so its ground is the tooltip's. */
-
-.tug-session-identity-tip {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.tug-session-identity-tip-line {
-  font-weight: var(--tug-font-weight-semibold);
-}
-
-.tug-session-identity-tip-desc {
-  opacity: 0.85;
-}
-
-/* The citation is flat text, and flat text is where monospace belongs — the
-   one place in session identity it appears. */
-.tug-session-identity-tip-citation {
-  font-family: var(--tug-font-family-mono);
-  font-size: var(--tug-font-size-xs);
-  opacity: 0.75;
-}
+   Not here: the session hover is `entity-tips.css`'s skeleton (`.tugx-tip*`),
+   the one every entity's bubble is drawn on. This file once held a second
+   copy of it under its own names, which is how a session and the commit
+   beside it came to describe themselves in two shapes. */

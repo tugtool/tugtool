@@ -64,6 +64,7 @@ import { DiffBlock } from "@/components/tugways/body-kinds/diff-block";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { DiffSummaryBadges } from "@/components/tugways/blocks/diff-summary-badges";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
+import { fileTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugActionTooltip } from "@/components/tugways/tug-action-tooltip";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
@@ -156,7 +157,7 @@ function FilePathLink({
   const absolutePath = projectRoot ? `${projectRoot}/${path}` : path;
   // The path is matchable content wherever a filtered list shows it, so the
   // marks go on the rendered string. `path` stays the authority for the
-  // `title`, the menu, and the open action.
+  // hover, the menu, and the open action.
   const shown = renderFilterHighlight(path, highlightQuery);
 
   // Inside the transcript a file reference has a HOST: one delegated click
@@ -205,11 +206,18 @@ function FilePathLink({
     [absolutePath, annotationHost, draggedSincePress],
   );
 
-  if (isDeleted(op, gitStatus) || !projectRoot) {
+  // The hover is the house file tip — the same bubble this path gets in a
+  // tool header, a Gazette ref, or a commit roster. A row elides its path,
+  // so the whole one belongs on the hover; a deleted file says so, since
+  // that is the fact its unclickable name cannot carry.
+  const deleted = isDeleted(op, gitStatus);
+  const tip = fileTip({ path, status: deleted ? "deleted" : undefined });
+
+  if (deleted || !projectRoot) {
     return (
-      <span className="tug-changes-list-file-path" title={path}>
-        {shown}
-      </span>
+      <TugTooltip variant="entity" align="start" content={tip}>
+        <span className="tug-changes-list-file-path">{shown}</span>
+      </TugTooltip>
     );
   }
 
@@ -218,7 +226,6 @@ function FilePathLink({
       ref={stampRef}
       className="tug-changes-list-file-path tug-changes-list-file-path--link"
       data-slot="tug-changes-list-file-ref"
-      title={path}
       // No `data-tug-focus="refuse"` here: refusing the gesture makes the
       // interpreter preventDefault the paired mousedown, which is also what
       // starts a text selection — the path became unselectable. Whether a
@@ -233,12 +240,18 @@ function FilePathLink({
     </span>
   );
 
+  const hovered = (
+    <TugTooltip variant="entity" align="start" content={tip}>
+      {link}
+    </TugTooltip>
+  );
+
   // Under a host the menu comes from the host, built from the registry for
   // whatever kind the gesture landed on — the same Open in Editor / Show in
   // Finder / Copy Path / Insert into Prompt over the standard editing block
   // a file reference in prose offers. A second menu here would be the two
   // popups over one press this surface used to show.
-  if (annotationHost) return link;
+  if (annotationHost) return hovered;
 
   return (
     <TugContextMenu<string>
@@ -247,7 +260,11 @@ function FilePathLink({
         { action: TUG_ACTIONS.REVEAL_IN_FINDER, value: absolutePath, label: "Show in Finder" },
       ]}
     >
-      {link}
+      {/* A box-less anchor, because two Radix `asChild` slots cannot nest: the
+          menu's trigger has to clone a DOM element, and the tooltip is a
+          component. `display: contents` means the path span stays the flex
+          item that elides it, so the anchor costs no layout. */}
+      <span className="tug-changes-list-file-path-menu">{hovered}</span>
     </TugContextMenu>
   );
 }

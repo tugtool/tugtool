@@ -367,10 +367,19 @@ function dropStaleWraps(
     if (annotation?.kind !== "file-path" && annotation?.kind !== "directory") {
       continue;
     }
-    const reference = detectPathReference(element.textContent ?? "");
+    // `textContent` is not the prose's spelling once a file tip has been
+    // portaled in — the portal host empties the span, the same way a
+    // citation's does — so the saved words are the authority when they
+    // exist, and are restored below rather than folded into a hole.
+    const saved = element.getAttribute(FILE_TEXT_ATTRIBUTE);
+    const reference = detectPathReference(saved ?? element.textContent ?? "");
     const state =
       reference === null ? "unknown" : context.resolvePath(reference).state;
     if (state === "confirmed") continue;
+    if (saved !== null) {
+      element.textContent = saved;
+      element.removeAttribute(FILE_TEXT_ATTRIBUTE);
+    }
     unwrapMatch(element);
   }
 }
@@ -408,6 +417,18 @@ export const AWAITING_ATTRIBUTE = "data-tugx-awaiting";
  * emptied wrapper would fold a hole into the sentence.
  */
 export const SESSION_TEXT_ATTRIBUTE = "data-tugx-session-text";
+
+/**
+ * Where a path wrap keeps the words it used to show.
+ *
+ * The same bargain {@link SESSION_TEXT_ATTRIBUTE} strikes, for the same
+ * reason: a confirmed path run hosts the file tip (`useFileTipPortals`), and
+ * hosting means emptying the span. A path wrap is re-checked on every pass —
+ * a file can be deleted — and the check reads the run's words, so without
+ * this an emptied host would resolve to nothing and unwrap every path mark
+ * in the container.
+ */
+export const FILE_TEXT_ATTRIBUTE = "data-tugx-file-text";
 
 /**
  * Whether `container` (or any annotated child block inside it) is still

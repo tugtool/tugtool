@@ -75,6 +75,7 @@ import {
   TugProgressIndicator,
   type TugProgressIndicatorPhaseVisual,
 } from "@/components/tugways/tug-progress-indicator";
+import { sessionTip } from "@/components/tugways/entity-tips";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { useSessionIdentityMenu } from "@/components/tugways/session-identity-menu";
 import { useCardIdForSession } from "@/lib/card-session-binding-store";
@@ -222,28 +223,20 @@ function SessionPrivacyMarker({
  * The identity's hover content: what the run cannot show — the description,
  * the lineage, and the citation, which is the flat-text form a reader would
  * paste elsewhere.
+ *
+ * The rows are {@link sessionTip}'s, because a session is an entity and an
+ * entity has one hover wherever it is pointed at (`entity-tips.tsx`). This
+ * once drew its own four rows in its own class names — the same four rows in
+ * the same order, one bubble variant narrower — so a session and the commit
+ * beside it described themselves in two different shapes.
  */
 function identityTooltip(identity: SessionIdentity): React.ReactNode {
-  return (
-    <span className="tug-session-identity-tip">
-      <span className="tug-session-identity-tip-line">
-        {sessionIdentityLine(identity)}
-      </span>
-      {identity.description !== null ? (
-        <span className="tug-session-identity-tip-desc">
-          {identity.description}
-        </span>
-      ) : null}
-      {identity.lineage.length > 0 ? (
-        <span className="tug-session-identity-tip-desc">
-          {`forked at ${identity.lineage.join(" → ")}`}
-        </span>
-      ) : null}
-      <span className="tug-session-identity-tip-citation">
-        {sessionCitation(identity, { project: true })}
-      </span>
-    </span>
-  );
+  return sessionTip({
+    identityLine: sessionIdentityLine(identity),
+    description: identity.description,
+    lineage: identity.lineage,
+    citation: sessionCitation(identity, { project: true }),
+  });
 }
 
 export const TugSessionIdentity = React.forwardRef<
@@ -362,7 +355,9 @@ export const TugSessionIdentity = React.forwardRef<
     // reader can already see says nothing about why it did not resolve.
     <TugTooltip content="Session not found">{body}</TugTooltip>
   ) : (
-    <TugTooltip content={identityTooltip(identity)}>{body}</TugTooltip>
+    <TugTooltip variant="entity" align="start" content={identityTooltip(identity)}>
+      {body}
+    </TugTooltip>
   );
 
   if (!isChip) return tipped;

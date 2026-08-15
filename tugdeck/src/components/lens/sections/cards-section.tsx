@@ -78,6 +78,8 @@ import { TUG_ACTIONS } from "@/components/tugways/action-vocabulary";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { fileTip } from "@/components/tugways/entity-tips";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugLabel } from "@/components/tugways/tug-label";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugListView } from "@/components/tugways/tug-list-view";
@@ -229,6 +231,28 @@ function registrationGlyph(identity: CardIdentity): React.ReactNode {
  *  A card with unsaved changes carries the same `•` after its name that the
  *  card's own header wears (`text-card.tsx` sets it on `cardTitleStore`), so
  *  the dirty bit reads identically wherever the file appears. */
+/**
+ * The row's content column, hovered when the card it stands for has a path.
+ *
+ * A pathless card (a Session, the Gazette) has nothing the hover would add,
+ * so it renders the bare headline rather than an empty bubble.
+ */
+function RowHeadlineHover({
+  path,
+  children,
+}: {
+  path: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  const headline = <span className="lens-cards-row-headline">{children}</span>;
+  if (path.length === 0) return headline;
+  return (
+    <TugTooltip variant="entity" align="start" content={fileTip({ path })}>
+      {headline}
+    </TugTooltip>
+  );
+}
+
 function OneLineRow({
   identity,
   glyph,
@@ -306,12 +330,11 @@ function OneLineRow({
         rowId !== null ? (e) => ctx.onRowPointerDown(rowId, e) : undefined
       }
     >
-      {/* The path is the row's hover title: `TugListRow` owns the `title` prop
-          as row text, so the tooltip rides the content column instead. */}
-      <span
-        className="lens-cards-row-headline"
-        title={hoverPath.length > 0 ? hoverPath : undefined}
-      >
+      {/* The path is the row's hover, in the house file tip — a row shows a
+          card's title, and its path is the fact that title cannot carry.
+          `TugListRow` owns the `title` prop as row text, so the hover rides
+          the content column instead. */}
+      <RowHeadlineHover path={hoverPath}>
         <span className="lens-cards-row-glyph" aria-hidden="true">
           {glyph}
         </span>
@@ -335,7 +358,7 @@ function OneLineRow({
         ) : null}
         {trailing}
         {showSlots ? <SlotPicker cardId={identity.cardId} /> : null}
-      </span>
+      </RowHeadlineHover>
     </TugListRow>
   );
 }
