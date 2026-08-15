@@ -4931,16 +4931,26 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     //
     // After the query changes the row set is different, so the cursor is
     // re-seeded onto the first match — the same preference ladder the attached
-    // cursor's seed runs (`initialSelectedIndex` → selection → first cursorable
+    // cursor's seed runs (`initialSelectedIndex`, else the first cursorable
     // row), which for the picker is what skips "New session" and lands on a
     // real result. The re-seed waits for the render the query causes: the rows
     // this reads do not exist yet at keystroke time.
+    //
+    // It re-commits even when the index did not move, and that is the whole
+    // subtlety: an index is not a row. Narrowing "g" to "ga" can leave the
+    // first match at index 1 while the SESSION at index 1 changes underneath
+    // it, so an identity check on the number alone skips the commit and leaves
+    // the surface's selection naming a row the query just hid. In the picker
+    // that row is then invalidated and the selection snaps back to "New
+    // session" — the cursor bar sitting on the match while `Return` opens an
+    // empty session, which is exactly the bug type-select exists to prevent.
+    // Re-committing the CURRENT row at the cursor is cheap and always true.
     const pendingReseedRef = React.useRef(false);
     const reseedCursorToFirstMatch = React.useCallback((): void => {
       const preferred = isCursorableRow(initialSelectedIndexRef.current ?? -1)
         ? (initialSelectedIndexRef.current as number)
         : cursorableNear(0, 1);
-      if (preferred < 0 || preferred === cursorIndexRef.current) return;
+      if (preferred < 0) return;
       moveCursorTo(preferred, true);
       if (commitOnMoveRef.current) selectCursorRowRef.current();
     }, [isCursorableRow, cursorableNear, moveCursorTo]);

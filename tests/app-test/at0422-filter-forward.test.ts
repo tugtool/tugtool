@@ -66,22 +66,34 @@ const encodeProjectDir = (absDir: string): string =>
 const SEEDED = [
   {
     id: "a7c04220-0000-4000-8000-0000000000b1",
-    prompt: "zebra harmonica calibration",
-    title: "zebra harmonica calibration",
+    prompt: "gazette provenance links",
+    title: "gazette provenance links",
   },
   {
     id: "a7c04220-0000-4000-8000-0000000000b2",
-    prompt: "quokka telemetry sweep",
-    title: "quokka telemetry sweep",
+    prompt: "grapefruit harvest ledger",
+    title: "grapefruit harvest ledger",
   },
   {
     id: "a7c04220-0000-4000-8000-0000000000b3",
-    prompt: "walrus ledger reconciliation",
-    title: "walrus ledger reconciliation",
+    prompt: "gopher tunnel telemetry",
+    title: "gopher tunnel telemetry",
+  },
+  {
+    id: "a7c04220-0000-4000-8000-0000000000b4",
+    prompt: "walrus reconciliation sweep",
+    title: "walrus reconciliation sweep",
   },
 ];
-/** A fragment of exactly one seeded title. */
-const FRAGMENT = "zebra";
+
+/**
+ * Typed one character at a time. Chosen so the query NARROWS THROUGH several
+ * row sets rather than jumping straight to one match: "g" matches three seeded
+ * rows, "ga" one. That is what moves a different session under the first-match
+ * index between keystrokes — the case where re-seeding the cursor by index
+ * alone leaves the selection naming a row the query has just hidden.
+ */
+const FRAGMENT = "gaz";
 
 function buildFixtureJsonl(
   cwd: string,
@@ -294,31 +306,45 @@ describe.skipIf(!SHOULD_RUN)(
           await focusSessionsList(app);
           expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
 
-          // (A) Type at the list. The field shows the query; the caret never
-          // goes there and the key view never leaves the list.
-          await app.nativeType(FRAGMENT);
-          expect(await waitForFilterValue(app, FRAGMENT)).toBe(true);
+          // (A)+(B) Type ONE CHARACTER AT A TIME, and after each one require
+          // that the selection names a row matching everything typed so far.
+          //
+          // Per-keystroke is the point, not thoroughness theatre. The selection
+          // is tracked by re-seeding the cursor to the first match, and the
+          // first match is an INDEX — so the interesting failure is the query
+          // narrowing while that index stays the same number and a different
+          // session slides under it ("g" matches three seeded rows, "ga" one).
+          // A selection left naming the previous occupant points at a row the
+          // query has now hidden, the picker invalidates it back to "New
+          // session", and `Return` opens an empty session with the cursor bar
+          // still sitting on the match. Asserting only the final state misses
+          // it whenever the last keystroke happens to move the index.
+          const typed: string[] = [];
+          for (const ch of FRAGMENT) {
+            await app.nativeType(ch);
+            const query = FRAGMENT.slice(0, typed.length + 1);
+            typed.push(ch);
+            expect(await waitForFilterValue(app, query)).toBe(true);
+            const selected = await app.waitForCondition<string>(
+              `(function(){
+                var el = document.querySelector(${JSON.stringify(SELECTED_ROW)});
+                return el === null ? null : (el.textContent || "");
+              })()`,
+              { timeoutMs: 6000 },
+            );
+            note(`selection at "${query}": ${JSON.stringify(selected)}`);
+            expect(selected.toLowerCase()).toContain(query);
+            expect(selected).not.toContain("New session");
+          }
+
+          // The caret never went to the field and the key view never left the
+          // list — the whole gesture ran with the list as first responder.
           expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
           expect(await app.evalJS<boolean>(KEY_VIEW_IS_LIST)).toBe(true);
           await app.waitForCondition<boolean>(
             `${RESUME_COUNT} < ${baselineCount}`,
             { timeoutMs: 6000 },
           );
-
-          // (B) The cursor re-seeded onto the match, NOT "New session" — so the
-          // sheet's Return acts on the row the user typed for. Asserting the
-          // selection's text is what makes this a pin rather than a vibe: the
-          // failure mode is a selection parked on "New session".
-          const selected = await app.waitForCondition<string>(
-            `(function(){
-              var el = document.querySelector(${JSON.stringify(SELECTED_ROW)});
-              return el === null ? null : (el.textContent || "");
-            })()`,
-            { timeoutMs: 6000 },
-          );
-          note(`selection after typing "${FRAGMENT}": ${JSON.stringify(selected)}`);
-          expect(selected.toLowerCase()).toContain(FRAGMENT);
-          expect(selected).not.toContain("New session");
 
           // Return presses the sheet's default with that selection live, which
           // opens the seeded session — the picker gives way to the card.
