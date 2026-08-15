@@ -107,7 +107,11 @@ import { SessionIdentityRow } from "@/components/tugways/session-identity-row";
 import { TUG_SESSION_ROW_STACK_DOT_SIZE } from "@/components/tugways/tug-session-row";
 import { cardServicesStore } from "@/lib/card-services-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
-import { useSessionBranch } from "@/lib/changeset-all-store";
+import {
+  useDashReviewState,
+  useSessionBranch,
+} from "@/lib/changeset-all-store";
+import { dashReviewPaints, dashReviewTooltip } from "@/lib/dash-review";
 import {
   groupPulseHistory,
   linesForScope,
@@ -463,9 +467,29 @@ export function SessionMasthead({
       [cardId],
     ),
   );
+  // The dash's owner key, beside its name: the review lookup matches on the
+  // key, because a stale binding to a dead incarnation of a reused name must
+  // not paint the wrong dash's mark.
+  const dashOwnerId = useSyncExternalStore(
+    cardSessionBindingStore.subscribe,
+    useCallback(
+      () =>
+        cardId === undefined
+          ? null
+          : (cardSessionBindingStore.getBinding(cardId)?.dash?.id ?? null),
+      [cardId],
+    ),
+  );
   // The branch is telemetry: it rides the record for the panel and never
   // reaches a rendered name.
   const branch = useSessionBranch(projectDir.length > 0 ? projectDir : null);
+  // Whether that dash's plan has drifted past its review ([P03], [P07]). Read
+  // from the account-global aggregate, the same shape as the branch above — the
+  // masthead is pane-supplied chrome and takes no controller for a mark.
+  const dashReview = useDashReviewState(
+    projectDir.length > 0 ? projectDir : null,
+    dashOwnerId,
+  );
   const identity = useSessionIdentity(sessionId, {
     projectDir: projectDir.length > 0 ? projectDir : undefined,
     branch,
@@ -555,7 +579,14 @@ export function SessionMasthead({
               size="2xs"
               className="session-masthead-dash-chip"
               data-slot="session-masthead-dash-chip"
-              title={`Working on dash ${dashName}`}
+              // The mark is the chip's own tone, not an element inside it: the
+              // chip is one line tall, and CSS paints from the attribute ([L06]).
+              data-review={dashReviewPaints(dashReview) ? dashReview : undefined}
+              title={
+                dashReviewPaints(dashReview)
+                  ? `Working on dash ${dashName} — ${dashReviewTooltip(dashReview!, null)}`
+                  : `Working on dash ${dashName}`
+              }
             >
               {dashName}
             </TugBadge>

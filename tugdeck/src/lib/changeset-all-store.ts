@@ -138,3 +138,42 @@ export function useSessionBranch(projectDir: string | null): string | null {
   const data = useChangesetAll();
   return useMemo(() => branchForProject(data, projectDir), [data, projectDir]);
 }
+
+/**
+ * One dash's plan review state in the aggregate, or null when there is nothing
+ * to say — no project, no dash, no plan, or a plan the server could not read.
+ *
+ * The dash is matched on its **owner key**, never on its name: a stale binding
+ * to a dead incarnation of a reused name must not paint the wrong dash's mark.
+ * This is the same rule the shade lane's `orderDashLane` states for choosing
+ * its fronted row.
+ */
+export function dashReviewForProject(
+  data: WorkspacesChangesetSnapshot,
+  projectDir: string | null,
+  dashOwnerId: string | null,
+): string | null {
+  if (projectDir === null || dashOwnerId === null) return null;
+  const project = data.projects.find((p) => p.project_dir === projectDir);
+  const dash = project?.changesets.find(
+    (entry) => entry.kind === "dash" && entry.owner_id === dashOwnerId,
+  );
+  if (dash === undefined || dash.kind !== "dash") return null;
+  return dash.review ?? null;
+}
+
+/**
+ * React hook: a bound dash's plan review state, read from the account-global
+ * aggregate ([L02]) rather than threaded down as a prop. Memoized to the state
+ * string, so a consumer repaints only when the state itself moves.
+ */
+export function useDashReviewState(
+  projectDir: string | null,
+  dashOwnerId: string | null,
+): string | null {
+  const data = useChangesetAll();
+  return useMemo(
+    () => dashReviewForProject(data, projectDir, dashOwnerId),
+    [data, projectDir, dashOwnerId],
+  );
+}

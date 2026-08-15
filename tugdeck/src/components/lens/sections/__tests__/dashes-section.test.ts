@@ -17,8 +17,11 @@ import type {
   WorkspacesChangesetSnapshot,
 } from "@/lib/changeset-types";
 import {
+  DASH_STAGE_RANK,
+  compareDashRows,
   dashRowsFromSnapshot,
   dashesCollapsedSummary,
+  type DashRow,
 } from "../dashes-section";
 
 const DATA = golden as WorkspacesChangesetSnapshot;
@@ -96,6 +99,32 @@ describe("dashRowsFromSnapshot", () => {
     ]);
   });
 
+  test("the order crosses projects: grouping by project is not a key", () => {
+    // A worked dash in the second project outranks a parked one in the first.
+    // Project grouping would bury it; the label is what tells them apart, and
+    // it still rides every row.
+    const second: ProjectChangeset = {
+      ...projectWith([
+        { ...GOLDEN_DASH, owner_id: "tugdash/live#2", display_name: "live" },
+      ]),
+      display_name: "other-project",
+      project_dir: "/tmp/other-project",
+    };
+    const rows = dashRowsFromSnapshot({
+      projects: [
+        projectWith([
+          { ...GOLDEN_DASH, display_name: "napping", bound_sessions: [] },
+        ]),
+        second,
+      ],
+    });
+    expect(rows.map((r) => r.name)).toEqual(["live", "napping"]);
+    expect(rows.map((r) => r.projectLabel)).toEqual([
+      "other-project",
+      DATA.projects[0]!.display_name,
+    ]);
+  });
+
   test("a project with no dashes never contributes a disambiguator", () => {
     const dashless = projectWith(
       DATA.projects[0]!.changesets.filter((entry) => entry.kind !== "dash"),
@@ -105,6 +134,69 @@ describe("dashRowsFromSnapshot", () => {
     });
     expect(rows.length).toBe(1);
     expect(rows[0]!.projectLabel).toBeNull();
+  });
+});
+
+describe("compareDashRows", () => {
+  /** A row with only the three keys the comparator reads. */
+  function row(
+    name: string,
+    stage: string | null,
+    parked: boolean,
+  ): DashRow {
+    return {
+      ownerId: `tugdash/${name}#1`,
+      name,
+      stage,
+      steps: null,
+      boundSessions: parked ? [] : ["sess-1"],
+      parked,
+      review: null,
+      projectLabel: null,
+    };
+  }
+
+  const order = (rows: DashRow[]): string[] =>
+    [...rows].sort(compareDashRows).map((r) => r.name);
+
+  test("worked before parked, whatever the stage says", () => {
+    // The dominant key, and deliberately so: the section exists to answer
+    // whether anyone is on it, so a parked dash about to land still sorts
+    // below a worked one that was created a minute ago.
+    expect(
+      order([row("parked-landing", "landing", true), row("worked-created", "created", false)]),
+    ).toEqual(["worked-created", "parked-landing"]);
+  });
+
+  test("within a group, nearest-to-done first", () => {
+    expect(
+      order([
+        row("c", "created", false),
+        row("l", "landing", false),
+        row("w", "working", false),
+        row("b", "built", false),
+        row("d", "draft-ready", false),
+        row("a", "audited", false),
+        row("i", "implementing", false),
+      ]),
+    ).toEqual(["l", "d", "a", "b", "i", "w", "c"]);
+  });
+
+  test("name breaks a tie, not snapshot order", () => {
+    expect(
+      order([row("zebra", "built", false), row("alpha", "built", false)]),
+    ).toEqual(["alpha", "zebra"]);
+  });
+
+  test("an unrecognized or absent stage sorts last rather than throwing", () => {
+    expect(
+      order([
+        row("mystery", "from-the-future", false),
+        row("none", null, false),
+        row("known", "created", false),
+      ]),
+    ).toEqual(["known", "mystery", "none"]);
+    expect(DASH_STAGE_RANK["from-the-future"]).toBeUndefined();
   });
 });
 

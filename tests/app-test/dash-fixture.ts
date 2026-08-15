@@ -16,7 +16,7 @@
  * and the worktree.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 /** How many times a git-touching verb retries through a held `index.lock`. */
@@ -123,6 +123,87 @@ export function commitRound(
     cwd: projectDir,
     stdin: JSON.stringify({ instruction: subject, summary: "app-test fixture round" }),
   });
+}
+
+/**
+ * A document that parses as a plan, carrying one unstamped Review Record round
+ * for `plan stamp` to write into.
+ *
+ * It has to be a *real* plan, not a stub: `dash step start` is the only writer
+ * of the dash's recorded plan path, and it refuses unless the document parses
+ * and carries a `#step-1` ledger row.
+ */
+const FIXTURE_PLAN = `## A Fixture Plan {#fixture-plan}
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|---|---|
+| Owner | app-test |
+
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus.** Lint: 0 errors, 0 warnings.
+
+### Phase Overview {#phase-overview}
+
+The fixture's context.
+
+### Execution Steps {#execution-steps}
+
+#### Step Status Ledger {#step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | The only step | pending | — |
+
+#### Step 1: The only step {#step-1}
+
+**Commit:** \`fixture(scope): do it\`
+
+**References:** [P01] the decision, (#phase-overview)
+
+**Tasks:**
+- [ ] Do the thing.
+
+**Tests:**
+- [ ] Unit: the thing works.
+
+**Checkpoint:**
+- [ ] \`cargo nextest run\`
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** the thing.
+`;
+
+/**
+ * Give a dash a plan it is driving, reviewed and stamped.
+ *
+ * The order is load-bearing in both directions. `dash step start` **mutates**
+ * the plan — it flips the ledger row to `in progress` — so it must run before
+ * the stamp, or the stamp would be invalidated by the very next verb. And
+ * ledger status cells sit outside the hashed content, so that mutation does
+ * not itself make the plan stale, which is what makes a test's "not stale yet"
+ * assertion mean anything.
+ */
+export function recordStampedPlan(
+  projectDir: string,
+  name: string,
+  worktree: string,
+): string {
+  const planPath = join(worktree, "plan.md");
+  writeFileSync(planPath, FIXTURE_PLAN);
+  tugutil(["dash", "step", name, "start", "1", "--plan", "plan.md"], {
+    cwd: projectDir,
+  });
+  tugutil(["plan", "stamp", planPath], { cwd: projectDir });
+  return planPath;
+}
+
+/** Move the document past its stamp — one appended line is the whole edit. */
+export function makePlanStale(planPath: string): void {
+  writeFileSync(planPath, `${readFileSync(planPath, "utf8")}\nOne more line.\n`);
 }
 
 /** Discard the dash — branch and worktree, dirt included. Best effort: a

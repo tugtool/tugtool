@@ -1070,6 +1070,31 @@ fn dash_file_row(file: tugdash_core::DashDetailFile) -> ChangesetFile {
     }
 }
 
+/// What a dash's recorded plan says about its own review, or `None`.
+///
+/// `worktree_abs` is the dash worktree's absolute path as
+/// `dash_detail_entries_in` resolved it, and `plan_path` is relative to that
+/// worktree. **Nothing else joins in** — composing from the caller's repo root
+/// would be the bug the absolute path exists to remove, and because every
+/// failure here is `None`, that bug would not raise: it would show up as a mark
+/// that never appears.
+///
+/// Every failure path is `None` deliberately ([P03]): a plan that cannot be
+/// read has not been shown to be stale, and an unreadable plan is a normal
+/// state rather than an incident.
+fn dash_review_state(worktree_abs: &Path, plan_path: &str) -> Option<String> {
+    let abs = worktree_abs.join(plan_path);
+    let source = std::fs::read_to_string(&abs)
+        .inspect_err(|e| tracing::debug!(path = %abs.display(), error = %e, "dash plan unreadable"))
+        .ok()?;
+    let doc = tugutil_core::plan::parse(&source).ok()?;
+    Some(
+        tugutil_core::plan::review_state(&doc, &source)
+            .as_str()
+            .to_string(),
+    )
+}
+
 /// Derive one dash entry per `refs/heads/tugdash/` branch.
 ///
 /// The composition lives in `tugdash_core::dash_detail_entries_in` — the same
@@ -1091,15 +1116,30 @@ async fn dash_entries(
         .unwrap_or_default();
 
     let root = repo_root.to_path_buf();
-    let Ok(details) =
-        tokio::task::spawn_blocking(move || tugdash_core::dash_detail_entries_in(&root)).await
+    // One blocking hop for everything synchronous: the git walk *and* the plan
+    // read each dash's review state needs. A second `spawn_blocking` would be a
+    // second scheduling round trip for a file read that costs less than one of
+    // the git subprocesses already in here ([P04]).
+    let Ok(details) = tokio::task::spawn_blocking(move || {
+        tugdash_core::dash_detail_entries_in(&root)
+            .into_iter()
+            .map(|detail| {
+                let review = detail
+                    .plan_path
+                    .as_deref()
+                    .and_then(|plan| dash_review_state(Path::new(&detail.worktree_abs), plan));
+                (detail, review)
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
     else {
         return Vec::new();
     };
 
     details
         .into_iter()
-        .map(|detail| ChangesetEntry::Dash {
+        .map(|(detail, review)| ChangesetEntry::Dash {
             bound_sessions: bound_by_dash
                 .get(&detail.owner_key)
                 .cloned()
@@ -1111,9 +1151,10 @@ async fn dash_entries(
             step_current: detail.step_current,
             step_total: detail.step_total,
             plan_path: detail.plan_path,
+            review,
             base: detail.base,
             rounds: detail.rounds,
-            worktree: detail.worktree_rel,
+            worktree: detail.worktree_abs,
             worktree_dirty: detail.worktree_dirty,
             files: detail.files.into_iter().map(dash_file_row).collect(),
             round_subjects: detail.round_subjects,
@@ -2130,6 +2171,151 @@ mod tests {
         );
     }
 
+    /// A document carrying everything `plan::parse` requires and one round with
+    /// no stamp yet — the state a review is in just before it stamps.
+    const UNSTAMPED_PLAN: &str = r#"## A Minimal Plan {#minimal-plan}
+
+### Plan Metadata {#plan-metadata}
+
+| Field | Value |
+|---|---|
+| Owner | Someone |
+
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-14, opus.** Lint: 0 errors, 0 warnings.
+
+### Phase Overview {#phase-overview}
+
+Some context.
+
+### Execution Steps {#execution-steps}
+
+#### Step Status Ledger {#step-status-ledger}
+
+| Step | Title | Status | Commit |
+|---|---|---|---|
+| #step-1 | The only step | pending | — |
+
+#### Step 1: The only step {#step-1}
+
+**Commit:** `thing(scope): do it`
+
+**References:** [P01] the decision, (#phase-overview)
+
+**Tasks:**
+- [ ] Do the thing.
+
+**Tests:**
+- [ ] Unit: the thing works.
+
+**Checkpoint:**
+- [ ] `cargo nextest run`
+
+### Deliverables and Checkpoints {#deliverables}
+
+**Deliverable:** the thing.
+"#;
+
+    /// Write `UNSTAMPED_PLAN` into `dir/plan.md`, stamped or not.
+    fn write_plan(dir: &Path, stamped: bool) {
+        let source = if stamped {
+            tugutil_core::plan::set_review_stamp(UNSTAMPED_PLAN).expect("stampable")
+        } else {
+            UNSTAMPED_PLAN.to_string()
+        };
+        std::fs::write(dir.join("plan.md"), source).unwrap();
+    }
+
+    #[test]
+    fn dash_review_state_reads_reviewed_for_a_stamped_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plan(dir.path(), true);
+        assert_eq!(
+            dash_review_state(dir.path(), "plan.md").as_deref(),
+            Some("reviewed")
+        );
+    }
+
+    #[test]
+    fn dash_review_state_reads_stale_after_the_document_moves() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plan(dir.path(), true);
+        let path = dir.path().join("plan.md");
+        let moved = format!("{}\nOne more line.\n", std::fs::read_to_string(&path).unwrap());
+        std::fs::write(&path, moved).unwrap();
+        assert_eq!(
+            dash_review_state(dir.path(), "plan.md").as_deref(),
+            Some("stale")
+        );
+    }
+
+    #[test]
+    fn dash_review_state_reads_never_reviewed_without_a_stamp() {
+        let dir = tempfile::tempdir().unwrap();
+        write_plan(dir.path(), false);
+        assert_eq!(
+            dash_review_state(dir.path(), "plan.md").as_deref(),
+            Some("never-reviewed")
+        );
+    }
+
+    /// Both failures read as *nothing to say*, not as an accusation: a plan
+    /// nobody can read has not been shown to be unreviewed.
+    #[test]
+    fn dash_review_state_is_absent_for_a_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(dash_review_state(dir.path(), "plan.md").is_none());
+    }
+
+    #[test]
+    fn dash_review_state_is_absent_for_a_document_that_is_not_a_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("plan.md"), "# Notes\n\nJust prose.\n").unwrap();
+        assert!(dash_review_state(dir.path(), "plan.md").is_none());
+    }
+
+    /// The composition asked from a *linked worktree* — the shape a card whose
+    /// project directory is itself a worktree produces, which is every dash's
+    /// own debug build. The plan lives in the dash's worktree, and the only
+    /// path that finds it is the absolute one the detail carries; composing
+    /// from the caller's root here would return `None`, which is indisting-
+    /// uishable from a dash with no plan.
+    #[tokio::test]
+    async fn dash_entries_read_review_state_from_a_linked_worktree() {
+        let (_dir, root) = init_repo();
+        git(&root, &["branch", "tugdash/demo"]);
+        git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
+        git(
+            &root,
+            &["worktree", "add", "-q", ".tug/worktrees/demo", "tugdash/demo"],
+        );
+        write_plan(&root.join(".tug/worktrees/demo"), true);
+        git(&root, &["config", "branch.tugdash/demo.tugplan", "plan.md"]);
+
+        // A second, unrelated worktree stands in for the card's project dir.
+        git(&root, &["branch", "sidecar"]);
+        git(
+            &root,
+            &["worktree", "add", "-q", ".tug/worktrees/sidecar", "sidecar"],
+        );
+        let asked_from = root.join(".tug/worktrees/sidecar");
+
+        let entries = dash_entries(&asked_from, None).await;
+        let ChangesetEntry::Dash { review, .. } = entries
+            .iter()
+            .find(|e| matches!(e, ChangesetEntry::Dash { display_name, .. } if display_name == "demo"))
+            .expect("the dash is visible from a sibling worktree")
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            review.as_deref(),
+            Some("reviewed"),
+            "the plan is found from a worktree-hosted caller"
+        );
+    }
+
     #[tokio::test]
     async fn compose_derives_dash_entries_from_tugdash_refs() {
         let (_dir, root) = init_repo();
@@ -2189,7 +2375,12 @@ mod tests {
         assert_eq!(display_name, "demo");
         assert_eq!(base, "main");
         assert_eq!(*rounds, 1);
-        assert_eq!(worktree, ".tug/worktrees/demo");
+        // Absolute — the receiver composes nothing. (This fixture's dash has no
+        // checked-out worktree, so the path names where it would be.)
+        assert!(
+            worktree.starts_with('/') && worktree.ends_with(".tug/worktrees/demo"),
+            "the worktree rides the wire absolute: {worktree}"
+        );
         assert!(!worktree_dirty);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].path, "dash-work.txt");
@@ -2268,6 +2459,7 @@ mod tests {
             step_current: None,
             step_total: None,
             plan_path: None,
+            review: None,
             base: "main".to_owned(),
             rounds: 0,
             worktree: String::new(),
@@ -2343,9 +2535,10 @@ mod tests {
                     step_current: None,
                     step_total: None,
                     plan_path: None,
+                    review: None,
                     base: "main".to_owned(),
                     rounds: 1,
-                    worktree: ".tug/worktrees/demo".to_owned(),
+                    worktree: "/repo/.tug/worktrees/demo".to_owned(),
                     worktree_dirty: false,
                     files: Vec::new(),
                     round_subjects: Vec::new(),

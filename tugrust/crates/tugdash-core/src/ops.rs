@@ -769,8 +769,15 @@ pub struct DashDetail {
     pub branch: String,
     pub base: String,
     pub rounds: u32,
-    /// Worktree path relative to the repo root.
+    /// Worktree path relative to the **main** repository root — the root this
+    /// composition normalizes to, which is not necessarily the root the caller
+    /// asked from. For display by a human who is standing in the repository;
+    /// never join it against a caller-held root.
     pub worktree_rel: String,
+    /// The dash's worktree, absolute. Resolved here because this is where the
+    /// main repository root is known; every consumer that needs a filesystem
+    /// path reads this one and composes nothing.
+    pub worktree_abs: String,
     pub worktree_dirty: bool,
     pub files: Vec<DashDetailFile>,
     /// Round commit subjects, newest first; empty when the dash has no rounds.
@@ -918,6 +925,7 @@ pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
             base,
             rounds,
             worktree_rel,
+            worktree_abs: worktree_abs.to_string_lossy().into_owned(),
             worktree_dirty,
             files,
             round_subjects,
@@ -3623,6 +3631,48 @@ Some context.
         let from_worktree = join_preflight_in(&worktree, "linked").unwrap();
         assert!(from_worktree.is_empty(), "{from_worktree:?}");
         assert!(join_preflight_in(repo, "linked").unwrap().is_empty());
+    }
+
+    /// The same class of bug one field over: `worktree_rel` is stripped against
+    /// the *main* root this composition normalizes to, so a consumer that joins
+    /// it against the root it asked from gets a path that does not exist — and
+    /// every consumer of that path degrades silently. `worktree_abs` is the
+    /// answer that does not depend on which root the question came from.
+    #[serial]
+    #[test]
+    fn dash_detail_asked_from_a_linked_worktree_reports_an_absolute_worktree() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "abs");
+        let repo = temp.path();
+        let worktree = repo.join(".tug/worktrees/abs");
+
+        let from_worktree = dash_detail_entries_in(&worktree);
+        let from_root = dash_detail_entries_in(repo);
+        let asked_there = from_worktree
+            .iter()
+            .find(|d| d.name == "abs")
+            .expect("the dash is visible from its own worktree");
+        let asked_here = from_root
+            .iter()
+            .find(|d| d.name == "abs")
+            .expect("and from the main root");
+
+        // Both spellings must name the same directory. They are compared after
+        // canonicalization because a linked worktree resolves its main root
+        // through git, which reports macOS's `/private/var` form of a temp dir
+        // while the caller holds the `/var` symlink — a difference in spelling,
+        // not in answer. What matters is that neither is relative to the root
+        // the question came from.
+        assert_eq!(
+            std::fs::canonicalize(&asked_there.worktree_abs).unwrap(),
+            std::fs::canonicalize(&asked_here.worktree_abs).unwrap(),
+            "the absolute worktree does not depend on the root asked from"
+        );
+        assert!(
+            Path::new(&asked_there.worktree_abs).is_dir(),
+            "and it names a directory that exists: {}",
+            asked_there.worktree_abs
+        );
     }
 
     #[serial]

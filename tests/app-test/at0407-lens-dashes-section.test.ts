@@ -19,21 +19,35 @@
  * recompose rather than latched at first sight, so a dash whose last worker
  * walks away goes quiet on its own.
  *
+ * A second dash carries the review mark. Its plan is real, recorded by the
+ * real `dash step start --plan` and stamped by the real `plan stamp`, and it
+ * goes stale the way a plan actually goes stale: somebody edits it after the
+ * review. Reviewed paints nothing — a mark that is always present is not a
+ * mark — so the transition, not the presence, is what this asserts.
+ *
  * @covers tugdeck/src/components/lens/sections/dashes-section.tsx
  * @covers tugdeck/src/lib/changeset-all-store.ts
+ * @covers tugdeck/src/lib/changeset-types.ts
+ * @covers tugdeck/src/lib/dash-review.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
-import { launchTugApp, type App } from "./_harness";
+import { launchTugApp, note, type App } from "./_harness";
 import {
   mkTempTugbank,
   rmTempTugbank,
   seedTugbankForLaunch,
 } from "./_harness/tugbank-helpers";
-import { createDash, releaseDash, tugutilPath } from "./dash-fixture";
+import {
+  createDash,
+  makePlanStale,
+  recordStampedPlan,
+  releaseDash,
+  tugutilPath,
+} from "./dash-fixture";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
@@ -49,16 +63,26 @@ const ROW = `${SECTION} [data-slot="lens-dashes-row"][data-dash="${DASH_NAME}"]`
 const PARKED = `${ROW} [data-slot="lens-dashes-parked"]`;
 const JUMP = `${ROW} [data-slot="lens-dashes-jump"]`;
 
+/** The review mark's own dash — a second one, so the parked/worked test above
+ *  keeps reading a dash with no plan at all (which paints nothing, ever). */
+const PLAN_DASH = "at0407-plan";
+const PLAN_ROW = `${SECTION} [data-slot="lens-dashes-row"][data-dash="${PLAN_DASH}"]`;
+const PLAN_MARK = `${PLAN_ROW} [data-slot="lens-dashes-review"]`;
+
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
+let planPath = "";
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
   createDash(PROJECT_DIR, DASH_NAME, "at0407 fixture");
+  const planned = createDash(PROJECT_DIR, PLAN_DASH, "at0407 plan fixture");
+  planPath = recordStampedPlan(PROJECT_DIR, PLAN_DASH, planned.worktree);
 });
 
 afterAll(() => {
   if (!SHOULD_RUN) return;
   releaseDash(PROJECT_DIR, DASH_NAME);
+  releaseDash(PROJECT_DIR, PLAN_DASH);
 });
 
 function deckShape() {
@@ -217,6 +241,84 @@ describe.skipIf(!SHOULD_RUN)("AT0407: the Lens Dashes section", () => {
         expect(await app.evalJS<number>(
           `document.querySelectorAll(${JSON.stringify(JUMP)}).length`,
         )).toBe(0);
+      } finally {
+        await app.close();
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+
+  test(
+    "a plan edited past its stamp grows the stale mark on its dash's row",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
+      const app = await launchTugApp({
+        testName: "at0407-lens-dashes-review",
+        env: { TUGBANK_PATH: tugbankPath },
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(PLAN_ROW)}) !== null`,
+          { timeoutMs: 30000 },
+        );
+
+        // Reviewed reads as nothing at all: a mark that is always present is
+        // not a mark. The ledger row `dash step start` flipped is outside the
+        // hashed content, which is what makes this assertion meaningful rather
+        // than accidental.
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(PLAN_MARK)}).length`,
+          ),
+        ).toBe(0);
+
+        // One appended line moves the document past its stamp. Touching a
+        // tracked project file is what wakes the aggregate for the recompose
+        // that carries the new state onto the entry.
+        makePlanStale(planPath);
+        const nudge = join(PROJECT_DIR, "at0407-nudge.txt");
+        writeFileSync(nudge, "at0407 recompose nudge\n");
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(PLAN_MARK)}) !== null`,
+            { timeoutMs: 30000 },
+          );
+        } finally {
+          rmSync(nudge, { force: true });
+        }
+
+        const mark = await app.evalJS<{ review: string | null; label: string | null }>(
+          `(() => {
+             const el = document.querySelector(${JSON.stringify(PLAN_MARK)});
+             return {
+               review: el.getAttribute("data-review"),
+               label: el.getAttribute("aria-label"),
+             };
+           })()`,
+        );
+        expect(mark.review).toBe("stale");
+        expect(mark.label).toContain("changed since");
+        note("at0407 stale mark", await app.screenshot().then((s) => s.path));
+
+        // ── The ordering, in the DOM ──────────────────────────────────────
+        // Both fixtures are parked, so the stage rank decides: this dash is
+        // `implementing` (a step is open on it), the other is `created`.
+        const order = await app.evalJS<string[]>(
+          `Array.from(
+             document.querySelectorAll(${JSON.stringify(`${SECTION} [data-slot="lens-dashes-row"]`)}),
+           ).map((el) => el.getAttribute("data-dash"))`,
+        );
+        expect(order.indexOf(PLAN_DASH)).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf(DASH_NAME)).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf(PLAN_DASH)).toBeLessThan(order.indexOf(DASH_NAME));
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

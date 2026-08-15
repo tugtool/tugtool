@@ -77,6 +77,23 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* The stale-review mark ([P07]): advisory, so it takes the same caution tone
+   as `dirty` rather than the danger one. `never-reviewed` drops to the muted
+   run — nothing has drifted there, nothing has vouched either. */
+.session-changes-dash-review {
+  color: var(
+    --session-changes-dash-review-color,
+    var(--tug7-element-tone-text-normal-caution-rest)
+  );
+}
+
+.session-changes-dash-review[data-review="never-reviewed"] {
+  color: var(
+    --session-changes-dash-review-never-color,
+    var(--tug7-element-global-text-normal-muted-rest)
+  );
+}
+
 /* ---- The expanded detail ---- */
 
 .session-changes-dash-detail {

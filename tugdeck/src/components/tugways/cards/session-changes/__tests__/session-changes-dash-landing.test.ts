@@ -11,8 +11,8 @@ import { describe, expect, it } from "bun:test";
 import {
   blockerAct,
   discardPreflightLine,
-  joinDisabledReason,
 } from "@/components/tugways/cards/session-changes/session-changes-dash-landing";
+import { joinDisabledReason } from "@/lib/join-mode-controller";
 import type { JoinBlocker } from "@/lib/changeset-verb-store";
 
 const blocker = (kind: string, paths: readonly string[] = []): JoinBlocker => ({

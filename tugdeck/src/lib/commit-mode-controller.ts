@@ -68,6 +68,26 @@ export function evaluateCommitLandGate(input: CommitLandGateInput): CommitLandGa
 }
 
 /**
+ * Why the commit cannot land, in the gate's own precedence — commit's half of
+ * the same contract `joinDisabledReason` fills for join. A disabled land button
+ * says what would enable it.
+ */
+export function commitDisabledReason(
+  reason: "turn" | "pending" | "empty-changeset" | "empty-message",
+): string {
+  switch (reason) {
+    case "turn":
+      return "Wait for the turn to finish";
+    case "pending":
+      return "Committing…";
+    case "empty-changeset":
+      return "Nothing to commit — this session has claimed no changes";
+    default:
+      return "Write a commit message";
+  }
+}
+
+/**
  * The controller's subscribable snapshot — everything the composer + Z5 read.
  * The shared half is {@link LandingSnapshot} ([P01]); the fields below it are
  * commit's own.
@@ -195,6 +215,7 @@ export class CommitModeController implements LandingMode {
       active: this.active,
       seedMessage: this.seedMessage,
       canLandIgnoringMessage: gate.ok,
+      landBlockedReason: gate.ok ? null : commitDisabledReason(gate.reason),
       landReady: this.active && gate.ok && messagePresent,
       fileCount,
       claimableCount,
@@ -393,6 +414,7 @@ function snapshotsEqual(a: CommitModeSnapshot, b: CommitModeSnapshot): boolean {
     a.active === b.active &&
     a.seedMessage === b.seedMessage &&
     a.canLandIgnoringMessage === b.canLandIgnoringMessage &&
+    a.landBlockedReason === b.landBlockedReason &&
     a.landReady === b.landReady &&
     a.fileCount === b.fileCount &&
     a.claimableCount === b.claimableCount &&

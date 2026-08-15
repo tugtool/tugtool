@@ -45,6 +45,7 @@ import {
 } from "@/components/tugways/tug-changes-list";
 import {
   SessionChangesDashLane,
+  type DashLaneBinding,
   type DashLaneLanding,
 } from "./session-changes-dash-lane";
 import type { DashLandingActions } from "./session-changes-dash-landing";
@@ -52,6 +53,7 @@ import type { JoinOutcome } from "@/lib/join-mode-controller";
 import { useChangesetJoinResolve } from "@/lib/changeset-join-store";
 import type { DiffDescriptor } from "@/lib/git-diff-store";
 import { cardSessionBindingStore } from "@/lib/card-session-binding-store";
+import { getConnection } from "@/lib/connection-singleton";
 import {
   useChangesetClaim,
   useChangesetDisclaim,
@@ -89,6 +91,10 @@ export interface SessionChangesViewProps {
 
 /** What the card hands the view for the fronted dash row's landing face. */
 export interface DashLandingSource {
+  /** Owner key of the dash the landing is about, or null when none is aimed.
+   *  It outranks the card's binding for fronting: `/dash-join <name>` aims
+   *  without binding, and the face has to appear on the dash being landed. */
+  dashId: string | null;
   /** The derived landing outcome ([#outcome-derivation]). */
   outcome: JoinOutcome;
   /** A candidate commit from the resolution ladder, if one was built. */
@@ -137,9 +143,15 @@ export function SessionChangesView({
   // The resolution ladder's overlay, keyed by dash rather than by card. The
   // fronted dash is resolved from the same snapshot the lane orders by; an
   // unbound card watches the empty key, which is idle by construction.
+  // A landing in flight decides the fronted row; the card's binding decides it
+  // the rest of the time. `/dash-join <name>` aims at a dash without binding to
+  // it, and the landing face — outcome, blockers, the resolve ladder — is the
+  // fronted row's alone, so fronting by the binding would leave a named join
+  // live in the composer with nothing in the room to explain a refusal.
+  const frontedDashId = dashLanding?.dashId ?? boundDashId;
   const frontedDash =
-    boundDashId !== null
-      ? (snap.dashes.find((entry) => entry.owner_id === boundDashId) ?? null)
+    frontedDashId !== null
+      ? (snap.dashes.find((entry) => entry.owner_id === frontedDashId) ?? null)
       : null;
   const resolveState = useChangesetJoinResolve(
     project.project_dir,
@@ -304,6 +316,40 @@ export function SessionChangesView({
       </>
     ) : undefined;
 
+  // Adopt and Leave ([P05]). Both are CONTROL frames on the existing
+  // connection, and **neither touches `cardSessionBindingStore`** — the
+  // `bind_dash_ok` / `unbind_dash_ok` broadcasts are the only movers, which is
+  // what leaves a card correctly bound to what it was when a bind is refused.
+  //
+  // The gate is *a landing in flight*, and deliberately not the Join
+  // affordance's `evaluateJoinLandGate`: that one refuses on outcome and on
+  // blockers, and a dash that is off-base or conflicted is precisely one
+  // somebody should be able to take on. The only thing worth blocking is a
+  // binding change that would move the lane's fronting out from under an open
+  // landing.
+  const tugSessionId = cardSessionBindingStore.getBinding(cardId)?.tugSessionId;
+  const laneBinding: DashLaneBinding | undefined =
+    tugSessionId === undefined || project === null
+      ? undefined
+      : {
+          adopt: (entry) => {
+            getConnection()?.sendControlFrame("bind_dash", {
+              tug_session_id: tugSessionId,
+              project_dir: project.project_dir,
+              dash: entry.display_name,
+            });
+          },
+          leave: () => {
+            getConnection()?.sendControlFrame("unbind_dash", {
+              tug_session_id: tugSessionId,
+            });
+          },
+          disabledReason:
+            turnInProgress || join.phase === "pending"
+              ? "A landing is in flight"
+              : null,
+        };
+
   const laneLanding: DashLaneLanding | undefined =
     dashLanding !== undefined
       ? {
@@ -372,8 +418,10 @@ export function SessionChangesView({
       <SessionChangesDashLane
         dashes={snap.dashes}
         boundDashId={boundDashId}
+        frontedDashId={frontedDashId}
         projectRoot={project.project_dir}
         landing={laneLanding}
+        binding={laneBinding}
       />
     </div>,
     headerActions,

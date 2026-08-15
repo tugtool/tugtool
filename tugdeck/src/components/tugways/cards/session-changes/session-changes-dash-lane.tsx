@@ -17,8 +17,15 @@
  * live `--preview` plus the act that clears it. `JoinState` is one slot per
  * card rather than per dash, so a second row previewing would overwrite the
  * first and render its blockers under the wrong name; landing is a gesture on
- * this card's own dash regardless. Every other row stays what it has always
- * been — facts, subjects, files, and the maintained join draft as ink.
+ * this card's own dash regardless.
+ *
+ * The two **binding** gestures go the other way. Every row carries one: Leave
+ * on the fronted row, Adopt on all the rest, complements that never appear
+ * together. This is the room where a dash's facts already live, so the act of
+ * taking a dash on belongs beside the facts you would take it on for — and
+ * "non-fronted rows stay read-only" was always a rule about *landing*, a
+ * gesture on work a card never touched. Adopting is how a card comes to touch
+ * it.
  *
  * Laws: [L02] the lane takes its data as props from the view's
  * `useSyncExternalStore` reads; [L06] tone and state paint through CSS and
@@ -33,8 +40,11 @@ import "./session-changes-dash-lane.css";
 import React, { useEffect, useRef, useState } from "react";
 
 import { TugBadge } from "@/components/tugways/tug-badge";
+import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugStatusMark } from "@/components/tugways/tug-status-mark";
+import { TugTooltip } from "@/components/tugways/tug-tooltip";
+import { dashReviewPaints, dashReviewTooltip } from "@/lib/dash-review";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
 import { PopOutDiffButton } from "@/components/tugways/tug-changes-list";
 import {
@@ -109,6 +119,28 @@ export interface DashLaneLanding {
   actions: DashLandingActions;
 }
 
+/**
+ * The lane's two binding gestures ([P05]).
+ *
+ * Unlike {@link DashLaneLanding}, this bundle goes to **every** row: Adopt's
+ * whole population is the rows the landing face never reaches, and a row picks
+ * Adopt or Leave from its own `fronted` flag — the two are complements, so they
+ * never appear together and the cluster stays one affordance wide.
+ *
+ * Neither callback may move `cardSessionBindingStore`. The `bind_dash_ok` /
+ * `unbind_dash_ok` broadcasts are the only movers, which is what leaves a card
+ * correctly bound to what it was when a bind is refused.
+ */
+export interface DashLaneBinding {
+  /** Send `bind_dash` for this row's dash. */
+  adopt: (entry: DashChangesetEntry) => void;
+  /** Send `unbind_dash` for this card's session. */
+  leave: (entry: DashChangesetEntry) => void;
+  /** Why both are unavailable right now, or null when they are available.
+   *  Disabled with a reason rather than silently bouncing. */
+  disabledReason: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // The row
 // ---------------------------------------------------------------------------
@@ -117,16 +149,22 @@ function DashRow({
   entry,
   projectRoot,
   fronted,
+  bound,
   expanded,
   onToggle,
   landing,
+  binding,
 }: {
   entry: DashChangesetEntry;
   projectRoot: string;
   fronted: boolean;
+  /** This card is mated to this dash — which is what Leave-vs-Adopt reads,
+   *  and is not the same question as which row is fronted. */
+  bound: boolean;
   expanded: boolean;
   onToggle: (next: boolean) => void;
   landing: DashLaneLanding | null;
+  binding: DashLaneBinding | null;
 }): React.ReactElement {
   // Previewing costs a `merge-tree` run, so it is spent on the expand gesture
   // rather than on every lane render: the effect fires on the closed → open
@@ -175,6 +213,24 @@ function DashRow({
         }
         trailing={
           <span className="session-changes-dash-row-trailing">
+            {binding !== null ? (
+              <TugPushButton
+                size="2xs"
+                subtype="text"
+                disabled={binding.disabledReason !== null}
+                title={binding.disabledReason ?? undefined}
+                data-slot={
+                  bound
+                    ? "session-changes-dash-leave"
+                    : "session-changes-dash-adopt"
+                }
+                onClick={() =>
+                  bound ? binding.leave(entry) : binding.adopt(entry)
+                }
+              >
+                {bound ? "Leave" : "Adopt"}
+              </TugPushButton>
+            ) : null}
             {hasRange ? (
               <PopOutDiffButton
                 descriptor={descriptor}
@@ -217,6 +273,25 @@ function DashRow({
             <>
               <span className="session-changes-dash-sep">·</span>
               <span className="session-changes-dash-step">{steps}</span>
+            </>
+          ) : null}
+          {dashReviewPaints(entry.review) ? (
+            <>
+              <span className="session-changes-dash-sep">·</span>
+              <TugTooltip
+                content={dashReviewTooltip(
+                  entry.review!,
+                  entry.plan_path ?? null,
+                )}
+              >
+                <span
+                  className="session-changes-dash-review"
+                  data-slot="session-changes-dash-review"
+                  data-review={entry.review}
+                >
+                  {entry.review === "stale" ? "plan stale" : "plan unreviewed"}
+                </span>
+              </TugTooltip>
             </>
           ) : null}
         </span>
@@ -284,19 +359,32 @@ function DashRow({
 export interface SessionChangesDashLaneProps {
   /** The project's dash entries, in snapshot order. */
   dashes: readonly DashChangesetEntry[];
-  /** The owner key of the dash this card's session is mated to, if any. */
+  /** The owner key of the dash this card's session is mated to, if any. It
+   *  decides which row offers **Leave** rather than **Adopt**. */
   boundDashId: string | null;
+  /** The owner key of the row to front, when that is not the bound one — a
+   *  landing aimed by name (`/dash-join <name>`) fronts its target so the
+   *  landing face has somewhere to mount. Defaults to `boundDashId`.
+   *
+   *  The two are deliberately separate: fronting is about *what is being
+   *  landed*, the binding is about *what this card is working*, and a join
+   *  aimed at a dash the card never adopted must not offer to Leave it. */
+  frontedDashId?: string | null;
   /** Absolute checkout root — the range descriptor's `root`. */
   projectRoot: string;
   /** The fronted row's landing face; omitted leaves the lane read-only. */
   landing?: DashLaneLanding;
+  /** Adopt / Leave, for every row; omitted leaves the lane read-only. */
+  binding?: DashLaneBinding;
 }
 
 export function SessionChangesDashLane({
   dashes,
   boundDashId,
+  frontedDashId,
   projectRoot,
   landing,
+  binding,
 }: SessionChangesDashLaneProps): React.ReactElement | null {
   // Per-dash expansion overrides. The default is "expanded exactly when this
   // is the card's own dash", so a bind that arrives while the shade is open
@@ -306,7 +394,10 @@ export function SessionChangesDashLane({
 
   if (dashes.length === 0) return null;
 
-  const { fronted, rest } = orderDashLane(dashes, boundDashId);
+  const { fronted, rest } = orderDashLane(
+    dashes,
+    frontedDashId ?? boundDashId,
+  );
   const isExpanded = (entry: DashChangesetEntry): boolean =>
     overrides[entry.owner_id] ?? entry === fronted;
   const toggle = (entry: DashChangesetEntry, next: boolean): void => {
@@ -335,9 +426,11 @@ export function SessionChangesDashLane({
             entry={fronted}
             projectRoot={projectRoot}
             fronted
+            bound={fronted.owner_id === boundDashId}
             expanded={isExpanded(fronted)}
             onToggle={(next) => toggle(fronted, next)}
             landing={landing ?? null}
+            binding={binding ?? null}
           />
         </>
       ) : null}
@@ -368,9 +461,13 @@ export function SessionChangesDashLane({
                   entry={entry}
                   projectRoot={projectRoot}
                   fronted={false}
+                  bound={entry.owner_id === boundDashId}
                   expanded={isExpanded(entry)}
                   onToggle={(next) => toggle(entry, next)}
                   landing={null}
+                  // Unlike `landing`, this reaches every row — Adopt's whole
+                  // population is exactly the rows the landing face skips.
+                  binding={binding ?? null}
                 />
               ))
             : null}

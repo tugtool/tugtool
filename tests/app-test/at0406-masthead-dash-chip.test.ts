@@ -18,16 +18,28 @@
  * change height when the chip arrives: a card that reflows when a dash is
  * bound would move the transcript under the reader's eyes.
  *
+ * The chip also carries the dash plan's review state, as its own tone rather
+ * than as an element inside it — one line has no room for a glyph. The dash
+ * drives a real stamped plan, so the chip arrives unmarked; editing the plan
+ * past its stamp is what makes the mark appear.
+ *
  * @covers tugdeck/src/components/tugways/session-masthead.tsx
  * @covers tugdeck/src/lib/card-session-binding-store.ts
+ * @covers tugdeck/src/lib/dash-review.ts
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { realpathSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { launchTugApp, note, type App } from "./_harness";
-import { createDash, releaseDash, tugutilPath } from "./dash-fixture";
+import {
+  createDash,
+  makePlanStale,
+  recordStampedPlan,
+  releaseDash,
+  tugutilPath,
+} from "./dash-fixture";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 180_000;
@@ -43,10 +55,15 @@ const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
 
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 const DASH_NAME = "at0406-chip";
+let planPath = "";
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
-  createDash(PROJECT_DIR, DASH_NAME, "at0406 fixture");
+  const created = createDash(PROJECT_DIR, DASH_NAME, "at0406 fixture");
+  // The dash drives a real plan, reviewed and stamped — so the chip's resting
+  // state carries no review attribute at all, and the one that appears later
+  // can only be the edit.
+  planPath = recordStampedPlan(PROJECT_DIR, DASH_NAME, created.worktree);
 });
 
 afterAll(() => {
@@ -185,6 +202,33 @@ describe.skipIf(!SHOULD_RUN)("AT0406: the masthead's dash chip", () => {
 
         const shot = await app.screenshot();
         note("at0406 masthead with the dash chip", shot.path);
+
+        // ── The plan drifts past its review; the chip says so ─────────────
+        // The mark is the chip's own tone rather than an element inside it —
+        // the chip is one line tall — so the contract is the attribute.
+        expect(
+          await app.evalJS<string | null>(
+            `document.querySelector(${JSON.stringify(CHIP)}).getAttribute("data-review")`,
+          ),
+        ).toBeNull();
+        makePlanStale(planPath);
+        const nudge = join(PROJECT_DIR, "at0406-nudge.txt");
+        writeFileSync(nudge, "at0406 recompose nudge\n");
+        try {
+          await app.waitForCondition<boolean>(
+            `document.querySelector(${JSON.stringify(CHIP)})?.getAttribute("data-review") === "stale"`,
+            { timeoutMs: 30000 },
+          );
+        } finally {
+          rmSync(nudge, { force: true });
+        }
+        expect(
+          await app.evalJS<string | null>(
+            `document.querySelector(${JSON.stringify(CHIP)}).getAttribute("title")`,
+          ),
+        ).toContain("changed since");
+        // A tinted chip is still the same chip: no reflow of the chrome tier.
+        expect(await mastheadHeight(app)).toBe(bareHeight);
 
         // ── Unbind, for real ──────────────────────────────────────────────
         await shellAndSettle(app, `${tugutilPath(PROJECT_DIR)} dash unbind`, 1);

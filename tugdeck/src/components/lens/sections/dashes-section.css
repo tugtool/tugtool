@@ -47,6 +47,30 @@
   color: var(--tug7-element-global-text-normal-subtle-rest);
 }
 
+/* The stale-review mark. Advisory, so it takes the caution tone rather than
+   the danger one: nothing is broken, a document has drifted. It renders only
+   for `stale` and `never-reviewed`, and the two are told apart by their glyph
+   and their tooltip; `never-reviewed` is the quieter of the pair, because a
+   plan that nothing ever vouched for is a state to notice, not to fix. */
+.lens-dashes-review {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  color: var(
+    --lens-dashes-review-color,
+    var(--tug7-element-tone-icon-normal-caution-rest)
+  );
+}
+
+.lens-dashes-review[data-review="never-reviewed"] {
+  color: var(
+    --lens-dashes-review-never-color,
+    var(--tug7-element-global-text-normal-subtle-rest)
+  );
+}
+
 /* The parked mark. Toned down from the live dot's palette on purpose: a dash
    nobody is working must not read as a dash at rest between turns. */
 .lens-dashes-parked {

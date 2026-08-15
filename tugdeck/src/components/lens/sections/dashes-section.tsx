@@ -21,9 +21,13 @@
  * subscription at the dot, the section's data pass never reads phase, and a
  * reducer wake repaints one glyph.
  *
- * Read-only, deliberately: this era ships no landing verb, so the row offers
- * no join, no release, and no adopt. It says what is true and gets out of the
- * way.
+ * Read-only, deliberately: the binding verbs live in the Changes shade, beside
+ * the facts you would take a dash on for, and this row offers no join, no
+ * release, and no adopt. It says what is true and gets out of the way.
+ *
+ * Rows are totally ordered ([P02]): worked before parked, then nearest-to-done
+ * first, then by name. The first reading is the useful one that way, and the
+ * order does not reshuffle when an unrelated branch is created.
  *
  * Laws: [L02] the aggregate and the bindings enter React through
  * `useSyncExternalStore`; [L03] the section's content declaration is a
@@ -39,7 +43,7 @@
 import "./dashes-section.css";
 
 import React, { useLayoutEffect, useMemo, useSyncExternalStore } from "react";
-import { CircleDashed, GitBranch } from "lucide-react";
+import { CircleDashed, FileClock, FileQuestion, GitBranch } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
@@ -62,6 +66,7 @@ import {
   useCardIdForSession,
 } from "@/lib/card-session-binding-store";
 import { useChangesetAll } from "@/lib/changeset-all-store";
+import { dashReviewPaints, dashReviewTooltip } from "@/lib/dash-review";
 import type {
   DashChangesetEntry,
   WorkspacesChangesetSnapshot,
@@ -91,6 +96,9 @@ export interface DashRow {
   boundSessions: string[];
   /** True when no live session is working this dash. */
   parked: boolean;
+  /** The dash plan's review state (`reviewed` | `stale` | `never-reviewed`),
+   *  or null when the dash records no plan or the server had nothing to say. */
+  review: string | null;
   /** The owning project's name, when more than one project has dashes. */
   projectLabel: string | null;
 }
@@ -113,13 +121,59 @@ function rowFromEntry(
     // sender omits `bound_sessions` entirely, and that is not a reason to say
     // somebody is working.
     parked: boundSessions.length === 0,
+    review: entry.review ?? null,
     projectLabel,
   };
 }
 
 /**
- * Every inflight dash across every open project, in project-enumeration order
- * then entry order.
+ * How far along a dash is, as a sortable rank ([P02], Table T01).
+ *
+ * Nearest-to-done ranks highest, because the actionable dash is the one about
+ * to land rather than the one just created. `landing` tops the table because it
+ * means an interrupted teardown — the one state that actively needs a person.
+ * Exported so its test can be a table test rather than a DOM assertion.
+ */
+export const DASH_STAGE_RANK: Record<string, number> = {
+  landing: 6,
+  "draft-ready": 5,
+  audited: 4,
+  built: 3,
+  implementing: 2,
+  working: 1,
+  created: 0,
+};
+
+/** An absent or unrecognized stage sorts last, and never throws: an older or
+ *  newer sender must not be able to break the section's render. */
+function stageRank(stage: string | null): number {
+  return stage === null ? -1 : (DASH_STAGE_RANK[stage] ?? -1);
+}
+
+/**
+ * The section's total order ([P02], Spec S02): worked before parked, then by
+ * stage rank descending, then by name.
+ *
+ * Worked-before-parked dominates because it is the question the section exists
+ * to answer — an ordering that ignores *whether anyone is on it* contradicts
+ * the section's own premise. Name is the tiebreak rather than snapshot order,
+ * which is git-enumeration order: stable, arbitrary, and reshuffled by any
+ * branch created or deleted.
+ */
+export function compareDashRows(a: DashRow, b: DashRow): number {
+  if (a.parked !== b.parked) return a.parked ? 1 : -1;
+  const byStage = stageRank(b.stage) - stageRank(a.stage);
+  if (byStage !== 0) return byStage;
+  return a.name.localeCompare(b.name);
+}
+
+/**
+ * Every inflight dash across every open project, ordered by
+ * {@link compareDashRows}.
+ *
+ * Project grouping is not an ordering key: the project label already rides each
+ * row when more than one project has dashes, and grouping by project would bury
+ * the dash somebody is working under one created a week ago in another repo.
  *
  * The project disambiguator only appears when it disambiguates: with one
  * project holding dashes, every row's suffix would say the same thing.
@@ -131,13 +185,16 @@ export function dashRowsFromSnapshot(
     project.changesets.some((entry) => entry.kind === "dash"),
   );
   const disambiguate = withDashes.length > 1;
-  return withDashes.flatMap((project) =>
+  const rows = withDashes.flatMap((project) =>
     project.changesets
       .filter((entry): entry is DashChangesetEntry => entry.kind === "dash")
       .map((entry) =>
         rowFromEntry(entry, disambiguate ? project.display_name : null),
       ),
   );
+  // `flatMap` already allocated this array; the snapshot it was projected from
+  // is never touched.
+  return rows.sort(compareDashRows);
 }
 
 /** The band's one-line reading when the section is collapsed. */
@@ -176,6 +233,27 @@ function DashParkedMark(): React.ReactElement {
         aria-label="Parked"
       >
         <CircleDashed size={DASH_DOT_SIZE + 2} />
+      </span>
+    </TugTooltip>
+  );
+}
+
+/**
+ * The stale-review mark ([P03], [P07]): advisory, and absent unless there is
+ * something to say. The Lens row spans projects on one line, so the tooltip
+ * names the state and not the plan's path — the path is the shade's to show.
+ */
+function DashReviewMark({ review }: { review: string }): React.ReactElement {
+  const Glyph = review === "stale" ? FileClock : FileQuestion;
+  return (
+    <TugTooltip content={dashReviewTooltip(review, null)}>
+      <span
+        className="lens-dashes-review"
+        data-slot="lens-dashes-review"
+        data-review={review}
+        aria-label={dashReviewTooltip(review, null)}
+      >
+        <Glyph size={DASH_DOT_SIZE + 2} />
       </span>
     </TugTooltip>
   );
@@ -281,6 +359,9 @@ const DashCell: TugListViewCellRenderer<DashRowsDataSource> = ({
         ) : null}
         {row.steps !== null ? (
           <span className="lens-dashes-step">{row.steps}</span>
+        ) : null}
+        {dashReviewPaints(row.review) ? (
+          <DashReviewMark review={row.review!} />
         ) : null}
         {row.projectLabel !== null ? (
           <span className="lens-dashes-project">{row.projectLabel}</span>

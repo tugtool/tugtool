@@ -428,3 +428,23 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A plan that drifted past its review tints the chip rather than growing an
+   element inside it — the chip is one line tall and has no room for a glyph.
+   Advisory, so it borrows the caution tone and never the danger one ([P07]);
+   `never-reviewed` takes the quieter dotted border, because nothing has moved
+   there, nothing has vouched either. */
+.session-masthead-dash-chip[data-review] {
+  border-color: var(
+    --session-masthead-dash-chip-review-border,
+    var(--tug7-element-tone-border-normal-caution-rest)
+  );
+  color: var(
+    --session-masthead-dash-chip-review-color,
+    var(--tug7-element-tone-text-normal-caution-rest)
+  );
+}
+
+.session-masthead-dash-chip[data-review="never-reviewed"] {
+  border-style: dashed;
+}

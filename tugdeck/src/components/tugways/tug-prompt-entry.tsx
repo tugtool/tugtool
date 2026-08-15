@@ -793,9 +793,14 @@ export interface TugPromptEntryProps {
    */
   landingMode?: LandingMode;
   /**
-   * Whether this card is bound to a dash, which is what puts the Join segment
-   * in the Z4A route group ([P03]). An unbound card renders the two-segment
-   * group it always has.
+   * Whether a dash is in reach — this card is bound to one, **or** a landing
+   * is aimed at one by name — which is what puts the Join segment in the Z4A
+   * route group ([P03]). A card with neither renders the two-segment group it
+   * always has.
+   *
+   * The aimed case matters: `/dash-join <name>` enters join mode without
+   * binding, and gating the segment on the binding alone left the mode live
+   * with no segment to show it — the route could never read `join`.
    */
   joinAvailable?: boolean;
   /**
@@ -3742,8 +3747,13 @@ export const TugPromptEntry = React.forwardRef<
         />
       </TugActionTooltip>
       <TugTooltip
+        // The mode's own sentence when it has one — "Clear what blocks this
+        // join first" beats a constant that names no cause, and a disabled
+        // land button with no reason is a dead end at the worst moment.
         content={
-          commitCanLand ? landingWords.land : landingWords.landUnavailable
+          commitCanLand
+            ? landingWords.land
+            : landingSnap?.landBlockedReason ?? landingWords.landUnavailable
         }
         // Authored, and deliberately so: the composer's submit key is the
         // editor's own, text-editing currency handled by the CM6 keymap rather

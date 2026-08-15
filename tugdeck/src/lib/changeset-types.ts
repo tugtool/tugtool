@@ -147,13 +147,22 @@ export interface DashChangesetEntry {
   step_total?: number;
   /** The plan this dash is driving, relative to its **worktree** — the copy a
    *  run edits and whose ledger the step verbs rewrite. Absolute path is
-   *  `projectDir` / `worktree` / `plan_path`. */
+   *  `worktree` / `plan_path`, and involves no third component. */
   plan_path?: string;
+  /** What that plan's Review Record says about the document on disk now — one
+   *  of `reviewed` | `stale` | `never-reviewed`, the same spellings
+   *  `tugutil plan status` reports. Absent when the dash records no plan, or
+   *  when the file cannot be read or parsed: absence means *nothing to say*,
+   *  and a surface paints nothing for it. */
+  review?: string;
   /** The base branch the dash was created from. */
   base: string;
   /** Number of commits on the dash branch past its base. */
   rounds: number;
-  /** Worktree path relative to the repository root. */
+  /** The dash worktree's **absolute** path, resolved on the server against the
+   *  main repository root — which is not necessarily this card's project root,
+   *  since a project directory may itself be a linked worktree. Never compose
+   *  it with `projectDir`; use it as it arrives. */
   worktree: string;
   /** True when the dash worktree has uncommitted changes. */
   worktree_dirty: boolean;

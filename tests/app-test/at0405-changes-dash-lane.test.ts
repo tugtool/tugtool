@@ -19,6 +19,11 @@
  * records; dash entries derive from the repo's `tugdash/*` refs, which the
  * registered worktree shares with the checkout the dash was cut from.
  *
+ * The lane's two binding gestures live here too, and are driven for real:
+ * Leave on the fronted row sends `unbind_dash`, Adopt on a non-fronted row
+ * sends `bind_dash`, and both the masthead chip and the lane's fronting move
+ * on the broadcast that comes back rather than on the click.
+ *
  * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-lane.tsx
  * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-view.tsx
  * @covers tugdeck/src/lib/changes-route-controller.ts
@@ -53,6 +58,9 @@ const FRONTED_LABEL = `${LANE} [data-slot="session-changes-dash-lane-fronted-lab
 const DASH_NAME = "at0405-lane";
 const ROW = `${LANE} [data-slot="session-changes-dash-row"][data-dash="${DASH_NAME}"]`;
 const ROW_FOLD = `${ROW} [data-slot="session-changes-dash-fold"]`;
+const LEAVE = `${ROW} [data-slot="session-changes-dash-leave"]`;
+const ADOPT = `${ROW} [data-slot="session-changes-dash-adopt"]`;
+const CHIP = '[data-slot="session-masthead-dash-chip"]';
 
 /** The checkout this file sits in — the project the aggregate composes, per
  *  at0332's rule. */
@@ -173,6 +181,21 @@ describe.skipIf(!SHOULD_RUN)("AT0405: the Changes shade's dash lane", () => {
           workspaceKey: PROJECT_DIR,
         });
         await app.awaitEngineReady("A", { timeoutMs: 15000 });
+        // Adopt and Leave send real CONTROL frames, and the server resolves
+        // the calling session out of this instance's ledger — a client-side
+        // binding alone is invisible to it. After launch, not before: tugcast
+        // demotes every `live` row to `closed` at startup.
+        app.seedLedger({
+          sessions: [
+            {
+              session_id: SID,
+              workspace_key: PROJECT_DIR,
+              project_dir: PROJECT_DIR,
+              card_id: "A",
+              name: "at0405 work",
+            },
+          ],
+        });
 
         await app.driveSession("A", { op: "send", text: "hello" });
         await app.driveSession("A", {
@@ -330,6 +353,59 @@ describe.skipIf(!SHOULD_RUN)("AT0405: the Changes shade's dash lane", () => {
         );
         expect(fronted.first).toBe(DASH_NAME);
         expect(fronted.expanded).toBe("true");
+
+        // ── The complement rule ───────────────────────────────────────────
+        // Leave on the fronted row, Adopt on none of it — a refactor that
+        // broke this into two buttons on one row would say the card can both
+        // take on and put down the same dash.
+        const affordances = await app.evalJS<{ leave: number; adopt: number }>(
+          `(() => {
+             const row = document.querySelector(${JSON.stringify(ROW)});
+             return {
+               leave: row.querySelectorAll('[data-slot="session-changes-dash-leave"]').length,
+               adopt: row.querySelectorAll('[data-slot="session-changes-dash-adopt"]').length,
+             };
+           })()`,
+        );
+        expect(affordances.leave).toBe(1);
+        expect(affordances.adopt).toBe(0);
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(CHIP)}).length`,
+          ),
+        ).toBe(1);
+
+        // ── Leave: the real `unbind_dash` round trip ──────────────────────
+        // The chip and the fronting both move on the `unbind_dash_ok`
+        // broadcast, never on the click — nothing here writes the binding
+        // store optimistically, so these assertions are about the round trip.
+        await app.nativeClickAtElement(LEAVE);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FRONTED_LABEL)}) === null`,
+          { timeoutMs: 15000 },
+        );
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(CHIP)}).length`,
+          ),
+        ).toBe(0);
+
+        // ── Adopt: and back again, the same way ───────────────────────────
+        // The row fell back into the collapsed rest group when it stopped
+        // being fronted, so re-open the fold to reach it.
+        await clickUntil(app, GROUP_FOLD, ADOPT);
+        // Through the same scroll-in-and-retry the fold cue needs, and for the
+        // same reason: the lane is the shade's last block over an aggregate
+        // that recomposes on its own schedule, so a coordinate read can go
+        // stale between aiming and clicking. A missed click leaves the state
+        // untouched, which is what makes the retry a retry and not a
+        // double-bind.
+        await clickUntil(app, ADOPT, FRONTED_LABEL);
+        expect(
+          await app.evalJS<string>(
+            `(document.querySelector(${JSON.stringify(CHIP)})?.textContent ?? "").trim()`,
+          ),
+        ).toBe(DASH_NAME);
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

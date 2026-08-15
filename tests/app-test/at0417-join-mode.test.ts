@@ -294,4 +294,82 @@ describe.skipIf(!SHOULD_RUN)("AT0417: /dash-join enters join mode", () => {
     },
     TEST_TIMEOUT_MS,
   );
+
+  test(
+    "a dash joined by name fronts, even though the card is bound to nothing",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
+      const app = await launchTugApp({
+        testName: "at0417-join-mode-named",
+        env: { TUGBANK_PATH: tugbankPath },
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", {
+          tugSessionId: SID,
+          projectDir: PROJECT_DIR,
+          workspaceKey: PROJECT_DIR,
+        });
+        await app.awaitEngineReady("A", { timeoutMs: 15000 });
+        // Deliberately no dash binding: `/dash-join <name>` aims without
+        // binding, and this is the state the gap lived in.
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(CHIP)}).length === 0`,
+          { timeoutMs: 10000 },
+        );
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${LENS_SECTION} [data-slot="lens-dashes-row"][data-dash="${DASH}"]') !== null`,
+          { timeoutMs: 30000 },
+        );
+        await app.dispatchControlAction("toggle-lens");
+
+        await runCommand(app, `/dash-join ${DASH}`);
+        await waitForRoute(app, "join", "after a named join on an unbound card");
+
+        // The landing face lives on the fronted row alone. Before the fix this
+        // row never fronted, so a named join came up live in the composer with
+        // nothing in the room to explain a refusal — a disabled button and no
+        // way to learn why.
+        const FRONTED = `${SHEET} [data-slot="session-changes-dash-lane-fronted-label"]`;
+        const ROW = `${SHEET} [data-slot="session-changes-dash-row"][data-dash="${DASH}"]`;
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FRONTED)}) !== null`,
+          { timeoutMs: 15000 },
+        );
+        const face = await app.evalJS<{
+          fronted: string | null;
+          landing: number;
+          adopt: number;
+          leave: number;
+        }>(
+          `(() => {
+             const row = document.querySelector(${JSON.stringify(ROW)});
+             const rows = document.querySelectorAll(${JSON.stringify(`${SHEET} [data-slot="session-changes-dash-row"]`)});
+             return {
+               fronted: (rows[0] ?? null)?.getAttribute("data-dash") ?? null,
+               landing: row === null ? -1 : row.querySelectorAll('[data-slot="session-changes-dash-landing"]').length,
+               adopt: row === null ? -1 : row.querySelectorAll('[data-slot="session-changes-dash-adopt"]').length,
+               leave: row === null ? -1 : row.querySelectorAll('[data-slot="session-changes-dash-leave"]').length,
+             };
+           })()`,
+        );
+        note(`at0417 named-join face: ${JSON.stringify(face)}`);
+        expect(face.fronted).toBe(DASH);
+        // Fronted is not bound: the card never adopted this dash, so the row
+        // offers to take it on rather than to put it down.
+        expect(face.adopt).toBe(1);
+        expect(face.leave).toBe(0);
+      } finally {
+        await app.close();
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
 });

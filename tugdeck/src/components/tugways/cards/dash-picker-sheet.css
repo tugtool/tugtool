@@ -1,0 +1,21 @@
+/* The `/dash-bind` picker's rows — appearance only ([L06]); the list and the
+   rows keep their own tokens ([L20]). */
+
+.dash-picker-sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dash-picker-list {
+  min-height: 0;
+  max-block-size: var(--dash-picker-max-height, 22rem);
+  overflow: auto;
+}
+
+/* The card's own dash, marked rather than described: the row is already the
+   seeded cursor, so this only has to confirm which one that is. */
+.dash-picker-current {
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}

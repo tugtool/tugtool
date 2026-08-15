@@ -66,8 +66,9 @@ export interface PlanReviewTargetInput {
   projectDir: string;
   /** The plan this card last reviewed, or `null`. */
   lastReviewed: string | null;
-  /** The bound dash's worktree (repo-relative) and recorded plan path
-   *  (worktree-relative), when this card is bound to one that records a plan. */
+  /** The bound dash's worktree (**absolute**, as the changeset entry carries
+   *  it) and recorded plan path (worktree-relative), when this card is bound to
+   *  one that records a plan. */
   boundDash: { worktree: string; planPath: string } | null;
 }
 
@@ -85,9 +86,12 @@ export type PlanReviewTarget = { path: string } | { refused: true };
  * which is the failure this whole lane exists to kill. The dash is not lost: it
  * is step 2, and it is the only answer a fresh card bound to a running dash has.
  *
- * The dash branch composes `projectDir` / `worktree` / `plan_path` and so lands
- * on the **worktree** copy — the one a run edits and whose ledger the step verbs
- * rewrite, which is the copy the run's own stale gate reads.
+ * The dash branch joins `plan_path` onto the dash's worktree, which arrives
+ * absolute, and so lands on the **worktree** copy — the one a run edits and
+ * whose ledger the step verbs rewrite, which is the copy the run's own stale
+ * gate reads. `projectDir` does not enter into it: a card's project directory
+ * may itself be a linked worktree, and the dash path is resolved against the
+ * main repository root, which only the server knows.
  *
  * Pure: the card has no filesystem, so nothing here stats, normalizes, or
  * round-trips. A path that does not exist is the review turn's report to make.
@@ -104,10 +108,7 @@ export function resolvePlanReviewTarget(
   }
   if (input.boundDash !== null) {
     return {
-      path: joinPath(
-        joinPath(input.projectDir, input.boundDash.worktree),
-        input.boundDash.planPath,
-      ),
+      path: joinPath(input.boundDash.worktree, input.boundDash.planPath),
     };
   }
   return { refused: true };

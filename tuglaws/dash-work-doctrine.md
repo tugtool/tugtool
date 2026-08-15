@@ -2,7 +2,7 @@
 
 *How an agent works on a dash worktree. The rules below hold for every dash — a quick plan-less task, a planned run walking a ledger, an audit that only reads. They are cited, not copied: a working skill states its own flow and points here for the discipline, so the discipline has exactly one home.*
 
-This document covers **how the work is done**. The dash's state model — what `created`, `working`, `implementing`, `built`, `audited`, `draft-ready`, and `landing` mean and how each is derived or declared — is a separate subject.
+This document covers **how the work is done**. The dash's state model — what `created`, `working`, `implementing`, `built`, `audited`, `draft-ready`, and `landing` mean and how each is derived or declared — is a separate subject, and lives in [dash-lifecycle.md](dash-lifecycle.md) along with the identity and binding models.
 
 ## The one and only working root
 

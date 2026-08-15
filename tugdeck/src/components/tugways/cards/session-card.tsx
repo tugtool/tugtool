@@ -63,6 +63,7 @@ import {
 } from "../chrome/session-route-indicator-badge";
 import { AiChip } from "./ai-chip";
 import { useAiConfigSheet } from "./ai-config-sheet";
+import { DashPickerSheet } from "./dash-picker-sheet";
 import { useModel } from "@/lib/use-model";
 import {
   REVIEW_PLAN_COMMAND,
@@ -4019,6 +4020,10 @@ export function SessionCardBody({
     // `/dash-bind` means "work on this dash, making it if needed", so there is
     // no name it can refuse for being unfamiliar. The shell receipt is what
     // makes the outcome legible.
+    //
+    // Bare form picks ([P01]): several dashes open the picker sheet, exactly
+    // one binds directly, none cautions. The retired `/dash` spelling reaches
+    // this handler through `runRetiredVerb` and gets the picker with it.
     "dash-bind": (args) => {
       const notify = paneBulletinRef.current;
       // The `/diff` precedent: a surface that needs a binding returns silently
@@ -4027,27 +4032,54 @@ export function SessionCardBody({
       if (binding === undefined) return;
       const snap = changesController.getSnapshot();
       const name = args.trim();
+      // The one place the frame is built. Every caller names a dash from the
+      // snapshot, which matters because `bind_dash` MINTS — a frame built from
+      // free text would create rather than refuse.
+      const bindToDash = (dashName: string): void => {
+        getConnection()?.sendControlFrame("bind_dash", {
+          tug_session_id: binding.tugSessionId,
+          project_dir: binding.projectDir,
+          dash: dashName,
+        });
+      };
 
-      if (name.length === 0) {
-        // Discovery lands where this card's own dash facts live ([Q02]) — the
-        // shade as a glance surface, the Z4A chip's entrance, no mode. It only
-        // shows: a typed verb asking to see something must not be the thing
-        // that hides it.
-        if (snap.dashes.length > 0) shadeViewController.show("changes");
-        else notify?.caution("No dashes in this project — /dash <name> starts one");
-        return;
-      }
+      // Above the bare-form branch, not below it: before the first aggregate
+      // emit the dash list is empty for reasons that have nothing to do with
+      // the project, and "no dashes in this project" would be a lie.
       if (!snap.composed) {
         notify?.caution("Still scanning this project — try again in a moment");
         return;
       }
+      if (name.length === 0) {
+        // Bare form picks. With several dashes, showing them all and offering
+        // no way to choose is what the shade already did; with exactly one,
+        // opening a sheet to confirm the only option is ceremony.
+        if (snap.dashes.length === 0) {
+          notify?.caution("No dashes in this project — /dash-bind <name> starts one");
+          return;
+        }
+        if (snap.dashes.length === 1) {
+          bindToDash(snap.dashes[0]!.display_name);
+          return;
+        }
+        void cardPickerSheet.showSheet({
+          title: "Work on a dash",
+          icon: "GitBranch",
+          iconRole: "agent",
+          content: (close) => (
+            <DashPickerSheet
+              dashes={snap.dashes}
+              boundDashId={binding.dash?.id ?? null}
+              onPick={(entry) => bindToDash(entry.display_name)}
+              onClose={close}
+            />
+          ),
+        });
+        return;
+      }
       const known = snap.dashes.some((entry) => entry.display_name === name);
       if (known) {
-        getConnection()?.sendControlFrame("bind_dash", {
-          tug_session_id: binding.tugSessionId,
-          project_dir: binding.projectDir,
-          dash: name,
-        });
+        bindToDash(name);
         return;
       }
       if (!isShellSafeDashName(name)) {
@@ -4477,11 +4509,27 @@ export function SessionCardBody({
   );
   const dashLanding = useMemo<DashLandingSource>(
     () => ({
+      // Which dash the landing is ABOUT, which is not always the one this card
+      // is bound to: `/dash-join <name>` aims at a dash by name without
+      // binding. The face has to follow the target, or a named join comes up
+      // live in the composer and unmounted in the room that explains it.
+      //
+      // Gated on `active`, and that gate is load-bearing: `aim()` sets the same
+      // target when a row is merely EXPANDED, to spend a `merge-tree` on the
+      // open gesture rather than on every render. Fronting on an aim would move
+      // the lane under the reader for a preview they did not ask to land.
+      dashId: joinSnapshot.active ? (joinSnapshot.dash?.ownerId ?? null) : null,
       outcome: joinSnapshot.outcome,
       candidateCommit: joinSnapshot.candidateCommit,
       actions: dashLandingActions,
     }),
-    [joinSnapshot.outcome, joinSnapshot.candidateCommit, dashLandingActions],
+    [
+      joinSnapshot.active,
+      joinSnapshot.dash,
+      joinSnapshot.outcome,
+      joinSnapshot.candidateCommit,
+      dashLandingActions,
+    ],
   );
   // A question put to the developer by a process outside the turn stream, with
   // that process blocked on the answer. The snapshot's `pendingAsk` reference
@@ -4933,7 +4981,14 @@ export function SessionCardBody({
                     projectDir={projectDir}
                     changesController={changesController}
                     codeSessionStore={codeSessionStore}
-                    dashLanding={boundDashId !== null ? dashLanding : undefined}
+                    // A landing in flight supplies its own target, so an
+                    // aimed-but-unbound dash still gets its face.
+                    dashLanding={
+                      boundDashId !== null ||
+                      (joinSnapshot.active && joinSnapshot.dash !== null)
+                        ? dashLanding
+                        : undefined
+                    }
                   />
                 </TugSheetContent>
               </TugSheet>
@@ -5006,7 +5061,10 @@ export function SessionCardBody({
               shellClassifyStore={shellClassifyStore}
               findSession={findSession}
               landingMode={joinActive ? joinModeController : commitModeController}
-              joinAvailable={boundDashId !== null}
+              joinAvailable={
+                boundDashId !== null ||
+                (joinSnapshot.active && joinSnapshot.dash !== null)
+              }
               onSelectRoute={handleSelectComposerRoute}
               // A rejected drop / paste (unsupported, oversize, or
               // undecodable image) is transient input validation, not a

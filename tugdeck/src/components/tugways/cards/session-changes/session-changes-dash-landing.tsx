@@ -28,7 +28,11 @@ import { TugPushButton } from "@/components/tugways/tug-push-button";
 import type { DashChangesetEntry } from "@/lib/changeset-types";
 import type { JoinBlocker, JoinPhase } from "@/lib/changeset-verb-store";
 import type { ResolvePhase, ResolveState } from "@/lib/changeset-join-store";
-import { evaluateJoinLandGate, type JoinOutcome } from "@/lib/join-mode-controller";
+import {
+  evaluateJoinLandGate,
+  joinDisabledReason,
+  type JoinOutcome,
+} from "@/lib/join-mode-controller";
 
 /** The lane's landing gestures, supplied by the card that owns the dash. */
 export interface DashLandingActions {
@@ -139,29 +143,6 @@ export function blockerAct(blocker: JoinBlocker, base: string): string | null {
       return "Release this dash";
     default:
       return null;
-  }
-}
-
-/** Why the Join affordance is disabled, in the gate's own precedence ([P05]). */
-export function joinDisabledReason(
-  reason: "turn" | "pending" | "outcome" | "empty-message",
-  outcome: JoinOutcome,
-): string {
-  if (reason === "turn") return "Wait for the turn to finish";
-  if (reason === "pending") return "Previewing…";
-  switch (outcome) {
-    case "unknown":
-      return "Not previewed yet";
-    case "previewing":
-      return "Previewing…";
-    case "conflicted":
-      return "Resolve the conflicts first";
-    case "blocked":
-      return "Clear what blocks this join first";
-    case "empty":
-      return "Nothing to join";
-    default:
-      return "This join cannot land yet";
   }
 }
 

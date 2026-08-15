@@ -19,6 +19,7 @@ import {
   JoinModeController,
   deriveJoinOutcome,
   evaluateJoinLandGate,
+  joinDisabledReason,
   joinTargetFromEntry,
   type JoinTarget,
 } from "@/lib/join-mode-controller";
@@ -35,6 +36,33 @@ import type { ChangesRouteController } from "@/lib/changes-route-controller";
 import type { CodeSessionStore } from "@/lib/code-session-store";
 import type { CommitModeController } from "@/lib/commit-mode-controller";
 import type { DashChangesetEntry } from "@/lib/changeset-types";
+
+describe("joinDisabledReason", () => {
+  // The regression this pins: a real `base-dirt` blocker derives `blocked`,
+  // the gate refuses on the outcome, and the composer's land button used to
+  // report a constant that named no cause — leaving a disabled button, a
+  // generated message, and no way to learn what was wrong.
+  it("names the cause for a preview that came back blocked", () => {
+    expect(joinDisabledReason("outcome", "blocked")).toBe(
+      "Clear what blocks this join first",
+    );
+  });
+
+  it("reports the turn and the round trip before the outcome has a say", () => {
+    expect(joinDisabledReason("turn", "blocked")).toBe(
+      "Wait for the turn to finish",
+    );
+    expect(joinDisabledReason("pending", "blocked")).toBe("Previewing…");
+  });
+
+  it("distinguishes conflicted, empty, and never-previewed", () => {
+    expect(joinDisabledReason("outcome", "conflicted")).toBe(
+      "Resolve the conflicts first",
+    );
+    expect(joinDisabledReason("outcome", "empty")).toBe("Nothing to join");
+    expect(joinDisabledReason("outcome", "unknown")).toBe("Not previewed yet");
+  });
+});
 
 describe("evaluateJoinLandGate", () => {
   const base = {

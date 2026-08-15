@@ -588,17 +588,20 @@ fn parse_git_log(output: &str) -> Vec<GitLogCommit> {
 /// "everything this dash has done past its base" view: committed rounds plus
 /// uncommitted worktree dirt ([P19], #diff-descriptor-resolution).
 ///
-/// `repo_dir` is the checkout root (the workspace); `worktree_rel` is the
-/// dash worktree path relative to it (e.g. `.tug/worktrees/demo`). The diff
-/// itself is resolved by [`fetch_dash_diff`]: working tree vs. merge-base when
-/// the worktree exists (rounds + dirt), else committed rounds only. The
-/// snapshot's `base` field carries the human-readable range `<base>...<branch>`
-/// so the document header reads correctly.
+/// `repo_dir` is the checkout root (the workspace), used only to decide whether
+/// there is a repository here at all; `worktree_abs` is the dash worktree's
+/// **absolute** path, resolved by `dash_detail_entries_in` against the main
+/// repository root and carried whole. The two are never composed: `repo_dir`
+/// may itself be a linked worktree, which is not the root the dash path is
+/// relative to. The diff itself is resolved by [`fetch_dash_diff`]: working
+/// tree vs. merge-base when the worktree exists (rounds + dirt), else committed
+/// rounds only. The snapshot's `base` field carries the human-readable range
+/// `<base>...<branch>` so the document header reads correctly.
 pub async fn build_dash_diff_snapshot(
     repo_dir: &Path,
     request_id: String,
     workspace_key: &str,
-    worktree_rel: &str,
+    worktree_abs: &str,
     base: &str,
     branch: &str,
 ) -> GitDiffSnapshot {
@@ -615,7 +618,7 @@ pub async fn build_dash_diff_snapshot(
             files: Vec::new(),
         };
     }
-    let files = match fetch_dash_diff(repo_dir, worktree_rel, base, branch).await {
+    let files = match fetch_dash_diff(repo_dir, worktree_abs, base, branch).await {
         Some(output) => parse_git_diff(&output),
         None => Vec::new(),
     };
@@ -644,16 +647,21 @@ pub async fn build_dash_diff_snapshot(
 /// checkout), fall back to `git diff <base>...<branch>` in the repo root —
 /// committed rounds only, which is then the whole truth. Returns `None` (and
 /// logs) on a non-zero exit or spawn failure.
+///
+/// `worktree_abs` arrives absolute and is used as given; `repo_dir` is only the
+/// fallback's working directory. Joining the two was the old shape and it
+/// degraded silently — a missed join yields a path that is not a directory,
+/// which reads as "this dash has no worktree" and quietly drops its dirt.
 pub(crate) async fn fetch_dash_diff(
     repo_dir: &Path,
-    worktree_rel: &str,
+    worktree_abs: &str,
     base: &str,
     branch: &str,
 ) -> Option<String> {
-    let worktree_abs = repo_dir.join(worktree_rel);
+    let worktree_abs = Path::new(worktree_abs);
     if worktree_abs.is_dir() {
-        let merge_base = run_git_line(&worktree_abs, &["merge-base", base, branch]).await?;
-        run_git_diff_against(&worktree_abs, &merge_base).await
+        let merge_base = run_git_line(worktree_abs, &["merge-base", base, branch]).await?;
+        run_git_diff_against(worktree_abs, &merge_base).await
     } else {
         run_git_diff_against(repo_dir, &format!("{base}...{branch}")).await
     }
@@ -1585,6 +1593,9 @@ index 1111111..2222222 100644
     /// `round.txt` in a checked-out worktree under `.tug/worktrees/`, tracked worktree
     /// dirt on `keep.txt`, and a later main-only commit that must stay out of
     /// the dash range (merge-base semantics).
+    ///
+    /// Returns the dash worktree's **absolute** path, which is what the wire
+    /// carries and what `build_dash_diff_snapshot` takes.
     async fn init_dash_fixture_repo() -> (TempDir, String) {
         let temp = TempDir::new().unwrap();
         let repo = temp.path().to_path_buf();
@@ -1615,17 +1626,17 @@ index 1111111..2222222 100644
         git_in(&repo, &["add", "-A"]).await;
         git_in(&repo, &["commit", "-m", "main drift"]).await;
 
-        (temp, worktree_rel.to_string())
+        (temp, worktree_abs.to_string_lossy().into_owned())
     }
 
     #[tokio::test]
     async fn test_build_dash_diff_snapshot_rounds_plus_dirt() {
-        let (temp, worktree_rel) = init_dash_fixture_repo().await;
+        let (temp, worktree_abs) = init_dash_fixture_repo().await;
         let snapshot = build_dash_diff_snapshot(
             temp.path(),
             "req-dash".to_string(),
             "ws-key",
-            &worktree_rel,
+            &worktree_abs,
             "main",
             "tugdash/demo",
         )
@@ -1648,13 +1659,13 @@ index 1111111..2222222 100644
 
     #[tokio::test]
     async fn test_build_dash_diff_snapshot_no_worktree_falls_back_to_committed_rounds() {
-        let (temp, _worktree_rel) = init_dash_fixture_repo().await;
+        let (temp, _worktree_abs) = init_dash_fixture_repo().await;
         // A worktree path that does not exist forces the committed-only fallback.
         let snapshot = build_dash_diff_snapshot(
             temp.path(),
             "req-dash-2".to_string(),
             "ws-key",
-            ".tugtree/does-not-exist",
+            "/nonexistent/tugtree/does-not-exist",
             "main",
             "tugdash/demo",
         )
@@ -1665,6 +1676,37 @@ index 1111111..2222222 100644
             paths,
             ["round.txt"],
             "committed round only, no dirt: {paths:?}"
+        );
+    }
+
+    /// Asked from a *linked worktree* — the configuration `just app-debug`
+    /// produces and every dash build is vetted on. The old shape joined the
+    /// caller's root with a relative tail, which from here resolved to a path
+    /// that does not exist and degraded silently to committed rounds. Worktree
+    /// dirt in the file list is what falsifies that regression.
+    #[tokio::test]
+    async fn test_build_dash_diff_snapshot_from_a_linked_worktree_keeps_the_dirt() {
+        let (temp, worktree_abs) = init_dash_fixture_repo().await;
+        let repo = temp.path().to_path_buf();
+        git_in(&repo, &["branch", "sidecar"]).await;
+        git_in(&repo, &["worktree", "add", ".tug/worktrees/sidecar", "sidecar"]).await;
+        let asked_from = repo.join(".tug/worktrees/sidecar");
+
+        let snapshot = build_dash_diff_snapshot(
+            &asked_from,
+            "req-dash-3".to_string(),
+            "ws-key",
+            &worktree_abs,
+            "main",
+            "tugdash/demo",
+        )
+        .await;
+
+        let paths: Vec<&str> = snapshot.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"round.txt"), "committed round: {paths:?}");
+        assert!(
+            paths.contains(&"keep.txt"),
+            "worktree dirt survives a worktree-hosted caller: {paths:?}"
         );
     }
 

@@ -36,7 +36,7 @@
       "display_name": "fix-join",
       "base": "main",
       "rounds": 3,
-      "worktree": ".tug/worktrees/tugdash__fix-join",
+      "worktree": "/Users/dev/src/tugtool/.tug/worktrees/tugdash__fix-join",
       "worktree_dirty": false,
       "files": [
         {

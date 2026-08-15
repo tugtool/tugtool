@@ -92,6 +92,37 @@ export function evaluateJoinLandGate(input: JoinLandGateInput): JoinLandGate {
   return { ok: true };
 }
 
+/**
+ * Why the join cannot land, in the gate's own precedence — the sentence that
+ * goes wherever a Join control is disabled.
+ *
+ * It lives beside {@link evaluateJoinLandGate} rather than in a surface,
+ * because two surfaces need it (the fronted row's landing face and the
+ * composer's land button) and a refusal that reads differently in two places
+ * is worse than one that reads tersely in both.
+ */
+export function joinDisabledReason(
+  reason: "turn" | "pending" | "outcome" | "empty-message",
+  outcome: JoinOutcome,
+): string {
+  if (reason === "turn") return "Wait for the turn to finish";
+  if (reason === "pending") return "Previewing…";
+  switch (outcome) {
+    case "unknown":
+      return "Not previewed yet";
+    case "previewing":
+      return "Previewing…";
+    case "conflicted":
+      return "Resolve the conflicts first";
+    case "blocked":
+      return "Clear what blocks this join first";
+    case "empty":
+      return "Nothing to join";
+    default:
+      return "This join cannot land yet";
+  }
+}
+
 /** The controller's subscribable snapshot — the shared half plus join's own. */
 export interface JoinModeSnapshot extends LandingSnapshot {
   /** The dash being landed, or null when the mode is down. */
@@ -230,12 +261,19 @@ export class JoinModeController implements LandingMode {
       candidateCommit,
       message: "x", // ignore message emptiness here (CSS-gated on data-commit-empty)
     });
+    // The same sentence the fronted row's landing face shows, carried to the
+    // composer's button — which is where somebody who typed `/dash-join` is
+    // actually looking, and which otherwise reports a constant.
+    const landBlockedReason = gate.ok
+      ? null
+      : joinDisabledReason(gate.reason, outcome);
     const messagePresent = this.active && (this.messageProvider?.() ?? "").trim().length > 0;
 
     return {
       active: this.active,
       seedMessage: this.seedMessage,
       canLandIgnoringMessage: gate.ok,
+      landBlockedReason,
       landReady: this.active && gate.ok && messagePresent,
       landPhase: joinPhase,
       landError,
@@ -512,6 +550,7 @@ function snapshotsEqual(a: JoinModeSnapshot, b: JoinModeSnapshot): boolean {
     a.active === b.active &&
     a.seedMessage === b.seedMessage &&
     a.canLandIgnoringMessage === b.canLandIgnoringMessage &&
+    a.landBlockedReason === b.landBlockedReason &&
     a.landReady === b.landReady &&
     a.landPhase === b.landPhase &&
     a.landError === b.landError &&

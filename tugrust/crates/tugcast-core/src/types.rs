@@ -501,14 +501,24 @@ pub enum ChangesetEntry {
         /// The plan this dash is driving, relative to its **worktree** — the
         /// copy a run edits and whose ledger the step verbs rewrite, which is
         /// what makes it the copy a review of a bound dash has to read. Compose
-        /// an absolute path as `projectDir` / `worktree` / `plan_path`.
+        /// an absolute path as `worktree` / `plan_path`, and nothing else.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         plan_path: Option<String>,
+        /// What that plan's Review Record says about the document on disk now:
+        /// `reviewed` | `stale` | `never-reviewed`, `tugutil_core::plan::
+        /// ReviewState::as_str` verbatim. Absent when the dash records no plan,
+        /// when the file cannot be read, or when it does not parse as a plan —
+        /// absence is "nothing to say", never an accusation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        review: Option<String>,
         /// The base branch the dash was created from.
         base: String,
         /// Number of commits on the dash branch past its base.
         rounds: u32,
-        /// Worktree path relative to the repository root.
+        /// The dash worktree's **absolute** path, resolved against the main
+        /// repository root — which the sender knows and the receiver does not,
+        /// since a project directory may itself be a linked worktree. No
+        /// consumer composes it with anything.
         worktree: String,
         /// True when the dash worktree has uncommitted changes.
         worktree_dirty: bool,
@@ -1322,9 +1332,10 @@ mod tests {
             step_current: None,
             step_total: None,
             plan_path: None,
+            review: None,
             base: "main".to_string(),
             rounds: 0,
-            worktree: ".tug/worktrees/tugdash__x".to_string(),
+            worktree: "/repo/.tug/worktrees/tugdash__x".to_string(),
             worktree_dirty: true,
             files: vec![],
             round_subjects: vec![],
@@ -1347,8 +1358,10 @@ mod tests {
         assert!(json.contains(r#""bound_sessions":["sess-1"]"#));
         // Phase 3's slots stay off the wire while they are empty.
         assert!(!json.contains("step_current"));
-        // …and so does the plan path, which most dashes never record.
+        // …and so do the plan path and its review state, which most dashes
+        // never record. Absence is "nothing to say" on both.
         assert!(!json.contains("plan_path"));
+        assert!(!json.contains("review"));
 
         // An older sender's entry — no new fields at all — still decodes.
         let legacy = r#"{"kind":"dash","owner_id":"tugdash/y","display_name":"y",

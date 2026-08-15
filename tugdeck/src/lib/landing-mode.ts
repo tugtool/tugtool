@@ -41,6 +41,18 @@ export interface LandingSnapshot {
    * per-keystroke React state is avoided ([L22]).
    */
   canLandIgnoringMessage: boolean;
+  /**
+   * Why {@link canLandIgnoringMessage} is false, in the mode's own words — or
+   * null when it is true.
+   *
+   * A disabled control that cannot say what would enable it is a dead end, and
+   * the land button is the worst place to have one: the whole landing is in
+   * front of it. Each mode already computes this sentence for its own surface
+   * (join's is `joinDisabledReason`, over the preview's outcome and blockers),
+   * so what this field does is carry the sentence to the button rather than let
+   * the composer fall back to a constant that names no cause.
+   */
+  landBlockedReason: string | null;
   /** The auto-message draft overlay phase (drives the pencil pose + pulse). */
   draftPhase: DraftOverlayPhase;
   /** Live draft text — streaming while drafting, the settled message otherwise. */

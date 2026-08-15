@@ -2,7 +2,7 @@
 
 <!--
   This is the format contract for plans authored by `/tugplug:plan-devise` and walked
-  by `/tugplug:implement`. Its mechanical half is checked by `tugutil plan lint`;
+  by `/tugplug:dash-implement`. Its mechanical half is checked by `tugutil plan lint`;
   its judgment half is `/tugplug:plan-review`'s, against
   `tuglaws/plan-review-rubric.md`.
   The devise skill's output is a plan written against this skeleton.
@@ -378,7 +378,7 @@ Table T05, (#op-rename, #fundamental-wall)
 
 #### Step Status Ledger {#step-status-ledger}
 
-> A single at-a-glance table of every step and its current state. `/tugplug:implement`
+> A single at-a-glance table of every step and its current state. `/tugplug:dash-implement`
 > reads this to know where to resume (which step is the first `pending`), to scope a
 > step range, and to mark progress. Keep it in sync as steps land — flip `pending` →
 > `in progress` → `done` (record the commit). It is the plan's source of truth for "where are we?".

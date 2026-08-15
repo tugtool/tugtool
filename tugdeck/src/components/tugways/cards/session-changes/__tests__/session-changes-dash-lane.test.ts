@@ -52,6 +52,19 @@ describe("orderDashLane", () => {
     expect(order.rest).toEqual(DASHES);
   });
 
+  test("fronting follows the id it is given, which need not be the binding", () => {
+    // `/dash-join <name>` aims at a dash without binding the card to it, and
+    // the landing face — outcome, blockers, the resolve ladder — mounts on the
+    // fronted row alone. Fronting by the binding left a named join live in the
+    // composer with nothing in the room to explain a refusal.
+    const aimed = DASHES[0]!;
+    const order = orderDashLane(DASHES, aimed.owner_id);
+    expect(order.fronted).toBe(aimed);
+    // Which row is fronted says nothing about which dash the card is mated to:
+    // the lane takes both, and Leave-vs-Adopt reads the binding.
+    expect(order.rest).not.toContain(aimed);
+  });
+
   test("an empty lane orders to nothing", () => {
     const order = orderDashLane([], "tugdash/whatever#1");
     expect(order.fronted).toBeNull();
