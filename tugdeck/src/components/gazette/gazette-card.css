@@ -23,6 +23,13 @@
      wave, and a working animation needs room under it to read as motion
      rather than as something pressed against the bottom of the column. */
   --tugx-gazette-transcript-end-space: var(--tug-space-2xl);
+  /* The rail's side insets — TUNE HERE. Named apart from `--tug-space-md`
+     because the two sides answer different questions: the start side is how
+     far the icon column stands off the card edge, the end side is how much
+     air the prose keeps off the scrollbar. The rail is a narrow column read
+     at 13px, so both run tighter than a full card's inset would. */
+  --tugx-gazette-transcript-inset-start: 3px;
+  --tugx-gazette-transcript-inset-end: 8px;
 }
 
 /* The transcript's region — the card's `1fr` track, and the positioned
@@ -44,7 +51,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--tugx-gazette-post-gap);
-  padding: var(--tug-space-md);
+  padding-block-end: var(--tug-space-md);
+  padding-inline-start: var(--tugx-gazette-transcript-inset-start);
+  padding-inline-end: var(--tugx-gazette-transcript-inset-end);
   /* START SIDE ZEROED — this is what plugs the sticky header's leak. A
      `position: sticky` header resolves `top: 0` against the scrollport, which
      is the scroller's PADDING box: with padding here, the pinned attribution
@@ -71,14 +80,28 @@
    primitive. These rules are that block, restated for this card and read from
    it directly: identifier 0.95em (≈13.3px — a hair under body, the weight and
    the icon do the landmark work), timestamp 0.85em with tabular figures,
-   gutter 2.5em, glyph 1.2em nudged 1px down, controls hugging the body. A
-   number here that is not the number there is a second attribution design;
-   there is one.
+   glyph 1.2em nudged 1px down, controls hugging the body.
+
+   The one number that is deliberately NOT the Session card's is the gutter:
+   2.2em here against 2.5em there. The glyph is centered in that track, so
+   the width is spent twice — half as the standoff from the card edge, half
+   as the gap before the identifier — and a rail this narrow cannot afford a
+   full card's gutter on both. Narrowing the track tightens both halves by
+   the same ~2px without touching the type. Everything else on this line is
+   the Session card's value; a second number here would be a second
+   attribution design, and there is one.
    ------------------------------------------------------------------------ */
 
 .gazette-transcript .tug-transcript-entry {
   --tugx-transcript-controls-margin-top: var(--tug-space-2xs);
-  --tugx-transcript-icon-column-width: 2.5em;
+  /* TUNE HERE — see the gutter note above. */
+  --tugx-transcript-icon-column-width: 2.2em;
+  /* The last pixel between the glyph and the text column, taken off the grid
+     gap rather than off the track: the track's width is spent on both sides
+     of the centered glyph, so narrowing it again would have pulled the icon
+     off the card edge too. The gap is the one number that moves the text
+     column alone — attribution and body share its left edge. */
+  --tugx-transcript-icon-column-gap: 2px;
 }
 
 /* The breathing room the scroller's zeroed start-side padding gave up. On the
