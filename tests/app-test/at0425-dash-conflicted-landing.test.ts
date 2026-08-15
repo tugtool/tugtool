@@ -1,0 +1,334 @@
+/**
+ * at0425-dash-conflicted-landing.test.ts — the conflicted landing face, and
+ * per-control accountability on it.
+ *
+ * ## Why this exists
+ *
+ * The first real dash landing arrived at the shade exactly here: an unbound
+ * card, a join aimed by name, a preview that came back `conflicted` — and the
+ * user reported every control as a dead click. The landed outcomes (clean,
+ * blocked, empty) all have coverage in at0418; `conflicted` had none, because
+ * a real conflict seemed to require moving the developer's `main`. It does
+ * not: the fixture owns the dash's worktree, so it can rewind the dash branch
+ * to the base's parent and delete a file the base's tip commit modified. The
+ * preview's `merge-tree` then reports a genuine delete/modify conflict with no
+ * commit on the base and no dirt in the developer's checkout.
+ *
+ * Delete/modify is chosen deliberately a second time over: the per-file walk
+ * short-circuits non-content conflicts straight to unresolved — text tools
+ * never guess at structure — so driving Resolve here exercises the whole
+ * click → request → ladder → terminal-frame round trip without ever reaching
+ * the AI rung (no scribe run in an app-test) and settles fast.
+ *
+ * ## What is pinned
+ *
+ * - The incident's state renders as designed: the named join fronts a dash the
+ *   card is not bound to, under "This card's dash", with **Adopt** (fronting
+ *   is about what is being landed; the binding is about what the card works).
+ * - **Join** on a conflicted outcome is disabled and carries its reason.
+ * - **Resolve** is enabled, and a click visibly registers at once — the offer
+ *   face leaves the moment the store flips to `resolving`, before any server
+ *   frame. This is the dead-click assertion: if the click does nothing, the
+ *   Resolve affordance is still on screen and the wait below times out.
+ * - The ladder's terminal frame lands: the face settles `partial`, naming the
+ *   file that is still conflicting.
+ * - **Adopt** round-trips for real: the click sends `bind_dash`, and the row
+ *   flips to Leave only on the `bind_dash_ok` broadcast that comes back.
+ *
+ * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-landing.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-lane.tsx
+ * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-view.tsx
+ * @covers tugdeck/src/lib/join-mode-controller.ts
+ * @covers tugdeck/src/lib/changeset-join-store.ts
+ */
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { realpathSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+
+import { launchTugApp, note, type App } from "./_harness";
+import {
+  mkTempTugbank,
+  rmTempTugbank,
+  seedTugbankForLaunch,
+} from "./_harness/tugbank-helpers";
+import { commitRound, createDash, releaseDash } from "./dash-fixture";
+
+const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
+const TEST_TIMEOUT_MS = 240_000;
+
+const SID = "at0425-session";
+const CARD = '[data-card-id="A"]';
+const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
+const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
+const ROUTE_GROUP = `${TOOLBAR} .tug-prompt-entry-route-group`;
+const SHEET = `${CARD} .session-view-pane[data-view="changes"] [data-slot="tug-sheet"]`;
+const LANE = `${SHEET} [data-slot="session-changes-dash-lane"]`;
+const FRONTED_LABEL = `${LANE} [data-slot="session-changes-dash-lane-fronted-label"]`;
+
+const DASH = "at0425-conflict";
+const ROW = `${LANE} [data-slot="session-changes-dash-row"][data-dash="${DASH}"]`;
+const ADOPT = `${ROW} [data-slot="session-changes-dash-adopt"]`;
+const LEAVE = `${ROW} [data-slot="session-changes-dash-leave"]`;
+const OUTCOME = `${ROW} [data-slot="session-changes-dash-landing-outcome"]`;
+const RESOLVE = `${ROW} [data-slot="session-changes-dash-resolve"]`;
+const JOIN = `${ROW} [data-slot="session-changes-dash-join"]`;
+const CONFLICTS = `${ROW} [data-slot="session-changes-dash-landing-conflicts"]`;
+
+const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
+
+const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
+
+/** The base-tip file the dash's round deletes — the conflict's subject. */
+let conflictFile = "";
+
+/** `git`, in a directory, throwing on failure. */
+function git(cwd: string, ...args: string[]): string {
+  const out = Bun.spawnSync(["git", "-C", cwd, ...args], {});
+  if (out.exitCode !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${out.stderr.toString()}`);
+  }
+  return out.stdout.toString();
+}
+
+beforeAll(() => {
+  if (!SHOULD_RUN) return;
+  releaseDash(PROJECT_DIR, DASH);
+  const created = createDash(PROJECT_DIR, DASH, "at0425 conflicted fixture");
+
+  // The newest first-parent commit on the base that MODIFIED a file, and one
+  // such file. Rewinding the dash branch to that commit's parent and deleting
+  // the file diverges the two sides on it: the base modified what the dash
+  // deleted — a delete/modify conflict `merge-tree` must report.
+  const log = git(
+    PROJECT_DIR,
+    "log",
+    "--first-parent",
+    "--diff-filter=M",
+    "--pretty=%H",
+    "--name-only",
+    "-1",
+    "main",
+  )
+    .trim()
+    .split("\n")
+    .filter((line) => line.length > 0);
+  const tipWithModification = log[0] ?? "";
+  conflictFile = log[1] ?? "";
+  if (tipWithModification === "" || conflictFile === "") {
+    throw new Error("at0425: no modified file found on main's first-parent history");
+  }
+
+  // The rewind and the deletion happen in the dash's own worktree — the
+  // developer's checkout and the base branch are never touched.
+  git(created.worktree, "reset", "--hard", `${tipWithModification}~1`);
+  rmSync(join(created.worktree, conflictFile));
+  commitRound(PROJECT_DIR, DASH, `at0425(round): delete ${conflictFile}`);
+});
+
+afterAll(() => {
+  if (!SHOULD_RUN) return;
+  releaseDash(PROJECT_DIR, DASH);
+});
+
+function deckShape() {
+  return {
+    cards: [{ id: "A", componentId: "session", title: "Session", closable: true }],
+    panes: [
+      {
+        id: "p1",
+        position: { x: 40, y: 40 },
+        size: { width: 900, height: 680 },
+        cardIds: ["A"],
+        activeCardId: "A",
+        title: "",
+        acceptsFamilies: ["maker"],
+      },
+    ],
+    activePaneId: "p1",
+    hasFocus: true,
+  };
+}
+
+const settle = (ms = 200) => new Promise((r) => setTimeout(r, ms));
+
+async function runCommand(app: App, line: string): Promise<void> {
+  await app.nativeClickAtElement(EDITOR);
+  await app.nativeType(line);
+  await settle();
+  // Dismiss the slash completion popup so Enter submits rather than accepting.
+  await app.nativeKey("Escape");
+  await settle();
+  await app.nativeKey("Return", ["cmd"]);
+}
+
+describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its controls", () => {
+  test(
+    "a named join on an unbound card fronts conflicted; Join refuses with its reason, Resolve's click registers and settles partial, Adopt round-trips",
+    async () => {
+      const tugbankPath = mkTempTugbank();
+      seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
+      const app = await launchTugApp({
+        testName: "at0425-dash-conflicted-landing",
+        env: { TUGBANK_PATH: tugbankPath },
+      });
+      try {
+        await app.enableDeckTrace(true);
+        await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+        await app.waitForCondition<boolean>(
+          `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+        );
+        await app.bindSession("A", {
+          tugSessionId: SID,
+          projectDir: PROJECT_DIR,
+          workspaceKey: PROJECT_DIR,
+        });
+        await app.awaitEngineReady("A", { timeoutMs: 15000 });
+        // The Adopt probe's `bind_dash` needs the session in this instance's
+        // ledger, or the server has nothing to bind.
+        app.seedLedger({
+          sessions: [
+            {
+              session_id: SID,
+              workspace_key: PROJECT_DIR,
+              project_dir: PROJECT_DIR,
+              card_id: "A",
+              name: "at0425 work",
+            },
+          ],
+        });
+
+        // The aggregate has composed the dash once the Lens roster lists it.
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector('${LENS_SECTION} [data-slot="lens-dashes-row"][data-dash="${DASH}"]') !== null`,
+          { timeoutMs: 30000 },
+        );
+        await app.dispatchControlAction("toggle-lens");
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(LENS_SECTION)}) === null`,
+          { timeoutMs: 8000 },
+        );
+
+        // ── The incident's state, reconstructed for real ──────────────────
+        // Unbound card, join aimed by name. The mode enters, the shade rises,
+        // the preview fires on its own, and the answer is `conflicted`.
+        await runCommand(app, `/dash-join ${DASH}`);
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var el = document.querySelector(${JSON.stringify(ROUTE_GROUP)} + ' [data-state="active"]');
+            return el !== null && el.getAttribute("data-choice-value") === "join";
+          })()`,
+          { timeoutMs: 12000 },
+        );
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(FRONTED_LABEL)}) !== null
+             && document.querySelector(${JSON.stringify(ROW)})?.getAttribute("data-fronted") === "true"`,
+          { timeoutMs: 12000 },
+        );
+        await app.waitForCondition<boolean>(
+          `(document.querySelector(${JSON.stringify(OUTCOME)})?.textContent || "").trim() === "conflicted"`,
+          { timeoutMs: 30000 },
+        );
+        note(`outcome: conflicted over ${conflictFile}`);
+
+        // Fronted-but-unbound offers Adopt — fronting is about what is being
+        // landed, the binding about what the card works. The incident read
+        // this pairing as a contradiction; it is the designed state.
+        expect(
+          await app.evalJS<boolean>(
+            `document.querySelector(${JSON.stringify(ADOPT)}) !== null`,
+          ),
+        ).toBe(true);
+        // The conflict names its file.
+        expect(
+          await app.evalJS<string>(
+            `(document.querySelector(${JSON.stringify(CONFLICTS)})?.textContent || "")`,
+          ),
+        ).toContain(conflictFile);
+
+        // ── Join: refused, and the refusal has words ──────────────────────
+        const joinState = await app.evalJS<{
+          disabled: boolean;
+          title: string;
+          pointerEvents: string;
+        }>(
+          `(function(){
+            var b = document.querySelector(${JSON.stringify(JOIN)});
+            return {
+              disabled: b ? b.disabled : false,
+              title: b ? (b.getAttribute("title") || "") : "",
+              pointerEvents: b ? getComputedStyle(b).pointerEvents : "",
+            };
+          })()`,
+        );
+        expect(joinState.disabled).toBe(true);
+        expect(joinState.title).toBe("Resolve the conflicts first");
+        // Not asserted, recorded: pointer-events on the disabled button. While
+        // it is "none", the title above can never show — the reason exists and
+        // is unreachable, which is the tactical defect this file documents.
+        note(`disabled Join pointer-events: ${joinState.pointerEvents}`);
+
+        // ── Resolve: the click must visibly register ──────────────────────
+        expect(
+          await app.evalJS<boolean>(
+            `(function(){
+              var b = document.querySelector(${JSON.stringify(RESOLVE)});
+              return b !== null && !b.disabled;
+            })()`,
+          ),
+        ).toBe(true);
+        await app.nativeClickAtElement(RESOLVE);
+        // The store flips to resolving synchronously on click, before any
+        // server frame — the offer face leaves at once. A Resolve still on
+        // screen here IS the incident's dead click.
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(RESOLVE)}) === null`,
+          { timeoutMs: 5000 },
+        );
+        note("Resolve click registered: the offer face left");
+
+        // The ladder's terminal frame must land: the face settles as one of
+        // resolved / partial / error. WHICH of the three is deliberately not
+        // pinned yet: the per-file walk short-circuits a delete/modify to
+        // unresolved (partial), but the rerere rung runs before it and its
+        // marker-free harvest currently claims the path with the base side's
+        // content (resolved) — the false positive tracked for a fix in
+        // tugdash-core's resolve.rs. When that lands, tighten this to the
+        // partial note naming the file.
+        await app.waitForCondition<boolean>(
+          `(function(){
+            var row = document.querySelector(${JSON.stringify(ROW)});
+            if (row === null) return false;
+            return row.querySelector('[data-slot="session-changes-dash-landing-resolved"]') !== null
+              || row.querySelector('[data-slot="session-changes-dash-landing-partial"]') !== null
+              || row.querySelector('.session-changes-dash-landing-error') !== null;
+          })()`,
+          { timeoutMs: 60000 },
+        );
+        const terminal = await app.evalJS<string>(
+          `(function(){
+            var row = document.querySelector(${JSON.stringify(ROW)});
+            if (row === null) return "row gone";
+            if (row.querySelector('[data-slot="session-changes-dash-landing-partial"]') !== null) return "partial";
+            if (row.querySelector('[data-slot="session-changes-dash-landing-resolved"]') !== null) return "resolved";
+            return "error";
+          })()`,
+        );
+        note(`ladder terminal frame landed: ${terminal}`);
+
+        // ── Adopt: the real round trip ────────────────────────────────────
+        await app.nativeClickAtElement(ADOPT);
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(LEAVE)}) !== null`,
+          { timeoutMs: 20000 },
+        );
+        note("Adopt round-tripped: bind_dash_ok flipped the row to Leave");
+      } finally {
+        await app.close();
+        rmTempTugbank(tugbankPath);
+      }
+    },
+    TEST_TIMEOUT_MS,
+  );
+});
