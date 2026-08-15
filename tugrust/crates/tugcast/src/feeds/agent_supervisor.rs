@@ -5237,6 +5237,7 @@ impl AgentSupervisor {
                     discarded_rounds,
                     discarded_files,
                     &round_subjects,
+                    outcome.plan_restored.as_deref(),
                 );
                 Self::record_landing_receipt(
                     self.shell_ledger.as_ref(),

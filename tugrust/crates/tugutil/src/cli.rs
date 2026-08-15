@@ -396,6 +396,19 @@ pub enum DashCommands {
         /// Description of the work.
         #[arg(long)]
         description: Option<String>,
+        /// Plan document the dash adopts at birth: it is committed on the dash
+        /// branch and the base copy is cleaned, so there is one live copy.
+        #[arg(long)]
+        plan: Option<String>,
+    },
+    /// Adopt a plan into an existing dash: the worktree copy becomes the only
+    /// live one, with the worktree's ledger progress replayed onto it.
+    AdoptPlan {
+        /// Dash name.
+        name: String,
+        /// Plan path; required only when the dash has no plan recorded.
+        #[arg(long)]
+        plan: Option<String>,
     },
     /// Commit the dash worktree (if dirty) and append a dash-log line.
     ///

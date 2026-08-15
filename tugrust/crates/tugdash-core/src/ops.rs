@@ -35,6 +35,10 @@ pub struct CreateOutcome {
     pub base_branch: String,
     pub status: String,
     pub created: bool,
+    /// The adoption receipt, when the dash was created with a plan. Additive:
+    /// absent from the JSON for a plan-less create.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<AdoptOutcome>,
 }
 
 /// One entry in the [`list`] outcome.
@@ -165,6 +169,11 @@ pub struct JoinBlocker {
 #[derive(Debug, Clone, Serialize)]
 pub struct ReleaseOutcome {
     pub name: String,
+    /// The plan handed back to the base checkout before teardown, when the
+    /// dash's copy held bytes base did not. Additive: absent when there was
+    /// nothing to restore.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_restored: Option<String>,
     pub warnings: Vec<String>,
 }
 
@@ -525,7 +534,16 @@ fn run_post_create(repo: &Path, worktree: &Path) -> Result<(), String> {
 /// Create a dash: branch `tugdash/<name>` + worktree, base recorded in git
 /// config, `[tugtool.dash].post_create` hook run. Idempotent — a fully-present
 /// dash returns as-is (`created: false`) with no re-hydration.
-pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, String> {
+///
+/// With `plan`, the dash adopts that plan at birth: the file lands committed on
+/// the dash branch and the base copy is cleaned, so there is one live copy from
+/// second zero. Adoption runs on both exits — a re-run over an existing dash is
+/// a repair, not an error.
+pub fn create(
+    name: &str,
+    description: Option<String>,
+    plan: Option<&str>,
+) -> Result<CreateOutcome, String> {
     validate_dash_name(name).map_err(|e| e.to_string())?;
 
     let repo_root = find_repo_root().map_err(|e| e.to_string())?;
@@ -545,6 +563,12 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
         // A revisit is a write-path touch, so an id-less dash from an older
         // build gains its id here ([P02]).
         let id = ensure_dash_id(&repo_root, name).ok();
+        // A re-run with `--plan` over a live dash is the repair path: it runs
+        // the same transplant `adopt-plan` does.
+        let adopted = match plan {
+            Some(path) => Some(adopt_plan_in(&repo_root, name, Some(path))?),
+            None => None,
+        };
         return Ok(CreateOutcome {
             name: name.to_string(),
             id,
@@ -554,6 +578,7 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
             base_branch: base,
             status: "active".to_string(),
             created: false,
+            plan: adopted,
         });
     }
 
@@ -628,6 +653,24 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
         return Err(hook_err);
     }
 
+    // Adopt the plan last, so a failure rolls the dash back the same way a
+    // failed hook does — and by the transplant's own ordering the base copy is
+    // still intact when it does.
+    let adopted = match plan {
+        Some(path) => match adopt_plan_in(&repo_root, name, Some(path)) {
+            Ok(outcome) => Some(outcome),
+            Err(e) => {
+                let _ = git_output(
+                    &repo_root,
+                    &["worktree", "remove", "--force", &worktree.to_string_lossy()],
+                );
+                let _ = git_output(&repo_root, &["branch", "-D", &branch]);
+                return Err(e);
+            }
+        },
+        None => None,
+    };
+
     Ok(CreateOutcome {
         name: name.to_string(),
         id,
@@ -637,6 +680,7 @@ pub fn create(name: &str, description: Option<String>) -> Result<CreateOutcome, 
         base_branch,
         status: "active".to_string(),
         created: true,
+        plan: adopted,
     })
 }
 
@@ -1205,18 +1249,30 @@ fn step_in(
         return Err(format!("Dash not found or not active: {}", name));
     }
 
-    let rel = match plan {
-        Some(path) => {
-            let rel = resolve_plan_rel(&worktree, path)?;
-            set_dash_plan_path(repo_root, name, &rel)?;
-            rel
-        }
-        None => dash_plan_path(repo_root, name).ok_or_else(|| {
-            format!(
-                "dash '{name}' has no plan recorded; pass --plan <path> on the first step start"
-            )
-        })?,
+    let (rel, record) = match plan {
+        Some(path) => (resolve_plan_rel(&worktree, path)?, true),
+        None => (
+            dash_plan_path(repo_root, name).ok_or_else(|| {
+                format!(
+                    "dash '{name}' has no plan recorded; pass --plan <path> on the first step start"
+                )
+            })?,
+            false,
+        ),
     };
+
+    // A second live copy of the plan on base is a divergence with exactly one
+    // right answer, and the step verbs are where a run passes often enough to
+    // catch it early. Refuse before anything — config included — is written.
+    if base_plan_dirt(repo_root, &rel).is_dirt() {
+        return Err(format!(
+            "base copy of the plan has uncommitted changes at {rel}; run: tugutil dash adopt-plan {name}"
+        ));
+    }
+
+    if record {
+        set_dash_plan_path(repo_root, name, &rel)?;
+    }
 
     let abs = worktree.join(&rel);
     let source = std::fs::read_to_string(&abs)
@@ -1281,6 +1337,381 @@ pub fn step_done(name: &str, step: u32, commit: Option<&str>) -> Result<StepOutc
     let repo_root = find_repo_root().map_err(|e| e.to_string())?;
     migrate_worktrees(&repo_root, &mut Vec::new());
     step_in(&repo_root, name, step, StepPhase::Done, None, commit)
+}
+
+// --- plan adoption ---------------------------------------------------------
+
+/// What one adoption did — the receipt every plan movement prints.
+#[derive(Debug, Clone, Serialize)]
+pub struct AdoptOutcome {
+    pub dash: String,
+    /// The plan, relative to both roots (it means the same file in each).
+    pub plan_path: String,
+    /// `committed` | `cleaned` | `inherited`.
+    pub action: String,
+    /// The adoption commit, when one was needed.
+    pub commit: Option<String>,
+    /// What happened to the base copy: `restored` | `removed` | `untouched`.
+    pub base_copy: String,
+    /// Ledger rows whose progress could not be replayed, as `#anchor`.
+    pub dropped_rows: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// How the base checkout currently holds a plan path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BasePlanState {
+    /// Present and matching HEAD.
+    Clean,
+    /// Tracked, with staged or unstaged changes against HEAD.
+    TrackedDirty,
+    /// Present but not tracked.
+    Untracked,
+    /// No file there.
+    Absent,
+}
+
+impl BasePlanState {
+    /// Whether this state is base *dirt* — a second live copy the verbs must
+    /// transplant or refuse over. A clean tracked copy is ordinary branch
+    /// divergence, which the join squash resolves like any other file.
+    fn is_dirt(self) -> bool {
+        matches!(self, BasePlanState::TrackedDirty | BasePlanState::Untracked)
+    }
+}
+
+/// Classify how the repo root holds `rel`.
+fn base_plan_dirt(repo_root: &Path, rel: &str) -> BasePlanState {
+    if !repo_root.join(rel).exists() {
+        return BasePlanState::Absent;
+    }
+    let untracked = git_stdout(
+        repo_root,
+        &["ls-files", "--others", "--exclude-standard", "--", rel],
+    )
+    .unwrap_or_default();
+    if !untracked.trim().is_empty() {
+        return BasePlanState::Untracked;
+    }
+    let dirty =
+        git_stdout(repo_root, &["diff", "--name-only", "HEAD", "--", rel]).unwrap_or_default();
+    if dirty.trim().is_empty() {
+        BasePlanState::Clean
+    } else {
+        BasePlanState::TrackedDirty
+    }
+}
+
+/// Resolve a plan path that may live in either root, returning it relative to
+/// both (a repo-relative path names the same file in a linked worktree).
+///
+/// The worktree is tried first because it sits *inside* the repo root, so a
+/// worktree file would otherwise strip to `.tug/worktrees/<name>/…`. The strict
+/// [`resolve_plan_rel`] still governs `dash step`, where adoption has already
+/// guaranteed the worktree copy exists.
+fn resolve_plan_rel_anywhere(
+    repo_root: &Path,
+    worktree: &Path,
+    plan: &str,
+) -> Result<String, String> {
+    let strip = |base: &Path, resolved: &Path| -> Option<String> {
+        let base = std::fs::canonicalize(base).ok()?;
+        let rel = resolved.strip_prefix(&base).ok()?;
+        Some(rel.to_string_lossy().replace('\\', "/"))
+    };
+
+    let candidates: Vec<PathBuf> = if Path::new(plan).is_absolute() {
+        vec![PathBuf::from(plan)]
+    } else {
+        vec![worktree.join(plan), repo_root.join(plan)]
+    };
+
+    for candidate in &candidates {
+        let Ok(resolved) = std::fs::canonicalize(candidate) else {
+            continue;
+        };
+        if let Some(rel) = strip(worktree, &resolved) {
+            return Ok(rel);
+        }
+        if let Some(rel) = strip(repo_root, &resolved) {
+            return Ok(rel);
+        }
+        return Err(format!(
+            "plan {} is outside the repository {}",
+            resolved.display(),
+            repo_root.display()
+        ));
+    }
+
+    Err(format!(
+        "plan not found at {plan} in either the worktree or the repo root"
+    ))
+}
+
+/// Replay the worktree copy's ledger progress onto the incoming base body.
+///
+/// Returns the body to write plus the rows whose progress could not travel.
+/// A row is replayed only when its status actually differs from the incoming
+/// body's — a document already carrying the progress needs no edit, and
+/// `set_ledger_status` treats `done` as terminal, so asking it to re-apply a
+/// `done` row would read as a refusal rather than a no-op.
+fn replay_ledger_progress(base_body: &str, worktree_body: &str) -> (String, Vec<String>) {
+    let Ok(worktree_doc) = tugutil_core::plan::parse(worktree_body) else {
+        // Nothing readable to replay from; the base body travels as-is.
+        return (base_body.to_string(), vec![]);
+    };
+    let progressed: Vec<_> = worktree_doc
+        .ledger_rows
+        .iter()
+        .filter(|r| r.status != "pending")
+        .collect();
+
+    let Ok(base_doc) = tugutil_core::plan::parse(base_body) else {
+        // An unparseable incoming body downgrades to a byte copy — loudly.
+        return (
+            base_body.to_string(),
+            progressed
+                .iter()
+                .map(|r| format!("#{}", r.anchor))
+                .collect(),
+        );
+    };
+
+    let mut body = base_body.to_string();
+    let mut dropped = Vec::new();
+    for row in progressed {
+        let incoming = base_doc.ledger_rows.iter().find(|r| r.anchor == row.anchor);
+        match incoming {
+            Some(existing) if existing.status == row.status && existing.commit == row.commit => {}
+            Some(_) => {
+                match tugutil_core::plan::set_ledger_status(
+                    &body,
+                    &row.anchor,
+                    &row.status,
+                    row.commit.as_deref(),
+                ) {
+                    Ok(next) => body = next,
+                    Err(_) => dropped.push(format!("#{}", row.anchor)),
+                }
+            }
+            None => dropped.push(format!("#{}", row.anchor)),
+        }
+    }
+    (body, dropped)
+}
+
+/// Clean the base copy of an adopted plan — the last act of a transplant, run
+/// only once the bytes are reachable from the dash branch (Risk R01).
+///
+/// A tracked path is restored with `git checkout HEAD --`, naming `HEAD`
+/// explicitly: a bare `git checkout --` restores from the *index*, so a
+/// **staged** plan edit would survive the cleanup and the path would still read
+/// as dirty against HEAD — making the step refusal fire forever and adoption
+/// non-idempotent.
+fn clean_base_plan_copy(
+    repo_root: &Path,
+    rel: &str,
+    state: BasePlanState,
+) -> Result<&'static str, String> {
+    match state {
+        BasePlanState::TrackedDirty => {
+            let out = git_output(repo_root, &["checkout", "HEAD", "--", rel])?;
+            if !out.status.success() {
+                return Err(format!(
+                    "failed to restore the base copy of {rel}: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ));
+            }
+            Ok("restored")
+        }
+        BasePlanState::Untracked => {
+            std::fs::remove_file(repo_root.join(rel))
+                .map_err(|e| format!("failed to remove the base copy of {rel}: {e}"))?;
+            Ok("removed")
+        }
+        _ => Ok("untouched"),
+    }
+}
+
+/// Adopt a plan into a dash: the worktree copy becomes the only live one.
+///
+/// The engine reads the base copy, writes and commits it on the dash branch,
+/// and only then cleans base — so no ordering exists in which the user's edits
+/// are unreachable. When both copies exist and their bodies differ, the base
+/// body wins and the worktree's ledger progress is replayed onto it, because
+/// the base copy is where the user types and the worktree ledger is where the
+/// step verbs write.
+pub fn adopt_plan_in(
+    repo_root: &Path,
+    name: &str,
+    plan: Option<&str>,
+) -> Result<AdoptOutcome, String> {
+    let repo_root = main_repo_root(repo_root);
+    let branch = branch_name(name);
+    let worktree = worktree_path(&repo_root, name);
+    if !branch_exists(&repo_root, &branch) || !worktree.exists() {
+        return Err(format!("Dash not found or not active: {}", name));
+    }
+
+    let rel = match plan {
+        Some(path) => resolve_plan_rel_anywhere(&repo_root, &worktree, path)?,
+        None => dash_plan_path(&repo_root, name)
+            .ok_or_else(|| format!("dash '{name}' has no plan recorded; pass --plan <path>"))?,
+    };
+
+    let base_abs = repo_root.join(&rel);
+    let work_abs = worktree.join(&rel);
+    let base_state = base_plan_dirt(&repo_root, &rel);
+    let work_present = work_abs.exists();
+
+    if base_state == BasePlanState::Absent && !work_present {
+        return Err(format!(
+            "plan not found at {rel} in either the worktree or the repo root"
+        ));
+    }
+
+    let mut warnings = Vec::new();
+    let mut dropped_rows = Vec::new();
+
+    // What the worktree copy should hold once the transplant is done. `None`
+    // means it already holds it.
+    let incoming: Option<String> = if !work_present {
+        // The bytes only exist on base — whether it is dirty or a clean copy
+        // committed after the dash was cut.
+        Some(read_plan_file(&base_abs)?)
+    } else if base_state.is_dirt() {
+        let base_body = read_plan_file(&base_abs)?;
+        let work_body = read_plan_file(&work_abs)?;
+        if base_body == work_body {
+            None
+        } else {
+            let same_content = match (
+                tugutil_core::plan::parse(&base_body),
+                tugutil_core::plan::parse(&work_body),
+            ) {
+                (Ok(base_doc), Ok(work_doc)) => {
+                    tugutil_core::plan::content_stamp(&base_doc, &base_body)
+                        == tugutil_core::plan::content_stamp(&work_doc, &work_body)
+                }
+                _ => false,
+            };
+            if same_content {
+                // Progress-only divergence: the worktree ledger is authoritative.
+                None
+            } else {
+                if let Some(w) = warn_on_superseded_worktree_edits(&worktree, &rel, &work_body) {
+                    warnings.push(w);
+                }
+                let (body, dropped) = replay_ledger_progress(&base_body, &work_body);
+                dropped_rows = dropped;
+                Some(body)
+            }
+        }
+    } else {
+        None
+    };
+
+    // Write, stage, commit — before any base cleanup (Risk R01).
+    let mut commit_hash = None;
+    if let Some(body) = incoming {
+        if let Some(parent) = work_abs.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        }
+        write_atomic(&work_abs, &body)?;
+
+        let add = git_output(&worktree, &["add", "--", &rel])?;
+        if !add.status.success() {
+            return Err(format!(
+                "git add of {rel} failed: {}",
+                String::from_utf8_lossy(&add.stderr).trim()
+            ));
+        }
+        // Surgical: only the plan is staged, so adoption is safe mid-round.
+        let staged = git_output(&worktree, &["diff", "--cached", "--quiet", "--", &rel])?;
+        if !staged.status.success() {
+            let message = with_dash_trailers(
+                &repo_root,
+                name,
+                &branch,
+                &format!("tugdash({name}): adopt plan {rel}"),
+            );
+            let out = git_output(&worktree, &["commit", "-m", &message, "--", &rel])?;
+            if !out.status.success() {
+                return Err(format!(
+                    "adoption commit failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ));
+            }
+            let sha = git_stdout(&worktree, &["rev-parse", "--short", "HEAD"])?;
+            append_dash_log(&repo_root, name, &sha, &format!("Adopt plan {rel}"))
+                .map_err(|e| e.to_string())?;
+            commit_hash = Some(sha);
+        }
+    }
+
+    let base_copy = clean_base_plan_copy(&repo_root, &rel, base_state)?;
+
+    set_dash_plan_path(&repo_root, name, &rel)?;
+    let _ = ensure_dash_id(&repo_root, name);
+
+    let action = if commit_hash.is_some() {
+        "committed"
+    } else if base_copy == "untouched" {
+        "inherited"
+    } else {
+        "cleaned"
+    };
+
+    Ok(AdoptOutcome {
+        dash: name.to_string(),
+        plan_path: rel,
+        action: action.to_string(),
+        commit: commit_hash,
+        base_copy: base_copy.to_string(),
+        dropped_rows,
+        warnings,
+    })
+}
+
+/// Adopt a plan into a dash, resolving the repo from the process cwd.
+pub fn adopt_plan(name: &str, plan: Option<&str>) -> Result<AdoptOutcome, String> {
+    let repo_root = find_repo_root().map_err(|e| e.to_string())?;
+    migrate_worktrees(&repo_root, &mut Vec::new());
+    adopt_plan_in(&repo_root, name, plan)
+}
+
+/// `git show <spec>` with the bytes intact. The trimming [`git_stdout`] does is
+/// right for a rev or a status line and wrong for file contents: a plan
+/// restored without its trailing newline is not the document the user wrote.
+fn git_show_raw(dir: &Path, spec: &str) -> Option<String> {
+    let out = git_output(dir, &["show", spec]).ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+fn read_plan_file(path: &Path) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read plan at {}: {e}", path.display()))
+}
+
+/// Warn when the worktree copy carries uncommitted *body* edits the incoming
+/// base body is about to supersede (Risk R02). Ledger cells are replayed, so
+/// they are not a loss; a body edit that never reached a commit is.
+fn warn_on_superseded_worktree_edits(
+    worktree: &Path,
+    rel: &str,
+    work_body: &str,
+) -> Option<String> {
+    let head_body = git_show_raw(worktree, &format!("HEAD:{rel}"))?;
+    let head_doc = tugutil_core::plan::parse(&head_body).ok()?;
+    let work_doc = tugutil_core::plan::parse(work_body).ok()?;
+    let changed = tugutil_core::plan::content_stamp(&head_doc, &head_body)
+        != tugutil_core::plan::content_stamp(&work_doc, work_body);
+    changed.then(|| {
+        "worktree copy had uncommitted body edits; superseded bytes are not in git".to_string()
+    })
 }
 
 /// What a `dash mark` declared ([P09]).
@@ -1666,10 +2097,35 @@ fn off_base_detail(current_branch: &str, base_branch: &str) -> String {
     )
 }
 
-fn base_dirt_detail(paths: &[String]) -> String {
+/// The remedy sentence for a blocked join that turns out to be jailed by the
+/// dash's *own* plan — the one case where "commit or stash it" is the wrong
+/// advice, because committing the stale base copy enshrines a fork and
+/// stashing only hides it.
+fn plan_remedy_sentence(paths: &[String], plan: Option<&str>, name: &str) -> Option<String> {
+    let rel = plan?;
+    paths.iter().any(|p| p == rel).then(|| {
+        format!(" This includes the dash's own plan ({rel}) — run: tugutil dash adopt-plan {name}.")
+    })
+}
+
+fn base_dirt_detail(paths: &[String], plan: Option<&str>, name: &str) -> String {
+    let remedy = plan_remedy_sentence(paths, plan, name).unwrap_or_default();
     format!(
-        "Cannot join: the base worktree has uncommitted changes to files this dash also changed ({}). Commit or stash them first.",
-        paths.join(", ")
+        "Cannot join: the base worktree has uncommitted changes to files this dash also changed ({}).{} Commit or stash them first.",
+        paths.join(", "),
+        remedy
+    )
+}
+
+/// Untracked base files the integration would have to write over. `git merge
+/// --squash` refuses these outright, so without this they read as a clean
+/// preview followed by a failing join.
+fn untracked_overwrite_detail(paths: &[String], plan: Option<&str>, name: &str) -> String {
+    let remedy = plan_remedy_sentence(paths, plan, name).unwrap_or_default();
+    format!(
+        "Cannot join: untracked files at the repo root would be overwritten by this dash ({}).{} Move them aside first.",
+        paths.join(", "),
+        remedy
     )
 }
 
@@ -1680,19 +2136,45 @@ fn empty_detail(name: &str, base_branch: &str) -> String {
     )
 }
 
-/// The base dirt that would block a join of `branch`: the base's dirty tracked
-/// paths intersected with the dash's changed set (`base...branch` ∪ the dash
-/// worktree's own dirt). Disjoint base dirt is fine — the integration only
-/// writes the dash's files.
+/// The base paths that would block a join, split by why they block.
+#[derive(Debug, Clone, Default)]
+struct BlockingBasePaths {
+    /// Tracked paths with uncommitted changes.
+    tracked: Vec<String>,
+    /// Untracked paths the integration would have to write over.
+    untracked: Vec<String>,
+}
+
+impl BlockingBasePaths {
+    fn is_empty(&self) -> bool {
+        self.tracked.is_empty() && self.untracked.is_empty()
+    }
+}
+
+/// The untracked paths at `dir`, as plain path lines.
+fn untracked_paths(dir: &Path) -> Vec<String> {
+    git_stdout(dir, &["ls-files", "--others", "--exclude-standard"])
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// The base state that would block a join of `branch`: the base's dirty tracked
+/// paths and its untracked paths, each intersected with the dash's changed set
+/// (`base...branch` ∪ the dash worktree's own dirt). Disjoint base dirt is fine
+/// — the integration only writes the dash's files.
 fn blocking_base_dirt(
     repo_root: &Path,
     worktree: &Path,
     base_branch: &str,
     branch: &str,
-) -> Vec<String> {
+) -> BlockingBasePaths {
     let base_dirt = dirty_tracked_paths(repo_root);
-    if base_dirt.is_empty() {
-        return vec![];
+    let base_untracked = untracked_paths(repo_root);
+    if base_dirt.is_empty() && base_untracked.is_empty() {
+        return BlockingBasePaths::default();
     }
     let mut dash_changed: Vec<String> = git_stdout(
         repo_root,
@@ -1710,10 +2192,16 @@ fn blocking_base_dirt(
     if worktree.exists() {
         dash_changed.extend(dirty_tracked_paths(worktree));
     }
-    base_dirt
-        .into_iter()
-        .filter(|p| dash_changed.contains(p))
-        .collect()
+    BlockingBasePaths {
+        tracked: base_dirt
+            .into_iter()
+            .filter(|p| dash_changed.contains(p))
+            .collect(),
+        untracked: base_untracked
+            .into_iter()
+            .filter(|p| dash_changed.contains(p))
+            .collect(),
+    }
 }
 
 /// The repository root a dash operation works against.
@@ -1763,11 +2251,19 @@ pub fn join_preflight_in(repo_root: &Path, name: &str) -> Result<Vec<JoinBlocker
     }
 
     let intersect = blocking_base_dirt(repo_root, &worktree, &base_branch, &branch);
-    if !intersect.is_empty() {
+    let plan_rel = dash_plan_path(repo_root, name);
+    if !intersect.tracked.is_empty() {
         blockers.push(JoinBlocker {
             kind: "base-dirt".to_string(),
-            detail: base_dirt_detail(&intersect),
-            paths: intersect,
+            detail: base_dirt_detail(&intersect.tracked, plan_rel.as_deref(), name),
+            paths: intersect.tracked,
+        });
+    }
+    if !intersect.untracked.is_empty() {
+        blockers.push(JoinBlocker {
+            kind: "base-dirt".to_string(),
+            detail: untracked_overwrite_detail(&intersect.untracked, plan_rel.as_deref(), name),
+            paths: intersect.untracked,
         });
     }
 
@@ -1887,7 +2383,12 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     // Disjoint base dirt is fine — the squash-merge only writes the dash's files.
     let intersect = blocking_base_dirt(&repo_root, &worktree, &base_branch, &branch);
     if !intersect.is_empty() {
-        return Err(base_dirt_detail(&intersect));
+        let plan_rel = dash_plan_path(&repo_root, name);
+        return Err(if intersect.tracked.is_empty() {
+            untracked_overwrite_detail(&intersect.untracked, plan_rel.as_deref(), name)
+        } else {
+            base_dirt_detail(&intersect.tracked, plan_rel.as_deref(), name)
+        });
     }
 
     // Auto-commit outstanding dash-worktree changes — FATAL on error now ([P14]).
@@ -2093,6 +2594,13 @@ pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String
         return Err(format!("Dash not found: {}", name));
     }
 
+    // Hand the plan back before anything is torn down. Adoption *removed* the
+    // base copy, and release deletes the branch holding the only one — so
+    // without this, discarding a dash would permanently destroy the user's
+    // plan document. A plan is not the work; it is the authored document that
+    // predates the dash and outlives it.
+    let plan_restored = restore_plan_to_base(&repo_root, name, &branch, &mut warnings);
+
     // Reap the dash's tmux/app and remove its worktree robustly (see
     // `remove_dash_worktree` for the "Directory not empty" race this avoids).
     remove_dash_worktree(&repo_root, &branch, &worktree, &mut warnings);
@@ -2114,8 +2622,43 @@ pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String
 
     Ok(ReleaseOutcome {
         name: name.to_string(),
+        plan_restored,
         warnings,
     })
+}
+
+/// Write the dash branch's copy of its recorded plan back to the base checkout,
+/// when those bytes are not already what base HEAD holds.
+///
+/// Read from the branch rather than the worktree so it works even if the
+/// worktree is already gone, and quiet by design: an untouched dash, or one
+/// that never adopted a plan, releases exactly as it did before.
+fn restore_plan_to_base(
+    repo_root: &Path,
+    name: &str,
+    branch: &str,
+    warnings: &mut Vec<String>,
+) -> Option<String> {
+    let rel = dash_plan_path(repo_root, name)?;
+    let on_branch = git_show_raw(repo_root, &format!("{branch}:{rel}"))?;
+    let on_base = git_show_raw(repo_root, &format!("HEAD:{rel}")).unwrap_or_default();
+    if on_branch == on_base {
+        return None;
+    }
+    let abs = repo_root.join(&rel);
+    if let Some(parent) = abs.parent()
+        && let Err(e) = std::fs::create_dir_all(parent)
+    {
+        warnings.push(format!("Failed to restore plan {rel}: {e}"));
+        return None;
+    }
+    match write_atomic(&abs, &on_branch) {
+        Ok(()) => Some(rel),
+        Err(e) => {
+            warnings.push(format!("Failed to restore plan {rel}: {e}"));
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2319,7 +2862,7 @@ Some context.
         init_git_repo(repo);
         redirect_state_dir(&repo.join("state"));
         std::env::set_current_dir(repo).unwrap();
-        create(name, None).unwrap();
+        create(name, None, None).unwrap();
 
         let worktree = worktree_path(repo, name);
         fs::create_dir_all(worktree.join("roadmap")).unwrap();
@@ -2550,6 +3093,666 @@ Some context.
         assert_eq!(after, interrupted, "re-entry moves no byte of the plan");
     }
 
+    // --- plan adoption -----------------------------------------------------
+
+    /// A repo with a dash whose worktree holds no plan yet.
+    fn adopting_dash(name: &str) -> (TempDir, std::path::PathBuf) {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&repo.join("state"));
+        std::env::set_current_dir(repo).unwrap();
+        create(name, None, None).unwrap();
+        let root = fs::canonicalize(repo).unwrap();
+        (temp, root)
+    }
+
+    /// A repo whose plan was committed on base *before* the dash was cut, so
+    /// both roots hold it and the base copy is clean.
+    fn adopted_from_committed_plan(name: &str) -> (TempDir, std::path::PathBuf) {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&repo.join("state"));
+        std::env::set_current_dir(repo).unwrap();
+        write_base_plan(repo, TWO_STEP_PLAN);
+        run_git(repo, &["add", "-A"]);
+        run_git(repo, &["commit", "-m", "Add the plan"]);
+        create(name, None, None).unwrap();
+        let root = fs::canonicalize(repo).unwrap();
+        (temp, root)
+    }
+
+    fn write_base_plan(root: &Path, body: &str) {
+        fs::create_dir_all(root.join("roadmap")).unwrap();
+        fs::write(root.join("roadmap/plan.md"), body).unwrap();
+    }
+
+    fn base_plan_status(root: &Path) -> String {
+        git_stdout(root, &["status", "--porcelain", "--", "roadmap/plan.md"]).unwrap()
+    }
+
+    fn worktree_plan(root: &Path, name: &str) -> String {
+        fs::read_to_string(worktree_path(root, name).join("roadmap/plan.md")).unwrap()
+    }
+
+    fn stamp_of(body: &str) -> String {
+        let doc = tugutil_core::plan::parse(body).unwrap();
+        tugutil_core::plan::content_stamp(&doc, body)
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_inherits_a_clean_base_copy_the_worktree_already_has() {
+        let (_temp, root) = adopted_from_committed_plan("inherit-dash");
+
+        let out = adopt_plan_in(&root, "inherit-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(out.action, "inherited");
+        assert_eq!(out.base_copy, "untouched");
+        assert!(out.commit.is_none());
+        assert_eq!(out.plan_path, "roadmap/plan.md");
+        assert!(base_plan_status(&root).is_empty());
+        assert_eq!(
+            dash_plan_path(&root, "inherit-dash").as_deref(),
+            Some("roadmap/plan.md")
+        );
+    }
+
+    /// The plan is committed on base *after* the dash was cut, so the worktree
+    /// — made from an older base — has never seen the file.
+    #[serial]
+    #[test]
+    fn adopt_copies_a_base_copy_committed_after_the_dash_was_cut() {
+        let (_temp, root) = adopting_dash("late-dash");
+        write_base_plan(&root, TWO_STEP_PLAN);
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+
+        let out = adopt_plan_in(&root, "late-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(out.action, "committed");
+        assert_eq!(out.base_copy, "untouched", "a clean copy is not dirt");
+        assert!(out.commit.is_some());
+        assert_eq!(worktree_plan(&root, "late-dash"), TWO_STEP_PLAN);
+        assert!(base_plan_status(&root).is_empty());
+        assert!(root.join("roadmap/plan.md").exists(), "base keeps its copy");
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_refuses_when_the_plan_is_absent_from_both_roots() {
+        let (_temp, root) = adopting_dash("nowhere-dash");
+        let err = adopt_plan_in(&root, "nowhere-dash", Some("roadmap/plan.md")).unwrap_err();
+        assert!(err.contains("plan not found"), "{err}");
+        assert!(
+            err.contains("either the worktree or the repo root"),
+            "{err}"
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_transplants_an_untracked_base_copy_and_removes_it() {
+        let (_temp, root) = adopting_dash("untracked-dash");
+        write_base_plan(&root, TWO_STEP_PLAN);
+
+        let out = adopt_plan_in(&root, "untracked-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(out.action, "committed");
+        assert_eq!(out.base_copy, "removed");
+        assert_eq!(worktree_plan(&root, "untracked-dash"), TWO_STEP_PLAN);
+        assert!(!root.join("roadmap/plan.md").exists());
+        assert!(base_plan_status(&root).is_empty());
+
+        // The bytes are reachable from the branch, not merely on disk.
+        let on_branch =
+            git_stdout(&root, &["show", "tugdash/untracked-dash:roadmap/plan.md"]).unwrap();
+        assert!(on_branch.contains("A Two Step Plan"));
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_transplants_a_tracked_dirty_base_copy_and_restores_it() {
+        let (_temp, root) = adopting_dash("dirty-dash");
+        write_base_plan(&root, TWO_STEP_PLAN);
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+        // The user's uncommitted edit, on a worktree that has never seen it.
+        let edited = TWO_STEP_PLAN.replace("Some context.", "Some revised context.");
+        write_base_plan(&root, &edited);
+
+        let out = adopt_plan_in(&root, "dirty-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(out.action, "committed");
+        assert_eq!(out.base_copy, "restored");
+        assert_eq!(
+            worktree_plan(&root, "dirty-dash"),
+            edited,
+            "the user's edit rode across, not the committed base version"
+        );
+        assert!(base_plan_status(&root).is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_cleans_a_byte_identical_base_copy_without_committing() {
+        let (_temp, root) = adopted_from_committed_plan("identical-dash");
+        // A leftover hand-copy on base: same bytes, now uncommitted dirt.
+        let edited = TWO_STEP_PLAN.replace("Some context.", "Some revised context.");
+        write_base_plan(&root, &edited);
+        fs::write(
+            worktree_path(&root, "identical-dash").join("roadmap/plan.md"),
+            &edited,
+        )
+        .unwrap();
+
+        let out = adopt_plan_in(&root, "identical-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(out.action, "cleaned");
+        assert_eq!(out.base_copy, "restored");
+        assert!(out.commit.is_none());
+        assert_eq!(worktree_plan(&root, "identical-dash"), edited);
+        assert!(base_plan_status(&root).is_empty());
+    }
+
+    /// Progress-only divergence: the base copy is a stale hand-copy whose body
+    /// matches, and only the worktree's ledger has moved. The worktree wins.
+    #[serial]
+    #[test]
+    fn adopt_cleans_a_progress_only_base_copy_and_keeps_worktree_progress() {
+        let (_temp, root) = adopted_from_committed_plan("progress-dash");
+        step_start("progress-dash", 1, Some("roadmap/plan.md")).unwrap();
+        // Base dirt whose body is unchanged; the worktree carries real progress.
+        write_base_plan(&root, &format!("{TWO_STEP_PLAN}\n"));
+
+        let out = adopt_plan_in(&root, "progress-dash", None).unwrap();
+        assert_eq!(out.action, "cleaned");
+        assert!(out.commit.is_none());
+        assert!(out.dropped_rows.is_empty());
+        assert_eq!(
+            ledger_row(&root, "progress-dash", "step-1").status,
+            "in progress",
+            "the worktree ledger is authoritative"
+        );
+        assert!(base_plan_status(&root).is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn adopt_replays_worktree_progress_onto_an_edited_base_body() {
+        let (_temp, root) = adopted_from_committed_plan("replay-dash");
+        // Progress on the worktree, committed there as a round would.
+        step_start("replay-dash", 1, Some("roadmap/plan.md")).unwrap();
+        step_done("replay-dash", 1, Some("abc1234")).unwrap();
+        let worktree = worktree_path(&root, "replay-dash");
+        run_git(&worktree, &["add", "-A"]);
+        run_git(&worktree, &["commit", "-m", "round"]);
+        // Meanwhile the user revised the body on base.
+        let revised = TWO_STEP_PLAN.replace("Some context.", "Some revised context.");
+        write_base_plan(&root, &revised);
+
+        let out = adopt_plan_in(&root, "replay-dash", None).unwrap();
+        assert_eq!(out.action, "committed");
+        assert_eq!(out.base_copy, "restored");
+        assert!(out.dropped_rows.is_empty());
+        assert!(out.warnings.is_empty());
+
+        let after = worktree_plan(&root, "replay-dash");
+        assert!(after.contains("Some revised context."), "base body won");
+        let row = ledger_row(&root, "replay-dash", "step-1");
+        assert_eq!(row.status, "done");
+        assert_eq!(row.commit.as_deref(), Some("abc1234"));
+        assert_eq!(
+            stamp_of(&after),
+            stamp_of(&revised),
+            "replaying progress leaves the content stamp — and so the review state — alone"
+        );
+        assert!(base_plan_status(&root).is_empty());
+    }
+
+    /// A **staged** base edit is the case a bare `git checkout --` would leave
+    /// behind: it restores from the index, so the path would stay dirty against
+    /// HEAD forever and adoption would never converge.
+    #[serial]
+    #[test]
+    fn adopt_is_idempotent_over_a_staged_base_edit() {
+        let (_temp, root) = adopted_from_committed_plan("staged-dash");
+        let edited = TWO_STEP_PLAN.replace("Some context.", "Some staged context.");
+        write_base_plan(&root, &edited);
+        run_git(&root, &["add", "--", "roadmap/plan.md"]);
+
+        let first = adopt_plan_in(&root, "staged-dash", Some("roadmap/plan.md")).unwrap();
+        assert_eq!(first.action, "committed");
+        assert_eq!(first.base_copy, "restored");
+        assert!(
+            dirty_tracked_paths(&root).is_empty(),
+            "the staged edit is gone from the index as well as the worktree"
+        );
+
+        let second = adopt_plan_in(&root, "staged-dash", None).unwrap();
+        assert_eq!(second.action, "inherited");
+        assert_eq!(second.base_copy, "untouched");
+        assert!(second.commit.is_none());
+    }
+
+    /// The ordering invariant: base is cleaned only after the commit lands, so
+    /// a failing commit leaves the user's bytes exactly where they were.
+    #[serial]
+    #[test]
+    fn adopt_leaves_the_base_copy_intact_when_the_commit_fails() {
+        let (_temp, root) = adopting_dash("failing-dash");
+        write_base_plan(&root, TWO_STEP_PLAN);
+        let worktree = worktree_path(&root, "failing-dash");
+        let hooks = worktree.join("refusing-hooks");
+        fs::create_dir_all(&hooks).unwrap();
+        let hook = hooks.join("pre-commit");
+        fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        run_git(
+            &worktree,
+            &["config", "core.hooksPath", &hooks.to_string_lossy()],
+        );
+
+        let err = adopt_plan_in(&root, "failing-dash", Some("roadmap/plan.md")).unwrap_err();
+        assert!(err.contains("adoption commit failed"), "{err}");
+        assert!(
+            root.join("roadmap/plan.md").exists(),
+            "the base copy survives a failed transplant"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("roadmap/plan.md")).unwrap(),
+            TWO_STEP_PLAN
+        );
+    }
+
+    /// The generic "commit or stash them first" is the wrong advice when what
+    /// intersects is the dash's own plan, so the detail names the remedy verb.
+    #[serial]
+    #[test]
+    fn preflight_names_the_plan_when_the_base_copy_is_what_jails_the_join() {
+        let (_temp, root) = adopted_from_committed_plan("jail-dash");
+        step_start("jail-dash", 1, Some("roadmap/plan.md")).unwrap();
+        commit("jail-dash", "a round", None).unwrap();
+        write_base_plan(
+            &root,
+            &TWO_STEP_PLAN.replace("Some context.", "Some revised context."),
+        );
+
+        let blockers = join_preflight_in(&root, "jail-dash").unwrap();
+        let dirt: Vec<_> = blockers.iter().filter(|b| b.kind == "base-dirt").collect();
+        assert_eq!(dirt.len(), 1);
+        assert!(dirt[0].detail.contains("roadmap/plan.md"), "{:?}", dirt[0]);
+        assert!(
+            dirt[0].detail.contains("adopt-plan jail-dash"),
+            "{:?}",
+            dirt[0]
+        );
+
+        // Adoption clears it.
+        adopt_plan_in(&root, "jail-dash", None).unwrap();
+        let after = join_preflight_in(&root, "jail-dash").unwrap();
+        assert!(after.iter().all(|b| b.kind != "base-dirt"), "{after:?}");
+    }
+
+    /// Non-plan tracked dirt keeps the message it always had.
+    #[serial]
+    #[test]
+    fn preflight_leaves_ordinary_base_dirt_wording_alone() {
+        let (_temp, root) = adopted_from_committed_plan("plainly-dash");
+        let worktree = worktree_path(&root, "plainly-dash");
+        fs::write(worktree.join("README.md"), "# Dash\n").unwrap();
+        commit("plainly-dash", "touch readme", None).unwrap();
+        fs::write(root.join("README.md"), "# Local\n").unwrap();
+
+        let blockers = join_preflight_in(&root, "plainly-dash").unwrap();
+        let dirt = blockers.iter().find(|b| b.kind == "base-dirt").unwrap();
+        assert!(dirt.detail.contains("README.md"), "{:?}", dirt);
+        assert!(dirt.detail.contains("Commit or stash them first."));
+        assert!(!dirt.detail.contains("adopt-plan"), "{:?}", dirt);
+    }
+
+    /// An untracked base file at a path the dash changed is what `git merge
+    /// --squash` refuses outright — previously a clean preview and a failing
+    /// join. It is a blocker now, and only when it actually intersects.
+    #[serial]
+    #[test]
+    fn preflight_blocks_untracked_base_files_the_dash_would_overwrite() {
+        let (_temp, root) = adopting_dash("overwrite-dash");
+        let worktree = worktree_path(&root, "overwrite-dash");
+        fs::create_dir_all(worktree.join("roadmap")).unwrap();
+        fs::write(worktree.join("roadmap/plan.md"), TWO_STEP_PLAN).unwrap();
+        commit("overwrite-dash", "add the plan", None).unwrap();
+
+        // A disjoint untracked file does not block.
+        fs::write(root.join("scratch.txt"), "notes\n").unwrap();
+        let clean = join_preflight_in(&root, "overwrite-dash").unwrap();
+        assert!(clean.iter().all(|b| b.kind != "base-dirt"), "{clean:?}");
+
+        // The same path the dash added does — with the plan remedy named,
+        // because this dash records that plan.
+        write_base_plan(&root, TWO_STEP_PLAN);
+        set_dash_plan_path(&root, "overwrite-dash", "roadmap/plan.md").unwrap();
+        let blockers = join_preflight_in(&root, "overwrite-dash").unwrap();
+        let dirt = blockers.iter().find(|b| b.kind == "base-dirt").unwrap();
+        assert_eq!(dirt.paths, vec!["roadmap/plan.md".to_string()]);
+        assert!(dirt.detail.contains("would be overwritten"), "{:?}", dirt);
+        assert!(
+            dirt.detail.contains("adopt-plan overwrite-dash"),
+            "{:?}",
+            dirt
+        );
+
+        // The execute path refuses with the same sentence, rather than a clean
+        // preview followed by a squash that fails on the untracked file.
+        let err = join("overwrite-dash", JoinOptions::default()).unwrap_err();
+        assert_eq!(err, dirt.detail);
+        assert!(branch_present(&root, "tugdash/overwrite-dash"));
+    }
+
+    /// The step verbs are a run's heartbeat, so they are the earliest place a
+    /// diverging base copy shows up — as a refusal naming its one remedy.
+    #[serial]
+    #[test]
+    fn step_verbs_refuse_while_a_base_plan_copy_diverges() {
+        let (_temp, root) = adopted_from_committed_plan("jailed-dash");
+        let plan = worktree_path(&root, "jailed-dash").join("roadmap/plan.md");
+        step_start("jailed-dash", 1, Some("roadmap/plan.md")).unwrap();
+        let before = fs::read_to_string(&plan).unwrap();
+
+        // Tracked-dirty on base.
+        write_base_plan(
+            &root,
+            &TWO_STEP_PLAN.replace("Some context.", "Some revised context."),
+        );
+        let err = step_done("jailed-dash", 1, Some("abc1234")).unwrap_err();
+        assert!(err.contains("adopt-plan jailed-dash"), "{err}");
+        assert!(err.contains("roadmap/plan.md"), "{err}");
+        assert_eq!(
+            fs::read_to_string(&plan).unwrap(),
+            before,
+            "a refusal moves no byte of the plan"
+        );
+
+        // Untracked on base refuses the same way.
+        run_git(&root, &["checkout", "HEAD", "--", "roadmap/plan.md"]);
+        run_git(&root, &["rm", "--cached", "roadmap/plan.md"]);
+        run_git(&root, &["commit", "-m", "untrack the plan"]);
+        let err = step_start("jailed-dash", 2, None).unwrap_err();
+        assert!(err.contains("adopt-plan jailed-dash"), "{err}");
+
+        // Adoption is the remedy, and the same call then succeeds.
+        adopt_plan_in(&root, "jailed-dash", None).unwrap();
+        let resumed = step_start("jailed-dash", 2, None).unwrap();
+        assert_eq!(resumed.status, "in progress");
+        assert_eq!(
+            ledger_row(&root, "jailed-dash", "step-1").status,
+            "in progress",
+            "the transplant replayed the progress the run had already made"
+        );
+    }
+
+    /// Adoption removed the base copy, so the branch holds the only one —
+    /// and release deletes the branch. The plan has to come back out first.
+    #[serial]
+    #[test]
+    fn release_hands_back_a_plan_that_was_untracked_on_base() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+        create("discard-dash", None, Some("roadmap/plan.md")).unwrap();
+        assert!(!root.join("roadmap/plan.md").exists(), "adoption took it");
+
+        let out = release("discard-dash").unwrap();
+        assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
+        assert!(!branch_present(&root, "tugdash/discard-dash"));
+        assert_eq!(
+            fs::read_to_string(root.join("roadmap/plan.md")).unwrap(),
+            TWO_STEP_PLAN,
+            "the document survives its dash"
+        );
+    }
+
+    /// The tracked-dirty shape: the user's uncommitted edits lived only on the
+    /// branch, so release puts them back in the base working tree.
+    #[serial]
+    #[test]
+    fn release_hands_back_the_users_uncommitted_plan_edits() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+        let edited = TWO_STEP_PLAN.replace("Some context.", "Some revised context.");
+        write_base_plan(&root, &edited);
+        create("edited-dash", None, Some("roadmap/plan.md")).unwrap();
+        assert!(base_plan_status(&root).is_empty(), "adoption restored base");
+
+        let out = release("edited-dash").unwrap();
+        assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
+        assert_eq!(
+            fs::read_to_string(root.join("roadmap/plan.md")).unwrap(),
+            edited
+        );
+        assert!(
+            !base_plan_status(&root).is_empty(),
+            "the base copy is dirty again, exactly as the user left it"
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn release_of_an_untouched_or_planless_dash_restores_nothing() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+
+        // No plan recorded at all.
+        create("bare-dash", None, None).unwrap();
+        assert!(release("bare-dash").unwrap().plan_restored.is_none());
+
+        // A plan recorded, but the branch's copy is what base HEAD holds.
+        create("same-dash", None, Some("roadmap/plan.md")).unwrap();
+        let out = release("same-dash").unwrap();
+        assert!(out.plan_restored.is_none());
+        assert!(
+            base_plan_status(&root).is_empty(),
+            "nothing was written over the clean base copy"
+        );
+    }
+
+    /// The whole lifecycle on the join arm: a plan authored untracked on base,
+    /// adopted at birth, driven through a step, jailed by a base edit the user
+    /// made mid-run, freed by the remedy verb, and landed — with the ledger the
+    /// run wrote and the body the user typed both present on base afterwards.
+    #[serial]
+    #[test]
+    fn a_plan_adopted_at_birth_survives_the_whole_run_and_lands() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+
+        create("e2e-join", None, Some("roadmap/plan.md")).unwrap();
+        assert!(!root.join("roadmap/plan.md").exists(), "one live copy");
+
+        step_start("e2e-join", 1, None).unwrap();
+        commit("e2e-join", "the first round", None).unwrap();
+        step_done("e2e-join", 1, None).unwrap();
+
+        // The user revises the plan on base mid-run. Every seam refuses.
+        let revised = TWO_STEP_PLAN.replace("Some context.", "Revised mid-run.");
+        write_base_plan(&root, &revised);
+        let err = step_start("e2e-join", 2, None).unwrap_err();
+        assert!(err.contains("adopt-plan e2e-join"), "{err}");
+        let blockers = join_preflight_in(&root, "e2e-join").unwrap();
+        let dirt = blockers.iter().find(|b| b.kind == "base-dirt").unwrap();
+        assert!(dirt.detail.contains("adopt-plan e2e-join"), "{:?}", dirt);
+
+        // The remedy verb takes both halves: the user's body, the run's ledger.
+        adopt_plan_in(&root, "e2e-join", None).unwrap();
+        let merged = worktree_plan(&root, "e2e-join");
+        assert!(merged.contains("Revised mid-run."));
+        assert_eq!(ledger_row(&root, "e2e-join", "step-1").status, "done");
+
+        step_start("e2e-join", 2, None).unwrap();
+        commit("e2e-join", "the second round", None).unwrap();
+        step_done("e2e-join", 2, None).unwrap();
+
+        assert!(join_preflight_in(&root, "e2e-join").unwrap().is_empty());
+        join("e2e-join", JoinOptions::default()).unwrap();
+        assert!(!branch_present(&root, "tugdash/e2e-join"));
+
+        let landed = fs::read_to_string(root.join("roadmap/plan.md")).unwrap();
+        assert!(
+            landed.contains("Revised mid-run."),
+            "the user's body landed"
+        );
+        let doc = tugutil_core::plan::parse(&landed).unwrap();
+        assert!(
+            doc.ledger_rows.iter().all(|r| r.status == "done"),
+            "the run's ledger landed with it"
+        );
+    }
+
+    /// The abandon arm — the one that proves no path through the system loses
+    /// the document. Adoption removes the base copy and release deletes the
+    /// branch, so release has to hand the plan back on its way out.
+    #[serial]
+    #[test]
+    fn a_released_dash_hands_its_plan_back_to_base() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+
+        create("e2e-abandon", None, Some("roadmap/plan.md")).unwrap();
+        step_start("e2e-abandon", 1, None).unwrap();
+        commit("e2e-abandon", "a round", None).unwrap();
+        assert!(!root.join("roadmap/plan.md").exists());
+
+        let out = release("e2e-abandon").unwrap();
+        assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
+        assert!(!branch_present(&root, "tugdash/e2e-abandon"));
+        assert!(
+            git_stdout(
+                &root,
+                &["for-each-ref", "--format=%(refname)", "refs/heads/tugdash/"]
+            )
+            .unwrap()
+            .is_empty(),
+            "no dash branch survives the release"
+        );
+
+        let back = fs::read_to_string(root.join("roadmap/plan.md")).unwrap();
+        assert!(back.contains("A Two Step Plan"), "the document came home");
+        assert_eq!(
+            tugutil_core::plan::parse(&back)
+                .unwrap()
+                .ledger_rows
+                .iter()
+                .find(|r| r.anchor == "step-1")
+                .unwrap()
+                .status,
+            "in progress",
+            "including the progress the abandoned run had made"
+        );
+    }
+
+    /// A repo with no dash yet, ready for a `create --plan`.
+    fn repo_for_create(base_plan: Option<&str>) -> (TempDir, std::path::PathBuf) {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        init_git_repo(repo);
+        redirect_state_dir(&repo.join("state"));
+        std::env::set_current_dir(repo).unwrap();
+        if let Some(body) = base_plan {
+            write_base_plan(repo, body);
+        }
+        let root = fs::canonicalize(repo).unwrap();
+        (temp, root)
+    }
+
+    #[serial]
+    #[test]
+    fn create_with_a_plan_adopts_an_untracked_base_copy() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+
+        let out = create("born-dash", None, Some("roadmap/plan.md")).unwrap();
+        assert!(out.created);
+        let adopted = out.plan.expect("create --plan returns its receipt");
+        assert_eq!(adopted.action, "committed");
+        assert_eq!(adopted.base_copy, "removed");
+
+        assert_eq!(worktree_plan(&root, "born-dash"), TWO_STEP_PLAN);
+        assert!(!root.join("roadmap/plan.md").exists(), "one live copy");
+        assert!(base_plan_status(&root).is_empty());
+        assert_eq!(
+            dash_plan_path(&root, "born-dash").as_deref(),
+            Some("roadmap/plan.md")
+        );
+    }
+
+    #[serial]
+    #[test]
+    fn create_with_a_plan_carries_a_tracked_dirty_base_copy_across() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+        let edited = TWO_STEP_PLAN.replace("Some context.", "Some revised context.");
+        write_base_plan(&root, &edited);
+
+        let adopted = create("carry-dash", None, Some("roadmap/plan.md"))
+            .unwrap()
+            .plan
+            .unwrap();
+        assert_eq!(adopted.action, "committed");
+        assert_eq!(adopted.base_copy, "restored");
+        assert_eq!(worktree_plan(&root, "carry-dash"), edited);
+        assert!(base_plan_status(&root).is_empty());
+    }
+
+    #[serial]
+    #[test]
+    fn create_with_a_committed_clean_plan_inherits_it() {
+        let (_temp, root) = repo_for_create(Some(TWO_STEP_PLAN));
+        run_git(&root, &["add", "-A"]);
+        run_git(&root, &["commit", "-m", "Add the plan"]);
+
+        let adopted = create("clean-dash", None, Some("roadmap/plan.md"))
+            .unwrap()
+            .plan
+            .unwrap();
+        assert_eq!(adopted.action, "inherited");
+        assert_eq!(adopted.base_copy, "untouched");
+        assert!(adopted.commit.is_none());
+        assert!(root.join("roadmap/plan.md").exists());
+    }
+
+    /// Re-running `create --plan` over a live dash is the repair path: the
+    /// resume exit returns before hydration, so adoption has to sit there too.
+    #[serial]
+    #[test]
+    fn create_with_a_plan_repairs_an_existing_dash() {
+        let (_temp, root) = repo_for_create(None);
+        let first = create("repair-dash", None, None).unwrap();
+        assert!(first.created);
+        assert!(
+            first.plan.is_none(),
+            "a plan-less create carries no receipt"
+        );
+
+        write_base_plan(&root, TWO_STEP_PLAN);
+        let second = create("repair-dash", None, Some("roadmap/plan.md")).unwrap();
+        assert!(!second.created, "the dash was already there");
+        let adopted = second.plan.expect("the resume exit adopts too");
+        assert_eq!(adopted.action, "committed");
+        assert_eq!(adopted.base_copy, "removed");
+        assert_eq!(worktree_plan(&root, "repair-dash"), TWO_STEP_PLAN);
+    }
+
+    /// A transplant that fails takes the whole dash with it, and — by the
+    /// engine's ordering — leaves the base copy where the user left it.
+    #[serial]
+    #[test]
+    fn create_rolls_back_when_the_transplant_fails() {
+        let (_temp, root) = repo_for_create(None);
+
+        let err = create("doomed-dash", None, Some("roadmap/missing.md")).unwrap_err();
+        assert!(err.contains("plan not found"), "{err}");
+        assert!(!branch_present(&root, "tugdash/doomed-dash"));
+        assert!(!worktree_path(&root, "doomed-dash").exists());
+    }
+
     #[test]
     fn legacy_owner_key_strips_the_id_and_passes_legacy_keys_through() {
         assert_eq!(
@@ -2591,12 +3794,12 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        let first = create("id-dash", None).unwrap();
+        let first = create("id-dash", None, None).unwrap();
         let id = first.id.clone().expect("create mints an id");
         assert!(id.starts_with("tugdash/id-dash#"), "owner key shape: {id}");
 
         // The idempotent revisit reports the same identity, not a fresh mint.
-        let second = create("id-dash", None).unwrap();
+        let second = create("id-dash", None, None).unwrap();
         assert!(!second.created);
         assert_eq!(second.id.as_deref(), Some(id.as_str()));
 
@@ -2696,7 +3899,7 @@ Some context.
             std::env::set_var("TUG_CHANGES_DB", &changes_db);
         }
 
-        let created = create("status-dash", Some("Test".to_string())).unwrap();
+        let created = create("status-dash", Some("Test".to_string()), None).unwrap();
         let owner_key = created.id.clone().unwrap();
 
         let fresh = status("status-dash").unwrap();
@@ -2807,7 +4010,7 @@ Some context.
             std::env::set_var("TUG_SESSIONS_DB", &sessions_db);
         }
 
-        let owner_key = create("parked-dash", None).unwrap().id.unwrap();
+        let owner_key = create("parked-dash", None, None).unwrap().id.unwrap();
         {
             let conn = rusqlite::Connection::open(&sessions_db).unwrap();
             conn.execute(
@@ -2847,7 +4050,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        let result = create("test-dash", Some("desc".to_string()));
+        let result = create("test-dash", Some("desc".to_string()), None);
         assert!(result.is_ok());
 
         assert!(repo.join(".tug/worktrees/test-dash").exists());
@@ -2872,9 +4075,9 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("first".to_string())).unwrap();
+        create("test-dash", Some("first".to_string()), None).unwrap();
         // Second create returns the existing dash without error.
-        let result = create("test-dash", Some("second".to_string()));
+        let result = create("test-dash", Some("second".to_string()), None);
         assert!(!result.unwrap().created);
         assert!(repo.join(".tug/worktrees/test-dash").exists());
     }
@@ -2890,13 +4093,13 @@ Some context.
         write_config(repo, &["echo ran >> hook-marker.txt"]);
         std::env::set_current_dir(repo).unwrap();
 
-        create("hooky", None).unwrap();
+        create("hooky", None, None).unwrap();
         let marker = repo.join(".tug/worktrees/hooky/hook-marker.txt");
         assert!(marker.exists(), "post_create should run on creation");
         assert_eq!(fs::read_to_string(&marker).unwrap().lines().count(), 1);
 
         // Idempotent resume must NOT re-run the hook.
-        create("hooky", None).unwrap();
+        create("hooky", None, None).unwrap();
         assert_eq!(
             fs::read_to_string(&marker).unwrap().lines().count(),
             1,
@@ -2914,7 +4117,7 @@ Some context.
         write_config(repo, &["exit 1"]);
         std::env::set_current_dir(repo).unwrap();
 
-        let result = create("doomed", None);
+        let result = create("doomed", None, None);
         assert!(result.is_err(), "failing hook should fail create");
 
         // Rollback: neither worktree nor branch survive.
@@ -2923,7 +4126,7 @@ Some context.
 
         // A retry (with a passing hook) then succeeds cleanly.
         write_config(repo, &[]);
-        let retry = create("doomed", None);
+        let retry = create("doomed", None, None);
         assert!(retry.is_ok());
         assert!(repo.join(".tug/worktrees/doomed").exists());
     }
@@ -2938,7 +4141,7 @@ Some context.
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
 
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "content\n").unwrap();
@@ -2972,7 +4175,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
 
         let result = commit("test-dash", "No changes", None);
         assert!(!result.unwrap().committed);
@@ -2998,7 +4201,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", None).unwrap();
+        create("test-dash", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("f.txt"), "x\n").unwrap();
 
@@ -3032,7 +4235,7 @@ Some context.
         std::env::set_current_dir(repo).unwrap();
         redirect_state_dir(&home);
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
 
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
@@ -3060,8 +4263,8 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("dash1", None).unwrap();
-        create("dash2", None).unwrap();
+        create("dash1", None, None).unwrap();
+        create("dash2", None, None).unwrap();
 
         assert_eq!(list().unwrap().len(), 2);
         assert!(show("dash1").is_ok());
@@ -3078,7 +4281,7 @@ Some context.
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test dash".to_string())).unwrap();
+        create("test-dash", Some("Test dash".to_string()), None).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("feature.txt"), "new feature\n").unwrap();
         commit("test-dash", "Add feature", None).unwrap();
@@ -3161,7 +4364,7 @@ Some context.
             std::env::set_var("TUG_CHANGES_DB", &changes_db);
         }
 
-        create("draft-dash", Some("Test".to_string())).unwrap();
+        create("draft-dash", Some("Test".to_string()), None).unwrap();
         let worktree = repo.join(".tug/worktrees/draft-dash");
         fs::write(worktree.join("f.txt"), "x\n").unwrap();
         commit("draft-dash", "Add f", None).unwrap();
@@ -3247,7 +4450,7 @@ Some context.
             std::env::set_var("TUG_CHANGES_DB", &changes_db);
         }
 
-        let created = create("id-draft-dash", Some("Test".to_string())).unwrap();
+        let created = create("id-draft-dash", Some("Test".to_string()), None).unwrap();
         let owner_key = created.id.expect("created dash has an owner key");
         assert!(owner_key.contains('#'), "id-qualified: {owner_key}");
 
@@ -3301,7 +4504,7 @@ Some context.
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("trailer-dash", Some("Test".to_string())).unwrap();
+        create("trailer-dash", Some("Test".to_string()), None).unwrap();
         let worktree = repo.join(".tug/worktrees/trailer-dash");
         fs::write(worktree.join("f.txt"), "x\n").unwrap();
         commit("trailer-dash", "Add f", None).unwrap();
@@ -3374,7 +4577,7 @@ Some context.
         run_git(repo, &["add", "-A"]);
         run_git(repo, &["commit", "-m", "seed f"]);
 
-        create("cand", None).unwrap();
+        create("cand", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/cand");
         fs::write(worktree.join("f.txt"), "B\n").unwrap();
         commit("cand", "r1", None).unwrap();
@@ -3420,7 +4623,7 @@ Some context.
         run_git(repo, &["add", "-A"]);
         run_git(repo, &["commit", "-m", "seed f"]);
 
-        create("cand", None).unwrap();
+        create("cand", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/cand");
         fs::write(worktree.join("f.txt"), "B\n").unwrap();
         commit("cand", "r1", None).unwrap();
@@ -3467,7 +4670,7 @@ Some context.
         init_git_repo(repo);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", None).unwrap();
+        create("test-dash", None, None).unwrap();
         let branch = branch_name("test-dash");
         let worktree = worktree_path(repo, "test-dash");
         assert!(worktree.exists());
@@ -3517,7 +4720,7 @@ Some context.
         git_output(repo, &["commit", "-m", "seed"]).unwrap();
 
         // A dash that changes shared.txt.
-        create("isect", None).unwrap();
+        create("isect", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/isect");
         fs::write(worktree.join("shared.txt"), "base\ndash change\n").unwrap();
         commit("isect", "touch shared", None).unwrap();
@@ -3550,7 +4753,7 @@ Some context.
         fs::write(repo.join("shared.txt"), "base\n").unwrap();
         git_output(repo, &["add", "."]).unwrap();
         git_output(repo, &["commit", "-m", "seed"]).unwrap();
-        create(name, None).unwrap();
+        create(name, None, None).unwrap();
         let worktree = repo.join(".tug/worktrees").join(name);
         fs::write(worktree.join("shared.txt"), "base\ndash change\n").unwrap();
         commit(name, "touch shared", None).unwrap();
@@ -3744,7 +4947,7 @@ Some context.
         fs::write(repo.join("shared.txt"), "base\n").unwrap();
         git_output(repo, &["add", "."]).unwrap();
         git_output(repo, &["commit", "-m", "seed"]).unwrap();
-        create("hollow", None).unwrap();
+        create("hollow", None, None).unwrap();
 
         assert!(blocker(&preview("hollow"), "empty").is_some());
 
@@ -3809,7 +5012,7 @@ Some context.
         clear_join_journal(&root, "agree");
 
         // empty — a dash of its own, since the one above has a round.
-        create("agree2", None).unwrap();
+        create("agree2", None, None).unwrap();
         let out = preview("agree2");
         let b = blocker(&out, "empty").expect("empty blocker");
         let err = join("agree2", JoinOptions::default()).unwrap_err();
@@ -3825,7 +5028,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
         Command::new("git")
             .arg("-C")
             .arg(repo)
@@ -3851,7 +5054,7 @@ Some context.
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
 
@@ -3891,7 +5094,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        create("test-dash", Some("Test".to_string())).unwrap();
+        create("test-dash", Some("Test".to_string()), None).unwrap();
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
         commit("test-dash", "Add test", None).unwrap();
@@ -3976,7 +5179,7 @@ Some context.
         init_git_repo(&repo);
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(&repo).unwrap();
-        create(name, None).unwrap();
+        create(name, None, None).unwrap();
         let worktree = repo.join(format!(".tug/worktrees/{name}"));
         fs::write(worktree.join("f.txt"), "dash\n").unwrap();
         commit(name, &format!("{name}-only"), None).unwrap();
@@ -4043,7 +5246,7 @@ Some context.
         git_output(repo, &["add", "."]).unwrap();
         git_output(repo, &["commit", "-m", "seed"]).unwrap();
 
-        create("pv", None).unwrap();
+        create("pv", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/pv");
         fs::write(worktree.join("conflict.txt"), "dash line\n").unwrap();
         commit("pv", "dash edit", None).unwrap();
@@ -4087,7 +5290,7 @@ Some context.
         redirect_state_dir(&home);
         std::env::set_current_dir(repo).unwrap();
 
-        create("resume", None).unwrap();
+        create("resume", None, None).unwrap();
         let worktree = repo.join(".tug/worktrees/resume");
         fs::write(worktree.join("f.txt"), "x\n").unwrap();
         commit("resume", "add f", None).unwrap();

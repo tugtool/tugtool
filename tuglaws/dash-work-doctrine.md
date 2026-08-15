@@ -11,7 +11,7 @@ A dash *is* a git branch (`tugdash/<name>`) plus a worktree. `tugutil dash creat
 - Address **every** read, write, edit, and test by absolute path into the worktree. A shell's cwd silently reverts to the base checkout between tool calls; a relative path is a coin flip.
 - **Never write to the base checkout.** Not code, not a plan, not a ledger, not a scratch file. The base branch is the user's; the only path back is their landing gesture.
 - A stray write to the base root also *blocks* the landing — the join preflight requires the base clean where it intersects the dash's files.
-- If the document a run is driving lives on the base branch, work on its **worktree copy**. Read the original by path once if you must; edit only the copy.
+- If the document a run is driving lives on the base branch, a **verb** moves it into the worktree — `tugutil dash create <name> --plan <path>`, or `tugutil dash adopt-plan <name>` for a dash that already exists. Never copy it by hand: the dash owns its plan and there is exactly one live copy ([D139], [dash-lifecycle.md](dash-lifecycle.md#plan-adoption)).
 
 There is no canonical directory for anything. `roadmap/`, `.tugtool/`, and every other home are derived from what you were handed, never assumed.
 

@@ -1689,7 +1689,11 @@ index 1111111..2222222 100644
         let (temp, worktree_abs) = init_dash_fixture_repo().await;
         let repo = temp.path().to_path_buf();
         git_in(&repo, &["branch", "sidecar"]).await;
-        git_in(&repo, &["worktree", "add", ".tug/worktrees/sidecar", "sidecar"]).await;
+        git_in(
+            &repo,
+            &["worktree", "add", ".tug/worktrees/sidecar", "sidecar"],
+        )
+        .await;
         let asked_from = repo.join(".tug/worktrees/sidecar");
 
         let snapshot = build_dash_diff_snapshot(

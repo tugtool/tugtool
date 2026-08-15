@@ -55,6 +55,17 @@ A **bind** mates a live session to a dash. It is a UI concept: git has no idea i
 - A bind is **never a landing authority**. It says who is working; it does not say who may land.
 - The store moves on the **broadcast**, never on the gesture: `bind_dash_ok` / `unbind_dash_ok` are the only movers of `cardSessionBindingStore`, which is what leaves a card correctly bound to what it was when a bind is refused.
 
+## Plan adoption
+
+A dash that implements a plan **owns** that plan: the worktree copy is the only live one, and only a verb moves it ([D139]). Nothing in the dash lane instructs anyone to copy a plan file by hand, because a hand-copy leaves two live copies with no receipt and no way to notice they have diverged.
+
+- **Adoption at birth.** `tugutil dash create <name> --plan <path>` resolves the plan in either root, commits its bytes on the dash branch, records `branch.tugdash/<name>.tugplan`, and cleans the base copy. Re-running it over a live dash is the repair path, not an error, and `tugutil dash adopt-plan <name>` is the same transplant on its own.
+- **What "clean the base copy" means.** A tracked path is restored with `git checkout HEAD -- <rel>`; an untracked one is removed. A *committed, clean* base copy is left alone — that is not a second live copy, it is ordinary branch divergence the join squash resolves like any other file.
+- **The ordering is the safety property.** The engine reads base, writes and commits on the branch, and only then touches base. On any failure the base copy is exactly as the user left it.
+- **Divergence is a refusal, never a silent state.** `dash step` refuses while a base copy is dirty or untracked, and the join preflight names the plan and `tugutil dash adopt-plan <name>` — because the generic "commit or stash it" is wrong here: committing a stale base copy enshrines a fork, and stashing hides it to detonate later.
+- **Progress is never the casualty.** When bodies differ, the base body wins and the worktree's ledger progress is replayed onto it row by row. `content_stamp` excludes status and commit cells, so a plan that was `reviewed` before adoption is `reviewed` after it.
+- **Release hands the plan back.** Adoption removed the base copy and release deletes the branch holding the only one, so `release_in` writes the plan back to the repo root before teardown and the discard receipt says so. The plan comes in when the dash adopts it and goes back out when the dash is discarded — a plan is not the work, it is the authored document that predates the dash and outlives it ([L23]).
+
 ## Landing — by reference
 
 A dash lands by `/dash-join <name>` into its base: a preview runs on entry, the squash message is edited in the composer, and the land is the human's act. Skills draft; humans land.
@@ -71,4 +82,4 @@ An operation is spelled the same everywhere, and that spelling is its `tugutil` 
 
 - [dash-work-doctrine.md](dash-work-doctrine.md) — how an agent behaves on a dash worktree.
 - [tracking-changes.md](tracking-changes.md) — the capture and commit layer beneath a dash, and the landing doctrine.
-- [D112] (scope axiom), [D113], [D116] (the landing workflow), [D138] (derive vs declare).
+- [D112] (scope axiom), [D113], [D116] (the landing workflow), [D138] (derive vs declare), [D139] (one plan home).

@@ -1284,15 +1284,22 @@ pub(crate) fn format_release_summary(
     rounds: u32,
     files: u32,
     round_subjects: &[String],
+    plan_restored: Option<&str>,
 ) -> String {
     let mut header = format!("released {dash} · discarded {rounds} round(s)");
     if files > 0 {
         header.push_str(&format!(", {files} file(s)"));
     }
-    if round_subjects.is_empty() {
+    let mut lines: Vec<String> = round_subjects.to_vec();
+    // The plan is not the work — it came in when the dash adopted it and goes
+    // back out when the dash is discarded, so the receipt says where it went.
+    if let Some(rel) = plan_restored {
+        lines.push(format!("Restored {rel} to the base checkout."));
+    }
+    if lines.is_empty() {
         return header;
     }
-    format!("{header}\n{}", round_subjects.join("\n"))
+    format!("{header}\n{}", lines.join("\n"))
 }
 
 /// Run a git command at `dir`, returning trimmed stdout on success, `None`
@@ -2242,7 +2249,10 @@ Some context.
         let dir = tempfile::tempdir().unwrap();
         write_plan(dir.path(), true);
         let path = dir.path().join("plan.md");
-        let moved = format!("{}\nOne more line.\n", std::fs::read_to_string(&path).unwrap());
+        let moved = format!(
+            "{}\nOne more line.\n",
+            std::fs::read_to_string(&path).unwrap()
+        );
         std::fs::write(&path, moved).unwrap();
         assert_eq!(
             dash_review_state(dir.path(), "plan.md").as_deref(),
@@ -2288,7 +2298,13 @@ Some context.
         git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
         git(
             &root,
-            &["worktree", "add", "-q", ".tug/worktrees/demo", "tugdash/demo"],
+            &[
+                "worktree",
+                "add",
+                "-q",
+                ".tug/worktrees/demo",
+                "tugdash/demo",
+            ],
         );
         write_plan(&root.join(".tug/worktrees/demo"), true);
         git(&root, &["config", "branch.tugdash/demo.tugplan", "plan.md"]);
@@ -3001,6 +3017,7 @@ Some context.
             2,
             3,
             &["first round".to_string(), "second round".to_string()],
+            None,
         );
         assert_eq!(
             s,
@@ -3012,8 +3029,19 @@ Some context.
     #[test]
     fn format_release_summary_of_a_clean_dash_is_one_line() {
         assert_eq!(
-            format_release_summary("spike", 0, 0, &[]),
+            format_release_summary("spike", 0, 0, &[], None),
             "released spike · discarded 0 round(s)"
+        );
+    }
+
+    /// A discarded dash that had adopted a plan says where the plan went — the
+    /// receipt for the one thing a release hands back rather than destroys.
+    #[test]
+    fn format_release_summary_says_where_the_plan_went() {
+        assert_eq!(
+            format_release_summary("spike", 0, 0, &[], Some("roadmap/x.md")),
+            "released spike · discarded 0 round(s)\n\
+             Restored roadmap/x.md to the base checkout."
         );
     }
 

@@ -37,9 +37,12 @@ If no plan exists yet, author one first with `/tugplug:plan-devise`, or write it
 ### 1. Setup
 
 1. Read the **Step Status Ledger** and resolve the step selector into a concrete list of steps to walk this run.
-2. Derive a short dash name from the plan slug. `tugutil dash create <name> --description "<one line>" --json`. **Capture the absolute `worktree` path** and `branch` from the response. If the dash already exists (resuming a later step range), `create` is idempotent and returns it. `create` hydrates the fresh worktree itself (its `[tugtool.dash].post_create` hook runs `bun install`), so it arrives ready — no manual dependency install.
-3. Make sure the plan is present **inside the worktree**: if it was committed on the base branch it already rode along; otherwise copy the file once from its given path into the worktree. From here you drive the worktree copy only.
-4. **Check that the plan's review covers the plan.** Against the **worktree** copy — the one you are about to drive:
+2. Derive a short dash name from the plan slug. `tugutil dash create <name> --description "<one line>" --plan <plan-path> --json`. **Capture the absolute `worktree` path** and `branch` from the response. If the dash already exists (resuming a later step range), `create` is idempotent and returns it — and `--plan` on a live dash is the repair path, not an error, so pass it every time.
+
+   `--plan` is what puts the plan **inside the worktree**, and it is the only thing that may: the dash adopts the document ([D139]), committing its bytes on the branch and cleaning the base copy, so there is one live copy from second zero. **Never copy a plan file by hand.** A hand-copy leaves two live copies with no receipt and no divergence detection, which is the failure this verb exists to make impossible. The receipt names the adoption commit and what happened to the base copy; from here you drive the worktree copy only.
+
+   `create` also hydrates the fresh worktree itself (its `[tugtool.dash].post_create` hook runs `bun install`), so it arrives ready — no manual dependency install.
+3. **Check that the plan's review covers the plan.** Against the **worktree** copy — the one you are about to drive:
 
    ```bash
    tugutil plan status <worktree-plan-path> --json
@@ -54,17 +57,9 @@ If no plan exists yet, author one first with `/tugplug:plan-devise`, or write it
 
    The message names which verdict it is, and on `stale` quotes `data.last_round`'s date and model, so the user is deciding against a fact rather than a warning. Implementing a plan nobody reviewed is strictly worse than implementing one whose review predates an edit, so both raise the same gate.
 
-   **Also compare the two copies.** When the plan was given as a base-checkout path *and* a worktree copy already exists, compare the files **before** you report the verdict. A `reviewed` verdict on a worktree copy that is missing the user's uncommitted base edits is the one wrong answer this gate can give — the run would implement a document the user has moved on from while the system reports everything is fine.
-
-   If they differ, name both paths, say what the difference looks like (ledger cells only is routine — that is what `dash step` writes; anything in the body is not), and raise an `AskUserQuestion`:
-
-   - *"Use the worktree copy"* — the run's normal state. Right whenever the difference is only ledger progress.
-   - *"Refresh it from the base copy"* — the user's base edits win. **Say in the option that this loses the worktree copy's ledger progress**, because it does: the base copy's rows are whatever they were when the dash was cut. Re-record the progress with `dash step` after refreshing, from the commits already on the branch.
-   - *"Stop and reconcile by hand"* — the honest answer when the bodies diverge in ways neither copy should lose.
-
-   Neither copy is ever overwritten without that answer. The worktree copy carries ledger progress; the base copy carries the user's edits; copying either direction destroys real state, so the choice is theirs and it is made with both paths on screen.
-5. Establish a green baseline (`bun test`, and for Rust changes `cd tugrust && cargo nextest run`) so you know what "still green" means.
-6. Make progress visible with one task per step. **This is not optional and not best-effort** — the task list is the user's live progress surface for the run, and it must mirror the resolved step list exactly: **every step selected this run gets a task, before you start walking.** `TaskCreate`/`TaskUpdate` are deferred tools — their schemas are not in the prompt until you load them, and listing them under `allowed-tools` does **not** load them. First call `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate` **once per step** (it creates a single task — it has no `tasks`/`todos` batch parameter), passing top-level string `subject` (the step title) and `description` (what the step does).
+   The gate reads the worktree copy and needs no comparison against a base one: adoption left exactly one live copy, and replaying ledger progress does not move a plan's content stamp, so a `reviewed` plan is still `reviewed` after the transplant.
+4. Establish a green baseline (`bun test`, and for Rust changes `cd tugrust && cargo nextest run`) so you know what "still green" means.
+5. Make progress visible with one task per step. **This is not optional and not best-effort** — the task list is the user's live progress surface for the run, and it must mirror the resolved step list exactly: **every step selected this run gets a task, before you start walking.** `TaskCreate`/`TaskUpdate` are deferred tools — their schemas are not in the prompt until you load them, and listing them under `allowed-tools` does **not** load them. First call `ToolSearch` with query `select:TaskCreate,TaskUpdate`, then call `TaskCreate` **once per step** (it creates a single task — it has no `tasks`/`todos` batch parameter), passing top-level string `subject` (the step title) and `description` (what the step does).
 
 ### 2. Implement (walk the steps)
 
@@ -74,7 +69,7 @@ Walk the resolved steps in dependency order. For each step:
   ```bash
   tugutil dash step <name> start <n> [--plan <path>]
   ```
-  This moves the ledger row to `in progress` and records the step in the dash-log, which is what makes the dash read as `implementing (i/N)` in the Lens and the Changes card while you work. Pass `--plan` on the **first** `start` of the run — the path is worktree-relative (or absolute inside the worktree) and is remembered in the dash's branch config for every later call.
+  This moves the ledger row to `in progress` and records the step in the dash-log, which is what makes the dash read as `implementing (i/N)` in the Lens and the Changes card while you work. `create --plan` already recorded which plan this dash drives, so `--plan` here is only for a dash that never adopted one.
 - Read the step's Tasks / References / Checkpoint.
 - Do the work yourself, in the worktree.
 - Run **that step's checkpoint** before committing. The bar is in the doctrine; the step names the specific commands.
@@ -92,6 +87,7 @@ Walk the resolved steps in dependency order. For each step:
 
 Pragmatics:
 
+- **`dash step` refusing over a diverging base plan copy has exactly one right answer, so it is not an ask-fork.** The message names it: run `tugutil dash adopt-plan <name>` and retry the step. It means the user edited the base checkout's copy of the plan mid-run; the transplant folds their edits in, replays your ledger progress onto them, and cleans base. Do it and carry on.
 - **A refused `dash step` is telling you about the document, not the tool.** It exits 1, names the plan and the row, and leaves the file untouched — a plan that does not strictly parse, a missing ledger row, an anchor that is not `#step-<n>`, or a `done` row you tried to reopen.
 
   Raise the refusal as an `AskUserQuestion` rather than picking a repair yourself, because the wrong guess corrupts the durable record: *"Fix the plan and retry"* / *"Hand-edit the ledger this run"*. Quote what the verb said. A malformed document usually wants fixing; a document that genuinely cannot be made to parse wants the hand-edit — and which one this is depends on what the plan is *for*, which is the user's to know.

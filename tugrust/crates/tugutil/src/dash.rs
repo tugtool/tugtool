@@ -17,7 +17,14 @@ use crate::output::print_ok;
 /// (exit 1 on any error, matching the former standalone tugdash binary).
 pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
     let result: Result<(), String> = match cmd {
-        DashCommands::Create { name, description } => run_create(&name, description, json, quiet),
+        DashCommands::Create {
+            name,
+            description,
+            plan,
+        } => run_create(&name, description, plan.as_deref(), json, quiet),
+        DashCommands::AdoptPlan { name, plan } => {
+            run_adopt_plan(&name, plan.as_deref(), json, quiet)
+        }
         DashCommands::Commit { name, message } => run_commit(&name, &message, json, quiet),
         DashCommands::Join {
             name,
@@ -67,13 +74,51 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
     }
 }
 
+/// One line naming what the transplant did with each copy of the plan.
+fn adopt_receipt_line(data: &ops::AdoptOutcome) -> String {
+    let commit = match data.commit.as_deref() {
+        Some(sha) => format!("commit {sha}"),
+        None => "no commit needed".to_string(),
+    };
+    let base = match data.base_copy.as_str() {
+        "restored" => "base copy restored",
+        "removed" => "base copy removed",
+        _ => "base copy untouched",
+    };
+    format!("Adopted plan {} ({commit}, {base})", data.plan_path)
+}
+
+fn print_adopt_receipt(data: &ops::AdoptOutcome) {
+    println!("{}", adopt_receipt_line(data));
+    if !data.dropped_rows.is_empty() {
+        println!(
+            "  Ledger rows not replayed: {}",
+            data.dropped_rows.join(", ")
+        );
+    }
+    for warning in &data.warnings {
+        println!("  warning: {warning}");
+    }
+}
+
+fn run_adopt_plan(name: &str, plan: Option<&str>, json: bool, quiet: bool) -> Result<(), String> {
+    let data = ops::adopt_plan(name, plan)?;
+    if json {
+        print_ok("dash adopt-plan", &data);
+    } else if !quiet {
+        print_adopt_receipt(&data);
+    }
+    Ok(())
+}
+
 fn run_create(
     name: &str,
     description: Option<String>,
+    plan: Option<&str>,
     json: bool,
     quiet: bool,
 ) -> Result<(), String> {
-    let data = ops::create(name, description)?;
+    let data = ops::create(name, description, plan)?;
     // The session that made the dash is working on it. Best-effort: a headless
     // run with no live instance loses nothing (binding is a UI concept), so a
     // failure warns and never fails the create.
@@ -93,6 +138,9 @@ fn run_create(
         println!("  Worktree: {}", data.worktree);
         println!("  Branch: {}", data.branch);
         println!("  Base: {}", data.base_branch);
+        if let Some(adopted) = data.plan.as_ref() {
+            print_adopt_receipt(adopted);
+        }
     }
     Ok(())
 }
