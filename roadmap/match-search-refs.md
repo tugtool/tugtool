@@ -33,6 +33,14 @@ Applied: **architecture** — [P08] was rewritten from "two bespoke row renderer
 **Tests** — added the `@covers` requirement and derived-selection discipline, and a `just app-test` → `just app-test-changed` sweep; added an exit criterion asserting Grep's rows stay non-clickable, since that is the one way the opt-in prop could regress a surface this plan does not own.
 Asked and settled with the user: the composition scope (opt-in clicks, not global), the Step 12 cut, and the `/find` disposition. Nothing was deferred to an Open Question.
 
+**Round 2 — 2026-08-15, opus.** Reviewed `plan:5fe31d73426927a2`. Lint: 0 errors, 0 warnings on entry and on exit.
+Oriented on: the Review Record — round 1 landed whole in `a0cfdf622` and the plan has been clean since, so there is no diff to read; this round re-read the code the plan touches rather than the document's own history.
+Applied: **correctness** — added [P15] after finding the round-1 rewrite to the content annotator left a contradiction it could not have known it created. `PathListBlock` annotates a row **only when its path is absolute** (`const annotated = path.startsWith("/")`), and `FilePathPayload.path` is contractually the absolute canonical path with nothing downstream resolving a relative one — but #wire-frames makes `path` relative to `root` and told `refs-result-view.ts` to relativize. Every `/match` row would have rendered perfectly and done nothing on click, failing Spec S02, Spec S05 and two success criteria with no unit test able to see it. The wire and ledger stay relative (portable, and what the C++ tools reported); the view and `/ref` join `root` from one shared helper. Amended #wire-frames, #dependencies, [P08], [P09], Spec S05, #symbol-inventory, #state-zone-mapping, and Steps 6 and 8, and added the assertion that catches it: the app-test now checks the row carries `data-tug-annotation`.
+**Holes** — three parity sites the plan never named, all silent rather than loud. `countClaudeTurns` (`session-load-control-bar-state.ts`) is a **third** ink predicate beside the two [P13] generalizes, excluding `origin === "shell"` only; a refs turn would make the metadata row read "83 of 68", the exact bug that function's own docstring warns about. `rowSegments` in `transcript-search-index.ts` branches `ghost`/`shell`/`user` and lets everything else fall to the assistant path, which returns `[]` for a descriptor with no message range — refs rows would be invisible to transcript Find, which matters because #non-goals points the user at `FIND` as *the* transcript-search surface. And Share is not what the plan assumed: there is no `SHARE_*` action anywhere in the vocabulary. The shell row's add-to-context toggle calls `pendingContextStore.stage(…)`, and two of that store's unions are closed — `ContextSource` is `"shell" | "btw"`, and the `<tug-context source="(shell|btw)">` `OPEN_RE` is a **durable format**, since the sentinel travels inside the sent user message into the session JSONL and is split back out on reload. An unwidened regex means a shared refs block returns as raw text after a reload; the store's binary `n(source)` ternary would meanwhile answer `_btwContext` for `"refs"`. All three are now in [P03]/[P13], #dependencies, #symbols, Steps 5 and 6, and the exit criteria, with a round-trip test on the sentinel — the half a click cannot expose.
+**Rust** — [P05] and Step 4 now name the two gates a `shell_ledger.rs` clone must not drop: `tugcore::ledger_db::open` / `apply_pragmas` (a bare `Connection::open` fails the workspace's `no_ad_hoc_ledger_opens` source-scanning test, so this breaks the build, not a convention) and `ledger_integrity::integrity_gate` / `salvage_into`. Re-verified `0x62`/`0x63` still free and `glob`, `regex`, `rayon` still direct `tugcast` deps.
+**Corrections** — [P01] claimed registry entry auto-wires `/m`→`/match` inline completion; `/model`, `/mode`, and `/memory` all hold that prefix, so the claim is false as written and now reads as prefix-rule resolution with an explicit "do not special-case it," matching the note Step 8 already carried for `/r`. Re-verified against the tree: no name collides with an existing registry entry; the handler signature, the three participant unions, `upsertShellTurn`/`appendTurnInterleavingShell`, `SearchResultSpan`, both blocks' `embedded` modes and `componentStatePreservationKey`, and `openFileInCard`'s signature are all as round 1 recorded them.
+Left alone: Step 6 grew — the Share widening and the search-index projection are real work — but Share is already a success criterion and an exit criterion, so this is the cost of a decision the plan made, not a new one, and it was not re-opened. Nothing was deferred to an Open Question.
+
 ---
 
 ### Phase Overview {#phase-overview}
@@ -224,7 +232,10 @@ this plan's mechanisms (streaming feed, ledger, slash commands) replace the scaf
     a list of clickable file paths with `MiddleEllipsisPath`, a found/name sort toggle, a
     `BlockCopyButton`, standalone **and** `embedded` modes (the header's actions cluster
     portals into the host `BlockChrome`). `GlobToolBlock` composes it; `GrepToolBlock`
-    reuses it for files-only mode. This is `/match`'s row renderer.
+    reuses it for files-only mode. This is `/match`'s row renderer. **A row is annotated —
+    and therefore clickable — only when its path is absolute** (`path.startsWith("/")`;
+    relative paths are left un-annotated by design), which is why refs rows carry absolute
+    paths ([P15]).
   - `SearchResultBlock` (`…/body-kinds/search-result-block.tsx`) — matches grouped by file
     under collapsible file-header rows, each match row rendering `line` + text with the hit
     **spans highlighted from explicit char offsets** (`SearchResultSpan = [start, end)`,
@@ -243,7 +254,30 @@ this plan's mechanisms (streaming feed, ledger, slash commands) replace the scaf
   `TUG_ACTIONS.OPEN_FILE` with `{ path, line?, endLine? }` and offers Open in Editor /
   Show in Finder / Copy Path. `path-list-block.tsx` is the worked precedent — it owns no
   handler and no responder, which is why a Glob result opens exactly like a path written
-  in assistant prose. Refs rows do the same.
+  in assistant prose. Refs rows do the same. `FilePathPayload.path`
+  (`tugdeck/src/lib/annotator/payloads.ts`) is documented as the **absolute canonical**
+  path and `openTargetFor` forwards it verbatim — nothing downstream resolves a relative
+  path ([P15]).
+- **Share into Claude's context** (frontend) — the `PendingContextStore`
+  (`tugdeck/src/lib/pending-context-store.ts`), not an action in the vocabulary: there is no
+  `SHARE_*` action. A shell row's `CommandBlock` carries a `staged` / `onToggleContext` pair
+  (wired in `session-card-transcript.tsx`) that calls `pendingContextStore.stage({ source,
+  ref, label, body })` with `composeShellShareText(message)`, and the staged items are
+  prepended to the next `❯` submission wrapped in a `<tug-context source="…" ref="…">`
+  sentinel. Two things there are **closed unions, not open ones**: `ContextSource` is
+  `"shell" | "btw"`, and the sentinel is parsed back out of the session JSONL by a literal
+  `OPEN_RE = /^<tug-context source="(shell|btw)" ref="…/` — a **durable wire format**, so a
+  third source that is not in that alternation round-trips as raw text on reload. The
+  store's `n(source)` visibility read is a binary ternary that answers `_btwContext` for
+  anything that is not `"shell"`. See [P03].
+- **Transcript search** (frontend): `tugdeck/src/lib/transcript-search-index.ts` projects
+  each transcript row into search segments — `rowSegments` branches `ghost` / `shell`
+  (`shellSegments`) / `user`, and everything else falls through to the assistant path, which
+  returns `[]` for a descriptor with no `messageStart`/`messageEnd`. A new cell kind is
+  therefore *silently* unsearchable rather than broken. See [P03].
+- **Loaded-turn accounting** (frontend):
+  `tugdeck/src/components/tugways/cards/session-load-control-bar-state.ts` `countClaudeTurns`
+  — the `X of Y` metadata figure, which excludes `origin === "shell"` only. See [P13].
 - **File-open / reveal chain** (frontend): `openFileInCard`
   (`tugdeck/src/lib/open-file-in-card.ts` — signature
   `(store, path, line?, endLine?)`; path-keyed reuse, viewable-file fork, then the
@@ -462,9 +496,13 @@ changes.
   intact, but its subject changed and the plan's original phrasing named dead symbols.)
 - The slash system is the designed surface for "run local Tug work without a Claude turn,"
   and [L30] makes a registry entry the required shape for a user-invocable command.
-- Adding to the registry auto-wires completion (`/m`→`/match` inline + popup), the
+- Adding to the registry auto-wires completion (popup + inline), the
   `/name args` parser, submit interception (before the Claude-send gates, so it works
-  mid-turn), history, and the "don't forward to Claude" classifier — zero extra edits.
+  mid-turn), history, and the "don't forward to Claude" classifier — zero extra edits. None
+  of the three names collides with an existing entry; all three do share a first letter with
+  live commands (`/model` `/mode` `/memory`; `/shell` `/skills`; `/rewind` `/resume`
+  `/rename`), so completion resolves them by the registry's ordinary prefix rules and no
+  command gets a single-letter shortcut — do not special-case any of them.
 - The exhaustive `Record<LocalCommandName, …>` handler map makes a missing handler a
   compile error, not a silent no-op.
 
@@ -524,7 +562,24 @@ Claude's context is the block's **Share** gesture.
   (`"user" | "assistant" | "ghost" | "shell"`), and `SessionZ1BParticipant` in
   `session-card-z1b.tsx` (`"user" | "assistant" | "shell"`). The third is easy to miss and
   is a compile error, not a silent gap.
-- The refs block carries a Share affordance wired to the same share path shell uses.
+- **Share is `PendingContextStore`, and two of its unions are closed.** There is no
+  `SHARE_*` action; the shell block's add-to-context toggle calls
+  `pendingContextStore.stage({ source: "shell", ref, label, body })`. Refs parity means:
+  `ContextSource` += `"refs"`; the `<tug-context source="(shell|btw)">` `OPEN_RE`
+  alternation += `refs` — **this one is a durable format**, since the sentinel travels inside
+  the sent user message into the session JSONL and the user-row renderer splits it back out
+  on reload, so an unwidened regex means a shared refs block comes back as raw text; the
+  binary `n(source)` / `setContext(source)` ternaries gain a `refs` branch (today anything
+  that is not `"shell"` silently answers `_btwContext`); and a `composeRefsShareText` beside
+  `composeShellShareText` composes the fence-safe body, with `ref` addressed `r{n}` to match
+  shell's `s{n}`.
+- **The transcript search index needs a refs projection.** `rowSegments` in
+  `transcript-search-index.ts` handles `ghost` / `shell` / `user` explicitly and lets
+  everything else take the assistant path, which returns `[]` when a descriptor has no
+  `messageStart`/`messageEnd` — so a `refs` row would be silently invisible to transcript
+  Find (⌘F). That matters more here than for most rows, because #non-goals points the user at
+  the deck's `FIND` action as *the* transcript-search surface. Add a `refsSegments`
+  projection (the command line, then the ref rows' paths + previews) beside `shellSegments`.
 
 #### [P04] Streaming result frames with cancellation (DECIDED) {#p04-streaming}
 
@@ -558,6 +613,14 @@ CONTROL read returns it for restore.
   shell ledger's restore contract.
 
 **Implications:**
+- **Two gates the clone must not drop.** `ShellLedger::open` opens through
+  `tugcore::ledger_db::open` (and `open_in_memory` calls `ledger_db::apply_pragmas`) — the
+  `no_ad_hoc_ledger_opens` enforcement test reads the workspace's own production sources and
+  fails the build on a bare `Connection::open`, so this is a compile-time-ish requirement, not
+  a convention. It also runs `ledger_integrity::integrity_gate(path, "shell")` before opening
+  and `salvage_into(…)` after, which quarantines a corrupt file and salvages readable rows;
+  `refs_ledger` passes `"refs"` and its own table name. `default_path()` derives from
+  `SessionLedger::default_path()` so the db is per-instance when `TUG_INSTANCE_ID` is set.
 - Model on `shell_ledger.rs` (`default_path()` → a sibling `refs.db`, `open`/`open_in_memory`,
   a `record_run` that deletes the session's prior rows then inserts the new list, a
   `list_refs(tug_session_id)`), wired through the supervisor for the CONTROL read
@@ -632,8 +695,9 @@ keeps its current display-only behavior.
 **Implications:**
 - New view code shrinks to **one** pure module, `refs-result-view.ts`: the numbered flat
   `TextRef` list → `PathListData` (for `match`) or `SearchResultData` (for `search`),
-  grouping by file, relativizing paths against `root`, passing spans through unchanged
-  ([P14]). Unit-testable like `shell-exchange-view.ts`. `refs-match-row.tsx`,
+  grouping by file, **joining `root` onto each path so the row is absolute and therefore
+  clickable** ([P15]), passing spans through unchanged ([P14]). Unit-testable like
+  `shell-exchange-view.ts`. `refs-match-row.tsx`,
   `refs-search-row.tsx`, and a bespoke row chrome are **not** written.
 - The flat numbered list stays the ledger's and `/ref`'s truth ([P05], [P09]); grouping is a
   *display* derivation only, so a `#r` number never depends on how rows are grouped.
@@ -666,7 +730,9 @@ error and is skipped.
 - `/ref` is pure frontend: parse spec → look up the current refs (from the store /
   latest `refs` turn) → `dispatchCommand(TUG_ACTIONS.OPEN_FILE, { path, line?, endLine? })`
   per ref — the identical payload the annotator's `file-path` `primaryClick` sends, so a
-  typed `/ref 3` and a click on row 3 are the same event by construction. Search refs pass
+  typed `/ref 3` and a click on row 3 are the same event by construction. That identity is
+  only real if `/ref` joins `root` onto the ref's relative `path` from the same helper
+  `refs-result-view.ts` uses ([P15]) — `openFileInCard` resolves nothing. Search refs pass
   `line` (+ column range once [P10] lands); match refs pass only `path`.
 
 #### [P10] Line-granular reveal first; column-span highlight extends the chain (DECIDED) {#p10-column-highlight}
@@ -783,6 +849,45 @@ duplicated per origin.
   gains a sibling `refs_result` skip.
 - These are pure helpers on `_transcript` in the store wrapper — the same layer, no reducer
   state changes.
+- **A third ink predicate lives outside the reducer:** `countClaudeTurns` in
+  `tugdeck/src/components/tugways/cards/session-load-control-bar-state.ts` computes the
+  metadata row's `X of Y` as `transcript.reduce((n, t) => t.origin === "shell" ? n : n + 1)`
+  — its own docstring says counting ink rows reads a shell-heavy session as "83 of 68".
+  A `refs` turn would be counted as a Claude turn and produce exactly that lie. Generalize
+  this predicate in lockstep (an exported `isInkOrigin(origin)` the reducer, the data
+  source, and this counter all read is the shape that keeps three copies from drifting).
+
+#### [P15] Rows carry absolute paths; the wire stays relative (DECIDED) {#p15-absolute-paths}
+
+**Decision:** The wire and the ledger keep `path` **relative to `root`** (#wire-frames), and
+`refs-result-view.ts` joins `root` back on, so every path handed to a body kind — and every
+path `/ref` dispatches — is **absolute**.
+
+**Rationale:**
+- Clickability depends on it. `PathListBlock` annotates a row **only when the path is
+  absolute** (`const annotated = path.startsWith("/")`; a relative path is deliberately left
+  un-annotated rather than guessed at), so a relativized `/match` row would render with no
+  `data-tug-annotation` at all and silently fail Spec S02, Spec S05 and #success-criteria —
+  a defect no unit test on the derivation would catch.
+- The annotator's contract agrees: `FilePathPayload.path` is documented as the *absolute
+  canonical* path, `openTargetFor` forwards it to `OPEN_FILE` unchanged, and `openFileInCard`
+  does no root resolution. There is no layer below the row that could re-absolutize.
+- This is also what the transcript already looks like: `GlobToolBlock` feeds `PathListBlock`
+  the Glob tool's absolute filenames, and `MiddleEllipsisPath` is what makes them readable.
+  A refs row and a Glob row must not differ.
+- Keeping the *wire* relative is still right — `root` is the frame's own field, the ledger
+  row stays portable, and the C++ tools reported relative paths.
+
+**Implications:**
+- `refs-result-view.ts` takes `root` as an argument and emits absolute `PathListData.paths` /
+  `SearchResultFile.path`. Its unit test asserts absolutization (not relativization) and that
+  a row's `data-path` is absolute.
+- `/ref` ([P09]) resolves against the flat `TextRef` list, whose `path` is relative — it joins
+  `root` before dispatching `OPEN_FILE`, from the same helper the view uses, so a typed
+  `/ref 3` and a click on row 3 cannot diverge.
+- The restore path ([P05], #step-9) needs `root` at ingest time; `RefsSessionStore` already
+  holds `projectDir` ([P06]), so it stamps it onto the restored message rather than relying on
+  the ledger row.
 
 ---
 
@@ -830,7 +935,9 @@ Output (`REFS_OUTPUT`, session-scoped; `tug_session_id` spliced in by the feed):
 
 `line` is **1-based**; `columns` are **0-based half-open `[start, end)` char offsets** into
 `preview` ([P14]) — the exact shape `SearchResultBlock`'s `SearchResultSpan` consumes.
-`path` is relative to `root`. `preview` is the full matched line, untruncated: the block
+`path` is relative to `root` **on the wire and in the ledger only** — `refs-result-view.ts`
+joins `root` back on before a path reaches a body kind or `OPEN_FILE`, because a relative
+path is not clickable ([P15]). `preview` is the full matched line, untruncated: the block
 renders and ellipsizes, and a pre-truncated line would make the offsets lie.
 
 CONTROL: `list_refs` request `{ action:"list_refs", tug_session_id }` → `list_refs_ok`
@@ -883,13 +990,16 @@ CONTROL: `list_refs` request `{ action:"list_refs", tug_session_id }` → `list_
   (Open in Editor / Show in Finder / Copy Path). The row owns no handler and no responder
   ([L11]), which is why a refs row opens exactly the way a path written in assistant prose
   does. `PathListBlock` already does this; `SearchResultBlock` gains it behind the opt-in
-  prop ([P08]).
+  prop ([P08]). `data-path` is **absolute** — `PathListBlock` annotates only absolute paths
+  and the annotator payload is contractually absolute ([P15]).
 
 **Spec S06: Non-context ink + Share** {#s06-ink}
 
 - `refs` turns are `#r`-addressed and excluded from Claude context (skipped inside Claude
   turns, like `shell`). The block's **Share** affordance is the only path that surfaces a
-  result into Claude's context.
+  result into Claude's context: an add-to-context toggle staging a `<tug-context
+  source="refs" ref="r{n}">`-wrapped body on the `PendingContextStore`, which rides the next
+  `❯` submission and is split back out of the JSONL on reload ([P03]).
 
 **Spec S07: Latest-only persistence** {#s07-persistence}
 
@@ -931,7 +1041,8 @@ CONTROL: `list_refs` request `{ action:"list_refs", tug_session_id }` → `list_
 | `RefsSessionStore` snapshot (in-flight run, live, run_id) | structure/local-data | store `subscribe`/`getSnapshot` + `useSyncExternalStore` | [L02] |
 | Refs result rows (the `refs` `TurnEntry` + streamed appends) | local-data | `CodeSessionStore` reducer + `useSyncExternalStore` | [L02] |
 | `#r` ordinal | local-data | precomputed `refsRowOrdinal` slot field in `session-transcript-data-source.ts` (single-pass, mirror `shellRowOrdinal`) | [L02] |
-| Row click → `open-file` | structure | annotator `file-path` `primaryClick` → `dispatchCommand(OPEN_FILE)`; the row owns no handler | [L11], [L30] |
+| Row click → `open-file` | structure | annotator `file-path` `primaryClick` → `dispatchCommand(OPEN_FILE)`; the row owns no handler; the row's `data-path` is absolute ([P15]) | [L11], [L30] |
+| Staged-for-Claude share items | local-data | `PendingContextStore` `subscribe`/`getSnapshot` (existing) + a `refs` `ContextSource` | [L02] |
 | In-flight pulsing header / Stop affordance | appearance | CSS/DOM `data-state`, no React state | [L06] |
 | In-block match-span highlight | appearance | `SearchResultBlock`'s existing CSS runs from `spans` — nothing new | [L06] |
 | Text-card line flash / column-span highlight | appearance | CM6 decoration / `CSS.highlights` imperative | [L06] |
@@ -952,7 +1063,7 @@ CONTROL: `list_refs` request `{ action:"list_refs", tug_session_id }` → `list_
 | `tugdeck/src/lib/refs-session-store.ts` | Per-card store driving `REFS_INPUT`; `run(kind,args)`, `cancel()`, `_fold` → `ingestRefs`; restore via `list_refs`. |
 | `tugdeck/src/lib/refs-flags.ts` | Shared getopt-style flag parser/normalizer for `/match` + `/search` (Lists L01/L02); consumed by the store. Written to emit tokens as well as parse them, for the deferred cluster ([P07]). |
 | `tugdeck/src/components/tugways/cards/refs-result-block.tsx` (+ `.css`) | Refs block chrome (header, Share, Copy, in-flight pulse) composing `PathListBlock` / `SearchResultBlock` `embedded`. [L19]/[L20] conformant. ([P08]) |
-| `tugdeck/src/components/tugways/cards/refs-result-view.ts` | Pure derivation: `TextRef[]` → `PathListData` \| `SearchResultData` (group by file, relativize, pass spans through) — unit-tested. ([P08], [P14]) |
+| `tugdeck/src/components/tugways/cards/refs-result-view.ts` | Pure derivation: `TextRef[]` → `PathListData` \| `SearchResultData` (group by file, join `root` so paths are absolute and clickable, pass spans through) + the `root`-join helper `/ref` shares — unit-tested. ([P08], [P14], [P15]) |
 
 **Deliberately not created** (the plan's original four-file view layer): `refs-match-row.tsx`,
 `refs-search-row.tsx`, and `refs-option-cluster.tsx`. The first two are `PathListBlock` /
@@ -973,6 +1084,10 @@ CONTROL: `list_refs` request `{ action:"list_refs", tug_session_id }` → `list_
 | `buildRefsTurnEntry` + reducer actions + Claude-turn skip | fn | `tugdeck/src/lib/code-session-store/reducer.ts` | mirror `buildShellTurnEntry` + the shell skip |
 | `refsRowOrdinal` | slot field | `tugdeck/src/lib/session-transcript-data-source.ts` | precomputed single-pass (mirror `shellRowOrdinal`), 1..N within the restored block |
 | `upsertShellTurn` → ink upsert, `appendTurnInterleavingShell` predicate | fn | `tugdeck/src/lib/code-session-store/reducer.ts` | generalize to `shell`+`refs` ink origins ([P13]); streaming upsert + reload interleave. Both still exist under these names, applied by the store wrapper in `code-session-store.ts`. |
+| `countClaudeTurns` predicate | fn | `tugdeck/src/components/tugways/cards/session-load-control-bar-state.ts` | the third ink predicate ([P13]) — excludes `origin === "shell"` only; a `refs` turn would inflate the `X of Y` metadata figure. Generalize with the other two (a shared `isInkOrigin`) |
+| `refsSegments` + `rowSegments` branch | fn | `tugdeck/src/lib/transcript-search-index.ts` | project refs rows for transcript Find; without it a `refs` descriptor falls to the assistant path and yields `[]` — **silently** unsearchable ([P03]) |
+| `ContextSource` += `"refs"`, `OPEN_RE` alternation, `n`/`setContext` branches | type + fn | `tugdeck/src/lib/pending-context-store.ts` | the Share path ([P03]). `OPEN_RE` is a **durable format** — the sentinel lands in the session JSONL and is re-split on reload |
+| `composeRefsShareText` + block staged/toggle wiring | fn + props | beside `composeShellShareText`; `session-card-transcript.tsx` | fence-safe share body + the add-to-context toggle, `ref` addressed `r{n}` ([P03]) |
 | `Participant` union + `PARTICIPANT_ICONS` | type + registry | `tug-transcript-entry.tsx` | add `"refs"` + a gutter glyph — the union is open by design and already carries `git`/`reporter`/`operator` |
 | `SessionTranscriptCellKind` | type | `tugdeck/src/lib/session-transcript-data-source.ts` | add `"refs"` to `"user"\|"assistant"\|"ghost"\|"shell"` |
 | `SessionZ1BParticipant` | type | `tugdeck/src/components/tugways/cards/session-card-z1b.tsx` | add `"refs"` — a **third** participant union, easy to miss |
@@ -1176,6 +1291,10 @@ Spec S02, List L01, ([Q02] skip model, #wire-frames)
 - Supervisor `list_refs` CONTROL handler returning `list_refs_ok`.
 
 **Tasks:**
+- [ ] Open through `tugcore::ledger_db::open` (+ `apply_pragmas` for the in-memory ctor) and
+      run `ledger_integrity::integrity_gate(path, "refs")` / `salvage_into` around it, exactly
+      as `ShellLedger::open` does — a bare `Connection::open` fails the workspace's
+      `no_ad_hoc_ledger_opens` enforcement test ([P05]).
 - [ ] Implement clobber-on-complete; do not persist cancelled runs.
 - [ ] Wire the CONTROL read through the supervisor.
 
@@ -1230,6 +1349,9 @@ Spec S06, [L02], (#data-flow, #p13-ink-insertion), Dependencies (#dependencies)
 - [ ] Generalize `upsertShellTurn` + `appendTurnInterleavingShell` to ink origins
       (`shell` + `refs`) per [P13]; route streaming `refs_rows` updates through the
       ink upsert so the in-flight turn settles in place (not a duplicate row).
+- [ ] Generalize the **third** ink predicate in lockstep: `countClaudeTurns` in
+      `session-load-control-bar-state.ts` ([P13]). Left alone, a session with refs turns
+      reports "83 of 68" in the metadata row — the exact bug its docstring warns about.
 - [ ] Implement the store + ingest + reducer; append `refs_rows` to the in-flight message
       as [L02] store updates (not DOM).
 
@@ -1239,6 +1361,8 @@ Spec S06, [L02], (#data-flow, #p13-ink-insertion), Dependencies (#dependencies)
       (row count stays 1, refs accumulate); a cancelled complete marks the message; a
       `refs` turn interleaves correctly when a restore lands after a trailing shell turn
       ([P13]).
+- [ ] Unit: `countClaudeTurns` over a transcript carrying both a shell and a `refs` turn
+      returns the Claude-turn count, not the row count ([P13]).
 
 **Checkpoint:**
 - [ ] `bunx tsc --noEmit` clean; `bunx vite build` succeeds.
@@ -1280,17 +1404,31 @@ Spec S06, Spec S02, Spec S03, [L02], [L06], [L11], [L19], [L20], (#state-zone-ma
 **Tasks:**
 - [ ] Render a streaming refs turn; rows grow as the message updates; in-flight header
       pulses; completed shows total.
-- [ ] Wire Share (reuse the shell block's share path) and Copy.
+- [ ] Derive rows with **absolute** paths (join `root`) — a relative path renders
+      un-annotated and the row silently does not open ([P15]).
+- [ ] Wire Share and Copy. Share is `pendingContextStore.stage(…)` behind a
+      `staged`/`onToggleContext` pair like the shell row's `CommandBlock` — which means
+      widening `ContextSource`, the `<tug-context source="…">` `OPEN_RE` alternation (a
+      durable JSONL format), and the store's binary `n`/`setContext` ternaries, plus a
+      `composeRefsShareText` ([P03]).
+- [ ] Add the `refsSegments` projection to `transcript-search-index.ts` so refs rows are
+      reachable by transcript Find ([P03]).
 - [ ] Confirm `SearchResultBlock` collapse state and `PathListBlock` sort survive the
       streaming upsert ([P13]) rather than resetting on every `refs_rows` batch — the turn's
       mount identity is what to fix if they do ([L26], [P08]).
 
 **Tests:**
 - [ ] Unit: `refs-result-view` groups a flat numbered list into `SearchResultData` without
-      renumbering, relativizes paths, and passes spans through byte-identical.
+      renumbering, emits **absolute** paths joined from `root` ([P15]), and passes spans
+      through byte-identical.
+- [ ] Unit: a shared refs item round-trips the `<tug-context source="refs">` sentinel —
+      staged, prepended, and split back out by the user-row renderer ([P03]). This is the
+      durable-format half of Share and the one that a reload, not a click, would expose.
 - [ ] App-test (`@covers` the block, the view, and `search-result-block.tsx`): a real refs
       turn renders both kinds; clicking a search row opens a Text card scrolled to the line;
       clicking a match row opens the file; a Grep tool block's rows remain non-clickable.
+      Assert a match row actually carries `data-tug-annotation="file-path"` — the failure
+      mode of a relative path is a row that renders perfectly and does nothing ([P15]).
 
 **Checkpoint:**
 - [ ] `bunx vite build` succeeds; live: a refs turn renders and rows open Text cards.
@@ -1351,6 +1489,8 @@ Spec S06, Spec S02, Spec S03, [L02], [L06], [L11], [L19], [L20], (#state-zone-ma
 
 **Tasks:**
 - [ ] Implement spec parsing + resolution + capped multi-open.
+- [ ] Join `root` onto the ref's relative `path` via the shared helper before dispatching
+      `OPEN_FILE`, so `/ref 3` and a click on row 3 send the identical payload ([P15]).
 
 **Tests:**
 - [ ] Unit: spec parser (`3`, `3-5`, `3 7 9`, mixed, cap, out-of-range).
@@ -1485,8 +1625,11 @@ cards honoring the deck's open preference.
 - [ ] A run is cancellable; an invalid `-e` regex yields zero results, no crash. (P04, R02)
 - [ ] A new run clobbers the ledger; a reload restores the last block; `/ref N` still
       resolves. (Spec S07, P05)
-- [ ] Refs never enter Claude context except via Share; `SecretFilter` paths never appear.
-      (Spec S06, R03)
+- [ ] Refs never enter Claude context except via Share, and a shared refs block survives a
+      reload as an attributed context chip (not raw sentinel text). `SecretFilter` paths
+      never appear. (Spec S06, R03, P03)
+- [ ] A session carrying refs turns still reports the right `X of Y` in the metadata row,
+      and a refs row is findable by transcript Find. ([P13], [P03])
 - [ ] A Grep tool block's match rows are still non-clickable — the `SearchResultBlock`
       interactivity prop is opt-in and defaulted off. ([P08])
 - [ ] `cargo nextest run`, `bunx tsc --noEmit`, `bunx vite build`, and the plan's app-test
