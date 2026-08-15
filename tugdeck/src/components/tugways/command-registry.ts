@@ -930,6 +930,43 @@ export const COMMANDS: readonly CommandEntry[] = [
     mirrored: true,
     validate: (chain) => chain.validateAction(TUG_ACTIONS.PASTE),
   },
+  // The case pair carries no predicate: first-responder routing asks the
+  // editable surface itself, which answers on its writability — the same
+  // gate Delete gets, at the same granularity (focus, not caret), and for
+  // the same reason: a selection-granular answer would be stale by the time
+  // the menu opened. Each handler no-ops on a collapsed selection.
+  //
+  // ⌥⌘U / ⌥⌘L are the user's grant and are recorded as an anomaly in
+  // chord-tiers.md: ⌥ composes on no base here (⌘U is unbound, ⌘L is Focus
+  // Lens), so the pair is a mnemonic — U for upper, L for lower — rather
+  // than a derivation. `menuEligible` with an empty Swift key equivalent,
+  // so `applyCommandChords` writes both and both stay rebindable.
+  {
+    id: TUG_ACTIONS.MAKE_UPPERCASE,
+    title: "Make Uppercase",
+    routing: "first-responder",
+    menuItemId: "edit.makeUppercase",
+    bindings: [
+      chord(
+        { key: "KeyU", meta: true, alt: true, label: "u" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+    mirrored: true,
+  },
+  {
+    id: TUG_ACTIONS.MAKE_LOWERCASE,
+    title: "Make Lowercase",
+    routing: "first-responder",
+    menuItemId: "edit.makeLowercase",
+    bindings: [
+      chord(
+        { key: "KeyL", meta: true, alt: true, label: "l" },
+        { preventDefault: true, menuEligible: true },
+      ),
+    ],
+    mirrored: true,
+  },
   // The Find items carry no predicate: they are first-responder-routed, so
   // the default chain walk asks the focused surface directly — which is
   // exactly the question, and the answer stays false until a find-capable

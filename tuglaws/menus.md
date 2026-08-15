@@ -221,6 +221,8 @@ An untabled code throws in dev and publishes `null` in production, so a bad bind
 | ⌥⇧⌘↓ | `last-turn` | Last Turn | menu bar (swept) |
 | ⌥⌘/ | `show-devtools` | Show DevTools | menu bar (swept) |
 | ⌥⌘H | `hide-others` | Hide Others | menu bar (AppKit's own) |
+| ⌥⌘L | `make-lowercase` | Make Lowercase | menu bar (swept) |
+| ⌥⌘U | `make-uppercase` | Make Uppercase | menu bar (swept) |
 | ⌥⌘V | `paste-as-quote` | Paste as Quote | JS, global |
 | ⌥⌘W | `close-all` | Close All Tabs | JS, global |
 | ⌥⌘[ | `previous-stack-card` | Previous Card in Stack | JS, global |
@@ -264,6 +266,8 @@ Every command has several doors: a chord, a menu item, the palette, a control fr
 | `edit.find` | `find` | first responder | registry gate |
 | `edit.findNext` | `find-next` | first responder | registry gate |
 | `edit.findPrevious` | `find-previous` | first responder | registry gate |
+| `edit.makeLowercase` | `make-lowercase` | first responder | registry gate |
+| `edit.makeUppercase` | `make-uppercase` | first responder | registry gate |
 | `edit.paste` | `paste` | AppKit performs it | registry gate |
 | `edit.pasteAsPlainText` | `paste-as-plain-text` | first responder | registry gate |
 | `edit.pasteAsQuote` | `paste-as-quote` | first responder | registry gate |

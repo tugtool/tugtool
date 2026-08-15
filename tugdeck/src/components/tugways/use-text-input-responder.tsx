@@ -589,6 +589,52 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     };
   }, [disabled, inputRef]);
 
+  // ---- Case transforms ----
+  //
+  // Replace the selection with its case-transformed text, through
+  // `execCommand("insertText")` so the WKWebView's NSUndoManager records
+  // the edit and ⌘Z reverts it per [DM03] — the same reason the paste and
+  // delete paths route through execCommand rather than assigning `value`.
+  // The selection is re-established first (the field editor leaves
+  // insertText disabled otherwise) and restored over the replacement after,
+  // so a second press transforms the same run. A collapsed selection is a
+  // no-op, and so is text the transform leaves unchanged: neither should
+  // push an entry onto the undo stack. Deferred into a continuation like
+  // paste's, so a menu activation lands the edit after the blink.
+  const transformSelectionCase = useCallback(
+    (transform: (text: string) => string): ActionHandlerResult => {
+      if (disabled) return;
+      if (!inputRef.current) return;
+      return () => {
+        const el = inputRef.current;
+        if (!mountedRef.current || !el) return;
+        const start = el.selectionStart ?? 0;
+        const end = el.selectionEnd ?? 0;
+        if (start === end) return;
+        const selected = el.value.slice(start, end);
+        const next = transform(selected);
+        if (next === selected) return;
+        el.focus();
+        el.setSelectionRange(start, end);
+        document.execCommand("insertText", false, next);
+        el.setSelectionRange(start, start + next.length);
+      };
+    },
+    [disabled, inputRef, mountedRef],
+  );
+
+  const handleMakeUppercase = useCallback(
+    (): ActionHandlerResult =>
+      transformSelectionCase((text) => text.toUpperCase()),
+    [transformSelectionCase],
+  );
+
+  const handleMakeLowercase = useCallback(
+    (): ActionHandlerResult =>
+      transformSelectionCase((text) => text.toLowerCase()),
+    [transformSelectionCase],
+  );
+
   // ---- Editing motion / deletion ----
   //
   // Four substrate-local handlers for the gap bindings consumed from
@@ -733,6 +779,8 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
     [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
     [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
     [TUG_ACTIONS.SELECT_ALL]: handleSelectAll,
+    [TUG_ACTIONS.MAKE_UPPERCASE]: handleMakeUppercase,
+    [TUG_ACTIONS.MAKE_LOWERCASE]: handleMakeLowercase,
     // ---- Editing motion / deletion ----
     [TUG_ACTIONS.DELETE_TO_LINE_START]: handleDeleteToLineStart,
     [TUG_ACTIONS.DELETE_WORD_BACKWARD]: handleDeleteWordBackward,
@@ -751,15 +799,22 @@ export function useTextInputResponder<T extends TextInputLikeElement>({
   const { responderRef, ResponderScope } = useOptionalResponder({
     id: responderId,
     actions,
-    // Delete writes, so it is dark on a read-only or disabled control. It
-    // deliberately does NOT gate on having a selection: the pushed edit
-    // block is republished on focus and registration changes, not on caret
-    // moves, so a selection-granular answer would be stale by the time the
-    // menu opened — the same reason Cut doesn't gate on one either. The
-    // handler no-ops when nothing is selected. Reads the live element at
-    // query time, never a captured value [L07].
+    // Delete and the two case transforms write, so they are dark on a
+    // read-only or disabled control. They deliberately do NOT gate on having
+    // a selection: the pushed edit block is republished on focus and
+    // registration changes, not on caret moves, so a selection-granular
+    // answer would be stale by the time the menu opened — the same reason
+    // Cut doesn't gate on one either. The handlers no-op when nothing is
+    // selected. Reads the live element at query time, never a captured
+    // value [L07].
     validateAction: (action) => {
-      if (action !== TUG_ACTIONS.DELETE) return true;
+      if (
+        action !== TUG_ACTIONS.DELETE &&
+        action !== TUG_ACTIONS.MAKE_UPPERCASE &&
+        action !== TUG_ACTIONS.MAKE_LOWERCASE
+      ) {
+        return true;
+      }
       const el = inputRef.current;
       return el !== null && !disabled && !el.readOnly;
     },

@@ -206,10 +206,18 @@ export const TUG_ACTIONS = {
   //            selection (or the item at the focus point).
   // DUPLICATE: payload — none. The first responder duplicates its
   //            current selection.
+  // MAKE_UPPERCASE: payload — none. The first responder replaces its
+  //            selection with the selection's text uppercased. A collapsed
+  //            selection is a no-op — the verb acts on a selection, the way
+  //            Delete does. Bound to ⌥⌘U.
+  // MAKE_LOWERCASE: payload — none. The lowercase twin of MAKE_UPPERCASE.
+  //            Bound to ⌥⌘L.
   UNDO:      "undo",
   REDO:      "redo",
   DELETE:    "delete",
   DUPLICATE: "duplicate",
+  MAKE_UPPERCASE: "make-uppercase",
+  MAKE_LOWERCASE: "make-lowercase",
 
   // ---- Editing motion / deletion ----
   //

@@ -1660,6 +1660,45 @@ export const TugTextCardEditor = React.forwardRef<
     [pasteWithTransform],
   );
 
+  // Case transforms: rewrite the selection in one transaction, so undo
+  // reverts the whole run rather than a character at a time, and restore the
+  // selection over the replacement so a second press acts on the same text.
+  // A collapsed selection is a no-op — the verb acts on a selection, the way
+  // Delete does.
+  const transformSelectionCase = useCallback(
+    (transform: (text: string) => string): ActionHandlerResult => {
+      const live = viewRef.current;
+      if (live === null || readOnlyRef.current) return;
+      live.focus();
+      return () => {
+        const inner = viewRef.current;
+        if (inner === null || readOnlyRef.current) return;
+        const { from, to } = inner.state.selection.main;
+        if (from === to) return;
+        const text = transform(inner.state.sliceDoc(from, to));
+        inner.dispatch({
+          changes: { from, to, insert: text },
+          selection: { anchor: from, head: from + text.length },
+          userEvent: "input",
+          scrollIntoView: true,
+        });
+      };
+    },
+    [],
+  );
+
+  const handleMakeUppercase = useCallback(
+    (): ActionHandlerResult =>
+      transformSelectionCase((text) => text.toUpperCase()),
+    [transformSelectionCase],
+  );
+
+  const handleMakeLowercase = useCallback(
+    (): ActionHandlerResult =>
+      transformSelectionCase((text) => text.toLowerCase()),
+    [transformSelectionCase],
+  );
+
   // SAVE — automatic mode: flush pending edits now (⌘S forces the debounce
   // to fire). Manual mode: route to the card's save() + needs-path panel
   // flow, since ⌘S must write the REAL file, not the aside.
@@ -1737,6 +1776,8 @@ export const TugTextCardEditor = React.forwardRef<
     [TUG_ACTIONS.PASTE]: handlePaste,
     [TUG_ACTIONS.PASTE_AS_QUOTE]: handlePasteAsQuote,
     [TUG_ACTIONS.PASTE_AS_PLAIN_TEXT]: handlePasteAsPlainText,
+    [TUG_ACTIONS.MAKE_UPPERCASE]: handleMakeUppercase,
+    [TUG_ACTIONS.MAKE_LOWERCASE]: handleMakeLowercase,
     [TUG_ACTIONS.SAVE]: handleSave,
     [TUG_ACTIONS.SAVE_AS]: handleSaveAs,
     [TUG_ACTIONS.SAVE_A_COPY]: handleSaveACopy,
@@ -1766,6 +1807,8 @@ export const TugTextCardEditor = React.forwardRef<
         action === TUG_ACTIONS.PASTE ||
         action === TUG_ACTIONS.PASTE_AS_QUOTE ||
         action === TUG_ACTIONS.PASTE_AS_PLAIN_TEXT ||
+        action === TUG_ACTIONS.MAKE_UPPERCASE ||
+        action === TUG_ACTIONS.MAKE_LOWERCASE ||
         action === TUG_ACTIONS.SAVE
       ) {
         return !readOnlyRef.current;

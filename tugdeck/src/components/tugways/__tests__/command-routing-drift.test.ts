@@ -225,6 +225,8 @@ const SWIFT_WIRES: Readonly<Record<string, WireKind>> = {
   "copy-as-plain-text": "command",
   "paste-as-quote": "command",
   "paste-as-plain-text": "command",
+  "make-uppercase": "command",
+  "make-lowercase": "command",
   find: "command",
   "find-next": "command",
   "find-previous": "command",
@@ -414,6 +416,11 @@ const ADDED_SINCE_THE_MAP: ReadonlyArray<readonly [chord: string, commandId: str
   // above: ⌃⌘ carries Tug's layout and card-posture vocabulary generally,
   // of which the sidebar toggles are one family.
   ["⌃⌘B", TUG_ACTIONS.TOGGLE_BULLSEYE],
+  // The case pair — an anomaly by the algebra (⌥ composes on no base) and
+  // recorded as one in chord-tiers.md; a mnemonic pair, U for upper and L
+  // for lower.
+  ["⌥⌘U", TUG_ACTIONS.MAKE_UPPERCASE],
+  ["⌥⌘L", TUG_ACTIONS.MAKE_LOWERCASE],
 ];
 
 /** The map as it reads today: transcription, minus retirements, plus moves and additions. */

@@ -1020,6 +1020,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(performSelectAll(_:)), keyEquivalent: "a").identified("edit.selectAll"))
         editMenu.addItem(NSMenuItem.separator())
 
+        // The case pair — chain-action round-trips like the paste variants:
+        // the transform lives in the web responder chain, which rewrites the
+        // selection in one editor transaction so undo reverts it whole. Built
+        // with EMPTY key equivalents on purpose: their chords (⌥⌘U / ⌥⌘L) are
+        // the command registry's, published per item in the menu-state gate,
+        // and `applyCommandChords` writes them from there — a construction
+        // literal here would put a second author on the same keys and would
+        // survive a rebind.
+        editMenu.addItem(NSMenuItem(title: "Make Uppercase", action: #selector(performMakeUppercase(_:)), keyEquivalent: "").identified("edit.makeUppercase"))
+        editMenu.addItem(NSMenuItem(title: "Make Lowercase", action: #selector(performMakeLowercase(_:)), keyEquivalent: "").identified("edit.makeLowercase"))
+        editMenu.addItem(NSMenuItem.separator())
+
         // Copy Last Response — the session card's `/copy` surface. Enablement
         // rides the command's registry gate on the menuState push.
         let copyLastItem = NSMenuItem(title: "Copy Last Response", action: #selector(runCardCommand(_:)), keyEquivalent: "").identified("edit.copyLastResponse")
@@ -1728,6 +1740,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc private func performPasteAsPlainText(_ sender: Any?) {
         sendControl("paste-as-plain-text")
+    }
+
+    // Edit ▸ Make Uppercase / Make Lowercase — chain-action round-trips.
+    // The case transform is applied to the focused surface's selection by
+    // the web responder chain; an unhandled dispatch is a silent no-op (no
+    // editable surface focused, or nothing selected).
+    @objc private func performMakeUppercase(_ sender: Any?) {
+        sendControl("make-uppercase")
+    }
+
+    @objc private func performMakeLowercase(_ sender: Any?) {
+        sendControl("make-lowercase")
     }
 
     // Edit ▸ Find — chain-action round-trips (the web responder chain's
