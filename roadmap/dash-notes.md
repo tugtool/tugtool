@@ -19,3 +19,13 @@ Make me a proposal for how we can achieve this. Ideally, `/vet` goes away.
 | draft | tugutil draft | ✓ (unchanged — the namespace is the name) |
 
 
+OK. All this dash-related work is now in the codebase. This was a big lift to get to the point, but as I pull back and look at the code, it feels like while I hope we have the *infrastructure* to support dashes in the app now, the user experience and user interface has *quite* some way to go before it works smoothly and intuitively.
+
+Just as a start, the use of badges in the UI to name dash branches needs a *ton* of work, both in the errant/ill-chosen placement, and in the implementation to simply show the complete badge with clipping it. ![Screenshot 2026-08-14 at 9.29.57 AM](<assets/Screenshot 2026-08-14 at 9.29.57 AM.png>). We need to think about how to show dashes and session-identity in the title bars of sessions and in the session atoms we show in places like the transcript and the Gazette. The binding to a dash is temporary for sure, but we already dynamically cahnge and update session atoms with custom names when they change, so this is not a structural issue barring us from doing something interesting graphically and informative to the user.
+
+Also, I think a separate *Dashes* section in the Lens was a mistake. We should instead show dashes as an *indented sub-row* under the session bound to it (marked with the lucide `git-branch` icon).
+
+The `Join` route in the Z4A section in the prompt-entry component seems unresolved, as does the prompt we type for joining.
+
+Finally, the user interface to *get into* the dashes workflows still seems entirely driven by hard-to-find and difficult-to-understand slash commands... but OK for now. If we address some of the above issues, then we can circle back on the UI to plan and begin dashes.  
+
