@@ -7673,7 +7673,9 @@ mod tests {
     fn changeset_release_payload_session_id_is_optional() {
         let bare = br#"{"project_dir":"/p","dash":"d"}"#;
         assert_eq!(
-            parse_changeset_release_payload(bare).expect("parse").session_id,
+            parse_changeset_release_payload(bare)
+                .expect("parse")
+                .session_id,
             None
         );
         let tagged = br#"{"project_dir":"/p","dash":"d","session_id":"sess-1"}"#;

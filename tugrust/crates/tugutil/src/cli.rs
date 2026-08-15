@@ -318,7 +318,6 @@ pub enum PlanCommands {
         /// Path to the plan document.
         path: String,
     },
-
 }
 
 #[derive(Subcommand)]

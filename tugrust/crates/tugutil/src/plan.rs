@@ -311,4 +311,3 @@ fn run_stamp(path: &Path, json: bool) -> Result<(), AppError> {
     }
     Ok(())
 }
-
