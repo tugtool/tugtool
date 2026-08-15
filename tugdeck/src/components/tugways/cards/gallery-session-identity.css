@@ -303,13 +303,11 @@
 
    The tape draws in its container's computed color, and the masthead's
    ground is the tinted chrome band, not the pane bg — so the color is
-   pinned to the chrome foreground and the line/area alphas are raised
-   above the instrument's pane-ground defaults, which wash out against a
-   saturated light-theme band. */
+   pinned to the chrome foreground, which washes out at the instrument's
+   muted default against a saturated light-theme band. Color only: the
+   line and area weights stay the instrument's, so this tape and the Lens
+   row's are the same mark of the same work. */
 .gsi-masthead-tape {
-  --tugx-sparkline-line-alpha: 1;
-  --tugx-sparkline-area-alpha: 0.3;
-
   display: inline-flex;
   flex: none;
   position: relative;
