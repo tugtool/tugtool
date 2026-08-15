@@ -135,6 +135,7 @@ import type {
   SpatialCursorHandle,
 } from "./focus-manager";
 import type { FocusKey } from "./focus-act";
+import type { AttachedFilterBinding } from "./attached-filter";
 import { CardIdContext } from "@/lib/card-id-context";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { deckTrace } from "@/deck-trace";
@@ -1292,6 +1293,22 @@ export interface TugListViewProps<
   onKeyViewKey?: (event: KeyboardEvent) => boolean;
 
   /**
+   * The pairing with the `TugFilterField` that trims this list ([P08]) — the
+   * same binding the field receives as `attachment`.
+   *
+   * Passing it declares the UPWARD half of the attached-list contract: while
+   * this list holds the key view, a printable character the list itself does
+   * not claim grants the caret to that field and lands there, so the user can
+   * start filtering without tabbing away from the list first. The downward half
+   * (↑/↓ from the caret drive this list's cursor) is the field's, via the
+   * delegate. See `attached-filter.ts`.
+   *
+   * `captureKeys` / {@link onKeyViewKey} still win: the forward is only offered
+   * a key this list declined, so a list with single-key verbs keeps them.
+   */
+  attachedFilter?: AttachedFilterBinding;
+
+  /**
    * ARIA role for the scroll container. Defaults to `"list"`. Override for a
    * list that is semantically a selection group — e.g. `"radiogroup"` (a
    * single-select option list) or `"group"` (a multi-select one). The cell
@@ -1719,6 +1736,7 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       activateOnDoubleClick = false,
       captureKeys,
       onKeyViewKey,
+      attachedFilter,
       listRole = "list",
       itemRole = "listitem",
     },
@@ -5177,6 +5195,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       ((e: KeyboardEvent) => boolean) | undefined
     >(undefined);
     onKeyViewKeyRef.current = onKeyViewKey;
+    // The attached filter ([L07] live ref): the binding is read at keystroke
+    // time, so a field mounting after this list (a sheet's lead control, a
+    // collapsed section's band) is nominatable the moment it arrives.
+    const attachedFilterRef = React.useRef<AttachedFilterBinding | undefined>(
+      undefined,
+    );
+    attachedFilterRef.current = attachedFilter;
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
@@ -5213,6 +5238,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         onKey: (e: KeyboardEvent) =>
           handleListKeyRef.current(e) ||
           (onKeyViewKeyRef.current?.(e) ?? false),
+        // The upward half of the attached-list contract ([P08]): a character
+        // this list declined is a request to filter, and this says where.
+        attachedFilter: () => attachedFilterRef.current?.field() ?? null,
       }),
       [
         singleSelect,

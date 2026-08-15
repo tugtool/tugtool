@@ -1087,7 +1087,32 @@ export function ResponderChainProvider({ children }: { children: React.ReactNode
       if (focusManager.dispatchKeyToKeyView(event)) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        return;
       }
+      // ---- The filter forward at a deputy text stop ([P08], #filter-forward) ----
+      //
+      // The upward half of the attached-list contract. A key view that is not
+      // itself a text stop may nominate one — a list nominates the filter field
+      // beside it — and a character arriving here is a request to filter: grant
+      // the caret there and let the browser type it in, the same synchronous,
+      // un-prevented mechanism as the printable grant above.
+      //
+      // Placed AFTER the dispatch, not before, so the key view's own verbs win
+      // by construction rather than by an exclusion list: Jots keeps Space for
+      // "new jot" and Backspace for "delete jot" because its `onKey` claims them
+      // first, and any single-letter verb a list grows later is safe for free.
+      //
+      // Space never STARTS a forward — on a list it is commit, and a query
+      // opening with a space means nothing. Once the caret is in the field a
+      // space is an ordinary character, so nothing is lost. Backspace forwards
+      // only into a non-empty query, for the same reason: with nothing to
+      // delete it is not a filter gesture.
+      if (event.metaKey || event.ctrlKey || event.isComposing) return;
+      const forwardable =
+        (event.key.length === 1 && event.key !== " ") ||
+        (event.key === "Backspace" && focusManager.attachedFilterHasQuery());
+      if (!forwardable) return;
+      focusManager.grantAttachedFilterStop();
     }
 
     // ---- The arrow liveliness net ([P01], Spec S01) ----

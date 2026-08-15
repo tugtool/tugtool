@@ -250,10 +250,8 @@ import {
   SESSIONS_CELL_RENDERERS,
   type PickerSelection,
 } from "./session-picker-cells";
-import {
-  attachedListDelegate,
-  TugFilterField,
-} from "@/components/tugways/tug-filter-field";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
+import { useAttachedFilter } from "@/components/tugways/attached-filter";
 import { caseInsensitiveSubstring } from "@/lib/text-match";
 import "./session-card.css";
 
@@ -1985,14 +1983,15 @@ function SessionProjectPickerForm({
   // the sheet's dismiss, so no `filterFieldDidRequestDismiss` here. Enter stays
   // with the picker's default action (Open), so no submit either.
   const pickerListRef = useRef<TugListViewHandle>(null);
+  const pickerFilter = useAttachedFilter(() => pickerListRef.current);
   const filterDelegate = useMemo(
     () => ({
       filterFieldDidChangeQuery: setFilterQuery,
       // ↑/↓ cursor the Sessions list from the caret ([P08]) instead of handing
       // the key view down to it, so narrowing and choosing stay one gesture.
-      ...attachedListDelegate(() => pickerListRef.current),
+      ...pickerFilter.delegate,
     }),
-    [focusManager],
+    [focusManager, pickerFilter],
   );
 
   // Master/detail layout: project-path input → Recents list →
@@ -2158,6 +2157,7 @@ function SessionProjectPickerForm({
               key={trimmedPath}
               className="session-card-picker-filter"
               delegate={filterDelegate}
+              attachment={pickerFilter}
               placeholder="Filter sessions"
               data-testid="session-card-picker-filter"
               focusGroup={PICKER_CYCLE_GROUP}
@@ -2176,6 +2176,7 @@ function SessionProjectPickerForm({
                 className="session-card-picker-sessions-list session-card-picker-list-view"
                 focusGroup={PICKER_CYCLE_GROUP}
                 focusOrder={PICKER_ORDER_SESSIONS}
+                attachedFilter={pickerFilter}
                 singleSelect
                 // Arrowing out of a non-empty filter field should land on the
                 // first MATCH. A single-select list commits as its cursor

@@ -80,11 +80,11 @@ import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { TUG_ACTIONS } from "./action-vocabulary";
+import type { AttachedFilterBinding } from "./attached-filter";
 import { ATTACHED_LIST_ATTRIBUTE } from "./focus-manager";
 import type { FocusPolicy, KeyViewBehavior } from "./focus-manager";
 import { TugIconButton } from "./tug-icon-button";
 import { TugInput, type TugInputSize } from "./tug-input";
-import type { TugListViewHandle } from "./tug-list-view";
 import { useResponderChain } from "./responder-chain-provider";
 import { useOptionalResponder } from "./use-responder";
 
@@ -136,8 +136,8 @@ export interface TugFilterFieldDelegate {
   /**
    * The caret has left the field, so the attached list's highlight is no longer
    * anybody's statement about anything — drop it. Paired with
-   * {@link attachedListMoveCursor}; a site using {@link attachedListDelegate}
-   * gets both.
+   * {@link attachedListMoveCursor}; a site spreading an
+   * `AttachedFilterBinding`'s `delegate` gets both.
    */
   attachedListDidRelease?(): void;
   /** Escape while already empty — the host may yield focus up its ladder. */
@@ -147,6 +147,16 @@ export interface TugFilterFieldDelegate {
 export interface TugFilterFieldProps {
   /** The behavior contract. See {@link TugFilterFieldDelegate}. */
   delegate: TugFilterFieldDelegate;
+  /**
+   * The pairing with the list this field trims ([P08]) — the same binding the
+   * list receives as `attachedFilter`. Passing it publishes this field as the
+   * list's deputy text stop, so a character typed with the ring on the list
+   * lands here. See `attached-filter.ts`.
+   *
+   * The downward half (↑/↓ from the caret drive the list) still rides the
+   * delegate; `useAttachedFilter().delegate` supplies it.
+   */
+  attachment?: AttachedFilterBinding;
   /** Placeholder text — the house form is `Filter <section>`. */
   placeholder: string;
   /** Initial text. The field is uncontrolled; reset it by `key` remount. */
@@ -192,35 +202,12 @@ export interface TugFilterFieldProps {
 }
 
 /**
- * Build the attached-list half of a delegate from a `TugListViewHandle` ref
- * ([P08], Spec S02) — the shape every `TugFilterField` site with a `TugListView`
- * beside it needs, so none of them hand-rolls it.
- *
- * `resolve` is a function rather than the handle itself because the list may
- * mount after the field (a collapsed Lens section, a sheet's list behind a
- * loading state): the handle is read at keystroke time, never captured.
- */
-export function attachedListDelegate(
-  resolve: () => TugListViewHandle | null,
-): Pick<
-  TugFilterFieldDelegate,
-  "attachedListMoveCursor" | "attachedListDidRelease"
-> {
-  return {
-    attachedListMoveCursor: (direction) =>
-      resolve()?.attachedCursorMove(direction) ?? false,
-    attachedListDidRelease: () => {
-      resolve()?.attachedCursorRelease();
-    },
-  };
-}
-
-/**
  * A list's filter field. See the module docstring for the delegate contract,
  * the value-authority model, and the two Escape arbiters.
  */
 export function TugFilterField({
   delegate,
+  attachment,
   placeholder,
   defaultValue,
   fill = false,
@@ -303,8 +290,41 @@ export function TugFilterField({
     [syncEmptyAttribute],
   );
 
+  // ---- The deputy half of the attached-list contract ([P08]) ----
+  //
+  // Published in a layout effect so the stop is nominatable before any key can
+  // arrive ([L03]). A forwarded arrival is a one-shot latch rather than a prop
+  // because it describes a single focus event, not a state the field is in.
+  const forwardArrivalRef = React.useRef(false);
+  const focusKey =
+    focusGroup !== undefined && focusOrder !== undefined
+      ? `${focusGroup}:${focusOrder}`
+      : null;
+  React.useLayoutEffect(() => {
+    if (attachment === undefined) return;
+    return attachment.publishField({
+      focusKey: () => focusKey,
+      hasQuery: () => currentQuery() !== "",
+      noteForwardArrival: () => {
+        forwardArrivalRef.current = true;
+      },
+    });
+  }, [attachment, focusKey, currentQuery]);
+
+  // Tab into a filter means "replace what is there", so the field selects all.
+  // A FORWARDED character means "keep going" — the user is looking at the query
+  // while they type the next letter of it — so the caret goes to the end and
+  // the character extends the query instead of erasing it.
   const onFocus = React.useCallback((): void => {
-    inputRef.current?.select();
+    const input = inputRef.current;
+    if (input === null) return;
+    if (forwardArrivalRef.current) {
+      forwardArrivalRef.current = false;
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+      return;
+    }
+    input.select();
   }, []);
 
   // The attached list's highlight belongs to this caret ([P08]); when the caret

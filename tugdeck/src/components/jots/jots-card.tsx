@@ -83,10 +83,11 @@ import { TugListRow } from "@/components/tugways/tug-list-row";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import { TugConfirmPopover } from "@/components/tugways/tug-confirm-popover";
 import type { TugPopoverMeasurable } from "@/components/tugways/tug-popover";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import {
-  attachedListDelegate,
-  TugFilterField,
-} from "@/components/tugways/tug-filter-field";
+  useAttachedFilter,
+  type AttachedFilterBinding,
+} from "@/components/tugways/attached-filter";
 // The Lens's one-line lists and this one are the same kind of surface — a dense
 // index of one-line handles read by scanning — so they keep sharing one
 // presentation. The constant is the Lens's to tune; a second copy here would be
@@ -222,29 +223,30 @@ function JotsToolbar({
   onQueryChange,
   populated,
   onAdvance,
-  listRef,
+  filter,
 }: {
   query: string;
   onQueryChange: (next: string) => void;
   populated: boolean;
   onAdvance: () => void;
-  /** The jot list this filter is attached to ([P08]) — its cursor is what
-   *  ↑/↓ drive while the caret stays in the field. */
-  listRef: React.RefObject<TugListViewHandle | null>;
+  /** The pairing with the jot list ([P08]) — ↑/↓ drive its cursor while the
+   *  caret stays here, and a character typed at the list lands here. */
+  filter: AttachedFilterBinding;
 }): React.ReactElement {
   const store = getJotsStore();
   const delegate = useMemo(
     () => ({
       filterFieldDidChangeQuery: onQueryChange,
-      ...attachedListDelegate(() => listRef.current),
+      ...filter.delegate,
     }),
-    [onQueryChange, onAdvance, listRef],
+    [onQueryChange, onAdvance, filter],
   );
   return (
     <div className="jots-toolbar" data-testid="jots-toolbar">
       <TugFilterField
         key={populated ? "live" : "inert"}
         delegate={delegate}
+        attachment={filter}
         placeholder="Filter Jots"
         defaultValue={query}
         disabled={!populated}
@@ -946,6 +948,7 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
   useSeedKeyView(hasContent ? `${JOTS_FOCUS_GROUP}:0` : null);
 
   const listRef = useRef<TugListViewHandle>(null);
+  const filter = useAttachedFilter(() => listRef.current);
   const listWrapRef = useRef<HTMLDivElement | null>(null);
   const caretRef = useRef<HTMLDivElement | null>(null);
   const focusManager = useFocusManager();
@@ -1209,7 +1212,7 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
           onQueryChange={setFilterQuery}
           populated={hasItems}
           onAdvance={advanceToList}
-          listRef={listRef}
+          filter={filter}
         />
         {snapshot.error !== null ? (
           <div className="jots-error" role="status">
@@ -1248,6 +1251,7 @@ export function JotsContent({ cardId }: { cardId: string }): React.ReactElement 
                 selectionFollowsCursor
                 captureKeys={JOTS_CAPTURE_KEYS}
                 onKeyViewKey={onCardKeyViewKey}
+                attachedFilter={filter}
                 onSelectionChange={onSelectionChange}
                 initialSelectedIndex={initialSelectedIndex}
                 {...LENS_LIST_PRESENTATION}

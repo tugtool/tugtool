@@ -61,10 +61,7 @@ import React from "react";
 import { lensStore } from "@/lib/lens-store/lens-store";
 import { BlockStrip } from "@/components/tugways/blocks/block-strip";
 import { BlockFoldCue } from "@/components/tugways/body-kinds/affordances/block-fold-cue";
-import {
-  attachedListDelegate,
-  TugFilterField,
-} from "@/components/tugways/tug-filter-field";
+import { TugFilterField } from "@/components/tugways/tug-filter-field";
 import {
   useFocusable,
   useFocusManager,
@@ -72,7 +69,7 @@ import {
 import { getFilterQuery, setFilterQuery } from "./lens-filter-store";
 import {
   getSectionContentVersion,
-  sectionAttachedList,
+  sectionAttachedFilter,
   sectionIsPopulated,
   subscribeSectionContent,
 } from "./lens-section-content";
@@ -201,7 +198,7 @@ export function LensSection({
       // ↑/↓ drive the body's list cursor with the caret staying here ([P08]).
       // The body publishes its handle under this section's focus group; the
       // lookup is per-keystroke because a collapsed section has no body.
-      ...attachedListDelegate(() => sectionAttachedList(host.focusGroup)),
+      ...sectionAttachedFilter(host.focusGroup).delegate,
     }),
     [def.kind, focusManager, host.lensCardId, host.focusGroup],
   );
@@ -269,6 +266,7 @@ export function LensSection({
               <TugFilterField
                 key={populated ? "live" : "inert"}
                 delegate={filterDelegate}
+                attachment={sectionAttachedFilter(host.focusGroup)}
                 placeholder={`Filter ${def.title}`}
                 defaultValue={getFilterQuery(def.kind)}
                 disabled={!populated}

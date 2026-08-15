@@ -92,7 +92,9 @@ import type {
   TugListViewCellRenderer,
   TugListViewDataSource,
   TugListViewDelegate,
+  TugListViewHandle,
 } from "../tug-list-view";
+import { useAttachedFilter } from "../attached-filter";
 import { TugAlert, type TugAlertHandle } from "../tug-alert";
 import { TugBadge } from "../tug-badge";
 import { TugPushButton } from "../tug-push-button";
@@ -722,9 +724,14 @@ export function SettingsKeymapBody(): React.ReactElement {
     [armed],
   );
 
+  // The commands list and its filter are one compound control ([P08]): ↑/↓
+  // from the caret cursor the list, and a character typed at the list lands
+  // back in the field.
+  const listRef = useRef<TugListViewHandle>(null);
+  const filter = useAttachedFilter(() => listRef.current);
   const filterDelegate = useMemo<TugFilterFieldDelegate>(
-    () => ({ filterFieldDidChangeQuery: setQuery }),
-    [],
+    () => ({ filterFieldDidChangeQuery: setQuery, ...filter.delegate }),
+    [filter],
   );
 
   const delegate = useMemo<TugListViewDelegate>(
@@ -761,6 +768,7 @@ export function SettingsKeymapBody(): React.ReactElement {
       <div className="settings-keymap-toolbar">
         <TugFilterField
           delegate={filterDelegate}
+          attachment={filter}
           placeholder="Filter commands"
           fill
           focusGroup={focusGroup}
@@ -780,6 +788,7 @@ export function SettingsKeymapBody(): React.ReactElement {
       <div className="settings-keymap-list">
         <KeymapCellContextValue.Provider value={ctx}>
           <TugListView<KeymapDataSource>
+            ref={listRef}
             dataSource={dataSource.current}
             delegate={delegate}
             cellRenderers={CELL_RENDERERS}
@@ -793,6 +802,7 @@ export function SettingsKeymapBody(): React.ReactElement {
             singleSelect
             focusGroup={focusGroup}
             focusOrder={1}
+            attachedFilter={filter}
             listRole="list"
             itemRole="listitem"
             inline

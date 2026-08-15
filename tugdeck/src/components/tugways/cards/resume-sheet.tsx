@@ -38,10 +38,10 @@ import "./resume-sheet.css";
 import React, { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import {
-  attachedListDelegate,
   TugFilterField,
   type TugFilterFieldDelegate,
 } from "@/components/tugways/tug-filter-field";
+import { useAttachedFilter } from "@/components/tugways/attached-filter";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import {
   useFocusManager,
@@ -191,6 +191,7 @@ function ResumeSheetBody({
   useSeedKeyView(`${focusGroup}:0`);
   const focusManager = useFocusManager();
   const listRef = React.useRef<TugListViewHandle>(null);
+  const filter = useAttachedFilter(() => listRef.current);
   // The filter field's contract: report each keystroke into local state, hand
   // the key view to the list on ArrowDown, and close the sheet on an Escape
   // the field itself declined (an already-empty query).
@@ -202,9 +203,9 @@ function ResumeSheetBody({
       },
       // The sheet opens with the caret in this field ([P12] seed rule), so
       // ↑/↓ must reach the sessions list from there ([P08]).
-      ...attachedListDelegate(() => listRef.current),
+      ...filter.delegate,
     }),
-    [cardId, focusGroup, focusManager, onClose],
+    [cardId, focusGroup, focusManager, onClose, filter],
   );
 
   // Pick-to-resume: a row rebinds + resumes (or spawns a new session), then
@@ -252,6 +253,7 @@ function ResumeSheetBody({
           REDO responders that a hand-rolled input would lose. */}
       <TugFilterField
         delegate={filterDelegate}
+        attachment={filter}
         placeholder="Filter sessions"
         fill
         data-testid="resume-filter-input"
@@ -279,6 +281,7 @@ function ResumeSheetBody({
             rowLayout="flush"
             focusGroup={focusGroup}
             focusOrder={1}
+            attachedFilter={filter}
             commitOnEnter="act"
             className="session-card-picker-sessions-list session-card-picker-list-view"
           />

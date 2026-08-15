@@ -67,6 +67,7 @@ import {
 } from "@/components/lens/lens-filter-store";
 import { LENS_LIST_PRESENTATION } from "@/components/lens/lens-list-presentation";
 import {
+  sectionAttachedFilter,
   setSectionAttachedList,
   setSectionContent,
 } from "@/components/lens/lens-section-content";
@@ -933,6 +934,7 @@ function CardsSectionBody({
               inline
               rowLayout="flush"
               focusGroup={hasContent ? host.focusGroup : undefined}
+              attachedFilter={sectionAttachedFilter(host.focusGroup)}
               commitOnEnter="act"
               initialSelectedIndex={initialSelectedIndex}
               {...LENS_LIST_PRESENTATION}

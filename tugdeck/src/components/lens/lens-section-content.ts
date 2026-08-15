@@ -27,6 +27,10 @@
  */
 
 import type { TugListViewHandle } from "@/components/tugways/tug-list-view";
+import {
+  createAttachedFilterBinding,
+  type AttachedFilterBinding,
+} from "@/components/tugways/attached-filter";
 
 /** What a section currently holds. See the module docstring. */
 export interface LensSectionContent {
@@ -97,6 +101,28 @@ export function sectionAttachedList(
   focusGroup: string,
 ): TugListViewHandle | null {
   return attachedListByGroup.get(focusGroup) ?? null;
+}
+
+// The binding that pairs the two ([P08]), keyed the same way. A section's band
+// and body cannot share a `useAttachedFilter` between them — they are separate
+// components — so the pairing lives here, beside the handle it reads, and both
+// ends take it from `sectionAttachedFilter(focusGroup)`. One binding per group
+// for the life of the process: the participants come and go (a collapsed
+// section unmounts its body, a non-populated band remounts its field), and the
+// binding is the fixed point they publish into.
+const attachedFilterByGroup = new Map<string, AttachedFilterBinding>();
+
+/** The attached-filter binding for a section's band/body pair ([P08]). */
+export function sectionAttachedFilter(
+  focusGroup: string,
+): AttachedFilterBinding {
+  const existing = attachedFilterByGroup.get(focusGroup);
+  if (existing !== undefined) return existing;
+  const created = createAttachedFilterBinding(() =>
+    sectionAttachedList(focusGroup),
+  );
+  attachedFilterByGroup.set(focusGroup, created);
+  return created;
 }
 
 /** Publish what the section authored into `focusGroup` holds. */
