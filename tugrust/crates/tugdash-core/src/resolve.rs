@@ -451,7 +451,8 @@ fn merge_tree_stages(
 
 /// Replay recorded conflict resolutions ([P31]) in a scratch detached worktree:
 /// merge the branch into a checkout of the base head (rerere auto-applies +
-/// stages known resolutions), then harvest the paths that came out marker-free.
+/// stages known resolutions), then harvest the content-conflict paths that came
+/// out marker-free and that rerere does not still list as remaining.
 /// Returns `path → resolved blob oid`. Best-effort — any failure yields an empty
 /// map (the per-file rungs still run) and pushes a warning.
 fn rerere_rung(
@@ -476,7 +477,30 @@ fn rerere_rung(
     // A conflicting merge is expected; rerere (autoUpdate) resolves + stages the
     // known ones. We ignore the exit status and inspect the working tree.
     let _ = git_output(scratch.path(), &["merge", "--no-edit", branch]);
-    for path in stages.keys() {
+    // The paths rerere itself reports as still needing a resolution — a direct
+    // answer where the marker scan below can only infer one. An unreadable
+    // answer restricts nothing.
+    let remaining: std::collections::BTreeSet<String> =
+        git_stdout(scratch.path(), &["rerere", "remaining"])
+            .map(|s| {
+                s.lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+    for (path, raw) in stages {
+        // A non-content conflict is marker-free by construction — git leaves the
+        // surviving side's content in the tree — so the scan below would claim it
+        // with one side's bytes even though rerere did nothing. These belong to
+        // the per-file short-circuit; leave them for it.
+        if raw.load(repo).is_none() {
+            continue;
+        }
+        if remaining.contains(path) {
+            continue;
+        }
         let file = scratch.path().join(path);
         if let Ok(bytes) = std::fs::read(&file) {
             if !bytes.is_empty() && is_clean_merge(&bytes) {
@@ -1003,6 +1027,59 @@ mod tests {
         assert!(outcome.candidate_commit.is_none());
         assert_eq!(outcome.unresolved, vec!["f.txt".to_string()]);
         assert!(outcome.resolved.is_empty());
+    }
+
+    #[test]
+    fn delete_modify_is_not_claimed_by_rerere() {
+        // Same shape as the test above, but with a populated `rr-cache` so rung 2
+        // actually runs — `rerere_rung` early-returns on an empty cache, which is
+        // why every other test in this module is blind to what it does here.
+        let temp = init(&[("f.txt", "B\n", "modify")]);
+        let repo = temp.path();
+        ensure_rerere_config(repo);
+        let base = git_stdout(repo, &["rev-parse", "HEAD"]).unwrap();
+
+        // Seed the cache with a genuine recorded resolution on an unrelated file,
+        // then rewind — `rr-cache` survives the reset.
+        git(repo, &["switch", "-q", "-c", "seed"]);
+        set(repo, "g.txt", "S\n");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-m", "seed side"]);
+        git(repo, &["switch", "-q", "main"]);
+        set(repo, "g.txt", "M\n");
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-m", "main side"]);
+        let _ = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(["merge", "--no-edit", "seed"])
+            .status();
+        set(repo, "g.txt", "R\n");
+        git(repo, &["add", "g.txt"]);
+        git(repo, &["commit", "--no-edit", "-m", "resolve g"]);
+        git(repo, &["reset", "--hard", &base]);
+        assert!(has_rr_cache(repo), "rr-cache seeded");
+
+        // main deletes f.txt; the branch modified it → delete/modify.
+        std::fs::remove_file(repo.join("f.txt")).unwrap();
+        git(repo, &["commit", "-am", "main deletes f.txt"]);
+
+        let outcome = resolve_conflicts(repo, "demo", None).unwrap();
+        assert!(
+            outcome.resolved.is_empty(),
+            "rerere resolved nothing here; a delete/modify is marker-free by \
+             construction and must not be harvested as resolved: {:?}",
+            outcome
+                .resolved
+                .iter()
+                .map(|r| (&r.path, r.resolved_by))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(outcome.unresolved, vec!["f.txt".to_string()]);
+        assert!(
+            outcome.candidate_commit.is_none(),
+            "a candidate here would be the base tree — an empty squash"
+        );
     }
 
     #[test]

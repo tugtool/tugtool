@@ -40,6 +40,7 @@
  * @covers tugdeck/src/components/tugways/cards/session-changes/session-changes-view.tsx
  * @covers tugdeck/src/lib/join-mode-controller.ts
  * @covers tugdeck/src/lib/changeset-join-store.ts
+ * @covers tugrust/crates/tugdash-core/src/resolve.rs
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -74,6 +75,7 @@ const OUTCOME = `${ROW} [data-slot="session-changes-dash-landing-outcome"]`;
 const RESOLVE = `${ROW} [data-slot="session-changes-dash-resolve"]`;
 const JOIN = `${ROW} [data-slot="session-changes-dash-join"]`;
 const CONFLICTS = `${ROW} [data-slot="session-changes-dash-landing-conflicts"]`;
+const PARTIAL = `${ROW} [data-slot="session-changes-dash-landing-partial"]`;
 
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 
@@ -288,34 +290,32 @@ describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its co
         );
         note("Resolve click registered: the offer face left");
 
-        // The ladder's terminal frame must land: the face settles as one of
-        // resolved / partial / error. WHICH of the three is deliberately not
-        // pinned yet: the per-file walk short-circuits a delete/modify to
-        // unresolved (partial), but the rerere rung runs before it and its
-        // marker-free harvest currently claims the path with the base side's
-        // content (resolved) — the false positive tracked for a fix in
-        // tugdash-core's resolve.rs. When that lands, tighten this to the
-        // partial note naming the file.
-        await app.waitForCondition<boolean>(
+        // The ladder's terminal frame must land, and for a delete/modify it must
+        // be `partial` naming the file. No rung may claim a non-content conflict:
+        // the per-file walk short-circuits it to unresolved, and rung 2 (rerere)
+        // skips it rather than harvesting the surviving side's content as a
+        // resolution — the false positive `resolve.rs` used to have here, which
+        // reported `resolved` over a candidate equal to the base tree.
+        const terminal = await app.waitForCondition<string>(
           `(function(){
             var row = document.querySelector(${JSON.stringify(ROW)});
-            if (row === null) return false;
-            return row.querySelector('[data-slot="session-changes-dash-landing-resolved"]') !== null
-              || row.querySelector('[data-slot="session-changes-dash-landing-partial"]') !== null
-              || row.querySelector('.session-changes-dash-landing-error') !== null;
+            if (row === null) return null;
+            if (row.querySelector('[data-slot="session-changes-dash-landing-partial"]') !== null) return "partial";
+            if (row.querySelector('[data-slot="session-changes-dash-landing-resolved"]') !== null) return "resolved";
+            if (row.querySelector('.session-changes-dash-landing-error') !== null) return "error";
+            return null;
           })()`,
           { timeoutMs: 60000 },
         );
-        const terminal = await app.evalJS<string>(
-          `(function(){
-            var row = document.querySelector(${JSON.stringify(ROW)});
-            if (row === null) return "row gone";
-            if (row.querySelector('[data-slot="session-changes-dash-landing-partial"]') !== null) return "partial";
-            if (row.querySelector('[data-slot="session-changes-dash-landing-resolved"]') !== null) return "resolved";
-            return "error";
-          })()`,
+        // A delete/modify must settle `partial` — no rung may claim a
+        // non-content conflict.
+        expect(terminal).toBe("partial");
+        const partialText = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(PARTIAL)})?.textContent || "").trim()`,
         );
-        note(`ladder terminal frame landed: ${terminal}`);
+        // The face names the file it could not resolve.
+        expect(partialText).toContain(conflictFile);
+        note(`ladder settled partial: ${partialText}`);
 
         // ── Adopt: the real round trip ────────────────────────────────────
         await app.nativeClickAtElement(ADOPT);
