@@ -21,12 +21,25 @@
  * link over already-rendered ink. Only a real answer notifies: a lost one
  * changes nothing painted, so it stays silent.
  *
- * **Honesty under failure.** A transport error records candidates as a
- * terminal `unknown`, never `confirmed` and never `missing`: an
- * unreachable server means we don't know. Terminal, not forgotten — a
- * forgotten verdict is re-asked by the very re-annotation its forgetting
- * triggers, and that loop never converges. The one thing this must never
- * do is manufacture a link.
+ * **Honesty under failure.** A transport error records candidates as
+ * `unknown`, never `confirmed` and never `missing`: an unreachable server
+ * means we don't know. Recorded, not forgotten — a forgotten verdict is
+ * re-asked by the very re-annotation its forgetting triggers, and that loop
+ * never converges. The one thing this must never do is manufacture a link.
+ *
+ * **A "no" expires; a "yes" does not.** `missing` and `unknown` are answers
+ * about a moment, and the moment passes: a Gazette post narrates a plan file
+ * minutes before it is written, a probe is lost while the server restarts.
+ * Cached for the app's life, either one leaves a reference permanently dead
+ * on a surface that is still open, and no amount of scrolling back can
+ * revive it. So a non-affirmative verdict carries the time it was asked at,
+ * and a lookup past {@link RETRY_AFTER_MS} asks again. It keeps serving the
+ * old answer meanwhile — the re-ask is invisible unless it changes
+ * something, and {@link PathResolutionStore.applyProbeResult} notifies only
+ * on change, so a still-missing path costs one silent probe a minute and a
+ * newly-arrived one lights up on the next pass. `confirmed` never expires:
+ * re-asking it could only ever take a live link away, and the open gesture
+ * finds out for real anyway.
  *
  * The endpoint rejects relative paths outright, so a relative candidate is
  * joined against the session cwd first. Until the cwd arrives — it is null
@@ -42,6 +55,14 @@ const MAX_STAT_PATHS = 64;
 
 /** How long wants accumulate before going out as one batch. */
 const FLUSH_DELAY_MS = 16;
+
+/**
+ * How long a `missing` or `unknown` verdict is trusted before the path is
+ * asked about again. Long enough that a wall of unresolved refs costs one
+ * batched probe a minute; short enough that a file created while its post is
+ * on screen becomes a link about as fast as a reader could notice it didn't.
+ */
+export const RETRY_AFTER_MS = 60_000;
 
 /** What is known about a path reference. */
 export type PathVerdict =
@@ -172,8 +193,23 @@ export class PathResolutionStore {
   private readonly verdicts = new Map<string, PathVerdict>();
   private readonly wanted = new Set<string>();
   private readonly listeners = new Set<() => void>();
+  /** When each path was last asked about — the clock a re-ask runs on. */
+  private readonly askedAt = new Map<string, number>();
   private flushHandle: ReturnType<typeof setTimeout> | null = null;
   private currentVersion = 0;
+
+  /**
+   * The clock is injected so a test can age a verdict without waiting out a
+   * minute, and the probe so it can read which paths the store decided to
+   * ask about — the decision the expiry rule exists to make. Production
+   * passes neither.
+   */
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly probe: (
+      paths: readonly string[],
+    ) => Promise<ProbeResult | null> = probePaths,
+  ) {}
 
   /**
    * What is known about `rawPath` right now, resolving it against `cwd`
@@ -190,7 +226,14 @@ export class PathResolutionStore {
     // something to resolve against.
     if (resolved === null) return UNKNOWN;
     const known = this.verdicts.get(resolved);
-    if (known !== undefined) return known;
+    if (known !== undefined) {
+      // A stale "no" is asked again, and the old answer is what this call
+      // returns: nothing painted should flicker back to `pending` over a
+      // question the reader never asked. Stamping the ask inside `want`
+      // is what keeps the in-flight window from re-asking every pass.
+      if (this.expired(resolved, known)) this.want(resolved);
+      return known;
+    }
     this.verdicts.set(resolved, PENDING);
     this.want(resolved);
     return PENDING;
@@ -240,8 +283,23 @@ export class PathResolutionStore {
     if (changed) this.notify();
   }
 
+  /**
+   * Whether `verdict` is a "no" old enough to be worth asking again. A
+   * confirmed path never expires; a pending one is already in flight.
+   */
+  private expired(resolved: string, verdict: PathVerdict): boolean {
+    if (verdict.state !== "missing" && verdict.state !== "unknown") {
+      return false;
+    }
+    const asked = this.askedAt.get(resolved);
+    // A verdict recorded without ever being asked here — `applyProbeResult`
+    // called directly — is stale by construction, and asking is the answer.
+    return asked === undefined || this.now() - asked >= RETRY_AFTER_MS;
+  }
+
   /** Record that `resolved` is wanted, and schedule the batch. */
   private want(resolved: string): void {
+    this.askedAt.set(resolved, this.now());
     if (this.wanted.has(resolved)) return;
     this.wanted.add(resolved);
     if (this.flushHandle !== null) return;
@@ -261,7 +319,7 @@ export class PathResolutionStore {
     this.wanted.clear();
     if (paths.length === 0) return;
     for (const chunk of chunkPaths(paths)) {
-      this.applyProbeResult(chunk, await probePaths(chunk));
+      this.applyProbeResult(chunk, await this.probe(chunk));
     }
   }
 

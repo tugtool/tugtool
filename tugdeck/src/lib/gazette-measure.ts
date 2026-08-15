@@ -58,7 +58,7 @@ export const GAZETTE_MEASURE_CH = 64;
  * macOS overlay scrollbars contribute nothing. The authored number is the
  * MEASUREMENT, not the sum of this list.
  */
-export const GAZETTE_ROW_CHROME_PX = 49;
+export const GAZETTE_ROW_CHROME_PX = 46;
 
 /** The width the Gazette rail opens at before the user has sized it: the
  *  64-character measure, plus the chrome it is read through. */

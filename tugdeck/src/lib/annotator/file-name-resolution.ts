@@ -31,11 +31,18 @@
  * does not match the question is ignored. A question that goes unanswered
  * past a deadline is retried a bounded number of times — silently, from
  * inside the queue, with the verdict still `pending` — and then recorded
- * as a terminal `unknown`, never `missing`. Terminal matters: an
- * unanswered question must not forget its verdict, because a forgotten
- * verdict is re-asked by the very re-annotation its forgetting triggers,
- * and that loop never converges. The one thing this must never do is
- * manufacture a link.
+ * as `unknown`, never `missing`. Recorded matters: an unanswered question
+ * must not forget its verdict, because a forgotten verdict is re-asked by
+ * the very re-annotation its forgetting triggers, and that loop never
+ * converges. The one thing this must never do is manufacture a link.
+ *
+ * **A "no" expires.** A name the index does not carry today may be a file
+ * tomorrow — narration routinely names a file just before it is written —
+ * so `missing` and `unknown` age out after {@link RETRY_AFTER_MS} and are
+ * asked again, on the same terms as a path's ({@link
+ * lib/annotator/path-resolution}). The old answer keeps being served
+ * meanwhile, and only a changed one notifies, so an unresolvable name costs
+ * one queued query a minute rather than a permanently dead reference.
  *
  * @module lib/annotator/file-name-resolution
  */
@@ -50,7 +57,7 @@ import {
 } from "../filetree-store";
 import { getConnection } from "../connection-singleton";
 import type { TugConnection } from "../../connection";
-import type { PathVerdict } from "./path-resolution";
+import { RETRY_AFTER_MS, type PathVerdict } from "./path-resolution";
 
 /** How long one query may go unanswered before it is re-queued. */
 const QUERY_TIMEOUT_MS = 4000;
@@ -97,6 +104,15 @@ export function bestIndexMatch(
   return best;
 }
 
+/** Whether two verdicts say the same thing about the same file. */
+function sameVerdict(a: PathVerdict, b: PathVerdict): boolean {
+  if (a.state !== b.state) return false;
+  if (a.state === "confirmed" && b.state === "confirmed") {
+    return a.canonical === b.canonical && a.isDir === b.isDir;
+  }
+  return true;
+}
+
 /** Drop a trailing separator, so the two spellings of a folder agree. */
 function trimTrailingSlash(path: string): string {
   const trimmed = path.replace(/\/+$/, "");
@@ -110,6 +126,8 @@ function trimTrailingSlash(path: string): string {
 export class FileNameResolutionStore {
   private readonly verdicts = new Map<string, PathVerdict>();
   private readonly attempts = new Map<string, number>();
+  /** When each name was last asked about — the clock a re-ask runs on. */
+  private readonly askedAt = new Map<string, number>();
   private readonly queue: string[] = [];
   private readonly listeners = new Set<() => void>();
   private readonly feedStore: FeedStore;
@@ -123,6 +141,8 @@ export class FileNameResolutionStore {
     private readonly projectDir: string,
     workspaceKey: string,
     connection: TugConnection,
+    /** Injected so a test can age a verdict without waiting on a minute. */
+    private readonly now: () => number = Date.now,
   ) {
     this.feedStore = new FeedStore(
       connection,
@@ -148,10 +168,14 @@ export class FileNameResolutionStore {
    */
   lookup = (name: string): PathVerdict => {
     const known = this.verdicts.get(name);
-    if (known !== undefined) return known;
+    if (known !== undefined) {
+      // Stale "no": ask the index again, and go on serving the old answer
+      // while it does. Nothing painted should flicker back to `pending`.
+      if (this.expired(name, known)) this.enqueue(name);
+      return known;
+    }
     this.verdicts.set(name, PENDING);
-    this.queue.push(name);
-    this.pump();
+    this.enqueue(name);
     return PENDING;
   };
 
@@ -166,6 +190,26 @@ export class FileNameResolutionStore {
   /** Bumped whenever verdicts change, so waiting ink re-marks. */
   version = (): number => this.currentVersion;
 
+  /**
+   * Whether `verdict` is a "no" old enough to ask about again. A confirmed
+   * name never expires; a pending one is already in the queue.
+   */
+  private expired(name: string, verdict: PathVerdict): boolean {
+    if (verdict.state !== "missing" && verdict.state !== "unknown") {
+      return false;
+    }
+    const asked = this.askedAt.get(name);
+    return asked === undefined || this.now() - asked >= RETRY_AFTER_MS;
+  }
+
+  /** Queue `name` for the index, unless it is already waiting or in flight. */
+  private enqueue(name: string): void {
+    this.askedAt.set(name, this.now());
+    if (this.inFlight === name || this.queue.includes(name)) return;
+    this.queue.push(name);
+    this.pump();
+  }
+
   /** Send the next queued query, if the single slot is free. */
   private pump(): void {
     if (this.inFlight !== null) return;
@@ -175,10 +219,11 @@ export class FileNameResolutionStore {
     this.timeoutHandle = setTimeout(() => {
       // Unanswered: the shared feed may have carried someone else's
       // answer over ours. Re-queue a bounded number of times, then record
-      // a terminal `unknown`. Never delete the verdict and never notify —
-      // `pending` and `unknown` paint identically, so there is nothing to
-      // re-mark, and a deleted entry would be re-asked by the next pass
-      // forever.
+      // `unknown`. Never delete the verdict and never notify — `pending`
+      // and `unknown` paint identically, so there is nothing to re-mark,
+      // and a deleted entry would be re-asked by the next pass forever.
+      // The recorded `unknown` is still asked again once it ages out, which
+      // is the retry that survives a server that was down for a while.
       this.timeoutHandle = null;
       this.inFlight = null;
       const tried = (this.attempts.get(next) ?? 0) + 1;
@@ -207,8 +252,7 @@ export class FileNameResolutionStore {
     this.inFlight = null;
     this.attempts.delete(pendingQuery);
     const match = bestIndexMatch(snapshot.results, pendingQuery);
-    this.verdicts.set(
-      pendingQuery,
+    const next: PathVerdict =
       match === null
         ? MISSING
         : {
@@ -218,9 +262,13 @@ export class FileNameResolutionStore {
               trimTrailingSlash(match.path),
             ),
             isDir: match.is_dir === true,
-          },
-    );
-    this.notify();
+          };
+    const prev = this.verdicts.get(pendingQuery);
+    this.verdicts.set(pendingQuery, next);
+    // Only a changed answer re-marks. A re-ask that comes back still missing
+    // paints nothing different, and notifying anyway would run the whole
+    // annotation pass once a minute for every name the index does not have.
+    if (prev === undefined || !sameVerdict(prev, next)) this.notify();
     this.pump();
   }
 

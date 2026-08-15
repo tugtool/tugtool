@@ -14,9 +14,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   PathResolutionStore,
+  RETRY_AFTER_MS,
   chunkPaths,
   joinPath,
   resolveCandidate,
+  type ProbeResult,
 } from "../path-resolution";
 
 describe("joinPath", () => {
@@ -110,7 +112,7 @@ describe("verdicts settle on the real store", () => {
     });
   });
 
-  test("a missing path stays missing — it is cached, not re-asked", () => {
+  test("a missing path stays missing — the answer is cached, not re-derived", () => {
     const store = new PathResolutionStore();
     store.applyProbeResult(["/repo/gone.ts"], {
       exists: { "/repo/gone.ts": false },
@@ -199,5 +201,126 @@ describe("the version moves exactly when the ink would need re-marking", () => {
       isDir: {},
     });
     expect(notifications).toBe(1);
+  });
+});
+
+/**
+ * A verdict cached for the app's life is a reference that can never come
+ * back, and a Gazette post routinely names a file minutes before it exists.
+ * The clock and the probe are injected — the clock so a minute can pass
+ * without waiting one, the probe so the test can read WHICH paths the store
+ * chose to ask about, which is the decision the expiry rule makes. That is
+ * not a mocked round trip standing in for the endpoint: the endpoint's own
+ * answers are still the real shapes, and the app-test still clicks a real
+ * path in a real transcript.
+ */
+describe("a 'no' expires and is asked again; a 'yes' never is", () => {
+  function harness() {
+    let clock = 1_000_000;
+    const asked: string[][] = [];
+    let answer: ProbeResult | null = null;
+    const store = new PathResolutionStore(
+      () => clock,
+      async (paths) => {
+        asked.push([...paths]);
+        return answer;
+      },
+    );
+    return {
+      store,
+      asked,
+      advance: (ms: number) => {
+        clock += ms;
+      },
+      answerWith: (next: ProbeResult | null) => {
+        answer = next;
+      },
+      // The store batches on a 16ms debounce and answers on a microtask.
+      settle: () => new Promise((resolve) => setTimeout(resolve, 40)),
+    };
+  }
+
+  const gone: ProbeResult = {
+    exists: { "/repo/plan.md": false },
+    canonical: {},
+    isDir: {},
+  };
+  const there: ProbeResult = {
+    exists: { "/repo/plan.md": true },
+    canonical: { "/repo/plan.md": "/repo/plan.md" },
+    isDir: {},
+  };
+
+  test("a file written after the post that named it becomes a link", async () => {
+    const h = harness();
+    h.answerWith(gone);
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({ state: "pending" });
+    await h.settle();
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({ state: "missing" });
+    expect(h.asked.length).toBe(1);
+
+    // Within the window the cached "no" answers every pass on its own.
+    h.advance(RETRY_AFTER_MS - 1);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.asked.length).toBe(1);
+
+    // Past it, the path is asked again — and the reader sees the OLD answer
+    // while that question is in flight, never a flicker back to pending.
+    h.advance(2);
+    h.answerWith(there);
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({ state: "missing" });
+    await h.settle();
+    expect(h.asked.length).toBe(2);
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({
+      state: "confirmed",
+      canonical: "/repo/plan.md",
+      isDir: false,
+    });
+  });
+
+  test("a re-ask that is still 'no' re-marks nothing", async () => {
+    const h = harness();
+    h.answerWith(gone);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    const settledVersion = h.store.version();
+
+    h.advance(RETRY_AFTER_MS);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.asked.length).toBe(2);
+    expect(h.store.version()).toBe(settledVersion);
+  });
+
+  test("a lost answer is asked again too — a server that was down comes back", async () => {
+    const h = harness();
+    h.answerWith(null);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({ state: "unknown" });
+
+    h.advance(RETRY_AFTER_MS);
+    h.answerWith(there);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.store.lookup("/repo/plan.md", null)).toEqual({
+      state: "confirmed",
+      canonical: "/repo/plan.md",
+      isDir: false,
+    });
+  });
+
+  test("a confirmed path is never re-asked — expiry can only ever add a link", async () => {
+    const h = harness();
+    h.answerWith(there);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.asked.length).toBe(1);
+
+    h.advance(RETRY_AFTER_MS * 10);
+    h.store.lookup("/repo/plan.md", null);
+    await h.settle();
+    expect(h.asked.length).toBe(1);
   });
 });
