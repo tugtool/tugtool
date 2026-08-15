@@ -451,6 +451,10 @@ pub struct ChangesetDraft {
 /// discriminate without a separate field check.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+// `Dash` carries more fields than `Session`, so the variants differ in size.
+// Boxing would put the wire shape behind an indirection for a type that is
+// built once per owner per snapshot and immediately serialized.
+#[allow(clippy::large_enum_variant)]
 pub enum ChangesetEntry {
     /// Files attributed to one Claude session's `file_events` rows.
     Session {

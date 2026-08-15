@@ -80,16 +80,12 @@ fn split_compound(token: &str) -> Vec<String> {
     for i in 1..chars.len() {
         let prev = chars[i - 1];
         let cur = chars[i];
-        let boundary = if prev.is_numeric() != cur.is_numeric() {
-            true
-        } else if prev.is_lowercase() && cur.is_uppercase() {
-            true
-        } else if prev.is_uppercase() && cur.is_uppercase() {
+        let boundary = if prev.is_uppercase() && cur.is_uppercase() {
             // Inside an acronym run, break only where the next character shows
             // this capital was starting a word: `HTTPServer`, not `HTTPS`.
             matches!(chars.get(i + 1), Some(next) if next.is_lowercase())
         } else {
-            false
+            prev.is_numeric() != cur.is_numeric() || (prev.is_lowercase() && cur.is_uppercase())
         };
         if boundary {
             pieces.push(chars[start..i].iter().collect::<String>());

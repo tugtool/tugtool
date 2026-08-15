@@ -63,6 +63,18 @@ test-ts:
     cd tugdeck && bun test
     cd tugcode && bun test
 
+# Regenerate every checked-in golden fixture from the code that produces it.
+#
+# A golden is DERIVED: retune a constant its producer reads and the file is
+# stale by construction, which is a fact about the retune, not a test failure
+# to be diagnosed. Each entry below pairs a golden with the one command that
+# rebuilds it, so the knowledge lives here instead of in a test docstring
+# nobody reads until the gate is already red. `fix` runs this, so the ordinary
+# path regenerates goldens for you and shows the diff. Adding a new golden
+# means adding its line here — an unlisted golden is one `just fix` cannot fix.
+golden:
+    cd tugdeck && IMPOSER_GOLDEN_UPDATE=1 bun test src/lib/__tests__/layout-imposer-solutions.test.ts
+
 # Capture Claude Code fixtures + capabilities snapshot (~2-3 min; real-claude)
 capture-capabilities:
     #!/usr/bin/env bash
@@ -231,18 +243,48 @@ lint:
     cd tugrust && cargo clippy --workspace --all-targets -- -D warnings
     cd tugrust && cargo fmt --all -- --check
 
-# Apply clippy's machine-applicable fixes, format, then run the full gate.
-# `lint` only reports; this is the recipe that edits the code. Rewrites files
-# in place, so review the diff afterwards. It ends in `ci` on purpose: a green
-# `fix` means commit-ready, and anything it could not fix mechanically — a
-# hand-only lint, a failing test — is named right here instead of on the next
-# `just ci`.
+# Repair everything repairable, then run the full gate.
+#
+# `lint` only reports; this is the recipe that EDITS. It repairs in three
+# passes, cheapest first — clippy's machine-applicable rewrites, formatting,
+# then the derived goldens (`just golden`) — and only then runs `ci`. So a
+# stale golden, which is arithmetic rather than a bug, is fixed on the way
+# through instead of failing the gate with a 245-line diff to read.
+#
+# It rewrites files in place, so review the diff afterwards; when it changes
+# a golden it says so and shows you which.
+#
+# What is left when this recipe still fails is, by construction, the part no
+# tool can do: a lint clippy has no mechanical rewrite for (`large_enum_variant`,
+# `if_same_then_else` — these want a judgment call about the code's shape), or
+# a genuinely failing test. The recipe names which of the two before it stops.
 fix:
-    cd tugrust && cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged
-    cd tugrust && cargo fmt --all
-    just ci
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
 
-# Full pre-merge gate (lint + test)
+    (cd tugrust && cargo clippy --fix --workspace --all-targets --allow-dirty --allow-staged)
+    (cd tugrust && cargo fmt --all)
+
+    just golden
+    if ! git diff --quiet -- '*/__tests__/golden/*'; then
+        echo
+        echo "REGENERATED GOLDENS — a producer's constants moved. Review this diff:"
+        git diff --stat -- '*/__tests__/golden/*'
+        echo
+    fi
+
+    if ! just lint; then
+        echo
+        echo "STOPPED: lint failures survived --fix. These have no mechanical" >&2
+        echo "rewrite; each one above needs a decision about the code's shape" >&2
+        echo "(restructure it, or #[allow(...)] it with the reason)." >&2
+        exit 1
+    fi
+    just test
+
+# Full pre-merge gate (lint + test). `fix` runs these same two recipes rather
+# than calling `ci`, so that it can speak between them; keep the pair in step.
 ci: lint test
 
 # Build every WASM crate under tugdeck/crates/ via scripts/build-wasm.sh.
