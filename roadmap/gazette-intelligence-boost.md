@@ -15,6 +15,15 @@
 
 ---
 
+### Review Record {#review-record}
+
+**Round 1 — 2026-08-15, opus.** Reviewed `plan:0e037794375d9747`. Lint: 0 errors, 1 warning (fixed — this section is what PL023 wanted).
+Oriented on: the whole document, this being the first round on a plan that has never been reviewed and is not yet tracked in git.
+Applied: **migration sequencing** — Spec S03's step order was authored against an imagined `open()` and contradicted the real `bootstrap_schema`, which runs drift-guards → `migrate_*` ALTERs → one `execute_batch` → post-batch work; a drop placed after the batch would never be followed by a create, so the spec is now phased (A–D) into that structure and #bootstrap-order records it for the implementer. **Law [LR5] corollary** (`tuglaws/ledger-reliability.md`) — the spec's shape probes and `DROP TABLE`s were unqualified, and on a connection with `changes` attached an unqualified name resolves into the attachment when the local table is absent; every FTS name is now `main.`-qualified, matching the existing `main.file_events` guard. [LR5]'s shared-schema ban was cross-checked and is honored: `sessions.db` is per-instance and an FTS index is derivable state, the `turn_telemetry`-class carve-out. **Trigger survival** — `CREATE TRIGGER IF NOT EXISTS` cannot replace an existing trigger, so the batch would have left old two-column sync triggers writing into a three-column index; the drop is now explicit, with a risk row and an insert-after-migration test. **Silent excerpt regression** — `search_facts` selects `snippet(facts_fts, -1, …)`, and `-1` means auto-select, so the new `tokens` column would start supplying excerpts the Operator quotes into answers; pinned to the `text` column, moved into Step 2 (the step that creates the hazard, not Step 3), and given a content assertion, since the three excerpt tests that exist only check non-empty/is-string and would all stay green. **Crash window** — keying the FTS rebuild to "index dropped" alone would strand trigger-written garbage forever if the process died mid-backfill; the condition is now "dropped **or** backfill updated ≥1 row", with backfill and rebuild named as an inseparable pair. **Existing machinery** ([P03] axis) — the bespoke `sqlite_master` DDL-text probe is replaced by the `table_columns` / `rebuild_table_if_schema_drifted` idiom that already ships, with the one documented reason it needs a variant (triggers). **Dependency honesty** — Step 7 mutates the `OperatorContext` literal Step 6 introduces, so it now declares `#step-6`; the "four construction sites" claim was verified against `main.rs` and the two `operator.rs` test sites. Also verified and left alone: `scripted_haiku_pool` is `pub(crate)` in `#[cfg(test)] mod test_support` and documented for exactly this cross-module use, so Step 7's test plan stands.
+Deferred: nothing. Every finding was settleable from the code or the laws, so no question was raised to the user and no `[Q##]` was added; [Q01] remains the plan's only open question, deliberately deferred at authoring time with its findings and successor path recorded.
+
+---
+
 ### Phase Overview {#phase-overview}
 
 #### Context {#context}
@@ -125,7 +134,9 @@ This plan follows `tuglaws/devise-skeleton.md`: explicit `{#anchor}` on every ci
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Migration bug corrupts an FTS index on a live ledger | med | low | FTS is derivable state: the migration's last resort is always drop + `'rebuild'` from the content table; sequencing in Spec S03 keeps triggers dropped while rows churn | any `MATCH` error or missing-row report after upgrade |
+| Migration bug corrupts an FTS index on a live ledger | med | low | FTS is derivable state: the last resort is always drop + `'rebuild'` from the content table; Spec S03 phases the work into `bootstrap_schema`'s real order and keys the rebuild to backfill work so a crash mid-backfill cannot strand garbage | any `MATCH` error or missing-row report after upgrade |
+| A stale two-column trigger survives the migration | high | med | `CREATE TRIGGER IF NOT EXISTS` cannot replace one, so Spec S03 phase A drops all three explicitly; Step 2 pins it with an insert-after-migration test | a fact inserted post-upgrade not findable by sub-word |
+| Excerpts silently become normalizer output | med | high without the fix | `snippet()` pinned to `text` in the same step that adds the column, plus a content assertion (#snippet-column) | any answer quoting token soup |
 | New ranking degrades queries that worked | med | low | Weights are modest (4/2/1); kind budgeting only caps a kind when others matched; unit tests pin both the old wins and the new | a real question where the right fact is present but off-page |
 | Recovery ladder returns noise for genuinely unanswerable queries | low | med | Every relaxed result carries a `note` naming the query actually used, so the answering model knows the match is loose | answers citing loose matches as exact |
 | Instruction-pin tests drift from wording | low | med | Pins updated in the same commit as wording ([P07]); the existing test style asserts substrings, not full text | `cargo nextest` failure |
@@ -251,7 +262,7 @@ This plan follows `tuglaws/devise-skeleton.md`: explicit `{#anchor}` on every ci
 
 **Implications:**
 - `OperatorContext` gains `haiku: Option<Arc<SharedAgentPool>>`. It is an `Option` because two of the four construction sites are tests and one is the new CLI (Spec S05); `None` means the rung is skipped and the empty result returns honestly, exactly as today. The production site is `main.rs`, which already holds the pool.
-- The verb executor becomes model-touching for the first time. That is bounded deliberately: the rung runs at most **once per verb call**, only on a doubly-empty result, under the existing `VERB_TIMEOUT` of 10 s, and its own job timeout is `SUMMARIZE_TIMEOUT` (6 s) via `JobClass::of`'s catch-all `Summarize` lane — a failed or slow expansion degrades to the empty result rather than failing the verb.
+- The verb executor becomes model-touching for the first time. That is bounded deliberately: the rung runs at most **once per verb call**, only on a doubly-empty result, under the existing `VERB_TIMEOUT` of 10 s, and its own job timeout is `SUMMARIZE_TIMEOUT` (6 s) via `JobClass::of`'s catch-all `Summarize` lane — a failed or slow expansion degrades to the empty result rather than failing the verb. The 6 s ceiling sits inside the 10 s one with room for the two lexical rungs that already ran, but the margin is thin by construction: raising the expansion job's timeout without raising `VERB_TIMEOUT` would turn graceful degradation into verb timeouts.
 - Expansion terms are model-written strings that reach an FTS query, so they pass through `sanitize_fts_query` (Spec S04) like any other query text — never interpolated raw.
 - The result JSON names the expansion explicitly (`query_used` plus a note saying the terms were model-suggested), so the answering model never mistakes a loose expansion match for a direct hit.
 
@@ -272,6 +283,28 @@ All paths relative to `tugrust/crates/tugcast/src/`.
 #### The vocabulary failure, precisely {#vocabulary-failure}
 
 Fact 6291's text: `commit ac462ba3a1ae "tugways(entity-tips): unify commit hover into a real TugTooltip" — 27 file(s)`. unicode61 splits on non-alphanumeric only; `TugTooltip` is one token. Verified against the release ledger: the fact matches `MATCH 'tugtooltip'`, does not match `MATCH 'tooltip'`, does not match `MATCH 'tooltip*'` (prefix search extends a token rightward; it cannot start mid-token). The same failure shape covers `tugways(entity-tips)` (`entity` and `tips` *do* split — parens and hyphen are separators — so kebab and punctuation are partially survivable; CamelCase is the systematic hole), `at0365` (letter/digit boundary does not split), and any `useSomeHook`/`TugListView` name in prose. Gazette post bodies carry the same vocabulary inside backticks, so `gazette_posts_fts` needs the same treatment.
+
+#### `bootstrap_schema`'s three phases, and why Spec S03 is shaped around them {#bootstrap-order}
+
+`SessionLedger::open` → `open_full` → `configure` → **`bootstrap_schema`**, which runs in a fixed order that the migration must slot into rather than replace:
+
+1. **Drift guards** — `rebuild_table_if_schema_drifted(conn, "turn_telemetry", …)` and the same call for `"main.file_events"`. These DROP a table whose on-disk column set no longer matches the expected one, so the CREATE below rebuilds it fresh.
+2. **The `migrate_*` ALTERs** — a dozen self-healing column adds (`migrate_sessions_add_name`, `migrate_gazette_posts_add_elapsed_ms`, …), each reading `table_columns` first and no-op'ing on a fresh or already-migrated database.
+3. **One large `conn.execute_batch(…)`** carrying every `CREATE TABLE IF NOT EXISTS`, `CREATE VIRTUAL TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, and `CREATE TRIGGER IF NOT EXISTS`. Post-batch work follows it (`migrate_instance_file_events_to_changes`, `migrate_instance_changeset_drafts_to_changes`).
+
+Three consequences, each of which a plan that ignored this structure would get wrong:
+
+- **The batch runs exactly once, and nothing re-runs it.** A drop performed *after* the batch is never followed by a create, so the index would simply be gone until the next process start. The FTS drop therefore belongs in phase 1, not in a migration step of its own.
+- **A column add must precede the batch** to be visible to the `CREATE`s and to any later phase, which is why `tokens` joins the phase-2 family rather than being ALTERed ad hoc.
+- **Anything needing the FTS tables to exist must run after the batch**, which is where the backfill and rebuild go — the post-batch region that already hosts the two `migrate_instance_*` calls.
+
+#### The `snippet()` column argument is load-bearing, and adding a column silently breaks it {#snippet-column}
+
+`search_facts` currently selects `snippet(facts_fts, -1, '', '', '…', 32)`. The `-1` means *auto-select the best-matching column*. Today that ranges over `subject` and `text`, both human-readable. The moment `tokens` becomes column 2, `-1` may choose it, and the excerpt the Operator reads — and quotes into an answer — becomes normalizer output like `tug tooltip action` instead of the sentence it came from.
+
+Nothing in the suite would catch this: the only excerpt assertions that exist are `assert!(!hits[0].excerpt.is_empty(), "snippet() cut an excerpt")` in `session_ledger.rs` and two `assert!(…["excerpt"].is_string())` checks in `operator.rs`. Token soup is non-empty and is a string, so all three stay green while the answers degrade.
+
+The fix is to pin the argument to the `text` column (index 1) in the same commit that adds the column — **Step 2, not Step 3** — and to add an assertion on excerpt *content*. `search_gazette_posts` already passes an explicit `0` (`body`) and needs no change; that asymmetry is why only one of the two is affected.
 
 #### Why overfetch-then-budget instead of SQL-side kind weighting {#why-budget-in-rust}
 
@@ -313,16 +346,31 @@ The cap value 12 of a 30-row page lets a genuinely shell-heavy question stay she
 
 **Spec S03: The migration, exactly ordered** {#s03-migration}
 
-Runs inside `SessionLedger::open`'s existing self-healing sequence, before the server accepts work. Idempotent; every step is a no-op on an already-migrated ledger.
+Runs inside `SessionLedger::bootstrap_schema`, before the server accepts work. Idempotent; every step is a no-op on an already-migrated ledger. **The step order below is not a suggestion — it is dictated by `bootstrap_schema`'s existing three-phase structure**, which the implementer must place these into rather than appending a new sequence (see #bootstrap-order for that structure and why it forces this):
 
-1. `ALTER TABLE facts ADD COLUMN tokens TEXT` and `ALTER TABLE gazette_posts ADD COLUMN tokens TEXT`, each swallowing `duplicate column name` via the existing `is_duplicate_column` helper.
-2. **Stale-shape check:** read `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'facts_fts'`; if the DDL does not contain `tokens`, the index is old-shape. Same check for `gazette_posts_fts`.
-3. For each stale index: `DROP TRIGGER` its three sync triggers, then `DROP TABLE` the FTS table. (Triggers first, and *before* any row churn: an external-content FTS `'delete'` command with values that don't match what was indexed corrupts the index, so no trigger may observe the backfill.)
-4. Run the normal schema-init SQL block, whose `CREATE VIRTUAL TABLE IF NOT EXISTS` / `CREATE TRIGGER IF NOT EXISTS` statements now declare the new three-column shapes (facts: `subject, text, tokens`; posts: `body, refs, tokens`) and triggers carrying `new.tokens` / `old.tokens`.
-5. **Backfill:** `SELECT id, subject, text FROM facts WHERE tokens IS NULL`, compute `subword_tokens`, `UPDATE facts SET tokens = ?1 WHERE id = ?2`; likewise `gazette_posts (id, body, refs)`. Safe with the new triggers live *only if* step 6 follows; on the stale path the triggers were just recreated over an empty index, so the interim trigger writes are discarded by:
-6. If either index was stale in step 2: `INSERT INTO facts_fts(facts_fts) VALUES('rebuild')` (and the posts equivalent) — FTS5 discards the index and re-derives every row from the content table, now with `tokens` populated.
+**Phase A — before the `execute_batch`, beside the existing drift guards:**
 
-Fresh databases hit none of the special paths: columns exist from `CREATE TABLE` (add `tokens TEXT` to both base-table DDLs too), the FTS DDL is new-shape, backfill finds no NULLs, no rebuild. Insert paths (`record_fact_tx`, the gazette post insert) always write `tokens` so NULLs never reappear.
+1. **Stale-shape check + drop.** For each of `main.facts_fts` and `main.gazette_posts_fts`: read its columns and, if `tokens` is absent, `DROP TRIGGER` its three sync triggers and then `DROP TABLE` the index. Model this on the existing `rebuild_table_if_schema_drifted` / `table_columns` helpers — `table_columns` uses `PRAGMA table_info`, which reports an FTS5 virtual table's columns correctly — but it needs its own small helper because `rebuild_table_if_schema_drifted` drops the *table only*, and here the triggers must go too (see the next point).
+   - **Every name must be `main.`-qualified.** [LR5]'s corollary in `tuglaws/ledger-reliability.md`: a shape probe or `DROP TABLE` on a connection with an attached database resolves into the attachment when the local table is absent. `bootstrap_schema` already does this for `main.file_events`; the FTS drops must too.
+   - **The triggers must be dropped explicitly.** `CREATE TRIGGER IF NOT EXISTS` does **not** replace an existing trigger, so an old two-column `facts_fts_insert` would survive the batch and keep writing two columns into a three-column index — a silently half-populated `tokens` column with no error anywhere.
+   - Dropping is legal here and not a shared-schema violation: `sessions.db` is per-instance and an FTS index is derivable state, which is exactly the carve-out [LR5] grants (`turn_telemetry`-class rebuildable caches).
+
+**Phase B — with the existing `migrate_*_add_*` calls, still before the batch:**
+
+2. `migrate_facts_add_tokens` and `migrate_gazette_posts_add_tokens`, following the established idiom exactly (`table_columns`, bail when the table is absent, `ALTER TABLE … ADD COLUMN tokens TEXT` otherwise). The `is_duplicate_column` helper remains the guard for the concurrent-loser case.
+
+**Phase C — the `execute_batch` itself:**
+
+3. The batch's `CREATE TABLE IF NOT EXISTS` gains `tokens TEXT` on both base tables; its `CREATE VIRTUAL TABLE IF NOT EXISTS` declares the three-column indexes (facts: `subject, text, tokens`; posts: `body, refs, tokens`); its six `CREATE TRIGGER IF NOT EXISTS` statements carry `new.tokens` / `old.tokens`. Because Phase A dropped any stale index and its triggers, these `IF NOT EXISTS` statements are what recreates them — nothing re-runs the batch later, which is why the drop cannot happen after it.
+
+**Phase D — after the batch, where `migrate_instance_file_events_to_changes` already runs:**
+
+4. **Backfill.** `SELECT id, subject, text FROM facts WHERE tokens IS NULL`, compute `subword_tokens`, `UPDATE facts SET tokens = ?1 WHERE id = ?2`; likewise `gazette_posts (id, body, refs)`. Wrap it in one transaction.
+5. **Rebuild if anything moved.** `INSERT INTO facts_fts(facts_fts) VALUES('rebuild')` (and the posts equivalent) — FTS5 discards the index and re-derives every row from the content table.
+
+   **The rebuild condition is "the backfill updated ≥1 row **or** Phase A dropped this index", not "Phase A dropped this index" alone.** The backfill's `UPDATE`s fire the live update trigger, which issues an external-content `'delete'` command carrying the *new* row values against an index entry written from the *old* ones — garbage entries that only the rebuild clears. If the process dies mid-backfill, the next open sees a table whose shape is already current (so a drop-only condition never re-fires) but whose index holds that garbage, permanently. Keying the rebuild to backfill work closes that window. **Backfill and rebuild are a pair: never ship one without the other.**
+
+Fresh databases hit none of the special paths: the base tables carry `tokens` from `CREATE TABLE`, the FTS DDL is new-shape, Phase A finds nothing to drop, the backfill finds no NULLs, and no rebuild runs. Insert paths (`record_fact_tx`'s `INSERT OR IGNORE INTO facts (…)`, which grows from seven bound parameters to eight, and the gazette post insert) always write `tokens`, so NULLs never reappear.
 
 **Spec S04: Query sanitize and the relaxation ladder** {#s04-query-ladder}
 
@@ -379,7 +427,9 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 | `budget_by_kind` | fn | `feeds/operator.rs` | Spec S02 |
 | `facts_search`, `gazette_search` | fn (modify) | `feeds/operator.rs` | sanitize + ladder + budget + `query_used`/`note` fields |
 | `answer` / pipeline entry | fn (modify/factor) | `feeds/operator.rs` | per-verb INFO logging ([P06]); factored so the CLI shares it ([P08]) |
-| `search_facts` | fn (modify) | `session_ledger.rs` | bm25 weights `4,2,1`; overfetch `3 × limit` (caller passes the bigger limit) |
+| `search_facts` | fn (modify) | `session_ledger.rs` | bm25 weights `4,2,1`; overfetch `3 × limit` (caller passes the bigger limit); `snippet()` pinned to the `text` column in Step 2 (#snippet-column) |
+| `migrate_facts_add_tokens`, `migrate_gazette_posts_add_tokens` | fn | `session_ledger.rs` | Spec S03 phase B; the established `migrate_*_add_*` idiom |
+| FTS stale-shape drop helper | fn | `session_ledger.rs` | Spec S03 phase A; modeled on `rebuild_table_if_schema_drifted` but drops triggers too, `main.`-qualified |
 | `search_gazette_posts` | fn (modify) | `session_ledger.rs` | bm25 weights `2,1,1` |
 | `record_fact_tx` | fn (modify) | `session_ledger.rs` | write `tokens` |
 | gazette post insert path | fn (modify) | `session_ledger.rs` | write `tokens` |
@@ -467,23 +517,28 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 
 **Commit:** `tugcast(gazette-vocab): index sub-word tokens in facts_fts and gazette_posts_fts, with self-healing migration`
 
-**References:** [P01] tokens column, Spec S01, Spec S03, Risk R01, (#code-map, #vocabulary-failure)
+**References:** [P01] tokens column, Spec S01, Spec S03, Risk R01, [LR5] corollary (schema-qualified drops, `tuglaws/ledger-reliability.md`), (#code-map, #vocabulary-failure, #bootstrap-order, #snippet-column)
 
 **Artifacts:**
-- `tokens TEXT` on `facts` and `gazette_posts` (base DDL + idempotent ALTER), three-column FTS tables and triggers, the stale-shape check, backfill, and conditional rebuild — all in `session_ledger.rs` per Spec S03's exact ordering.
+- `tokens TEXT` on `facts` and `gazette_posts` (base DDL + idempotent ALTER), three-column FTS tables and triggers, the stale-shape drop, backfill, and conditional rebuild — all in `session_ledger.rs`, placed into `bootstrap_schema`'s existing phases per Spec S03 and #bootstrap-order.
 - `record_fact_tx` and the gazette post insert path compute and store `tokens` via `subword_tokens`.
+- `search_facts`'s `snippet()` argument pinned to the `text` column (#snippet-column).
 
 **Tasks:**
-- [ ] Add `tokens` to both base-table `CREATE TABLE` blocks and as idempotent ALTERs (the `is_duplicate_column` idiom).
-- [ ] Re-declare both FTS tables and all six triggers with the third column.
-- [ ] Implement the stale-shape check + drop + backfill + rebuild in Spec S03's step order (triggers dropped before any row churn).
-- [ ] Wire `subword_tokens` into both insert paths.
+- [ ] Add `tokens` to both base-table `CREATE TABLE` blocks; add `migrate_facts_add_tokens` / `migrate_gazette_posts_add_tokens` beside the existing `migrate_*_add_*` family (Spec S03 phase B).
+- [ ] Re-declare both FTS tables and all six triggers with the third column inside the `execute_batch` (phase C).
+- [ ] Add the phase-A stale-shape drop beside the existing drift guards: `main.`-qualified per [LR5]'s corollary, dropping the three triggers **and** the index, modeled on `rebuild_table_if_schema_drifted`.
+- [ ] Add the phase-D backfill + rebuild after the batch, with the rebuild keyed to "index dropped **or** backfill updated ≥1 row" (Spec S03 step 5's crash window).
+- [ ] Wire `subword_tokens` into both insert paths (`record_fact_tx` grows to eight bound parameters).
+- [ ] Change `snippet(facts_fts, -1, …)` to pin the `text` column — required *in this step*, because the third column is what breaks it (#snippet-column).
 
 **Tests:**
 - [ ] Fresh ledger: a fact whose text contains `TugTooltip` matches `MATCH 'tooltip'` via `search_facts` (the headline regression — the exact fact-6291 text as fixture).
 - [ ] Gazette post with `TugTooltip` in the body matches `gazette.search 'tooltip'`.
 - [ ] Migration: build a ledger with the *old* schema shape (create old-DDL FTS + rows in a temp db within the test, the way existing migration tests seed old shapes), reopen through `SessionLedger::open`, assert the stale path ran: `tokens` populated, `MATCH 'tooltip'` finds the `TugTooltip` fact, and FTS `'integrity-check'` passes.
+- [ ] Migration leaves no stale trigger: after reopening the old-shape ledger, insert a new fact and assert it is findable by a sub-word — proving the recreated three-column trigger is the one that fired, not a surviving two-column one.
 - [ ] Reopen an already-migrated ledger: no rebuild (assert via unchanged FTS content and no error), NULL-free `tokens`.
+- [ ] Excerpt content, not just presence: a `search_facts` hit's excerpt contains prose from the fact's `text`, and contains no bare normalizer output — the assertion the three existing `is_empty`/`is_string` checks cannot make (#snippet-column).
 
 **Checkpoint:**
 - [ ] `cd /Users/kocienda/Mounts/u/src/tugtool/tugrust && cargo nextest run -p tugcast session_ledger`
@@ -598,7 +653,7 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 
 #### Step 7: Haiku query-expansion rung {#step-7}
 
-**Depends on:** #step-4
+**Depends on:** #step-4, #step-6
 
 **Commit:** `tugcast(gazette-expand): ask haiku for search terms when a search finds nothing`
 
@@ -611,7 +666,7 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 
 **Tasks:**
 - [ ] Add the `expand_query` JobSpec and write its instructions per Spec S06 (JSON out, `{"terms": []}` as a first-class answer, 3–8 single words, terms that would appear *in the record*).
-- [ ] Add the `haiku` field to `OperatorContext` and populate it in `main.rs`; leave the other three construction sites `None`.
+- [ ] Add the `haiku` field to `OperatorContext` and populate it at the production site (`main.rs`); leave `None` at the other three — the verb fixture and the `PipelineHarness` in `operator.rs`'s test module, and the `operator-ask` site Step 6 introduced (which is why this step depends on #step-6).
 - [ ] Implement `expand_via_model`: call the pool, parse, treat unparseable as `[]`, sanitize every term through `sanitize_fts_query`, cap at 8, build the OR query, run it once.
 - [ ] Extend `the_haiku_job_table_carries_every_contract_the_gates_depend_on` to pin the new job's output contract.
 
