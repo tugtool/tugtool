@@ -4912,6 +4912,89 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       delegateRef.current?.onSelect?.(i);
       scrollIndexIntoView(i, "nearest");
     }, [isCursorableRow, scrollIndexIntoView]);
+    // The attached filter ([L07] live ref): the binding is read at keystroke
+    // time, so a field mounting after this list (a sheet's lead control, a
+    // collapsed section's band) is reachable the moment it arrives.
+    const attachedFilterRef = React.useRef<AttachedFilterBinding | undefined>(
+      undefined,
+    );
+    attachedFilterRef.current = attachedFilter;
+
+    // ---- Type-select: the shadowed half of the attached-list contract ([P08]) ----
+    //
+    // A printable key nothing else claimed is a request to FILTER, so it is
+    // shadowed into the attached field — and the list keeps the keyboard. That
+    // is the whole point of the gesture: typing is how the user finds a row,
+    // so `Return` must still reach the cursored row and ↑/↓ must still move it.
+    // Handing the caret to the field instead narrows correctly and then
+    // strands the user behind a Tab, which is the bug this replaced.
+    //
+    // After the query changes the row set is different, so the cursor is
+    // re-seeded onto the first match — the same preference ladder the attached
+    // cursor's seed runs (`initialSelectedIndex` → selection → first cursorable
+    // row), which for the picker is what skips "New session" and lands on a
+    // real result. The re-seed waits for the render the query causes: the rows
+    // this reads do not exist yet at keystroke time.
+    const pendingReseedRef = React.useRef(false);
+    const reseedCursorToFirstMatch = React.useCallback((): void => {
+      const preferred = isCursorableRow(initialSelectedIndexRef.current ?? -1)
+        ? (initialSelectedIndexRef.current as number)
+        : cursorableNear(0, 1);
+      if (preferred < 0 || preferred === cursorIndexRef.current) return;
+      moveCursorTo(preferred, true);
+      if (commitOnMoveRef.current) selectCursorRowRef.current();
+    }, [isCursorableRow, cursorableNear, moveCursorTo]);
+    // `selectCursorRow` is declared above but the reseed runs from an effect a
+    // render later, so it reads through a ref rather than closing over the
+    // identity this render happened to have ([L07]).
+    const selectCursorRowRef = React.useRef(selectCursorRow);
+    selectCursorRowRef.current = selectCursorRow;
+    React.useEffect(() => {
+      if (!pendingReseedRef.current) return;
+      pendingReseedRef.current = false;
+      reseedCursorToFirstMatch();
+    });
+
+    /**
+     * Shadow `event` into the attached filter. Returns whether it was consumed.
+     *
+     * Chained LAST in the key-view behavior — after the list's own movement
+     * keys and after the consumer's `onKeyViewKey` — so a list's single-key
+     * verbs win by construction rather than by an exclusion list here (Jots
+     * keeps Space for *new jot* and Backspace for *delete jot*), and any verb a
+     * list grows later is safe for free.
+     */
+    const shadowKeyIntoFilter = React.useCallback(
+      (event: KeyboardEvent): boolean => {
+        const field = attachedFilterRef.current?.field() ?? null;
+        if (field === null) return false;
+        if (event.metaKey || event.ctrlKey || event.altKey) return false;
+        if (event.isComposing) return false;
+        // Space is the list's commit, and a query cannot usefully OPEN with
+        // one — but once a query exists a space is an ordinary character in it,
+        // which is what lets a multi-word title be typed straight through.
+        // (`Spacebar` is the legacy key name the act dispatch also honors.)
+        const key = event.key === "Spacebar" ? " " : event.key;
+        const printable = key.length === 1 && (key !== " " || field.hasQuery());
+        if (printable) {
+          field.appendChar(key);
+        } else if (key === "Backspace") {
+          if (!field.deleteBackward()) return false;
+        } else if (key === "Escape") {
+          // Escape drops the query and the list keeps the keyboard, so the
+          // ladder above it (dismiss the sheet, collapse the section) is only
+          // reached once there is no query left to clear — the same courtesy
+          // the field extends when the caret is inside it.
+          if (!field.clearQuery()) return false;
+        } else {
+          return false;
+        }
+        pendingReseedRef.current = true;
+        return true;
+      },
+      [],
+    );
+
     // Enter/act on the cursor row, the `commitOnEnter: "act"` path. Commits the
     // list's own selection (so `data-selected` lands before the consumer reads
     // it) then fires `delegate.onActivate` — the DISTINCT Enter callback, not
@@ -5195,13 +5278,9 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       ((e: KeyboardEvent) => boolean) | undefined
     >(undefined);
     onKeyViewKeyRef.current = onKeyViewKey;
-    // The attached filter ([L07] live ref): the binding is read at keystroke
-    // time, so a field mounting after this list (a sheet's lead control, a
-    // collapsed section's band) is nominatable the moment it arrives.
-    const attachedFilterRef = React.useRef<AttachedFilterBinding | undefined>(
-      undefined,
-    );
-    attachedFilterRef.current = attachedFilter;
+    // Type-select delegate ([L07] live ref), tried after both of the above.
+    const shadowKeyIntoFilterRef = React.useRef(shadowKeyIntoFilter);
+    shadowKeyIntoFilterRef.current = shadowKeyIntoFilter;
     const behavior = React.useCallback(
       (): KeyViewBehavior => ({
         container: "item",
@@ -5209,9 +5288,25 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           singleSelect || (selectionRequired && selectionFollowsCursor)
             ? "live"
             : "deferred",
-        ...(captureKeySet !== null
-          ? { captures: (k: FocusKey) => captureKeySet.has(k.key) }
-          : {}),
+        // Escape and Space are claimed only while the attached filter holds a
+        // query ([P08] type-select) — otherwise the act dispatch resolves them
+        // first and this delegate never sees them.
+        //
+        // **Escape**: the ladder above it (dismiss the sheet, fold the section)
+        // must stay reachable the moment there is nothing left to clear, which
+        // is the same courtesy the field extends when the caret is inside it.
+        // **Space**: mid-query it is a character, so a multi-word title types
+        // straight through; with no query it keeps its commit meaning, which is
+        // why a query can never OPEN with one. A list that reserves Space for a
+        // verb of its own (`captureKeys`, Jots' *new jot*) still wins — its
+        // `onKeyViewKey` runs ahead of the shadow.
+        //
+        // An empty or absent filter claims neither, so a list without one
+        // behaves exactly as it always did.
+        captures: (k: FocusKey) =>
+          (captureKeySet?.has(k.key) ?? false) ||
+          ((k.key === "Escape" || k.key === " " || k.key === "Spacebar") &&
+            (attachedFilterRef.current?.field()?.hasQuery() ?? false)),
         // A single-select list keeps select-on-arrow (the cursor IS the selection —
         // a 7.5 picker idiom, intentionally excluded from the [P24] reversion):
         // `commit: "live"` moves the selection with the cursor, and a single-select
@@ -5235,12 +5330,13 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         onSelect: selectCursorRow,
         onAct: enterActs ? actCursorRow : selectCursorRow,
         onDescend: descendCursorRow,
+        // Chained last on purpose: the list's movement keys, then the
+        // consumer's verbs, then type-select. Only a key nothing else wanted
+        // reaches the filter ([P08]).
         onKey: (e: KeyboardEvent) =>
           handleListKeyRef.current(e) ||
-          (onKeyViewKeyRef.current?.(e) ?? false),
-        // The upward half of the attached-list contract ([P08]): a character
-        // this list declined is a request to filter, and this says where.
-        attachedFilter: () => attachedFilterRef.current?.field() ?? null,
+          (onKeyViewKeyRef.current?.(e) ?? false) ||
+          shadowKeyIntoFilterRef.current(e),
       }),
       [
         singleSelect,

@@ -10,8 +10,8 @@
  *  - **field → list.** The caret is in the field; ↑/↓ drive the list's cursor
  *    and never leave the field. The field needs the list's handle.
  *  - **list → field.** The ring is on the list; a printable character is a
- *    request to filter, so it lands in the field. The list needs the field's
- *    focus stop.
+ *    request to filter, so it is SHADOWED into the field. The list needs to
+ *    write the field's query.
  *
  * Authored as two independent props those halves can drift: a site that wires
  * one and forgets the other is a surface where the pair behaves like a compound
@@ -22,18 +22,24 @@
  * may mount after the other (a list behind a loading state, a collapsed Lens
  * section whose body is not in the tree yet).
  *
- * ## What each end publishes
+ * ## Type-select: the list keeps the keyboard
  *
- * The field publishes an {@link AttachedFilterField}: where its focus stop is,
- * whether it currently holds a query, and a one-shot note that the next focus
- * arrival is a forwarded keystroke rather than a Tab. That last one exists
- * because the field selects-all on focus (a Tab into a filter means "replace
- * what is there"), which would make a forwarded character *overwrite* a query
- * the user is trying to extend. A forwarded arrival puts the caret at the end
- * instead, so typing at the list continues the query it can see.
+ * The upward direction is **type-select**, the Finder gesture — typing at a
+ * list narrows it *without the list giving up the keyboard*. The field shows
+ * what was typed; it does not receive it. That distinction is the whole
+ * feature: the reason to type is to find a row and act on it, so `Return` must
+ * still reach the list's cursored row and ↑/↓ must still move it. A design that
+ * granted the caret to the field instead — which this contract briefly did —
+ * narrows correctly and then strands the user, because the row they were
+ * hunting is now behind a Tab.
  *
- * The list publishes an {@link AttachedFilterList} — the cursor half the field
- * already drove before this module existed.
+ * So the field half is a set of MUTATORS, not a focus target. The list calls
+ * {@link AttachedFilterField.appendChar} and the field writes its own input
+ * value and fires its delegate's change notification — the same path a real
+ * keystroke in the field takes, so there is still exactly one value authority
+ * (the `<input>`'s DOM value) and one filtering path. The field is never
+ * focused by a forward, and nothing is mirrored or duplicated: what it shows IS
+ * the query.
  *
  * @module components/tugways/attached-filter
  */
@@ -52,20 +58,21 @@ export interface AttachedFilterList {
   attachedCursorRelease(): void;
 }
 
-/** The field half of the binding, published by `TugFilterField` on mount. */
+/**
+ * The field half of the binding, published by `TugFilterField` on mount — the
+ * shadowed query the list writes through. Every mutator drives the field's own
+ * value + change notification, so a forwarded character and a typed one are
+ * indistinguishable downstream.
+ */
 export interface AttachedFilterField {
-  /**
-   * The field's registered focus stop as a `group:order` focus key, or `null`
-   * when the field is authored into no focus group (nothing to forward to).
-   */
-  focusKey(): string | null;
-  /** Whether the field currently holds a query — gates the Backspace forward. */
+  /** Whether the field currently holds a query. */
   hasQuery(): boolean;
-  /**
-   * One-shot: the focus arrival about to happen is a forwarded keystroke, so
-   * place the caret at the end rather than selecting the existing query.
-   */
-  noteForwardArrival(): void;
+  /** Shadow one character onto the end of the query. */
+  appendChar(ch: string): void;
+  /** Delete the query's last character; `false` when it was already empty. */
+  deleteBackward(): boolean;
+  /** Clear the query; `false` when it was already empty. */
+  clearQuery(): boolean;
 }
 
 /**

@@ -290,41 +290,50 @@ export function TugFilterField({
     [syncEmptyAttribute],
   );
 
-  // ---- The deputy half of the attached-list contract ([P08]) ----
+  // ---- The shadowed half of the attached-list contract ([P08]) ----
   //
-  // Published in a layout effect so the stop is nominatable before any key can
-  // arrive ([L03]). A forwarded arrival is a one-shot latch rather than a prop
-  // because it describes a single focus event, not a state the field is in.
-  const forwardArrivalRef = React.useRef(false);
-  const focusKey =
-    focusGroup !== undefined && focusOrder !== undefined
-      ? `${focusGroup}:${focusOrder}`
-      : null;
+  // The list writes the query through these while KEEPING the keyboard —
+  // type-select, not a focus handoff. Each mutator drives the field's own
+  // value + change notification, the same path `onChange` takes, so a
+  // forwarded character and a typed one are indistinguishable downstream and
+  // the `<input>` stays the single value authority.
+  //
+  // Published in a layout effect so the field is writable before any key can
+  // arrive ([L03]).
+  const writeQuery = React.useCallback(
+    (next: string): void => {
+      const input = inputRef.current;
+      if (input === null) return;
+      input.value = next;
+      syncEmptyAttribute();
+      delegateRef.current.filterFieldDidChangeQuery(next);
+    },
+    [syncEmptyAttribute],
+  );
   React.useLayoutEffect(() => {
     if (attachment === undefined) return;
     return attachment.publishField({
-      focusKey: () => focusKey,
       hasQuery: () => currentQuery() !== "",
-      noteForwardArrival: () => {
-        forwardArrivalRef.current = true;
+      appendChar: (ch) => {
+        writeQuery(currentQuery() + ch);
+      },
+      deleteBackward: () => {
+        const query = currentQuery();
+        if (query === "") return false;
+        writeQuery(query.slice(0, -1));
+        return true;
+      },
+      clearQuery: () => {
+        if (currentQuery() === "") return false;
+        writeQuery("");
+        delegateRef.current.filterFieldDidClear?.();
+        return true;
       },
     });
-  }, [attachment, focusKey, currentQuery]);
+  }, [attachment, currentQuery, writeQuery]);
 
-  // Tab into a filter means "replace what is there", so the field selects all.
-  // A FORWARDED character means "keep going" — the user is looking at the query
-  // while they type the next letter of it — so the caret goes to the end and
-  // the character extends the query instead of erasing it.
   const onFocus = React.useCallback((): void => {
-    const input = inputRef.current;
-    if (input === null) return;
-    if (forwardArrivalRef.current) {
-      forwardArrivalRef.current = false;
-      const end = input.value.length;
-      input.setSelectionRange(end, end);
-      return;
-    }
-    input.select();
+    inputRef.current?.select();
   }, []);
 
   // The attached list's highlight belongs to this caret ([P08]); when the caret

@@ -4,36 +4,31 @@
  *
  * ## What this gates
  *
- * The upward half of the attached-list contract ([P08]). The downward half —
- * ↑/↓ from the caret drive the list's cursor — is at0265's (C). This is the
- * other direction: with the ring on the LIST, a printable character is a
- * request to filter, so the engine grants the caret to the field the list
- * nominates and the browser types the character in. Before it existed the
- * character was declined by `handleListKey`'s `default:` and silently dropped,
- * and filtering cost a Tab out and a Tab back.
+ * The upward half of the attached-list contract ([P08]) — **type-select**, the
+ * Finder gesture. The downward half (↑/↓ from the caret drive the list's
+ * cursor) is at0265's (C). This is the other direction: with the ring on the
+ * LIST, a printable character narrows the list *and the list keeps the
+ * keyboard*. The field shadows what was typed; it never receives it.
  *
- * The keystrokes here are REAL (`nativeType` / `nativeKey`), not synthesized
- * KeyboardEvents, because the whole mechanism is a synchronous un-prevented
- * grant that relies on the browser's own `beforeinput` → `input` pipeline to
- * land the character. A dispatched `KeyboardEvent` has no default action, so it
- * would exercise the grant and prove nothing about the character.
+ * That distinction is the entire feature, and it is what the first version of
+ * this contract got wrong. Granting the caret to the field narrows perfectly
+ * and then strands the user: the row they were hunting is behind a Tab, and
+ * `Return` presses the sheet's default with the list's selection still parked
+ * wherever it was before they typed — on "New session", which silently
+ * discards the pick.
  *
- *   - **The forward itself (A):** with the sessions list holding the key view,
- *     typing a fragment moves the caret into the filter field, leaves the
- *     field holding exactly what was typed, and narrows the list. Fails if the
- *     nomination is unwired, if the grant parks instead of granting (a parked
- *     deputy swallows the character that asked for it), or if the provider
- *     prevents the event and kills the browser's insertion.
- *   - **The round trip stays keyboard-only (B):** from there ↓ cursors the list
- *     without moving the caret, so narrow-then-choose is one gesture with no
- *     Tab in it.
- *   - **A forwarded arrival APPENDS (C):** the field selects-all on a Tab-in,
- *     which would make the second forwarded character erase the first. A
- *     forwarded arrival puts the caret at the end instead, so a query typed
- *     across a re-entry survives.
- *   - **Space does not forward (D):** on a list Space is commit, and a query
- *     opening with a space means nothing. Typing a space with the ring on the
- *     list must leave the field empty.
+ *   - **Narrow without losing the keyboard (A):** typing a fragment with the
+ *     ring on the list leaves the caret OUT of the field, the key view still on
+ *     the list, the field showing the query, and the list narrowed to matches.
+ *   - **Return opens the row you typed for (B):** the cursor re-seeds onto the
+ *     first real match rather than staying on "New session", so `Return` acts
+ *     on it. The regression this pins is a user typing a name and getting an
+ *     empty new session.
+ *   - **Escape drops the query, list keeps the keyboard (C):** the rows come
+ *     back and the ring has not moved.
+ *   - **Space and Backspace (D):** Space cannot OPEN a query (on a list it is
+ *     the commit) but extends a non-empty one, so a multi-word title types
+ *     straight through; Backspace deletes the query's last character.
  *
  * ## Deterministic rows
  *
@@ -45,7 +40,6 @@
  * @covers tugdeck/src/components/tugways/attached-filter.ts
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx
- * @covers tugdeck/src/components/tugways/responder-chain-provider.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  */
 
@@ -174,6 +168,9 @@ const RESUME_ROW = '[data-testid="session-card-picker-session-resume"]';
 
 const RESUME_COUNT = `document.querySelectorAll(${JSON.stringify(RESUME_ROW)}).length`;
 
+/** The row the list has SELECTED — what the sheet's default button will act on. */
+const SELECTED_ROW = `${RESUME_ROW}[data-selected="true"], ${RESUME_ROW} [data-selected="true"]`;
+
 /** The filter field's current value — `null` when the field is not mounted. */
 const FILTER_VALUE = `(function(){
   var el = document.querySelector(${JSON.stringify(FILTER_INPUT)});
@@ -184,19 +181,6 @@ const FILTER_VALUE = `(function(){
 const CARET_IN_FILTER = `(function(){
   var el = document.querySelector(${JSON.stringify(FILTER_INPUT)});
   return el !== null && document.activeElement === el;
-})()`;
-
-/** The caret's offset in the filter field, or -1 when it does not hold focus. */
-const CARET_OFFSET = `(function(){
-  var el = document.querySelector(${JSON.stringify(FILTER_INPUT)});
-  if (el === null || document.activeElement !== el) return -1;
-  return el.selectionStart;
-})()`;
-
-/** Which row the list's cursor rests on — its rendered text, or `null`. */
-const CURSOR_ROW_TEXT = `(function(){
-  var el = document.querySelector('[data-tug-key-within], [data-attached-cursor]');
-  return el === null ? null : (el.textContent || '');
 })()`;
 
 /** The focus key of whatever wears the keyboard ring — for diagnosing a stall. */
@@ -210,6 +194,21 @@ const KEY_VIEW_IS_LIST = `(function(){
   var el = document.querySelector(${JSON.stringify(SESSIONS_STOP)});
   return el !== null && el.hasAttribute("data-key-view-kbd");
 })()`;
+
+/**
+ * Wait for the filter field to hold exactly `expected`.
+ *
+ * Returns a BOOLEAN rather than the value: `waitForCondition` polls until its
+ * script returns something truthy, and `""` — the expected value whenever a
+ * query has just been cleared — is falsy, so a value-returning predicate can
+ * never resolve for the one case most worth asserting.
+ */
+function waitForFilterValue(app: App, expected: string): Promise<boolean> {
+  return app.waitForCondition<boolean>(
+    `${FILTER_VALUE} === ${JSON.stringify(expected)}`,
+    { timeoutMs: 6000 },
+  );
+}
 
 /**
  * Walk the picker's Tab cycle until the sessions list holds the key view —
@@ -276,111 +275,103 @@ async function openPickerOnSeededProject(app: App): Promise<void> {
 }
 
 describe.skipIf(!SHOULD_RUN)(
-  "AT0422: typing at a focused list forwards into its attached filter",
+  "AT0422: type-select narrows a focused list without taking its keyboard",
   () => {
     test(
-      "a character typed at the sessions list lands in the filter, narrows it, and leaves the round trip keyboard-only",
+      "typing narrows while the list keeps the keyboard, and Return opens the row that was typed for",
       async () => {
-        // Real keystrokes need a real key window: the forward's whole point is
-        // the browser's default insertion, which a background app never runs.
+        // Real keystrokes, not synthesized KeyboardEvents: a dispatched event
+        // has no default action, and half of what this asserts is about which
+        // surface the real key reaches.
         const app = await launchTugApp({
-          testName: "at0422-filter-forward",
+          testName: "at0422-type-select",
           foreground: true,
         });
         try {
           await openPickerOnSeededProject(app);
           const baselineCount = await app.evalJS<number>(RESUME_COUNT);
 
-          // The ring goes on the LIST — the state the user is complaining
-          // about, and the picker's own default focus when sessions are ready.
           await focusSessionsList(app);
-          await app.waitForCondition<boolean>(KEY_VIEW_IS_LIST, { timeoutMs: 4000 });
           expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
 
-          // (A) Type the fragment with the ring still on the list. Every
-          // character but the first arrives with the caret already in the
-          // field; the FIRST is the one the forward carries.
+          // (A) Type at the list. The field shows the query; the caret never
+          // goes there and the key view never leaves the list.
           await app.nativeType(FRAGMENT);
-          expect(
-            await app.waitForCondition<string>(
-              `(function(){ var v = ${FILTER_VALUE}; return v === ${JSON.stringify(
-                FRAGMENT,
-              )} ? v : null; })()`,
-              { timeoutMs: 6000 },
-            ),
-          ).toBe(FRAGMENT);
-          expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(true);
+          expect(await waitForFilterValue(app, FRAGMENT)).toBe(true);
+          expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
+          expect(await app.evalJS<boolean>(KEY_VIEW_IS_LIST)).toBe(true);
           await app.waitForCondition<boolean>(
             `${RESUME_COUNT} < ${baselineCount}`,
             { timeoutMs: 6000 },
           );
-          note(
-            `forward: ${baselineCount} rows → ${await app.evalJS<number>(RESUME_COUNT)} after typing "${FRAGMENT}" at the list`,
+
+          // (B) The cursor re-seeded onto the match, NOT "New session" — so the
+          // sheet's Return acts on the row the user typed for. Asserting the
+          // selection's text is what makes this a pin rather than a vibe: the
+          // failure mode is a selection parked on "New session".
+          const selected = await app.waitForCondition<string>(
+            `(function(){
+              var el = document.querySelector(${JSON.stringify(SELECTED_ROW)});
+              return el === null ? null : (el.textContent || "");
+            })()`,
+            { timeoutMs: 6000 },
+          );
+          note(`selection after typing "${FRAGMENT}": ${JSON.stringify(selected)}`);
+          expect(selected.toLowerCase()).toContain(FRAGMENT);
+          expect(selected).not.toContain("New session");
+
+          // Return presses the sheet's default with that selection live, which
+          // opens the seeded session — the picker gives way to the card.
+          await app.nativeKey("Return");
+          await app.waitForCondition<boolean>(`!(${PICKER_OPEN})`, {
+            timeoutMs: 15_000,
+          });
+        } catch (err) {
+          const tail = app.tailLog(200);
+          if (tail !== "") {
+            process.stderr.write(`\n[at0422-type-select] log tail:\n${tail}\n`);
+          }
+          throw err;
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "Escape drops the query and the list still holds the keyboard",
+      async () => {
+        const app = await launchTugApp({
+          testName: "at0422-type-select-escape",
+          foreground: true,
+        });
+        try {
+          await openPickerOnSeededProject(app);
+          const baselineCount = await app.evalJS<number>(RESUME_COUNT);
+          await focusSessionsList(app);
+
+          await app.nativeType(FRAGMENT);
+          await app.waitForCondition<boolean>(
+            `${RESUME_COUNT} < ${baselineCount}`,
+            { timeoutMs: 6000 },
           );
 
-          // (B) From here ↓ cursors the list and the caret stays put — the
-          // narrow-then-choose round trip with no Tab in it ([P08]).
-          await app.nativeKey("ArrowDown");
-          expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(true);
-          const cursorText = await app.evalJS<string | null>(CURSOR_ROW_TEXT);
-          expect(cursorText).not.toBeNull();
-          expect((cursorText ?? "").toLowerCase()).toContain(FRAGMENT);
-        } catch (err) {
-          const tail = app.tailLog(200);
-          if (tail !== "") {
-            process.stderr.write(`\n[at0422-forward] log tail:\n${tail}\n`);
-          }
-          throw err;
-        } finally {
-          await app.close();
-        }
-      },
-      TEST_TIMEOUT_MS,
-    );
-
-    test(
-      "a forwarded arrival appends to the query, and Space never starts a forward",
-      async () => {
-        const app = await launchTugApp({
-          testName: "at0422-filter-append",
-          foreground: true,
-        });
-        try {
-          await openPickerOnSeededProject(app);
-
-          // Build a partial query by forwarding, then go back to the list and
-          // forward again — the second arrival must EXTEND, not replace. A
-          // Tab-in selects-all, and reusing that here would erase the query
-          // the user can see while they type the next letter of it.
-          await focusSessionsList(app);
-          await app.nativeType("zeb");
-          expect(
-            await app.waitForCondition<string>(
-              `(function(){ var v = ${FILTER_VALUE}; return v === "zeb" ? v : null; })()`,
-              { timeoutMs: 6000 },
-            ),
-          ).toBe("zeb");
-
-          await focusSessionsList(app);
-          await app.waitForCondition<boolean>(KEY_VIEW_IS_LIST, { timeoutMs: 4000 });
+          // (C) Escape is the list's while there is a query to drop, so the
+          // sheet survives it and the ring does not move.
+          await app.nativeKey("Escape");
+          expect(await waitForFilterValue(app, "")).toBe(true);
+          await app.waitForCondition<boolean>(
+            `${RESUME_COUNT} === ${baselineCount}`,
+            { timeoutMs: 6000 },
+          );
+          expect(await app.evalJS<boolean>(PICKER_OPEN)).toBe(true);
+          expect(await app.evalJS<boolean>(KEY_VIEW_IS_LIST)).toBe(true);
           expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
-          // The query is intact while the ring sits on the list — the field
-          // does not clear itself just because the caret left.
-          expect(await app.evalJS<string | null>(FILTER_VALUE)).toBe("zeb");
-
-          // (C) One more forwarded character extends it to the full fragment.
-          await app.nativeType("r");
-          expect(
-            await app.waitForCondition<string>(
-              `(function(){ var v = ${FILTER_VALUE}; return v === "zebr" ? v : null; })()`,
-              { timeoutMs: 6000 },
-            ),
-          ).toBe("zebr");
-          expect(await app.evalJS<number>(CARET_OFFSET)).toBe(4);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
-            process.stderr.write(`\n[at0422-append] log tail:\n${tail}\n`);
+            process.stderr.write(`\n[at0422-escape] log tail:\n${tail}\n`);
           }
           throw err;
         } finally {
@@ -391,29 +382,37 @@ describe.skipIf(!SHOULD_RUN)(
     );
 
     test(
-      "Space never starts a forward — on a list it is still the commit",
+      "Space cannot open a query but extends one, and Backspace deletes",
       async () => {
         const app = await launchTugApp({
-          testName: "at0422-filter-space",
+          testName: "at0422-type-select-keys",
           foreground: true,
         });
         try {
           await openPickerOnSeededProject(app);
           await focusSessionsList(app);
 
-          // (D) A query cannot usefully OPEN with a space, and on a list Space
-          // is the commit — so it must not carry the caret into the field. Its
-          // own test because the commit is real: where the engine leaves the
-          // key view afterwards is that gesture's business, and threading it
-          // through the append flow would be testing two things at once.
+          // (D) On a list Space is the commit, and a query cannot usefully open
+          // with one — so it must leave the field empty.
           await app.nativeKey(" ");
           await new Promise((r) => setTimeout(r, 500));
           expect(await app.evalJS<string | null>(FILTER_VALUE)).toBe("");
+
+          // Inside a query it is an ordinary character, which is what lets a
+          // multi-word title be typed straight through.
+          await focusSessionsList(app);
+          await app.nativeType("zebra ha");
+          expect(await waitForFilterValue(app, "zebra ha")).toBe(true);
+
+          // Backspace edits the query rather than doing nothing. (The harness
+          // name is `Backspace`; its `Delete` is the forward-delete key.)
+          await app.nativeKey("Backspace");
+          expect(await waitForFilterValue(app, "zebra h")).toBe(true);
           expect(await app.evalJS<boolean>(CARET_IN_FILTER)).toBe(false);
         } catch (err) {
           const tail = app.tailLog(200);
           if (tail !== "") {
-            process.stderr.write(`\n[at0422-space] log tail:\n${tail}\n`);
+            process.stderr.write(`\n[at0422-keys] log tail:\n${tail}\n`);
           }
           throw err;
         } finally {

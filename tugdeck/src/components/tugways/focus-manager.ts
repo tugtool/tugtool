@@ -47,7 +47,6 @@ import { createContext } from "react";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { deckTrace } from "@/deck-trace";
 import type { TugAction } from "./action-vocabulary";
-import type { AttachedFilterField } from "./attached-filter";
 import type { ComponentKeyDeclaration, FocusKey } from "./focus-act";
 import type { ResponderChainManager } from "./responder-chain";
 import { resolveSpatial, type SpatialDirection, type SpatialOrder } from "./spatial-order";
@@ -87,20 +86,6 @@ export interface KeyViewBehavior extends ComponentKeyDeclaration {
    * chords (those belong to the bindings).
    */
   onKey?: (event: KeyboardEvent) => boolean;
-  /**
-   * The **deputy text stop** this key view nominates ([P08], #filter-forward):
-   * "I am not a text stop, but that field over there is mine." A printable
-   * character arriving at a key view that declares one — and that its own
-   * `onKey` declined — is a request to type into that field, so the engine
-   * grants the caret there and lets the browser land the character.
-   *
-   * Today's one declarer is a `TugListView` with an attached filter, which is
-   * what makes a list and its filter behave as one compound control in both
-   * directions rather than only downward. Read live and per-keystroke: the
-   * field may mount after the list, and a list with no filter beside it returns
-   * `null` and keeps declining printables as it always has.
-   */
-  attachedFilter?: () => AttachedFilterField | null;
 }
 
 /**
@@ -892,20 +877,6 @@ export class FocusContext {
     const captured = this.keyViewBehavior()?.captures?.(key) ?? false;
     if (captured) return true;
     return key.key === "Tab" ? this.keyViewConsumesTab() : false;
-  }
-
-  /**
-   * The deputy text stop the current key view nominates, if any ([P08],
-   * #filter-forward) — see {@link KeyViewBehavior.attachedFilter}.
-   *
-   * Deliberately NOT following `dispatchKeyToKeyView`'s descend fallback to the
-   * container's behavior: while the keyboard is descended into a list row it is
-   * working inside that row's accessories, and a character there is not a
-   * request to filter the list the row sits in. The nomination is the key
-   * view's own or it does not apply.
-   */
-  attachedFilterField(): AttachedFilterField | null {
-    return this.keyViewBehavior()?.attachedFilter?.() ?? null;
   }
 
   /**
@@ -2399,15 +2370,6 @@ export class FocusContext {
    * The id of the rendered focusable with this `group:order` key, or `null`. Prefers
    * a rendered record so the navigator lands the ring on a live target.
    */
-  /**
-   * Whether `focusKey` names a stop that is registered right now — the
-   * liveness check a placement built from a *nominated* key needs before it
-   * fires (the filter forward, [P08]).
-   */
-  hasRegisteredFocusKey(focusKey: string): boolean {
-    return this.idForFocusKey(focusKey) !== null;
-  }
-
   private idForFocusKey(focusKey: string): string | null {
     let fallback: string | null = null;
     for (const record of this.focusables.values()) {
@@ -4350,63 +4312,6 @@ export class FocusManager {
   /** Grant the caret at a parked text stop and re-land the keyboard ([P12]). */
   grantParkedTextStop(): boolean {
     return this.activeContext().grantParkedTextStop();
-  }
-  /**
-   * Whether the key view nominates a deputy text stop that is registered right
-   * now — the gate on the filter forward ([P08], #filter-forward).
-   */
-  hasAttachedFilterStop(): boolean {
-    return this.attachedFilterTarget() !== null;
-  }
-  /**
-   * Whether the nominated filter currently holds a query. The Backspace forward
-   * asks, because a Backspace with nothing to delete is not a filter gesture
-   * and must stay with whatever the list or the surface means by it.
-   */
-  attachedFilterHasQuery(): boolean {
-    return this.activeContext().attachedFilterField()?.hasQuery() ?? false;
-  }
-  /**
-   * Grant the caret at the key view's nominated filter ([P08],
-   * #filter-forward) — the deputy form of {@link grantParkedTextStop}.
-   *
-   * A plain placement, so the arrival is `"placement"` and `parksTextStop` is
-   * false: the field is GRANTED, caret and all, which is the whole point (a
-   * parked deputy would swallow the character that asked for it). The field is
-   * told the arrival is a forward first, so its focus handler places the caret
-   * at the end instead of selecting the query the user is extending.
-   *
-   * Like every printable grant this must run SYNCHRONOUSLY inside the capture
-   * keydown and the caller must NOT prevent the event — that is what lets the
-   * browser's own `beforeinput` → `input` pipeline land the character in the
-   * just-focused field, with no synthetic re-dispatch ([P12], #printable-grant).
-   */
-  grantAttachedFilterStop(): boolean {
-    const target = this.attachedFilterTarget();
-    if (target === null) return false;
-    this.setKbfManual(false);
-    target.field.noteForwardArrival();
-    this.place(null, { kind: "focus-key", focusKey: target.focusKey }, {
-      modality: "keyboard",
-    });
-    return true;
-  }
-  /**
-   * The nomination resolved against the live registry: a field that names a
-   * focus key nothing has registered (its section collapsed, its sheet gone) is
-   * no target at all, and the character must fall through rather than vanish
-   * into a placement that cannot land.
-   */
-  private attachedFilterTarget(): {
-    field: AttachedFilterField;
-    focusKey: string;
-  } | null {
-    const field = this.activeContext().attachedFilterField();
-    if (field === null) return null;
-    const focusKey = field.focusKey();
-    if (focusKey === null) return null;
-    if (!this.activeContext().hasRegisteredFocusKey(focusKey)) return null;
-    return { field, focusKey };
   }
   /** Whether a Class A (auto-engaging) trap is on the active context's stack. */
   hasEngagingTrap(): boolean {

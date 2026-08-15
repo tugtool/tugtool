@@ -102,16 +102,27 @@ async function kbdLabel(app: App): Promise<string | null> {
   );
 }
 
-/** Tab until `selector` holds the keyboard key view; throws if it never does. */
+/**
+ * Tab until `selector` holds the keyboard key view; throws if it never does.
+ *
+ * The check runs after EVERY Tab, including the last, and the bound is a
+ * runaway guard rather than a claim about the walk's length. Both matter: with
+ * all three Lens sections expanded and the Cards filter live, the walk from the
+ * Layouts list round to the Cards list is exactly twelve stops — so a loop that
+ * spent its last Tab and then threw without re-checking reported a walk that
+ * had in fact arrived.
+ */
 async function tabUntilKbd(app: App, selector: string): Promise<void> {
-  for (let i = 0; i < 12; i += 1) {
-    const on = await app.evalJS<boolean>(
+  const reached = (): Promise<boolean> =>
+    app.evalJS<boolean>(
       `document.querySelector(${JSON.stringify(`${selector}[data-key-view-kbd]`)}) !== null`,
     );
-    if (on) return;
+  for (let i = 0; i < 20; i += 1) {
+    if (await reached()) return;
     await app.nativeKey("Tab");
     await new Promise<void>((r) => setTimeout(r, 200));
   }
+  if (await reached()) return;
   throw new Error(`Tab never reached ${selector}`);
 }
 
