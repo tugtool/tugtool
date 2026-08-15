@@ -1,6 +1,19 @@
 # Joining a dash: what the first real landing showed
 
-The dash-UI work landed on `main` as `5964a0a19` — by CLI, from the terminal, with the conflict resolved by hand. The Changes shade was open the whole time, was invoked deliberately, and did not respond. This is the post-mortem, written while it is fresh.
+The dash-UI work landed on `main` as `5964a0a19` — by CLI, from the terminal, with the conflict resolved by hand. The Changes shade was open the whole time, was invoked deliberately, and did not respond. This began as the post-mortem of that, written while it was fresh.
+
+## What this document is
+
+It is now the **working brief for landing dashes**, and it is meant to be picked up cold. It carries three things, in this order: what the incident was and what investigating it proved or overturned; what has since been fixed and how that is pinned by tests; and — at [The doctrine this is all heading toward](#the-doctrine-this-is-all-heading-toward) — the program that is actually left. A reader who only wants the work should start there and use [Starting again from cold](#starting-again-from-cold) for paths and [Working on this — the landmines](#working-on-this--the-landmines) before running anything.
+
+The vocabulary, since it is Tug's own:
+
+- A **dash** is a unit of work on its own git worktree and branch (`tugdash/<name>`), cut from a **base** branch (normally `main`) and recorded in git config as `branch.<name>.tugbase`. A dash accumulates **rounds** — ordinary commits on its branch.
+- A **join** is landing a dash back: by default a squash of its rounds onto the base, performed by `tugutil dash join` or by the Session card's `/join <name>`.
+- The **ladder** is the five-rung conflict resolver in `tugdash-core::resolve` that a conflicted join can run: replay probe → rerere → `merge-file` → structured-merge driver → AI. It never touches a checkout; it builds a **candidate commit** off to the side for the join to land.
+- The **shade** is the Changes surface in the Session card; the **dash lane** is the strip inside it that lists dashes and carries the landing face (`Resolve` / `Join` / `Release`, plus `Adopt` / `Leave`).
+
+The problem the whole document is circling: **landing a dash whose base has moved since the dash was cut.** Everything else is a symptom of that.
 
 ## What actually happened
 
@@ -60,14 +73,16 @@ One fragility worth knowing before it bites again: the dash lane renders *below*
 
 ## Two defects the landing did establish
 
-Both are read off the landed commit, not inferred:
+Both are read off the landed commit, not inferred. Both are still open; what to do about them is in [The two message defects](#the-two-message-defects) below.
 
 - **The subject line is doubled** — `tugdash(dash-ui): tugdash(dash-ui): identity carries the dash run…`. The join prefixes `tugdash(<name>): ` onto the draft unconditionally, including when the draft already opens with a conventional subject.
 - **The draft that landed was not the draft that was written.** `tugutil draft set --owner dash:dash-ui` wrote one message; the commit carries a different, auto-generated summary — accurate, but including a bullet nobody wrote. Something regenerated the maintained draft between the write and the join. If the draft is the thing a landing commits, a scribe silently replacing it is the more serious of the two.
 
 ## One hazard the resolution exposed
 
-`git rerere` auto-staged a cached resolution for the conflicted file, silently, and it was wrong: it kept one side wholesale and discarded the other. Left alone it would have landed a tooltip styled by CSS that no longer exists — green build, green tests, broken hover. The dash-work doctrine has the resolve ladder running `rerere`; any surface that offers `Resolve` has to say **that a cached resolution was used** and show what it produced, or it will land silent breakage on exactly the conflicts that recur.
+`git rerere` auto-staged a cached resolution for the conflicted file, silently, and it was wrong: it kept one side wholesale and discarded the other. Left alone it would have landed a tooltip styled by CSS that no longer exists — green build, green tests, broken hover.
+
+This is the observation that became the review gate: any surface offering `Resolve` has to say **which rung resolved each file** and show what it produced, or it will land silent breakage on exactly the conflicts that recur. **Addressed** — see [half two](#the-fix-in-two-halves), which generalises it past rerere to every rung that decides a file by machine.
 
 ## What the dash-UI work did and did not do for this
 
@@ -75,15 +90,82 @@ Honestly: **almost nothing for joining.** It improved where a dash is *legible* 
 
 That is the chicken-and-egg named at the time, and it is worth stating plainly: legibility work does not move a landing that has no working controls.
 
-## Where to take this
+## The doctrine this is all heading toward
 
-1. ~~Reproduce the dead lane~~ **Done — at0425.** The wiring is sound; the causes worth fixing are the ladder's false resolution and the presentation failures below.
-2. ~~Fix `rerere_rung`'s marker-free harvest, and surface every machine-resolved file for review before anything lands~~ **Done, both halves.**
-3. **Then decide what a turn should legitimately block.** The blanket `turnInProgress` gate on every control — `Join`, `Resolve`, `Release`, `Adopt`/`Leave` — was not what broke this run, but it is still wrong on its own terms: a landing mutates the base while an agent may be mid-edit, so some gate is right, but `Resolve` touches only the dash and blocking it locks the one escape hatch a conflicted dash has.
-4. **A refused control must state its reason without a hover.** Each button carries its reason as a native `title`, and `.tug-button:disabled` sets `pointer-events: none` — an element with no pointer events never hovers, so that reason can never render. This is dead code wherever it appears, independent of what caused this incident.
-5. **Make disabled look disabled.** `--tugx-control-disabled-opacity` is `0.65` in the dark themes, `0.7` in the light. A filled action button at that strength reads as live, and when a whole cluster is disabled at once there is no full-strength control adjacent to calibrate against.
-6. **Give a conflict somewhere to go.** The shade named the file and stopped. The diagnosis that made the hand resolution possible — *which commit on the base touched this file, and when* — was `git log --name-only` archaeology the UI had every fact needed to do.
-7. **Fix the two message defects** — the doubled subject prefix, and whatever rewrote the draft.
+Everything above is work on **the landing moment**, and the landing moment is the wrong place to fix landings. Two sessions of it bought correctness — the ladder no longer fabricates resolutions, and no machine-made merge lands unread — but neither made a landing *rarer* or *easier*. The conflict still ambushes you at the end of a run, when you want to be done, holding the least context you will ever have about why the two sides disagree.
+
+The rule worth building to, and the one that makes a landing boring:
+
+> **A landing problem should surface the moment it becomes true, not the moment you try to land.**
+
+There are exactly three ways a landing problem becomes true, and each one has a moment long before the join where it could have been said out loud:
+
+1. **The base gains commits.** True the moment someone lands on `main`. Today nothing notices until the join previews.
+2. **The base checkout holds uncommitted work that the dash also touches.** True the moment the overlap appears — which is usually the moment the dash's round touches that file, hours before the join. Today the preflight computes exactly this intersection, but only when you try to land.
+3. **The dash starts from a base that was already unclean.** True at `dash create`, the earliest moment there is. Today create says nothing about it.
+
+Each of the three has its own item below. What makes them one program rather than three chores: they all need a **watcher on the base** — its ref for (1), its working tree for (2) — and they all move a discovery earlier. Design them together or the watcher gets built three times.
+
+### Start from a base you can hope to land on
+
+This is the cheapest of the three and it is worth doing first, because it removes a whole class of landing failure at the one moment when it costs nothing.
+
+**What `dash create` does today.** It runs `git worktree add <path> -b tugdash/<name> <base_branch>`, cutting the worktree from the **base branch tip** — a commit. So the good news is already true: uncommitted changes in the developer's checkout are *not* carried into the dash. The dash worktree starts clean.
+
+**What it does not do is anything about the dirt it left behind.** The uncommitted work stays in the base checkout for the whole life of the dash, where it does three kinds of harm:
+
+- It is invisible to the dash's agent, which reads the base branch's *committed* state. The agent is reasoning about a `main` that does not match the one on screen.
+- If it is later committed, it becomes base motion — problem (1), now with the dash's rounds already written against the older tree.
+- If it is not committed, it becomes the `base-dirt` blocker at the join: `blocking_base_dirt` intersects the base's dirty tracked paths with the dash's changed files, and refuses the landing over the overlap. That refusal fires at the last possible moment over state that existed *before the dash had done anything*.
+
+**The invariant to add:** `dash create` ends with a base checkout that holds nothing uncommitted, one way or the other. Three ways to satisfy it, and the third is the whole point:
+
+- The base was already clean — the common case, and nothing happens.
+- The dirt *is this dash's work*. Transplant it into the worktree and remove it from the base. This is the "I was editing `main`, and half-way through I realised this should be a dash" gesture, which is a real and desirable way to start, and today it has no support at all.
+- The dirt is unrelated. Say so, name the paths, and offer commit-or-stash as an act rather than leaving it to be discovered at the join.
+
+**The precedent is already built and shipped.** `adopt_plan_in` does exactly this for one file: it moves the plan into the worktree and then calls `clean_base_plan_copy` to remove the base copy, restoring a tracked path with `git checkout HEAD --` (naming `HEAD` explicitly, because a bare `git checkout --` restores from the index and a *staged* edit would survive). `BasePlanState` already classifies a path as `Clean` / `TrackedDirty` / `Untracked` / `Absent`, and `is_dirt()` already draws the line between "a second live copy" and "ordinary branch divergence". The rollback ordering is worked out too: the transplant runs last in `create`, so a failure tears the dash down the same way a failed `post_create` hook does, and the base copy is still intact when it does. Generalising one-file transplant to *the working set* is an extension of a tested engine, not a new one.
+
+**The honest counter-argument, recorded so it is not re-discovered:** most dashes get created on a tree with *some* unrelated dirt, and a create that refuses every time would be intolerable. So the default cannot be a refusal. The shape that survives that objection is a **decision, not a veto**: create proceeds, but it states what it left on the base and offers the two acts, and it defaults to taking nothing. The refusal only belongs where the harm is certain — and the one place it is certain is a path the dash is about to work on, which at create time is knowable only when a plan was adopted (the plan names its files). That is worth a design pass rather than a guess.
+
+**One asymmetry to fix while in here:** `create` does not care which branch the developer's checkout is on — it cuts from the base *ref*. But the join's preflight has an `off-base` blocker that refuses to land unless the checkout *is* on the base branch. Creation is commit-based and landing is checkout-based, and nothing warns you at the start that the end will demand something the start did not.
+
+### Replay the rounds when the base moves
+
+The big one, and the item that changes the dash lifecycle rather than the dash UI. When `main` moves under a live dash, replay the dash's rounds onto the new tip *then and there*: a clean replay just happens and nobody is told; a conflicted one becomes an ordinary agent turn in the dash's own session, with the stages and the dash's intent in hand, reviewed like any other round. By the time you land, the dash is already sitting on current `main` and any disagreement was settled hours earlier by the agent that wrote the code, with you present.
+
+**The engine already exists.** `replay_probe` — rung 1 of the ladder — replays a dash's rounds one at a time onto the current base with `merge-tree --merge-base=<round^>` + `commit-tree`, and returns the replayed head when every round comes out clean. That is base-motion replay, complete and unit-tested (`replay_probe_resolves_base_already_advanced_and_lands_replay_shape`). It simply runs at the wrong time: once, in memory, on the `Resolve` click, and its result is thrown away unless the *whole* replay is clean.
+
+So the distance here is not merge machinery. It is lifecycle and bookkeeping, and that is what the design brief has to answer:
+
+- **What watches the base ref, and when is acting safe?** Not mid-turn, and not over a dirty dash worktree. Shares its watcher with the overlap warning above.
+- **The dash worktree is checked out at the old base.** Moving the branch under a live checkout is the genuinely hard part, and it is where this can make things worse rather than better if it fires at a bad moment.
+- **Replayed rounds get new SHAs.** The dash-log, the plan's Step Status Ledger commit cells, and anything else holding a commit id all reference the old ones.
+- **How does the conflicted case become a turn?** It needs a way to inject a turn into the dash's bound session carrying the stages plus the dash's intent, and to mark the resulting round as a rebase resolution rather than ordinary work.
+- **What happens when no agent is bound**, or the session is gone? The fallback is today's landing-time ladder, which is exactly why the ladder stays.
+- **Does the user ever see it?** "Clean replays are silent" is the goal, but silence about history rewriting itself is its own hazard. Probably a settled, glanceable mark rather than an interruption.
+
+### The tactical layer
+
+Still owed, none of it paid down by the review gate. Worth doing, but it is polish on a surface the two items above may make rare, so it should not go first.
+
+- **Decide what a turn should legitimately block.** The blanket `turnInProgress` gate sits on every control — `Join`, `Resolve`, `Release`, `Adopt`/`Leave`. It was not what broke the incident, but it is wrong on its own terms: a landing mutates the base while an agent may be mid-edit, so *some* gate is right, but `Resolve` touches only the dash and blocking it locks the one escape hatch a conflicted dash has.
+- **A refused control must state its reason without a hover.** Each button carries its reason as a native `title`, and `.tug-button:disabled` sets `pointer-events: none` — an element with no pointer events never hovers, so that reason can never render. This is dead code wherever it appears. It includes the review gate's own refusal, which reaches the user only because the review block underneath says the same thing in prose.
+- **Make disabled look disabled.** `--tugx-control-disabled-opacity` is `0.65` dark, `0.7` light. A filled action button at that strength reads as live, and when a whole cluster is disabled at once there is no full-strength control adjacent to calibrate against.
+- **Give a conflict somewhere to go.** The shade named the file and stopped. The diagnosis that made the hand resolution possible — *which commit on the base touched this file, and when* — is `git log --name-only` archaeology the UI had every fact needed to do.
+
+### The two message defects
+
+The doubled subject prefix is understood and mechanical: `integrate_message` prepends `tugdash(<name>): ` unconditionally, including when the draft already opens with a conventional subject.
+
+**The other one is not understood, and that makes it the most urgent single item in this brief.** `tugutil draft set --owner dash:dash-ui` wrote one message; the commit carries a different, auto-generated summary. Something regenerated a maintained draft between the write and the join. If the draft is the thing a landing commits, a scribe silently replacing it is a correctness bug, not a polish item — and it is the only defect here whose *mechanism* is still unknown. Reproduce it before building anything on top of the draft.
+
+### Suggested order
+
+1. **The draft regeneration bug** — smallest, and the only open unknown.
+2. **Clean base at creation** — cheap, has a shipped precedent, and removes one of the three sources of divergence outright.
+3. **Base-motion replay** — the real program, and the one that deserves its own design brief.
+4. **The tactical layer** — after the surfaces have settled.
 
 ## Starting again from cold
 
@@ -103,13 +185,30 @@ Everything named above, by path:
 | Dash fixtures for tests (`createDash`, `releaseDash`, `commitRound`) | `tests/app-test/dash-fixture.ts` |
 | **The resolution ladder** — `resolve_conflicts`, `rerere_rung`, `RawStages::load`, `has_rr_cache`, and the inline `mod tests` | `tugrust/crates/tugdash-core/src/resolve.rs` |
 | `integrate_message` (the unconditional `tugdash(<name>): ` prefix), `join_in` | `tugrust/crates/tugdash-core/src/ops.rs` |
+| **`create`** — `git worktree add -b <branch> <base_branch>`, the post-create hook, the rollback ordering | `.../ops.rs` (`pub fn create`) |
+| **The transplant** — `adopt_plan_in`, `clean_base_plan_copy`, `BasePlanState` / `is_dirt`, `base_plan_dirt`. The working precedent for a clean base at creation | `.../ops.rs` |
+| **The join preflight** — `blocking_base_dirt` (intersects base dirt with the dash's changed files), `base_dirt_detail`, the `off-base` / `base-dirt` / `stale-journal` / `empty` blockers | `.../ops.rs` |
+| **`replay_probe`** — rung 1, which *is* base-motion replay, running at the wrong time | `.../resolve.rs` |
 | The server's resolve handler (`do_changeset_join_resolve`) and the control dispatch | `tugrust/crates/tugcast/src/feeds/agent_supervisor.rs` |
 | The AI rung's scribe seam and the progress deltas | `tugrust/crates/tugcast/src/feeds/join_resolve.rs` |
 | The client's resolve overlay store (`ResolveState`, the delta/ok/err frames) | `tugdeck/src/lib/changeset-join-store.ts` |
 
-State of the world at the last update (2026-08-15): `main` is at `25567b165`, which carries the reproduction and the half-one fix. No dashes exist, no debug instances are running, and the fixtures leave no `tugdash.mergedriver` config or `rr-cache` entry behind. Uncommitted and belonging to this line of work: this brief, and the review gate — `resolve.rs` (the per-file `diff`), `changeset-join-store.ts`, `join-mode-controller.ts`, the landing face and its CSS, `tug-diff-document.tsx`, `session-card.tsx`, their unit tests, and the new `at0426`. Green: `cargo nextest run` (2621), `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed` (20 files, 32 tests). `bun test` is 6759/1 — the one red is the pre-existing `layout-imposer-solutions` golden table, which is red on `main` and untouched here. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
+State of the world at the last update (2026-08-15): `main` is at `a36ec60f6`, which carries everything described above — the reproduction (`at0425`), the `rerere_rung` fix and its regression test, and the review gate with `at0426`. The three commits of this line of work are `e98683647` (the reproduction and the diagnosis), `25567b165` (half one), `a36ec60f6` (half two). Nothing of it is uncommitted except later edits to this brief.
 
-Next piece of work: **the tactical layer** — items 3–7 above, none of which the review gate paid down. Note in particular that the gate's own refusal, *"Review what the ladder resolved first"*, still reaches the user only as a `title` on a `pointer-events: none` button — unreachable by hover, exactly as item 4 describes. What saves it in practice is that the review block sitting under the button says the same thing in prose. Every other refusal in the lane has no such luck.
+No dashes exist and no debug instances are running; the fixtures leave no `tugdash.mergedriver` config, `rr-cache` entry, worktree, or `tugdash/*` branch behind. Green at that commit: `cargo nextest run` (2621 tests), `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed` (20 files, 32 tests). `bun test` is 6759/1, the one red being the pre-existing `layout-imposer-solutions` golden table — red on `main`, not ours. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
+
+Next piece of work: the **suggested order** above — the draft regeneration bug, then a clean base at creation, then the base-motion replay brief.
+
+## Working on this — the landmines
+
+Read these before touching anything; each one cost something to learn.
+
+- **`tugutil dash join <name> --resolve` LANDS.** It runs the ladder and then *completes the join*, squashing onto the base. It is not a dry run. Using it to probe the ladder is how an empty `ebee1d49f` reached `main` while this was being diagnosed. The safe CLI probe is `--preview`, which reports conflicts through in-memory `merge-tree` and touches nothing. To exercise the ladder itself, use the inline `mod tests` in `resolve.rs` — its `init()` helper builds a scratch repo in a tempdir.
+- **Only the user commits.** Every fix in this line of work has been handed over uncommitted. Never run `git commit`, `git push`, or a history-rewriting command; and never hand over a `git reset` command without re-reading `HEAD` first, because the working tree may have been committed since you last looked. That mistake destroyed a commit here once, recovered only through the reflog.
+- **A Rust change needs `just build-app` before any app-test can see it.** `just app-test` refreshes `dist`, not the app bundle.
+- **Verify tugdeck with `bunx vite build`** — the debug app loads the prod rollup bundle, so a change that only works under HMR is not done.
+- **The app-tests here run against the live repository.** They build real dashes on real conflicts. Keep them putting the repo back: no leftover `tugdash.mergedriver` config, no `rr-cache` entries the run added, no stray worktrees or `tugdash/*` branches. `git worktree list` and `git branch --list 'tugdash/*'` are the check.
+- **`bun test` has one pre-existing red** — the `layout-imposer-solutions` golden table. It is red on `main` and is not yours. Do not regenerate it to get a green run; that would mask whatever actually moved it.
 
 ## Open questions
 
