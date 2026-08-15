@@ -342,6 +342,12 @@ The facts are ground truth for what was asked, what ran, and what happened: prom
 
 facts.search answers \"find facts about X\" (best matches first); facts.list answers \"what happened\" (newest first). Reach for facts.list when the question is a time or a session, not a topic. Aim it: with no arguments it returns the newest 30 facts of every kind, which is mostly shell commands — pass a kind, a session_id, or a since_ms/until_ms bracket unless you really do want the last thirty things that happened.
 
+A search query is AND-ed term by term: \"tooltip colors\" finds only records that contain BOTH words, and a phrase that reads naturally to a person often matches nothing at all. Search with ONE distinctive word and let the results narrow you. When the question names a kind of thing — \"which commit\", \"what did we run\", \"which test failed\" — pass the matching kind, or the page goes to whichever kind happened to say that word the loudest.
+
+Names are findable by their parts: tooltip finds TugTooltip, sync finds useSyncExternalStore, 0365 finds at0365-gazette-card.test.ts. Search the plain word rather than the spelling you would type in code.
+
+\"The recent commit about X\" is git.log with grep set to X. With no grep, since, or path, git.log returns only the last 20 commits — anything older is simply not in what comes back, so a question about work from more than a day or two ago needs one of those arguments to reach it at all.
+
 Fact text looks like this — compose your queries against these words:
 
 $ just app-test at0365-gazette-card.test.ts → ok
@@ -384,6 +390,8 @@ A fact result may carry a detail object beside its one-line text: a commit's fil
 Spell a commit sha exactly as the result gives it, in backticks, and let the app do the naming. Every sha that checks out against the repository is DISPLAYED as Commit <8ch> — the word supplied, the hash trimmed to eight characters — however you spelled it; and if your own word commit already sits right before the sha, the app shows the hash alone rather than doubling the word. So write the sentence for meaning, not for the hash's looks: never trim, pad, or reconstruct a sha, because the exact characters are what the app verifies and links, and a sha it cannot verify stays plain text exactly as you wrote it. The refs still carry whatever the result spelled, exactly.
 
 REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
+
+Before you write that something could not be looked up, read this list again — it is every verb you may ask for: gazette.search, gazette.window, facts.search, facts.list, facts.window, shell.history, sessions.list, session.prompts, changes.for_session, changes.for_path, git.log, git.show, repo.grep. git.log takes a grep argument, so \"which commit was about X\" is always reachable. If one of them could have answered it, ask for that verb rather than describing the gap — and if this is your last round, name the lookup plainly as the follow-up the reader could ask for, instead of leaving them thinking the system has no way to reach it.
 
 If the results are not enough and one more lookup would settle it, you may ask for more verbs instead of answering — but ONLY ONCE. If you have already been given a second round of results, you must answer now with what you have, saying what remains unconfirmed.
 
@@ -548,6 +556,24 @@ mod tests {
         assert!(retrieve.contains("Fact text looks like this"));
         assert!(retrieve.contains("tests: cargo nextest — passed"));
         assert!(retrieve.contains("$ just app-test"));
+        // What the index actually does, told plainly. The recovery ladder in
+        // Rust relaxes an AND query that matched nothing, but recovery is the
+        // backstop and these three sentences are the aim: terms are AND-ed, so
+        // a natural phrase misses; a kind is what keeps the loudest kind from
+        // spending the page; and a name is reachable by its parts because the
+        // index carries their sub-words.
+        assert!(retrieve.contains("A search query is AND-ed term by term"));
+        assert!(retrieve.contains("Search with ONE distinctive word"));
+        assert!(retrieve.contains("pass the matching kind"));
+        assert!(retrieve.contains("Names are findable by their parts"));
+        assert!(retrieve.contains("tooltip finds TugTooltip"));
+        // The wish the 2026-08-15 transcript ended on — "I'd need a search
+        // scoped to tooltip in the commit history" — named a verb argument the
+        // model was already holding. The horizon clause is the other half:
+        // without grep/since/path, git.log cannot see past 20 commits, so a
+        // model that reaches for it bare concludes the commit does not exist.
+        assert!(retrieve.contains("is git.log with grep set to X"));
+        assert!(retrieve.contains("git.log returns only the last 20 commits"));
 
         // The answer job must know both of its output shapes and that its
         // second round is final.
@@ -573,6 +599,16 @@ mod tests {
         // checks against the rendered results, and `detail` is rendered.
         assert!(answer.contains("detail object"));
         assert!(answer.contains("Its fields are exact"));
+        // The answer turn's input carries results, never the verb list — so
+        // "read the verb list again" is only satisfiable because the list is
+        // spelled here. Pinned against the executor's own names for the same
+        // reason the retrieve list is: a verb the model is told about must
+        // exist, and one it is never told about is one it cannot ask for.
+        assert!(answer.contains("Before you write that something could not be looked up"));
+        for verb in crate::feeds::operator::VERB_NAMES {
+            assert!(answer.contains(verb), "verb {verb} missing from answer");
+        }
+        assert!(answer.contains("git.log takes a grep argument"));
     }
 
     /// Every job answers with JSON that a strict parser reads, so an

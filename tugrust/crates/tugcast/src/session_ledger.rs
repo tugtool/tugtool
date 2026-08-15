@@ -122,6 +122,7 @@ use tugcast_core::{GazetteAuthor, GazettePost};
 
 use crate::ledger_integrity;
 use crate::path_resolver::resolve_to_claude_form;
+use crate::search_tokens::subword_tokens;
 
 /// The privacy exclusion, spelled once and pasted into every read that could
 /// surface a private session's work ([P05]). The argument is the row's
@@ -955,10 +956,13 @@ impl SessionLedger {
 
     /// Open the ledger with an explicit `claude_projects_root`, attached to
     /// a `<path>.changes` sibling file (never the machine-global one) —
-    /// the on-disk test constructor: per-file isolation with reopen
-    /// persistence. No production caller uses this; production is
-    /// [`SessionLedger::open`].
-    #[cfg(test)]
+    /// per-file isolation with reopen persistence.
+    ///
+    /// This is the on-disk test constructor, and it is also what `tugcast
+    /// operator-ask` opens a ledger copy with: an instrument pointed at a copy
+    /// must not reach past it and claim the writer role on the machine-global
+    /// `changes.db` that a running instance holds. The server itself opens
+    /// with [`SessionLedger::open`].
     pub fn open_with_claude_root(
         path: impl AsRef<Path>,
         claude_projects_root: PathBuf,
@@ -1466,6 +1470,26 @@ impl SessionLedger {
             "main.changeset_drafts",
             Self::LEGACY_CHANGESET_DRAFTS_SCHEMA,
         )?;
+        // The derived FTS indexes gained a third column (`tokens`). They are
+        // pure indexes over `facts` / `gazette_posts`, so a shape change is
+        // resolved by dropping and re-deriving rather than migrating — the
+        // same carve-out `turn_telemetry` gets, and the reason the comments on
+        // those two base tables say the shadow tables may be dropped freely.
+        //
+        // This must happen HERE, before the schema batch: the batch runs
+        // exactly once per open and nothing re-runs it, so a drop placed after
+        // it would never be followed by a create and the index would simply be
+        // gone until the next process start.
+        let facts_fts_dropped = Self::rebuild_fts_if_columns_drifted(
+            conn,
+            "main.facts_fts",
+            &["subject", "text", "tokens"],
+        )?;
+        let posts_fts_dropped = Self::rebuild_fts_if_columns_drifted(
+            conn,
+            "main.gazette_posts_fts",
+            &["body", "refs", "tokens"],
+        )?;
         // The SHARED changes.* tables are deliberately NOT drift-rebuilt:
         // drop-and-recreate on a machine-global database lets any stray
         // build destroy the shared truth. Their schema is governed by the
@@ -1483,6 +1507,10 @@ impl SessionLedger {
         Self::migrate_gazette_posts_add_elapsed_ms(conn)?;
         Self::migrate_gazette_posts_add_project_dir(conn)?;
         Self::migrate_gazette_posts_add_attachments(conn)?;
+        // Before the batch, so the column exists for the FTS declarations and
+        // the triggers below to name.
+        Self::migrate_facts_add_tokens(conn)?;
+        Self::migrate_gazette_posts_add_tokens(conn)?;
         conn.execute_batch(
             "
             CREATE TABLE IF NOT EXISTS sessions (
@@ -1879,7 +1907,14 @@ impl SessionLedger {
                 -- ledger, never in this row. NULL on every post nobody
                 -- attached anything to and on every row written before the
                 -- column existed (`migrate_gazette_posts_add_attachments`).
-                attachments TEXT
+                attachments TEXT,
+                -- The sub-word bag derived from `body` and `refs` by
+                -- `search_tokens::subword_tokens`, indexed as the third
+                -- `gazette_posts_fts` column so a search for `tooltip` reaches
+                -- a post that only ever wrote `TugTooltip`. Derived state: it
+                -- is recomputed from this row's own columns, never authored.
+                -- NULL only between a pre-migration open and the backfill.
+                tokens      TEXT
             );
 
             CREATE INDEX IF NOT EXISTS gazette_posts_session
@@ -1892,9 +1927,16 @@ impl SessionLedger {
             -- verb returns. A LIKE scan would answer the same questions
             -- without an index, tokenization, or ranking — over a table
             -- that only grows.
+            --
+            -- `tokens` is the derived sub-word column: unicode61 holds
+            -- `TugTooltip` as one token, so without it a search for `tooltip`
+            -- cannot reach a post that named the component. It is weighted
+            -- below the authored columns in `bm25()` — added vocabulary, not
+            -- re-weighted vocabulary.
             CREATE VIRTUAL TABLE IF NOT EXISTS gazette_posts_fts USING fts5(
                 body,
                 refs,
+                tokens,
                 content='gazette_posts',
                 content_rowid='id'
             );
@@ -1906,24 +1948,24 @@ impl SessionLedger {
             CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_insert
             AFTER INSERT ON gazette_posts
             BEGIN
-                INSERT INTO gazette_posts_fts (rowid, body, refs)
-                VALUES (new.id, new.body, new.refs);
+                INSERT INTO gazette_posts_fts (rowid, body, refs, tokens)
+                VALUES (new.id, new.body, new.refs, new.tokens);
             END;
 
             CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_delete
             AFTER DELETE ON gazette_posts
             BEGIN
-                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs)
-                VALUES ('delete', old.id, old.body, old.refs);
+                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs, tokens)
+                VALUES ('delete', old.id, old.body, old.refs, old.tokens);
             END;
 
             CREATE TRIGGER IF NOT EXISTS gazette_posts_fts_update
             AFTER UPDATE ON gazette_posts
             BEGIN
-                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs)
-                VALUES ('delete', old.id, old.body, old.refs);
-                INSERT INTO gazette_posts_fts (rowid, body, refs)
-                VALUES (new.id, new.body, new.refs);
+                INSERT INTO gazette_posts_fts (gazette_posts_fts, rowid, body, refs, tokens)
+                VALUES ('delete', old.id, old.body, old.refs, old.tokens);
+                INSERT INTO gazette_posts_fts (rowid, body, refs, tokens)
+                VALUES (new.id, new.body, new.refs, new.tokens);
             END;
 
             -- The facts-library: the durable, structured record of the work
@@ -1969,7 +2011,13 @@ impl SessionLedger {
                 subject    TEXT,
                 text       TEXT NOT NULL,
                 payload    TEXT NOT NULL,
-                dedupe_key TEXT
+                dedupe_key TEXT,
+                -- The sub-word bag derived from `subject` and `text` by
+                -- `search_tokens::subword_tokens`. See the `gazette_posts`
+                -- column of the same name; the same derived-state posture
+                -- applies, and it is why dropping and rebuilding the FTS index
+                -- is safe while dropping this table would not be.
+                tokens     TEXT
             );
 
             CREATE INDEX IF NOT EXISTS facts_kind_at ON facts(kind, at_ms);
@@ -1984,6 +2032,7 @@ impl SessionLedger {
             CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
                 subject,
                 text,
+                tokens,
                 content='facts',
                 content_rowid='id'
             );
@@ -1991,24 +2040,24 @@ impl SessionLedger {
             CREATE TRIGGER IF NOT EXISTS facts_fts_insert
             AFTER INSERT ON facts
             BEGIN
-                INSERT INTO facts_fts (rowid, subject, text)
-                VALUES (new.id, new.subject, new.text);
+                INSERT INTO facts_fts (rowid, subject, text, tokens)
+                VALUES (new.id, new.subject, new.text, new.tokens);
             END;
 
             CREATE TRIGGER IF NOT EXISTS facts_fts_delete
             AFTER DELETE ON facts
             BEGIN
-                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
-                VALUES ('delete', old.id, old.subject, old.text);
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text, tokens)
+                VALUES ('delete', old.id, old.subject, old.text, old.tokens);
             END;
 
             CREATE TRIGGER IF NOT EXISTS facts_fts_update
             AFTER UPDATE ON facts
             BEGIN
-                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
-                VALUES ('delete', old.id, old.subject, old.text);
-                INSERT INTO facts_fts (rowid, subject, text)
-                VALUES (new.id, new.subject, new.text);
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text, tokens)
+                VALUES ('delete', old.id, old.subject, old.text, old.tokens);
+                INSERT INTO facts_fts (rowid, subject, text, tokens)
+                VALUES (new.id, new.subject, new.text, new.tokens);
             END;
 
             -- Cache of external-session scan results — one row per
@@ -2068,6 +2117,8 @@ impl SessionLedger {
             DROP TRIGGER IF EXISTS file_events_cascade_delete_on_session;
             ",
         )?;
+        // After the batch, because it needs the FTS tables to exist.
+        Self::backfill_search_tokens(conn, facts_fts_dropped, posts_fts_dropped)?;
         let changes_write_ok = Self::bootstrap_changes_schema(conn, may_write_changes)?;
         if changes_write_ok && may_write_changes {
             Self::migrate_instance_file_events_to_changes(conn)?;
@@ -2575,6 +2626,155 @@ impl SessionLedger {
                     Err(err) => return Err(err.into()),
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Add the derived `tokens` column to a ledger created before it
+    /// existed. The values are filled after the schema batch, by
+    /// {@link backfill_search_tokens}.
+    fn migrate_facts_add_tokens(conn: &Connection) -> Result<(), LedgerError> {
+        Self::add_tokens_column(conn, "facts")
+    }
+
+    /// The `gazette_posts` half of {@link migrate_facts_add_tokens}.
+    fn migrate_gazette_posts_add_tokens(conn: &Connection) -> Result<(), LedgerError> {
+        Self::add_tokens_column(conn, "gazette_posts")
+    }
+
+    fn add_tokens_column(conn: &Connection, table: &str) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, table)?;
+        // Absent means fresh: the batch creates the table with the column.
+        if cols.is_empty() || cols.iter().any(|(name, _)| name == "tokens") {
+            return Ok(());
+        }
+        match conn.execute(&format!("ALTER TABLE {table} ADD COLUMN tokens TEXT"), []) {
+            Ok(_) => Ok(()),
+            // The column set was read before the ALTER; two processes opening
+            // the same database can both see it missing and both try. The
+            // loser gets `duplicate column name`, which means the column is
+            // there — the outcome this call wanted.
+            Err(err) if is_duplicate_column(&err) => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Drop a derived FTS5 index — and the three triggers that feed it —
+    /// when its column set no longer matches `expected`.
+    ///
+    /// Separate from {@link rebuild_table_if_schema_drifted} for one
+    /// reason: an external-content FTS5 index is kept in step by triggers,
+    /// and `CREATE TRIGGER IF NOT EXISTS` does **not** replace an existing
+    /// trigger. Dropping the index alone would leave the old ones in place
+    /// and the schema batch would not overwrite them, so a two-column
+    /// `facts_fts_insert` would go on writing two columns into the
+    /// recreated three-column index — a half-populated `tokens` with no
+    /// error anywhere.
+    ///
+    /// `fts_table` MUST be `main.`-qualified, for the reason the
+    /// `main.file_events` guard is: on a connection with the shared
+    /// `changes` database attached, an unqualified name resolves into the
+    /// attachment when the local table is absent.
+    ///
+    /// Returns whether it dropped anything — half the rebuild condition in
+    /// {@link backfill_search_tokens}.
+    fn rebuild_fts_if_columns_drifted(
+        conn: &Connection,
+        fts_table: &str,
+        expected: &[&str],
+    ) -> Result<bool, LedgerError> {
+        let actual = Self::table_columns(conn, fts_table)?;
+        if actual.is_empty() {
+            return Ok(false);
+        }
+        let current = actual.len() == expected.len()
+            && actual
+                .iter()
+                .zip(expected)
+                .all(|((name, _), want)| name.as_str() == *want);
+        if current {
+            return Ok(false);
+        }
+        let (schema, bare) = fts_table.split_once('.').unwrap_or(("main", fts_table));
+        for suffix in ["insert", "delete", "update"] {
+            conn.execute_batch(&format!("DROP TRIGGER IF EXISTS {schema}.{bare}_{suffix};"))?;
+        }
+        conn.execute_batch(&format!("DROP TABLE {fts_table};"))?;
+        Ok(true)
+    }
+
+    /// Re-derive whichever FTS index was just dropped, then fill `tokens` on
+    /// the rows that predate the column.
+    ///
+    /// **The rebuild comes first, and the order is not cosmetic.** A dropped
+    /// index is recreated empty by the schema batch, while the sync triggers
+    /// are live again the moment the batch runs. Backfilling into that state
+    /// makes every `UPDATE` fire the update trigger's external-content
+    /// `'delete'` command against an index entry that does not exist, and
+    /// FTS5 answers a delete it cannot reconcile with `database disk image is
+    /// malformed`. Rebuilding first puts the index back in step with the
+    /// content table, after which the triggers keep it there through the
+    /// backfill — `old.tokens` is genuinely what was indexed — and no second
+    /// rebuild is needed.
+    ///
+    /// That ordering also closes the crash window on its own. A process that
+    /// dies mid-backfill leaves an index that is *consistent* rather than
+    /// half-garbage, and the rows still holding NULL are picked up by the next
+    /// open, because the backfill is scoped by `tokens IS NULL` rather than by
+    /// a one-shot flag.
+    fn backfill_search_tokens(
+        conn: &Connection,
+        facts_fts_dropped: bool,
+        posts_fts_dropped: bool,
+    ) -> Result<(), LedgerError> {
+        if facts_fts_dropped {
+            conn.execute_batch("INSERT INTO facts_fts (facts_fts) VALUES ('rebuild');")?;
+        }
+        if posts_fts_dropped {
+            conn.execute_batch(
+                "INSERT INTO gazette_posts_fts (gazette_posts_fts) VALUES ('rebuild');",
+            )?;
+        }
+
+        let tx = conn.unchecked_transaction()?;
+        Self::backfill_tokens_for(&tx, "facts", "subject", "text")?;
+        Self::backfill_tokens_for(&tx, "gazette_posts", "body", "refs")?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Derive `tokens` for every row of `table` still holding NULL.
+    fn backfill_tokens_for(
+        conn: &Connection,
+        table: &str,
+        first: &str,
+        second: &str,
+    ) -> Result<(), LedgerError> {
+        let cols = Self::table_columns(conn, table)?;
+        if !cols.iter().any(|(name, _)| name == "tokens") {
+            return Ok(());
+        }
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, {first}, {second} FROM {table} WHERE tokens IS NULL"
+        ))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let mut update = conn.prepare(&format!("UPDATE {table} SET tokens = ?1 WHERE id = ?2"))?;
+        for (id, first, second) in &rows {
+            update.execute(params![
+                subword_tokens(&[first.as_str(), second.as_str()]),
+                id
+            ])?;
         }
         Ok(())
     }
@@ -5823,8 +6023,8 @@ impl SessionLedger {
         conn.execute(
             "INSERT INTO gazette_posts
                  (at_ms, author, session_id, wake_reason, body, refs, elapsed_ms, project_dir,
-                  attachments)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                  attachments, tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 post.at_ms,
                 post.author.as_str(),
@@ -5835,6 +6035,7 @@ impl SessionLedger {
                 post.elapsed_ms,
                 post.project_dir,
                 attachments_json,
+                subword_tokens(&[&post.body, &refs_json]),
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -5967,7 +6168,11 @@ impl SessionLedger {
                AND (?3 IS NULL OR p.session_id = ?3)
                AND (?4 IS NULL OR p.at_ms >= ?4)
                AND (?5 IS NULL OR p.at_ms <= ?5)
-             ORDER BY bm25(gazette_posts_fts) ASC
+             -- Column weights (body, refs, tokens). The body is what a post
+             -- says; `refs` is a machine-written JSON list of paths and shas,
+             -- and `tokens` is derived vocabulary — both are ways IN to a
+             -- post, not reasons one is the best answer.
+             ORDER BY bm25(gazette_posts_fts, 2.0, 1.0, 1.0) ASC
              LIMIT ?6",
         )?;
         let rows = stmt.query_map(
@@ -6027,8 +6232,8 @@ impl SessionLedger {
         }
         let affected = conn.execute(
             "INSERT OR IGNORE INTO facts
-                 (at_ms, kind, session_id, subject, text, payload, dedupe_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                 (at_ms, kind, session_id, subject, text, payload, dedupe_key, tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 fact.at_ms,
                 fact.kind,
@@ -6037,6 +6242,7 @@ impl SessionLedger {
                 fact.text,
                 fact.payload,
                 fact.dedupe_key,
+                subword_tokens(&[fact.subject.as_deref().unwrap_or(""), &fact.text]),
             ],
         )?;
         if affected == 0 {
@@ -6157,7 +6363,13 @@ impl SessionLedger {
         let conn = self.db.lock().expect("ledger mutex");
         let mut stmt = conn.prepare(concat!(
             "SELECT f.id, f.at_ms, f.kind, f.session_id, f.subject, f.text, f.payload,
-                    snippet(facts_fts, -1, '', '', '…', 32)
+                    -- Column 1 (`text`), pinned. `-1` means auto-select the
+                    -- best-matching column, which was harmless while both
+                    -- indexed columns held authored prose. `tokens` is column
+                    -- 2 and holds normalizer output (`tug tooltip action`), so
+                    -- auto-select would start handing the Operator token soup
+                    -- to quote into answers.
+                    snippet(facts_fts, 1, '', '', '…', 32)
              FROM facts_fts x
              JOIN facts f ON f.id = x.rowid
              WHERE facts_fts MATCH ?1
@@ -6166,7 +6378,13 @@ impl SessionLedger {
                AND (?4 IS NULL OR f.at_ms >= ?4)
                AND (?5 IS NULL OR f.at_ms <= ?5)",
             not_private!("f.session_id"),
-            " ORDER BY bm25(facts_fts) ASC
+            // Column weights (subject, text, tokens). `subject` is the fact's
+            // headline handle — a sha, a command incipit, a session name — and
+            // a hit there is almost always what the question meant, so it
+            // outranks a passing mention in the rendered text. `tokens` is
+            // derived vocabulary and ranks below both: it exists to make a row
+            // reachable, not to make it win.
+            " ORDER BY bm25(facts_fts, 4.0, 2.0, 1.0) ASC
              LIMIT ?6"
         ))?;
         let rows = stmt.query_map(
@@ -8766,6 +8984,229 @@ mod tests {
         // handle a question asks by, the text carries the wording.
         assert_eq!(fts_hits(&ledger, "legible"), 1);
         assert_eq!(fts_hits(&ledger, "rendered"), kinds.len());
+    }
+
+    /// Fact 6291's text, verbatim from the release ledger — the row the
+    /// 2026-08-15 question needed and the index could not reach.
+    const TOOLTIP_COMMIT_TEXT: &str = "commit ac462ba3a1ae \"tugways(entity-tips): unify commit hover into a real TugTooltip\" — 27 file(s)";
+
+    #[test]
+    fn a_camel_case_identifier_is_findable_by_its_parts() {
+        let ledger = fresh();
+        ledger
+            .record_fact(&fact(1_000, "commit", "ac462ba3a1ae", TOOLTIP_COMMIT_TEXT))
+            .expect("record");
+
+        // unicode61 holds `TugTooltip` as one token, so before the `tokens`
+        // column neither of these matched — not even the prefix form, since a
+        // prefix query extends a token rightward and cannot start mid-token.
+        let hits = ledger
+            .search_facts("tooltip", &FactSearchFilter::default(), 10)
+            .expect("search");
+        assert_eq!(hits.len(), 1, "the commit fact is reachable by sub-word");
+        assert_eq!(hits[0].fact.subject.as_deref(), Some("ac462ba3a1ae"));
+
+        // The authored spelling still matches, and so does the other hump.
+        assert_eq!(fts_hits(&ledger, "tugtooltip"), 1);
+        assert_eq!(fts_hits(&ledger, "tug"), 1);
+    }
+
+    #[test]
+    fn an_excerpt_quotes_the_fact_text_never_the_derived_tokens() {
+        let ledger = fresh();
+        ledger
+            .record_fact(&fact(1_000, "commit", "ac462ba3a1ae", TOOLTIP_COMMIT_TEXT))
+            .expect("record");
+
+        // `snippet(facts_fts, -1, …)` would auto-select the best-matching
+        // column, and for this query that is `tokens` — so the Operator would
+        // quote `tug tooltip` into an answer instead of the sentence it came
+        // from. Presence assertions cannot see this: token soup is a non-empty
+        // string. Content can.
+        let hits = ledger
+            .search_facts("tooltip", &FactSearchFilter::default(), 10)
+            .expect("search");
+        let excerpt = &hits[0].excerpt;
+        assert!(!excerpt.is_empty(), "snippet() cut an excerpt");
+        assert!(
+            excerpt.contains("unify") || excerpt.contains("hover") || excerpt.contains("entity"),
+            "excerpt should quote the fact's prose, got {excerpt:?}"
+        );
+        assert!(
+            !excerpt.contains("tug tooltip"),
+            "excerpt is normalizer output, not prose: {excerpt:?}"
+        );
+    }
+
+    #[test]
+    fn a_gazette_post_is_findable_by_sub_word_too() {
+        let ledger = fresh();
+        ledger
+            .record_gazette_post(&gazette_post(
+                1_000,
+                GazetteAuthor::Reporter,
+                "The commit hover became a real `TugTooltip` this afternoon.",
+            ))
+            .expect("record");
+
+        let hits = ledger
+            .search_gazette_posts("tooltip", &GazetteSearchFilter::default(), 10)
+            .expect("search");
+        assert_eq!(hits.len(), 1);
+        assert!(
+            hits[0].excerpt.contains("hover") || hits[0].excerpt.contains("commit"),
+            "excerpt quotes the body, got {:?}",
+            hits[0].excerpt
+        );
+    }
+
+    /// Build a ledger at the shape that shipped before `tokens` existed —
+    /// two-column FTS indexes, two-column sync triggers, no `tokens` column —
+    /// with one row already in it, then hand back its path for a real
+    /// `SessionLedger::open` to migrate.
+    fn seed_pre_tokens_ledger(path: &Path) {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(
+            "
+            CREATE TABLE facts (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_ms      INTEGER NOT NULL,
+                kind       TEXT NOT NULL,
+                session_id TEXT,
+                subject    TEXT,
+                text       TEXT NOT NULL,
+                payload    TEXT NOT NULL,
+                dedupe_key TEXT
+            );
+            CREATE VIRTUAL TABLE facts_fts USING fts5(
+                subject, text, content='facts', content_rowid='id'
+            );
+            CREATE TRIGGER facts_fts_insert AFTER INSERT ON facts BEGIN
+                INSERT INTO facts_fts (rowid, subject, text)
+                VALUES (new.id, new.subject, new.text);
+            END;
+            CREATE TRIGGER facts_fts_delete AFTER DELETE ON facts BEGIN
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
+                VALUES ('delete', old.id, old.subject, old.text);
+            END;
+            CREATE TRIGGER facts_fts_update AFTER UPDATE ON facts BEGIN
+                INSERT INTO facts_fts (facts_fts, rowid, subject, text)
+                VALUES ('delete', old.id, old.subject, old.text);
+                INSERT INTO facts_fts (rowid, subject, text)
+                VALUES (new.id, new.subject, new.text);
+            END;
+            ",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO facts (at_ms, kind, subject, text, payload)
+             VALUES (1000, 'commit', 'ac462ba3a1ae', ?1, '{}')",
+            params![TOOLTIP_COMMIT_TEXT],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_pre_tokens_ledger_migrates_backfills_and_becomes_searchable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        seed_pre_tokens_ledger(&path);
+
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .expect("open migrates");
+
+        // The row that predates the column carries derived tokens now …
+        let hits = ledger
+            .search_facts("tooltip", &FactSearchFilter::default(), 10)
+            .expect("search");
+        assert_eq!(hits.len(), 1, "the backfilled row is reachable by sub-word");
+
+        // … and the rebuild left a coherent index behind it.
+        {
+            let conn = ledger.db.lock().unwrap();
+            let nulls: i64 = conn
+                .query_row("SELECT COUNT(*) FROM facts WHERE tokens IS NULL", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(nulls, 0, "backfill left no NULL tokens");
+            conn.execute_batch("INSERT INTO facts_fts (facts_fts) VALUES ('integrity-check');")
+                .expect("FTS integrity");
+        }
+    }
+
+    #[test]
+    fn the_migration_leaves_no_two_column_sync_trigger_behind() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        seed_pre_tokens_ledger(&path);
+
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .expect("open migrates");
+
+        // `CREATE TRIGGER IF NOT EXISTS` cannot replace a trigger, so a stale
+        // two-column `facts_fts_insert` would survive the schema batch and go
+        // on writing two columns into the three-column index — leaving
+        // `tokens` silently half-populated with no error anywhere. A fact
+        // inserted AFTER the migration is what proves which trigger fired.
+        ledger
+            .record_fact(&fact(
+                2_000,
+                "commit",
+                "beefcafe1234",
+                "commit beefcafe1234 \"tugdeck(rows): teach TugListView to scroll\" — 3 file(s)",
+            ))
+            .expect("record");
+
+        // `view` reaches this row ONLY through the derived column: it is not a
+        // whole unicode61 token anywhere in the subject or the text.
+        let hits = ledger
+            .search_facts("view", &FactSearchFilter::default(), 10)
+            .expect("search");
+        assert_eq!(hits.len(), 1, "the recreated three-column trigger fired");
+        assert_eq!(fts_hits(&ledger, "scroll"), 1);
+    }
+
+    #[test]
+    fn reopening_an_already_migrated_ledger_changes_nothing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sessions.db");
+        seed_pre_tokens_ledger(&path);
+
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .expect("first open");
+        let tokens_after_first: String = {
+            let conn = ledger.db.lock().unwrap();
+            conn.query_row("SELECT tokens FROM facts WHERE id = 1", [], |r| r.get(0))
+                .unwrap()
+        };
+        drop(ledger);
+
+        let ledger = SessionLedger::open_with_claude_root(
+            &path,
+            PathBuf::from("/tmp/tugcast-tests-no-trash"),
+        )
+        .expect("second open");
+        let conn = ledger.db.lock().unwrap();
+        let tokens_after_second: String = conn
+            .query_row("SELECT tokens FROM facts WHERE id = 1", [], |r| r.get(0))
+            .unwrap();
+        // The derivation is deterministic and the backfill is NULL-scoped, so
+        // the second open neither recomputes nor disturbs the row.
+        assert_eq!(tokens_after_first, tokens_after_second);
+        let rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM facts_fts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1, "the index still holds exactly its one row");
     }
 
     #[test]

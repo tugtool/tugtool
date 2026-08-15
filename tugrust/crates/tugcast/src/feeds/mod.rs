@@ -26,6 +26,7 @@ pub mod git_watch;
 pub mod join_resolve;
 pub mod jots;
 pub mod operator;
+pub mod operator_ask;
 pub mod payload_inspector;
 pub mod pulse;
 pub mod reporter;

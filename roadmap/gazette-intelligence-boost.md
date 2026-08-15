@@ -134,7 +134,7 @@ This plan follows `tuglaws/devise-skeleton.md`: explicit `{#anchor}` on every ci
 
 | Risk | Impact | Likelihood | Mitigation | Trigger to revisit |
 |------|--------|------------|------------|--------------------|
-| Migration bug corrupts an FTS index on a live ledger | med | low | FTS is derivable state: the last resort is always drop + `'rebuild'` from the content table; Spec S03 phases the work into `bootstrap_schema`'s real order and keys the rebuild to backfill work so a crash mid-backfill cannot strand garbage | any `MATCH` error or missing-row report after upgrade |
+| Migration bug corrupts an FTS index on a live ledger | med | low | FTS is derivable state: the last resort is always drop + `'rebuild'` from the content table; Spec S03 phases the work into `bootstrap_schema`'s real order and rebuilds a dropped index before backfilling into it, so the live triggers never fire against entries that are not there | any `MATCH` error or missing-row report after upgrade |
 | A stale two-column trigger survives the migration | high | med | `CREATE TRIGGER IF NOT EXISTS` cannot replace one, so Spec S03 phase A drops all three explicitly; Step 2 pins it with an insert-after-migration test | a fact inserted post-upgrade not findable by sub-word |
 | Excerpts silently become normalizer output | med | high without the fix | `snippet()` pinned to `text` in the same step that adds the column, plus a content assertion (#snippet-column) | any answer quoting token soup |
 | New ranking degrades queries that worked | med | low | Weights are modest (4/2/1); kind budgeting only caps a kind when others matched; unit tests pin both the old wins and the new | a real question where the right fact is present but off-page |
@@ -365,10 +365,12 @@ Runs inside `SessionLedger::bootstrap_schema`, before the server accepts work. I
 
 **Phase D — after the batch, where `migrate_instance_file_events_to_changes` already runs:**
 
-4. **Backfill.** `SELECT id, subject, text FROM facts WHERE tokens IS NULL`, compute `subword_tokens`, `UPDATE facts SET tokens = ?1 WHERE id = ?2`; likewise `gazette_posts (id, body, refs)`. Wrap it in one transaction.
-5. **Rebuild if anything moved.** `INSERT INTO facts_fts(facts_fts) VALUES('rebuild')` (and the posts equivalent) — FTS5 discards the index and re-derives every row from the content table.
+4. **Rebuild first, for each index Phase A dropped.** `INSERT INTO facts_fts(facts_fts) VALUES('rebuild')` (and the posts equivalent) — FTS5 discards the index and re-derives every row from the content table.
+5. **Then backfill.** `SELECT id, subject, text FROM facts WHERE tokens IS NULL`, compute `subword_tokens`, `UPDATE facts SET tokens = ?1 WHERE id = ?2`; likewise `gazette_posts (id, body, refs)`. Wrap it in one transaction.
 
-   **The rebuild condition is "the backfill updated ≥1 row **or** Phase A dropped this index", not "Phase A dropped this index" alone.** The backfill's `UPDATE`s fire the live update trigger, which issues an external-content `'delete'` command carrying the *new* row values against an index entry written from the *old* ones — garbage entries that only the rebuild clears. If the process dies mid-backfill, the next open sees a table whose shape is already current (so a drop-only condition never re-fires) but whose index holds that garbage, permanently. Keying the rebuild to backfill work closes that window. **Backfill and rebuild are a pair: never ship one without the other.**
+   **This order is not interchangeable, and the reverse corrupts the database.** Phase A dropped the index; Phase C recreated it *empty* while bringing the sync triggers back to life. Backfilling into that state fires the update trigger, which issues an external-content `'delete'` against an index entry that does not exist, and SQLite answers `database disk image is malformed` — observed on the first migration test run, which is how this was found. Rebuilding first puts the index in step with the content table, after which the triggers keep it there: `old.tokens` is genuinely what was indexed, so every `UPDATE` deletes an entry that is really present and writes the new one.
+
+   Rebuilding first also closes the crash window more simply than a "did the backfill move a row" flag can. The backfill is scoped by `tokens IS NULL`, so a process that dies mid-backfill leaves a *consistent* index over a partly-filled column, and the next open finishes the remaining rows through the live triggers — no drop, no second rebuild, and no state where garbage entries can be stranded permanently.
 
 Fresh databases hit none of the special paths: the base tables carry `tokens` from `CREATE TABLE`, the FTS DDL is new-shape, Phase A finds nothing to drop, the backfill finds no NULLs, and no rebuild runs. Insert paths (`record_fact_tx`'s `INSERT OR IGNORE INTO facts (…)`, which grows from seven bound parameters to eight, and the gazette post insert) always write `tokens`, so NULLs never reappear.
 
@@ -476,14 +478,14 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Normalizer module + per-verb logging | pending | — |
-| #step-2 | Schema: tokens columns, FTS reshape, migration | pending | — |
-| #step-3 | Ranking weights + kind-diversity budgeting | pending | — |
-| #step-4 | Query sanitize + relaxation ladder | pending | — |
-| #step-5 | Instruction updates + pins | pending | — |
-| #step-6 | `tugcast operator-ask` | pending | — |
-| #step-7 | Haiku query-expansion rung | pending | — |
-| #step-8 | Integration checkpoint: replay the question | pending | — |
+| #step-1 | Normalizer module + per-verb logging | done | `7c3450471` |
+| #step-2 | Schema: tokens columns, FTS reshape, migration | done | `7c3450471` |
+| #step-3 | Ranking weights + kind-diversity budgeting | done | `59347546d` |
+| #step-4 | Query sanitize + relaxation ladder | done | `f0318beb5` |
+| #step-5 | Instruction updates + pins | done | `facb53677` |
+| #step-6 | `tugcast operator-ask` | done | `7b4654b54` |
+| #step-7 | Haiku query-expansion rung | done | `f26fdd2a8` |
+| #step-8 | Integration checkpoint: replay the question | done | `7603b7050` |
 
 #### Step 1: Normalizer module + per-verb logging {#step-1}
 
@@ -528,7 +530,7 @@ tugcast operator-ask --db <path/to/sessions.db copy> --project-dir <repo> [--she
 - [ ] Add `tokens` to both base-table `CREATE TABLE` blocks; add `migrate_facts_add_tokens` / `migrate_gazette_posts_add_tokens` beside the existing `migrate_*_add_*` family (Spec S03 phase B).
 - [ ] Re-declare both FTS tables and all six triggers with the third column inside the `execute_batch` (phase C).
 - [ ] Add the phase-A stale-shape drop beside the existing drift guards: `main.`-qualified per [LR5]'s corollary, dropping the three triggers **and** the index, modeled on `rebuild_table_if_schema_drifted`.
-- [ ] Add the phase-D backfill + rebuild after the batch, with the rebuild keyed to "index dropped **or** backfill updated ≥1 row" (Spec S03 step 5's crash window).
+- [ ] Add the phase-D rebuild + backfill after the batch, in that order — rebuild each index Phase A dropped before backfilling into it (Spec S03 phase D; the reverse order corrupts the database).
 - [ ] Wire `subword_tokens` into both insert paths (`record_fact_tx` grows to eight bound parameters).
 - [ ] Change `snippet(facts_fts, -1, …)` to pin the `text` column — required *in this step*, because the third column is what breaks it (#snippet-column).
 

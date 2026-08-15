@@ -24,6 +24,7 @@
 //!   packs into the results so the model reads its own mistake and tries
 //!   something else.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -32,11 +33,12 @@ use chrono::TimeZone;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::process::Command;
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::feeds::facts_library;
+use crate::search_tokens::{expand_subwords, relax_or, sanitize_fts_query};
 use crate::session_ledger::{
-    FactRow, FactSearchFilter, GazetteSearchFilter, SessionLedger, SessionRow,
+    FactRow, FactSearchFilter, FactSearchHit, GazetteSearchFilter, SessionLedger, SessionRow,
 };
 use crate::shared_agent::TurnImage;
 use crate::shell_ledger::ShellLedger;
@@ -89,6 +91,14 @@ pub struct OperatorContext {
     /// Where an attached image's bytes come to rest — one file per image,
     /// beside the ledger rather than inside it. Created on first write.
     pub attachments_dir: PathBuf,
+    /// The Haiku pool, for the search ladder's last rung ([P09]).
+    ///
+    /// `Option` because most construction sites have no pool and want none:
+    /// the verb fixtures, and `operator-ask`, which builds only the Gazette's
+    /// own pool. `None` means the rung is skipped and an unanswerable search
+    /// returns empty exactly as it did before — the degradation is the
+    /// default, not the exception.
+    pub haiku: Option<Arc<crate::shared_agent::SharedAgentPool>>,
 }
 
 /// Every verb the Operator may name. The retrieval instructions list the same
@@ -131,9 +141,9 @@ pub async fn run_verb(ctx: &OperatorContext, name: &str, args: &Value) -> Result
 
 async fn dispatch(ctx: &OperatorContext, name: &str, args: &Value) -> Result<Value, String> {
     match name {
-        "gazette.search" => gazette_search(ctx, args),
+        "gazette.search" => gazette_search(ctx, args).await,
         "gazette.window" => gazette_window(ctx, args),
-        "facts.search" => facts_search(ctx, args),
+        "facts.search" => facts_search(ctx, args).await,
         "facts.list" => facts_list(ctx, args),
         "facts.window" => facts_window(ctx, args),
         "shell.history" => shell_history(ctx, args),
@@ -278,7 +288,119 @@ fn post_json(post: &tugcast_core::types::GazettePost) -> Value {
     })
 }
 
-fn gazette_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+/// Run a search, and when it comes back empty, retry with progressively looser
+/// queries before handing the caller nothing.
+///
+/// A model round is the scarcest thing in the pipeline — there are two, by
+/// design — and an empty page spends one on nothing. A Rust retry costs
+/// microseconds, so the system tries the obvious relaxations itself: the terms
+/// OR-ed instead of AND-ed, then each term OR-ed with its own sub-words.
+/// Whatever produced the rows is reported back as `query_used`, and a rung that
+/// fired says so, because a loose match presented as an exact one is worse than
+/// no match at all.
+fn search_with_recovery<T>(
+    raw: &str,
+    noun: &str,
+    mut run: impl FnMut(&str) -> Result<Vec<T>, String>,
+) -> Result<(Vec<T>, String, Option<String>), String> {
+    let Some(sanitized) = sanitize_fts_query(raw) else {
+        // Nothing searchable in the query at all; there is no expression to run
+        // and nothing to relax.
+        return Ok((Vec::new(), raw.trim().to_string(), None));
+    };
+    let rows = run(&sanitized)?;
+    if !rows.is_empty() {
+        return Ok((rows, sanitized, None));
+    }
+    let ladder = [
+        (
+            relax_or(raw),
+            format!("no {noun} matched the full query; showing matches for any term"),
+        ),
+        (
+            expand_subwords(raw),
+            format!("no {noun} matched those words; showing matches for their sub-words"),
+        ),
+    ];
+    for (query, note) in ladder {
+        let Some(query) = query else { continue };
+        let rows = run(&query)?;
+        if !rows.is_empty() {
+            return Ok((rows, query, Some(note)));
+        }
+    }
+    Ok((Vec::new(), sanitized, None))
+}
+
+/// What a search says when the terms it matched on came from a model rather
+/// than from the question ([P09]).
+const MODEL_TERMS_NOTE: &str =
+    "nothing matched the question's own words; showing matches for model-suggested terms";
+
+/// At most this many expansion terms reach SQL. The instructions ask for 3–8;
+/// this is the cap that holds when a model ignores them.
+const EXPANSION_TERM_CAP: usize = 8;
+
+#[derive(Debug, Deserialize)]
+struct TermsEnvelope {
+    terms: Vec<String>,
+}
+
+/// Ladder rung 3: ask Haiku for words the record would actually contain, and
+/// build one more OR query out of them ([P09], Spec S06).
+///
+/// This is the first place the verb executor touches a model, and every bound
+/// on it is deliberate: it fires only after two lexical rungs have already
+/// returned nothing, at most once per verb call, on a pool whose own job
+/// ceiling (6 s) sits inside [`VERB_TIMEOUT`] (10 s). Every failure — no pool,
+/// a pool error, a timeout, prose where JSON was asked for, an empty list — is
+/// the same `None`, which puts the caller back on the honest empty result it
+/// already had.
+///
+/// The terms are model-written strings on their way to an FTS5 MATCH, so they
+/// go through `sanitize_fts_query` exactly like a model-written query does.
+/// Nothing here is interpolated raw.
+async fn expand_via_model(ctx: &OperatorContext, question: &str) -> Option<String> {
+    let pool = ctx.haiku.as_ref()?;
+    let raw = match pool.run("expand_query", question.to_string()).await {
+        Ok(raw) => raw,
+        Err(err) => {
+            warn!(error = %err, "gazette operator: query expansion unavailable");
+            return None;
+        }
+    };
+    let terms = crate::feeds::reporter_wake::json_object_spans(raw.trim())
+        .into_iter()
+        .rev()
+        .find_map(|span| serde_json::from_str::<TermsEnvelope>(span).ok())
+        .map(|envelope| envelope.terms)
+        // An unreadable turn is the same answer as an empty list: nothing to
+        // suggest. There is no round to spend on asking again.
+        .unwrap_or_default();
+    let expressions: Vec<String> = terms
+        .iter()
+        .take(EXPANSION_TERM_CAP)
+        .filter_map(|term| {
+            // Reduce a term to words before sanitizing. Punctuation carries no
+            // search value, and lowercasing puts the result out of reach of the
+            // pass-through path — a term is never allowed to be FTS5 syntax the
+            // way a model-written *query* is, because nobody is reading the
+            // error it could cause.
+            let words: String = term
+                .chars()
+                .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+                .collect::<String>()
+                .to_lowercase();
+            sanitize_fts_query(&words)
+        })
+        .collect();
+    if expressions.is_empty() {
+        return None;
+    }
+    Some(expressions.join(" OR "))
+}
+
+async fn gazette_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let query = req_str(args, "query")?;
     let author = match opt_str(args, "author")? {
         Some(raw) => Some(
@@ -293,12 +415,26 @@ fn gazette_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> 
         since_ms: opt_i64(args, "since_ms")?,
         until_ms: opt_i64(args, "until_ms")?,
     };
-    let hits = ctx
-        .ledger
-        .search_gazette_posts(query, &filter, SEARCH_LIMIT)
-        // An unbalanced quote or a bare `AND` is the model's error to see,
-        // not a failure to hide: FTS5 says exactly what it disliked.
-        .map_err(|err| format!("gazette.search: {err}"))?;
+    let search = |expr: &str| {
+        ctx.ledger
+            .search_gazette_posts(expr, &filter, SEARCH_LIMIT)
+            // An unbalanced quote or a bare `AND` is the model's error to see,
+            // not a failure to hide: FTS5 says exactly what it disliked. Only a
+            // query the model wrote in FTS5 can reach here — a sanitized one
+            // cannot syntax-error.
+            .map_err(|err| format!("gazette.search: {err}"))
+    };
+    let (mut hits, mut query_used, mut note) = search_with_recovery(query, "posts", search)?;
+    if hits.is_empty()
+        && let Some(expanded) = expand_via_model(ctx, query).await
+    {
+        let expanded_hits = search(&expanded)?;
+        if !expanded_hits.is_empty() {
+            hits = expanded_hits;
+            query_used = expanded;
+            note = Some(MODEL_TERMS_NOTE.to_string());
+        }
+    }
     let rows: Vec<Value> = hits
         .iter()
         .map(|hit| {
@@ -307,7 +443,11 @@ fn gazette_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> 
             row
         })
         .collect();
-    Ok(json!({ "posts": rows, "count": rows.len() }))
+    let mut out = json!({ "posts": rows, "count": rows.len(), "query_used": query_used });
+    if let Some(note) = note {
+        out["note"] = json!(note);
+    }
+    Ok(out)
 }
 
 fn gazette_window(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
@@ -371,20 +511,53 @@ fn fact_json(fact: &FactRow) -> Value {
     out
 }
 
-fn facts_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+async fn facts_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let query = req_str(args, "query")?;
+    let kind = opt_str(args, "kind")?.map(str::to_string);
+    let aimed_at_a_kind = kind.is_some();
     let filter = FactSearchFilter {
-        kind: opt_str(args, "kind")?.map(str::to_string),
+        kind,
         session_id: opt_str(args, "session_id")?.map(str::to_string),
         since_ms: opt_i64(args, "since_ms")?,
         until_ms: opt_i64(args, "until_ms")?,
     };
-    let hits = ctx
-        .ledger
-        .search_facts(query, &filter, FACTS_SEARCH_LIMIT)
-        // Same posture as `gazette.search`: FTS5 says what it disliked about
-        // the query, and the model reads its own mistake.
-        .map_err(|err| format!("facts.search: {err}"))?;
+    // Overfetch so the budgeter has minority-kind rows to FIND. Without the
+    // wider read there is nothing to balance: a page already spent on one kind
+    // is spent.
+    let fetch = if aimed_at_a_kind {
+        FACTS_SEARCH_LIMIT
+    } else {
+        FACTS_SEARCH_LIMIT * KIND_BUDGET_OVERFETCH
+    };
+    let search = |expr: &str| {
+        ctx.ledger
+            .search_facts(expr, &filter, fetch)
+            // Same posture as `gazette.search`: FTS5 says what it disliked
+            // about the query, and the model reads its own mistake.
+            .map_err(|err| format!("facts.search: {err}"))
+    };
+    let (mut hits, mut query_used, mut rung_note) = search_with_recovery(query, "facts", search)?;
+    // Rung 3, and only here: the lexical ladder has already come back empty,
+    // so the alternative to asking a model is returning nothing.
+    if hits.is_empty()
+        && let Some(expanded) = expand_via_model(ctx, query).await
+    {
+        let expanded_hits = search(&expanded)?;
+        if !expanded_hits.is_empty() {
+            hits = expanded_hits;
+            query_used = expanded;
+            rung_note = Some(MODEL_TERMS_NOTE.to_string());
+        }
+    }
+
+    // An explicit `kind` is the caller having already made the choice the
+    // budgeter exists to avoid making for them.
+    let (hits, budget_note) = if aimed_at_a_kind {
+        (hits, None)
+    } else {
+        budget_by_kind(hits, FACTS_SEARCH_LIMIT)
+    };
+
     let rows: Vec<Value> = hits
         .iter()
         .map(|hit| {
@@ -393,7 +566,89 @@ fn facts_search(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
             row
         })
         .collect();
-    Ok(json!({ "facts": rows, "count": rows.len() }))
+    let mut out = json!({ "facts": rows, "count": rows.len(), "query_used": query_used });
+    // Both notes can be true at once — a relaxed query that then matched more
+    // than one kind — and the caller needs each of them.
+    let notes: Vec<String> = [rung_note, budget_note].into_iter().flatten().collect();
+    if !notes.is_empty() {
+        out["note"] = json!(notes.join(" "));
+    }
+    Ok(out)
+}
+
+/// Spend a result page across the fact kinds that matched, so one loud kind
+/// cannot take all of it.
+///
+/// The failure this answers is concrete: "what was the recent commit where we
+/// tried to regularize tooltip colors" matched 39 facts, and the top 30 by
+/// bm25 were 28 `shell` facts — the greps that session itself ran — because a
+/// shell command that literally contains the query word outranks a commit
+/// subject that merely describes it. No static column weight fixes that
+/// without breaking the symmetric question ("which command did we run"), since
+/// which kind matters is the *question's* knowledge, not the ledger's.
+///
+/// Budgeting sidesteps the guess. It guarantees representation, never
+/// precedence: rank order is preserved throughout, a kind is capped only while
+/// some other kind still has unpicked matches, and any leftover room is
+/// refilled from the skipped rows in rank order. A single-kind result set
+/// therefore passes through untouched.
+fn budget_by_kind(hits: Vec<FactSearchHit>, limit: usize) -> (Vec<FactSearchHit>, Option<String>) {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+    for hit in &hits {
+        *counts.entry(hit.fact.kind.as_str()).or_default() += 1;
+    }
+    if counts.len() < 2 {
+        let mut hits = hits;
+        hits.truncate(limit);
+        return (hits, None);
+    }
+
+    let mut page: Vec<FactSearchHit> = Vec::with_capacity(limit.min(hits.len()));
+    let mut skipped: Vec<FactSearchHit> = Vec::new();
+    let mut taken: HashMap<String, usize> = HashMap::new();
+    for hit in hits {
+        let seen = taken.entry(hit.fact.kind.clone()).or_default();
+        if *seen >= KIND_PAGE_CAP {
+            skipped.push(hit);
+            continue;
+        }
+        *seen += 1;
+        page.push(hit);
+    }
+    // Rows past the page fall in with the capped ones rather than vanishing,
+    // so the note below accounts for every row the caller does not get.
+    if page.len() > limit {
+        let tail = page.split_off(limit);
+        skipped.extend(tail);
+    }
+
+    // Room left over goes back to the capped kinds rather than being wasted —
+    // the cap is a floor for the minority, not a ceiling on the answer.
+    let mut refilled = 0usize;
+    for hit in &skipped {
+        if page.len() >= limit {
+            break;
+        }
+        page.push(hit.clone());
+        refilled += 1;
+    }
+
+    let dropped = &skipped[refilled..];
+    let mut by_kind: HashMap<&str, usize> = HashMap::new();
+    for hit in dropped {
+        *by_kind.entry(hit.fact.kind.as_str()).or_default() += 1;
+    }
+    // Name the kind the caller is missing the most of — that is the one worth
+    // spending a `kind:` follow-up on.
+    let note = by_kind
+        .into_iter()
+        .max_by_key(|(_, n)| *n)
+        .map(|(kind, n)| {
+            format!(
+                "results capped for balance: {n} more {kind} fact(s) matched; pass kind: \"{kind}\" to see them"
+            )
+        });
+    (page, note)
 }
 
 /// Browse the fact base by kind, session, and time — the verb for "what
@@ -836,7 +1091,24 @@ pub const MAX_VERBS_PER_ROUND: usize = 6;
 
 /// How much of an unreadable model turn rides the warning. Enough to see what
 /// shape it took; not so much that one bad turn floods the log.
+/// The most rows one fact kind may hold on a `facts.search` page before the
+/// budgeter starts skipping it. Twelve of a thirty-row page lets a genuinely
+/// shell-heavy question stay shell-heavy while guaranteeing eighteen rows of
+/// room for every other kind that matched.
+const KIND_PAGE_CAP: usize = 12;
+
+/// How much wider than the page `facts.search` reads when it is going to
+/// budget. Three is enough because the budgeter only needs to FIND the
+/// minority-kind rows, and bm25's subject weighting already pulls the
+/// handle-hits toward the front.
+const KIND_BUDGET_OVERFETCH: usize = 3;
+
 const RAW_LOG_CHARS: usize = 400;
+
+/// How much of a verb's arguments its log line carries. Enough to see the
+/// query the model wrote; short enough that a pasted wall of text cannot flood
+/// the log.
+const VERB_LOG_ARGS_CHARS: usize = 300;
 
 /// One retrieval round, then at most one follow-up, then the answer is forced.
 /// The cap lives here rather than in the wording because the wording is a
@@ -857,6 +1129,41 @@ pub struct VerbRequest {
     pub verb: String,
     #[serde(default)]
     pub args: Value,
+    /// Arguments the model wrote flat on the verb object instead of nested
+    /// under `args` — `{"verb": "facts.search", "query": "contrast"}`.
+    ///
+    /// Observed against the real model, twice, on a question it otherwise
+    /// answered: every verb in the round came back argument-less, each one
+    /// erroring with "argument \"query\" is required", and the whole first
+    /// round was spent on the slip. Rounds are capped at two, so that is half
+    /// the lookups a question gets. Reading the arguments where the model
+    /// actually put them costs nothing and is the same posture as the
+    /// relaxation ladder: recover in Rust rather than spend a round.
+    #[serde(flatten)]
+    flat: serde_json::Map<String, Value>,
+}
+
+impl VerbRequest {
+    /// Move flat arguments into `args` when `args` is absent. A request that
+    /// nested them properly is untouched, and a stray annotation ("why": …)
+    /// on a properly-formed request stays ignored where it always was.
+    /// A well-formed request, for tests that compose one directly rather than
+    /// parsing a model's envelope.
+    #[cfg(test)]
+    fn new(verb: &str, args: Value) -> Self {
+        Self {
+            verb: verb.to_string(),
+            args,
+            flat: serde_json::Map::new(),
+        }
+    }
+
+    fn absorb_flat_args(mut self) -> Self {
+        if !self.args.is_object() && !self.flat.is_empty() {
+            self.args = Value::Object(std::mem::take(&mut self.flat));
+        }
+        self
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -870,10 +1177,10 @@ struct AnswerEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
-struct AnswerPost {
-    body: String,
+pub struct AnswerPost {
+    pub body: String,
     #[serde(default)]
-    refs: Vec<tugcast_core::types::GazetteRef>,
+    pub refs: Vec<tugcast_core::types::GazetteRef>,
 }
 
 /// What `operator-answer` said: the answer, or a request for one more round.
@@ -893,7 +1200,13 @@ fn parse_verbs(raw: &str) -> Option<Vec<VerbRequest>> {
         .rev()
     {
         if let Ok(envelope) = serde_json::from_str::<VerbsEnvelope>(span) {
-            return Some(envelope.verbs);
+            return Some(
+                envelope
+                    .verbs
+                    .into_iter()
+                    .map(VerbRequest::absorb_flat_args)
+                    .collect(),
+            );
         }
     }
     None
@@ -1383,126 +1696,194 @@ impl OperatorPipeline {
     }
 
     /// Retrieve, execute, answer — bounded at [`MAX_RETRIEVAL_ROUNDS`].
-    ///
-    /// Returns the answer alongside the text it was allowed to draw on, which
-    /// is what its refs are then validated against.
     async fn answer(
         &self,
         question: &str,
         images: &[TurnImage],
     ) -> Result<(AnswerPost, String), String> {
-        let scrollback = render_scrollback(
-            &self
-                .ctx
-                .ledger
-                .list_gazette_posts_tail(SCROLLBACK_POSTS)
-                .unwrap_or_default(),
-        );
+        run_question(&self.ctx, &self.pool, question, images, None).await
+    }
+}
 
-        // Composed once and reused by both turns, the way the scrollback is.
-        // A roster read that fails costs the question a convenience, never the
-        // answer — the wake's "a facts read must never cost a wake" posture
-        // ([P02]) — and the degraded line still rides the header the model was
-        // told about.
-        let roster =
-            match self
-                .ctx
-                .ledger
-                .list_sessions_recent(None, None, false, SESSIONS_ROSTER_LIMIT)
-            {
-                Ok(rows) => render_session_roster(&rows),
-                Err(err) => {
-                    warn!(error = %err, "gazette operator: session roster unavailable");
-                    format!("{SESSIONS_HEADER}\n(sessions unavailable)\n")
-                }
-            };
+/// Watch each verb as it is executed. The feed passes `None`; `operator-ask`
+/// passes a printer, which is the whole reason the pipeline takes one.
+pub type RoundObserver<'a> =
+    &'a (dyn Fn(usize, &VerbRequest, &Result<Value, String>) + Send + Sync);
 
-        let raw = self
-            .pool
+/// Retrieve, execute, answer — bounded at [`MAX_RETRIEVAL_ROUNDS`].
+///
+/// Returns the answer alongside the text it was allowed to draw on, which is
+/// what its refs are then validated against.
+///
+/// This is a free function rather than a method because the pipeline has two
+/// callers with nothing else in common: the Gazette feed, which broadcasts and
+/// persists what comes back, and `tugcast operator-ask`, which prints it. A
+/// verification instrument that ran a *reimplementation* of the pipeline would
+/// verify nothing, so both callers enter here.
+pub async fn run_question(
+    ctx: &OperatorContext,
+    pool: &Arc<crate::shared_agent::SharedAgentPool>,
+    question: &str,
+    images: &[TurnImage],
+    observer: Option<RoundObserver<'_>>,
+) -> Result<(AnswerPost, String), String> {
+    let scrollback = render_scrollback(
+        &ctx.ledger
+            .list_gazette_posts_tail(SCROLLBACK_POSTS)
+            .unwrap_or_default(),
+    );
+
+    // Composed once and reused by both turns, the way the scrollback is.
+    // A roster read that fails costs the question a convenience, never the
+    // answer — the wake's "a facts read must never cost a wake" posture
+    // ([P02]) — and the degraded line still rides the header the model was
+    // told about.
+    let roster = match ctx
+        .ledger
+        .list_sessions_recent(None, None, false, SESSIONS_ROSTER_LIMIT)
+    {
+        Ok(rows) => render_session_roster(&rows),
+        Err(err) => {
+            warn!(error = %err, "gazette operator: session roster unavailable");
+            format!("{SESSIONS_HEADER}\n(sessions unavailable)\n")
+        }
+    };
+
+    let raw = pool
+        .run_seeing(
+            "operator-retrieve",
+            compose_retrieve_input(now_ms(), question, &roster, &scrollback, images.len()),
+            images.to_vec(),
+        )
+        .await?;
+    // An unreadable retrieval is not a failed exchange. Retrieval is an
+    // optimization — it decides what to *add* to the material the answering
+    // step already has, and the scrollback rides that turn either way. Some
+    // questions ("how many physics questions today?") are answerable from
+    // the channel alone, and killing the exchange because the model wrote
+    // prose where a verb list was asked for spends a real answer to punish
+    // a formatting slip. So: log it, and answer with what we have.
+    let mut requests = match parse_verbs(&raw) {
+        Some(requests) => requests,
+        None => {
+            warn!(
+                raw = %raw.chars().take(RAW_LOG_CHARS).collect::<String>(),
+                "gazette operator: retrieval named no verbs; answering from the channel alone",
+            );
+            Vec::new()
+        }
+    };
+
+    let mut results: Vec<(VerbRequest, Result<Value, String>)> = Vec::new();
+    let mut rendered = String::new();
+    for round in 1..=MAX_RETRIEVAL_ROUNDS {
+        requests.truncate(MAX_VERBS_PER_ROUND);
+        for request in requests {
+            let started = std::time::Instant::now();
+            let outcome = run_verb(ctx, &request.verb, &request.args).await;
+            log_verb(round, &request, &outcome, started.elapsed());
+            if let Some(observe) = observer {
+                observe(round, &request, &outcome);
+            }
+            results.push((request, outcome));
+        }
+        rendered = render_results(&results);
+        let forced = round == MAX_RETRIEVAL_ROUNDS;
+        let raw = pool
             .run_seeing(
-                "operator-retrieve",
-                compose_retrieve_input(now_ms(), question, &roster, &scrollback, images.len()),
+                "operator-answer",
+                // Read again rather than reusing the retrieve turn's: a
+                // retrieval round plus its verbs is real elapsed time, and
+                // the clock the answer converts its prose times from
+                // should be the one on the wall when it writes them.
+                compose_answer_input(
+                    now_ms(),
+                    question,
+                    &roster,
+                    &scrollback,
+                    &rendered,
+                    forced,
+                    images.len(),
+                ),
+                // Shown to every round, not just the first: the model that
+                // writes the answer is the one that has to have looked.
                 images.to_vec(),
             )
             .await?;
-        // An unreadable retrieval is not a failed exchange. Retrieval is an
-        // optimization — it decides what to *add* to the material the answering
-        // step already has, and the scrollback rides that turn either way. Some
-        // questions ("how many physics questions today?") are answerable from
-        // the channel alone, and killing the exchange because the model wrote
-        // prose where a verb list was asked for spends a real answer to punish
-        // a formatting slip. So: log it, and answer with what we have.
-        let mut requests = match parse_verbs(&raw) {
-            Some(requests) => requests,
+        match parse_answer_turn(&raw) {
+            Some(AnswerTurn::Answer(post)) => {
+                let context = format!("{scrollback}{rendered}");
+                return Ok((post, context));
+            }
+            Some(AnswerTurn::More(more)) if !forced => requests = more,
+            Some(AnswerTurn::More(_)) => {
+                return Err(
+                    "the answering step asked for more lookups after its last round".to_string(),
+                );
+            }
             None => {
+                // Here the raw text IS the diagnosis: a silence cannot be
+                // read off the post that was not written.
                 warn!(
                     raw = %raw.chars().take(RAW_LOG_CHARS).collect::<String>(),
-                    "gazette operator: retrieval named no verbs; answering from the channel alone",
+                    "gazette operator: unreadable answer envelope",
                 );
-                Vec::new()
-            }
-        };
-
-        let mut results: Vec<(VerbRequest, Result<Value, String>)> = Vec::new();
-        let mut rendered = String::new();
-        for round in 1..=MAX_RETRIEVAL_ROUNDS {
-            requests.truncate(MAX_VERBS_PER_ROUND);
-            for request in requests {
-                let outcome = run_verb(&self.ctx, &request.verb, &request.args).await;
-                results.push((request, outcome));
-            }
-            rendered = render_results(&results);
-            let forced = round == MAX_RETRIEVAL_ROUNDS;
-            let raw = self
-                .pool
-                .run_seeing(
-                    "operator-answer",
-                    // Read again rather than reusing the retrieve turn's: a
-                    // retrieval round plus its verbs is real elapsed time, and
-                    // the clock the answer converts its prose times from
-                    // should be the one on the wall when it writes them.
-                    compose_answer_input(
-                        now_ms(),
-                        question,
-                        &roster,
-                        &scrollback,
-                        &rendered,
-                        forced,
-                        images.len(),
-                    ),
-                    // Shown to every round, not just the first: the model that
-                    // writes the answer is the one that has to have looked.
-                    images.to_vec(),
-                )
-                .await?;
-            match parse_answer_turn(&raw) {
-                Some(AnswerTurn::Answer(post)) => {
-                    let context = format!("{scrollback}{rendered}");
-                    return Ok((post, context));
-                }
-                Some(AnswerTurn::More(more)) if !forced => requests = more,
-                Some(AnswerTurn::More(_)) => {
-                    return Err(
-                        "the answering step asked for more lookups after its last round"
-                            .to_string(),
-                    );
-                }
-                None => {
-                    // Here the raw text IS the diagnosis: a silence cannot be
-                    // read off the post that was not written.
-                    warn!(
-                        raw = %raw.chars().take(RAW_LOG_CHARS).collect::<String>(),
-                        "gazette operator: unreadable answer envelope",
-                    );
-                    return Err("the answering step did not produce a readable answer".to_string());
-                }
+                return Err("the answering step did not produce a readable answer".to_string());
             }
         }
-        // Unreachable while MAX_RETRIEVAL_ROUNDS ≥ 1: the final round either
-        // answers or errors above. Kept as a value rather than an unwrap so a
-        // future knob of 0 degrades to a transient post instead of a panic.
-        let _ = rendered;
-        Err("the Operator ran out of rounds without answering".to_string())
+    }
+    // Unreachable while MAX_RETRIEVAL_ROUNDS ≥ 1: the final round either
+    // answers or errors above. Kept as a value rather than an unwrap so a
+    // future knob of 0 degrades to a transient post instead of a panic.
+    let _ = rendered;
+    Err("the Operator ran out of rounds without answering".to_string())
+}
+
+/// One INFO line per executed verb — what was asked, whether it answered, how
+/// long it took, and how much came back.
+///
+/// Without this the only trace a question leaves is `shared agent call
+/// task=operator-retrieve outcome=ok`, which says nothing about what the model
+/// looked for or what it got; a miss can then only be reconstructed by
+/// inference. The volume is bounded by construction at `MAX_VERBS_PER_ROUND ×
+/// MAX_RETRIEVAL_ROUNDS` lines per question, and questions are user-initiated,
+/// so this belongs at INFO rather than DEBUG.
+fn log_verb(
+    round: usize,
+    request: &VerbRequest,
+    outcome: &Result<Value, String>,
+    elapsed: std::time::Duration,
+) {
+    let args = request.args.to_string();
+    let args: String = args.chars().take(VERB_LOG_ARGS_CHARS).collect();
+    let elapsed_ms = elapsed.as_millis() as u64;
+    match outcome {
+        Ok(value) => {
+            // `count` is what the row-returning verbs report; everything else
+            // gets a size the reader can still compare across runs.
+            let size = match value.get("count").and_then(Value::as_u64) {
+                Some(count) => format!("rows={count}"),
+                None => format!("bytes={}", value.to_string().len()),
+            };
+            info!(
+                round,
+                verb = %request.verb,
+                args = %args,
+                outcome = "ok",
+                elapsed_ms,
+                size = %size,
+                "gazette operator verb",
+            );
+        }
+        Err(err) => info!(
+            round,
+            verb = %request.verb,
+            args = %args,
+            outcome = "err",
+            elapsed_ms,
+            error = %err,
+            "gazette operator verb",
+        ),
     }
 }
 
@@ -1561,6 +1942,13 @@ mod tests {
     }
 
     fn fixture() -> Fixture {
+        fixture_with_haiku(None)
+    }
+
+    /// The same fixture, carrying a pool for the expansion rung. Every verb
+    /// test but the [P09] ones runs with `None`, which is also what the
+    /// degradation contract says production does when no pool is present.
+    fn fixture_with_haiku(haiku: Option<Arc<crate::shared_agent::SharedAgentPool>>) -> Fixture {
         let repo = git_repo();
         let dir = tempfile::tempdir().expect("tempdir");
         Fixture {
@@ -1571,6 +1959,7 @@ mod tests {
                 )),
                 bootstrap_project_dir: repo.path().to_path_buf(),
                 attachments_dir: dir.path().join("gazette-attachments"),
+                haiku,
             },
             _dir: dir,
             repo,
@@ -1836,6 +2225,142 @@ mod tests {
         assert_eq!(rows[0]["kind"], "prompt");
     }
 
+    fn hit(id: i64, kind: &str) -> FactSearchHit {
+        FactSearchHit {
+            fact: FactRow {
+                id,
+                at_ms: 1_000 + id,
+                kind: kind.to_string(),
+                session_id: None,
+                subject: Some(format!("subject-{id}")),
+                text: format!("text-{id}"),
+                payload: "{}".to_string(),
+            },
+            excerpt: format!("excerpt-{id}"),
+        }
+    }
+
+    fn kinds_of(hits: &[FactSearchHit]) -> Vec<&str> {
+        hits.iter().map(|h| h.fact.kind.as_str()).collect()
+    }
+
+    #[test]
+    fn budgeting_puts_the_minority_kind_on_a_page_a_loud_kind_would_have_taken() {
+        // The 2026-08-15 shape: dozens of shell facts matching the query word
+        // literally, and the two commit facts that actually answer the
+        // question, which raw bm25 order buries past the page.
+        let mut hits: Vec<FactSearchHit> = (0..35).map(|i| hit(i, "shell")).collect();
+        hits.push(hit(100, "commit"));
+        hits.push(hit(101, "commit"));
+
+        let (page, note) = budget_by_kind(hits, 30);
+        assert_eq!(page.len(), 30);
+        assert_eq!(
+            page.iter().filter(|h| h.fact.kind == "commit").count(),
+            2,
+            "both commit facts made the page"
+        );
+        // Rank order survives: the cap skips rows, it never reorders them. The
+        // seeded ids ascend with rank, so the shell rows must too.
+        let shell_ids: Vec<i64> = page
+            .iter()
+            .filter(|h| h.fact.kind == "shell")
+            .map(|h| h.fact.id)
+            .collect();
+        assert!(
+            shell_ids.windows(2).all(|w| w[0] < w[1]),
+            "rank order disturbed: {shell_ids:?}"
+        );
+        // The first twelve rows are the capped kind, then the minority lands.
+        assert_eq!(&kinds_of(&page)[..KIND_PAGE_CAP], &["shell"; KIND_PAGE_CAP]);
+        assert_eq!(kinds_of(&page)[KIND_PAGE_CAP], "commit");
+
+        // Leftover room refilled the capped kind rather than being wasted, and
+        // what still did not fit is reported rather than silently dropped:
+        // 35 shell + 2 commit = 37 matched, 30 fit, so 7 shell are missing.
+        let note = note.expect("a capped page says so");
+        assert!(
+            note.contains("7 more shell fact(s)"),
+            "note counts what the caller is missing: {note}"
+        );
+        assert!(
+            note.contains("kind: \"shell\""),
+            "note names the escape: {note}"
+        );
+    }
+
+    #[test]
+    fn a_single_kind_result_set_passes_through_untouched() {
+        let hits: Vec<FactSearchHit> = (0..20).map(|i| hit(i, "shell")).collect();
+        let (page, note) = budget_by_kind(hits, 30);
+        assert_eq!(page.len(), 20, "nothing to balance, nothing capped");
+        assert_eq!(kinds_of(&page), vec!["shell"; 20]);
+        assert!(note.is_none(), "no cap fired, so no note");
+    }
+
+    #[test]
+    fn a_page_that_fits_is_never_capped_however_many_kinds_matched() {
+        let hits = vec![hit(1, "shell"), hit(2, "commit"), hit(3, "prompt")];
+        let (page, note) = budget_by_kind(hits, 30);
+        assert_eq!(kinds_of(&page), vec!["shell", "commit", "prompt"]);
+        assert!(note.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_commit_fact_survives_a_page_of_shell_facts_that_match_the_same_word() {
+        let f = fixture();
+        for i in 0..35 {
+            seed_fact(
+                &f.ctx,
+                &facts_library::shell_fact(
+                    1_000 + i,
+                    Some("sess-a"),
+                    &facts_library::ShellFact {
+                        command: &format!("rg tooltip tugdeck/src/case{i}"),
+                        route: facts_library::ShellRoute::Claude,
+                        ok: true,
+                        exit_code: None,
+                        cwd: None,
+                    },
+                    None,
+                ),
+            );
+        }
+        for (i, sha) in ["ac462ba3a1ae", "beefcafe1234"].iter().enumerate() {
+            seed_fact(
+                &f.ctx,
+                &facts_library::commit_fact(
+                    2_000 + i as i64,
+                    Some("sess-a"),
+                    sha,
+                    "tugways: regularize tooltip presentation",
+                    &["tugdeck/src/tooltip.tsx".to_string()],
+                    None,
+                ),
+            );
+        }
+
+        let found = run_verb(&f.ctx, "facts.search", &json!({"query": "tooltip"}))
+            .await
+            .expect("search ran");
+        let rows = found["facts"].as_array().unwrap();
+        let commits: Vec<&Value> = rows.iter().filter(|r| r["kind"] == "commit").collect();
+        assert_eq!(commits.len(), 2, "both commit facts are on the page");
+        assert!(found["note"].is_string(), "the capped page says so");
+
+        // An explicit kind is the caller having made the choice themselves, so
+        // the budgeter stands down entirely.
+        let aimed = run_verb(
+            &f.ctx,
+            "facts.search",
+            &json!({"query": "tooltip", "kind": "commit"}),
+        )
+        .await
+        .expect("search ran");
+        assert_eq!(aimed["count"], 2);
+        assert!(aimed["note"].is_null(), "an aimed search is never capped");
+    }
+
     #[tokio::test]
     async fn facts_list_browses_newest_first_and_caps_its_results() {
         let f = fixture();
@@ -1987,6 +2512,244 @@ mod tests {
             .await
             .expect_err("FTS5 rejects the query");
         assert!(err.starts_with("facts.search:"));
+    }
+
+    /// The commit the 2026-08-15 question was asking about, as a fact.
+    fn seed_tooltip_commit(f: &Fixture) {
+        seed_fact(
+            &f.ctx,
+            &facts_library::commit_fact(
+                3_000,
+                Some("sess-a"),
+                "ac462ba3a1ae",
+                "tugways(entity-tips): unify commit hover into a real TugTooltip",
+                &["tugdeck/src/chrome/entity-tips.tsx".to_string()],
+                None,
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn a_query_that_matched_says_which_expression_found_the_rows() {
+        let f = fixture();
+        seed_tooltip_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "tooltip"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["query_used"], "\"tooltip\"");
+        assert!(out["note"].is_null(), "nothing was relaxed");
+    }
+
+    #[tokio::test]
+    async fn a_phrase_no_fact_contains_relaxes_to_its_terms() {
+        let f = fixture();
+        seed_tooltip_commit(&f);
+        // FTS5 AND-s terms implicitly, so the natural phrase matches nothing —
+        // the failure that cost the original question its first round.
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "tooltip colors"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 1, "the ladder recovered the commit fact");
+        assert_eq!(out["query_used"], "\"tooltip\" OR \"colors\"");
+        assert!(
+            out["note"].as_str().unwrap().contains("any term"),
+            "note was {:?}",
+            out["note"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_camel_case_query_reaches_prose_through_its_sub_words() {
+        let f = fixture();
+        // Prose only: nothing here is spelled `TugTooltip`, so an exact query
+        // for the identifier matches neither the text nor the tokens column.
+        seed_fact(
+            &f.ctx,
+            &facts_library::prompt_fact(4_000, "sess-a", "make the tooltip colors consistent"),
+        );
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "TugTooltip"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 1, "rung 2 split the identifier");
+        assert_eq!(
+            out["query_used"],
+            "(\"TugTooltip\" OR \"tug\" OR \"tooltip\")"
+        );
+        assert!(
+            out["note"].as_str().unwrap().contains("sub-words"),
+            "note was {:?}",
+            out["note"]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_query_nothing_answers_comes_back_empty_and_honest() {
+        let f = fixture();
+        seed_tooltip_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "quokka"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 0);
+        assert!(out["facts"].as_array().unwrap().is_empty());
+        assert_eq!(out["query_used"], "\"quokka\"");
+        assert!(out["note"].is_null(), "no rung fired, so nothing to say");
+    }
+
+    #[tokio::test]
+    async fn a_query_of_pure_punctuation_is_an_empty_result_not_an_error() {
+        let f = fixture();
+        seed_tooltip_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "--- ((("}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 0);
+    }
+
+    #[tokio::test]
+    async fn the_gazette_search_walks_the_same_ladder() {
+        let f = fixture();
+        seed_post(
+            &f.ctx,
+            "Unified the commit hover into a real TugTooltip.",
+            None,
+        );
+        let out = run_verb(
+            &f.ctx,
+            "gazette.search",
+            &json!({"query": "tooltip presentation"}),
+        )
+        .await
+        .expect("search ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["query_used"], "\"tooltip\" OR \"presentation\"");
+        assert!(out["note"].as_str().unwrap().contains("posts"));
+    }
+
+    /// A pool over the real Haiku job table that answers `answer` to every
+    /// turn — the project's seam for agent-dependent logic.
+    fn scripted(
+        answer: Result<String, String>,
+    ) -> Option<Arc<crate::shared_agent::SharedAgentPool>> {
+        Some(crate::shared_agent::test_support::scripted_haiku_pool(
+            answer,
+        ))
+    }
+
+    /// A record of work whose vocabulary shares nothing with how someone would
+    /// describe the symptom — the concept-mismatch case [P09] exists for.
+    fn seed_flicker_commit(f: &Fixture) {
+        seed_fact(
+            &f.ctx,
+            &facts_library::commit_fact(
+                5_000,
+                Some("sess-a"),
+                "b17c9f2d0011",
+                "tugdeck(transcript): stop repaint flicker on theme switch",
+                &["tugdeck/src/transcript.tsx".to_string()],
+                None,
+            ),
+        );
+    }
+
+    #[tokio::test]
+    async fn a_question_sharing_no_words_with_the_record_is_reached_by_expansion() {
+        let f = fixture_with_haiku(scripted(Ok(
+            r#"{"terms": ["flicker", "repaint"]}"#.to_string()
+        )));
+        seed_flicker_commit(&f);
+        // Neither word is anywhere in the record, and neither decomposes, so
+        // both lexical rungs come back empty.
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "cards blinking"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 1, "the expansion rung found the commit");
+        assert_eq!(out["query_used"], "\"flicker\" OR \"repaint\"");
+        assert_eq!(out["note"], MODEL_TERMS_NOTE);
+    }
+
+    #[tokio::test]
+    async fn without_a_pool_that_question_returns_the_honest_empty_result() {
+        let f = fixture();
+        assert!(f.ctx.haiku.is_none());
+        seed_flicker_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "cards blinking"}))
+            .await
+            .expect("search ran");
+        assert_eq!(out["count"], 0);
+        assert!(out["note"].is_null());
+    }
+
+    /// Every way the rung can fail is the same answer: the empty result the
+    /// caller already had. None of them may fail the verb.
+    #[tokio::test]
+    async fn a_failed_expansion_degrades_rather_than_failing_the_verb() {
+        for answer in [
+            Err("worker died".to_string()),
+            Ok("I'd try searching for flicker".to_string()),
+            Ok(r#"{"terms": []}"#.to_string()),
+            Ok(String::new()),
+        ] {
+            let f = fixture_with_haiku(scripted(answer.clone()));
+            seed_flicker_commit(&f);
+            let out = run_verb(&f.ctx, "facts.search", &json!({"query": "cards blinking"}))
+                .await
+                .unwrap_or_else(|err| panic!("verb failed on {answer:?}: {err}"));
+            assert_eq!(out["count"], 0, "on {answer:?}");
+            assert!(out["note"].is_null(), "on {answer:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn expansion_never_fires_when_a_lexical_rung_already_found_rows() {
+        // The scripted terms would match a fact the question does not mean, so
+        // that fact's absence is the proof the rung never ran.
+        let f = fixture_with_haiku(scripted(Ok(r#"{"terms": ["flicker"]}"#.to_string())));
+        seed_flicker_commit(&f);
+        seed_tooltip_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "tooltip colors"}))
+            .await
+            .expect("search ran");
+        let subjects: Vec<&str> = out["facts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["text"].as_str().unwrap())
+            .collect();
+        assert_eq!(subjects.len(), 1, "{subjects:?}");
+        assert!(subjects[0].contains("TugTooltip"), "{subjects:?}");
+        assert_ne!(out["note"], MODEL_TERMS_NOTE);
+    }
+
+    #[tokio::test]
+    async fn expansion_terms_are_sanitized_not_interpolated() {
+        // A term carrying FTS5 syntax would syntax-error the query it lands
+        // in, which would turn a graceful degradation into a failed verb.
+        let f = fixture_with_haiku(scripted(Ok(
+            r#"{"terms": ["\"unbalanced", "NEAR(x", "repaint*", "flicker"]}"#.to_string(),
+        )));
+        seed_flicker_commit(&f);
+        let out = run_verb(&f.ctx, "facts.search", &json!({"query": "cards blinking"}))
+            .await
+            .expect("a term full of syntax must not fail the verb");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["note"], MODEL_TERMS_NOTE);
+    }
+
+    #[tokio::test]
+    async fn the_gazette_search_gets_the_same_rung() {
+        let f = fixture_with_haiku(scripted(Ok(r#"{"terms": ["flicker"]}"#.to_string())));
+        seed_post(&f.ctx, "Stopped the repaint flicker on theme switch.", None);
+        let out = run_verb(
+            &f.ctx,
+            "gazette.search",
+            &json!({"query": "cards blinking"}),
+        )
+        .await
+        .expect("search ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["query_used"], "\"flicker\"");
+        assert_eq!(out["note"], MODEL_TERMS_NOTE);
     }
 
     #[tokio::test]
@@ -2476,6 +3239,7 @@ mod tests {
                     shell_ledger: None,
                     bootstrap_project_dir: repo.path().to_path_buf(),
                     attachments_dir: repo.path().join("gazette-attachments"),
+                    haiku: None,
                 }),
                 pool,
                 gazette_tx: tx,
@@ -2773,10 +3537,7 @@ mod tests {
     #[test]
     fn a_verb_round_is_capped_at_six() {
         let many: Vec<VerbRequest> = (0..20)
-            .map(|_| VerbRequest {
-                verb: "git.log".to_string(),
-                args: json!({}),
-            })
+            .map(|_| VerbRequest::new("git.log", json!({})))
             .collect();
         let mut requests = many;
         requests.truncate(MAX_VERBS_PER_ROUND);
@@ -2809,6 +3570,37 @@ mod tests {
         let verbs = parse_verbs(&raw).expect("verbs parsed");
         assert_eq!(verbs.len(), 1);
         assert_eq!(verbs[0].verb, "gazette.search");
+    }
+
+    /// Observed against the real model: it wrote the arguments flat on the
+    /// verb object, every verb in the round errored with "argument … is
+    /// required", and the question lost the first of its two rounds to it.
+    #[test]
+    fn arguments_written_flat_on_the_verb_are_still_arguments() {
+        let raw = r#"{"verbs": [
+            {"verb": "gazette.search", "query": "contrast"},
+            {"verb": "facts.search", "query": "contrast", "kind": "shell"}
+        ]}"#;
+        let verbs = parse_verbs(raw).expect("verbs parsed");
+        assert_eq!(verbs[0].args, json!({"query": "contrast"}));
+        assert_eq!(verbs[1].args, json!({"query": "contrast", "kind": "shell"}));
+    }
+
+    /// …but a request that nested them properly keeps exactly what it wrote.
+    /// The annotation a model hangs off a well-formed verb stays ignored,
+    /// which is what the neighbouring test above is about.
+    #[test]
+    fn a_well_formed_request_is_not_rewritten_by_its_annotations() {
+        let raw = json!({
+            "verbs": [{
+                "verb": "gazette.search",
+                "args": {"query": "physics"},
+                "why": "the posts mention it",
+            }],
+        })
+        .to_string();
+        let verbs = parse_verbs(&raw).expect("verbs parsed");
+        assert_eq!(verbs[0].args, json!({"query": "physics"}));
     }
 
     #[test]
@@ -3250,15 +4042,12 @@ mod tests {
         for _round in 0..MAX_RETRIEVAL_ROUNDS {
             for slot in 0..MAX_VERBS_PER_ROUND {
                 let request = if slot % 2 == 0 {
-                    VerbRequest {
-                        verb: "facts.window".to_string(),
-                        args: json!({"fact_id": hit, "n": FACTS_WINDOW_MAX_N}),
-                    }
+                    VerbRequest::new(
+                        "facts.window",
+                        json!({"fact_id": hit, "n": FACTS_WINDOW_MAX_N}),
+                    )
                 } else {
-                    VerbRequest {
-                        verb: "facts.list".to_string(),
-                        args: json!({}),
-                    }
+                    VerbRequest::new("facts.list", json!({}))
                 };
                 let outcome = run_verb(&f.ctx, &request.verb, &request.args).await;
                 results.push((request, outcome));

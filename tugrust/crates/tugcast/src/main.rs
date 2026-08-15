@@ -31,6 +31,10 @@ mod permissions;
 mod resources;
 mod router;
 mod scribe;
+/// Sub-word vocabulary for the facts library's full-text indexes. A leaf with
+/// no dependencies, shared by `session_ledger` (write-time derivation and the
+/// backfill) and `feeds::operator` (query-time expansion).
+mod search_tokens;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
@@ -148,9 +152,19 @@ async fn main() {
     // can be run against a machine with a live tugcast on it without the two
     // ever meeting.
     if let Some(command) = cli.command.as_ref() {
-        let cli::Command::GazetteReplay(args) = command;
-        let opts = feeds::gazette_replay::ReplayOptions::from_args(args);
-        std::process::exit(feeds::gazette_replay::run(&args.jsonl, &opts).await);
+        let code = match command {
+            cli::Command::GazetteReplay(args) => {
+                let opts = feeds::gazette_replay::ReplayOptions::from_args(args);
+                feeds::gazette_replay::run(&args.jsonl, &opts).await
+            }
+            cli::Command::OperatorAsk(args) => feeds::operator_ask::run(args).await,
+        };
+        // `process::exit` runs no destructors, and the log writer is
+        // non-blocking — without this drop every line a subcommand logged is
+        // still in the buffer when the process disappears, which is how a run
+        // that logged one INFO line per verb leaves an empty log file.
+        drop(_log_guard);
+        std::process::exit(code);
     }
 
     // Ledger seeding runs before everything else and never returns — it must
@@ -1601,6 +1615,11 @@ async fn main() {
             // Beside the ledger the posts live in, so an instance's history
             // and the pictures in it are one thing to keep or to throw away.
             attachments_dir: tugcore::instance::data_dir().join("gazette-attachments"),
+            // The search ladder's last rung ([P09]). The same pool the shell
+            // classifier and the session headlines use — warm workers, one
+            // reviewed job table, and nothing spawned until a search actually
+            // comes back empty twice.
+            haiku: Some(Arc::clone(&haiku_agent)),
         }),
         pool: Arc::clone(&gazette_agent),
         gazette_tx: gazette_tx.clone(),

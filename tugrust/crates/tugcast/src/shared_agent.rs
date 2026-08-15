@@ -1254,6 +1254,12 @@ pub static HAIKU_AGENT_JOBS: &[JobSpec] = &[
         slow: Some(SUMMARIZE_SLOW),
         instructions: SYNOPSIS_INSTRUCTIONS,
     },
+    JobSpec {
+        name: "expand_query",
+        timeout: SUMMARIZE_TIMEOUT,
+        slow: Some(SUMMARIZE_SLOW),
+        instructions: EXPAND_QUERY_INSTRUCTIONS,
+    },
 ];
 
 /// Classify's ceiling is one of **three** constants that must agree:
@@ -1467,6 +1473,50 @@ USE THE DIGEST'S OWN WORDS. Build the line out of words that appear in the diges
 Answer only from the digest below. Output only the line.
 
 DIGEST:";
+
+/// Search terms for a question whose own words are nowhere in the record.
+///
+/// The Gazette's index is lexical: it finds a record by the words that record
+/// contains. "Where did we fix the thing that made the cards flash" shares no
+/// token with any commit, command, or post about that work, and no amount of
+/// splitting or OR-relaxing manufactures one — this job is what turns the
+/// question into words that *would* appear in the record, so the lexical index
+/// can do the rest.
+///
+/// It is asked only when a search has already come back empty twice, so an
+/// empty answer costs nothing: the alternative was returning nothing anyway.
+/// That is why `{"terms": []}` is a first-class reply rather than a failure —
+/// the same silence-is-an-answer posture the Reporter's `{"post": null}` has.
+const EXPAND_QUERY_INSTRUCTIONS: &str = "\
+You generate SEARCH TERMS. Someone asked a question about their own coding work, a full-text search of the record found nothing, and your job is to guess the words that record would actually contain.
+
+The record is a fact library: every prompt the person typed, every shell command run, every test run, every commit, and session lifecycle events. Fact text reads like this:
+
+$ just app-test at0365-gazette-card.test.ts → ok
+tests: cargo nextest — passed (1614 passed, 0 failed)
+commit 3f16971b \"tugways(transcript-copy): route native ⌘C through onCopy substitution\" — 4 file(s)
+
+So write the words that would APPEAR IN THE RECORD OF THE WORK, not synonyms of the question. A commit subject's vocabulary, a filename fragment, a command name, the technical word for the symptom the question describes in plain English. \"Made the cards flash\" is written down somewhere as flicker, repaint, transition, or animation — those are the terms.
+
+Rules:
+
+Single words, never phrases. Every term is OR-ed against the index separately.
+3 to 8 of them. Fewer is fine; more is noise that buries the match.
+Lowercase, no punctuation, no wildcards.
+Do not repeat a word from the question — the search already tried those and found nothing.
+If you have nothing better to suggest than the question's own words, say so with an empty list. That is a real answer and it is preferred over filler.
+
+Answer with JSON and nothing else — no prose before it, no code fence around it:
+
+{\"terms\": [\"flicker\", \"repaint\", \"transition\"]}
+
+Or, when you have nothing to add:
+
+{\"terms\": []}
+
+Answer only from the question below.
+
+QUESTION:";
 
 /// Scripted workers, for this module's pool-policy tests and for any other
 /// module that needs a pool answering a known thing.
@@ -2081,6 +2131,25 @@ mod tests {
             assert!(text.contains("56 CHARACTERS"), "{name}");
         }
         assert!(job("summarize_done").instructions.contains("PAST TENSE"));
+
+        // Expansion's output contract, which `expand_via_model` parses and
+        // whose empty case it treats as a real answer. Both halves are pinned:
+        // the shape, and the permission to return nothing — without the latter
+        // a model with no good suggestion invents filler, and filler here is
+        // rows that look like evidence.
+        let expand = job("expand_query").instructions;
+        assert!(expand.contains(r#"{"terms": []}"#));
+        assert!(expand.contains("That is a real answer"));
+        assert!(expand.contains("Single words, never phrases"));
+        assert!(expand.contains("3 to 8"));
+        // The whole point: terms as the RECORD spells them, not synonyms of
+        // the question. A model that reached for synonyms would produce words
+        // just as absent from the index as the question's own.
+        assert!(expand.contains("APPEAR IN THE RECORD OF THE WORK"));
+        // Its ceiling sits inside the verb's, with room for the two lexical
+        // rungs that already ran. Raising one without the other turns graceful
+        // degradation into verb timeouts.
+        assert!(job("expand_query").timeout < crate::feeds::operator::VERB_TIMEOUT);
 
         // Classify's ceiling is the triad's Rust member; summarize stays under
         // the emit floor.

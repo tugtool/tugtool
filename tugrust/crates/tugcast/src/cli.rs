@@ -99,6 +99,47 @@ pub enum Command {
     /// output at two or three values rather than by guessing one.
     #[command(hide = true)]
     GazetteReplay(GazetteReplayArgs),
+
+    /// Ask the Gazette's Operator a question against a named ledger and print
+    /// what it answers, with every verb it ran on the way.
+    ///
+    /// Hidden for the same reason as `gazette-replay`: it is a verification and
+    /// calibration instrument. It runs the real pipeline — real ledger, real
+    /// verbs, real model — which is the only way a question that once failed
+    /// can be shown to answer now.
+    #[command(hide = true)]
+    OperatorAsk(OperatorAskArgs),
+}
+
+/// Flags for `tugcast operator-ask`.
+#[derive(Args, Debug)]
+pub struct OperatorAskArgs {
+    /// The question, exactly as someone would type it into the Gazette card.
+    pub question: String,
+
+    /// Session ledger to read. POINT THIS AT A COPY: `just db-inspect` makes
+    /// one safely. A foreign process on a live ledger is a corruption vector,
+    /// and opening one also runs any pending schema migration on it.
+    #[arg(long)]
+    pub db: PathBuf,
+
+    /// The repository a question means when it names no session — what
+    /// `--source-tree` resolves to in a running instance.
+    #[arg(long)]
+    pub project_dir: PathBuf,
+
+    /// Shell-route command history, for `shell.history`. Omitted reads as "no
+    /// command history to search", which is a legal state, not an error.
+    #[arg(long)]
+    pub shell_db: Option<PathBuf>,
+
+    /// Model for both Operator jobs, for this run only.
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Print each verb's full result JSON, not just its row count.
+    #[arg(long)]
+    pub show_rounds: bool,
 }
 
 /// Flags for `tugcast gazette-replay`. Each one overrides a `dev.tugtool.gazette`
@@ -191,6 +232,53 @@ mod tests {
             }
         }
         let _: Option<OsString> = std::env::var_os("TUG_INSTANCE_ID");
+    }
+
+    /// The one piece of `operator-ask`'s shape that is ours rather than
+    /// clap's: which arguments it demands, and the fact that it demands the
+    /// ledger by name. A `--db` that slipped to optional would default to
+    /// nothing and the instrument would be pointed at whatever ran it.
+    #[test]
+    fn operator_ask_takes_a_ledger_a_repo_and_a_question() {
+        let cli = <Cli as Parser>::try_parse_from([
+            "tugcast",
+            "operator-ask",
+            "--db",
+            "/tmp/copy/sessions.db",
+            "--project-dir",
+            "/repo",
+            "--show-rounds",
+            "what was the recent commit about tooltips?",
+        ])
+        .expect("operator-ask parses");
+        let Some(Command::OperatorAsk(args)) = cli.command else {
+            panic!("parsed as something other than operator-ask");
+        };
+        assert_eq!(args.db, PathBuf::from("/tmp/copy/sessions.db"));
+        assert_eq!(args.project_dir, PathBuf::from("/repo"));
+        assert_eq!(args.question, "what was the recent commit about tooltips?");
+        assert!(args.show_rounds);
+        // Both are genuinely optional: no shell ledger reads as "no command
+        // history", and no model means the Gazette's own default.
+        assert!(args.shell_db.is_none());
+        assert!(args.model.is_none());
+
+        assert!(
+            <Cli as Parser>::try_parse_from(["tugcast", "operator-ask", "a question"]).is_err(),
+            "the ledger and the repo are required",
+        );
+    }
+
+    /// Both developer subcommands are instruments, not features. A user
+    /// reading `tugcast --help` should see the server's flags and nothing
+    /// about replaying transcripts or interrogating ledger copies.
+    #[test]
+    fn the_developer_subcommands_stay_out_of_help() {
+        let help = <Cli as clap::CommandFactory>::command()
+            .render_help()
+            .to_string();
+        assert!(!help.contains("operator-ask"), "{help}");
+        assert!(!help.contains("gazette-replay"), "{help}");
     }
 
     #[test]
