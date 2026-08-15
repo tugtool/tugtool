@@ -29,3 +29,5 @@ The `Join` route in the Z4A section in the prompt-entry component seems unresolv
 
 Finally, the user interface to *get into* the dashes workflows still seems entirely driven by hard-to-find and difficult-to-understand slash commands... but OK for now. If we address some of the above issues, then we can circle back on the UI to plan and begin dashes.  
 
+
+Why did this dash turn into a dotted circle? It's still working! ![Screenshot 2026-08-15 at 8.00.18 AM](<assets/Screenshot 2026-08-15 at 8.00.18 AM.png>)
