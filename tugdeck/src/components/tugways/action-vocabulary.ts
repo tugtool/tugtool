@@ -932,6 +932,37 @@ export const TUG_ACTIONS = {
   SHOW_SESSION:          "show-session",
   RESUME_SESSION:        "resume-session",
 
+  // ---- The commit a right-click landed on ----
+  //
+  // Every one of these is menu-only over a sampled target — "the commit the
+  // pointer is on", which no chord can name — and every one is handled by the
+  // row's own responder ({@link useCommitIdentityMenu}).
+  //
+  // TOGGLE_COMMIT_DETAIL:   payload — none. Fold the commit's detail open or
+  //                         shut, the same act the row's click performs. The
+  //                         item SAYS which way it will go, so the menu never
+  //                         asks the reader to remember the row's state.
+  // COPY_COMMIT_HASH:       payload — none. The complete 40-char hash — what
+  //                         every git verb wants and what no row displays.
+  // COPY_COMMIT_SHORT_HASH: payload — none. The 8-char form the row shows,
+  //                         which is the one a sentence quotes.
+  // COPY_COMMIT_SUBJECT:    payload — none. The subject line alone.
+  // COPY_COMMIT_MESSAGE:    payload — none. Subject + body, the message as it
+  //                         was written.
+  // COPY_COMMIT_RECORD:     payload — none. The whole record — header line,
+  //                         attribution, message — the same text the row's
+  //                         Copy button writes, so the two cannot drift.
+  // COPY_COMMIT_FILES:      payload — none. The paths the commit changed, one
+  //                         per line. Disabled for a commit that changed none
+  //                         (a merge, an empty commit).
+  TOGGLE_COMMIT_DETAIL:   "toggle-commit-detail",
+  COPY_COMMIT_HASH:       "copy-commit-hash",
+  COPY_COMMIT_SHORT_HASH: "copy-commit-short-hash",
+  COPY_COMMIT_SUBJECT:    "copy-commit-subject",
+  COPY_COMMIT_MESSAGE:    "copy-commit-message",
+  COPY_COMMIT_RECORD:     "copy-commit-record",
+  COPY_COMMIT_FILES:      "copy-commit-files",
+
   // ---- Meta ----
   //
   // SET_PROPERTY: payload — `{ path: string; value: unknown; source?: string }`.

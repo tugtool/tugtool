@@ -162,6 +162,7 @@ export function CommitIdentityLine({
   shaContent,
   subjectContent,
   badge,
+  shaMenu = true,
   className,
 }: {
   sha: string;
@@ -185,6 +186,12 @@ export function CommitIdentityLine({
   shaContent?: React.ReactNode;
   subjectContent?: React.ReactNode;
   badge?: React.ReactNode;
+  /**
+   * Whether the sha keeps its own Copy menu. Off on a surface whose HOST
+   * claims the right-click for the whole commit — see {@link CommitShaText}.
+   * @default true
+   */
+  shaMenu?: boolean;
   className?: string;
 }): React.ReactElement {
   return (
@@ -205,7 +212,7 @@ export function CommitIdentityLine({
         }
         data-slot="commit-identity"
       >
-        <CommitShaText sha={sha} content={shaContent} />
+        <CommitShaText sha={sha} content={shaContent} menu={shaMenu} />
         {" "}
         {subjectContent ?? subject}
         {badge}

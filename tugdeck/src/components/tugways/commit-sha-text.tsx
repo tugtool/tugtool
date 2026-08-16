@@ -42,10 +42,21 @@ export const SHA_DISPLAY_LEN = 8;
 export function CommitShaText({
   sha,
   content,
+  menu = true,
   className,
 }: {
   /** The full commit sha; displayed and copied truncated to the short form. */
   sha: string;
+  /**
+   * Whether the sha carries its own single-item Copy menu. Off where a HOST
+   * claims the right-click for the whole commit — a History row, whose menu
+   * offers the full hash, the message, and the roster — so the pointer does
+   * not get the poorer of two menus for landing on eight characters rather
+   * than beside them. The gesture then bubbles to that host; every other
+   * pointer gesture still stops here.
+   * @default true
+   */
+  menu?: boolean;
   /**
    * The short sha rendered with decoration — filter-match `<mark>`s, say.
    * MUST read as the same characters the plain form shows; it replaces how the
@@ -61,6 +72,7 @@ export function CommitShaText({
     ref,
     getText: () => `Commit ${sha.slice(0, SHA_DISPLAY_LEN)}`,
     copyMenu: true,
+    disabled: !menu,
   });
   return (
     <>
@@ -70,6 +82,9 @@ export function CommitShaText({
           className !== undefined ? `commit-sha-text ${className}` : "commit-sha-text"
         }
         onContextMenu={(event) => {
+          // Only claimed when this atom is the one answering the press. Under
+          // a host that claims the whole commit, the gesture rides on up.
+          if (!menu) return;
           event.stopPropagation();
           handleContextMenu(event);
         }}

@@ -68,6 +68,7 @@ import {
   CommitChangesList,
   type CommitChangesFile,
 } from "@/components/tugways/tug-changes-list";
+import { useCommitIdentityMenu } from "@/components/tugways/commit-identity-menu";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
 import { TugSessionCitation } from "@/components/tugways/tug-session-identity";
 import { dashNameFromTrailer } from "@/lib/landing-receipt";
@@ -359,6 +360,23 @@ function CommitRow({
     () => matchedContext(commit, shortSha, filterQuery, filterScope),
     [commit, shortSha, filterQuery, filterScope],
   );
+  // The whole row's right-click menu ([P10]) — every fact the commit holds,
+  // including the ones no row displays (the full hash, the roster). It
+  // supersedes the sha atom's lone Copy here, which is why the identity line
+  // below is asked to stand its own menu down.
+  const menu = useCommitIdentityMenu({
+    commit: {
+      sha: commit.sha,
+      subject: commit.subject,
+      body: commit.body,
+      author: commit.committer ?? commit.author,
+      email: commit.committer_email,
+      dateIso: commit.committer_date,
+      paths: commit.files,
+    },
+    expanded,
+    onToggleDetail: () => setExpanded((e) => !e),
+  });
   return (
     <div
       className="tug-history-list-commit-block"
@@ -366,10 +384,12 @@ function CommitRow({
       data-sha={commit.sha}
       data-expanded={expanded ? "true" : undefined}
     >
-      {/* Primary button only — a right-click belongs to the sha's copy menu,
+      {/* Primary button only — a right-click belongs to the row's commit menu,
           and must never fold the row under it. */}
       <div
         className="tug-history-list-row-hit"
+        ref={menu.ref as (el: HTMLDivElement | null) => void}
+        onContextMenu={menu.onContextMenu}
         onClick={(event) => {
           if (event.button !== 0) return;
           setExpanded((e) => !e);
@@ -419,6 +439,7 @@ function CommitRow({
         >
           <CommitIdentityLine
             sha={commit.sha}
+            shaMenu={false}
             subject={commit.subject}
             author={commit.committer ?? commit.author}
             dateIso={commit.committer_date}
@@ -433,6 +454,15 @@ function CommitRow({
             className="tug-history-list-commit-header"
             badge={
               <>
+                {/* A real space, not a margin, between the subject and each
+                    mark. The marks ride the subject's own inline flow, so a
+                    long subject wraps them onto the hanging indent — and a
+                    left margin is drawn there too, setting the mark in from
+                    the very column the wrapped subject lines start at. A space
+                    is dropped at a line break, so the mark begins the line
+                    flush with the text above it and keeps its gap when it sits
+                    beside the subject. */}
+                {dashName !== null ? " " : null}
                 {dashName !== null ? (
                   <span
                     className="tug-history-list-join-badge"
@@ -449,6 +479,7 @@ function CommitRow({
                     the body — tugcast strips them server-side — so this chip is
                     the only place the attribution reads, and it resolves rather
                     than merely printing an id. */}
+                {cited !== null ? " " : null}
                 {cited !== null ? (
                   <TugSessionCitation
                     citedId={cited.citedId}
@@ -491,6 +522,7 @@ function CommitRow({
           filterScope={filterScope}
         />
       ) : null}
+      {menu.contextMenu}
     </div>
   );
 }

@@ -115,18 +115,20 @@
 
 /* Join badge ([P09]) — a commit that landed as a dash join reads differently
    from a hand commit. */
-/* The citation chip naming the session that made the commit ([P10]). Same
-   left gap as the join badge, so the two marks after the subject read as one
-   trailing run whether a commit carries one of them or both. The chip brings
-   its own shape and its own ink, and its live dot is its only color; nothing
-   here may restate any of them ([L20]). */
+/* The citation chip naming the session that made the commit ([P10]). The chip
+   brings its own shape and its own ink, and its live dot is its only color;
+   nothing here may restate any of them ([L20]).
+
+   Neither mark carries a left margin: the gap before it is a space in the
+   subject's own inline flow (see the note at the mount). A margin would be
+   drawn again at the head of a wrapped line, indenting the mark past the
+   column its own subject lines start at — which is the misalignment a reader
+   sees as the chip floating right of the text it belongs to. */
 .tug-history-list-session-chip {
-  margin-left: 8px;
   vertical-align: baseline;
 }
 
 .tug-history-list-join-badge {
-  margin-left: 8px;
   padding: 1px 6px;
   border-radius: 8px;
   font-size: 0.625rem;
