@@ -87,6 +87,7 @@ import { ANNOTATION_CLASS } from "@/lib/annotator/types";
 import { pathRelativeTo } from "@/lib/relative-path";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
+import { TugListRow } from "@/components/tugways/tug-list-row";
 import {
   TugListView,
   type TugListViewCellProps,
@@ -388,16 +389,19 @@ const ICON_BY_KIND: Readonly<
 };
 
 /**
- * One path row — `[icon] [path]`. The path composes the shared
- * `MiddleEllipsisPath`: it fills the row, shows whole when it fits,
- * and collapses in the middle (filename pinned) only when genuinely
- * too wide.
+ * One path row — `[icon] [path] [ref]`.
  *
- * Sanctioned custom cell (not `TugListRow`) per the list-view house
- * rules (`tuglaws/list-view-usage.md`): a dense, monospace, middle-
- * ellipsis tool-output row, not a title/subtitle row. It holds no
- * selection; its only state affordance is a `:hover` background from
- * the shared `--tugx-block-row-hover-bg` token.
+ * The same `TugListRow` the commit receipt's file list is built from
+ * (`TugChangesList`'s compact row: `variant="flush" density="compact" mono`,
+ * a fixed-cell glyph leading, the path as content, an annotation trailing).
+ * A `/match` result and a commit's file list are the same kind of line, so
+ * they are the same row — the icon simply stands where the git status mark
+ * stands. Geometry, typeface, and density therefore cannot drift apart,
+ * because neither surface owns them.
+ *
+ * The path composes the shared `MiddleEllipsisPath`: it fills the row, shows
+ * whole when it fits, and collapses in the middle (filename pinned) only
+ * when genuinely too wide.
  */
 const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
   index,
@@ -409,9 +413,13 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
   // A relative path is left un-annotated rather than guessed at — the
   // annotation's contract is a path that opens.
   const annotated = path.startsWith("/");
+  const refNumber = dataSource.numbered ? dataSource.numberAt(index) : null;
 
   return (
-    <div
+    <TugListRow
+      variant="flush"
+      density="compact"
+      mono
       className={
         annotated ? `tugx-paths-row ${ANNOTATION_CLASS}` : "tugx-paths-row"
       }
@@ -420,19 +428,25 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
       data-path={annotated ? path : undefined}
       data-tug-focus={annotated ? "refuse" : undefined}
       data-no-activate={annotated ? "" : undefined}
+      leading={
+        <span className="tugx-paths-icon" aria-hidden="true">
+          <Icon size={12} />
+        </span>
+      }
+      trailing={
+        refNumber !== null ? (
+          <span className="tugx-paths-ref" data-slot="path-list-ref">
+            {refNumber}
+          </span>
+        ) : undefined
+      }
     >
-      <Icon size={14} aria-hidden="true" />
       <MiddleEllipsisPath
         path={pathRelativeTo(path, dataSource.relativeTo)}
         fullPath={path}
         findable={dataSource.findable}
       />
-      {dataSource.numbered ? (
-        <span className="tugx-paths-ref" data-slot="path-list-ref">
-          {dataSource.numberAt(index) ?? ""}
-        </span>
-      ) : null}
-    </div>
+    </TugListRow>
   );
 };
 

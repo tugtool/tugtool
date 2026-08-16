@@ -108,7 +108,7 @@
 .tugx-commit-file {
   display: flex;
   align-items: center;
-  gap: var(--tug-space-xs);
+  gap: var(--tugx-filerow-lead-gap);
   font-size: var(--tugx-filerow-name-size);
 }
 
@@ -117,8 +117,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 15px;
-  height: 15px;
+  width: var(--tugx-filerow-marker-size);
+  height: var(--tugx-filerow-marker-size);
   font-family: var(--tug-font-family-mono);
   font-size: var(--tug-font-size-3xs);
   font-weight: var(--tug-font-weight-semibold);

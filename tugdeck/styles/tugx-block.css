@@ -233,6 +233,17 @@ body {
   --tugx-filerow-inset:       var(--tug-space-md);
   --tugx-filerow-padding-y:   var(--tug-space-2xs);
   --tugx-filerow-gap:         var(--tug-space-sm);
+  /* Lead cell to name. Tighter than the general gap, because the two belong
+   * together: the marker says what kind of thing the name names. Every
+   * block that pairs a marker with a filename uses THIS one, so a `/match`
+   * row and a commit receipt's file row measure identically. */
+  --tugx-filerow-lead-gap:    var(--tug-space-xs);
+  /* The marker cell's box — the commit receipt's status letter, a `/match`
+   * row's file icon. A fixed box, not the glyph's own size: the glyphs are
+   * a letterform and an SVG and will never measure alike, so it is the
+   * COLUMN that has to agree. Both center their glyph inside it, and the
+   * name after it therefore starts at the same x in both blocks. */
+  --tugx-filerow-marker-size: 15px;
   /* Wide enough for a five-digit line number; the same column whether a
    * row fills it or holds it empty, so the text edge stays straight. */
   --tugx-filerow-lead-width:  3.5em;

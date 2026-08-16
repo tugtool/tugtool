@@ -58,7 +58,7 @@
 body {
   --tugx-search-file-padding:   var(--tugx-filerow-padding-y) var(--tugx-filerow-inset);
   --tugx-search-line-padding-y: var(--tugx-filerow-padding-y);
-  --tugx-search-line-padding-x: var(--tugx-filerow-inset);
+  --tugx-search-line-padding-x: var(--tug-space-sm);
   --tugx-search-row-gap:        var(--tugx-filerow-gap);
   --tugx-search-twist-color:    var(--tugx-filerow-meta-color);
   --tugx-search-file-color:     var(--tugx-filerow-text-color);
@@ -71,13 +71,21 @@ body {
    * shouted louder than the matches they were separating. */
   --tugx-search-file-border: var(--tugx-block-hairline);
 
-  /* Line-number column. It is the LEAD cell of the file-row grammar — a
-   * plain drained number holding a fixed width — not a gutter. An opaque
-   * gutter surface would have to reach the frame's edge to read as one,
-   * which is what forced this block's rows to carry no inset at all and
-   * put their text out of line with every other file list in the app. */
-  --tugx-search-lineno-text:      var(--tugx-filerow-meta-color);
-  --tugx-search-lineno-min-width: var(--tugx-filerow-lead-width);
+  /* Line-number gutter — the lead cell of the file-row grammar, and the one
+   * place in the family where that cell paints a surface of its own. It
+   * earns it: a run of matched source lines is dense, and the tinted column
+   * running unbroken down the group is what gives the eye a rail to read
+   * along. The same indicator surface every other line-numbered surface in
+   * the app uses (`TugCodeView`, the editor's own gutter); spelled out here
+   * rather than borrowed so the two can evolve apart [L20]. */
+  --tugx-search-gutter-bg:        var(--tug7-surface-indicator-primary-normal-plain-rest);
+  --tugx-search-gutter-border:    var(--tug7-element-indicator-border-normal-plain-rest);
+  --tugx-search-gutter-text:      var(--tug7-element-indicator-text-normal-plain-rest);
+  --tugx-search-gutter-padding-x: var(--tug-space-sm);
+  --tugx-search-gutter-min-width: var(--tugx-filerow-lead-width);
+  /* The gutter's own hover surface — the row's wash cannot show through an
+   * opaque column, so the column carries it too. */
+  --tugx-search-gutter-hover-bg: var(--tug7-surface-highlight-primary-normal-hover-rest);
 
   /* The producer's number for a row — the handle a user types back
    * (`/ref 5`). The trail cell: right-aligned at the row's inset and
@@ -272,31 +280,42 @@ body {
   background: var(--tugx-block-row-hover-bg);
 }
 
-/* One rendered line — the line number, the line text, then the ref number
- * (when the producer numbered the list). The row carries the family's
- * inset, so its text starts on the same left edge as a `/match` row and a
- * commit receipt's file list, and the whole row lights as one thing on
- * hover with no column left behind. */
+/* The gutter paints its own surface, so the row's wash cannot reach it —
+   it lifts to the same highlight itself, and the row lights as one thing. */
+/* @tug-renders-on: --tugx-search-gutter-bg */
+.tugx-search-match[data-tug-annotation="file-path"]:hover .tugx-search-lineno {
+  background: var(--tugx-search-gutter-hover-bg);
+}
+
+/* One rendered line — the line-number gutter, the line text, then the ref
+ * number (when the producer numbered the list). The row itself carries no
+ * padding: the gutter has to reach the block's left edge and run unbroken
+ * down the group, which it cannot do inside an inset. Each cell insets
+ * itself instead, so the row still ends on the family's right margin. */
 .tugx-search-line {
   display: flex;
-  gap: var(--tugx-search-row-gap);
-  padding: var(--tugx-search-line-padding-y) var(--tugx-search-line-padding-x);
+  gap: 0;
+  padding: 0;
   line-height: var(--tugx-block-code-line-height, 1.5);
 }
 
 /* The lead cell: where in the file. Fixed width so the text edge stays
  * straight down a group whether the numbers are two digits or five. */
-/* @tug-renders-on: --tugx-block-bg */
+/* @tug-renders-on: --tugx-search-gutter-bg */
 .tugx-search-lineno {
   flex: 0 0 auto;
-  min-width: var(--tugx-search-lineno-min-width);
+  min-width: var(--tugx-search-gutter-min-width);
+  padding: var(--tugx-search-line-padding-y) var(--tugx-search-gutter-padding-x);
   text-align: right;
-  color: var(--tugx-search-lineno-text);
+  background: var(--tugx-search-gutter-bg);
+  border-right: 1px solid var(--tugx-search-gutter-border);
+  color: var(--tugx-search-gutter-text);
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
 
-/* The trail cell: the address the user types back. Aligned to the row's
+/* The trail cell: the address the user types back, hanging off the same
+ * right inset the file header's match count does. Aligned to the row's
  * first line rather than centred, so it stays level with the line number
  * across from it when the matched line wraps. */
 /* @tug-renders-on: --tugx-block-bg */
@@ -304,6 +323,8 @@ body {
   flex: 0 0 auto;
   align-self: flex-start;
   min-width: var(--tugx-search-ref-min-width);
+  padding: var(--tugx-search-line-padding-y) var(--tugx-filerow-inset)
+           var(--tugx-search-line-padding-y) 0;
   text-align: right;
   color: var(--tugx-search-ref-color);
   font-variant-numeric: tabular-nums;
@@ -316,6 +337,7 @@ body {
 .tugx-search-linetext {
   flex: 1 1 auto;
   min-width: 0;
+  padding: var(--tugx-search-line-padding-y) var(--tugx-search-line-padding-x);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

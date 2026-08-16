@@ -53,12 +53,7 @@
 /* ---- Component-tier aliases — path-specific only [L17] ---- */
 
 body {
-  --tugx-paths-row-padding: var(--tugx-filerow-padding-y) var(--tugx-filerow-inset);
-  --tugx-paths-row-gap:     var(--tugx-filerow-gap);
-  /* Held clear between a path that runs the full width and the ref number
-   * it would otherwise butt against. */
-  --tugx-paths-row-end-gap: var(--tugx-filerow-gap);
-  --tugx-paths-icon-color:  var(--tugx-filerow-meta-color);
+  --tugx-paths-icon-color: var(--tugx-filerow-meta-color);
 
   /* The producer's number for a row, when it has one (the refs block). It
    * is metadata about the row, not the row — so it is drained like every
@@ -81,12 +76,9 @@ body {
    * and would capture sticky positioning from `.tugx-paths-header`. */
   overflow: clip;
   color: var(--tugx-filerow-text-color);
-  /* A list of paths is a list of names. It takes the sans face at the
-   * file-row size, the same as the commit receipt's file list — not the
-   * block's code face, which this block was inheriting only for living
-   * inside a code-ish frame. */
-  font-family: var(--tugx-filerow-name-font);
-  font-size: var(--tugx-filerow-name-size);
+  /* No type declared here on purpose. The rows are `TugListRow`s in `mono`
+   * — they bring the commit receipt's file-list typeface and size with them,
+   * and a face set on the frame would only fight it. */
 }
 
 /* Embedded variant — composed inside a host that already paints a
@@ -156,8 +148,8 @@ body {
  * (it is normally the scroll container, sized by a bounded parent);
  * here the block grows to its natural content height instead, so
  * `height` is overridden to `auto` and the host row-gap / padding
- * tokens are zeroed so path rows stack flush. The row's own
- * `--tugx-paths-row-padding` provides the inset. [L20]
+ * tokens are zeroed so path rows stack flush. `TugListRow`'s own
+ * `compact` padding provides the inset. [L20]
  */
 .tugx-paths .tug-list-view.tugx-paths-list {
   height: auto;
@@ -169,16 +161,11 @@ body {
 
 /* ---------- Row ---------- */
 
-/* One path row — `[icon] [path]`, compact and single-line. The
- * `MiddleEllipsisPath` `<code>` flexes to fill and middle-ellipsizes
- * only on genuine overflow. */
-.tugx-paths-row {
-  display: flex;
-  align-items: center;
-  gap: var(--tugx-paths-row-gap);
-  padding: var(--tugx-paths-row-padding);
-  line-height: var(--tugx-block-code-line-height, 1.4);
-}
+/* The row IS `TugListRow` (`flush` / `compact` / `mono`) — the same row the
+ * commit receipt's file list is built from. Its padding, gap, density, and
+ * typeface are the primitive's, deliberately not restated here: the whole
+ * point of sharing the row is that neither surface can drift. What follows
+ * tunes only what is genuinely this list's own. */
 
 /* The producer's row number — the handle a user types back (`/ref 5`).
  * The trail cell of the file-row grammar: right-aligned against the row's
@@ -191,8 +178,24 @@ body {
   min-width: var(--tugx-paths-ref-width);
   text-align: right;
   color: var(--tugx-paths-ref-color);
+  /* The same face and size the path beside it reads at — the row's mono,
+     which the trailing slot does not inherit on its own. */
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
   font-variant-numeric: tabular-nums;
   user-select: none;
+}
+
+/* `MiddleEllipsisPath` renders the path in a `<code>`, and a bare `<code>`
+   takes the BROWSER's monospace family at the browser's own size — not the
+   app's. That is why a `/match` path and the identical path in a commit
+   receipt (a plain span inheriting the row's mono) came out in two different
+   faces at two different sizes. The path is the row's text, so it inherits
+   the row's type instead of the UA's. */
+.tugx-paths-row .tug-path,
+.tugx-paths-row .tool-block-path {
+  font-family: inherit;
+  font-size: inherit;
 }
 
 /* The filename does not shrink in a results list. `TugPath` lets its tail
@@ -205,18 +208,6 @@ body {
   flex-shrink: 0;
 }
 
-/* Breathing room at the end of a truncating row. It has to be MARGIN: the
-   path clips at its own padding edge, so padding there would be painted over
-   by the very text it is meant to hold off the block's border. */
-.tugx-paths-row .tug-path {
-  margin-inline-end: var(--tugx-paths-row-end-gap);
-}
-
-/* @tug-renders-on: --tugx-block-bg */
-.tugx-paths-row:hover {
-  background: var(--tugx-block-row-hover-bg);
-}
-
 /* A row whose path the annotator marked opens on click, so the pointer
    says so. The row already lights on hover; the cursor is the only
    addition — a result list reads as a list, not as a wall of links. */
@@ -224,8 +215,21 @@ body {
   cursor: pointer;
 }
 
+/* The marker cell. It stands exactly where the commit receipt's git status
+   letter stands, so it takes that letter's cell verbatim: `TugStatusMark`'s
+   fixed `2ch` box in the row's own mono family, which is what makes the path
+   column start at the same offset on every row of either surface. */
 /* @tug-renders-on: --tugx-block-bg */
-.tugx-paths-row svg {
-  flex: 0 0 auto;
+.tugx-paths-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* `TugStatusMark`'s cell, restated: a `2ch` box in the row's mono at the
+     row's size. `ch` resolves against THIS element's font, so both must be
+     named or the box would be 2ch of the wrong face. */
+  inline-size: 2ch;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-xs);
   color: var(--tugx-paths-icon-color);
 }
