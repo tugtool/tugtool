@@ -444,3 +444,90 @@ No new state zones; the fields extend an existing store shape that already flows
 | Lane suite stable | Three consecutive 5/5 invocations |
 | Stat truthful | Large-resolution numstat test + review face on server counts |
 | Instance current | `just instances` + dash-log year/route probe |
+
+---
+
+## Addendum — handoff state, 2026-08-16 {#addendum}
+
+*Written after the plan closed, for a session picking this up cold with no conversation history. Everything below is state, not narrative: what landed, where it lives, what is still open, and what cost time to learn. Read this section first and the rest of the document only if you need a decision's rationale.*
+
+**Note on the stamp.** This addendum edits hashed content, so `tugutil plan status` now reports `stale` against round 1's `plan:a2f9b14a6797ddf9`. That is expected and harmless — the plan is finished and its ledger rows (which live outside the hash) are the record. Do not read `stale` here as "unreviewed": round 1 was a real review and its findings are in the [Review Record](#review-record).
+
+### Status: closed {#addendum-status}
+
+All six steps `done`. The dash backend campaign is **closed**. The gate that closed it: the five dash-lane app-test files green in one invocation, three consecutive runs, leaving no branch, worktree, `rr-cache` entry, or working-tree modification behind.
+
+### The commit trail {#addendum-commits}
+
+| Commit | What it did |
+|---|---|
+| `5ba5ce400` | The prior eleven-step program (clock, NUL bytes, projects dir, route-attributed landings, engine opt-out, worktree refusal, turn gate, refusal legibility, disabled look, conflict archaeology) |
+| `5280c8c3b` | This plan, drafted |
+| `c99692691` | Step 1 — fixture failures carry exit code, signal, and both streams; `gitRetry` shared |
+| `5e493d0b9` | Step 2 — the `app-test` recipe sweeps stranded `tugdash/at04??-*` fixture dashes |
+| `5e1014d4f` | Step 3 — real numstat counts on `FileResolution`; `countStat` deleted |
+| `ca8139a4b` | Step 4 — at0425/at0426 pin a small conflict subject; at0426 gets a per-run nonce |
+| `84b8d9982` | Step 6 — the brief rewritten to declare the campaign closed |
+
+Steps 5 and 6 carried no code commit of their own; step 5 was pure verification and step 6's only artifact was the brief.
+
+### The document map {#addendum-documents}
+
+What each surviving document is *for*, so nobody re-reads the wrong one:
+
+| Document | Role now |
+|---|---|
+| [`closing-dash-backend-issues-brief.md`](closing-dash-backend-issues-brief.md) | **The closure record, and the one to read first.** Carries the corrected mechanisms, the verification numbers for both programs, item 5's capture protocol, and the landmines |
+| [`closing-dash-backend-issues.md`](closing-dash-backend-issues.md) | The eleven-step program plan. Landed as `5ba5ce400`; historical |
+| `close-backend-campaign.md` (this) | The closing program. Landed across the four commits above; historical |
+| [`join-assessment.md`](join-assessment.md) | The origin post-mortem of the first real landing, since grown into the working brief for landing dashes. Still live — its doctrine section is the program the UI work inherits |
+| [`dash-ui-report.md`](dash-ui-report.md) | **The next round's jumping-off point.** Inventories where dash identity surfaces today, names two badge defects, and proposes folding dash identity into the session identity grammar the way [D123] settled session names |
+| [`base-motion-replay-plan.md`](base-motion-replay-plan.md) | Base-motion replay. 10/10 steps `done`; stamp reads `stale` because it finished, not because it drifted |
+| `archive/dash-integration-*.md` | The five-phase dash integration program plus its brief and plan. Complete and archived |
+| [`dash-notes.md`](dash-notes.md) | **Superseded.** It proposes folding `/vet` into `/devise`; that shipped as `plan-devise` + `plan-review`, with the review auto-running on Opus. Nothing to do here |
+
+### What changed in the code {#addendum-code}
+
+The durable surface a next session will touch:
+
+- **`tugrust/crates/tugdash-core/src/resolve.rs`** — `FileResolution` carries `added`/`removed` (`Option<u32>`, `skip_serializing_if`). `resolution_diff` runs `git diff --no-color --numstat --patch` and returns `ResolutionDiff { text, added, removed }` from **one** subprocess, so the counts and the text cannot disagree. `parse_numstat` maps `-` to `None` for binary paths and refuses a non-numstat first line. **The emptiness check runs on the patch body, after the numstat line is split off** — the raw output always carries a numstat line, and the frontend drops resolutions whose `diff` is `null`. Ladder rungs and their order are untouched.
+- **`tugdeck/src/lib/changeset-join-store.ts`** — `ResolvedFile` gained `added`/`removed` (`number | null`), read defensively. No new store, no new subscription: they ride the existing `useSyncExternalStore` face ([L02]).
+- **`.../session-changes/session-changes-dash-landing.tsx`** — `resolutionDiffPayload` uses the server counts; `countStat` is **deleted**. Do not reintroduce a client-side count over `unified` — that text is capped.
+- **`tests/app-test/dash-fixture.ts`** — `transientGitFailure` (closed literal set), `gitRetry` (exported, replaced three private copies), `smallConflictSubject`, and a `tugutil()` throw that names exit code, signal, stderr, and the stdout tail.
+- **`justfile`** — the `app-test` clean-slate preamble releases leftover `tugdash/at04??-*` dashes, hard-resetting each fixture worktree first.
+
+### Facts that cost time, and would cost it again {#addendum-hard-won}
+
+- **`dash release` hands a worktree's uncommitted files back into the base checkout.** `ops::release_in` → `working_set_hand_back` / `apply_hand_back`. Deliberate — a teardown must not destroy work typed in a dash — but it means releasing a dirty fixture worktree writes fixture bytes into the developer's checkout as a modification nobody made. Confirmed by deliberate probe, not inferred. Reset before releasing anything you did not intend to keep. `HandBack.deletions` is never handed back, so deletions were always safe.
+- **A stat derived from a capped view lies exactly when it matters.** The `+0 −395` incident: the diff was never wrong, only the number printed beside it. The ladder was correct throughout.
+- **rerere is rung 2; the merge driver is rung 4.** A cached resolution short-circuits ahead of the driver. Any fixture that pins its conflict text must carry a per-run nonce, or a stale `rr-cache` entry from a killed run replays and the rung assertion fails. at0426 does; `DRIVER_BODY` deliberately does not, because it is asserted verbatim.
+- **The app-test runner is sequential**, behind a machine-wide port gate. There is no test concurrency to serialize. Cross-file interference comes from *stranded state*, not races.
+- **`Bun.spawnSync` pipes both streams by default.** A blank failure means the process died before reaching its own error path.
+- **This plan ran on `main`, not on a dash** — the `app-test` recipe refuses to run from a linked worktree because every `tugutil dash` verb resolves the *main* repo root, so lane-fixture dashes made from a worktree are invisible to the app under test. `TUG_APPTEST_ALLOW_WORKTREE=1` does not help; the lane fixtures *are* the refusal's cause. Any future work whose checkpoint is a dash-lane app-test has the same constraint.
+
+### What is open {#addendum-open}
+
+Nothing blocks the UI campaign. In rough order of when it will matter:
+
+1. **Item 5 — the Join sheet, caught live.** A tripwire, not a task. The capture protocol is in the brief's `#join-sheet`. Resist building a fix before it is caught: the three candidate shapes (refusing / stale / covered lane) have three different fixes and the evidence still cannot pick one.
+2. **Item 7 — the deferred lifecycle work.** Queue-a-landing-for-turn-end; a click affordance for `dash replay`; post-rebase checkpoint runs. Pull-driven.
+3. **Head+tail elision for capped review diffs**, so a huge resolution still shows its additions on screen. The stat is truthful without it and the pinned fixture no longer depends on it, so this is now cosmetic.
+4. **The join's doubled subject prefix** — `5ba5ce400`'s message reads `tugdash(close-backend): tugdash(backend): …`. Whoever composes the squash message prefixes a draft subject that already has a scope.
+5. **at0405's click noise.** Every lane run logs `click on … dash-lane-fold did not land (attempt 1)`, twice in some runs. The file's own retry covers it and it has never failed — but a real click is missing its target, and if that retry ever stops covering it the diagnostic will already have been normalized as background noise.
+
+### Verifying from cold {#addendum-verify}
+
+```
+TUG_APPTEST_ASSUME=background just app-test \
+  tests/app-test/at0405-changes-dash-lane.test.ts \
+  tests/app-test/at0417-join-mode.test.ts \
+  tests/app-test/at0418-join-outcomes.test.ts \
+  tests/app-test/at0425-dash-conflicted-landing.test.ts \
+  tests/app-test/at0426-dash-resolution-review.test.ts
+```
+
+Expect 5/5 files, 6/6 tests. Run the recipe **bare** — never pipe it into a filter; the pipeline's exit status becomes the filter's, so a green run reads as a silent failure. Use `TUG_APPTEST_JSON=<path>` if you need a result to compute over. A Rust change needs `just build-app` before any app-test can see it.
+
+Between runs, the hygiene that matters (all four were stable across the closing gate): no `tugdash/*` branch, `rr-cache` entry count unchanged, projects dir at 1 entry, and no working-tree modification the run introduced.
+
+Also green at close: `cargo nextest run` workspace-wide (2816 passed, 6 skipped), and tugdeck `tsc --noEmit` / `bun test` (6864 passed) / `vite build`.
