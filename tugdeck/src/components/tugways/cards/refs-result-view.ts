@@ -21,6 +21,7 @@
  */
 
 import type { RefsResultMessage, TextRef } from "@/lib/code-session-store/types";
+import { pathRelativeTo } from "@/lib/relative-path";
 import type { PathListData } from "../body-kinds/path-list-block";
 import type {
   SearchResultData,
@@ -96,21 +97,24 @@ export function refsToSearchResultData(
 }
 
 /**
- * The absolute file paths the block renders as its own rows, in DOM order —
- * one per path row for a `match` run, one per file group for a `search` run.
+ * The file paths the block renders as its own rows, in DOM order and AS DRAWN
+ * — one per path row for a `match` run, one per file group for a `search` run.
  *
  * This is the projection half of `data-tugx-findable`: the body kinds mark
  * exactly these paths, and `transcript-search-index` projects exactly this
- * list, so the k-th index match in a refs row is the k-th DOM match. Match
- * LINES are not included, because whether a match row exists depends on the
- * search block's own per-file collapse set — state the index cannot see.
+ * list, so the k-th index match in a refs row is the k-th DOM match. That is
+ * why these are the workspace-relative strings the rows show rather than the
+ * absolute paths the payloads carry — Find searches what the reader sees.
+ * Match LINES are not included, because whether a match row exists depends on
+ * the search block's own per-file collapse set — state the index cannot see.
  */
 export function refsFindablePaths(message: RefsResultMessage): string[] {
+  const shown = (path: string): string => pathRelativeTo(path, message.root);
   if (message.opKind === "match") {
-    return refsToPathListData(message.root, message.refs).paths.slice();
+    return refsToPathListData(message.root, message.refs).paths.map(shown);
   }
-  return refsToSearchResultData(message.root, message.refs).files.map(
-    (file) => file.path,
+  return refsToSearchResultData(message.root, message.refs).files.map((file) =>
+    shown(file.path),
   );
 }
 

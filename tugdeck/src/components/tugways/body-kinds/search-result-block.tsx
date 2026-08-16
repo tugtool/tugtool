@@ -81,6 +81,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
 import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import { pathRelativeTo } from "@/lib/relative-path";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import {
   TugListView,
@@ -212,6 +213,18 @@ export interface SearchResultBlockProps {
    * @default false
    */
   findable?: boolean;
+
+  /**
+   * Draw file-header paths RELATIVE to this root — display only. A search
+   * over one workspace repeats that workspace's prefix on every group, where
+   * it says nothing and costs the width the filename needs. Match rows keep
+   * the absolute path in their annotation payload ([P15]), and the tooltip
+   * still shows it whole.
+   *
+   * A host that sets this and PROJECTS these headers into a search index must
+   * project the same shortened strings, or the DOM and the index disagree.
+   */
+  relativeTo?: string;
 
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
@@ -422,6 +435,8 @@ class SearchResultDataSource implements TugListViewDataSource {
     readonly openable: boolean,
     /** Whether file-header paths are marked for transcript Find (opt-in). */
     readonly findable: boolean,
+    /** Root to draw file headers relative to — display only. */
+    readonly relativeTo: string,
     /**
      * Whether ANY match carries a `refNumber`. Derived once, because the
      * number column has to hold its width on context lines too — a column
@@ -494,7 +509,11 @@ const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
       <span className="tugx-search-twist" aria-hidden="true">
         {row.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </span>
-      <MiddleEllipsisPath path={row.path} findable={dataSource.findable} />
+      <MiddleEllipsisPath
+        path={pathRelativeTo(row.path, dataSource.relativeTo)}
+        fullPath={row.path}
+        findable={dataSource.findable}
+      />
       <span className="tugx-search-file-count" data-slot="search-result-file-count">
         {composeMatchCountLabel(row.matchCount)}
       </span>
@@ -615,6 +634,7 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   className,
   openable = false,
   findable = false,
+  relativeTo = "",
   componentStatePreservationKey,
 }) => {
   // ---- Collapse state — logical UI state, React-owned per [L06] ------
@@ -659,9 +679,10 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
         handleToggleFile,
         openable,
         findable,
+        relativeTo,
         numbered,
       ),
-    [rows, handleToggleFile, openable, findable, numbered],
+    [rows, handleToggleFile, openable, findable, relativeTo, numbered],
   );
 
   // ---- Copy source ---------------------------------------------------

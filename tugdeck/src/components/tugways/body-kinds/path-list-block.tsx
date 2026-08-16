@@ -84,6 +84,7 @@ import {
 
 import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
 import { ANNOTATION_CLASS } from "@/lib/annotator/types";
+import { pathRelativeTo } from "@/lib/relative-path";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import {
@@ -152,6 +153,20 @@ export interface PathListBlockProps {
 
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
+
+  /**
+   * Draw each row's path RELATIVE to this root — display only. Every row of a
+   * workspace search repeats the workspace's own prefix, which says nothing
+   * and costs the width the filename needs. The annotation payload keeps the
+   * absolute path ([P15]), the tooltip still shows it whole, and a path from
+   * outside the root is drawn unchanged.
+   *
+   * A host that sets this and also PROJECTS these rows into a search index
+   * must project the same shortened strings — the DOM and the index have to
+   * agree on the text ([L20] is about tokens; this is the same discipline for
+   * content).
+   */
+  relativeTo?: string;
 
   /**
    * Opt each row's path into transcript Find (`data-tugx-findable`).
@@ -315,6 +330,8 @@ class PathListDataSource implements TugListViewDataSource {
      * Empty when the producer numbered nothing; the column is then absent.
      */
     private readonly numberByPath: ReadonlyMap<string, number>,
+    /** Root to draw rows relative to — display only; empty means absolute. */
+    readonly relativeTo: string,
   ) {}
 
   /** Whether this list is numbered at all — the column's width is shared. */
@@ -410,7 +427,11 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
         </span>
       ) : null}
       <Icon size={14} aria-hidden="true" />
-      <MiddleEllipsisPath path={path} findable={dataSource.findable} />
+      <MiddleEllipsisPath
+        path={pathRelativeTo(path, dataSource.relativeTo)}
+        fullPath={path}
+        findable={dataSource.findable}
+      />
     </div>
   );
 };
@@ -442,6 +463,7 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   embedded = false,
   className,
   findable = false,
+  relativeTo = "",
   sortable = true,
   componentStatePreservationKey,
 }) => {
@@ -483,8 +505,9 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
     return map;
   }, [rawPaths, rawNumbers]);
   const dataSource = React.useMemo(
-    () => new PathListDataSource(displayPaths, findable, numberByPath),
-    [displayPaths, findable, numberByPath],
+    () =>
+      new PathListDataSource(displayPaths, findable, numberByPath, relativeTo),
+    [displayPaths, findable, numberByPath, relativeTo],
   );
 
   // ---- Copy source ---------------------------------------------------

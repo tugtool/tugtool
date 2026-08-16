@@ -187,6 +187,9 @@ export function RefsResultBlock({
         data={refsToPathListData(message.root, message.refs)}
         embedded
         findable
+        // Every ref of a run sits under the same root, so the root is noise on
+        // every row — the leaf is what the reader is looking for.
+        relativeTo={message.root}
         // A refs list is numbered by position ([P12]): `/ref 5` is the fifth
         // row, so alphabetizing it would make the number on screen a lie.
         sortable={false}
@@ -199,6 +202,7 @@ export function RefsResultBlock({
         embedded
         openable
         findable
+        relativeTo={message.root}
         className="refs-result-list"
         componentStatePreservationKey={componentStatePreservationKey}
       />

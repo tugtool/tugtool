@@ -65,6 +65,14 @@ export interface MiddleEllipsisPathProps {
   /** The file path to render. */
   path: string;
   /**
+   * The whole path, when what is rendered is a shortened form of it (a
+   * workspace-relative row). The tooltip shows this, so the full location is
+   * one hover away even where the column shows only the part that varies.
+   *
+   * @default path
+   */
+  fullPath?: string;
+  /**
    * Stamps `data-tugx-findable` on the path element, opting it into
    * transcript Find. Set by the tool-call header that composes it (the
    * fetched URL), whose text `tool-header-projection` projects. Off by
@@ -83,11 +91,12 @@ export interface MiddleEllipsisPathProps {
  */
 export function MiddleEllipsisPath({
   path,
+  fullPath,
   findable = false,
 }: MiddleEllipsisPathProps): React.ReactElement {
   return (
     <TugTooltip
-      content={path}
+      content={fullPath ?? path}
       side="bottom"
       suppressOpen={pathTooltipSuppressed}
     >

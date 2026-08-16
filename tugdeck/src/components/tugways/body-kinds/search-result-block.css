@@ -201,7 +201,9 @@ body {
   background: var(--tugx-search-file-bg);
   border-top: 1px solid var(--tugx-search-file-border);
   border-bottom: 1px solid var(--tugx-search-file-border);
-  font-weight: var(--tug-font-weight-semibold);
+  /* No weight of its own: the band IS the demarcation, and a bolded path
+   * here would read differently from the same path in a `/match` row. One
+   * treatment for a filename across both result kinds. */
   cursor: pointer;
 }
 

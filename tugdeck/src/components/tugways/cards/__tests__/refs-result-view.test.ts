@@ -130,12 +130,22 @@ describe("refsToSearchResultData — a search run's groups", () => {
 });
 
 describe("refsFindablePaths — the projection half of transcript Find", () => {
-  it("gives one path per row for a match run", () => {
+  it("gives one path per row for a match run, as the row DRAWS it", () => {
+    // Workspace-relative, because that is the text on screen — Find searches
+    // what the reader sees, not the payload behind it.
     const msg = message({
       opKind: "match",
       refs: [ref({ index: 1, path: "a.ts" }), ref({ index: 2, path: "b.ts" })],
     });
-    expect(refsFindablePaths(msg)).toEqual(["/proj/a.ts", "/proj/b.ts"]);
+    expect(refsFindablePaths(msg)).toEqual(["a.ts", "b.ts"]);
+  });
+
+  it("keeps a path from outside the root whole", () => {
+    const msg = message({
+      opKind: "match",
+      refs: [ref({ index: 1, path: "/elsewhere/a.ts" })],
+    });
+    expect(refsFindablePaths(msg)).toEqual(["/elsewhere/a.ts"]);
   });
 
   it("gives one path per FILE GROUP for a search run, not one per match", () => {
@@ -148,7 +158,7 @@ describe("refsFindablePaths — the projection half of transcript Find", () => {
         ref({ index: 2, path: "a.ts", line: 7, preview: "foo" }),
       ],
     });
-    expect(refsFindablePaths(msg)).toEqual(["/proj/a.ts"]);
+    expect(refsFindablePaths(msg)).toEqual(["a.ts"]);
   });
 });
 
