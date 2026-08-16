@@ -59,6 +59,7 @@ const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 240_000;
 
 const SID = "at0425-session";
+const FEED_CODE_OUTPUT = 0x40;
 const CARD = '[data-card-id="A"]';
 const EDITOR = `${CARD} [data-slot="tug-text-editor"] .cm-content`;
 const TOOLBAR = `${CARD} .tug-prompt-entry-toolbar`;
@@ -74,7 +75,10 @@ const LEAVE = `${ROW} [data-slot="session-changes-dash-leave"]`;
 const OUTCOME = `${ROW} [data-slot="session-changes-dash-landing-outcome"]`;
 const RESOLVE = `${ROW} [data-slot="session-changes-dash-resolve"]`;
 const JOIN = `${ROW} [data-slot="session-changes-dash-join"]`;
+const RELEASE = `${ROW} [data-slot="session-changes-dash-release"]`;
+const REFUSALS = `${ROW} [data-slot="session-changes-dash-landing-refusals"]`;
 const CONFLICTS = `${ROW} [data-slot="session-changes-dash-landing-conflicts"]`;
+const ARCHAEOLOGY = `${ROW} [data-slot="session-changes-dash-landing-archaeology"]`;
 const PARTIAL = `${ROW} [data-slot="session-changes-dash-landing-partial"]`;
 
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
@@ -83,6 +87,8 @@ const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 
 /** The base-tip file the dash's round deletes — the conflict's subject. */
 let conflictFile = "";
+/** That base commit's subject — what the archaeology must name under the path. */
+let baseSubject = "";
 
 /**
  * `git`, in a directory, throwing on failure — retrying past an `index.lock`.
@@ -129,6 +135,7 @@ beforeAll(() => {
   if (tipWithModification === "" || conflictFile === "") {
     throw new Error("at0425: no modified file found on main's first-parent history");
   }
+  baseSubject = git(PROJECT_DIR, "log", "-1", "--pretty=%s", tipWithModification).trim();
 
   // The rewind and the deletion happen in the dash's own worktree — the
   // developer's checkout and the base branch are never touched.
@@ -257,6 +264,15 @@ describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its co
             `(document.querySelector(${JSON.stringify(CONFLICTS)})?.textContent || "")`,
           ),
         ).toContain(conflictFile);
+        // …and what the base did to it. The fixture rewinds the dash to the
+        // parent of the newest base commit that MODIFIED this file, so that
+        // commit is on the base side of the merge-base by construction and its
+        // subject must appear under the path.
+        const archaeology = await app.evalJS<string>(
+          `(document.querySelector(${JSON.stringify(ARCHAEOLOGY)})?.textContent || "")`,
+        );
+        expect(archaeology).toContain(baseSubject);
+        note(`archaeology names the base commit: ${baseSubject}`);
 
         // ── Join: refused, and the refusal has words ──────────────────────
         const joinState = await app.evalJS<{
@@ -274,13 +290,35 @@ describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its co
           })()`,
         );
         expect(joinState.disabled).toBe(true);
-        expect(joinState.title).toBe("Resolve the conflicts first");
-        // Not asserted, recorded: pointer-events on the disabled button. While
-        // it is "none", the title above can never show — the reason exists and
-        // is unreachable, which is the tactical defect this file documents.
+        // The reason arrives as face text, and ONLY as face text. A disabled
+        // button takes no pointer events (recorded below), so the `title` this
+        // file used to assert could never be read by anyone — carrying one was
+        // the defect, not the fix.
+        expect(joinState.title).toBe("");
         note(`disabled Join pointer-events: ${joinState.pointerEvents}`);
+        expect(
+          await app.evalJS<string>(
+            `(document.querySelector(${JSON.stringify(REFUSALS)})?.textContent || "")`,
+          ),
+        ).toContain("Resolve the conflicts first");
 
-        // ── Resolve: the click must visibly register ──────────────────────
+        // ── Resolve: ungated by the turn, and the click must register ─────
+        // Hold a real turn open across the whole Resolve gesture. Resolving
+        // builds a candidate off to the side and touches no checkout, so the
+        // agent being mid-edit is no reason to refuse it — and refusing it
+        // locked a conflicted dash's only escape hatch behind the turn. The
+        // turn is driven through the real store wire path (the at0099 send +
+        // ingestFrame pattern), not simulated on the component.
+        //
+        // Release is the witness that the turn really is in flight: it keeps
+        // the gate, because it destroys the dash. So mid-turn the two controls
+        // must disagree — Release disabled, Resolve live — which is the whole
+        // of the narrowing, read off the face.
+        await app.driveSession("A", { op: "send", text: "hold the turn open" });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(RELEASE)})?.disabled === true`,
+          { timeoutMs: 8000 },
+        );
         expect(
           await app.evalJS<boolean>(
             `(function(){
@@ -310,7 +348,19 @@ describe.skipIf(!SHOULD_RUN)("AT0425: the conflicted landing face answers its co
           `document.querySelector(${JSON.stringify(RESOLVE)}) === null`,
           { timeoutMs: 5000 },
         );
-        note("Resolve click registered: the offer face left");
+        note("Resolve click registered mid-turn: the offer face left");
+
+        // Close the turn — the rest of the file is an idle-state story, and
+        // Adopt below would otherwise be read against a live turn.
+        await app.driveSession("A", {
+          op: "ingestFrame",
+          feedId: FEED_CODE_OUTPUT,
+          decoded: { tug_session_id: SID, type: "turn_complete", msg_id: "m1", result: "success" },
+        });
+        await app.waitForCondition<boolean>(
+          `document.querySelector(${JSON.stringify(RELEASE)})?.disabled === false`,
+          { timeoutMs: 8000 },
+        );
 
         // The ladder's terminal frame must land, and for a delete/modify it must
         // be `partial` naming the file. No rung may claim a non-content conflict:

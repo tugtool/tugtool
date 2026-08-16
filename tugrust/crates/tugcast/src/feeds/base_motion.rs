@@ -65,6 +65,14 @@ pub struct DashInputs {
     /// Whether automatic motion is enabled for this repository
     /// (`git config tugdash.autoreplay`, default true).
     pub autoreplay: bool,
+    /// Whether this *dash* has opted out
+    /// (`git config branch.tugdash/<name>.tugautoreplay false`, default in).
+    ///
+    /// Every tugcast process watching a repository runs an engine, and each one
+    /// treats every dash it can see as its own to keep current — which is how a
+    /// release instance came to replay an app-test's fixture dash mid-test. A
+    /// dash that nobody else should touch says so on its own branch config.
+    pub dash_autoreplay: bool,
     /// Commits the base has gained past this dash's merge-base.
     pub base_ahead: u32,
     pub worktree_dirty: bool,
@@ -115,6 +123,9 @@ pub enum Decision {
 pub fn decide_for_dash(inputs: &DashInputs) -> Decision {
     if !inputs.autoreplay {
         return Decision::Skip("autoreplay-off");
+    }
+    if !inputs.dash_autoreplay {
+        return Decision::Skip("autoreplay-off (dash)");
     }
     if inputs.in_flight {
         return Decision::Skip("in-flight");
@@ -466,6 +477,7 @@ async fn evaluate_workspace(
             .map(|detail| DashReading {
                 base_tip: rev_parse(&dir, &detail.base),
                 join_journal: tugdash_core::join_in_flight(&dir, &detail.name),
+                dash_autoreplay: read_dash_autoreplay(&dir, &detail.name),
                 detail,
             })
             .collect();
@@ -498,6 +510,7 @@ async fn evaluate_workspace(
 
         let inputs = DashInputs {
             autoreplay,
+            dash_autoreplay: reading.dash_autoreplay,
             base_ahead: detail.base_ahead,
             worktree_dirty: detail.worktree_dirty,
             join_journal: reading.join_journal,
@@ -567,6 +580,7 @@ struct DashReading {
     detail: tugdash_core::DashDetail,
     base_tip: String,
     join_journal: bool,
+    dash_autoreplay: bool,
 }
 
 /// Everything one replay needs, gathered on the async side so the spawned work
@@ -905,6 +919,23 @@ async fn bound_sessions(
     out
 }
 
+/// `git config --bool branch.tugdash/<name>.tugautoreplay` for one dash,
+/// defaulting to on. Read per dash inside the same blocking hop that assembles
+/// the rest of its reading, beside the `branch.tugdash/<name>.{tugbase,tugplan}`
+/// keys the dash already keeps there.
+fn read_dash_autoreplay(repo_dir: &Path, name: &str) -> bool {
+    let key = format!("branch.tugdash/{name}.tugautoreplay");
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_dir)
+        .args(["config", "--bool", &key])
+        .output();
+    match out {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim() != "false",
+        _ => true,
+    }
+}
+
 /// `git config --bool tugdash.autoreplay`, defaulting to on ([P08]).
 fn read_autoreplay(repo_dir: &Path) -> bool {
     let out = std::process::Command::new("git")
@@ -945,6 +976,7 @@ mod tests {
     fn behind() -> DashInputs {
         DashInputs {
             autoreplay: true,
+            dash_autoreplay: true,
             base_ahead: 2,
             worktree_dirty: false,
             join_journal: false,
@@ -993,6 +1025,37 @@ mod tests {
         assert_eq!(
             decide_for_dash(&inputs),
             Decision::ReplayThenNotify("newest".to_string())
+        );
+    }
+
+    #[test]
+    fn a_dash_that_opted_out_is_left_alone_however_far_behind_it_is() {
+        // Every condition below would otherwise argue for acting: the dash is
+        // behind, clean, idle, and mid-plan with a session to tell.
+        let inputs = DashInputs {
+            dash_autoreplay: false,
+            base_ahead: 40,
+            mid_plan: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(
+            decide_for_dash(&inputs),
+            Decision::Skip("autoreplay-off (dash)")
+        );
+    }
+
+    #[test]
+    fn an_opted_out_conflicted_dash_is_not_even_marked() {
+        let inputs = DashInputs {
+            dash_autoreplay: false,
+            conflicted: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(
+            decide_for_dash(&inputs),
+            Decision::Skip("autoreplay-off (dash)")
         );
     }
 

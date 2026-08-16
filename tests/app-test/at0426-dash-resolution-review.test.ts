@@ -70,6 +70,7 @@ const ROW = `${LANE} [data-slot="session-changes-dash-row"][data-dash="${DASH}"]
 const OUTCOME = `${ROW} [data-slot="session-changes-dash-landing-outcome"]`;
 const RESOLVE = `${ROW} [data-slot="session-changes-dash-resolve"]`;
 const JOIN = `${ROW} [data-slot="session-changes-dash-join"]`;
+const REFUSALS = `${ROW} [data-slot="session-changes-dash-landing-refusals"]`;
 const REVIEW = `${ROW} [data-slot="session-changes-dash-landing-review"]`;
 const REVIEWED = `${ROW} [data-slot="session-changes-dash-landing-reviewed"]`;
 
@@ -238,11 +239,16 @@ async function revealAndClick(app: App, selector: string): Promise<void> {
   await app.nativeClickAtElement(selector);
 }
 
-/** The Join button's live disabled state and the sentence it carries. */
+/**
+ * The Join button's live disabled state and the sentence the face carries for
+ * it. The reason is face text, never a `title`: a disabled button takes no
+ * pointer events, so a tooltip on one is unreachable by construction.
+ */
 const JOIN_STATE = `(function(){
   var b = document.querySelector(${JSON.stringify(JOIN)});
   if (b === null) return null;
-  return { disabled: b.disabled === true, title: b.getAttribute("title") || "" };
+  var r = document.querySelector(${JSON.stringify(REFUSALS)});
+  return { disabled: b.disabled === true, reason: (r ? r.textContent : "") || "" };
 })()`;
 
 describe.skipIf(!SHOULD_RUN)("AT0426: the ladder's candidate is gated on a review", () => {
@@ -300,9 +306,9 @@ describe.skipIf(!SHOULD_RUN)("AT0426: the ladder's candidate is gated on a revie
         note(`outcome: conflicted over ${conflictFile}`);
 
         // Join refuses on the conflict, before any of this is about the review.
-        const preResolve = await app.evalJS<{ disabled: boolean; title: string }>(JOIN_STATE);
+        const preResolve = await app.evalJS<{ disabled: boolean; reason: string }>(JOIN_STATE);
         expect(preResolve.disabled).toBe(true);
-        expect(preResolve.title).toBe("Resolve the conflicts first");
+        expect(preResolve.reason).toContain("Resolve the conflicts first");
 
         // ── Resolve: the driver rung builds a candidate ───────────────────
         // The row's controls settle as the conflict list renders under them;
@@ -347,10 +353,10 @@ describe.skipIf(!SHOULD_RUN)("AT0426: the ladder's candidate is gated on a revie
         ).toBe("clean");
 
         // ── The gate: a landable candidate, and Join still refuses ────────
-        const refused = await app.evalJS<{ disabled: boolean; title: string }>(JOIN_STATE);
+        const refused = await app.evalJS<{ disabled: boolean; reason: string }>(JOIN_STATE);
         expect(refused.disabled).toBe(true);
-        expect(refused.title).toBe("Review what the ladder resolved first");
-        note(`Join refused over a resolved candidate: ${refused.title}`);
+        expect(refused.reason).toContain("Review what the ladder resolved first");
+        note(`Join refused over a resolved candidate: ${refused.reason}`);
 
         // What the review puts on screen: the resolved file, and the body the
         // driver actually chose. This is the artifact the incident lacked.
@@ -372,7 +378,7 @@ describe.skipIf(!SHOULD_RUN)("AT0426: the ladder's candidate is gated on a revie
           `document.querySelector(${JSON.stringify(REVIEW)})?.getAttribute("data-reviewed") === "true"`,
           { timeoutMs: 8000 },
         );
-        const armed = await app.evalJS<{ disabled: boolean; title: string }>(JOIN_STATE);
+        const armed = await app.evalJS<{ disabled: boolean; reason: string }>(JOIN_STATE);
         expect(armed.disabled).toBe(false);
         note("Reviewed armed Join — the candidate is landable once read");
 

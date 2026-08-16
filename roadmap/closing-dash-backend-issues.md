@@ -183,7 +183,7 @@ Everything this plan fixes was established live on 2026-08-15/16; the full narra
 | Lane landing face | `tugdeck/src/components/tugways/cards/session-changes/session-changes-dash-landing.tsx` — props include `turnInProgress`, `joinDisabledReason`; disabled+title pattern on Resolve/Join/Release/Adopt |
 | Gate derivation | `tugdeck/src/lib/join-mode-controller.ts` `evaluateJoinLandGate`, `joinDisabledReason` |
 | Button chrome | `tugdeck/src/components/tugways/internal/tug-button.css` (`:disabled` → `pointer-events: none`, opacity via `--tugx-control-disabled-opacity`) |
-| NUL byte | `tugdeck/src/lib/changeset-verb-store.ts`, `verbKey` — a literal `0x00` in a template literal where ` ` belongs |
+| NUL byte | `tugdeck/src/lib/changeset-verb-store.ts`, `verbKey` — a literal `0x00` in a template literal where `\x00` belongs |
 
 ---
 
@@ -245,17 +245,17 @@ The deck mirror does **not** live in `changeset-types.ts` — a grep for `confli
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The clock tells the truth | pending | — |
-| #step-2 | No NUL bytes in source | pending | — |
-| #step-3 | The projects dir stays clean | pending | — |
-| #step-4 | Every landing leaves a receipt | pending | — |
-| #step-5 | The engine keeps its hands off opted-out dashes | pending | — |
-| #step-6 | The corpus refuses the wrong environment | pending | — |
-| #step-7 | The turn gate narrows to the two landing acts | pending | — |
-| #step-8 | A refusal says why, in the face | pending | — |
-| #step-9 | Disabled looks disabled | pending | — |
-| #step-10 | A conflict names its history | pending | — |
-| #step-11 | Integration checkpoint | pending | — |
+| #step-1 | The clock tells the truth | done | `b2a89afe1` |
+| #step-2 | No NUL bytes in source | done | `35ed34988` |
+| #step-3 | The projects dir stays clean | done | `1b02591db` |
+| #step-4 | Every landing leaves a receipt | done | `8a054b15b` |
+| #step-5 | The engine keeps its hands off opted-out dashes | done | `117ecd5c8` |
+| #step-6 | The corpus refuses the wrong environment | done | `b8abed084` |
+| #step-7 | The turn gate narrows to the two landing acts | done | `f0aacb540` |
+| #step-8 | A refusal says why, in the face | done | `36faf8b8a` |
+| #step-9 | Disabled looks disabled | done | `dbf87700b` |
+| #step-10 | A conflict names its history | done | `d9bbc87ed` |
+| #step-11 | Integration checkpoint | done | `3b1338f18` |
 
 #### Step 1: The clock tells the truth {#step-1}
 
@@ -288,7 +288,7 @@ The deck mirror does **not** live in `changeset-types.ts` — a grep for `confli
 **References:** (#seam-map), [P06] is unaffected — this is pure hygiene
 
 **Artifacts:**
-- `verbKey` in `tugdeck/src/lib/changeset-verb-store.ts` uses `" "` instead of a literal byte.
+- `verbKey` in `tugdeck/src/lib/changeset-verb-store.ts` uses `"\x00"` instead of a literal byte.
 
 **Tasks:**
 - [ ] Replace the raw byte (offset ~8099, inside the template literal `` `${projectDir}<NUL>${dash}` ``) with the escape. Use `tugutil file edit` or a byte-safe editor path — `Edit` on a "binary" file may refuse.

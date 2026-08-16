@@ -291,6 +291,81 @@
   opacity: var(--tugx-control-disabled-opacity);
 }
 
+/* A disabled filled button drops its fill.
+   Opacity alone is not enough on a filled control: dimmed, a filled button
+   still reads as the strongest thing in its row, and a cluster of them with no
+   full-strength control adjacent gives the eye nothing to calibrate against —
+   the row looks live and answers nothing. Disabled filled variants fall back
+   to their own role's outlined treatment, so the difference between live and
+   dead is a difference in kind rather than a few percent of alpha. The base
+   rule's opacity still applies on top.
+
+   Scoped to this component ([P08]): moving `--tugx-control-disabled-opacity`
+   or the theme files would restyle every disabled control in the app and
+   re-open the light-theme accent/danger collision under CVD. */
+.tug-button-filled-accent:disabled,
+.tug-button-filled-accent[aria-disabled="true"] {
+  background-color: var(--tug7-surface-control-primary-outlined-accent-rest);
+  color: var(--tug7-element-control-text-outlined-accent-rest);
+  border-color: var(--tug7-element-control-border-outlined-accent-rest);
+}
+
+.tug-button-filled-action:disabled,
+.tug-button-filled-action[aria-disabled="true"] {
+  background-color: var(--tug7-surface-control-primary-outlined-action-rest);
+  color: var(--tug7-element-control-text-outlined-action-rest);
+  border-color: var(--tug7-element-control-border-outlined-action-rest);
+}
+
+.tug-button-filled-agent:disabled,
+.tug-button-filled-agent[aria-disabled="true"] {
+  background-color: var(--tug7-surface-control-primary-outlined-agent-rest);
+  color: var(--tug7-element-control-text-outlined-agent-rest);
+  border-color: var(--tug7-element-control-border-outlined-agent-rest);
+}
+
+.tug-button-filled-danger:disabled,
+.tug-button-filled-danger[aria-disabled="true"] {
+  background-color: var(--tug7-surface-control-primary-outlined-danger-rest);
+  color: var(--tug7-element-control-text-outlined-danger-rest);
+  border-color: var(--tug7-element-control-border-outlined-danger-rest);
+}
+
+.tug-button-filled-data:disabled,
+.tug-button-filled-data[aria-disabled="true"] {
+  background-color: var(--tug7-surface-control-primary-outlined-data-rest);
+  color: var(--tug7-element-control-text-outlined-data-rest);
+  border-color: var(--tug7-element-control-border-outlined-data-rest);
+}
+
+/* The icon follows the fill. A filled variant's icon token is drawn to sit on
+   a solid role fill; left in place over the outlined fallback it would be the
+   one full-strength mark on a dead control. */
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-accent-rest */
+.tug-button-filled-accent:is(:disabled, [aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-accent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-action-rest */
+.tug-button-filled-action:is(:disabled, [aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-action-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-agent-rest */
+.tug-button-filled-agent:is(:disabled, [aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-agent-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-danger-rest */
+.tug-button-filled-danger:is(:disabled, [aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-danger-rest);
+}
+
+/* @tug-renders-on: --tug7-surface-control-primary-outlined-data-rest */
+.tug-button-filled-data:is(:disabled, [aria-disabled="true"]) svg {
+  color: var(--tug7-element-control-icon-outlined-data-rest);
+}
+
 /* @tug-renders-on: --tug7-surface-control-primary-outlined-action-rest */
 .tug-button svg {
   pointer-events: none;

@@ -173,6 +173,7 @@ pub fn append_dash_log(
     marker: &str,
     note: &str,
 ) -> Result<(), TugError> {
+    refuse_unredirected_temp_repo(repo_root);
     let dir = project_state_dir(repo_root);
     fs::create_dir_all(&dir).map_err(TugError::Io)?;
     let path = dir.join("dash-log.md");
@@ -188,6 +189,51 @@ pub fn append_dash_log(
     file.write_all(line.as_bytes()).map_err(TugError::Io)?;
     Ok(())
 }
+
+/// Whether writing project state for `repo_root` would land in the user's live
+/// data directory when it should not: the repo sits under the OS temp directory
+/// (so it is scratch by construction) and `data_dir` — the value of
+/// `TUG_DATA_DIR` — is unset or empty.
+///
+/// Both paths are canonicalized before the comparison because macOS reports the
+/// temp directory as `/var/folders/…` while a canonicalized repo root reads
+/// `/private/var/folders/…`; comparing them raw never matches.
+#[cfg(debug_assertions)]
+fn temp_repo_without_redirect(repo_root: &Path, data_dir: Option<&std::ffi::OsStr>) -> bool {
+    if data_dir.is_some_and(|v| !v.is_empty()) {
+        return false;
+    }
+    let resolve = |p: &Path| fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    resolve(repo_root).starts_with(resolve(&std::env::temp_dir()))
+}
+
+/// Panic rather than write dash state for a temp-directory repo into the user's
+/// real data directory.
+///
+/// A test that builds a repo under `$TMPDIR` and runs dash ops against it
+/// resolves [`project_state_dir`] from the live data root and leaves one
+/// directory behind per run — hundreds accumulated before this check existed.
+/// The fix is to redirect `TUG_DATA_DIR`, which `tugrust/.cargo/config.toml`
+/// already does for every cargo-driven process, so the message names it.
+///
+/// Debug builds only: the shipping app never runs this check, and a user whose
+/// real project genuinely lives under a temp path is not second-guessed.
+#[cfg(debug_assertions)]
+fn refuse_unredirected_temp_repo(repo_root: &Path) {
+    let data_dir = std::env::var_os(tugcore::instance::ENV_DATA_DIR);
+    assert!(
+        !temp_repo_without_redirect(repo_root, data_dir.as_deref()),
+        "dash state for the temp-directory repo {} would be written to the live data \
+         directory. Set {} to a scratch path before running dash ops against a \
+         tempdir repo (cargo does this for every test process; a binary invoked \
+         directly — from a shell test or an app-test — inherits nothing).",
+        repo_root.display(),
+        tugcore::instance::ENV_DATA_DIR,
+    );
+}
+
+#[cfg(not(debug_assertions))]
+fn refuse_unredirected_temp_repo(_repo_root: &Path) {}
 
 // --- declarations ----------------------------------------------------------
 
@@ -278,8 +324,13 @@ fn split_log_line(line: &str) -> Option<(&str, &str, &str)> {
 /// "Terminal" is spelled two ways because two writers spell it two ways: the
 /// join teardown records the squash's sha as the marker and `joined` as the
 /// note, and `release` records the marker `released` with no note.
+///
+/// The join's note is matched by prefix, not equality, because it carries the
+/// route that landed it (`joined via card`). Narrowing this back to equality
+/// would silently stop ending generations, and a dash name reused after a join
+/// would be born carrying the previous generation's declarations.
 fn is_terminal(marker: &str, note: &str) -> bool {
-    marker == "released" || note == "joined"
+    marker == "released" || note == "joined" || note.starts_with("joined ")
 }
 
 /// Read the `i`/`N` a step declaration's note leads with. An unparseable note
@@ -399,6 +450,33 @@ mod tests {
     }
 
     #[test]
+    fn a_tempdir_repo_without_a_redirect_is_refused() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        assert!(temp_repo_without_redirect(repo.path(), None));
+        assert!(temp_repo_without_redirect(
+            repo.path(),
+            Some(std::ffi::OsStr::new(""))
+        ));
+    }
+
+    #[test]
+    fn a_redirected_tempdir_repo_is_allowed() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let scratch = tempfile::tempdir().expect("tempdir");
+        assert!(!temp_repo_without_redirect(
+            repo.path(),
+            Some(scratch.path().as_os_str())
+        ));
+    }
+
+    #[test]
+    fn a_repo_outside_the_temp_directory_is_allowed() {
+        // The checkout this test is compiled from — a real project root.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
+        assert!(!temp_repo_without_redirect(repo, None));
+    }
+
+    #[test]
     #[serial]
     fn declarations_are_empty_without_a_log() {
         let fixture = log_repo("");
@@ -448,7 +526,13 @@ mod tests {
     fn a_reused_name_inherits_nothing_across_a_terminal_line() {
         for terminal in [
             log_line("d", "released", ""),
+            log_line("d", "released", "via cli"),
             log_line("d", "a4477d5", "joined"),
+            // The route-suffixed note. A join recorded this way must still end
+            // the generation; matching the note by equality instead of prefix
+            // would leave the reused name carrying everything above.
+            log_line("d", "a4477d5", "joined via card"),
+            log_line("d", "a4477d5", "joined via cli"),
         ] {
             let log = format!(
                 "{}{}{}{}",

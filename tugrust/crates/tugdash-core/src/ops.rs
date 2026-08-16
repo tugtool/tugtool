@@ -168,6 +168,10 @@ pub struct JoinOptions {
     /// instead of integrating per `strategy`: fast-forward the base onto it
     /// (staleness-guarded), then run the normal journaled teardown.
     pub candidate: Option<String>,
+    /// Which route asked for this landing — `cli` or `card`. Recorded in the
+    /// dash-log's terminal note so a landing is attributable after the fact;
+    /// `None` writes the bare note the log carried before routes were recorded.
+    pub origin: Option<String>,
 }
 
 /// Outcome of [`join`].
@@ -196,7 +200,32 @@ pub struct JoinOutcome {
     /// commit. Additive: absent from the JSON when there is none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// For each conflicted path, what the base did to it since the merge-base
+    /// — the history that explains the conflict. Computed on the preview path
+    /// only. Additive: absent from the JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archaeology: Vec<ConflictHistory>,
     pub warnings: Vec<String>,
+}
+
+/// The base-side history of one conflicted path.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictHistory {
+    /// The conflicted path, as `conflicts` spells it.
+    pub path: String,
+    /// The most recent base commits that touched it, newest first, capped.
+    pub commits: Vec<ConflictCommit>,
+    /// How many touched it in total — `commits.len()` unless the cap bit.
+    pub total: u32,
+}
+
+/// One base commit behind a conflicted path.
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictCommit {
+    /// Abbreviated hash.
+    pub sha: String,
+    /// The commit's subject line.
+    pub subject: String,
 }
 
 /// One reason a join would be refused, as reported by a `--preview`.
@@ -2233,6 +2262,64 @@ fn conflicted_paths(repo: &Path) -> Vec<String> {
 
 /// In-memory conflict preview via `git merge-tree --write-tree` (git ≥ 2.38):
 /// returns the conflicted paths without touching any worktree, index, or ref.
+/// How many base commits a conflicted path shows before the face elides.
+const ARCHAEOLOGY_CAP: usize = 5;
+
+/// What the base did to each conflicted path since the two sides parted.
+///
+/// A conflict names a file and stops; the question it raises is what the base
+/// did to that file while the dash was away, and that answer is one `git log`
+/// per path. Capped, and computed only on the preview path, so the cost is
+/// bounded by the number of conflicts rather than by the size of the divergence
+/// (R02).
+///
+/// Any git failure yields no history rather than an error: archaeology is
+/// context for a conflict, and losing it must never cost the caller the
+/// conflict report itself.
+fn conflict_archaeology(
+    repo: &Path,
+    base: &str,
+    branch: &str,
+    conflicts: &[String],
+) -> Vec<ConflictHistory> {
+    if conflicts.is_empty() {
+        return Vec::new();
+    }
+    let Ok(merge_base) = git_stdout(repo, &["merge-base", base, branch]) else {
+        return Vec::new();
+    };
+    let range = format!("{merge_base}..{base}");
+    let mut out = Vec::new();
+    for path in conflicts {
+        let Ok(log) = git_stdout(
+            repo,
+            &["log", "--format=%h%x00%s", "--no-color", &range, "--", path],
+        ) else {
+            continue;
+        };
+        let mut commits = Vec::new();
+        let mut total = 0u32;
+        for line in log.lines().filter(|l| !l.is_empty()) {
+            total += 1;
+            if commits.len() < ARCHAEOLOGY_CAP {
+                let (sha, subject) = line.split_once('\0').unwrap_or((line, ""));
+                commits.push(ConflictCommit {
+                    sha: sha.to_string(),
+                    subject: subject.to_string(),
+                });
+            }
+        }
+        if total > 0 {
+            out.push(ConflictHistory {
+                path: path.clone(),
+                commits,
+                total,
+            });
+        }
+    }
+    out
+}
+
 fn merge_tree_conflicts(repo: &Path, base: &str, branch: &str) -> Result<Vec<String>, String> {
     let out = git_output(
         repo,
@@ -2741,7 +2828,15 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     if opts.continue_join {
         let journal = read_join_journal(&repo_root, name)
             .ok_or_else(|| format!("No interrupted join to continue for dash '{}'.", name))?;
-        return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
+        return finish_join_teardown(
+        &repo_root,
+        name,
+        &branch,
+        &worktree,
+        opts.origin.as_deref(),
+        journal,
+        warnings,
+    );
     }
 
     // --preview: report conflicts and blockers in memory; nothing is mutated.
@@ -2757,6 +2852,7 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         }
         let blockers = join_preflight_in(&repo_root, name)?;
         let conflicts = merge_tree_conflicts(&repo_root, &base_branch, &branch)?;
+        let archaeology = conflict_archaeology(&repo_root, &base_branch, &branch, &conflicts);
         return Ok(JoinOutcome {
             name: name.to_string(),
             base_branch,
@@ -2766,6 +2862,7 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
             previewed: true,
             blockers,
             message: None,
+            archaeology,
             warnings,
         });
     }
@@ -2854,7 +2951,15 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
             message,
         };
         write_join_journal(&repo_root, &journal)?;
-        return finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings);
+        return finish_join_teardown(
+        &repo_root,
+        name,
+        &branch,
+        &worktree,
+        opts.origin.as_deref(),
+        journal,
+        warnings,
+    );
     }
 
     let final_msg = integrate_message(&repo_root, name, &branch, opts.message.clone());
@@ -2870,6 +2975,9 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         previewed: false,
         blockers: vec![],
         message: None,
+        // Preview-only ([P07]): an execute that hit conflicts aborted cleanly
+        // and the caller's next act is a preview, which computes it.
+        archaeology: vec![],
         warnings,
     };
 
@@ -2934,7 +3042,15 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
     };
     write_join_journal(&repo_root, &journal)?;
 
-    finish_join_teardown(&repo_root, name, &branch, &worktree, journal, warnings)
+    finish_join_teardown(
+        &repo_root,
+        name,
+        &branch,
+        &worktree,
+        opts.origin.as_deref(),
+        journal,
+        warnings,
+    )
 }
 
 /// The resumable teardown half of a join ([P14]): remove the worktree, delete
@@ -2946,6 +3062,7 @@ fn finish_join_teardown(
     name: &str,
     branch: &str,
     worktree: &Path,
+    origin: Option<&str>,
     mut journal: JoinJournal,
     mut warnings: Vec<String>,
 ) -> Result<JoinOutcome, String> {
@@ -2974,7 +3091,11 @@ fn finish_join_teardown(
     // journal so the join is no longer "incomplete".
     let short = git_stdout(repo_root, &["rev-parse", "--short", &journal.commit_hash])
         .unwrap_or_else(|_| journal.commit_hash.clone());
-    append_dash_log(repo_root, name, &short, "joined").map_err(|e| e.to_string())?;
+    let note = match origin {
+        Some(origin) => format!("joined via {origin}"),
+        None => "joined".to_string(),
+    };
+    append_dash_log(repo_root, name, &short, &note).map_err(|e| e.to_string())?;
     clear_join_journal(repo_root, name);
 
     Ok(JoinOutcome {
@@ -2986,19 +3107,24 @@ fn finish_join_teardown(
         previewed: false,
         blockers: vec![],
         message: journal.message,
+        archaeology: vec![],
         warnings,
     })
 }
 
 /// Release a dash: tear down its worktree + branch without merging.
-pub fn release(name: &str) -> Result<ReleaseOutcome, String> {
+pub fn release(name: &str, origin: Option<&str>) -> Result<ReleaseOutcome, String> {
     let repo_root = find_repo_root().map_err(|e| e.to_string())?;
-    release_in(&repo_root, name)
+    release_in(&repo_root, name, origin)
 }
 
 /// Like [`release`], but against an explicit repo root instead of the process
 /// cwd — for callers such as tugcast.
-pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String> {
+pub fn release_in(
+    repo_root: &Path,
+    name: &str,
+    origin: Option<&str>,
+) -> Result<ReleaseOutcome, String> {
     let repo_root = main_repo_root(repo_root);
     let mut warnings = Vec::new();
     migrate_worktrees(&repo_root, &mut warnings);
@@ -3052,7 +3178,8 @@ pub fn release_in(repo_root: &Path, name: &str) -> Result<ReleaseOutcome, String
     }
 
     // Record the terminal action in the dash-log ([P04]).
-    append_dash_log(&repo_root, name, "released", "").map_err(|e| e.to_string())?;
+    append_dash_log(&repo_root, name, "released", &origin.map_or(String::new(), |o| format!("via {o}")))
+        .map_err(|e| e.to_string())?;
 
     Ok(ReleaseOutcome {
         name: name.to_string(),
@@ -4078,7 +4205,7 @@ Some context.
         create("discard-dash", None, Some("roadmap/plan.md"), false).unwrap();
         assert!(!root.join("roadmap/plan.md").exists(), "adoption took it");
 
-        let out = release("discard-dash").unwrap();
+        let out = release("discard-dash", None).unwrap();
         assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
         assert!(!branch_present(&root, "tugdash/discard-dash"));
         assert_eq!(
@@ -4101,7 +4228,7 @@ Some context.
         create("edited-dash", None, Some("roadmap/plan.md"), false).unwrap();
         assert!(base_plan_status(&root).is_empty(), "adoption restored base");
 
-        let out = release("edited-dash").unwrap();
+        let out = release("edited-dash", None).unwrap();
         assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
         assert_eq!(
             fs::read_to_string(root.join("roadmap/plan.md")).unwrap(),
@@ -4122,11 +4249,11 @@ Some context.
 
         // No plan recorded at all.
         create("bare-dash", None, None, false).unwrap();
-        assert!(release("bare-dash").unwrap().plan_restored.is_none());
+        assert!(release("bare-dash", None).unwrap().plan_restored.is_none());
 
         // A plan recorded, but the branch's copy is what base HEAD holds.
         create("same-dash", None, Some("roadmap/plan.md"), false).unwrap();
-        let out = release("same-dash").unwrap();
+        let out = release("same-dash", None).unwrap();
         assert!(out.plan_restored.is_none());
         assert!(
             base_plan_status(&root).is_empty(),
@@ -4198,7 +4325,7 @@ Some context.
         commit("e2e-abandon", "a round", None).unwrap();
         assert!(!root.join("roadmap/plan.md").exists());
 
-        let out = release("e2e-abandon").unwrap();
+        let out = release("e2e-abandon", None).unwrap();
         assert_eq!(out.plan_restored.as_deref(), Some("roadmap/plan.md"));
         assert!(!branch_present(&root, "tugdash/e2e-abandon"));
         assert!(
@@ -4420,7 +4547,7 @@ Some context.
         create("returner", None, None, true).unwrap();
         assert!(!root.join("scratch.txt").exists());
 
-        let out = release("returner").unwrap();
+        let out = release("returner", None).unwrap();
         assert_eq!(out.work_restored, vec!["scratch.txt".to_string()]);
         assert_eq!(
             fs::read_to_string(root.join("scratch.txt")).unwrap(),
@@ -4441,7 +4568,7 @@ Some context.
         fs::write(worktree.join("typed.txt"), "written in the dash\n").unwrap();
         fs::write(worktree.join("README.md"), "# edited in the dash\n").unwrap();
 
-        let out = release("typed").unwrap();
+        let out = release("typed", None).unwrap();
         assert_eq!(out.work_restored, vec!["README.md", "typed.txt"]);
         assert_eq!(
             fs::read_to_string(root.join("typed.txt")).unwrap(),
@@ -4466,7 +4593,7 @@ Some context.
         fs::write(worktree.join("README.md"), "# the dash's words\n").unwrap();
         fs::write(root.join("README.md"), "# the user's words\n").unwrap();
 
-        let err = release("clash").unwrap_err();
+        let err = release("clash", None).unwrap_err();
         assert!(err.contains("README.md"), "{err}");
         assert_eq!(
             fs::read_to_string(root.join("README.md")).unwrap(),
@@ -4482,7 +4609,7 @@ Some context.
     fn release_of_a_clean_worktree_behaves_exactly_as_before() {
         let (_temp, root) = repo_for_create(None);
         create("spotless", None, None, false).unwrap();
-        let out = release("spotless").unwrap();
+        let out = release("spotless", None).unwrap();
         assert!(out.work_restored.is_empty());
         assert!(out.warnings.is_empty(), "{:?}", out.warnings);
         assert!(!worktree_path(&root, "spotless").exists());
@@ -5347,6 +5474,61 @@ Some context.
         );
     }
 
+    /// The route that asked for a landing is recorded in the dash-log's
+    /// terminal note, so a join is attributable to the CLI or the card after
+    /// the fact rather than only to "something".
+    #[serial]
+    #[test]
+    fn a_join_records_the_route_that_asked_for_it() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        create("routed", None, None, false).unwrap();
+        fs::write(repo.join(".tug/worktrees/routed/f.txt"), "work\n").unwrap();
+        commit("routed", "Add f", None).unwrap();
+
+        join(
+            "routed",
+            JoinOptions {
+                origin: Some("card".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let dlog = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
+        assert!(
+            dlog.contains("joined via card"),
+            "dash-log should name the route: {dlog}"
+        );
+    }
+
+    /// A release records its route the same way — its marker already carries
+    /// the word `released`, so the note carries the route alone.
+    #[serial]
+    #[test]
+    fn a_release_records_the_route_that_asked_for_it() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        let home = temp.path().join("state");
+        init_git_repo(repo);
+        redirect_state_dir(&home);
+        std::env::set_current_dir(repo).unwrap();
+
+        create("dropped", None, None, false).unwrap();
+        release("dropped", Some("cli")).unwrap();
+
+        let dlog = fs::read_to_string(dash_log_path(&home, repo)).unwrap();
+        assert!(
+            dlog.contains("released  via cli"),
+            "dash-log should name the route: {dlog}"
+        );
+    }
+
     /// A join with no explicit message uses the dash's maintained draft from
     /// the machine-global changes ledger (`TUG_CHANGES_DB`) as its squash
     /// message — pins `dash_draft_message` reading
@@ -6194,6 +6376,72 @@ Some context.
         assert!(blocker(&preview("dirt"), "base-dirt").is_none());
     }
 
+    /// A conflict names a file; the archaeology names what the base did to it.
+    /// Only the base commits that touched the conflicted path may appear, and
+    /// they appear newest first — a list including the untouching commit would
+    /// be worse than none, since the reader would be reading the wrong history.
+    #[serial]
+    #[test]
+    fn a_conflicted_preview_names_the_base_commits_behind_each_path() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "digs");
+        let repo = temp.path();
+
+        // Two base commits touch the file the dash also changed, and one does
+        // not. Editing it on the base is what makes the merge conflict.
+        fs::write(repo.join("shared.txt"), "base\nfirst base edit\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "base touches shared once"]).unwrap();
+        fs::write(repo.join("other.txt"), "unrelated\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "base touches something else"]).unwrap();
+        fs::write(repo.join("shared.txt"), "base\nsecond base edit\n").unwrap();
+        git_output(repo, &["add", "."]).unwrap();
+        git_output(repo, &["commit", "-m", "base touches shared again"]).unwrap();
+
+        let out = preview("digs");
+        assert_eq!(out.conflicts, vec!["shared.txt".to_string()]);
+        assert_eq!(out.archaeology.len(), 1, "one conflicted path, one history");
+        let history = &out.archaeology[0];
+        assert_eq!(history.path, "shared.txt");
+        assert_eq!(history.total, 2, "the unrelated commit is not this path's");
+        let subjects: Vec<&str> = history.commits.iter().map(|c| c.subject.as_str()).collect();
+        assert_eq!(
+            subjects,
+            vec!["base touches shared again", "base touches shared once"],
+            "newest first"
+        );
+        assert!(
+            history.commits.iter().all(|c| !c.sha.is_empty()),
+            "every row carries its short sha"
+        );
+    }
+
+    /// The cap bounds what the face renders; `total` is what it counts. A cap
+    /// that also truncated the count would make "+N earlier" a lie.
+    #[serial]
+    #[test]
+    fn a_long_base_history_is_capped_but_still_counted() {
+        let temp = TempDir::new().unwrap();
+        seed_dash_with_a_round(&temp, "deep");
+        let repo = temp.path();
+
+        for n in 0..(ARCHAEOLOGY_CAP + 3) {
+            fs::write(repo.join("shared.txt"), format!("base\nedit {n}\n")).unwrap();
+            git_output(repo, &["add", "."]).unwrap();
+            git_output(repo, &["commit", "-m", &format!("base edit {n}")]).unwrap();
+        }
+
+        let history = &preview("deep").archaeology[0];
+        assert_eq!(history.commits.len(), ARCHAEOLOGY_CAP);
+        assert_eq!(history.total, (ARCHAEOLOGY_CAP + 3) as u32);
+        assert_eq!(
+            history.commits[0].subject,
+            format!("base edit {}", ARCHAEOLOGY_CAP + 2),
+            "the cap keeps the newest, not the oldest"
+        );
+    }
+
     /// Pins the ordering: the preview arm sits above the stale-journal guard,
     /// so a journalled dash previews with a blocker instead of erroring.
     #[serial]
@@ -6351,7 +6599,7 @@ Some context.
         let worktree = repo.join(".tug/worktrees/test-dash");
         fs::write(worktree.join("test.txt"), "test\n").unwrap();
 
-        let result = release("test-dash");
+        let result = release("test-dash", None);
         assert!(result.is_ok());
 
         assert!(!worktree.exists());
@@ -6373,7 +6621,7 @@ Some context.
         redirect_state_dir(&temp.path().join("state"));
         std::env::set_current_dir(repo).unwrap();
 
-        let result = release("nonexistent");
+        let result = release("nonexistent", None);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
     }

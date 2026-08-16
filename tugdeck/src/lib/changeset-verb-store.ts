@@ -103,11 +103,31 @@ export interface JoinBlocker {
   paths: readonly string[];
 }
 
+/** One base commit behind a conflicted path (Spec S03). */
+export interface ConflictCommit {
+  sha: string;
+  subject: string;
+}
+
+/**
+ * What the base did to one conflicted path since the two sides parted — the
+ * history that explains the conflict. Server-computed on the preview path,
+ * newest first and capped; `total` counts every commit, so the face can say
+ * how many it is not showing.
+ */
+export interface ConflictHistory {
+  path: string;
+  commits: readonly ConflictCommit[];
+  total: number;
+}
+
 export interface JoinState {
   phase: JoinPhase;
   error: string | null;
   /** Conflicting paths for a `preview`/`conflict` phase; empty otherwise. */
   conflicts: readonly string[];
+  /** Per-path base history for a conflicted `preview`; empty otherwise. */
+  archaeology: readonly ConflictHistory[];
   /** The landing commit sha when `phase === "done"`. */
   commitHash: string | null;
   /**
@@ -124,6 +144,7 @@ const JOIN_IDLE: JoinState = Object.freeze({
   phase: "idle",
   error: null,
   conflicts: Object.freeze([]) as readonly string[],
+  archaeology: Object.freeze([]) as readonly ConflictHistory[],
   commitHash: null,
   blockers: Object.freeze([]) as readonly JoinBlocker[],
   summary: null,
@@ -209,7 +230,7 @@ const RELEASE_IDLE: ReleaseState = Object.freeze({
 
 /** Correlation key for a join/release reply: `project_dir` + dash name. */
 function verbKey(projectDir: string, dash: string): string {
-  return `${projectDir} ${dash}`;
+  return `${projectDir}\x00${dash}`;
 }
 
 export interface JoinArgs {
@@ -253,6 +274,33 @@ function readJoinBlockers(value: unknown): JoinBlocker[] {
     blockers.push({ kind, detail, paths: readStringArray(entry.paths) });
   }
   return blockers;
+}
+
+/**
+ * The per-path base history a conflicted preview carries (Spec S03). Additive
+ * and preview-only, so absence is ordinary rather than an error; a malformed
+ * row is dropped, since a history is context and half of one is misleading.
+ */
+function readConflictHistories(value: unknown): ConflictHistory[] {
+  if (!Array.isArray(value)) return [];
+  const histories: ConflictHistory[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) continue;
+    const { path } = entry;
+    if (typeof path !== "string" || path === "") continue;
+    const commits: ConflictCommit[] = [];
+    if (Array.isArray(entry.commits)) {
+      for (const commit of entry.commits) {
+        if (!isRecord(commit)) continue;
+        const { sha, subject } = commit;
+        if (typeof sha !== "string" || sha === "") continue;
+        commits.push({ sha, subject: typeof subject === "string" ? subject : "" });
+      }
+    }
+    const total = typeof entry.total === "number" ? entry.total : commits.length;
+    histories.push({ path, commits, total });
+  }
+  return histories;
 }
 
 function readStringArray(value: unknown): string[] {
@@ -403,6 +451,7 @@ export class ChangesetVerbStore {
           phase: "preview",
           error: null,
           conflicts,
+          archaeology: readConflictHistories(body.archaeology),
           commitHash: null,
           blockers,
           summary: null,
@@ -412,6 +461,7 @@ export class ChangesetVerbStore {
           phase: "done",
           error: null,
           conflicts: [],
+          archaeology: [],
           commitHash,
           blockers: [],
           // The landing's receipt, formatted by the server so the durable row
@@ -424,6 +474,8 @@ export class ChangesetVerbStore {
           phase: "conflict",
           error: null,
           conflicts,
+          // Preview-only ([P07]): an execute that aborted did not compute it.
+          archaeology: [],
           commitHash: null,
           blockers: [],
           summary: null,
@@ -441,6 +493,7 @@ export class ChangesetVerbStore {
         phase: "error",
         error: detail,
         conflicts: [],
+        archaeology: [],
         commitHash: null,
         blockers: [],
         summary: null,
@@ -677,6 +730,7 @@ export class ChangesetVerbStore {
       phase: "pending",
       error: null,
       conflicts: [],
+      archaeology: [],
       commitHash: null,
       blockers: [],
       summary: null,

@@ -52,6 +52,7 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
                 preview,
                 continue_join,
                 candidate: None,
+                origin: Some("cli".to_string()),
             },
             json,
             quiet,
@@ -346,6 +347,7 @@ fn run_join_resolve(
             preview: false,
             continue_join: false,
             candidate: Some(candidate),
+            origin: Some("cli".to_string()),
         },
     )?;
     if landed.conflicts.is_empty()
@@ -381,7 +383,7 @@ fn run_join_resolve(
 fn run_release(name: &str, json: bool, quiet: bool) -> Result<(), String> {
     // Captured before the teardown, for the reason `capture_owner_key` states.
     let captured = capture_owner_key(name);
-    let data = ops::release(name)?;
+    let data = ops::release(name, Some("cli"))?;
     if let Some((repo, owner_key)) = captured {
         broadcast_dash_gone(&repo, &owner_key);
     }

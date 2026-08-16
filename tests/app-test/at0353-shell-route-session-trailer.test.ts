@@ -73,6 +73,17 @@ const encodeProjectDir = (absDir: string): string =>
  */
 const TUGUTIL = join(import.meta.dir, "..", "..", "tugrust", "target", "debug", "tugutil");
 
+/**
+ * `TUG_DATA_DIR=…` prefixed onto every `tugutil` line below.
+ *
+ * The project here lives under `$TMPDIR`, and a dash op resolves its per-project
+ * state dir from the data root. A `tugutil` spawned by the shell route inherits
+ * the app's environment, not cargo's, so without this the run leaves a directory
+ * in the user's live `Tug/projects/` — one per invocation, forever. `tugdash-core`
+ * refuses the write outright in a debug build, which is the build this uses.
+ */
+const REDIRECT = (dir: string): string => `TUG_DATA_DIR=${join(dir, ".tugdata")}`;
+
 let projectDir = "";
 let fixtureDir = "";
 
@@ -228,11 +239,15 @@ describe.skipIf(!SHOULD_RUN)(
           // do with what this test is about.
           const dash = join(projectDir, ".tug", "worktrees", "at0353");
           await execAndSettle(app, `/shell cd ${projectDir}`, 0);
-          await execAndSettle(app, `/shell ${TUGUTIL} dash create at0353`, 1);
+          await execAndSettle(
+            app,
+            `/shell ${REDIRECT(projectDir)} ${TUGUTIL} dash create at0353`,
+            1,
+          );
           writeFileSync(join(dash, "w.txt"), "work\n");
           const committed = await execAndSettle(
             app,
-            `/shell ${TUGUTIL} dash commit at0353 --message Addw`,
+            `/shell ${REDIRECT(projectDir)} ${TUGUTIL} dash commit at0353 --message Addw`,
             2,
           );
           expect(committed).toContain("Committed changes to dash");

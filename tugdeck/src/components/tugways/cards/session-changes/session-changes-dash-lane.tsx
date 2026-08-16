@@ -322,7 +322,6 @@ function DashRow({
                 size="2xs"
                 subtype="text"
                 disabled={binding.disabledReason !== null}
-                title={binding.disabledReason ?? undefined}
                 data-slot={
                   bound
                     ? "session-changes-dash-leave"
@@ -409,11 +408,17 @@ function DashRow({
               outcome={landing.outcome}
               joinPhase={landing.join.phase}
               conflicts={landing.join.conflicts}
+              archaeology={landing.join.archaeology}
               blockers={landing.join.blockers}
               error={landing.join.error}
               candidateCommit={landing.candidateCommit}
               turnInProgress={landing.turnInProgress}
               resolve={landing.resolve}
+              bindingRefusal={
+                binding === null || binding.disabledReason === null
+                  ? null
+                  : { control: bound ? "Leave" : "Adopt", reason: binding.disabledReason }
+              }
               actions={landing.actions}
             />
           ) : null}

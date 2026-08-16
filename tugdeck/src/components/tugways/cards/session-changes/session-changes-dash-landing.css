@@ -33,6 +33,31 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* Why a control on this face is refusing, one line per refused control. A
+   disabled button takes no pointer events, so its `title` can never be read;
+   the reason lives here instead, in the same prose row the empty outcome and
+   the review block already use. */
+.session-changes-dash-landing-refusals {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-changes-dash-landing-refusals > li {
+  display: flex;
+  gap: var(--tug-space-2xs);
+  align-items: baseline;
+}
+
+.session-changes-dash-landing-refusal-control {
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-xs);
+  color: var(--tug7-element-global-text-normal-rest);
+}
+
 /* The discard's first beat: what the second one destroys, listed. Marked off
    by a danger-toned rule, because this is the one act in the lane that cannot
    be undone. */
@@ -67,6 +92,43 @@
   font-size: var(--tug-font-size-xs);
 }
 
+/* What the base did to a conflicted path since the two sides parted, nested
+   under the path it explains. Indented rather than badged: it is the row's
+   own footnote, and a conflict list that shouted its history twice over would
+   bury the paths themselves. */
+.session-changes-dash-landing-archaeology {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: var(--tug-space-2xs) 0 0;
+  padding: 0 0 0 var(--tug-space-sm);
+  list-style: none;
+  border-left: 1px solid var(--tug7-element-global-border-normal-muted-rest);
+}
+
+.session-changes-dash-landing-archaeology > li {
+  display: flex;
+  gap: var(--tug-space-2xs);
+  align-items: baseline;
+}
+
+.session-changes-dash-landing-archaeology-sha {
+  flex-shrink: 0;
+  font-family: var(--tug-font-family-mono);
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-landing-archaeology-subject {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--tug-font-family-sans);
+  font-size: var(--tug-font-size-2xs);
+  color: var(--tug7-element-global-text-normal-muted-rest);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .session-changes-dash-landing-blockers > li {
   display: flex;
   flex-direction: column;
@@ -87,7 +149,16 @@
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
+/* The path, then its history under it — so the row is a column, and the
+   truncation lives on the path itself rather than on the row that now has a
+   nested list inside it. */
 .session-changes-dash-landing-conflicts > li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.session-changes-dash-landing-conflict-path {
   font-family: var(--tug-font-family-mono);
   overflow: hidden;
   text-overflow: ellipsis;

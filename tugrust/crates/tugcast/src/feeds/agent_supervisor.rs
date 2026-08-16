@@ -4951,6 +4951,7 @@ impl AgentSupervisor {
             preview: request.preview,
             continue_join: request.continue_join,
             candidate: request.candidate.clone(),
+            origin: Some("card".to_string()),
         };
         let result =
             tokio::task::spawn_blocking(move || tugdash_core::join_in(&dir_owned, &dash, opts))
@@ -4958,6 +4959,24 @@ impl AgentSupervisor {
 
         match result {
             Ok(Ok(outcome)) => {
+                // One line per landing, so a join is attributable afterwards
+                // without archaeology. The two joins of 2026-08-15 left no
+                // trace in any log, which is why the next incident report was
+                // an investigation rather than a read.
+                tracing::info!(
+                    dash = %outcome.name,
+                    base = %outcome.base_branch,
+                    previewed = outcome.previewed,
+                    commit = outcome.commit_hash.as_deref().unwrap_or("-"),
+                    conflicts = outcome.conflicts.len(),
+                    blockers = %outcome
+                        .blockers
+                        .iter()
+                        .map(|b| b.kind.as_str())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    "dash-join: completed"
+                );
                 // A real join that landed a commit shrinks the changeset set —
                 // refresh the card. A preview (or a conflict-aborted join)
                 // mutated nothing, so no bump. The landed dash's join draft
@@ -5013,12 +5032,20 @@ impl AgentSupervisor {
                 {
                     body["blockers"] = blockers;
                 }
+                // Same additive shape: the base-side history behind each
+                // conflicted path, present only on a conflicted preview.
+                if !outcome.archaeology.is_empty()
+                    && let Ok(archaeology) = serde_json::to_value(&outcome.archaeology)
+                {
+                    body["archaeology"] = archaeology;
+                }
                 let _ = self.control_tx.send(Frame::new(
                     FeedId::CONTROL,
                     serde_json::to_vec(&body).expect("changeset_join_ok serializes"),
                 ));
             }
             Ok(Err(detail)) => {
+                tracing::info!(dash = %request.dash, detail = %detail, "dash-join: refused");
                 Self::send_changeset_join_err(
                     &self.control_tx,
                     project_dir,
@@ -5143,6 +5170,14 @@ impl AgentSupervisor {
 
         match result {
             Ok(Ok(outcome)) => {
+                tracing::info!(
+                    dash = %request.dash,
+                    shape = ?outcome.shape,
+                    resolved = outcome.resolved.len(),
+                    unresolved = outcome.unresolved.len(),
+                    candidate = outcome.candidate_commit.as_deref().unwrap_or("-"),
+                    "dash-join: ladder ran"
+                );
                 let mut body =
                     serde_json::to_value(&outcome).unwrap_or_else(|_| serde_json::json!({}));
                 if let Some(map) = body.as_object_mut() {
@@ -5165,6 +5200,7 @@ impl AgentSupervisor {
                 ));
             }
             Ok(Err(detail)) => {
+                tracing::info!(dash = %request.dash, detail = %detail, "dash-join: ladder refused");
                 Self::send_changeset_join_resolve_err(
                     &self.control_tx,
                     project_dir,
@@ -5245,10 +5281,20 @@ impl AgentSupervisor {
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
         let result =
-            tokio::task::spawn_blocking(move || tugdash_core::release_in(&dir_owned, &dash)).await;
+            tokio::task::spawn_blocking(move || {
+                tugdash_core::release_in(&dir_owned, &dash, Some("card"))
+            })
+            .await;
 
         match result {
             Ok(Ok(outcome)) => {
+                tracing::info!(
+                    dash = %outcome.name,
+                    rounds = discarded_rounds,
+                    files = discarded_files,
+                    plan_restored = outcome.plan_restored.is_some(),
+                    "dash-release: completed"
+                );
                 // The released dash's join draft dies with it ([P14]) — a
                 // reused name must never inherit the dead dash's message.
                 if let Some(ledger) = self.session_ledger.as_deref() {
@@ -7776,6 +7822,7 @@ mod tests {
             previewed: true,
             blockers: vec![],
             message: None,
+            archaeology: vec![],
             warnings: vec![],
         };
         let mut body = serde_json::json!({ "action": "changeset_join_ok" });
@@ -7784,7 +7831,15 @@ mod tests {
         {
             body["blockers"] = blockers;
         }
+        if !outcome.archaeology.is_empty()
+            && let Ok(archaeology) = serde_json::to_value(&outcome.archaeology)
+        {
+            body["archaeology"] = archaeology;
+        }
         assert!(body.get("blockers").is_none());
+        // Same contract for the archaeology key: a clean preview carries no
+        // history, and it must be absent rather than an empty array.
+        assert!(body.get("archaeology").is_none());
 
         let blocked = tugdash_core::JoinBlocker {
             kind: "off-base".to_string(),

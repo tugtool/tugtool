@@ -325,7 +325,7 @@ export class ShellVerdictCache {
    * the same draft.
    */
   private static key(text: string, withGrammar: boolean): string {
-    return withGrammar ? ` grammar ${text}` : text;
+    return withGrammar ? `\x00grammar\x00${text}` : text;
   }
 
   get(text: string, withGrammar = false): "shell" | "prompt" | undefined {

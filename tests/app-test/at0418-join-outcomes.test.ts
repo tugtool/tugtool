@@ -318,7 +318,12 @@ async function settledOutcome(app: App, dash: string): Promise<string> {
   return outcome;
 }
 
-/** Whether the row's Join affordance is offered, and what it says if not. */
+/**
+ * Whether the row's Join affordance is offered, and what it says if not.
+ *
+ * The refusal is read off the face, not off the button: a disabled button
+ * takes no pointer events, so a `title` on one can never be shown.
+ */
 async function joinAffordance(
   app: App,
   dash: string,
@@ -326,10 +331,11 @@ async function joinAffordance(
   return app.evalJS<{ present: boolean; disabled: boolean; hint: string }>(
     `(() => {
        const el = document.querySelector(${JSON.stringify(`${row(dash)} [data-slot="session-changes-dash-join"]`)});
+       const reasons = document.querySelector(${JSON.stringify(`${row(dash)} [data-slot="session-changes-dash-landing-refusals"]`)});
        return {
          present: el !== null,
          disabled: el !== null && el.hasAttribute("disabled"),
-         hint: el === null ? "" : (el.getAttribute("title") ?? ""),
+         hint: reasons === null ? "" : (reasons.textContent ?? ""),
        };
      })()`,
   );
@@ -434,7 +440,7 @@ describe.skipIf(!SHOULD_RUN)("AT0418: the dash lane's landing outcomes", () => {
         expect(blocked.act).toBe("Resume the interrupted teardown");
         const stuck = await joinAffordance(app, DASH_WORK);
         expect(stuck.disabled).toBe(true);
-        expect(stuck.hint).toBe("Clear what blocks this join first");
+        expect(stuck.hint).toContain("Clear what blocks this join first");
 
         // The stage the journal derives fronts the act itself. The button is
         // asserted, never pressed: a resume would tear the fixture's branch
@@ -474,7 +480,7 @@ describe.skipIf(!SHOULD_RUN)("AT0418: the dash lane's landing outcomes", () => {
         expect(emptyFace.buttons).toBe(0);
         const noJoin = await joinAffordance(app, DASH_EMPTY);
         expect(noJoin.disabled).toBe(true);
-        expect(noJoin.hint).toBe("Nothing to join");
+        expect(noJoin.hint).toContain("Nothing to join");
 
         // ── Release: two beats, then the receipt, then a reload ────────────
         // Its own dash, because this case destroys the one it runs on.

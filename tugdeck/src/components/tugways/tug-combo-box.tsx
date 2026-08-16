@@ -264,7 +264,7 @@ export const TugComboBox = React.forwardRef<HTMLInputElement, TugComboBoxProps>(
     // when this changes — an add/remove/reorder/filter — not on every rebuild
     // (e.g. a row re-rendering to mark itself pending-delete keeps its values,
     // so the highlight stays put on the row being acted on).
-    const itemsKey = useMemo(() => items.map((i) => i.value).join(" "), [items]);
+    const itemsKey = useMemo(() => items.map((i) => i.value).join("\x00"), [items]);
 
     // Standard focus-stop opt-in ([P02]). The focusable is the `<input>`, so
     // the engine lands the key view on the real caret. The field owns Tab iff

@@ -344,10 +344,11 @@ export function SessionChangesView({
               tug_session_id: tugSessionId,
             });
           },
-          disabledReason:
-            turnInProgress || join.phase === "pending"
-              ? "A landing is in flight"
-              : null,
+          // Adopting or leaving changes only which dash this card is bound
+          // to — no branch moves, nothing is checked out — so a turn in
+          // flight is no reason to refuse it. A landing already in flight
+          // is: rebinding under it would strand the join.
+          disabledReason: join.phase === "pending" ? "A landing is in flight" : null,
         };
 
   const laneLanding: DashLaneLanding | undefined =

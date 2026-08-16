@@ -63,7 +63,7 @@ Two items: a one-time sweep of the tempdir slugs (they are garbage by constructi
 
 ### A literal NUL byte makes a join-path source file invisible to tooling
 
-`tugdeck/src/lib/changeset-verb-store.ts` contains one raw `0x00` byte — inside `verbKey`, where the key separator was written as a literal NUL instead of the ` ` escape. Runtime-identical, but `rg` and `git diff` classify the whole file as binary, so the join verb store — 34KB of load-bearing landing code — is silently excluded from every search and renders as `Binary files differ` in review. This was found *by* it: a grep sweep of the join path reported the file as a binary match. Replace the byte with the escape; sweep the tree for other NULs in source files while there.
+`tugdeck/src/lib/changeset-verb-store.ts` contains one raw `0x00` byte — inside `verbKey`, where the key separator was written as a literal NUL instead of the `\x00` escape. Runtime-identical, but `rg` and `git diff` classify the whole file as binary, so the join verb store — 34KB of load-bearing landing code — is silently excluded from every search and renders as `Binary files differ` in review. This was found *by* it: a grep sweep of the join path reported the file as a binary match. Replace the byte with the escape; sweep the tree for other NULs in source files while there.
 
 ## The work {#the-work}
 

@@ -99,7 +99,17 @@ export interface CreatedDash {
   worktree: string;
 }
 
-/** Create a dash, returning its owner key and worktree. */
+/**
+ * Create a dash, returning its owner key and worktree.
+ *
+ * The dash opts out of automatic base motion the moment it exists. Every
+ * tugcast process watching this repository runs a base-motion engine — the
+ * user's release instance and every other app-test instance included — and each
+ * one treats any dash it can see as its own to keep current. One of them was
+ * caught replaying a fixture dash mid-test, between its round commit and its
+ * release. A fixture asserting on a tip sha, a round list, or a worktree state
+ * cannot have the ground moving under it.
+ */
 export function createDash(
   projectDir: string,
   name: string,
@@ -110,7 +120,21 @@ export function createDash(
       cwd: projectDir,
     }),
   ) as { data: { id: string; worktree: string } };
+  gitConfig(projectDir, `branch.tugdash/${name}.tugautoreplay`, "false");
   return { id: out.data.id, worktree: out.data.worktree };
+}
+
+/** One `git config` write, retrying through a held lock like the verbs do. */
+function gitConfig(projectDir: string, key: string, value: string): void {
+  for (let attempt = 0; attempt <= LOCK_RETRIES; attempt += 1) {
+    const out = Bun.spawnSync(["git", "-C", projectDir, "config", key, value], {});
+    if (out.exitCode === 0) return;
+    if (!heldLock(out.stderr.toString())) {
+      throw new Error(`dash-fixture: git config ${key} failed: ${out.stderr.toString()}`);
+    }
+    sleepSync(LOCK_BACKOFF_MS);
+  }
+  throw new Error(`dash-fixture: git config ${key} never got the lock`);
 }
 
 /** Commit everything dirty in the dash's worktree as one round. */

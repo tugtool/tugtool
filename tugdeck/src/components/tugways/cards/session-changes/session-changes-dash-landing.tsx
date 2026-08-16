@@ -27,7 +27,7 @@ import { TugBadge, type TugBadgeRole } from "@/components/tugways/tug-badge";
 import { TugPushButton } from "@/components/tugways/tug-push-button";
 import { TugDiffDocument } from "@/components/tugways/tug-diff-document";
 import type { DashChangesetEntry } from "@/lib/changeset-types";
-import type { JoinBlocker, JoinPhase } from "@/lib/changeset-verb-store";
+import type { ConflictHistory, JoinBlocker, JoinPhase } from "@/lib/changeset-verb-store";
 import type { ResolvedFile, ResolvePhase, ResolveState } from "@/lib/changeset-join-store";
 import type { GitDiffFile, GitDiffPayload } from "@/lib/git-diff-store";
 import {
@@ -97,6 +97,8 @@ export interface SessionChangesDashLandingProps {
   joinPhase: JoinPhase;
   /** Conflicting paths from the preview or an aborted execute. */
   conflicts: readonly string[];
+  /** Per-path base history behind those conflicts (Spec S03); preview only. */
+  archaeology: readonly ConflictHistory[];
   /** What would refuse this join, from the preview's preflight (Spec S03). */
   blockers: readonly JoinBlocker[];
   /** A verb-level refusal from an execute, if one came back. */
@@ -107,6 +109,9 @@ export interface SessionChangesDashLandingProps {
   turnInProgress: boolean;
   /** The resolution ladder's live state for this dash. */
   resolve: ResolveState;
+  /** What refuses the binding control on the row above, named so the face can
+   *  say which control it is — the row calls it Adopt or Leave by binding. */
+  bindingRefusal: { control: string; reason: string } | null;
   actions: DashLandingActions;
 }
 
@@ -242,11 +247,13 @@ export function SessionChangesDashLanding({
   outcome,
   joinPhase,
   conflicts,
+  archaeology,
   blockers,
   error,
   candidateCommit,
   turnInProgress,
   resolve,
+  bindingRefusal,
   actions,
 }: SessionChangesDashLandingProps): React.ReactElement {
   // The message lives in the composer, not here, so the affordance asks the
@@ -273,6 +280,22 @@ export function SessionChangesDashLanding({
     [resolve.resolved, entry.owner_id],
   );
   const releaseHint = turnInProgress ? "Wait for the turn to finish" : null;
+  const resumeHint =
+    joinPhase === "pending"
+      ? "A landing is in flight"
+      : turnInProgress
+        ? "Wait for the turn to finish"
+        : null;
+  // Every refusal on this surface, said out loud. A disabled button takes no
+  // pointer events, so a `title` on one can never be read — the reason has to
+  // arrive as face text or it does not arrive at all.
+  const refusals: { control: string; reason: string }[] = [];
+  if (interrupted && resumeHint !== null) {
+    refusals.push({ control: "Resume teardown", reason: resumeHint });
+  }
+  if (disabledReason !== null) refusals.push({ control: "Join", reason: disabledReason });
+  if (releaseHint !== null) refusals.push({ control: "Release", reason: releaseHint });
+  if (bindingRefusal !== null) refusals.push(bindingRefusal);
 
   return (
     <div
@@ -295,9 +318,10 @@ export function SessionChangesDashLanding({
               size="xs"
               emphasis="outlined"
               role="action"
+              // Ungated by the turn: resolving builds a candidate commit off
+              // to the side and touches no checkout. Gating it locked a
+              // conflicted dash's only escape hatch behind the agent.
               onClick={() => actions.resolve(entry)}
-              disabled={turnInProgress}
-              title={turnInProgress ? "Wait for the turn to finish" : undefined}
               data-slot="session-changes-dash-resolve"
             >
               Resolve
@@ -309,8 +333,7 @@ export function SessionChangesDashLanding({
               emphasis="filled"
               role="accent"
               onClick={() => actions.resumeTeardown(entry)}
-              disabled={turnInProgress || joinPhase === "pending"}
-              title={turnInProgress ? "Wait for the turn to finish" : undefined}
+              disabled={resumeHint !== null}
               data-slot="session-changes-dash-resume"
             >
               Resume teardown
@@ -322,7 +345,6 @@ export function SessionChangesDashLanding({
             role="action"
             onClick={() => actions.join(entry)}
             disabled={disabledReason !== null}
-            title={disabledReason ?? undefined}
             data-slot="session-changes-dash-join"
           >
             Join
@@ -345,7 +367,6 @@ export function SessionChangesDashLanding({
               actions.release(entry);
             }}
             disabled={releaseHint !== null}
-            title={releaseHint ?? undefined}
             widthStabilize={{ alternateLabel: "Discard" }}
             data-slot="session-changes-dash-release"
             data-confirming={confirmingDiscard ? "true" : undefined}
@@ -354,6 +375,21 @@ export function SessionChangesDashLanding({
           </TugPushButton>
         </span>
       </div>
+      {refusals.length > 0 ? (
+        <ul
+          className="session-changes-dash-landing-refusals"
+          data-slot="session-changes-dash-landing-refusals"
+        >
+          {refusals.map((refusal) => (
+            <li key={refusal.control}>
+              <span className="session-changes-dash-landing-refusal-control">
+                {refusal.control}
+              </span>
+              <span className="session-changes-dash-landing-note">{refusal.reason}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {confirmingDiscard ? (
         <div
           className="session-changes-dash-landing-discard"
@@ -486,9 +522,41 @@ export function SessionChangesDashLanding({
           className="session-changes-dash-landing-conflicts"
           data-slot="session-changes-dash-landing-conflicts"
         >
-          {conflicts.map((path) => (
-            <li key={path}>{path}</li>
-          ))}
+          {conflicts.map((path) => {
+            // What the base did to this path while the dash was away. A
+            // conflict names a file and stops; this is the history that
+            // explains it, and it is the difference between "resolve this"
+            // and knowing what you are resolving against.
+            const history = archaeology.find((h) => h.path === path) ?? null;
+            const elided = history === null ? 0 : history.total - history.commits.length;
+            return (
+              <li key={path}>
+                <span className="session-changes-dash-landing-conflict-path">{path}</span>
+                {history !== null ? (
+                  <ul
+                    className="session-changes-dash-landing-archaeology"
+                    data-slot="session-changes-dash-landing-archaeology"
+                  >
+                    {history.commits.map((commit) => (
+                      <li key={commit.sha}>
+                        <span className="session-changes-dash-landing-archaeology-sha">
+                          {commit.sha}
+                        </span>
+                        <span className="session-changes-dash-landing-archaeology-subject">
+                          {commit.subject}
+                        </span>
+                      </li>
+                    ))}
+                    {elided > 0 ? (
+                      <li className="session-changes-dash-landing-note">
+                        +{elided} earlier
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
       {error !== null ? (

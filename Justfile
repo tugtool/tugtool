@@ -1016,6 +1016,39 @@ app-test *FILES:
     # file failures so the summary captures every file's status.
     set -uo pipefail
 
+    # The corpus runs from the main checkout, never from a dash worktree.
+    #
+    # Every `tugutil dash` verb resolves the MAIN repo root before it does
+    # anything (tugdash-core::ops::main_repo_root, via find_repo_root_from),
+    # so a dash created from a linked worktree is created against the base
+    # checkout. The app under test has the WORKTREE open as its project, so
+    # its dash lane can never list the dash its own fixture just made — the
+    # lane tests time out waiting for a row that was written somewhere else.
+    # Worse, the run leaves branches, worktrees and dash-log lines behind in
+    # the developer's main checkout.
+    #
+    # TUG_APPTEST_ALLOW_WORKTREE=1 proceeds anyway, for a test whose subject
+    # has nothing to do with dashes.
+    if [ "${TUG_APPTEST_ALLOW_WORKTREE:-}" != "1" ]; then
+        COMMON_DIR="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+        TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null)"
+        HEAD_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+        if [ -n "$COMMON_DIR" ] && [ "$COMMON_DIR" != "$TOPLEVEL/.git" ]; then
+            REFUSAL="this is a linked worktree (git-common-dir is $COMMON_DIR)"
+        elif case "$HEAD_BRANCH" in tugdash/*) true;; *) false;; esac; then
+            REFUSAL="HEAD is the dash branch $HEAD_BRANCH"
+        fi
+        if [ -n "${REFUSAL:-}" ]; then
+            echo "==> REFUSED: app-test does not run from a dash worktree — $REFUSAL." >&2
+            echo "    tugutil's dash verbs resolve the main repo root, so a fixture dash is" >&2
+            echo "    created against the base checkout while the app under test has this" >&2
+            echo "    worktree open. The lane can never list it, and the run dirties the" >&2
+            echo "    main checkout. Run the corpus from the main checkout instead." >&2
+            echo "    Set TUG_APPTEST_ALLOW_WORKTREE=1 to proceed anyway." >&2
+            exit 1
+        fi
+    fi
+
     # App-test always drives the dedicated `dev.tugtool.app.apptest`
     # identity — the same one `build-app` produces and `app-test-grant`
     # granted AX to. This is baked in (no env-var prefix) so the build
