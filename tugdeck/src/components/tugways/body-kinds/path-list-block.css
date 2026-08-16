@@ -203,6 +203,16 @@ body {
   cursor: pointer;
 }
 
+/* …and it underlines the name under the pointer, which is what a file that
+   opens looks like everywhere else in the app — the commit receipt's roster
+   wears exactly this. The underline is on the ROW's hover rather than the
+   path's own, because here the whole row is the target: the delegated
+   listener opens the file from a click anywhere along it, so the name has to
+   light while the pointer is over the part that will act. */
+.tugx-paths-row[data-tug-annotation="file-path"]:hover .tool-block-path {
+  text-decoration: underline;
+}
+
 /* The marker cell. It stands exactly where the commit receipt's git status
    letter stands, so it takes that letter's cell verbatim: `TugStatusMark`'s
    fixed `2ch` box in the row's own mono family, which is what makes the path

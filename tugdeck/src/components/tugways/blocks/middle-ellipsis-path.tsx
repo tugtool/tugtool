@@ -12,10 +12,12 @@
  * so the whole filename is pinned. What this adds is the tool block's own:
  * the `<code>` slot and mono face, transcript Find, and the tooltip.
  *
- * A hover tooltip surfaces the full path, but only when it is actually
- * clipped: `TugTooltip`'s `suppressOpen` gate runs `pathTooltipSuppressed`
- * on each hover, which compares the head's `scrollWidth` against its
- * `clientWidth`.
+ * A hover tooltip surfaces the full path. By default (`tip="path"`) it opens
+ * only when the path is actually clipped: `TugTooltip`'s `suppressOpen` gate
+ * runs `pathTooltipSuppressed` on each hover, which compares the head's
+ * `scrollWidth` against its `clientWidth`. A row that NAMES a file rather
+ * than heading one passes `tip="file"` and gets the house file hover instead
+ * — the same `fileTip` bubble the commit receipt's roster wears.
  *
  * Per [#bk-conformance] item 8 this is THE path-truncation pattern for
  * tool-block headers. `ReadToolBlock` and `EditToolBlock` both
@@ -42,6 +44,7 @@ import React from "react";
 
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugPath, pathHeadClipped } from "@/components/tugways/tug-path";
+import { fileTip } from "@/components/tugways/entity-tips";
 
 /*
  * The tail is the FILENAME — `TugPath`'s default split, at the last
@@ -85,6 +88,21 @@ export interface MiddleEllipsisPathProps {
    * so the unit's text is the whole path however it is clipped.
    */
   findable?: boolean;
+  /**
+   * Which hover the path answers with.
+   *
+   * `"path"` — the truncation's own explanation: the raw string, and only
+   * when the path is actually clipped. Right for a tool-block header, where
+   * the hover exists to un-elide a header line.
+   *
+   * `"file"` — the house file hover, the same `fileTip` bubble a path in
+   * prose, a commit roster, or a Gazette ref gets. Always opens, because it
+   * states the whole location of a file the row NAMES, which is a fact the
+   * row withholds whether or not its glyphs happen to fit.
+   *
+   * @default "path"
+   */
+  tip?: "path" | "file";
 }
 
 /**
@@ -94,12 +112,17 @@ export function MiddleEllipsisPath({
   path,
   fullPath,
   findable = false,
+  tip = "path",
 }: MiddleEllipsisPathProps): React.ReactElement {
+  const whole = fullPath ?? path;
+  const houseTip = tip === "file";
   return (
     <TugTooltip
-      content={fullPath ?? path}
-      side="bottom"
-      suppressOpen={pathTooltipSuppressed}
+      content={houseTip ? fileTip({ path: whole }) : whole}
+      variant={houseTip ? "entity" : "label"}
+      side={houseTip ? "top" : "bottom"}
+      align={houseTip ? "start" : "center"}
+      suppressOpen={houseTip ? undefined : pathTooltipSuppressed}
     >
       {/* The `<code>` is the slot and the mono face; the truncation is
           `TugPath`'s, so the head/tail split is authored once for every

@@ -612,6 +612,7 @@ const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
         path={pathRelativeTo(row.path, dataSource.relativeTo)}
         fullPath={row.path}
         findable={dataSource.findable}
+        tip="file"
       />
       <span className="tugx-search-file-count" data-slot="search-result-file-count">
         {composeMatchCountLabel(row.matchCount)}

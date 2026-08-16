@@ -445,6 +445,7 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
         path={pathRelativeTo(path, dataSource.relativeTo)}
         fullPath={path}
         findable={dataSource.findable}
+        tip="file"
       />
     </TugListRow>
   );
