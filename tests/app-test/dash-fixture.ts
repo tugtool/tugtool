@@ -3,13 +3,19 @@
  * app-test, by the real CLI.
  *
  * Shared because the alternative is four copies, and because the one thing
- * that is genuinely hard here has to be got right in all of them: **the app
- * tests run in parallel and they all drive the same git repository.** Two
- * `tugutil dash create`s in flight at once collide on `index.lock`, and the
- * loser exits non-zero mid-`beforeAll` with a message about another git
- * process. The lock is transient by construction — whoever holds it is a
- * fraction of a second from dropping it — so every git-touching verb here
- * retries through it rather than failing the file that lost a coin toss.
+ * that is genuinely hard here has to be got right in all of them: **these
+ * fixtures drive the developer's own repository, which other processes are
+ * holding at the same time.** Every live tugcast instance — the release app,
+ * every other app-test instance — runs a base-motion engine that shells git
+ * against this repo, so a `tugutil dash create` here can lose a coin toss for
+ * `index.lock`. The lock is transient by construction, so every git-touching
+ * verb retries through it rather than failing the file that lost.
+ *
+ * A failure that is *not* transient fails immediately and carries the whole
+ * corpse — exit code, signal, both streams. The alternative is what actually
+ * happened: `tugutil dash create … failed:` with nothing after the colon,
+ * because the message quoted only stderr and the process died before writing
+ * any.
  *
  * Everything else about a dash fixture is deliberately unclever: the dash is
  * real, the round is a real commit, and the release really discards the branch
@@ -53,13 +59,66 @@ export function tugutilPath(projectDir: string): string {
   throw new Error(`dash-fixture: no built tugutil under ${roots.join(" or ")}`);
 }
 
-function heldLock(stderr: string): boolean {
-  return stderr.includes("index.lock") || stderr.includes("Another git process");
+/**
+ * Whether a failure is a git contention that will clear on its own.
+ *
+ * The set is literal and closed: anything not named here fails fast with its
+ * evidence, because retrying an unknown failure twelve times only delays the
+ * diagnosis by three seconds.
+ */
+function transientGitFailure(stderr: string): boolean {
+  return (
+    stderr.includes("index.lock") ||
+    stderr.includes("Another git process") ||
+    stderr.includes("could not lock") ||
+    stderr.includes("cannot lock ref") ||
+    (stderr.includes("Unable to create") && stderr.includes(".lock"))
+  );
 }
 
 /** Block the calling thread — these run in `beforeAll`, which is synchronous. */
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** What a failed spawn leaves behind, kept whole rather than reduced to stderr. */
+interface SpawnFailure {
+  exitCode: number | null;
+  signalCode: string | null;
+  stdout: string;
+  stderr: string;
+}
+
+const EMPTY_FAILURE: SpawnFailure = {
+  exitCode: null,
+  signalCode: null,
+  stdout: "",
+  stderr: "",
+};
+
+/** The last `n` lines of `text`, or all of it when it is shorter. */
+function tailLines(text: string, n: number): string {
+  const lines = text.trimEnd().split("\n");
+  return lines.length <= n ? lines.join("\n") : lines.slice(-n).join("\n");
+}
+
+/**
+ * Render a failure as something a red run can be diagnosed from.
+ *
+ * Exit code and signal are always present, so a process killed before it could
+ * write anything still says so. stdout matters as much as stderr here: the
+ * `--json` verbs put their refusals *on stdout* inside the JSON envelope, so a
+ * message quoting stderr alone hides exactly the refusals they work hardest to
+ * phrase.
+ */
+function describeFailure(f: SpawnFailure): string {
+  const parts = [`exit ${f.exitCode ?? "none"}`];
+  if (f.signalCode !== null && f.signalCode !== undefined) parts.push(`signal ${f.signalCode}`);
+  const stderr = f.stderr.trim();
+  const stdout = tailLines(f.stdout, 20).trim();
+  parts.push(`stderr: ${stderr === "" ? "(empty)" : stderr}`);
+  parts.push(`stdout: ${stdout === "" ? "(empty)" : stdout}`);
+  return parts.join("\n  ");
 }
 
 export interface TugutilRun {
@@ -76,7 +135,7 @@ export interface TugutilRun {
 /** Run one `tugutil` verb, retrying through a transient git lock. */
 export function tugutil(args: string[], opts: TugutilRun): string {
   const bin = tugutilPath(opts.cwd);
-  let last = "";
+  let last = EMPTY_FAILURE;
   for (let attempt = 0; attempt <= LOCK_RETRIES; attempt += 1) {
     const out = Bun.spawnSync([bin, ...args], {
       cwd: opts.cwd,
@@ -84,12 +143,40 @@ export function tugutil(args: string[], opts: TugutilRun): string {
       env: { ...process.env, ...(opts.env ?? {}) },
     });
     if (out.exitCode === 0) return out.stdout.toString();
-    last = out.stderr.toString();
-    if (!heldLock(last)) break;
+    last = {
+      exitCode: out.exitCode,
+      signalCode: out.signalCode ?? null,
+      stdout: out.stdout.toString(),
+      stderr: out.stderr.toString(),
+    };
+    if (!transientGitFailure(last.stderr)) break;
     sleepSync(LOCK_BACKOFF_MS);
   }
   if (opts.required === false) return "";
-  throw new Error(`tugutil ${args.join(" ")} failed: ${last}`);
+  throw new Error(`tugutil ${args.join(" ")} failed\n  ${describeFailure(last)}`);
+}
+
+/**
+ * `git`, in a directory, throwing on failure — retrying past a transient lock.
+ *
+ * One copy, shared: the lane files each grew their own, and three predicates
+ * that must agree is two too many.
+ */
+export function gitRetry(cwd: string, ...args: string[]): string {
+  let last = EMPTY_FAILURE;
+  for (let attempt = 0; attempt <= LOCK_RETRIES; attempt += 1) {
+    const out = Bun.spawnSync(["git", "-C", cwd, ...args], {});
+    if (out.exitCode === 0) return out.stdout.toString();
+    last = {
+      exitCode: out.exitCode,
+      signalCode: out.signalCode ?? null,
+      stdout: out.stdout.toString(),
+      stderr: out.stderr.toString(),
+    };
+    if (!transientGitFailure(last.stderr)) break;
+    sleepSync(LOCK_BACKOFF_MS);
+  }
+  throw new Error(`git ${args.join(" ")} failed\n  ${describeFailure(last)}`);
 }
 
 export interface CreatedDash {
@@ -120,21 +207,8 @@ export function createDash(
       cwd: projectDir,
     }),
   ) as { data: { id: string; worktree: string } };
-  gitConfig(projectDir, `branch.tugdash/${name}.tugautoreplay`, "false");
+  gitRetry(projectDir, "config", `branch.tugdash/${name}.tugautoreplay`, "false");
   return { id: out.data.id, worktree: out.data.worktree };
-}
-
-/** One `git config` write, retrying through a held lock like the verbs do. */
-function gitConfig(projectDir: string, key: string, value: string): void {
-  for (let attempt = 0; attempt <= LOCK_RETRIES; attempt += 1) {
-    const out = Bun.spawnSync(["git", "-C", projectDir, "config", key, value], {});
-    if (out.exitCode === 0) return;
-    if (!heldLock(out.stderr.toString())) {
-      throw new Error(`dash-fixture: git config ${key} failed: ${out.stderr.toString()}`);
-    }
-    sleepSync(LOCK_BACKOFF_MS);
-  }
-  throw new Error(`dash-fixture: git config ${key} never got the lock`);
 }
 
 /** Commit everything dirty in the dash's worktree as one round. */

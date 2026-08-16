@@ -53,7 +53,7 @@ import {
   rmTempTugbank,
   seedTugbankForLaunch,
 } from "./_harness/tugbank-helpers";
-import { commitRound, createDash, releaseDash } from "./dash-fixture";
+import { commitRound, createDash, gitRetry as git, releaseDash } from "./dash-fixture";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 240_000;
@@ -89,24 +89,6 @@ const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 let conflictFile = "";
 /** That base commit's subject — what the archaeology must name under the path. */
 let baseSubject = "";
-
-/**
- * `git`, in a directory, throwing on failure — retrying past an `index.lock`.
- * Test files run in parallel and the dash fixtures share one repository, so a
- * sibling test's `dash create` can still be holding the lock when this one
- * starts. `dash-fixture`'s `tugutil` wrapper retries for the same reason.
- */
-function git(cwd: string, ...args: string[]): string {
-  let last = "";
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const out = Bun.spawnSync(["git", "-C", cwd, ...args], {});
-    if (out.exitCode === 0) return out.stdout.toString();
-    last = out.stderr.toString();
-    if (!last.includes("index.lock")) break;
-    Bun.sleepSync(250);
-  }
-  throw new Error(`git ${args.join(" ")} failed: ${last}`);
-}
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
