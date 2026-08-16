@@ -179,6 +179,83 @@ export function gitRetry(cwd: string, ...args: string[]): string {
   throw new Error(`git ${args.join(" ")} failed\n  ${describeFailure(last)}`);
 }
 
+/** A base commit and one small text file it modified — a conflict's subject. */
+export interface ConflictSubject {
+  /** The commit that modified `path`. A dash rewound to its parent diverges. */
+  commit: string;
+  /** Repo-relative path of the modified file. */
+  path: string;
+  /** That commit's subject line — what an archaeology face must name. */
+  subject: string;
+}
+
+/**
+ * Pick a conflict subject: the newest first-parent commit on `main` that
+ * modified a **small** text file, and that file.
+ *
+ * The size bound is the whole point. A fixture that took whatever `main` last
+ * touched had its outcome decided by unrelated work: when the newest modified
+ * file was a 2050-line `Justfile`, the resolution's diff overran the server's
+ * 400-line review cap and the assertion looking for the resolved body failed —
+ * a red suite that said nothing about the code under test. The bound keeps the
+ * conflict small enough to render whole.
+ *
+ * Deriving rather than hardcoding is deliberate too: a pinned sha ages out of
+ * the history, and the rewind has to stay shallow so the divergence is minimal
+ * and `merge-tree` stays cheap.
+ */
+export function smallConflictSubject(
+  projectDir: string,
+  opts: { maxLines?: number; maxCommits?: number } = {},
+): ConflictSubject {
+  const maxLines = opts.maxLines ?? 120;
+  const maxCommits = opts.maxCommits ?? 25;
+  const log = gitRetry(
+    projectDir,
+    "log",
+    "--first-parent",
+    "--diff-filter=M",
+    "--pretty=%H",
+    "--name-only",
+    `-${maxCommits}`,
+    "main",
+  )
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  let commit = "";
+  for (const line of log) {
+    if (/^[0-9a-f]{40}$/.test(line)) {
+      commit = line;
+      continue;
+    }
+    if (commit === "") continue;
+    // The dash rewinds to the parent, so a root commit is no use here.
+    if (!revExists(projectDir, `${commit}~1`)) continue;
+    const blob = gitRetry(projectDir, "show", `${commit}:${line}`);
+    if (blob.includes("\0")) continue; // binary — no content conflict to resolve
+    if (blob.split("\n").length > maxLines) continue;
+    return {
+      commit,
+      path: line,
+      subject: gitRetry(projectDir, "log", "-1", "--pretty=%s", commit).trim(),
+    };
+  }
+  throw new Error(
+    `dash-fixture: no commit in main's last ${maxCommits} first-parent commits ` +
+      `modified a text file of ${maxLines} lines or fewer`,
+  );
+}
+
+/** Whether a revision resolves — used to skip a commit with no parent. */
+function revExists(projectDir: string, rev: string): boolean {
+  return (
+    Bun.spawnSync(["git", "-C", projectDir, "rev-parse", "--verify", "--quiet", rev], {})
+      .exitCode === 0
+  );
+}
+
 export interface CreatedDash {
   /** The dash's owner key — what `bind_dash_ok` carries and the lane fronts on. */
   id: string;

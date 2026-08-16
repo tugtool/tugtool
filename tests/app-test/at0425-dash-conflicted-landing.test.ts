@@ -53,7 +53,13 @@ import {
   rmTempTugbank,
   seedTugbankForLaunch,
 } from "./_harness/tugbank-helpers";
-import { commitRound, createDash, gitRetry as git, releaseDash } from "./dash-fixture";
+import {
+  commitRound,
+  createDash,
+  gitRetry as git,
+  releaseDash,
+  smallConflictSubject,
+} from "./dash-fixture";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 240_000;
@@ -95,33 +101,23 @@ beforeAll(() => {
   releaseDash(PROJECT_DIR, DASH);
   const created = createDash(PROJECT_DIR, DASH, "at0425 conflicted fixture");
 
-  // The newest first-parent commit on the base that MODIFIED a file, and one
-  // such file. Rewinding the dash branch to that commit's parent and deleting
-  // the file diverges the two sides on it: the base modified what the dash
-  // deleted — a delete/modify conflict `merge-tree` must report.
-  const log = git(
-    PROJECT_DIR,
-    "log",
-    "--first-parent",
-    "--diff-filter=M",
-    "--pretty=%H",
-    "--name-only",
-    "-1",
-    "main",
-  )
-    .trim()
-    .split("\n")
-    .filter((line) => line.length > 0);
-  const tipWithModification = log[0] ?? "";
-  conflictFile = log[1] ?? "";
-  if (tipWithModification === "" || conflictFile === "") {
-    throw new Error("at0425: no modified file found on main's first-parent history");
-  }
-  baseSubject = git(PROJECT_DIR, "log", "-1", "--pretty=%s", tipWithModification).trim();
+  // A base commit that modified a small text file, and that file. Rewinding
+  // the dash branch to that commit's parent and deleting the file diverges the
+  // two sides on it: the base modified what the dash deleted — a delete/modify
+  // conflict `merge-tree` must report.
+  //
+  // The subject comes from the shared helper for determinism, so this file's
+  // outcome stops depending on what `main` last touched. It is *not* here for
+  // the size bound: a delete/modify short-circuits to unresolved before any
+  // rung runs, so no diff is ever produced and the review cap that bites
+  // at0426 cannot bite this. Nobody should go looking for one here.
+  const subject = smallConflictSubject(PROJECT_DIR);
+  conflictFile = subject.path;
+  baseSubject = subject.subject;
 
   // The rewind and the deletion happen in the dash's own worktree — the
   // developer's checkout and the base branch are never touched.
-  git(created.worktree, "reset", "--hard", `${tipWithModification}~1`);
+  git(created.worktree, "reset", "--hard", `${subject.commit}~1`);
   rmSync(join(created.worktree, conflictFile));
   commitRound(PROJECT_DIR, DASH, `at0425(round): delete ${conflictFile}`);
 });

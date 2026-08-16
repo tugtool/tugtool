@@ -52,7 +52,13 @@ import {
   rmTempTugbank,
   seedTugbankForLaunch,
 } from "./_harness/tugbank-helpers";
-import { commitRound, createDash, gitRetry as git, releaseDash } from "./dash-fixture";
+import {
+  commitRound,
+  createDash,
+  gitRetry as git,
+  releaseDash,
+  smallConflictSubject,
+} from "./dash-fixture";
 
 const SHOULD_RUN = process.env.TUGAPP_APP_TEST === "1";
 const TEST_TIMEOUT_MS = 240_000;
@@ -78,8 +84,28 @@ const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 
-/** The body the stub driver resolves every conflict to. */
+/**
+ * The body the stub driver resolves every conflict to.
+ *
+ * Asserted verbatim in the review face, so it must stay fixed — the per-run
+ * nonce below goes in the *dash side* of the conflict, never here.
+ */
 const DRIVER_BODY = "at0426 resolved by the stub driver\n";
+
+/**
+ * The dash side of the conflict, unique per run.
+ *
+ * The nonce is not cosmetic. rerere is rung 2 and the merge driver is rung 4,
+ * so a cached rerere resolution short-circuits ahead of the driver this test
+ * exists to exercise — and the ladder teaches rerere whatever the driver
+ * decided, writing an entry keyed on the conflict's exact text. Before the
+ * conflict subject was pinned, the base side moved with `main` and a stale
+ * entry rarely matched. Pinned, the same conflict recurs byte for byte, so a
+ * cache entry surviving a killed run (its `afterAll` skipped) would replay,
+ * `resolved_by` would come back `rerere`, and the assertion below looking for
+ * `driver` would fail. A nonce in this body makes each run's conflict its own.
+ */
+const DASH_BODY = `at0426 dash side — the whole file, rewritten (${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)})\n`;
 
 /** The base-tip file both sides rewrite — the conflict's subject. */
 let conflictFile = "";
@@ -118,34 +144,21 @@ beforeAll(() => {
   releaseDash(PROJECT_DIR, DASH);
   const created = createDash(PROJECT_DIR, DASH, "at0426 resolution-review fixture");
 
-  // The newest first-parent commit on the base that MODIFIED a file, and one
-  // such file. Rewinding the dash to that commit's parent and rewriting the
-  // file wholesale puts both sides on the same lines — a content conflict the
-  // `merge-file` rung declines, so the driver rung is the one that resolves it.
-  const log = git(
-    PROJECT_DIR,
-    "log",
-    "--first-parent",
-    "--diff-filter=M",
-    "--pretty=%H",
-    "--name-only",
-    "-1",
-    "main",
-  )
-    .trim()
-    .split("\n")
-    .filter((line) => line.length > 0);
-  const tipWithModification = log[0] ?? "";
-  conflictFile = log[1] ?? "";
-  if (tipWithModification === "" || conflictFile === "") {
-    throw new Error("at0426: no modified file found on main's first-parent history");
-  }
+  // A base commit that modified a SMALL text file, and that file. Rewinding
+  // the dash to that commit's parent and rewriting the file wholesale puts
+  // both sides on the same lines — a content conflict the `merge-file` rung
+  // declines, so the driver rung is the one that resolves it.
+  //
+  // The size bound is what makes this test about the code rather than about
+  // whatever `main` last touched: the server caps a resolution's review diff
+  // at 400 lines, so a large subject truncates the driver's decision out of
+  // the face and the assertion below looking for it fails for a reason that
+  // has nothing to do with the gate under test.
+  const subject = smallConflictSubject(PROJECT_DIR);
+  conflictFile = subject.path;
 
-  git(created.worktree, "reset", "--hard", `${tipWithModification}~1`);
-  writeFileSync(
-    join(created.worktree, conflictFile),
-    "at0426 dash side — the whole file, rewritten\n",
-  );
+  git(created.worktree, "reset", "--hard", `${subject.commit}~1`);
+  writeFileSync(join(created.worktree, conflictFile), DASH_BODY);
   commitRound(PROJECT_DIR, DASH, `at0426(round): rewrite ${conflictFile}`);
 
   // Rung 4's stub: <base> <ours> <theirs> <output> <ext> → write the output.
