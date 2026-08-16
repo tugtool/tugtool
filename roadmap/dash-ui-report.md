@@ -1,80 +1,84 @@
-# Dashes in the UI — a report and proposals
+# Dashes in the UI — report, first round, and the revision
 
-The dash infrastructure is in: binding, lifecycle stages, the plan verbs, join mode, the receipts. What grew up around it in the UI is a set of per-surface improvisations — a badge here, a section there — with no shared grammar for what a dash-bound session *looks like*. This report inventories what exists, names the defects, and proposes a direction: dash identity becomes part of the session identity grammar, produced in one place and worn by every surface, the same way [D123] settled session names.
+**Revised 2026-08-16, after the first round shipped and the owner reviewed it live.** The original report proposed folding dash identity into the session identity grammar; that round landed (inventory below), and the owner's review of the shipped result found the treatment wrong in two specific ways. This document now carries three things: what shipped and where it lives, the owner's verdicts, and the corrected design the next round implements. The corrected design supersedes the "Settled" register decisions the first edition closed with.
 
-## 1. Where dash identity surfaces today
+## 1. What shipped in round one {#shipped}
 
-| Surface | What it shows | Where |
-| --- | --- | --- |
-| Session masthead (title bar) | A `TugBadge` chip with the dash name, in the title line's trailing `slots` | `session-masthead.tsx:574-594`, `session-masthead.css:423-450` |
-| Lens **Dashes** section | One row per dash, account-global: phase dot / parked mark, name, stage, `step i/N`, review mark, session jump chips | `lens/sections/dashes-section.tsx` |
-| Changes card | The dash changeset entry (stage, plan, review state, verbs) | `tug-changes-list.tsx` |
-| Session atoms / citations | **Nothing.** The atom renders name + `project/callsign` + phase dot; a dash-bound session's atom is indistinguishable from any other | `tug-session-identity.tsx` |
-| Gazette | Nothing dash-specific — session refs render the plain atom | `gazette-card.tsx` |
+| Piece | Where it landed |
+| --- | --- |
+| `TugBadge` elision fix | The badge's face text rides its own `.tug-badge-text` span (`tug-badge.tsx:214-235`, `tug-badge.css:212`), so every badge elides instead of clipping both ends |
+| `dashForSession` selector | `lib/dash-session-index.ts` — session-keyed lookup derived from the changeset aggregate, memoized per snapshot; no second store |
+| Identity third run | `tug-session-identity.tsx` renders a dash marker run (`GitBranch` glyph + name on the line tier, glyph alone on the chip tier); the masthead's trailing badge slot is deleted (`session-masthead.tsx:528` states the rule) |
+| Lens dash sub-rows | `cards-data-source.ts` emits a `dash-subrow` row kind under each bound session's pane row; rendered by `DashSubrowCell` in `cards-section.tsx` via `DashFactsRun` |
+| Review tint | The marker takes the caution tone when the dash's plan reads `stale`/`never-reviewed` (`lib/dash-review.ts`); tooltip carries the sentence |
 
-Two different stores answer "what dash is this?": the masthead reads the **card-keyed** binding (`cardSessionBindingStore.getBinding(cardId)?.dash`), while the Lens section reads the **account-global** aggregate (`ChangesetAllStore`, whose dash entries carry `bound_sessions`). There is no session-keyed lookup at all — which is exactly the lookup an atom, a Gazette ref, or a Lens sub-row needs, since those surfaces have a session id and no card.
+The Dashes section stayed as the account-global roster, per the first edition's decision. That part holds.
 
-## 2. The badge: two defects, one root cause each
+## 2. The owner's verdicts on the shipped result {#verdicts}
 
-### 2a. The clipping is a component bug, not a width choice
+**2a. The two-register treatment bifurcated the identity.** The line tier shows `⎇ scroll-preserve-…` while the chip tier shows a bare glyph with the name hidden in a tooltip — the same session spells its identity two different ways depending on where you meet it. The register split was the design; the design was wrong. There must be **one format**, worn identically by every surface.
 
-The chip clips *both ends* of the name with no ellipsis (`…wn-attachments-fo…` in the screenshot). The CSS at `session-masthead.css:423` asks for elision — `overflow: hidden; text-overflow: ellipsis; max-inline-size: 12ch` — but it asks the wrong element. `TugBadge`'s root is `display: inline-flex; justify-content: center` (`tug-badge.css:196-198`), and `text-overflow` is inert on a flex container: the text lives in an anonymous flex item, the ellipsis never paints, and `justify-content: center` centers the overflowing run so it clips symmetrically off both edges. This is the same trap as [reference: inline-flex cannot elide] — a flex box hands its text no elidable box.
+**2b. The masthead truncates with room to spare.** `scroll-preserve-resize` clips to `scroll-preserve-…` in a masthead with ample free width. The cause is not space pressure: `.tug-session-identity-dash-name` carries a hard ceiling, `max-inline-size: var(--tugx-session-identity-dash-max, 14ch)` (`tug-session-identity.css:102`), so any dash name over 14 characters truncates unconditionally. A name must never elide while there is room to show it — ceilings that fire regardless of available width are the defect, not a tuning knob.
 
-**Fix in `TugBadge` itself, not at the call site:** the badge's label children get an inner `.tug-badge-text` span with `min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap`. Every badge in the app then elides correctly when a mount constrains it; no call site can reproduce this bug again. (Icon and overlay children stay siblings of the text span, unaffected.)
+**2c. The Lens sub-row reads as an outdent, not a nest.** The `dash-subrow` is its own row in the flat list, so it takes its own alternating-stripe band (a visible break from the session it belongs to) and its leading glyph sits at the list's outer gutter — *left* of the session's own text inset. The result reads as a stray sibling, not as a fact about the row above it.
 
-### 2b. The placement is wrong even once it elides
+## 3. The corrected design {#corrected-design}
 
-The chip sits in the title line's trailing slot, which on the masthead means it floats in the dead space between the title and the pane's control cluster — it reads as a stray control, not as identity. And it is frequently redundant ink: a session working dash `markdown-attachments` very often *is named* `markdown-attachments`, so the row says the same word twice, once clipped.
-
-The deeper problem: the dash was bolted on *beside* the identity instead of being folded *into* it. The title is already a deliberate two-run grammar — `<name> : <project>/<callsign>` with per-register elision rules (`tug-session-identity.tsx` header). A dash is a fact of the same kind as the project: it is *where the session is working*. It belongs in that grammar, not in a slot.
-
-## 3. Proposal — dash identity joins the identity grammar
-
-**One selector.** Add a session-keyed derived lookup over the changeset aggregate — `dashForSession(sessionId)` / `useDashForSession(sessionId)` in a small `lib/dash-session-index.ts` — built from the dash entries' `bound_sessions`, memoized per snapshot. This is the [D138] move: derived on every read from the aggregate that already exists, no second store, no new feed. Every surface below reads this one selector, so binding and unbinding repaint everywhere at once — the same liveness custom names already have.
-
-**The title grows a third run.** `sessionTitleParts` (or a sibling) yields an optional dash run, and both tiers wear it:
-
-- **Line tier (masthead, Lens rows, picker):** `<name> : <project>/<callsign>` gains a quiet trailing ` ⎇ <dash>` run — the lucide `git-branch` glyph at text size plus the dash name, in the callsign's muted register, *inside* the title's elision box with its own priority (name survives, dash elides before the callsign does). The trailing badge slot in the masthead is deleted. The review tint moves onto this run's glyph (caution tone for `stale`, the dashed treatment for `never-reviewed`), same tooltip text as today.
-- **Chip tier (the atom — transcript, Gazette, pastes):** the pill gains the same `⎇` glyph before the dot or after the run when `dashForSession` answers, with the dash name riding the tooltip and the citation string rather than the pill's ink — the atom is a citation and stays compact. When the atom's session unbinds (join or release lands, `bound_sessions` moves), the glyph evaporates on the next snapshot — exactly how custom-name updates already behave, so this is dynamic by construction.
-
-This makes "this session is on a dash" legible at every register with one implementation, and it removes the only badge callsite that was fighting for space with pane chrome.
-
-## 4. Proposal — the Lens: sub-rows, not a section
-
-Agreed that the separate **Dashes** section was a mistake. It answers "what dashes exist" in a place whose organizing principle is *cards*, forcing the reader to join two lists by eye. The dash's home in the Lens should be under the session working it.
-
-**Mechanics.** The Cards section's row model is a flat typed list (`cards-data-source.ts` — `group-header` / `pane` / `subcard` rows rendered by kind through `TugListView`). Add a `dash-subrow` kind: when `buildCardsRows` emits a session pane row, it consults the same `dashForSession` selector and, on a hit, emits one indented sub-row keyed on the dash's owner key:
+### 3a. One identity format, everywhere {#one-format}
 
 ```
-[dot] session-name : project/callsign        <slots>
-      description…
-      pulse line…                            <tape>
-   ⎇  markdown-attachments   built           [stale-mark]
+[custom-name]:[project/callsign]#[dash-name]
 ```
 
-- Leading glyph: lucide `git-branch`, at the sub-row's text size — the same glyph the retired section used as its band icon, now doing its work per-row.
-- Content: dash name, stage word, `step i/N` when present, the review mark. No jump chips — the jump was the section's way of getting *to* the session, and the sub-row is already under it. Activating the sub-row fronts the card (same `focus-session-card` dispatch), and a later round can make it open the Changes shade at the dash entry instead, which is the more useful landing.
-- The sub-row is not reorderable and not a drag handle; it travels with its session row.
-- Multiple sessions bound to one dash render the sub-row under each — the sub-row states a fact about the session above it, and each of those facts is true.
+- **No spaces around the `:`** — `scroll-preservation:tugtool/sporty-snail`, not `scroll-preservation : tugtool/sporty-snail`. The separator belongs to the callsign run, as today, so it vanishes with it.
+- **`#` is the dash sigil, and it replaces the `git-branch` glyph in the identity.** The dash run is text in the grammar — `#scroll-preserve-resize` — in the callsign's muted register, with the review tint riding the run's ink exactly as it rides the glyph today. The glyph-only chip treatment is dead: **the chip tier wears the same string as the line tier.** One format means one — the Reporter's footer atom and the masthead spell the session identically.
+- **Absent parts drop with their sigil.** No custom name → `tugtool/sporty-snail#scroll-preserve-resize`. No dash → `scroll-preservation:tugtool/sporty-snail`. Neither → the bare `project/callsign`. `custom-name` and `dash-name` are both often absent, and the format degrades by deletion, never by placeholder.
+- The `project/` prefix keeps riding the callsign run (`sessionIdentityLine`), unchanged — "callsign" in the format above is that composed run.
+- **The citation stays dash-free.** `sessionCitation` is the flat string that outlives the binding in pastes and commits; a citation carrying `#dash` would rot when the dash lands. This is a copy-path rule, not a display rule — every *displayed* identity wears the full format.
 
-**Parked dashes** (no bound session) have no session to nest under, and burying them in the Changes card alone is not acceptable — every dash must be findable in the Lens. **Decided: the standalone Dashes section stays as the one-stop roster, and the sub-rows are added on top.** A dash therefore appears twice in the Lens when it is being worked, and that is fine because the two appearances answer different questions: the sub-row answers *"what is this session doing"* in the session's own context; the section answers *"what dashes exist and which need attention"* account-globally. The Lens already tolerates this kind of doubling — it is itself a mirror of cards that also exist on the canvas.
+Implementation surface: `sessionTitleParts` (or a sibling) grows the dash arm so the format is produced in one place ([D123]'s rule — one name, one producer); `tug-session-identity.tsx` renders it on both tiers and deletes the chip/line marker asymmetry; the separator spacing change lands in `tug-session-identity.css` where the runs compose.
 
-With the sub-rows carrying the per-session context, the section can shed the parts that duplicated it: the session jump chips become redundant (the sub-row *is* at the session), so the section can quiet down toward name + stage + review + parked mark, with its collapsed summary ("3 dashes · 1 parked") as the at-a-glance count. The [P02] ordering and the section's registration survive unchanged.
+### 3b. Elision only under real pressure {#elision}
 
-## 5. The Z4A Join route — noted, needs its own pass
+Delete the `14ch` ceiling (`--tugx-session-identity-dash-max` and its `max-inline-size` at `tug-session-identity.css:100-106`). The dash run keeps `flex: 0 1 auto; min-width: 0` so it still shrinks first under a genuine squeeze, but its natural width is its own — a masthead with room shows `#scroll-preserve-resize` whole. The squeeze priority is unchanged: the dash run gives way first, then the per-register name/callsign rule. Audit the other two runs for the same class of defect while in there: any fixed `ch` ceiling that can truncate while the container has free width violates the same rule.
 
-The Join segment in the prompt entry's Z4A route group (`tug-prompt-entry.tsx:205-211`, `joinAvailable` / `onSelectRoute`) and the join-message prompt read as unresolved. This is a real area, but it is a *mode* design question (what the composer says while a landing is staged, what Auto-Message does, how the four-outcome face hands back), not an identity-grammar question, and it deserves its own focused discussion rather than a paragraph here. Flagged as the follow-on after the identity work.
+### 3c. The Lens: an extra line in the session row, actually indented {#lens-line}
 
-## 6. Entry points — deferred by agreement
+The dash stops being a row of its own. Delete the `dash-subrow` row kind from `cards-data-source.ts` (and its cell registration in `cards-section.tsx`); instead, when the pane row's session has a dash (`dashForSession`, same selector), **the session row itself grows a fourth line**:
 
-Getting *into* dash workflows is still slash-command archaeology (`/dash-bind`, `/dash-join`, `/tugplug:dash-implement`). Per the notes: OK for now; circle back after the above lands. One observation to carry into that round: once dashes are legible in the title bars, atoms, and Lens sub-rows, the surfaces that *show* a dash become natural places to *start* one — the affordance problem gets easier after the visibility problem is solved.
+```
+[dot] scroll-preservation:tugtool/sporty-snail#scroll-preserve-…   <slots>
+      Preserve scroll position across card width changes…
+      6 turns, 1.6 MB. Last updated: Aug 16, 2:46 PM. Ready.
+      #scroll-preserve-resize  working  step 6/10  [stale-mark]
+```
 
-## 7. Suggested order
+- **Same band.** The line lives inside the session's row, so it takes the row's own background — no alternating-stripe break between a session and its dash.
+- **Actually indented.** The line starts at the row's *text* inset (aligned with the description and pulse lines, i.e. past the phase dot), never at the list's outer gutter. The shipped sub-row's 20px `padding-inline-start` on a separate row put its glyph left of the session text — the new line indents *inward* from the session's content edge.
+- **Content:** the dash name in the grammar's own spelling (`#name`), the stage word, `step i/N` when present, the review mark — `DashFactsRun` survives as the renderer, re-hosted inside the pane row cell. No jump chips, as before.
+- The row's measured height grows with the line — rows render at real measured heights, so nothing else changes; the line travels with its session by construction, and the row-count/stripe-parity bookkeeping that a separate row kind required is simply gone.
+- Multiple sessions on one dash render the line under each, same truth as before.
 
-1. **`TugBadge` elision fix** — component-level, benefits every badge, small and standalone.
-2. **`dashForSession` selector** — the shared read everything else stands on.
-3. **Identity grammar: the third run** — masthead badge deleted, line + chip tiers updated, review tint folded in.
-4. **Lens sub-rows** — new row kind under bound sessions; the Dashes section stays as the roster and sheds its jump chips.
-5. Then the Z4A/join-mode polish pass, then entry points.
+The Dashes section stays as the account-global roster (parked dashes must remain findable), and still sheds its session jump chips in favor of the in-row line.
 
-Settled: the register of the `⎇` run is glyph+name on the line tier, glyph-only on the atom (dash name in tooltip and citation); parked dashes stay visible in the retained Dashes section.
+## 4. The Join sheet — from tripwire to active hunt {#join-sheet}
+
+Plainly: the Join sheet once appeared completely dead in real use, it was never reproduced, and the standing posture was to wait for it to happen again and capture evidence (the protocol in `closing-dash-backend-issues-brief.md#join-sheet`). Waiting is no longer the plan. The backend campaign built the instrumentation that makes a dead click diagnosable — a refusing lane now states its reason in the face, a disabled control looks disabled, `__deckTrace` and the join receipts exist — so the next round **goes looking instead of waiting**: with a real dash live (one exists right now), open the Changes shade in the release instance and exercise the join surface deliberately, through the whole lifecycle — implementing, built, conflicted, landed. Either it misbehaves and the capture protocol runs on the spot with a live subject, or it survives deliberate exercise and the original report is downgraded to "fixed by the legibility round, cause among the closed defects." Both outcomes end the tripwire. What remains forbidden is only the third path: building a speculative fix with no captured evidence — the three candidate shapes (refusing / stale / covered) still have three different fixes.
+
+## 5. The Z4A Join route — still its own pass {#z4a}
+
+Unchanged from the first edition: the Join segment in the prompt entry's Z4A route group (`tug-prompt-entry.tsx`, `joinAvailable` / `onSelectRoute`) and the join-message prompt are a *mode* design question, deserving a focused discussion after the identity work. One concrete item now attached to it: the join's doubled subject prefix (`tugdash(close-backend): tugdash(backend): …` on `5ba5ce400`) — whoever composes the squash message prefixes a draft subject that already carries a scope; fix it in this pass.
+
+## 6. Entry points — still deferred {#entry-points}
+
+Unchanged: dash workflows start from slash-command archaeology, acceptable for now; revisit after the identity revision lands, when the surfaces that show a dash become natural places to start one.
+
+## 7. Suggested order {#order}
+
+1. **The one-format identity revision** — `custom-name:project/callsign#dash-name` produced in one place, worn by both tiers, spaces deleted, glyph retired from the identity, citation untouched.
+2. **The elision fix** — kill the `14ch` ceiling; elide only under real pressure; audit the sibling runs for the same defect.
+3. **The Lens in-row dash line** — delete the `dash-subrow` row kind; the session row grows the indented fourth line.
+4. **The Join sheet hunt** — deliberate lifecycle exercise in the release instance with a live dash; capture or downgrade.
+5. Then the Z4A/join-mode pass (doubled prefix included), then entry points.
+
+Superseded by this revision: the first edition's closing register decisions (glyph+name on line, glyph-only on atom). Retained from the first edition: `dashForSession` as the single shared read, the Dashes section as the roster, the citation's dash-free rule, and the review tint riding the run's ink.
