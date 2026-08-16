@@ -70,36 +70,36 @@
   height: 1em;
 }
 
-/* The dash marker. A third run in the same grammar as the callsign, in the
-   same quieted ink — a dash says where the session is working, which is the
-   kind of thing the project already says.
+/* The dash run — `#<dash-name>`, in the same quieted ink as the callsign. A
+   dash says where the session is working, which is the kind of thing the
+   project already says, so it is spelled in the grammar rather than marked
+   with a glyph beside it. The sigil abuts the name, which is why there is no
+   gap here.
 
    It is the run that gives way FIRST under a squeeze, on both registers: the
    binding is temporary and the tooltip carries it whole, while the name and
-   the callsign are the durable handles a reader scans by. `flex: 0 1 auto`
-   with a `ch` ceiling is what buys that ordering — the ceiling keeps a long
-   dash name from setting the identity's natural width in the first place, and
-   the shrink factor spends the deficit here before the title's own runs are
-   asked for any. The glyph never shrinks; only the name beside it elides. */
+   the callsign are the durable handles a reader scans by. The ordering is the
+   TITLE BOX's clamp, not a shrink factor here — see the note on
+   `.tug-session-identity-title`. This run shrinks; the box beside it does not,
+   so every pixel of a deficit lands here first. The sigil never shrinks, so an
+   ellipsized dash still says it is a dash. */
 /* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
 .tug-session-identity-dash {
   display: inline-flex;
-  align-items: center;
-  gap: 3px;
+  align-items: baseline;
   flex: 0 1 auto;
-  min-width: 0;
+  min-inline-size: 0;
   color: var(--tug7-element-global-text-normal-muted-rest);
 }
 
-.tug-session-identity-dash > svg {
-  width: 1em;
-  height: 1em;
+.tug-session-identity-dash-sigil {
   flex: none;
 }
 
+/* No width ceiling. A run elides when the container is out of room and never
+   because of a number authored here — a name that fits is shown whole. */
 .tug-session-identity-dash-name {
-  min-width: 0;
-  max-inline-size: var(--tugx-session-identity-dash-max, 14ch);
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -114,12 +114,33 @@
   color: var(--tug7-element-tone-text-normal-caution-rest);
 }
 
-/* The two title runs share a baseline, so the quieter callsign sits on the
-   name's line rather than beside it. */
+/* The whole grammar on one line — `name:project/callsign#dash` — sharing a
+   baseline, so the quieter callsign and dash sit on the name's line rather
+   than beside it. The parts abut: every separator is a character inside a run,
+   so there is no gap to fight. */
 .tug-session-identity-run {
   display: inline-flex;
   align-items: baseline;
   min-width: 0;
+}
+
+/* The name and callsign, boxed. The box is CLAMPED, not shrunk: it takes its
+   natural width until the run cannot hold it and is then capped to the run.
+
+   That clamp is what makes "the dash gives way first" true rather than merely
+   intended. A shrink factor could not do it: flex splits a deficit in
+   proportion to `shrink × basis`, so however lopsided the factors, this box
+   would always lose a sliver to the dash's squeeze — and a sliver is enough to
+   paint an ellipsis on a name that fits. With the cap, every pixel of a
+   deficit lands on the dash until the dash has none left; only then is the box
+   capped and the tier's own rule below decides between the name and the
+   callsign. The atom uses this same idiom one level in, for the same reason. */
+.tug-session-identity-title {
+  display: inline-flex;
+  align-items: baseline;
+  flex: 0 0 auto;
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
 /* Which run gives way differs by REGISTER — the gallery draws both rules and
@@ -133,10 +154,9 @@
   font-weight: var(--tug-font-weight-semibold);
 }
 
-/* `white-space: pre` keeps the ` : ` separator, which belongs to this run so
-   it disappears with it. */
+/* The `:` separator belongs to this run, so it disappears with it — an
+   unnamed session reads as a bare `project/callsign`. */
 .tug-session-identity-callsign {
-  white-space: pre;
   font-weight: var(--tug-font-weight-regular, 400);
 }
 

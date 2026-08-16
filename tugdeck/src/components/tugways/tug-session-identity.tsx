@@ -78,7 +78,7 @@
 import "./tug-session-identity.css";
 
 import React, { useSyncExternalStore } from "react";
-import { EyeOff, GitBranch } from "lucide-react";
+import { EyeOff } from "lucide-react";
 
 import { dispatchCommand } from "@/command-dispatch";
 import { renderFilterHighlight } from "@/components/tugways/filter-highlight";
@@ -253,18 +253,17 @@ function SessionPrivacyMarker({
  * its identity, so folding it into the identity record would wake every
  * identity surface in the app whenever any session bound or unbound.
  *
- * `name` is what the tier asks for: the line tier passes it and gets the glyph
- * plus the dash name, the atom passes nothing and gets the glyph alone. The
+ * Both tiers render the same run — `#<dash-name>` — because the identity is one
+ * format wherever it is met. The `#` is the grammar's dash sigil and is
+ * decorative to a screen reader, which hears the run's own label instead. The
  * review state paints as a `data-review` attribute the CSS reads ([L06]) — the
  * mark is the run's own tone, since neither register has room for a second
- * glyph beside the first.
+ * mark beside the name.
  */
 function SessionDashMarker({
   sessionId,
-  withName,
 }: {
   sessionId: string;
-  withName: boolean;
 }): React.ReactElement | null {
   const dash = useDashForSession(sessionId);
   if (dash === null) return null;
@@ -275,11 +274,12 @@ function SessionDashMarker({
       data-slot="session-identity-dash"
       data-review={marked ? dash.review : undefined}
       title={dashMarkerTitle(dash)}
+      aria-label={`On dash ${dash.name}`}
     >
-      <GitBranch aria-label={`On dash ${dash.name}`} />
-      {withName ? (
-        <span className="tug-session-identity-dash-name">{dash.name}</span>
-      ) : null}
+      <span className="tug-session-identity-dash-sigil" aria-hidden="true">
+        #
+      </span>
+      <span className="tug-session-identity-dash-name">{dash.name}</span>
     </span>
   );
 }
@@ -425,26 +425,31 @@ export const TugSessionIdentity = React.forwardRef<
           )}
         </span>
       ) : null}
-      {/* Two runs, sized separately, so the tier's truncation rule can pick
-          which one elides. The filter mark is painted inside each run, never
-          across both. */}
-      <span className="tug-session-identity-run">
-        <span className="tug-session-identity-name">
-          {renderFilterHighlight(title.name, highlight)}
-        </span>
-        {title.callsign !== null ? (
-          <span className="tug-session-identity-callsign">
-            {" : "}
-            {renderFilterHighlight(title.callsign, highlight)}
-          </span>
-        ) : null}
-      </span>
-      {/* A citation that resolved to nothing has no live binding to report —
+      {/* One run holding the whole grammar — `name:project/callsign#dash`.
+          The name and callsign are boxed together so the tier's truncation
+          rule can pick which of the two elides, and so the box as a whole can
+          be clamped rather than shrunk beside the dash. The filter mark is
+          painted inside each run, never across two.
+
+          A citation that resolved to nothing has no live binding to report:
           the ledger does not hold the session, so it holds no dash for it
-          either. Same rule as the privacy marker directly below. */}
-      {isMissing || !dashRun ? null : (
-        <SessionDashMarker sessionId={identity.id} withName={!isChip} />
-      )}
+          either. Same rule as the privacy marker below. */}
+      <span className="tug-session-identity-run">
+        <span className="tug-session-identity-title">
+          <span className="tug-session-identity-name">
+            {renderFilterHighlight(title.name, highlight)}
+          </span>
+          {title.callsign !== null ? (
+            <span className="tug-session-identity-callsign">
+              {":"}
+              {renderFilterHighlight(title.callsign, highlight)}
+            </span>
+          ) : null}
+        </span>
+        {isMissing || !dashRun ? null : (
+          <SessionDashMarker sessionId={identity.id} />
+        )}
+      </span>
       {isMissing ? null : <SessionPrivacyMarker sessionId={identity.id} />}
     </span>
   );

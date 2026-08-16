@@ -24,6 +24,7 @@
  * @covers tugdeck/src/lib/dash-name.ts
  * @covers tugdeck/src/lib/dash-bind-error-store.ts
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -52,6 +53,8 @@ const PICKER = '[data-slot="dash-picker-sheet"]';
 // line-tier identity anywhere else (a Lens row, a picker row) wears it too.
 const CHIP =
   '[data-slot="session-masthead"] [data-slot="session-identity-dash"]';
+/** What that run reads: the identity's dash grammar, sigil included. */
+const chipText = (dash: string): string => `#${dash}`;
 const BULLETIN = ".tug-pane-bulletin";
 
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
@@ -162,7 +165,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash-bind gesture", () => {
         // ── A known name binds, with no shell row behind it ───────────────
         await runCommand(app, `/dash-bind ${KNOWN_DASH}`);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(KNOWN_DASH)}`,
+          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(chipText(KNOWN_DASH))}`,
           { timeoutMs: 15000 },
         );
         // The bind is a CONTROL frame: silent, no transcript ink.
@@ -186,7 +189,7 @@ describe.skipIf(!SHOULD_RUN)("AT0408: the /dash-bind gesture", () => {
         // `dash create`'s unconditional auto-bind is what ends the card bound —
         // this handler never sends a second bind of its own.
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(MADE_DASH)}`,
+          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(chipText(MADE_DASH))}`,
           { timeoutMs: 20000 },
         );
 

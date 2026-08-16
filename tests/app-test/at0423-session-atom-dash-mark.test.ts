@@ -2,24 +2,23 @@
  * at0423-session-atom-dash-mark.test.ts — the session ATOM marks a dash-bound
  * session, and marks it in the citation register.
  *
- * at0406 pins the same fact on the line tier, where the register is loud: the
- * `git-branch` glyph AND the dash name, in the title's own grammar. The atom
- * inverts it, and that inversion is what this file exists to hold. A citation
- * is a session referred to from foreign context — a Gazette post, a commit
- * line, a paste — so it stays compact, and the binding it marks is temporary
- * while the citation it rides is not. The glyph alone says "on a dash"; the
- * name rides the hover.
+ * at0406 pins the same grammar on the line tier. The atom wears it IDENTICALLY,
+ * and that identity is what this file exists to hold: a session that spelled
+ * itself one way in a masthead and another way in a citation would be two
+ * sessions to a reader who met it in both places.
  *
  * The surface is the masthead's telemetry panel, and it is the right one for
  * exactly one reason: the chip-tier ATOM and the flat CITATION string sit two
  * rows apart in it, for the same real session, so both halves of the claim can
- * be read off one open panel:
+ * be read off one open panel — and the two halves pull in opposite directions,
+ * which is why they are pinned together:
  *
  *   A. **The citation does not move.** The CITATION row is byte-identical
  *      bound and unbound. That string is the durable form a reader pastes
  *      elsewhere, and one carrying a dash would rot the moment the dash landed.
- *   B. **The mark is glyph-only.** The atom's marker carries no name span and
- *      contributes no text, which is the whole difference from the line tier.
+ *   B. **The displayed atom does.** Binding appends exactly `#<dash-name>` to
+ *      the atom's own text and changes nothing else in it — the same run, the
+ *      same sigil, the same ink as the line tier.
  *
  * The loop is real throughout: `tugutil dash bind` through the card's own `$`
  * shell route, which is what stamps `TUG_SESSION_ID` on the child, against a
@@ -143,7 +142,7 @@ async function readPanel(
 
 describe.skipIf(!SHOULD_RUN)("AT0423: the atom's dash mark", () => {
   test(
-    "a bound session's atom takes the glyph alone, and the citation never moves",
+    "a bound session's atom wears the line tier's grammar, and the citation never moves",
     async () => {
       const app = await launchTugApp({ testName: "at0423-session-atom-dash-mark" });
       try {
@@ -197,6 +196,7 @@ describe.skipIf(!SHOULD_RUN)("AT0423: the atom's dash mark", () => {
           hasGlyph: boolean;
           hasName: boolean;
           title: string | null;
+          label: string | null;
           text: string;
         }>(
           `(() => {
@@ -206,6 +206,7 @@ describe.skipIf(!SHOULD_RUN)("AT0423: the atom's dash mark", () => {
                hasName:
                  m.querySelector(".tug-session-identity-dash-name") !== null,
                title: m.getAttribute("title"),
+               label: m.getAttribute("aria-label"),
                text: (m.textContent ?? "").trim(),
              };
            })()`,
@@ -218,17 +219,23 @@ describe.skipIf(!SHOULD_RUN)("AT0423: the atom's dash mark", () => {
           { timeoutMs: 10_000 },
         );
 
-        expect(mark.hasGlyph).toBe(true);
-        // B. Glyph-only: the atom names no dash in its ink.
-        expect(mark.hasName).toBe(false);
-        expect(mark.text).toBe("");
-        // The name is reachable — it rides the marker's hover, not its run.
+        // B. The atom names the dash in its own ink, in the line tier's
+        // spelling — the glyph left the grammar when the `#` replaced it.
+        expect(mark.hasGlyph).toBe(false);
+        expect(mark.hasName).toBe(true);
+        expect(mark.text).toBe(`#${DASH_NAME}`);
         expect(mark.title).toBe(`Working on dash ${DASH_NAME}`);
+        expect(mark.label).toBe(`On dash ${DASH_NAME}`);
 
-        // A. And neither the atom's run nor the citation moved.
+        // The atom grew by the run and by nothing else: same name, same
+        // callsign, same punctuation, with `#<dash>` appended. Asserting the
+        // concatenation rather than a substring is what makes this a pin on
+        // the FORMAT — a treatment that respelled the atom would fail here
+        // even if the dash name were somewhere in the string.
         const bound = await readPanel(app);
         expect(bound.marks).toBe(1);
-        expect(bound.atom).toBe(bare.atom);
+        expect(bound.atom).toBe(`${bare.atom}#${DASH_NAME}`);
+        // A. And the citation did not move.
         expect(bound.citation).toBe(bare.citation);
         expect(bound.citation).not.toContain(DASH_NAME);
 
@@ -240,6 +247,7 @@ describe.skipIf(!SHOULD_RUN)("AT0423: the atom's dash mark", () => {
         );
         const after = await readPanel(app);
         expect(after.marks).toBe(0);
+        expect(after.atom).toBe(bare.atom);
         expect(after.citation).toBe(bare.citation);
       } finally {
         await app.close();

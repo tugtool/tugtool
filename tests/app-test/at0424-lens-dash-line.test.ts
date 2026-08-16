@@ -1,26 +1,38 @@
 /**
- * at0424-lens-dash-subrow.test.ts — the dash nests under the session working
- * it in the Lens's Cards section.
+ * at0424-lens-dash-line.test.ts — the dash a session is working is a LINE of
+ * that session's row in the Lens's Cards section, not a row beside it.
  *
- * The Cards section is organized by CARDS, so a dash's place in it is under
+ * The Cards section is organized by CARDS, so a dash's place in it is inside
  * the session that is on it: the reader is looking at the session, and the
- * dash is what that session is doing. What the sub-row adds over the title's
- * own dash run is the reason the run above it is suppressed — the stage, the
- * step counters, the review mark — so both halves are pinned here: the sub-row
- * appears with its facts, and the session row above it carries NO dash run
- * while it does.
+ * dash is what that session is doing. A dash drawn as its own list row took
+ * its own alternating-stripe band and hung its mark at the list's outer
+ * gutter — left of the session's own text — so it read as a stray sibling
+ * rather than as a fact about the row it belongs to.
+ *
+ * The structural claim is therefore CONTAINMENT, and that is what is asserted:
+ * the line is a descendant of the session's own row element, and the session
+ * still occupies exactly one list cell with the dash bound. Two counts make
+ * the second half falsifiable rather than incidental — the number of list
+ * cells before and after the bind.
+ *
+ * What the line adds over the title's own dash run is the reason the run above
+ * it is suppressed — the stage, the step counters, the review mark — so both
+ * halves are pinned: the line appears with its facts, and the title carries NO
+ * dash run while it does.
  *
  * Everything is real. `tugutil dash bind` runs through the card's own `$` shell
- * route (the route that stamps `TUG_SESSION_ID`), and the row appears because
- * the dash's `bound_sessions` moved in the account-global aggregate the Cards
- * projection now takes as an input. `dash unbind` takes it away the same way,
- * and the title's run comes back with it — which is the round trip that proves
- * the sub-row is derived on every recompose rather than latched at first sight.
+ * route (the route that stamps `TUG_SESSION_ID`), and the line appears because
+ * the dash's `bound_sessions` moved in the account-global aggregate the row's
+ * own leaf subscription reads. `dash unbind` takes it away the same way, which
+ * is the round trip that proves the line is derived on every beat rather than
+ * latched at first sight.
  *
  * @covers tugdeck/src/components/lens/sections/cards-data-source.ts
  * @covers tugdeck/src/components/lens/sections/cards-section.tsx
  * @covers tugdeck/src/components/lens/sections/cards-session-cell.tsx
  * @covers tugdeck/src/components/lens/sections/dash-facts.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-row.css
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -46,8 +58,9 @@ const SHELL_ROWS = `${CARD} [data-slot="session-transcript-shell-row"]`;
 const CARDS = '.lens-section[data-lens-section="cards"]';
 const SESSION_ROW = `${CARDS} [data-session-id="${SID}"]`;
 const SESSION_ROW_DASH = `${SESSION_ROW} [data-slot="session-identity-dash"]`;
-const DASH_NAME = "at0424-sub";
-const SUBROW = `${CARDS} [data-slot="lens-cards-dash-subrow"][data-dash="${DASH_NAME}"]`;
+const DASH_NAME = "at0424-line";
+const DASH_LINE = `${SESSION_ROW} [data-slot="tug-session-row-dashline"]`;
+const LIST_CELLS = `${CARDS} .tug-list-view-cell`;
 
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
 
@@ -106,14 +119,19 @@ const dashRunsOnSessionRow = (app: App): Promise<number> =>
     `document.querySelectorAll(${JSON.stringify(SESSION_ROW_DASH)}).length`,
   );
 
-describe.skipIf(!SHOULD_RUN)("AT0424: the Lens dash sub-row", () => {
+const listCellCount = (app: App): Promise<number> =>
+  app.evalJS<number>(
+    `document.querySelectorAll(${JSON.stringify(LIST_CELLS)}).length`,
+  );
+
+describe.skipIf(!SHOULD_RUN)("AT0424: the Lens dash line", () => {
   test(
-    "binding nests the dash under its session; unbinding takes it away",
+    "binding grows the session's row by a line, not the list by a row",
     async () => {
       const tugbankPath = mkTempTugbank();
       seedTugbankForLaunch(tugbankPath, { sourceTreePath: PROJECT_DIR });
       const app = await launchTugApp({
-        testName: "at0424-lens-dash-subrow",
+        testName: "at0424-lens-dash-line",
         env: { TUGBANK_PATH: tugbankPath },
       });
       try {
@@ -147,67 +165,73 @@ describe.skipIf(!SHOULD_RUN)("AT0424: the Lens dash sub-row", () => {
         );
         expect(
           await app.evalJS<number>(
-            `document.querySelectorAll(${JSON.stringify(SUBROW)}).length`,
+            `document.querySelectorAll(${JSON.stringify(DASH_LINE)}).length`,
           ),
         ).toBe(0);
+        const bareCells = await listCellCount(app);
 
         // ── Bind, for real ────────────────────────────────────────────────
         await shellAndSettle(app, `${tugutilPath(PROJECT_DIR)} dash bind ${DASH_NAME}`);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(SUBROW)}) !== null`,
+          `document.querySelector(${JSON.stringify(DASH_LINE)}) !== null`,
           { timeoutMs: 30000 },
         );
 
-        const sub = await app.evalJS<{
+        const line = await app.evalJS<{
           text: string;
-          glyphs: number;
-          followsSession: boolean;
-          cellIndexes: number[];
-          indented: boolean;
+          insideSessionRow: boolean;
+          sameCellAsSession: boolean;
+          belowActivity: boolean;
+          indentedPastSubLines: number;
         }>(
           `(() => {
-             const row = document.querySelector(${JSON.stringify(SUBROW)});
+             const el = document.querySelector(${JSON.stringify(DASH_LINE)});
              const session = document.querySelector(${JSON.stringify(SESSION_ROW)});
-             const idx = (el) => {
-               const cell = el.closest(".tug-list-view-cell");
-               return cell === null
-                 ? -1
-                 : Number(cell.getAttribute("data-tug-list-cell-index"));
-             };
-             const iSession = idx(session);
-             const iDash = idx(row);
-             const content = row.querySelector(".tug-list-row-content");
+             const cellOf = (n) => n.closest(".tug-list-view-cell");
+             const description = session.querySelector(".tug-session-row-description");
+             const pulse = session.querySelector(".tug-pulse");
+             const pad = (n) =>
+               parseFloat(getComputedStyle(n).paddingInlineStart) || 0;
              return {
-               text: (row.querySelector(".lens-dashes-facts")?.textContent ?? "").trim(),
-               glyphs: row.querySelectorAll(".lens-cards-dash-glyph svg").length,
-               followsSession: iSession >= 0 && iDash === iSession + 1,
-               cellIndexes: [iSession, iDash],
-               indented:
-                 content !== null &&
-                 parseFloat(getComputedStyle(content).paddingInlineStart) > 0,
+               text: (el.querySelector(".lens-dashes-facts")?.textContent ?? "").trim(),
+               // The structural claim: the line is INSIDE the session's row.
+               insideSessionRow: session.contains(el),
+               sameCellAsSession: cellOf(el) === cellOf(session),
+               belowActivity:
+                 pulse !== null &&
+                 el.getBoundingClientRect().top >=
+                   pulse.getBoundingClientRect().top,
+               // One step further in than the sub-lines it hangs off.
+               indentedPastSubLines:
+                 description === null ? 0 : pad(el) - pad(description),
              };
            })()`,
         );
-        note("at0424 sub-row", JSON.stringify(sub));
-        expect(sub.text).toContain(DASH_NAME);
+        note("at0424 dash line", JSON.stringify(line));
+        // The grammar's own spelling, and the facts the title's run cannot say.
+        expect(line.text).toContain(`#${DASH_NAME}`);
         // A freshly created dash with no round and no dirt is `created`.
-        expect(sub.text).toContain("created");
-        expect(sub.glyphs).toBe(1);
-        // Directly under the session it is a fact about, and indented like the
-        // stacked-card subrows — the step is what marks it as nested.
-        expect(sub.followsSession).toBe(true);
-        expect(sub.indented).toBe(true);
+        expect(line.text).toContain("created");
+        expect(line.insideSessionRow).toBe(true);
+        expect(line.sameCellAsSession).toBe(true);
+        expect(line.belowActivity).toBe(true);
+        expect(line.indentedPastSubLines).toBeGreaterThan(0);
 
-        // The row above says the dash exactly once, and the sub-row is where.
+        // And the list did not grow a row to hold it — the whole point of the
+        // redesign, and the half a containment assertion alone would miss.
+        expect(await listCellCount(app)).toBe(bareCells);
+
+        // The row says the dash exactly once, and the line is where.
         expect(await dashRunsOnSessionRow(app)).toBe(0);
-        note("at0424 lens with the sub-row", (await app.screenshot()).path);
+        note("at0424 lens with the dash line", (await app.screenshot()).path);
 
         // ── Unbind, for real ──────────────────────────────────────────────
         await shellAndSettle(app, `${tugutilPath(PROJECT_DIR)} dash unbind`, 1);
         await app.waitForCondition<boolean>(
-          `document.querySelectorAll(${JSON.stringify(SUBROW)}).length === 0`,
+          `document.querySelectorAll(${JSON.stringify(DASH_LINE)}).length === 0`,
           { timeoutMs: 30000 },
         );
+        expect(await listCellCount(app)).toBe(bareCells);
         expect(await dashRunsOnSessionRow(app)).toBe(0);
       } finally {
         await app.close();

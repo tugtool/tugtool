@@ -243,31 +243,12 @@ export type CardsRow =
       readonly identity: CardIdentity;
       /** This card is its pane's active tab. */
       readonly active: boolean;
-    }
-  | {
-      /**
-       * The dash the row above is working on, nested under it.
-       *
-       * It states a fact ABOUT the pane row directly above it, which is why a
-       * dash bound to two sessions truthfully emits one under each rather than
-       * picking a winner. It is not a pane row: it never appears in
-       * {@link LensCardsDataSource.visibleOrder}, carries no reorder key, and
-       * is never a drag handle.
-       */
-      readonly type: "dash-subrow";
-      readonly group: LensCardsGroup;
-      /** The pane row this sits under — half of the row's list id. */
-      readonly paneId: string;
-      /** The card to front when the sub-row is activated. */
-      readonly cardId: string;
-      readonly dash: DashSessionFact;
     };
 
 /** The cell renderer key `TugListView` dispatches on. */
 export function kindOfRow(row: CardsRow): string {
   if (row.type === "group-header") return "group-header";
   if (row.type === "card") return "subcard";
-  if (row.type === "dash-subrow") return "dash-subrow";
   return row.rowKind;
 }
 
@@ -280,10 +261,6 @@ export function idOfRow(row: CardsRow): string {
       return `pane:${row.paneId}`;
     case "card":
       return `card:${row.identity.cardId}`;
-    // Keyed by BOTH: one dash bound to two sessions renders under each, so the
-    // owner key alone would collide.
-    case "dash-subrow":
-      return `dash:${row.dash.ownerId}:${row.paneId}`;
   }
 }
 
@@ -372,12 +349,17 @@ export interface LensCardsInputs {
    */
   readonly nameVersion: unknown;
   /**
-   * The account-global changeset aggregate, for the dash sub-rows. Null before
-   * the connection is up, which emits none — the same as no dash at all, and
-   * the honest reading of "nothing has said yet".
+   * The account-global changeset aggregate, which is where a session's dash
+   * comes from. Null before the connection is up — the same as no dash at all,
+   * and the honest reading of "nothing has said yet".
    *
-   * A whole snapshot rather than a version token because the projection needs
-   * the dash's facts, not just notice that something moved; it is memoized per
+   * The rows use it for one thing: a session's dash name joins the pane's
+   * filter match fields, so a reader who types a dash name finds the session
+   * working it. What the row DRAWS comes from the row's own leaf subscription,
+   * not from here.
+   *
+   * A whole snapshot rather than a version token because the match needs the
+   * dash's facts, not just notice that something moved; it is memoized per
    * snapshot identity ({@link dashSessionIndex}), so a recompute costs one map
    * lookup per session row.
    */
@@ -676,20 +658,6 @@ export function buildCardsRows(
         disambiguator: disambiguatorByPane.get(entry.pane.id) ?? null,
       });
 
-      // The dash nests directly under the row it is a fact about. Emitted only
-      // after a SURVIVING pane row, so it inherits every rule the row above it
-      // is subject to — a collapsed group emits neither, and a filtered-out
-      // pane takes its sub-row with it.
-      const dash = dashFor(entry.identity);
-      if (dash !== null) {
-        rows.push({
-          type: "dash-subrow",
-          group,
-          paneId: entry.pane.id,
-          cardId: entry.identity.cardId,
-          dash,
-        });
-      }
       if (!multi) continue;
 
       const paneMatched =

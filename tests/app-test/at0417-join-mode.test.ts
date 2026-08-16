@@ -36,6 +36,7 @@
  * @covers tugdeck/src/lib/slash-commands.ts
  * @covers tugdeck/src/components/tugways/tug-prompt-entry.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -65,6 +66,8 @@ const BULLETIN = ".tug-pane-bulletin";
 // line-tier identity anywhere else (a Lens row, a picker row) wears it too.
 const CHIP =
   '[data-slot="session-masthead"] [data-slot="session-identity-dash"]';
+/** What that run reads: the identity's dash grammar, sigil included. */
+const chipText = (dash: string): string => `#${dash}`;
 
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 
@@ -219,7 +222,7 @@ describe.skipIf(!SHOULD_RUN)("AT0417: /dash-join enters join mode", () => {
         );
         await runCommand(app, `/dash-bind ${DASH}`);
         await app.waitForCondition<boolean>(
-          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(DASH)}`,
+          `document.querySelector(${JSON.stringify(CHIP)})?.textContent.trim() === ${JSON.stringify(chipText(DASH))}`,
           { timeoutMs: 20000 },
         );
 

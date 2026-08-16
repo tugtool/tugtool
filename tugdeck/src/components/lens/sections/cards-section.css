@@ -317,21 +317,6 @@ body {
   padding-inline-start: 20px;
 }
 
-/* The dash a session is working, nested under its row. It takes the same
-   indent as a stacked card's subrow — one step, no disclosure — because it is
-   the same relationship: a thing that belongs to the row above it. */
-.lens-cards-dash-subrow {
-  min-width: 0;
-}
-
-/* @tug-renders-on var(--tug7-surface-global-primary-normal-default-rest) */
-.lens-cards-dash-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--tug7-element-global-text-normal-muted-rest);
-}
-
 /* The empty label's size, tone and row-height box are `.lens-section-empty`'s
    (`lens-content.css`) — shared by every section, so an empty Cards section
    reads exactly like an empty Jots one. */

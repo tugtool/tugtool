@@ -27,6 +27,7 @@
  * @covers tugdeck/src/components/tugways/cards/dash-picker-sheet.tsx
  * @covers tugdeck/src/components/tugways/cards/session-card.tsx
  * @covers tugdeck/src/lib/card-session-binding-store.ts
+ * @covers tugdeck/src/components/tugways/tug-session-identity.tsx
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -54,6 +55,8 @@ const PICKER_ROWS = `${PICKER} [data-slot="dash-picker-row"]`;
 // line-tier identity anywhere else (a Lens row, a picker row) wears it too.
 const CHIP =
   '[data-slot="session-masthead"] [data-slot="session-identity-dash"]';
+/** What that run reads: the identity's dash grammar, sigil included. */
+const chipText = (dash: string): string => `#${dash}`;
 const LENS_SECTION = '.lens-section[data-lens-section="dashes"]';
 
 const PROJECT_DIR = realpathSync(resolve(import.meta.dir, "..", ".."));
@@ -212,8 +215,10 @@ describe.skipIf(!SHOULD_RUN)("AT0421: the /dash-bind picker", () => {
         const bound = await app.evalJS<string>(
           `(document.querySelector(${JSON.stringify(CHIP)})?.textContent ?? "").trim()`,
         );
-        expect(rows).toContain(bound);
-        expect(bound).not.toBe(rows[0]);
+        // The picker lists bare dash names; the masthead spells the binding in
+        // the identity's grammar, so the comparison goes through `chipText`.
+        expect(rows.map(chipText)).toContain(bound);
+        expect(bound).not.toBe(chipText(rows[0]));
       } finally {
         await app.close();
         rmTempTugbank(tugbankPath);

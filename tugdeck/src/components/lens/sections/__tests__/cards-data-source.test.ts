@@ -136,7 +136,6 @@ function shape(rows: readonly CardsRow[]): string[] {
       return `header:${row.group}(${row.count})${row.collapsed ? "-collapsed" : ""}`;
     }
     if (row.type === "pane") return `pane:${row.rowKind}:${row.identity.title}`;
-    if (row.type === "dash-subrow") return `  dash:${row.dash.name}`;
     return `  card:${row.identity.title}${row.active ? "*" : ""}`;
   });
 }
@@ -990,10 +989,10 @@ describe("summarizeGroup", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Dash sub-rows
+// A session's dash — a row-internal line, so the row MODEL never sees it
 // ---------------------------------------------------------------------------
 
-describe("dash sub-rows", () => {
+describe("a session's dash", () => {
   const SESSION_GROUPS = { session: "sessions" as const, lens: "none" as const };
 
   /** A snapshot whose one dash binds `sessions`. */
@@ -1048,7 +1047,10 @@ describe("dash sub-rows", () => {
     [pane("p1", ["s1"])],
   );
 
-  it("nests under the session it is bound to", () => {
+  it("a bound session is ONE row — the dash adds none", () => {
+    // The dash is a line inside the session's row, drawn from the row's own
+    // leaf subscription. Nothing about it reaches the row model, which is what
+    // makes the row count independent of what any dash is doing.
     const rows = buildCardsRows(
       inputs(oneSession, {
         bindings: new Map([["s1", binding("sess-1")]]),
@@ -1059,71 +1061,28 @@ describe("dash sub-rows", () => {
     expect(shape(rows)).toEqual([
       "header:sessions(1)",
       "pane:session-pane:session sess-1",
-      "  dash:fix",
     ]);
   });
 
-  it("emits nothing for a session no dash claims", () => {
-    const rows = buildCardsRows(
-      inputs(oneSession, {
-        bindings: new Map([["s1", binding("sess-1")]]),
-        changesets: snapshotWith(["someone-else"]),
-      }),
-      resolvers({ groups: SESSION_GROUPS }),
-    );
-    expect(rows.some((row) => row.type === "dash-subrow")).toBe(false);
+  it("binding a dash changes no row id and no row kind", () => {
+    // The same deck, projected with and without a dash claiming the session.
+    // Anything that differed here would be the row model carrying the binding,
+    // which it must not: a bind would then reflow the list.
+    const project = (changesets: ReturnType<typeof snapshotWith> | null) =>
+      buildCardsRows(
+        inputs(oneSession, {
+          bindings: new Map([["s1", binding("sess-1")]]),
+          changesets,
+        }),
+        resolvers({ groups: SESSION_GROUPS }),
+      );
+    const bound = project(snapshotWith(["sess-1"]));
+    const unbound = project(snapshotWith(["someone-else"]));
+    expect(bound.map(idOfRow)).toEqual(unbound.map(idOfRow));
+    expect(bound.map(kindOfRow)).toEqual(unbound.map(kindOfRow));
   });
 
-  it("emits nothing before the aggregate has said anything", () => {
-    const rows = buildCardsRows(
-      inputs(oneSession, {
-        bindings: new Map([["s1", binding("sess-1")]]),
-        changesets: null,
-      }),
-      resolvers({ groups: SESSION_GROUPS }),
-    );
-    expect(rows.some((row) => row.type === "dash-subrow")).toBe(false);
-  });
-
-  it("one dash on two sessions renders under each, with distinct ids", () => {
-    // The sub-row states a fact about the row ABOVE it, and both facts are
-    // true — so the owner key alone could not be the list id.
-    const two = deck(
-      [card("s1", "session"), card("s2", "session")],
-      [pane("p1", ["s1"]), pane("p2", ["s2"])],
-    );
-    const rows = buildCardsRows(
-      inputs(two, {
-        bindings: new Map([
-          ["s1", binding("sess-1")],
-          ["s2", binding("sess-2")],
-        ]),
-        changesets: snapshotWith(["sess-1", "sess-2"]),
-      }),
-      resolvers({ groups: SESSION_GROUPS }),
-    );
-    const subrows = rows.filter((row) => row.type === "dash-subrow");
-    expect(subrows.length).toBe(2);
-    expect(subrows.map(idOfRow)).toEqual([
-      "dash:tugdash/fix#1:p1",
-      "dash:tugdash/fix#1:p2",
-    ]);
-    expect(subrows.map(kindOfRow)).toEqual(["dash-subrow", "dash-subrow"]);
-  });
-
-  it("a collapsed group emits neither the pane row nor its sub-row", () => {
-    const rows = buildCardsRows(
-      inputs(oneSession, {
-        bindings: new Map([["s1", binding("sess-1")]]),
-        changesets: snapshotWith(["sess-1"]),
-        collapsedGroups: ["sessions"],
-      }),
-      resolvers({ groups: SESSION_GROUPS }),
-    );
-    expect(shape(rows)).toEqual(["header:sessions(1)-collapsed"]);
-  });
-
-  it("filtering by the dash name keeps the session and its sub-row", () => {
+  it("filtering by the dash name keeps the session", () => {
     // The session's own text says nothing about the dash, so this passes only
     // because the dash name joined the pane row's match fields.
     const rows = buildCardsRows(
@@ -1137,11 +1096,10 @@ describe("dash sub-rows", () => {
     expect(shape(rows)).toEqual([
       "header:sessions(1)",
       "pane:session-pane:session sess-1",
-      "  dash:marmalade",
     ]);
   });
 
-  it("a filtered-out session takes its sub-row with it", () => {
+  it("a dash name matches nothing once the session is filtered out", () => {
     const rows = buildCardsRows(
       inputs(oneSession, {
         bindings: new Map([["s1", binding("sess-1")]]),
@@ -1153,31 +1111,7 @@ describe("dash sub-rows", () => {
     expect(rows).toEqual([]);
   });
 
-  it("carries the stage, the counters, and the review state", () => {
-    const rows = buildCardsRows(
-      inputs(oneSession, {
-        bindings: new Map([["s1", binding("sess-1")]]),
-        changesets: snapshotWith(["sess-1"], {
-          stage: "implementing",
-          review: "stale",
-          stepCurrent: 2,
-          stepTotal: 5,
-        }),
-      }),
-      resolvers({ groups: SESSION_GROUPS }),
-    );
-    const sub = rows.find((row) => row.type === "dash-subrow");
-    expect(sub?.type).toBe("dash-subrow");
-    if (sub?.type !== "dash-subrow") throw new Error("no sub-row");
-    expect(sub.dash.stage).toBe("implementing");
-    expect(sub.dash.steps).toBe("step 2/5");
-    expect(sub.dash.review).toBe("stale");
-    expect(sub.cardId).toBe("s1");
-  });
-
-  it("never enters the reorder's visible order", () => {
-    // `useBlockReorder` walks pane rows only; a sub-row appearing here would
-    // be handed to `beginDrag` with no matching element and abort the drag.
+  it("the reorder's visible order is the pane rows, and only those", () => {
     const source = new LensCardsDataSource(
       inputs(oneSession, {
         bindings: new Map([["s1", binding("sess-1")]]),

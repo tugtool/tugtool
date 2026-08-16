@@ -5,6 +5,11 @@
  *   [dot] <session name>                         <slot layout>
  *   <description>
  *   <latest pulse line>                        <activity sparkline>
+ *     #<dash>  <stage>  step i/N  [review mark]
+ *
+ * The last line is there only while the session is bound to a dash. It is a
+ * line of the row rather than a row of its own, so it takes the row's own band
+ * and travels with the session by construction.
  *
  * The middle line is the agent's rolling description of the session, with the
  * session's creation date standing in until one is written — so the row is the
@@ -32,9 +37,45 @@
 
 import React from "react";
 
+import { DashFactsRun } from "@/components/lens/sections/dash-facts";
 import { SlotPicker } from "@/components/lens/slot-picker";
 import { SessionIdentityRow } from "@/components/tugways/session-identity-row";
 import { TUG_SESSION_ROW_INDICATOR_SIZE } from "@/components/tugways/tug-session-row";
+import { useDashForSession } from "@/lib/dash-session-index";
+
+/** The review mark's box, in px — sized to the line it rides. */
+const DASH_LINE_MARK = 14;
+
+/**
+ * The dash a session is working, as the last line of the session's own row —
+ * or null, which is what keeps an unbound row at exactly three lines.
+ *
+ * Null must be produced HERE rather than by a leaf component inside the slot:
+ * a component that renders null is still a non-null element to whatever wraps
+ * it, so a slot filled unconditionally would draw an empty line box on every
+ * row in the rail. The subscription costs nothing extra by living here — this
+ * component is already per-session, so it wakes exactly the row a leaf would.
+ *
+ * It carries what the title's own dash run cannot: the stage, the step
+ * counters, and the review mark. That is why the title suppresses its run
+ * below — the same fact twice within one row's height, and the fuller of the
+ * two wins. The name is spelled `#<name>`, the identity's own grammar, because
+ * this is a dash named inside a SESSION; the Dashes section's rows are dashes
+ * themselves and name themselves bare.
+ */
+function useSessionDashLine(sessionId: string): React.ReactNode {
+  const dash = useDashForSession(sessionId);
+  if (dash === null) return null;
+  return (
+    <DashFactsRun
+      name={`#${dash.name}`}
+      stage={dash.stage}
+      steps={dash.steps}
+      review={dash.review}
+      markSize={DASH_LINE_MARK}
+    />
+  );
+}
 
 export interface CardsSessionRowProps {
   cardId: string;
@@ -61,6 +102,7 @@ export function CardsSessionRow({
   filterQuery,
   onRowPointerDown,
 }: CardsSessionRowProps): React.ReactElement {
+  const dashLine = useSessionDashLine(tugSessionId);
   return (
     <SessionIdentityRow
       className="session-row-content lens-cards-row"
@@ -84,10 +126,11 @@ export function CardsSessionRow({
       // somewhere else, and it is the surface with the least room to show the
       // description it holds.
       identityMenu
-      // The dash rides the sub-row directly beneath this one, which carries
-      // the stage, the steps, and the review mark the title's run cannot. The
-      // same fact twice within one row's height is what this suppresses.
+      // The dash rides the row's last line, which carries the stage, the
+      // steps, and the review mark the title's run cannot. The same fact twice
+      // within one row's height is what this suppresses.
       dashRun={false}
+      dashLine={dashLine}
       highlight={filterQuery}
       slots={<SlotPicker cardId={cardId} />}
       // The row is its own reorder handle — a vertical drag from anywhere on
