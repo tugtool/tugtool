@@ -333,7 +333,7 @@ body {
 /* @tug-renders-on var(--tugx-gauge-surface) */
 .tug-arc-gauge-value-svg {
   fill: var(--tugx-gauge-value-text-color);
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-gauge-arc-value-text-size-detailed);
   font-weight: var(--tug-font-weight-semibold);
   font-variant-numeric: tabular-nums;
@@ -342,7 +342,7 @@ body {
 /* @tug-renders-on var(--tugx-gauge-surface) */
 .tug-arc-gauge-percent-svg {
   fill: var(--tugx-gauge-percent-text-color);
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-gauge-arc-percent-text-size-detailed);
   font-variant-numeric: tabular-nums;
 }
@@ -356,7 +356,7 @@ body {
   flex-direction: column;
   align-items: center;
   margin-top: var(--tugx-gauge-arc-readout-gap);
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
@@ -371,7 +371,7 @@ body {
 /* @tug-renders-on var(--tugx-gauge-surface) */
 .tug-arc-gauge-label {
   color: var(--tugx-gauge-label-text-color);
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-gauge-label-text-size-compact);
   text-transform: uppercase;
   letter-spacing: 0.04em;

@@ -190,7 +190,7 @@
 }
 
 .session-masthead-pulse-text code {
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: 0.95em;
 }
 

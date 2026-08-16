@@ -311,7 +311,7 @@
 /* @tug-renders-on var(--tug7-surface-card-primary-normal-status-rest) */
 .session-telemetry-endcap-label {
   color: var(--tug7-element-global-text-normal-muted-rest);
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: 0.5625rem;
   font-weight: var(--tug-font-weight-medium);
   letter-spacing: 0.18em;

@@ -51,7 +51,7 @@ input.tug-file-chooser-input {
    makes that truncation Finder-style — an ellipsis at the START so the meaningful
    tail of a long path stays visible. `plaintext` keeps the path's own LTR order. */
 .tug-completion-menu[data-slot="tug-file-chooser-overlay"] .tug-completion-menu-label {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-family: var(--tug-font-family-mono);
   direction: rtl;
   unicode-bidi: plaintext;
 }

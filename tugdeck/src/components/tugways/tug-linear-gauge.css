@@ -204,7 +204,7 @@ body {
 .tug-linear-gauge-hilo {
   display: flex;
   justify-content: space-between;
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: var(--tugx-gauge-hilo-text-size);
   font-variant-numeric: tabular-nums;
 }
@@ -223,7 +223,7 @@ body {
 .tug-linear-gauge-readout {
   display: flex;
   align-items: baseline;
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   /* Tabular figures keep each digit on a fixed-width metric so the
      value text inside a `width: Nch` container does not shift when
      digits change (e.g., 62 → 63 → 60). Combined with the inline

@@ -64,7 +64,7 @@ const labelStyle: React.CSSProperties = {
 const echoStyle: React.CSSProperties = {
   fontSize: "0.875rem",
   color: "var(--tug7-element-field-text-normal-label-rest)",
-  fontFamily: "var(--tug-font-family-mono, ui-monospace, monospace)",
+  fontFamily: "var(--tug-font-family-mono)",
   padding: "4px 0",
 };
 

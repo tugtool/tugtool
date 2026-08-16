@@ -98,7 +98,7 @@ const STYLE = `
     padding: 24px;
     box-sizing: border-box;
     background: rgba(0, 0, 0, 0.6);
-    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-family: var(--tug-font-family-mono);
     font-size: 13px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;

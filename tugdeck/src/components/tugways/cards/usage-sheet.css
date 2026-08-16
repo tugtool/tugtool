@@ -29,7 +29,7 @@
 
 /* Mono, tabular figures for every number in the panel. */
 .usage-sheet-num {
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-variant-numeric: tabular-nums;
 }
 

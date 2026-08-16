@@ -238,8 +238,7 @@
   display: block;
   text-align: center;
   margin-top: var(--tugx-attachment-caption-gap, 4px);
-  font-family: var(--tugx-attachment-caption-font,
-    ui-monospace, "SF Mono", Menlo, monospace);
+  font-family: var(--tugx-attachment-caption-font, var(--tug-font-family-mono));
   font-size: var(--tugx-attachment-caption-size, 0.7rem);
   line-height: 1.2;
   max-width: 100%;

@@ -57,7 +57,7 @@
 }
 
 .about-card-commit {
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
 }
 
 .about-card-copyright {

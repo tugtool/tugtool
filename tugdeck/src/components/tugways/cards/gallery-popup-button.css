@@ -48,7 +48,7 @@
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gpb-status code {
-  font-family: var(--tug-font-mono);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-default-rest);
 }
 

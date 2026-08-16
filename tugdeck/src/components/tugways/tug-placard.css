@@ -83,7 +83,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: 0.6875rem;
   font-weight: var(--tug-font-weight-medium);
   letter-spacing: 0.12em;

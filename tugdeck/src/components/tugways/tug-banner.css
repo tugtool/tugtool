@@ -135,7 +135,7 @@ body {
   overflow: auto;
   padding: 20px 24px;
   font-size: 0.8125rem;
-  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Monaco, Consolas, monospace;
+  font-family: var(--tug-font-family-mono);
   line-height: 1.6;
   /* @tug-renders-on: --tugx-banner-detail-bg */
   color: var(--tugx-banner-detail-fg);

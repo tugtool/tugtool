@@ -101,7 +101,7 @@
 }
 
 .skills-sheet-tokens {
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   min-width: 5em;
   text-align: right;
   font-variant-numeric: tabular-nums;

@@ -112,7 +112,7 @@
 }
 
 .hooks-sheet-cmd-text {
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: 0.8125rem;
   overflow-wrap: anywhere;
 }

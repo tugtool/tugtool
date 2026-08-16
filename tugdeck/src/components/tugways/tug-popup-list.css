@@ -69,7 +69,7 @@
    like a pane title bar. Everything else in the popup is tabular data,
    so mono lives on the non-title content, not the frame root. */
 .tug-popup-list > :not(.tug-popup-list-title) {
-  font-family: var(--tug-font-mono, monospace);
+  font-family: var(--tug-font-family-mono);
 }
 
 /* Frame chrome never shrinks under the viewport guard — only the

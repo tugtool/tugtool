@@ -506,7 +506,7 @@ export function GalleryMarkdownView({ staticContentSize }: GalleryMarkdownViewPr
         </TugPushButton>
 
         {/* Diagnostic overlay */}
-        <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", fontSize: 11, fontFamily: "var(--tugx-md-mono-font, ui-monospace, monospace)", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 16, alignItems: "center", fontSize: 11, fontFamily: "var(--tug-font-family-mono)", color: "var(--tug7-element-global-text-normal-muted-rest)" }}>
           <span>DOM nodes: <strong>{diagnostics.domNodeCount}</strong></span>
           <span>Blocks: <strong>{diagnostics.totalBlocks}</strong></span>
           {diagnostics.lexMs !== null && (

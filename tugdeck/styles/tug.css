@@ -98,6 +98,23 @@ body {
   --chart-5: var(--tug-chart-series-violet); /* legacy-token-allowlist */
 }
 
+/* The app has exactly one monospace face: IBM Plex Mono, bundled complete.
+ * These four elements are the only ones the UA stylesheet gives a font-family
+ * of its own — the generic `monospace`, which resolves to whatever the browser
+ * picked (Courier, SF Mono, Menlo) at the browser's own default fixed size.
+ * Any `<code>` / `<pre>` / `<kbd>` / `<samp>` rendered without a class that
+ * names a face therefore came out in a font this app never chose, at a size it
+ * never chose — visible as a path in a `/match` row setting differently from
+ * the identical path in a commit receipt beside it.
+ *
+ * Declared on the elements rather than left to each component: a component
+ * that forgets is exactly how the leak happened, and there is no case in this
+ * app where the browser's pick is the right answer. A surface wanting a
+ * different face still overrides it on its own selector. */
+:is(code, pre, kbd, samp) {
+  font-family: var(--tug-font-family-mono);
+}
+
 /* ============================================================================
    Scrollbar Styling (WebKit)
    ========================================================================= */

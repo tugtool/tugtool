@@ -52,7 +52,7 @@ const controlsRowStyle: React.CSSProperties = {
   alignItems: "center",
   gap: "1rem",
   marginBottom: "0.75rem",
-  fontFamily: "var(--tug-font-mono, monospace)",
+  fontFamily: "var(--tug-font-family-mono)",
   fontSize: "0.75rem",
 };
 
@@ -70,7 +70,7 @@ const fieldLabelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "5rem",
   padding: "2px 4px",
-  fontFamily: "var(--tug-font-mono, monospace)",
+  fontFamily: "var(--tug-font-family-mono)",
   fontSize: "0.75rem",
 };
 
@@ -86,7 +86,7 @@ const matrixCellStyle: React.CSSProperties = {
 };
 
 const matrixRowLabelStyle: React.CSSProperties = {
-  fontFamily: "var(--tug-font-mono, monospace)",
+  fontFamily: "var(--tug-font-family-mono)",
   fontSize: "0.6875rem",
   color: "var(--tug7-element-global-text-normal-muted-rest)",
   whiteSpace: "nowrap",

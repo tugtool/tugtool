@@ -58,7 +58,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-sunken-rest */
 .gpi-cell-caption {
   font-size: 10px;
-  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-muted-rest);
   text-align: center;
   user-select: none;
@@ -82,7 +82,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gpi-matrix-col-head {
   font-size: 10px;
-  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-muted-rest);
   text-align: center;
   padding: 2px 0;
@@ -91,7 +91,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gpi-matrix-row-head {
   font-size: 11px;
-  font-family: var(--tug-font-mono, ui-monospace, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-default-rest);
   padding-right: 8px;
   text-align: right;

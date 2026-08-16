@@ -186,18 +186,6 @@ body {
   user-select: none;
 }
 
-/* `MiddleEllipsisPath` renders the path in a `<code>`, and a bare `<code>`
-   takes the BROWSER's monospace family at the browser's own size — not the
-   app's. That is why a `/match` path and the identical path in a commit
-   receipt (a plain span inheriting the row's mono) came out in two different
-   faces at two different sizes. The path is the row's text, so it inherits
-   the row's type instead of the UA's. */
-.tugx-paths-row .tug-path,
-.tugx-paths-row .tool-block-path {
-  font-family: inherit;
-  font-size: inherit;
-}
-
 /* The filename does not shrink in a results list. `TugPath` lets its tail
    shrink after the head is spent, which is right in chrome — there, an
    unshrinkable tail would slide under the pane's controls. Here the row

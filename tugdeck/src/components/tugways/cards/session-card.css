@@ -904,7 +904,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--tug-font-family-mono, ui-monospace, monospace);
+  font-family: var(--tug-font-family-mono);
 }
 
 /* Footer row: spinner pinned left, Cancel button pinned right. */

@@ -101,9 +101,9 @@ export function GallerySeparator() {
           <div>
             <div style={descStyle}>console style — capped + label</div>
             <TugSeparator capped label="INSTRUCTION" />
-            <p style={{ ...textStyle, margin: "4px 0", fontFamily: "monospace" }}>MOV AX, 0x4C00</p>
+            <p style={{ ...textStyle, margin: "4px 0", fontFamily: "var(--tug-font-family-mono)" }}>MOV AX, 0x4C00</p>
             <TugSeparator capped label="MEMORY ADDRESS" />
-            <p style={{ ...textStyle, margin: "4px 0", fontFamily: "monospace" }}>0xFFFF:0x0000</p>
+            <p style={{ ...textStyle, margin: "4px 0", fontFamily: "var(--tug-font-family-mono)" }}>0xFFFF:0x0000</p>
           </div>
         </div>
       </div>

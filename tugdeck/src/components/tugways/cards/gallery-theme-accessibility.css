@@ -163,7 +163,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-token-name {
   font-size: 10px;
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-muted-rest);
   padding: 2px 0;
   overflow: hidden;
@@ -186,7 +186,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-token-value {
   font-size: 10px;
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-subtle-rest);
   padding: 2px 0;
   overflow: hidden;
@@ -216,7 +216,7 @@
 
 .gta-dash-summary-count {
   font-weight: var(--tug-font-weight-semibold);
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
 }
 
 /* Scrollable grid container */
@@ -263,7 +263,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-dash-token-name {
   font-size: 10px;
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-muted-rest);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -275,7 +275,7 @@
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-dash-ratio {
   font-size: 10px;
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   color: var(--tug7-element-global-text-normal-subtle-rest);
   align-self: center;
   padding: 2px 0;
@@ -481,7 +481,7 @@
 
 /* @tug-renders-on: --tug7-surface-global-primary-normal-default-rest */
 .gta-diag-token {
-  font-family: var(--tug-font-family-mono, monospace);
+  font-family: var(--tug-font-family-mono);
   font-size: 10px;
   color: var(--tug7-element-global-text-normal-default-rest);
   overflow: hidden;
