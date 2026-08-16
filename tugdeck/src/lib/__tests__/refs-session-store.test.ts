@@ -173,4 +173,44 @@ describe("parseTextRef", () => {
     expect(parseTextRef({ index: 1 })).toBe(null);
     expect(parseTextRef(null)).toBe(null);
   });
+
+  test("reads a windowed preview, snake-cased on the wire", () => {
+    const ref = parseTextRef({
+      index: 1,
+      path: "bundle.js",
+      line: 1,
+      columns: [[402, 408]],
+      preview: {
+        line_len: 90_000,
+        segments: [{ col: 370, text: "…window text…" }],
+        elided_matches: 3,
+      },
+    });
+    expect(ref?.preview).toEqual({
+      lineLen: 90_000,
+      segments: [{ col: 370, text: "…window text…" }],
+      elidedMatches: 3,
+    });
+  });
+
+  test("reads a bare-string preview as one full-width window", () => {
+    // What a `refs.db` row written before windowing holds. The ledger keeps
+    // one run per session indefinitely, so this shape outlives the change.
+    expect(parseTextRef({ index: 1, path: "a.ts", preview: "let foo = 2;" })?.preview)
+      .toEqual({
+        lineLen: 12,
+        segments: [{ col: 0, text: "let foo = 2;" }],
+        elidedMatches: 0,
+      });
+  });
+
+  test("drops a malformed segment rather than rendering `undefined`", () => {
+    expect(
+      parseTextRef({
+        index: 1,
+        path: "a.ts",
+        preview: { line_len: 20, segments: [{ col: 0 }, { col: 4, text: "ok" }] },
+      })?.preview?.segments,
+    ).toEqual([{ col: 4, text: "ok" }]);
+  });
 });

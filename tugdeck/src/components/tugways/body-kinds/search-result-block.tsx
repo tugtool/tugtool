@@ -33,6 +33,12 @@
  *    explicit char `spans` carried on the match — no regex is executed
  *    at render time, so a complex or invalid pattern can never break
  *    the render.
+ *  - A match carries a `preview` rather than a line: the windows of the
+ *    line worth showing, each knowing the column it starts at. Stretches
+ *    of line between them draw as elisions, which is what keeps a hit
+ *    inside a minified bundle a row rather than a wall. Spans stay in
+ *    whole-line coordinates throughout and are rebased per window at
+ *    render time.
  *  - File paths use the shared `MiddleEllipsisPath` ([#bk-conformance]
  *    item 8) — the same CSS-driven middle-ellipsis the file tool
  *    wrappers use.
@@ -115,13 +121,55 @@ export interface SearchResultContextLine {
   text: string;
 }
 
+/** One window of a matched line: text, and the column it starts at. */
+export interface SearchResultWindow {
+  /** 0-based char offset of `text` within the source line. */
+  col: number;
+  /** The window's text. */
+  text: string;
+}
+
+/**
+ * What a match row shows of its line.
+ *
+ * A producer that has a whole short line sends one window at `col: 0`
+ * ({@link wholeLinePreview}). One that excerpted a very long line sends a
+ * window per match, and the runs of line between them are painted as
+ * elisions — a search over a real tree hits minified bundles, and a row
+ * that renders a 400KB "line" is not a result, it is a wall.
+ */
+export interface SearchResultPreview {
+  /** Char length of the whole source line — what the elisions measure. */
+  lineLength: number;
+  /** The windows to draw, ascending by `col`, non-overlapping. */
+  windows: readonly SearchResultWindow[];
+  /**
+   * Matches on this line that no window covers, because the producer hit
+   * its excerpt budget. Shown as a trailing count so a capped row says so.
+   */
+  elidedMatches?: number;
+}
+
+/** A whole line as a preview — the un-excerpted case, said once. */
+export function wholeLinePreview(text: string): SearchResultPreview {
+  return {
+    lineLength: text.length,
+    windows: text === "" ? [] : [{ col: 0, text }],
+  };
+}
+
 /** One match within a file — the matched line plus its context. */
 export interface SearchResultMatch {
   /** 1-based line number of the matched line. */
   line: number;
-  /** Full text of the matched line. */
-  text: string;
-  /** Char ranges within `text` to render highlighted. */
+  /** What to show of the matched line. */
+  preview: SearchResultPreview;
+  /**
+   * Char ranges to render highlighted, in **whole-line** coordinates — the
+   * same coordinates the annotator's `data-columns` carries into the
+   * editor's reveal. A span is placed inside a window by that window's own
+   * `col`; one that falls in no window simply does not paint.
+   */
   spans: readonly SearchResultSpan[];
   /**
    * The producer's own number for this match, shown in the row's leading
@@ -284,7 +332,12 @@ export interface SearchTextSegment {
   text: string;
   /** `true` when this run falls inside a (clamped, merged) match span. */
   hit: boolean;
+  /** `true` when this run stands in for line the producer did not send. */
+  elision?: boolean;
 }
+
+/** What an elided run of the line is drawn as. */
+export const ELISION_MARK = "…";
 
 /**
  * Split a match line's `text` into alternating plain / highlighted
@@ -339,6 +392,52 @@ export function splitMatchSegments(
 }
 
 /**
+ * Split a match line's preview into the runs that draw it: the windows'
+ * text, cut into plain / highlighted runs by the spans that land in them,
+ * with an elision run standing in for every stretch of line the producer
+ * left out — including the head before the first window and the tail after
+ * the last.
+ *
+ * Spans arrive in whole-line coordinates and are rebased into each window
+ * before {@link splitMatchSegments} does the highlighting, so the two
+ * coordinate systems meet in exactly one place.
+ */
+export function splitPreviewSegments(
+  preview: SearchResultPreview,
+  spans: readonly SearchResultSpan[],
+): SearchTextSegment[] {
+  const out: SearchTextSegment[] = [];
+  const elide = (): void => {
+    out.push({ text: ELISION_MARK, hit: false, elision: true });
+  };
+
+  let cursor = 0;
+  for (const window of preview.windows) {
+    if (window.col > cursor) elide();
+    const end = window.col + window.text.length;
+    const local: SearchResultSpan[] = [];
+    for (const [start, stop] of spans) {
+      if (stop <= window.col || start >= end) continue;
+      local.push([
+        Math.max(start, window.col) - window.col,
+        Math.min(stop, end) - window.col,
+      ]);
+    }
+    out.push(...splitMatchSegments(window.text, local));
+    cursor = end;
+  }
+  if (cursor < preview.lineLength) elide();
+  return out;
+}
+
+/** The preview's text as one string, elisions marked — the flat form. */
+export function composePreviewText(preview: SearchResultPreview): string {
+  return splitPreviewSegments(preview, [])
+    .map((segment) => segment.text)
+    .join("");
+}
+
+/**
  * Serialize a search result to plain text for the Copy affordance —
  * each file path on its own line, followed by its matched lines
  * indented as `  {line}: {text}`.
@@ -348,7 +447,7 @@ export function composeSearchResultText(data: SearchResultData): string {
   for (const file of data.files) {
     lines.push(file.path);
     for (const match of file.matches) {
-      lines.push(`  ${match.line}: ${match.text}`);
+      lines.push(`  ${match.line}: ${composePreviewText(match.preview)}`);
     }
   }
   return lines.join("\n");
@@ -547,7 +646,8 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
   const row = dataSource.rowAt(index);
   if (row.kind !== MATCH_CELL_KIND) return null;
   const { match } = row;
-  const segments = splitMatchSegments(match.text, match.spans);
+  const segments = splitPreviewSegments(match.preview, match.spans);
+  const elidedMatches = match.preview.elidedMatches ?? 0;
   // Born confirmed: the search that produced this row just read the file.
   // A relative path is left un-annotated rather than guessed at — the
   // annotation's contract is a path that opens.
@@ -586,15 +686,32 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
         ) : null}
         <span className="tugx-search-lineno">{match.line}</span>
         <span className="tugx-search-linetext">
-          {segments.map((segment, segmentIndex) =>
-            segment.hit ? (
+          {segments.map((segment, segmentIndex) => {
+            if (segment.elision === true) {
+              return (
+                <span
+                  key={segmentIndex}
+                  className="tugx-search-elision"
+                  data-slot="search-result-elision"
+                  title={`line is ${match.preview.lineLength.toLocaleString()} characters`}
+                >
+                  {segment.text}
+                </span>
+              );
+            }
+            return segment.hit ? (
               <mark key={segmentIndex} className="tugx-search-hit">
                 {segment.text}
               </mark>
             ) : (
               <span key={segmentIndex}>{segment.text}</span>
-            ),
-          )}
+            );
+          })}
+          {elidedMatches > 0 ? (
+            <span className="tugx-search-more" data-slot="search-result-more">
+              {`+${elidedMatches.toLocaleString()} more on this line`}
+            </span>
+          ) : null}
         </span>
       </div>
       {match.after?.map((line) => (

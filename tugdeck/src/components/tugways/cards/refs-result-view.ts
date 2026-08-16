@@ -23,10 +23,13 @@
 import type { RefsResultMessage, TextRef } from "@/lib/code-session-store/types";
 import { pathRelativeTo } from "@/lib/relative-path";
 import type { PathListData } from "../body-kinds/path-list-block";
-import type {
-  SearchResultData,
-  SearchResultFile,
-  SearchResultMatch,
+import {
+  composePreviewText,
+  wholeLinePreview,
+  type SearchResultData,
+  type SearchResultFile,
+  type SearchResultMatch,
+  type SearchResultPreview,
 } from "../body-kinds/search-result-block";
 
 /**
@@ -62,11 +65,26 @@ export function refsToPathListData(
 }
 
 /**
+ * One ref's preview as the body kind reads it — the wire's windows, named
+ * the block's way. A ref with no preview (a filename match that reached
+ * this path) previews as nothing rather than as an empty line.
+ */
+function refPreview(ref: TextRef): SearchResultPreview {
+  if (ref.preview === null) return wholeLinePreview("");
+  return {
+    lineLength: ref.preview.lineLen,
+    windows: ref.preview.segments,
+    elidedMatches: ref.preview.elidedMatches,
+  };
+}
+
+/**
  * A `search` run's refs as the search-result body kind reads them: one
  * group per file in first-appearance order, one match per ref. The ref's
  * `columns` pass through as `spans` byte-identical — they are already the
- * 0-based half-open char offsets into `preview` that `SearchResultSpan`
- * means ([P14]), so there is nothing to convert and nothing to re-derive.
+ * 0-based half-open char offsets into the whole line that
+ * `SearchResultSpan` means ([P14]), so there is nothing to convert and
+ * nothing to re-derive.
  */
 export function refsToSearchResultData(
   root: string,
@@ -84,7 +102,7 @@ export function refsToSearchResultData(
     }
     matches.push({
       line: ref.line ?? 0,
-      text: ref.preview ?? "",
+      preview: refPreview(ref),
       spans: ref.columns,
       refNumber: ref.index,
     });
@@ -122,7 +140,10 @@ export function refsFindablePaths(message: RefsResultMessage): string[] {
 function refLine(root: string, ref: TextRef): string {
   const path = joinRefPath(root, ref.path);
   const located = ref.line === null ? path : `${path}:${ref.line}`;
-  const preview = ref.preview === null ? "" : `  ${ref.preview.trim()}`;
+  // Elisions travel into the text too: a shared search says where it cut a
+  // line, rather than handing Claude a doctored one.
+  const preview =
+    ref.preview === null ? "" : `  ${composePreviewText(refPreview(ref)).trim()}`;
   return `${ref.index}  ${located}${preview}`;
 }
 

@@ -17,14 +17,28 @@ import {
   refsToSearchResultData,
 } from "@/components/tugways/cards/refs-result-view";
 import { composeContextPrefix, splitLeadingContext } from "@/lib/pending-context-store";
+import { parseLinePreview } from "@/lib/refs-session-store";
 import type { RefsResultMessage, TextRef } from "@/lib/code-session-store/types";
 
-function ref(over: Partial<TextRef> & { index: number; path: string }): TextRef {
+/**
+ * A wire ref. `preview` is written as the plain line these fixtures mean;
+ * `parseLinePreview` turns it into the one full-width window the wire's
+ * older shape decodes to, so a test says what it is testing rather than
+ * spelling out a windowed preview it does not care about.
+ */
+function ref(
+  over: Partial<Omit<TextRef, "preview">> & {
+    index: number;
+    path: string;
+    preview?: string;
+  },
+): TextRef {
+  const { preview, ...rest } = over;
   return {
     line: null,
     columns: [],
-    preview: null,
-    ...over,
+    preview: preview === undefined ? null : parseLinePreview(preview),
+    ...rest,
   };
 }
 
@@ -114,10 +128,39 @@ describe("refsToSearchResultData — a search run's groups", () => {
     const data = refsToSearchResultData("/proj", [ref({ index: 1, path: "a.ts" })]);
     expect(data.files[0].matches[0]).toEqual({
       line: 0,
-      text: "",
+      preview: { lineLength: 0, windows: [] },
       spans: [],
       refNumber: 1,
     });
+  });
+
+  it("carries the wire's windows through as the match's preview", () => {
+    // A hit inside a minified line: the feed sent a window that starts 300
+    // chars in, and the block has to be told where it starts or it cannot
+    // place the span that lands in it.
+    const data = refsToSearchResultData("/proj", [
+      {
+        index: 1,
+        path: "bundle.js",
+        line: 1,
+        columns: [[310, 316]],
+        preview: {
+          lineLen: 9000,
+          segments: [{ col: 278, text: "…thirty-two chars…needle…and more" }],
+          elidedMatches: 2,
+        },
+      },
+    ]);
+    const match = data.files[0].matches[0];
+    expect(match.preview.lineLength).toBe(9000);
+    expect(match.preview.windows).toEqual([
+      { col: 278, text: "…thirty-two chars…needle…and more" },
+    ]);
+    expect(match.preview.elidedMatches).toBe(2);
+    // And the spans stay in whole-line coordinates ([P14]) — they are what
+    // the editor's reveal reads, so a rebase here would land the cursor 278
+    // chars early.
+    expect(match.spans).toEqual([[310, 316]]);
   });
 
   it("carries each ref's number, so the row shows what `/ref N` opens", () => {

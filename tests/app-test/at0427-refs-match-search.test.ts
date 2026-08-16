@@ -23,7 +23,10 @@
  *   5. **Reload restore** — after Maker ▸ Reload the last settled run comes
  *      back from the ledger with its numbering intact, and `/ref N` still
  *      resolves against it.
- *   6. **Cancel** — a run over a large tree settles as `interrupted` when the
+ *   6. **Excerpting** — a hit inside a very long line renders as windows
+ *      around each match with the rest elided, and the spans the row hands
+ *      the editor still name the whole line.
+ *   7. **Cancel** — a run over a large tree settles as `interrupted` when the
  *      block's Cancel is pressed, keeping the refs it had already found.
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
@@ -60,6 +63,8 @@ const EDITOR = '[data-slot="tug-text-card-editor"] .cm-content';
 let projectDir = "";
 /** A workspace big enough that a run over it is still going when we cancel. */
 let bigDir = "";
+/** A workspace whose one file is a single very long line, minified-bundle style. */
+let longDir = "";
 
 beforeAll(() => {
   if (!SHOULD_RUN) return;
@@ -85,6 +90,15 @@ beforeAll(() => {
   // A file neither needle names, so a run that returns everything fails.
   writeFileSync(join(projectDir, "src", "unrelated.ts"), "nothing to see\n");
 
+  // One line, two hits 1,000 chars apart, 2,206 chars end to end — the shape
+  // a `.jsonl` fixture or a minified bundle has, at a size an assertion can
+  // name exactly.
+  longDir = realpathSync(mkdtempSync(join(tmpdir(), "at0427-long-")));
+  writeFileSync(
+    join(longDir, "bundle.js"),
+    `${"x".repeat(100)}spinnaker${"y".repeat(1000)}spinnaker${"z".repeat(1097)}\n`,
+  );
+
   bigDir = realpathSync(mkdtempSync(join(tmpdir(), "at0427-big-")));
   const body = `${"// filler line\n".repeat(120)}const marker = "spinnaker";\n`;
   for (let i = 0; i < 8000; i++) {
@@ -93,7 +107,7 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  for (const dir of [projectDir, bigDir]) {
+  for (const dir of [projectDir, bigDir, longDir]) {
     if (dir !== "" && existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -342,7 +356,11 @@ describe.skipIf(!SHOULD_RUN)(
           expect(
             restored.paths.map((p, i) => `${p}:${restored.lines[i]}`).sort(),
             "a restored run is numbered and located exactly as the live one was",
-          ).toEqual(cited);
+            // Both sides sorted: files are scanned in parallel, so which one
+            // finishes first — and therefore the order the run emitted and
+            // the ledger stored — is not fixed. The claim is that the same
+            // refs came back, not that a race resolved the same way twice.
+          ).toEqual([...cited].sort());
 
           // And the restored refs are what `/ref` resolves against — the
           // block on screen would be a lie if its numbers opened nothing.
@@ -436,6 +454,79 @@ describe.skipIf(!SHOULD_RUN)(
                ${JSON.stringify(`${GREP} [data-slot="search-result-match"][data-tug-annotation]`)}).length`,
           );
           expect(annotated, "Grep match rows carry no file-path annotation").toBe(0);
+
+          process.stdout.write("VERDICT: PASS\n");
+        } catch (err) {
+          process.stdout.write("VERDICT: FAIL\n");
+          const tail = app.tailLog(200);
+          if (tail !== "") process.stderr.write(`\n[at0427] log tail:\n${tail}\n`);
+          throw err;
+        } finally {
+          await app.close();
+        }
+      },
+      TEST_TIMEOUT_MS,
+    );
+
+    test(
+      "a hit inside a very long line renders as an excerpt, not the line",
+      async () => {
+        const app = await launchTugApp({ testName: "at0427-refs-excerpt" });
+        try {
+          await app.seedDeckState({ state: deckShape(), focusCardId: "A" });
+          await app.waitForCondition<boolean>(
+            `(typeof window.__tug !== "undefined") && window.__tug.assertHostRootRegistered("A")`,
+            { timeoutMs: 30_000 },
+          );
+          await app.bindSession("A", {
+            tugSessionId: `${SID}-excerpt`,
+            projectDir: longDir,
+            workspaceKey: longDir,
+          });
+
+          await runRefs(app, "/search spinnaker", 0);
+
+          // What the row DRAWS. The line is 2,206 chars with two hits 1,000
+          // apart; the row shows two windows and the elisions between them.
+          const drawn = await app.evalJS<string>(
+            `(document.querySelector(${JSON.stringify(
+              `${REFS_ROWS} [data-slot="search-result-match"] .tugx-search-linetext`,
+            )}) || {}).textContent || ""`,
+          );
+          expect(
+            drawn.length,
+            "the row is an excerpt, not a 2,206-char line",
+          ).toBeLessThan(200);
+          expect(drawn).toContain("spinnaker");
+          const elisions = await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(
+              `${REFS_ROWS} [data-slot="search-result-elision"]`,
+            )}).length`,
+          );
+          expect(elisions, "head, middle, and tail of the line are elided").toBe(3);
+
+          // BOTH hits paint — an excerpt that showed only the first match
+          // would be answering a different question than the one asked.
+          const hits = await app.evalJS<string[]>(
+            `Array.from(document.querySelectorAll(${JSON.stringify(
+              `${REFS_ROWS} .tugx-search-hit`,
+            )})).map(function(m){ return m.textContent || ""; })`,
+          );
+          expect(hits).toEqual(["spinnaker", "spinnaker"]);
+
+          // And the span the row hands the editor still names the LINE: the
+          // first hit sits at chars 100..109, not at its offset inside the
+          // window that draws it.
+          const columns = await app.evalJS<string | null>(
+            `(document.querySelector(${JSON.stringify(
+              `${REFS_ROWS} [data-slot="search-result-match"]`,
+            )}) || {}).getAttribute
+               ? document.querySelector(${JSON.stringify(
+                 `${REFS_ROWS} [data-slot="search-result-match"]`,
+               )}).getAttribute("data-columns")
+               : null`,
+          );
+          expect(columns, "spans stay in whole-line coordinates ([P14])").toBe("100,109");
 
           process.stdout.write("VERDICT: PASS\n");
         } catch (err) {

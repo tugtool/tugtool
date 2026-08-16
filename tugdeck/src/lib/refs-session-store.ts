@@ -22,7 +22,7 @@ import { FeedId, type FeedIdValue } from "../protocol";
 import type { FeedStore } from "./feed-store";
 import { getConnection } from "./connection-singleton";
 import type { CodeSessionStore } from "./code-session-store";
-import type { TextRef } from "./code-session-store/types";
+import type { LinePreview, PreviewSegment, TextRef } from "./code-session-store/types";
 
 /** Which operation a run performs. */
 export type RefsOpKind = "match" | "search";
@@ -31,8 +31,11 @@ export type RefsOpKind = "match" | "search";
 export interface RefsRunOptions {
   kind: RefsOpKind;
   needles: ReadonlyArray<string>;
-  /** Flags as the feed's serde enum reads them, already normalized. */
-  flags: Record<string, boolean>;
+  /**
+   * Flags as the feed's serde struct reads them, already normalized. Mostly
+   * booleans; a flag that takes a value (`/search -c 64`) rides as a number.
+   */
+  flags: Record<string, boolean | number>;
   /** The line the user typed — the block header, echoed back on start. */
   command: string;
 }
@@ -269,6 +272,40 @@ function numberOr(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
+/**
+ * Read one wire `preview`; `null` for anything that isn't one.
+ *
+ * Two shapes are legal. The windowed one is what the feed sends today. A
+ * bare string is what a `refs.db` row written before windowing holds — the
+ * ledger keeps one run per session indefinitely, and reading it as a single
+ * full-width window costs a branch and saves a migration.
+ */
+export function parseLinePreview(raw: unknown): LinePreview | null {
+  if (typeof raw === "string") {
+    return {
+      lineLen: raw.length,
+      segments: raw === "" ? [] : [{ col: 0, text: raw }],
+      elidedMatches: 0,
+    };
+  }
+  if (typeof raw !== "object" || raw === null) return null;
+  const p = raw as Record<string, unknown>;
+  const segments: PreviewSegment[] = [];
+  if (Array.isArray(p.segments)) {
+    for (const entry of p.segments) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const s = entry as Record<string, unknown>;
+      if (typeof s.col !== "number" || typeof s.text !== "string") continue;
+      segments.push({ col: s.col, text: s.text });
+    }
+  }
+  return {
+    lineLen: numberOr(p.line_len, 0),
+    segments,
+    elidedMatches: numberOr(p.elided_matches, 0),
+  };
+}
+
 /** Read one wire `TextRef`; `null` for a row that isn't one. */
 export function parseTextRef(raw: unknown): TextRef | null {
   if (typeof raw !== "object" || raw === null) return null;
@@ -291,7 +328,7 @@ export function parseTextRef(raw: unknown): TextRef | null {
     path: r.path,
     line: typeof r.line === "number" ? r.line : null,
     columns,
-    preview: typeof r.preview === "string" ? r.preview : null,
+    preview: parseLinePreview(r.preview),
   };
 }
 

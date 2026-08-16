@@ -104,6 +104,48 @@ describe("parseRefsArgs — /search (List L02)", () => {
   });
 });
 
+describe("parseRefsArgs — the valued context flag", () => {
+  it("reads the value from the next token, the same token, or after an `=`", () => {
+    for (const line of ["-c 64 x", "-c64 x", "-c=64 x"]) {
+      const parsed = parseRefsArgs("search", line);
+      expect(parsed.flags).toEqual({ context_chars: 64 });
+      expect(parsed.needles).toEqual(["x"]);
+    }
+  });
+
+  it("rides at the end of a cluster", () => {
+    expect(parseRefsArgs("search", "-ic 8 x").flags).toEqual({
+      case_insensitive: true,
+      context_chars: 8,
+    });
+  });
+
+  it("takes zero, which is the whole-line escape hatch", () => {
+    expect(parseRefsArgs("search", "-c 0 x").flags).toEqual({ context_chars: 0 });
+  });
+
+  it("reports a missing or unreadable value rather than guessing one", () => {
+    // The needle is not silently eaten as a value, and the run still happens
+    // — one bad flag should not cost the user their search.
+    const parsed = parseRefsArgs("search", "-c foo");
+    expect(parsed.flags).toEqual({});
+    expect(parsed.unknown).toEqual(["-c"]);
+    expect(parsed.needles).toEqual([]);
+    expect(parseRefsArgs("search", "-c").needles).toEqual([]);
+    expect(parseRefsArgs("search", "-c -4 x").unknown).toEqual(["-c"]);
+  });
+
+  it("is a /search flag only — /match reads `-c` as unknown", () => {
+    expect(parseRefsArgs("match", "-c 8 x").unknown).toEqual(["-c"]);
+  });
+
+  it("round-trips through the emitter as its own token", () => {
+    const flags = parseRefsArgs("search", "-ic 64 foo").flags;
+    expect(composeRefsFlagTokens("search", flags)).toBe("-i -c 64");
+    expect(parseRefsArgs("search", "-i -c 64 foo").flags).toEqual(flags);
+  });
+});
+
 describe("composeRefsFlagTokens — the inverse the option cluster writes", () => {
   it("emits nothing for no flags", () => {
     expect(composeRefsFlagTokens("search", {})).toBe("");

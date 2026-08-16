@@ -243,21 +243,49 @@ export interface ShellExchangeMessage extends MessageBase {
   autoRouted?: boolean;
 }
 
+/** One window of a matched line: text, and the column it starts at. */
+export interface PreviewSegment {
+  /** 0-based char offset of `text` within the source line. */
+  col: number;
+  /** The window's text. */
+  text: string;
+}
+
+/**
+ * What the feed sends of a matched line.
+ *
+ * Not the line itself: a search over a real tree hits minified bundles and
+ * `.jsonl` fixtures whose every "line" is the whole file, so the producer
+ * keeps a window around each match and records `lineLen` for what it left
+ * out. Segments are ascending and non-overlapping; a line short enough to
+ * show whole arrives as one segment at `col: 0`.
+ */
+export interface LinePreview {
+  /** Char length of the whole source line. */
+  lineLen: number;
+  /** The windows kept, ascending by `col`. */
+  segments: readonly PreviewSegment[];
+  /** Matches on the line no kept window covers (an excerpt-budget cap). */
+  elidedMatches: number;
+}
+
 /**
  * One numbered file reference, as the `refs` feed sends it.
  *
  * `path` is relative to the run's `root`; joining the two is the view
  * layer's job, because a row's path must be absolute to be clickable.
  * `line` is 1-based and `columns` are 0-based half-open `[start, end)`
- * char offsets into `preview` — the same span shape `SearchResultBlock`
- * consumes, so nothing between the wire and the renderer adapts them.
+ * char offsets into **the whole source line** — not into `preview`, which
+ * carries only windows of that line. A span finds its window by the
+ * window's own `col`, which is what lets the same offsets drive both the
+ * row's highlight and the editor's reveal into the real file.
  */
 export interface TextRef {
   index: number;
   path: string;
   line: number | null;
   columns: ReadonlyArray<readonly [number, number]>;
-  preview: string | null;
+  preview: LinePreview | null;
 }
 
 /**

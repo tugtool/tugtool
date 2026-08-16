@@ -26,8 +26,11 @@ import {
   composeMatchCountLabel,
   composeSearchResultText,
   composeSearchTruncationLabel,
+  composePreviewText,
   splitMatchSegments,
+  splitPreviewSegments,
   totalMatchCount,
+  wholeLinePreview,
   type SearchResultData,
   type SearchResultFile,
 } from "../search-result-block";
@@ -42,14 +45,14 @@ const FILES: SearchResultFile[] = [
     matches: [
       {
         line: 12,
-        text: "const useStore = createStore();",
+        preview: wholeLinePreview("const useStore = createStore();"),
         spans: [[6, 14]],
         before: [{ line: 11, text: "// store wiring" }],
         after: [{ line: 13, text: "export { useStore };" }],
       },
       {
         line: 40,
-        text: "useStore.subscribe(listener);",
+        preview: wholeLinePreview("useStore.subscribe(listener);"),
         spans: [[0, 8]],
       },
     ],
@@ -59,7 +62,7 @@ const FILES: SearchResultFile[] = [
     matches: [
       {
         line: 5,
-        text: "import { useStore } from './alpha';",
+        preview: wholeLinePreview("import { useStore } from './alpha';"),
         spans: [[9, 17]],
       },
     ],
@@ -169,6 +172,98 @@ describe("splitMatchSegments", () => {
     expect(splitMatchSegments("abc", [[1, 1], [3, 2]])).toEqual([
       { text: "abc", hit: false },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// splitPreviewSegments — windows, elisions, and whole-line span coordinates
+// ---------------------------------------------------------------------------
+
+describe("splitPreviewSegments", () => {
+  test("a whole-line preview splits exactly as the line does", () => {
+    const preview = wholeLinePreview("const useStore = x;");
+    expect(splitPreviewSegments(preview, [[6, 14]])).toEqual(
+      splitMatchSegments("const useStore = x;", [[6, 14]]),
+    );
+  });
+
+  test("an empty preview yields no runs at all", () => {
+    expect(splitPreviewSegments(wholeLinePreview(""), [])).toEqual([]);
+  });
+
+  test("a window that starts mid-line is preceded by an elision", () => {
+    const preview = { lineLength: 500, windows: [{ col: 100, text: "needle here" }] };
+    expect(splitPreviewSegments(preview, [])).toEqual([
+      { text: "…", hit: false, elision: true },
+      { text: "needle here", hit: false },
+      { text: "…", hit: false, elision: true },
+    ]);
+  });
+
+  test("a window ending at the line's end has no trailing elision", () => {
+    const preview = { lineLength: 111, windows: [{ col: 100, text: "needle here" }] };
+    const runs = splitPreviewSegments(preview, []);
+    expect(runs[runs.length - 1].elision).toBeUndefined();
+  });
+
+  test("spans are rebased into the window that holds them", () => {
+    // The span names the LINE — chars 106–112 — and the window starts at 100.
+    // Rebasing is the renderer's job precisely so the span can stay honest
+    // for the editor's reveal.
+    const preview = { lineLength: 500, windows: [{ col: 100, text: "here: needle;" }] };
+    expect(splitPreviewSegments(preview, [[106, 112]])).toEqual([
+      { text: "…", hit: false, elision: true },
+      { text: "here: ", hit: false },
+      { text: "needle", hit: true },
+      { text: ";", hit: false },
+      { text: "…", hit: false, elision: true },
+    ]);
+  });
+
+  test("a span straddling a window's edge paints only the part that is shown", () => {
+    const preview = { lineLength: 500, windows: [{ col: 100, text: "needle" }] };
+    expect(splitPreviewSegments(preview, [[96, 103]])).toEqual([
+      { text: "…", hit: false, elision: true },
+      { text: "nee", hit: true },
+      { text: "dle", hit: false },
+      { text: "…", hit: false, elision: true },
+    ]);
+  });
+
+  test("a span in no window paints nothing rather than landing in the wrong one", () => {
+    const preview = { lineLength: 500, windows: [{ col: 100, text: "needle" }] };
+    expect(splitPreviewSegments(preview, [[300, 306]])).toEqual([
+      { text: "…", hit: false, elision: true },
+      { text: "needle", hit: false },
+      { text: "…", hit: false, elision: true },
+    ]);
+  });
+
+  test("each gap between windows draws one elision", () => {
+    const preview = {
+      lineLength: 900,
+      windows: [
+        { col: 0, text: "alpha" },
+        { col: 400, text: "omega" },
+      ],
+    };
+    expect(splitPreviewSegments(preview, []).map((r) => r.text)).toEqual([
+      "alpha",
+      "…",
+      "omega",
+      "…",
+    ]);
+  });
+
+  test("composePreviewText flattens the runs, elisions included", () => {
+    const preview = {
+      lineLength: 900,
+      windows: [
+        { col: 10, text: "alpha" },
+        { col: 400, text: "omega" },
+      ],
+    };
+    expect(composePreviewText(preview)).toBe("…alpha…omega…");
   });
 });
 

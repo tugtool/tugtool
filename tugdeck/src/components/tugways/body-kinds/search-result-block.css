@@ -93,6 +93,13 @@ body {
    * one-hop per [L17]. */
   --tugx-search-hit-bg:    var(--tug7-surface-tone-primary-normal-caution-rest);
   --tugx-search-hit-color: var(--tug7-element-global-text-normal-caution-rest);
+
+  /* The stand-in for line the producer excerpted away, and the count of
+   * matches a capped row is not showing. Both are the block talking about
+   * the result rather than showing it, so both take the subtle tone. */
+  --tugx-search-elision-color: var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-search-more-color:    var(--tug7-element-global-text-normal-subtle-rest);
+  --tugx-search-more-gap:      var(--tug-space-xs);
 }
 
 /* ---------- Frame ---------- */
@@ -324,6 +331,25 @@ body {
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-search-line--context .tugx-search-linetext {
   color: var(--tugx-search-context-color);
+}
+
+/* A stretch of line the producer excerpted away. Subtle, and non-selectable
+ * so a copied excerpt carries the text the user pointed at rather than a
+ * glyph they never typed. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-elision {
+  color: var(--tugx-search-elision-color);
+  user-select: none;
+}
+
+/* The tail of a row that hit its excerpt budget — the matches it is not
+ * showing, counted. A capped row says so rather than reading complete. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-more {
+  margin-inline-start: var(--tugx-search-more-gap);
+  color: var(--tugx-search-more-color);
+  font-style: normal;
+  user-select: none;
 }
 
 /* The match span highlight — the universal search-hit treatment. */

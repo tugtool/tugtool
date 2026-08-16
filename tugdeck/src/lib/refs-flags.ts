@@ -18,8 +18,13 @@
 
 import type { RefsOpKind } from "./refs-session-store";
 
-/** The flag record the feed reads — every key `false` unless the line set it. */
-export type RefsFlags = Record<string, boolean>;
+/**
+ * The flag record the feed reads — every key absent unless the line set it.
+ *
+ * Mostly booleans. A flag that takes a value (`-c 64`) lands as a number,
+ * which is the same shape the feed's serde field reads.
+ */
+export type RefsFlags = Record<string, boolean | number>;
 
 /** What a typed argument line parsed to. */
 export interface ParsedRefsCommand {
@@ -59,6 +64,19 @@ const SEARCH_FLAGS: Readonly<Record<string, string>> = {
   a: "all_files",
   s: "all_files",
   l: "per_line",
+};
+
+/**
+ * Flags that take a value rather than standing alone.
+ *
+ * `/search -c N` sets how many chars of context a matched line keeps on
+ * each side of a hit; `-c 0` turns excerpting off and shows the line whole.
+ * Omitted, the feed's own default applies — the number lives there, not
+ * here, so one side owns it.
+ */
+const VALUED_FLAGS: Readonly<Record<RefsOpKind, Readonly<Record<string, string>>>> = {
+  match: {},
+  search: { c: "context_chars" },
 };
 
 /** The flag table for an op. */
@@ -104,25 +122,48 @@ export function tokenizeRefsArgs(args: string): string[] {
 /**
  * Parse a `/match` or `/search` argument line.
  *
- * Short flags cluster (`-ie` is `-i -e`). A bare `--` ends flag parsing, so a
- * needle that genuinely starts with a dash is still reachable. An unknown
- * flag is collected rather than guessed at — the caller surfaces it as a
- * subdued notice and runs the rest of the line, because dropping the whole
- * command over one typo is worse than running the search the user meant.
+ * Short flags cluster (`-ie` is `-i -e`). A valued flag takes the rest of
+ * its token (`-c32`, `-c=32`) or, when the token ends at the letter, the
+ * next token (`-c 32`) — so it can still ride at the end of a cluster
+ * (`-ic 32`). A bare `--` ends flag parsing, so a needle that genuinely
+ * starts with a dash is still reachable. An unknown flag — or a valued one
+ * with no number after it — is collected rather than guessed at: the caller
+ * surfaces it as a subdued notice and runs the rest of the line, because
+ * dropping the whole command over one typo is worse than running the search
+ * the user meant.
  */
 export function parseRefsArgs(kind: RefsOpKind, args: string): ParsedRefsCommand {
   const table = flagTable(kind);
+  const valued = VALUED_FLAGS[kind];
   const needles: string[] = [];
   const flags: RefsFlags = {};
   const unknown: string[] = [];
   let flagsEnded = false;
-  for (const token of tokenizeRefsArgs(args)) {
+  const tokens = tokenizeRefsArgs(args);
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
     if (!flagsEnded && token === "--") {
       flagsEnded = true;
       continue;
     }
     if (!flagsEnded && token.length > 1 && token.startsWith("-")) {
-      for (const ch of token.slice(1)) {
+      const letters = token.slice(1);
+      for (let at = 0; at < letters.length; at += 1) {
+        const ch = letters[at];
+        const valuedName = valued[ch];
+        if (valuedName !== undefined) {
+          // The rest of the token, or the next one. Either way the letter
+          // ends the cluster — a value cannot be read as more flags.
+          const inline = letters.slice(at + 1).replace(/^=/, "");
+          const raw = inline !== "" ? inline : (tokens[(index += 1)] ?? "");
+          const value = Number(raw);
+          if (raw === "" || !Number.isInteger(value) || value < 0) {
+            unknown.push(`-${ch}`);
+          } else {
+            flags[valuedName] = value;
+          }
+          break;
+        }
         const name = table[ch];
         if (name === undefined) unknown.push(`-${ch}`);
         else flags[name] = true;
@@ -152,7 +193,14 @@ export function composeRefsFlagTokens(kind: RefsOpKind, flags: RefsFlags): strin
     emitted.add(name);
     letters += letter;
   }
-  return letters === "" ? "" : `-${letters}`;
+  // A valued flag cannot join the cluster — it carries a number after it, so
+  // it is its own token and comes last.
+  const tokens = letters === "" ? [] : [`-${letters}`];
+  for (const [letter, name] of Object.entries(VALUED_FLAGS[kind])) {
+    const value = flags[name];
+    if (typeof value === "number") tokens.push(`-${letter} ${value}`);
+  }
+  return tokens.join(" ");
 }
 
 /** The command line a run echoes in its block header — `/search -i foo bar`. */

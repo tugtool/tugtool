@@ -230,7 +230,7 @@ mod tests {
                 "src/a.ts",
                 12,
                 vec![(2, 7), (9, 14)],
-                "  héllo and héllo",
+                crate::feeds::text_ref::LinePreview::whole("  héllo and héllo"),
             )],
             settled_at_ms: 42,
         };

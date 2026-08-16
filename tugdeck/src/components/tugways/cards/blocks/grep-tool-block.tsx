@@ -79,6 +79,7 @@ import {
   type SearchResultData,
   type SearchResultFile,
   type SearchResultMatch,
+  wholeLinePreview,
   type SearchResultSpan,
 } from "@/components/tugways/body-kinds/search-result-block";
 
@@ -228,7 +229,9 @@ function narrowSearchResultMatch(value: unknown): SearchResultMatch | undefined 
   }
   return {
     line: v.line,
-    text: v.text,
+    // Grep sends a line, not windows: the tool's own result is whatever
+    // Claude's Grep put on the wire, and this block shows it as it arrived.
+    preview: wholeLinePreview(v.text),
     spans: narrowSpans(v.spans),
     before: narrowContextLines(v.before),
     after: narrowContextLines(v.after),

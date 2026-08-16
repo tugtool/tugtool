@@ -45,7 +45,13 @@ function refsMsg(turn: TurnEntry): RefsResultMessage {
 }
 
 function ref(index: number, path: string): TextRef {
-  return { index, path, line: index, columns: [[0, 3]], preview: "foo bar" };
+  return {
+    index,
+    path,
+    line: index,
+    columns: [[0, 3]],
+    preview: { lineLen: 7, segments: [{ col: 0, text: "foo bar" }], elidedMatches: 0 },
+  };
 }
 
 function publish(

@@ -30,7 +30,7 @@ use tracing::warn;
 use tugcast_core::{FeedId, Frame};
 
 use crate::feeds::session_scoped::SessionScopedFeed;
-use crate::feeds::text_ref::{ColumnSpan, TextRef};
+use crate::feeds::text_ref::{ColumnSpan, LinePreview, PreviewSegment, TextRef};
 use crate::feeds::walk::{WalkOptions, walk_workspace};
 use crate::fs_read::MAX_READ_BYTES;
 use crate::refs_ledger::{NewRefsRun, RefsLedger};
@@ -176,17 +176,38 @@ pub struct SearchFlags {
     /// Emit one row per match instead of merging a line's matches into a
     /// single row carrying every span.
     pub per_line: bool,
+    /// Chars of context to keep on each side of a match when excerpting a
+    /// matched line. `None` takes [`DEFAULT_CONTEXT_CHARS`]; `Some(0)` turns
+    /// excerpting off and shows the line whole.
+    pub context_chars: Option<u32>,
 }
+
+/// Chars kept on each side of a match when a matched line is excerpted.
+///
+/// Wide enough to carry the identifier a match sits inside plus its
+/// neighbours, narrow enough that a minified line reads as a row rather
+/// than a wall.
+pub const DEFAULT_CONTEXT_CHARS: u32 = 32;
+
+/// The most excerpt text one row may carry, in chars.
+///
+/// Windowing bounds a line by its *match count*, not by its length, so a
+/// query that hits thousands of times on one line (`/search ,` over
+/// `.jsonl`) reproduces the wall it was meant to prevent. Past this budget
+/// a row stops emitting windows and reports what it dropped, which is the
+/// one place the "every match is shown" property yields — and it says so on
+/// the row rather than silently.
+const MAX_EXCERPT_CHARS: u32 = 2_000;
 
 /// One matched line, before it takes its place in a run's numbering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefRow {
     /// 1-based line number.
     pub line: u32,
-    /// 0-based half-open char spans into `preview`.
+    /// 0-based half-open char spans, in whole-line coordinates.
     pub columns: Vec<ColumnSpan>,
-    /// The full text of the line.
-    pub preview: String,
+    /// What to show of the line.
+    pub preview: LinePreview,
 }
 
 /// Compile the run's needles into matchers.
@@ -234,6 +255,124 @@ fn merge_spans(mut spans: Vec<ColumnSpan>) -> Vec<ColumnSpan> {
     merged
 }
 
+/// Byte offsets of the given char offsets within `line`.
+///
+/// `marks` must be ascending, which lets one walk of the line answer them
+/// all — the alternative, `chars().nth()` per mark, is quadratic on exactly
+/// the multi-megabyte lines this whole path exists to handle. A mark past
+/// the end of the line answers with the line's length.
+fn byte_offsets(line: &str, marks: &[u32]) -> Vec<usize> {
+    let mut offsets = Vec::with_capacity(marks.len());
+    let mut chars = line.chars();
+    let mut seen = 0u32;
+    let mut cursor = 0usize;
+    for &mark in marks {
+        while seen < mark {
+            match chars.next() {
+                Some(ch) => {
+                    cursor += ch.len_utf8();
+                    seen += 1;
+                }
+                None => break,
+            }
+        }
+        offsets.push(cursor);
+    }
+    offsets
+}
+
+/// Excerpt a matched line down to the windows worth showing, and report
+/// which of its spans those windows cover.
+///
+/// One window per span, `context` chars on each side, merged where they
+/// touch. Two refinements make the common case read naturally:
+///
+///  - A run shorter than `context` at either end is *not* elided — showing
+///    the eight remaining chars of a line costs less than the mark that
+///    would stand in for them, so a normal source line comes back whole.
+///  - Windows stop at [`MAX_EXCERPT_CHARS`]; spans past that are counted,
+///    not carried, so the row can say how many matches it is not showing.
+///
+/// Spans arrive sorted and non-overlapping (`merge_spans`), and the spans
+/// returned keep whole-line coordinates — nothing here shifts an offset.
+fn excerpt_line(line: &str, spans: &[ColumnSpan], context: u32) -> (LinePreview, Vec<ColumnSpan>) {
+    if context == 0 || spans.is_empty() {
+        return (LinePreview::whole(line), spans.to_vec());
+    }
+    let line_len = line.chars().count() as u32;
+
+    let mut windows: Vec<(u32, u32)> = Vec::new();
+    for &(start, end) in spans {
+        let window = (start.saturating_sub(context), end.saturating_add(context).min(line_len));
+        match windows.last_mut() {
+            Some(last) if window.0 <= last.1 => last.1 = last.1.max(window.1),
+            _ => windows.push(window),
+        }
+    }
+    if let Some(first) = windows.first_mut() {
+        if first.0 <= context {
+            first.0 = 0;
+        }
+    }
+    if let Some(last) = windows.last_mut() {
+        if line_len - last.1 <= context {
+            last.1 = line_len;
+        }
+    }
+
+    let mut kept: Vec<(u32, u32)> = Vec::new();
+    let mut budget = MAX_EXCERPT_CHARS;
+    for window in windows {
+        if budget == 0 {
+            break;
+        }
+        let width = window.1 - window.0;
+        if width <= budget {
+            budget -= width;
+            kept.push(window);
+        } else {
+            kept.push((window.0, window.0 + budget));
+            budget = 0;
+        }
+    }
+
+    // Which spans survive: those a kept window still touches. Both lists are
+    // ascending, so one cursor walks them together.
+    let mut kept_spans: Vec<ColumnSpan> = Vec::with_capacity(spans.len());
+    let mut elided_matches = 0u32;
+    let mut cursor = 0usize;
+    for &(start, end) in spans {
+        while cursor < kept.len() && kept[cursor].1 <= start {
+            cursor += 1;
+        }
+        if cursor < kept.len() && kept[cursor].0 < end {
+            kept_spans.push((start, end));
+        } else {
+            elided_matches += 1;
+        }
+    }
+
+    let marks: Vec<u32> = kept.iter().flat_map(|&(start, end)| [start, end]).collect();
+    let bytes = byte_offsets(line, &marks);
+    let segments = kept
+        .iter()
+        .enumerate()
+        .map(|(index, &(start, _))| PreviewSegment {
+            col: start,
+            text: line[bytes[index * 2]..bytes[index * 2 + 1]].to_string(),
+        })
+        .collect();
+
+    (
+        LinePreview {
+            line_len,
+            segments,
+            elided_matches,
+        },
+        kept_spans,
+    )
+}
+
 /// Scan one file's text and return a row per hit.
 ///
 /// Zero-width matches are dropped before anything else — a pattern that
@@ -272,21 +411,25 @@ pub fn scan_text(text: &str, needles: &[Regex], flags: SearchFlags) -> Vec<RefRo
         }
 
         let line_number = line_index as u32 + 1;
+        let context = flags.context_chars.unwrap_or(DEFAULT_CONTEXT_CHARS);
         if flags.per_line {
             let mut spans: Vec<ColumnSpan> = hits.into_iter().map(|(_, span)| span).collect();
             spans.sort_unstable();
             for span in spans {
+                let (preview, columns) = excerpt_line(line, &[span], context);
                 rows.push(RefRow {
                     line: line_number,
-                    columns: vec![span],
-                    preview: line.to_string(),
+                    columns,
+                    preview,
                 });
             }
         } else {
+            let spans = merge_spans(hits.into_iter().map(|(_, span)| span).collect());
+            let (preview, columns) = excerpt_line(line, &spans, context);
             rows.push(RefRow {
                 line: line_number,
-                columns: merge_spans(hits.into_iter().map(|(_, span)| span).collect()),
-                preview: line.to_string(),
+                columns,
+                preview,
             });
         }
     }
@@ -865,6 +1008,26 @@ mod tests {
         scan_text(text, &compiled, flags)
     }
 
+    /// A preview's kept windows, joined at their elisions — the shape of
+    /// what a reader sees, in one string an assertion can name.
+    fn preview_text(preview: &LinePreview) -> String {
+        preview
+            .segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<&str>>()
+            .join("…")
+    }
+
+    /// A row whose line is short enough to show whole.
+    fn whole_row(line: u32, columns: Vec<ColumnSpan>, text: &str) -> RefRow {
+        RefRow {
+            line,
+            columns,
+            preview: LinePreview::whole(text),
+        }
+    }
+
     #[test]
     fn default_search_is_case_sensitive_literal() {
         let text = "let Foo = 1;\nlet foo = 2;\n";
@@ -872,7 +1035,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].line, 2);
         assert_eq!(rows[0].columns, vec![(4, 7)]);
-        assert_eq!(rows[0].preview, "let foo = 2;");
+        assert_eq!(preview_text(&rows[0].preview), "let foo = 2;");
     }
 
     #[test]
@@ -984,6 +1147,180 @@ mod tests {
         assert_eq!((start, end), (14, 20));
     }
 
+    // ── Excerpting a long line ───────────────────────────────────────────
+
+    /// A line long enough to be excerpted, with `needle` at `at`.
+    fn long_line(at: usize, filler: char) -> String {
+        let mut line = String::new();
+        line.extend(std::iter::repeat_n(filler, at));
+        line.push_str("needle");
+        line.extend(std::iter::repeat_n(filler, 500));
+        line
+    }
+
+    #[test]
+    fn a_short_line_is_shown_whole_rather_than_excerpted() {
+        // The default context is wider than this line, so nothing is cut and
+        // the row reads exactly as it did before excerpting existed.
+        let rows = scan("let foo = 2;", &["foo"], SearchFlags::default());
+        assert_eq!(rows[0].preview.segments.len(), 1);
+        assert_eq!(rows[0].preview.segments[0].col, 0);
+        assert_eq!(preview_text(&rows[0].preview), "let foo = 2;");
+    }
+
+    #[test]
+    fn a_long_line_keeps_a_window_around_the_match_and_nothing_else() {
+        let line = long_line(400, 'x');
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        let preview = &rows[0].preview;
+        assert_eq!(preview.line_len, 906);
+        assert_eq!(preview.segments.len(), 1);
+        // 32 chars of context on each side of a 6-char match.
+        assert_eq!(preview.segments[0].col, 368);
+        assert_eq!(preview.segments[0].text.chars().count(), 70);
+        assert!(preview.segments[0].text.contains("needle"));
+    }
+
+    #[test]
+    fn a_matchs_columns_stay_in_whole_line_coordinates() {
+        // The load-bearing property: the span the row highlights is the same
+        // span the editor reveals, so it has to name the line, not the window.
+        let line = long_line(400, 'x');
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        assert_eq!(rows[0].columns, vec![(400, 406)]);
+        // And the window contains it, which is what makes the two reconcile.
+        let segment = &rows[0].preview.segments[0];
+        let offset = (400 - segment.col) as usize;
+        assert_eq!(&segment.text[offset..offset + 6], "needle");
+    }
+
+    #[test]
+    fn every_match_on_a_line_gets_a_window() {
+        // The whole point: a line with hits at both ends shows both, not the
+        // first one and a promise.
+        let line = format!("needle{}needle", "x".repeat(400));
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        let preview = &rows[0].preview;
+        assert_eq!(preview.segments.len(), 2);
+        assert_eq!(preview.segments[0].col, 0);
+        assert_eq!(preview.segments[1].col, 374);
+        assert!(preview.segments.iter().all(|s| s.text.contains("needle")));
+        assert_eq!(preview.elided_matches, 0);
+    }
+
+    #[test]
+    fn windows_that_touch_merge_into_one() {
+        // Two hits 40 chars apart are within each other's context, so the
+        // reader gets one continuous run rather than a spurious elision.
+        let line = format!("{}needle{}needle{}", "x".repeat(200), "y".repeat(40), "z".repeat(200));
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        assert_eq!(rows[0].preview.segments.len(), 1);
+        assert!(!preview_text(&rows[0].preview).contains('…'));
+    }
+
+    #[test]
+    fn a_remainder_shorter_than_the_context_is_kept_rather_than_elided() {
+        // Twenty chars of tail cost less than the mark that would replace
+        // them, so the line comes back whole.
+        let line = format!("{}needle{}", "x".repeat(20), "y".repeat(20));
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        assert_eq!(rows[0].preview.segments.len(), 1);
+        assert_eq!(preview_text(&rows[0].preview), line);
+    }
+
+    #[test]
+    fn the_context_width_is_configurable_and_zero_means_the_whole_line() {
+        let line = long_line(400, 'x');
+        let narrow = scan(
+            &line,
+            &["needle"],
+            SearchFlags {
+                context_chars: Some(4),
+                ..SearchFlags::default()
+            },
+        );
+        assert_eq!(narrow[0].preview.segments[0].col, 396);
+        assert_eq!(narrow[0].preview.segments[0].text.chars().count(), 14);
+
+        let off = scan(
+            &line,
+            &["needle"],
+            SearchFlags {
+                context_chars: Some(0),
+                ..SearchFlags::default()
+            },
+        );
+        assert_eq!(off[0].preview.segments[0].text, line);
+    }
+
+    #[test]
+    fn a_row_stops_at_its_excerpt_budget_and_says_how_many_it_dropped() {
+        // The pathological line: a hit every 100 chars for 4,000 chars. The
+        // windows are real and disjoint, so only the budget bounds the row.
+        let line = "needle".to_string() + &"x".repeat(94);
+        let line = line.repeat(40);
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        let preview = &rows[0].preview;
+        let kept: usize = preview.segments.iter().map(|s| s.text.chars().count()).sum();
+        assert!(kept <= MAX_EXCERPT_CHARS as usize, "kept {kept} chars");
+        assert!(preview.elided_matches > 0);
+        // What it kept and what it counted account for every match on the line.
+        assert_eq!(rows[0].columns.len() as u32 + preview.elided_matches, 40);
+    }
+
+    #[test]
+    fn excerpting_cuts_on_char_boundaries_not_byte_boundaries() {
+        // Accented filler makes every byte offset wrong by a growing amount;
+        // a byte-sliced window would panic or mangle the text.
+        let line = long_line(400, 'é');
+        let rows = scan(&line, &["needle"], SearchFlags::default());
+        let segment = &rows[0].preview.segments[0];
+        assert_eq!(segment.col, 368);
+        assert_eq!(segment.text.chars().count(), 70);
+        assert!(segment.text.starts_with('é'));
+    }
+
+    #[test]
+    fn per_line_rows_each_carry_their_own_window() {
+        let line = format!("needle{}needle", "x".repeat(400));
+        let rows = scan(
+            &line,
+            &["needle"],
+            SearchFlags {
+                per_line: true,
+                ..SearchFlags::default()
+            },
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].columns, vec![(0, 6)]);
+        assert_eq!(rows[1].columns, vec![(406, 412)]);
+        // Each row shows only its own match — a per-match row that carried
+        // the other match's window would be showing someone else's result.
+        assert_eq!(rows[0].preview.segments.len(), 1);
+        assert_eq!(rows[1].preview.segments.len(), 1);
+        assert_eq!(rows[1].preview.segments[0].col, 374);
+    }
+
+    #[test]
+    fn the_context_flag_arrives_from_the_client_as_a_number() {
+        // The typed line's `-c 64` reaches the feed as a number in the flags
+        // object; absent, the default stands rather than zero.
+        let set: SearchFlags = serde_json::from_value(serde_json::json!({
+            "case_insensitive": true,
+            "context_chars": 64,
+        }))
+        .unwrap();
+        assert_eq!(set.context_chars, Some(64));
+        assert!(set.case_insensitive);
+
+        let absent: SearchFlags = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(absent.context_chars, None);
+
+        let off: SearchFlags =
+            serde_json::from_value(serde_json::json!({ "context_chars": 0 })).unwrap();
+        assert_eq!(off.context_chars, Some(0));
+    }
+
     #[test]
     fn invalid_regex_is_reported_not_panicked() {
         let err = compile_needles(
@@ -1077,28 +1414,12 @@ mod tests {
         let first = number_rows(
             "a.ts",
             vec![
-                RefRow {
-                    line: 1,
-                    columns: vec![(0, 6)],
-                    preview: "needle".into(),
-                },
-                RefRow {
-                    line: 3,
-                    columns: vec![(0, 6)],
-                    preview: "needle".into(),
-                },
+                whole_row(1, vec![(0, 6)], "needle"),
+                whole_row(3, vec![(0, 6)], "needle"),
             ],
             &mut next,
         );
-        let second = number_rows(
-            "b.ts",
-            vec![RefRow {
-                line: 9,
-                columns: vec![(4, 10)],
-                preview: "    needle".into(),
-            }],
-            &mut next,
-        );
+        let second = number_rows("b.ts", vec![whole_row(9, vec![(4, 10)], "    needle")], &mut next);
 
         assert_eq!(
             first.iter().map(|r| r.index).collect::<Vec<u32>>(),

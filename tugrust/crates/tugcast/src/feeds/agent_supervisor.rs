@@ -12846,7 +12846,7 @@ mod tests {
                     "src/a.ts",
                     12,
                     vec![(4, 10)],
-                    "    needle",
+                    crate::feeds::text_ref::LinePreview::whole("    needle"),
                 )],
                 settled_at_ms: 7,
             })
