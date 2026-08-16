@@ -183,18 +183,6 @@ function resolutionStatus(unified: string): GitDiffFile["status"] {
   return "modified";
 }
 
-/** Body `+`/`−` counts, excluding the `+++`/`---` file headers. */
-function countStat(unified: string): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  for (const line of unified.split("\n")) {
-    if (line.startsWith("+++") || line.startsWith("---")) continue;
-    if (line.startsWith("+")) added += 1;
-    else if (line.startsWith("-")) removed += 1;
-  }
-  return { added, removed };
-}
-
 /**
  * The ladder's resolutions as one diff document — what landing this candidate
  * would do to each file it decided ([P31]).
@@ -205,6 +193,12 @@ function countStat(unified: string): { added: number; removed: number } {
  * private diff surface. Pure, so what the review shows is testable without
  * mounting the shade. A resolution with no diff is dropped: it changes nothing
  * on the base, and an empty accordion row would read as one that does.
+ *
+ * The stat is the server's, which is git's. It is deliberately not counted off
+ * the `unified` text beside it: that text is capped, and counting a capped view
+ * reports `+0 −395` for a resolution that removed 2050 lines and added one —
+ * wrong exactly when the diff is large enough for a reviewer to need the number
+ * instead of reading it.
  */
 export function resolutionDiffPayload(
   resolved: readonly ResolvedFile[],
@@ -212,17 +206,14 @@ export function resolutionDiffPayload(
 ): GitDiffPayload {
   const files: GitDiffFile[] = resolved
     .filter((file): file is ResolvedFile & { diff: string } => file.diff !== null)
-    .map((file) => {
-      const { added, removed } = countStat(file.diff);
-      return {
-        path: file.path,
-        status: resolutionStatus(file.diff),
-        added,
-        removed,
-        binary: false,
-        unified: file.diff,
-      };
-    });
+    .map((file) => ({
+      path: file.path,
+      status: resolutionStatus(file.diff),
+      added: file.added ?? 0,
+      removed: file.removed ?? 0,
+      binary: false,
+      unified: file.diff,
+    }));
   return {
     request_id: "dash-resolution-review",
     workspace_key: workspaceKey,

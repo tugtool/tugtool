@@ -90,7 +90,9 @@ describe("resolutionDiffPayload", () => {
     path: string,
     resolvedBy: string,
     diff: string | null,
-  ): ResolvedFile => ({ path, resolvedBy, diff });
+    added: number | null = null,
+    removed: number | null = null,
+  ): ResolvedFile => ({ path, resolvedBy, diff, added, removed });
 
   const modified = [
     "diff --git a/a.ts b/a.ts",
@@ -104,8 +106,8 @@ describe("resolutionDiffPayload", () => {
     "+extra",
   ].join("\n");
 
-  it("counts the body lines without counting the +++/--- headers", () => {
-    const payload = resolutionDiffPayload([file("a.ts", "rerere", modified)], "ws");
+  it("carries the server's counts through to the payload", () => {
+    const payload = resolutionDiffPayload([file("a.ts", "rerere", modified, 2, 1)], "ws");
     expect(payload.files).toHaveLength(1);
     expect(payload.files[0]).toMatchObject({
       path: "a.ts",
@@ -117,6 +119,37 @@ describe("resolutionDiffPayload", () => {
     });
     expect(payload.total_added).toBe(2);
     expect(payload.total_removed).toBe(1);
+    expect(payload.file_count).toBe(1);
+  });
+
+  it("reports the whole resolution when the diff text it ships is capped", () => {
+    // The `+0 −395` incident. The server caps the diff, and git emits deletions
+    // before additions, so a large resolution's single `+` line falls past the
+    // cap — the text here has 3 deletions and no addition at all. Counting it
+    // would report a resolution that added nothing; the counts say otherwise,
+    // and the counts are what land.
+    const capped = [
+      "diff --git a/big.ts b/big.ts",
+      "--- a/big.ts",
+      "+++ b/big.ts",
+      "@@ -1,2050 +1 @@",
+      "-line 1",
+      "-line 2",
+      "-line 3",
+      "… 2048 more lines",
+    ].join("\n");
+    const payload = resolutionDiffPayload([file("big.ts", "driver", capped, 1, 2050)], "ws");
+    expect(payload.files[0]).toMatchObject({ added: 1, removed: 2050, unified: capped });
+    expect(payload.total_added).toBe(1);
+    expect(payload.total_removed).toBe(2050);
+  });
+
+  it("renders an absent count as zero and still shows the diff", () => {
+    // A binary path: git reports `-` rather than a line count, so there is no
+    // number to show — but there is still a resolution to review.
+    const payload = resolutionDiffPayload([file("a.ts", "driver", modified)], "ws");
+    expect(payload.files[0]).toMatchObject({ added: 0, removed: 0, unified: modified });
+    expect(payload.total_added).toBe(0);
     expect(payload.file_count).toBe(1);
   });
 
@@ -145,15 +178,15 @@ describe("resolutionReviewLine", () => {
   it("names the count and every rung that decided, deduplicated", () => {
     expect(
       resolutionReviewLine([
-        { path: "a.ts", resolvedBy: "rerere", diff: "d" },
-        { path: "b.ts", resolvedBy: "ai", diff: "d" },
-        { path: "c.ts", resolvedBy: "rerere", diff: "d" },
+        { path: "a.ts", resolvedBy: "rerere", diff: "d", added: null, removed: null },
+        { path: "b.ts", resolvedBy: "ai", diff: "d", added: null, removed: null },
+        { path: "c.ts", resolvedBy: "rerere", diff: "d", added: null, removed: null },
       ]),
     ).toBe("3 files resolved by ai, rerere — read this before it lands");
   });
 
   it("agrees with itself in the singular", () => {
-    expect(resolutionReviewLine([{ path: "a.ts", resolvedBy: "rerere", diff: "d" }])).toBe(
+    expect(resolutionReviewLine([{ path: "a.ts", resolvedBy: "rerere", diff: "d", added: null, removed: null }])).toBe(
       "1 file resolved by rerere — read this before it lands",
     );
   });

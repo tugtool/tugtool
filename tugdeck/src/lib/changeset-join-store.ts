@@ -43,6 +43,13 @@ export interface ResolvedFile {
    * review. This is the artifact the review gate exists to put on screen.
    */
   diff: string | null;
+  /**
+   * Lines added and removed, as git counted them over the whole resolution —
+   * not over `diff`, which the server caps. `null` for a binary path, and for
+   * any resolution carrying no diff.
+   */
+  added: number | null;
+  removed: number | null;
 }
 
 /** The live resolve state for one dash. */
@@ -157,6 +164,8 @@ export class ChangesetJoinStore {
           path: typeof r.path === "string" ? r.path : "",
           resolvedBy: typeof r.resolved_by === "string" ? r.resolved_by : "",
           diff: typeof r.diff === "string" ? r.diff : null,
+          added: typeof r.added === "number" ? r.added : null,
+          removed: typeof r.removed === "number" ? r.removed : null,
         }));
       const unresolved = readStringArray(body.unresolved);
       const candidateCommit =

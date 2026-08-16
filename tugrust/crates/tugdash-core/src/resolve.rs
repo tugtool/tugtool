@@ -82,6 +82,19 @@ pub struct FileResolution {
     /// and the AI rung guess. This is what makes the decision reviewable before
     /// it lands rather than after.
     pub diff: Option<String>,
+    /// Lines added and removed by this resolution, as **git** counts them —
+    /// never as anything counts the `diff` above, which is capped.
+    ///
+    /// A stat derived from the capped text is a lie exactly when the diff is
+    /// big enough for the cap to bite, which is when a reviewer most needs it:
+    /// a 2050-line file resolved to a one-line body truncates to 395 deletions
+    /// and no addition, and the face reported `+0 −395` over a resolution that
+    /// added a line. `None` for a binary path, where git reports `-` rather
+    /// than a line count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub added: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub removed: Option<u32>,
 }
 
 /// The shape the join will land as.
@@ -298,39 +311,108 @@ fn resolution_report(
 ) -> Vec<FileResolution> {
     resolved
         .iter()
-        .map(|r| FileResolution {
-            path: r.path.clone(),
-            resolved_by: r.by,
-            diff: candidate.and_then(|c| resolution_diff(repo, base_head, c, &r.path)),
+        .map(|r| {
+            let d = candidate.and_then(|c| resolution_diff(repo, base_head, c, &r.path));
+            FileResolution {
+                path: r.path.clone(),
+                resolved_by: r.by,
+                added: d.as_ref().and_then(|d| d.added),
+                removed: d.as_ref().and_then(|d| d.removed),
+                diff: d.map(|d| d.text),
+            }
         })
         .collect()
 }
 
-/// The unified diff one resolved path would land: base head → candidate. Reads
-/// the built candidate rather than the blobs, so an add, a delete, and a mode
-/// change all come out in the form git already renders them. Best-effort — a
-/// diff git declines to produce is `None`, never a failed resolve.
-fn resolution_diff(repo: &Path, base_head: &str, candidate: &str, path: &str) -> Option<String> {
-    let text = git_stdout(
+/// One path's diff and the counts that describe it, from a single `git diff`.
+struct ResolutionDiff {
+    /// The patch body, capped at [`DIFF_LINE_CAP`] lines.
+    text: String,
+    added: Option<u32>,
+    removed: Option<u32>,
+}
+
+/// Parse a `--numstat` line: `<added>\t<removed>\t<path>`, where either count
+/// is `-` for a binary file. `None` when the line is not a numstat line at all,
+/// which is what keeps a git that stops emitting one from being misread as a
+/// patch whose first line vanished.
+fn parse_numstat(line: &str) -> Option<(Option<u32>, Option<u32>)> {
+    let mut fields = line.split('\t');
+    let added = fields.next()?;
+    let removed = fields.next()?;
+    fields.next()?; // the path — present by construction, unused here
+    let cell = |s: &str| -> Option<Option<u32>> {
+        if s == "-" {
+            Some(None)
+        } else {
+            s.parse::<u32>().ok().map(Some)
+        }
+    };
+    Some((cell(added)?, cell(removed)?))
+}
+
+/// The unified diff one resolved path would land: base head → candidate, plus
+/// git's own count of what it moves. Reads the built candidate rather than the
+/// blobs, so an add, a delete, and a mode change all come out in the form git
+/// already renders them. Best-effort — a diff git declines to produce is
+/// `None`, never a failed resolve.
+///
+/// `--numstat --patch` answers both questions in one subprocess: the numstat
+/// line, a blank line, then the patch. One call also means the counts and the
+/// text can never disagree, which two calls could if the candidate moved
+/// between them.
+fn resolution_diff(
+    repo: &Path,
+    base_head: &str,
+    candidate: &str,
+    path: &str,
+) -> Option<ResolutionDiff> {
+    let raw = git_stdout(
         repo,
-        &["diff", "--no-color", base_head, candidate, "--", path],
+        &[
+            "diff",
+            "--no-color",
+            "--numstat",
+            "--patch",
+            base_head,
+            candidate,
+            "--",
+            path,
+        ],
     )
     .ok()?;
-    if text.is_empty() {
+    let (added, removed, body) = match raw
+        .split_once('\n')
+        .and_then(|(first, rest)| parse_numstat(first).map(|(a, r)| (a, r, rest)))
+    {
+        Some((a, r, rest)) => (a, r, rest.strip_prefix('\n').unwrap_or(rest)),
+        None => (None, None, raw.as_str()),
+    };
+    // Emptiness is a question about the **patch**, not the raw output: the raw
+    // output always carries a numstat line, so testing it would mean a path
+    // with no diff started arriving as a reviewable resolution, and the face
+    // drops exactly the entries whose diff is null.
+    if body.is_empty() {
         return None;
     }
-    let mut lines = text.lines();
+    let mut lines = body.lines();
     let head: Vec<&str> = lines.by_ref().take(DIFF_LINE_CAP).collect();
     let rest = lines.count();
-    if rest == 0 {
-        return Some(head.join("\n"));
-    }
-    Some(format!(
-        "{}\n… {} more line{}",
-        head.join("\n"),
-        rest,
-        if rest == 1 { "" } else { "s" }
-    ))
+    let text = if rest == 0 {
+        head.join("\n")
+    } else {
+        format!(
+            "{}\n… {} more line{}",
+            head.join("\n"),
+            rest,
+            if rest == 1 { "" } else { "s" }
+        )
+    };
+    Some(ResolutionDiff {
+        text,
+        added,
+        removed,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -955,6 +1037,22 @@ mod tests {
         temp
     }
 
+    /// Configure rung 4 with a stub that resolves every conflict to `body`.
+    /// `<base> <ours> <theirs> <output> <ext>` → write the output.
+    fn stub_driver(repo: &Path, body: &str) {
+        let stub = repo.join("stub-driver.sh");
+        std::fs::write(&stub, format!("#!/bin/sh\nprintf '%s' '{body}' > \"$4\"\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        git(
+            repo,
+            &["config", "tugdash.mergedriver", &stub.to_string_lossy()],
+        );
+    }
+
     // ---- unit rungs ----
 
     #[test]
@@ -1137,18 +1235,7 @@ mod tests {
         set(repo, "f.txt", "C\n");
         git(repo, &["commit", "-am", "main to C"]);
 
-        // A stub driver: <base> <ours> <theirs> <output> <ext> → write output.
-        let stub = repo.join("stub-driver.sh");
-        std::fs::write(&stub, "#!/bin/sh\nprintf 'DRIVER\\n' > \"$4\"\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        git(
-            repo,
-            &["config", "tugdash.mergedriver", &stub.to_string_lossy()],
-        );
+        stub_driver(repo, "DRIVER\n");
 
         let outcome = resolve_conflicts(repo, "demo", None).unwrap();
         let candidate = outcome
@@ -1173,20 +1260,11 @@ mod tests {
         let repo = temp.path();
         set(repo, "f.txt", "C\n");
         git(repo, &["commit", "-am", "main to C"]);
-        let stub = repo.join("stub-driver.sh");
-        std::fs::write(&stub, "#!/bin/sh\nprintf 'DRIVER\\n' > \"$4\"\n").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        git(
-            repo,
-            &["config", "tugdash.mergedriver", &stub.to_string_lossy()],
-        );
+        stub_driver(repo, "DRIVER\n");
 
         let outcome = resolve_conflicts(repo, "demo", None).unwrap();
-        let diff = outcome.resolved[0]
+        let resolution = &outcome.resolved[0];
+        let diff = resolution
             .diff
             .as_deref()
             .expect("a landable resolution carries its diff");
@@ -1194,8 +1272,11 @@ mod tests {
         assert!(diff.contains("-C"), "the base's line leaving: {diff}");
         assert!(diff.contains("+DRIVER"), "the resolution landing: {diff}");
         assert!(diff.contains("f.txt"), "the path in the header: {diff}");
+        // One line out, one line in — git's count, beside the text it describes.
+        assert_eq!((resolution.added, resolution.removed), (Some(1), Some(1)));
 
-        // A partial outcome lands nothing, so it has nothing to review.
+        // A partial outcome lands nothing, so it has nothing to review — and
+        // nothing to count either.
         let temp2 = init(&[("f.txt", "B\n", "r1")]);
         let repo2 = temp2.path();
         set(repo2, "f.txt", "C\n");
@@ -1203,6 +1284,47 @@ mod tests {
         let partial = resolve_conflicts(repo2, "demo", None).unwrap();
         assert!(partial.candidate_commit.is_none());
         assert!(partial.resolved.iter().all(|r| r.diff.is_none()));
+        assert!(partial
+            .resolved
+            .iter()
+            .all(|r| r.added.is_none() && r.removed.is_none()));
+    }
+
+    #[test]
+    fn a_capped_diff_still_reports_the_whole_resolution() {
+        // The `+0 −395` incident, pinned. A large file on the base resolved to a
+        // one-line body produces a diff whose deletions alone overrun the cap —
+        // and git emits deletions before additions, so the single `+` line, the
+        // driver's actual decision, falls past it. Counting the text you can see
+        // therefore reports a resolution that removed everything and added
+        // nothing, which is the opposite of what would land.
+        let big: String = (1..=2050).map(|i| format!("line {i}\n")).collect();
+        let temp = init(&[("f.txt", "dash side — the whole file, rewritten\n", "r1")]);
+        let repo = temp.path();
+        set(repo, "f.txt", &big);
+        git(repo, &["commit", "-am", "main grows f.txt past the cap"]);
+        stub_driver(repo, "DRIVER\n");
+
+        let outcome = resolve_conflicts(repo, "demo", None).unwrap();
+        let resolution = &outcome.resolved[0];
+        assert_eq!(resolution.resolved_by, ResolvedBy::Driver);
+        let diff = resolution.diff.as_deref().expect("a resolution to review");
+
+        // The text really is truncated — the premise of the whole test.
+        assert!(
+            diff.contains("more lines"),
+            "the cap should have bitten: {}",
+            &diff[..diff.len().min(200)]
+        );
+        assert!(
+            !diff.contains("+DRIVER"),
+            "the addition falls past the cap — if it does not, this test no \
+             longer covers the case it was written for"
+        );
+
+        // …and the counts are still git's, over the whole diff. This is the
+        // assertion the face's stat now rests on.
+        assert_eq!((resolution.added, resolution.removed), (Some(1), Some(2050)));
     }
 
     #[test]

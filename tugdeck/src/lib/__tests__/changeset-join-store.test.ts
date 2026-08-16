@@ -52,7 +52,9 @@ describe("changeset join resolve overlay", () => {
       action: "changeset_join_resolve_ok",
       ...K,
       resolved: [
-        { path: "a.rs", resolved_by: "ai", diff: "@@ -1 +1 @@\n-old\n+new\n" },
+        { path: "a.rs", resolved_by: "ai", diff: "@@ -1 +1 @@\n-old\n+new\n", added: 1, removed: 1 },
+        // Counts are optional on the wire — git omits them for a binary path.
+        { path: "b.bin", resolved_by: "driver", diff: "Binary files differ\n" },
       ],
       unresolved: [],
       candidate_commit: "abc123",
@@ -63,7 +65,20 @@ describe("changeset join resolve overlay", () => {
     expect(done.candidateCommit).toBe("abc123");
     expect(done.shape).toBe("squash");
     expect(done.resolved).toEqual([
-      { path: "a.rs", resolvedBy: "ai", diff: "@@ -1 +1 @@\n-old\n+new\n" },
+      {
+        path: "a.rs",
+        resolvedBy: "ai",
+        diff: "@@ -1 +1 @@\n-old\n+new\n",
+        added: 1,
+        removed: 1,
+      },
+      {
+        path: "b.bin",
+        resolvedBy: "driver",
+        diff: "Binary files differ\n",
+        added: null,
+        removed: null,
+      },
     ]);
     // The ladder's decision arrives unread, whatever the last one was ([P31]).
     expect(done.reviewed).toBe(false);
