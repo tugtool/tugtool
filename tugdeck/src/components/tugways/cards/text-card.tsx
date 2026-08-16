@@ -176,7 +176,11 @@ export interface TextCardBagContent {
    * instead of silently restoring a viewport. Never written by the
    * persistence save path — only the open seed carries it.
    */
-  revealOnOpen?: { line: number; endLine?: number };
+  revealOnOpen?: {
+    line: number;
+    endLine?: number;
+    columns?: readonly [number, number];
+  };
 }
 
 /** Narrow an unknown `{ line, ch }` pair, or undefined. */
@@ -212,16 +216,25 @@ function coerceBagContent(state: unknown): TextCardBagContent | null {
   };
 }
 
-/** Narrow an unknown `{ line, endLine? }` reveal target, or undefined. */
+/** Narrow an unknown `{ line, endLine?, columns? }` reveal target, or
+ *  undefined. */
 function coerceRevealOnOpen(
   value: unknown,
-): { line: number; endLine?: number } | undefined {
+):
+  | { line: number; endLine?: number; columns?: readonly [number, number] }
+  | undefined {
   if (value === null || typeof value !== "object") return undefined;
   const obj = value as Record<string, unknown>;
   if (typeof obj.line !== "number") return undefined;
+  const raw = obj.columns;
+  const columns =
+    Array.isArray(raw) && typeof raw[0] === "number" && typeof raw[1] === "number"
+      ? ([raw[0], raw[1]] as const)
+      : undefined;
   return {
     line: obj.line,
     endLine: typeof obj.endLine === "number" ? obj.endLine : undefined,
+    columns,
   };
 }
 
@@ -395,7 +408,11 @@ export function TextCardContent({ cardId }: { cardId: string }) {
   // A one-time reveal target (open-from-click) applied once the file
   // binds — it reveals + flashes the passage instead of restoring a
   // viewport. Takes precedence over `pendingPositionsRef`.
-  const pendingRevealRef = useRef<{ line: number; endLine?: number } | null>(
+  const pendingRevealRef = useRef<{
+    line: number;
+    endLine?: number;
+    columns?: readonly [number, number];
+  } | null>(
     null,
   );
 
@@ -631,13 +648,15 @@ export function TextCardContent({ cardId }: { cardId: string }) {
         const snap = store.getSnapshot();
         return snap.saveMode === "manual" && snap.saveState !== "clean";
       },
-      revealLine: (line, endLine) => editorRef.current?.revealLine(line, endLine),
-      openFile: (path, line, endLine) => {
+      revealLine: (line, endLine, columns) =>
+        editorRef.current?.revealLine(line, endLine, columns),
+      openFile: (path, line, endLine, columns) => {
         // Reuse this card for a different file: flush the current
         // buffer first (autosave may have pending edits), then open the
         // new path and reveal + flash `line`..`endLine` once it binds
         // via the pending-reveal channel.
-        pendingRevealRef.current = line === undefined ? null : { line, endLine };
+        pendingRevealRef.current =
+          line === undefined ? null : { line, endLine, columns };
         void store.flush().then(() => store.openPath(path));
       },
     });
@@ -1069,7 +1088,7 @@ export function TextCardContent({ cardId }: { cardId: string }) {
     if (reveal !== null) {
       pendingRevealRef.current = null;
       pendingPositionsRef.current = null;
-      editorRef.current?.revealLine(reveal.line, reveal.endLine);
+      editorRef.current?.revealLine(reveal.line, reveal.endLine, reveal.columns);
       return;
     }
     const pending = pendingPositionsRef.current;

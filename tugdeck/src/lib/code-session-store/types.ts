@@ -109,7 +109,8 @@ export type MessageKind =
   | "assistant_thinking"
   | "system_note"
   | "tool_use"
-  | "shell_exchange";
+  | "shell_exchange"
+  | "refs_result";
 
 /**
  * Fields every `Message` carries. `messageKey` is the React-row /
@@ -243,6 +244,53 @@ export interface ShellExchangeMessage extends MessageBase {
 }
 
 /**
+ * One numbered file reference, as the `refs` feed sends it.
+ *
+ * `path` is relative to the run's `root`; joining the two is the view
+ * layer's job, because a row's path must be absolute to be clickable.
+ * `line` is 1-based and `columns` are 0-based half-open `[start, end)`
+ * char offsets into `preview` — the same span shape `SearchResultBlock`
+ * consumes, so nothing between the wire and the renderer adapts them.
+ */
+export interface TextRef {
+  index: number;
+  path: string;
+  line: number | null;
+  columns: ReadonlyArray<readonly [number, number]>;
+  preview: string | null;
+}
+
+/**
+ * The single content of a `refs`-origin turn: one `/match` or `/search`
+ * run and every reference it found. Non-context ink — a search is the
+ * user's own investigation of their files, and it reaches Claude only
+ * through the block's Share gesture.
+ *
+ * The message is replaced in place as rows stream in, so `refs` grows
+ * while `inFlight` is true and freezes when the run settles.
+ */
+export interface RefsResultMessage extends MessageBase {
+  kind: "refs_result";
+  /** Fences streaming frames and the ledger clobber. */
+  runId: string;
+  opKind: "match" | "search";
+  /** The command line as the user typed it — the block's header. */
+  command: string;
+  /** Workspace root every ref's `path` is relative to. */
+  root: string;
+  refs: ReadonlyArray<TextRef>;
+  /** True from `refs_started` until the run settles. */
+  inFlight: boolean;
+  /** True when the run was stopped rather than finishing. */
+  cancelled: boolean;
+  /** A reason the run produced nothing — an unparseable pattern. */
+  notice: string | null;
+  startedAtMs: number;
+  /** `null` while in flight. */
+  settledAtMs: number | null;
+}
+
+/**
  * Discriminated union of every Message kind. Iteration is the substrate's
  * primary access pattern — consumers `messages.filter(m => m.kind === ...)`
  * or `messages[0]?.kind === "user_message"` instead of reaching for
@@ -254,6 +302,7 @@ export type Message =
   | AssistantThinking
   | SystemNote
   | ToolUseMessage
+  | RefsResultMessage
   | ShellExchangeMessage;
 
 /**
@@ -272,8 +321,25 @@ export type Message =
  * reserved `#s` addressing). A shell turn carries exactly one
  * `shell_exchange` Message and is visually distinct non-context ink ([P11]);
  * it is NOT part of Claude's context.
+ *
+ * `refs` — a `/match` or `/search` run (`#r`), the second ink origin. Like
+ * `shell` it records what the user did, carries exactly one message, and is
+ * not part of Claude's context.
  */
-export type TurnOrigin = "user" | "assistant" | "shell";
+export type TurnOrigin = "user" | "assistant" | "shell" | "refs";
+
+/**
+ * True for an origin whose turns are **non-context ink**: a record of what
+ * the user did, never sent to Claude.
+ *
+ * The one predicate the transcript's insertion helpers, the row layout, and
+ * the loaded-turn counter all read. Three hand-written copies of
+ * `origin === "shell"` is how the count in the metadata row starts lying
+ * the day a second ink origin lands.
+ */
+export function isInkOrigin(origin: TurnOrigin): boolean {
+  return origin === "shell" || origin === "refs";
+}
 
 /**
  * Per-turn token + cost figures, frozen onto the committed `TurnEntry`

@@ -401,8 +401,15 @@ export interface TugTextCardEditorDelegate {
    * highlight — no persistent selection. The transcript's tool-call
    * file-ref links land here: a Read jumps to its window start, an Edit
    * flashes its first changed line(s).
+   *
+   * A `columns` pair narrows the flash to a character range within `line`
+   * — 0-based, half-open, as the wire carries a search ref's match span.
    */
-  revealLine(line: number, endLine?: number): void;
+  revealLine(
+    line: number,
+    endLine?: number,
+    columns?: readonly [number, number],
+  ): void;
   /**
    * The same reveal, addressed by document offsets rather than lines. The
    * attachment strip knows where a link *is* — it parsed it — and converting
@@ -1323,7 +1330,7 @@ export const TugTextCardEditor = React.forwardRef<
   }, []);
 
   const revealLineFn = useCallback(
-    (startLine: number, endLine?: number): void => {
+    (startLine: number, endLine?: number, columns?: readonly [number, number]): void => {
       const live = viewRef.current;
       if (live === null) return;
       const doc = live.state.doc;
@@ -1332,7 +1339,31 @@ export const TugTextCardEditor = React.forwardRef<
         endLine === undefined
           ? sLine
           : Math.max(sLine, Math.min(endLine, doc.lines));
-      const from = doc.line(sLine).from;
+      const line = doc.line(sLine);
+      // A column range is the only place a reference is narrower than a line:
+      // a search ref knows exactly which characters matched. The wire's
+      // offsets are 0-based and half-open WITHIN the line, so this is the one
+      // boundary that converts them to document positions ([P14]) — clamped,
+      // because the file on disk may have moved on since the run.
+      if (columns !== undefined && columns[1] > columns[0]) {
+        const from = Math.min(line.from + Math.max(0, columns[0]), line.to);
+        const to = Math.min(line.from + columns[1], line.to);
+        if (to > from) {
+          live.dispatch({
+            selection: { anchor: from },
+            effects: [
+              EditorView.scrollIntoView(from, { y: "center" }),
+              setRevealFlash.of({ from, to }),
+            ],
+          });
+          live.focus();
+          window.setTimeout(() => {
+            viewRef.current?.dispatch({ effects: setRevealFlash.of(null) });
+          }, REVEAL_FLASH_MS);
+          return;
+        }
+      }
+      const from = line.from;
       const flashTo = doc.line(eLine).from;
       // Place a PLAIN caret at the first changed line — no persistent
       // selection. The momentary accent flash draws the eye; once it

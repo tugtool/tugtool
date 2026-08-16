@@ -145,6 +145,29 @@ export interface PathListBlockProps {
   className?: string;
 
   /**
+   * Opt each row's path into transcript Find (`data-tugx-findable`).
+   * Default off, and it must stay a deliberate opt-in: a marked unit that
+   * the host surface does not also PROJECT into its search index desyncs
+   * the match count from the paint. A host sets this only alongside its own
+   * projection — the refs block does both.
+   *
+   * @default false
+   */
+  findable?: boolean;
+
+  /**
+   * Whether the list may be re-ordered. `false` pins it to producer order
+   * and withholds the sort toggle entirely — for a host whose list is
+   * NUMBERED by position, where alphabetizing would put the fifth result
+   * somewhere other than fifth and break the number the user reads off it.
+   * The refs block is exactly that host: `/ref 5` resolves by emission order
+   * ([P12]).
+   *
+   * @default true
+   */
+  sortable?: boolean;
+
+  /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
    * When set, PathListBlock persists its sort mode into
    * `bag.components` so a Maker > Reload restores it. Undefined
@@ -273,7 +296,11 @@ const NOOP_UNSUBSCRIBE = (): void => {};
  * the array reference (stable per instance, distinct across instances).
  */
 class PathListDataSource implements TugListViewDataSource {
-  constructor(private readonly paths: readonly string[]) {}
+  constructor(
+    private readonly paths: readonly string[],
+    /** Whether each row's path is marked for transcript Find (opt-in). */
+    readonly findable: boolean,
+  ) {}
 
   numberOfItems(): number {
     return this.paths.length;
@@ -353,7 +380,7 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
       data-no-activate={annotated ? "" : undefined}
     >
       <Icon size={14} aria-hidden="true" />
-      <MiddleEllipsisPath path={path} />
+      <MiddleEllipsisPath path={path} findable={dataSource.findable} />
     </div>
   );
 };
@@ -384,6 +411,8 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   label,
   embedded = false,
   className,
+  findable = false,
+  sortable = true,
   componentStatePreservationKey,
 }) => {
   // ---- Sort state — logical UI state, React-owned per [L06] ----------
@@ -405,12 +434,15 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
   // ---- Display paths + data source -----------------------------------
   const rawPaths = data?.paths;
   const displayPaths = React.useMemo(
-    () => (rawPaths === undefined ? [] : sortPaths(rawPaths, sortMode)),
-    [rawPaths, sortMode],
+    () =>
+      rawPaths === undefined
+        ? []
+        : sortPaths(rawPaths, sortable ? sortMode : "found"),
+    [rawPaths, sortMode, sortable],
   );
   const dataSource = React.useMemo(
-    () => new PathListDataSource(displayPaths),
-    [displayPaths],
+    () => new PathListDataSource(displayPaths, findable),
+    [displayPaths, findable],
   );
 
   // ---- Copy source ---------------------------------------------------
@@ -473,7 +505,7 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
 
   // The sort toggle earns its place only on a list long enough to make
   // re-ordering worthwhile.
-  const showSortToggle = displayPaths.length > SORT_TOGGLE_MIN_COUNT;
+  const showSortToggle = sortable && displayPaths.length > SORT_TOGGLE_MIN_COUNT;
   const sortByName = sortMode === "name";
 
   // The actions cluster — Copy + (when long enough) the sort toggle.

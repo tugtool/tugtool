@@ -1070,21 +1070,43 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           return;
         }
         if (typeof target !== "object" || target === null) return;
-        const { path, line, endLine } = target as {
-          path?: unknown;
-          line?: unknown;
-          endLine?: unknown;
+        // One reference, or a list of them. A list is a single gesture —
+        // `/ref 1-5` — and it has to arrive as one dispatch: opening a card
+        // re-seats the first responder, so a second chain dispatch in the
+        // same tick would walk a card whose responders have not mounted yet
+        // and die unhandled.
+        const one = (ref: unknown): void => {
+          if (typeof ref !== "object" || ref === null) return;
+          const { path, line, endLine, columns } = ref as {
+            path?: unknown;
+            line?: unknown;
+            endLine?: unknown;
+            columns?: unknown;
+          };
+          if (typeof path !== "string" || path.trim() === "") {
+            console.warn("open-file: missing or invalid path", ref);
+            return;
+          }
+          const span =
+            Array.isArray(columns) &&
+            typeof columns[0] === "number" &&
+            typeof columns[1] === "number"
+              ? ([columns[0], columns[1]] as const)
+              : undefined;
+          openFileInCard(
+            store,
+            path,
+            typeof line === "number" ? line : undefined,
+            typeof endLine === "number" ? endLine : undefined,
+            span,
+          );
         };
-        if (typeof path !== "string" || path.trim() === "") {
-          console.warn("open-file: missing or invalid path", target);
+        const { targets } = target as { targets?: unknown };
+        if (Array.isArray(targets)) {
+          for (const ref of targets) one(ref);
           return;
         }
-        openFileInCard(
-          store,
-          path,
-          typeof line === "number" ? line : undefined,
-          typeof endLine === "number" ? endLine : undefined,
-        );
+        one(target);
       },
       // An untitled manual buffer — no file exists until the first Save,
       // so the draft id is the card's identity until then.

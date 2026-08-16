@@ -1141,18 +1141,18 @@ it.
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Shared walk helper + `TextRef` model + `match` op (pure Rust) | pending | — |
-| #step-2 | `search` op — content grep (pure Rust) | pending | — |
-| #step-3 | `refs` feed — wiring, streaming, cancel | pending | — |
-| #step-4 | `refs_ledger` — latest-only + `list_refs` | pending | — |
-| #step-5 | Frontend protocol + `RefsSessionStore` + `refs` origin | pending | — |
-| #step-6 | Refs block chrome composing the body kinds + clickable refs | pending | — |
-| #step-7 | `/match` + `/search` slash commands + typed flags | pending | — |
-| #step-8 | `/ref` resolution + multi-open honoring `openTarget` | pending | — |
-| #step-9 | Reload restore via the ledger | pending | — |
-| #step-10 | Integration checkpoint (core vertical slice) | pending | — |
-| #step-11 | Column-span highlight for `search` refs (Text card) | pending | — |
-| #step-12 | Final integration checkpoint | pending | — |
+| #step-1 | Shared walk helper + `TextRef` model + `match` op (pure Rust) | done | `b6bdda667` |
+| #step-2 | `search` op — content grep (pure Rust) | done | `fbcfb2e80` |
+| #step-3 | `refs` feed — wiring, streaming, cancel | done | `1187f1f65` |
+| #step-4 | `refs_ledger` — latest-only + `list_refs` | done | `879a828ec` |
+| #step-5 | Frontend protocol + `RefsSessionStore` + `refs` origin | done | `2d277928b` |
+| #step-6 | Refs block chrome composing the body kinds + clickable refs | done | `4b6f3093e` |
+| #step-7 | `/match` + `/search` slash commands + typed flags | done | `e188528dd` |
+| #step-8 | `/ref` resolution + multi-open honoring `openTarget` | done | `17ec1a49c` |
+| #step-9 | Reload restore via the ledger | done | `5aac13023` |
+| #step-10 | Integration checkpoint (core vertical slice) | done | `3d5866bfd` |
+| #step-11 | Column-span highlight for `search` refs (Text card) | done | `7404c0a43` |
+| #step-12 | Final integration checkpoint | done | `7404c0a43` |
 
 #### Step 1: Shared walk helper + `TextRef` model + `match` op (pure Rust) {#step-1}
 

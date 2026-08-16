@@ -110,7 +110,7 @@ import { turnHasTiming } from "@/lib/code-session-store/telemetry";
  * `data-participant` attribute and the per-variant content choices
  * (see module docstring).
  */
-export type SessionZ1BParticipant = "user" | "assistant" | "shell";
+export type SessionZ1BParticipant = "user" | "assistant" | "shell" | "refs";
 
 export interface SessionZ1BProps {
   /**
@@ -122,7 +122,10 @@ export interface SessionZ1BProps {
    * in-flight, the transcript-level `SessionZ1C` carries the
    * indicator (this slot is empty). The shell variant ([D111])
    * shows the exchange's exit badge + duration (no tokens), gated
-   * on the exchange being settled.
+   * on the exchange being settled. The refs variant ([P03]) reads
+   * the same way for a `/match` / `/search` run: its end-state badge
+   * (complete, or interrupted for a cancelled run) + how long it ran,
+   * gated on the run being settled.
    */
   participant: SessionZ1BParticipant;
   /**
@@ -185,6 +188,17 @@ function readShellFacts(
   return { settled: m.settledAtMs !== null, exitCode: m.exitCode };
 }
 
+/**
+ * Whether a refs run has settled ([P03]). Same gate as the shell half: while
+ * a run streams, its block's own lifecycle dot is the signal and this slot
+ * stays empty — an end-state badge on a list still growing would read "OK"
+ * about a run that has not finished.
+ */
+function refsSettled(turn: TurnEntry | undefined): boolean {
+  const m = turn?.messages[0];
+  return m !== undefined && m.kind === "refs_result" && !m.inFlight;
+}
+
 export const SessionZ1B: React.FC<SessionZ1BProps> = ({
   participant,
   turn,
@@ -194,6 +208,7 @@ export const SessionZ1B: React.FC<SessionZ1BProps> = ({
 }) => {
   const isUserHalf = participant === "user";
   const isShellHalf = participant === "shell";
+  const isRefsHalf = participant === "refs";
   const shellSettled = isShellHalf && readShellFacts(turn)?.settled === true;
   // End-state presence — per [D19] SessionZ1B is committed-end-state
   // only.
@@ -203,10 +218,16 @@ export const SessionZ1B: React.FC<SessionZ1BProps> = ({
   //  - Assistant half: end-state shown only when `turn !== undefined`.
   //    While in-flight the transcript-level `SessionZ1C` carries the
   //    indicator; this slot renders nothing.
-  //  - Shell half ([D111]): end-state shown once the exchange settles;
-  //    while in flight the block's own lifecycle dot is the signal and
-  //    this slot stays empty.
-  const hasEndState = isUserHalf || (isShellHalf ? shellSettled : turn !== undefined);
+  //  - Shell half ([D111]) and refs half ([P03]): end-state shown once the
+  //    exchange / run settles; while in flight the block's own lifecycle dot
+  //    is the signal and this slot stays empty.
+  const hasEndState =
+    isUserHalf ||
+    (isShellHalf
+      ? shellSettled
+      : isRefsHalf
+        ? refsSettled(turn)
+        : turn !== undefined);
   // End-state reason. The user half is pinned to `complete` — its
   // badge reports "the message was submitted," never the response's
   // outcome, so an interrupt / error never bleeds onto the user row.
@@ -400,10 +421,10 @@ function EndStateDisplay({
           ) : null}
         </>
       ) : null}
-      {/* Shell half: exit badge + duration, no tokens (a shell exchange
-          burns none). Duration uses the same formatter as the assistant
-          time segment. */}
-      {participant === "shell" && turn !== undefined ? (
+      {/* Shell and refs halves: badge + duration, no tokens (neither burns
+          any). Duration uses the same formatter as the assistant time
+          segment. */}
+      {(participant === "shell" || participant === "refs") && turn !== undefined ? (
         <>
           <TugLabel size="xs" emphasis="calm" aria-hidden>
             •

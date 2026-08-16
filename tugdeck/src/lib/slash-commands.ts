@@ -157,6 +157,24 @@ export const LOCAL_SLASH_COMMANDS = [
     takesArgs: true,
   },
   {
+    name: "match",
+    description: "Find files whose names match — results are clickable, numbered refs",
+    takesArgs: true,
+  },
+  {
+    name: "search",
+    description: "Search file contents — results are clickable, numbered refs",
+    takesArgs: true,
+  },
+  // `/rewind`, `/resume`, and `/rename` already share the `/r` prefix, so
+  // inline completion resolves `/ref` by the registry's existing rules —
+  // nothing here is special-cased for it.
+  {
+    name: "ref",
+    description: "Open refs by number from the last /match or /search (3, 3-5, 3 7 9)",
+    takesArgs: true,
+  },
+  {
     name: "btw",
     description:
       "Ask a quick side question, answered from the conversation with no tools",

@@ -66,6 +66,12 @@ export interface FilePathPayload {
   line?: number;
   /** 1-based last line of a cited range; `line` is its start. */
   endLine?: number;
+  /**
+   * Character range within `line` the reference actually names — 0-based and
+   * half-open, as a search result carries its match span. Only a reference
+   * that knows its columns has this; prose citing a line does not.
+   */
+  columns?: readonly [number, number];
 }
 
 /** A directory that exists on disk. */
@@ -239,6 +245,7 @@ export const ANNOTATION_DATASET_KEYS = [
   "path",
   "line",
   "endLine",
+  "columns",
   "atomId",
   "atomLabel",
   "sha",
@@ -263,6 +270,11 @@ export function datasetForPayload(payload: AnnotationPayload): AnnotationDataset
       if (payload.line !== undefined) record.line = String(payload.line);
       if (payload.endLine !== undefined) {
         record.endLine = String(payload.endLine);
+      }
+      if (payload.columns !== undefined) {
+        // Two numbers in one dataset value — a dataset holds text, and the
+        // pair travels together or not at all.
+        record.columns = `${payload.columns[0]},${payload.columns[1]}`;
       }
       return record;
     }
@@ -309,6 +321,21 @@ function lineFromRecord(raw: string | undefined): number | undefined {
   return Number.isFinite(value) && value >= 1 ? value : undefined;
 }
 
+/** Recover the `start,end` column pair. Half-open, so an empty span is no
+ *  span at all — a bare caret is the line reveal, not a zero-width wash. */
+function columnsFromRecord(
+  raw: string | undefined,
+): readonly [number, number] | undefined {
+  if (raw === undefined) return undefined;
+  const parts = raw.split(",");
+  if (parts.length !== 2) return undefined;
+  const start = Number.parseInt(parts[0], 10);
+  const end = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  if (start < 0 || end <= start) return undefined;
+  return [start, end] as const;
+}
+
 /**
  * Recover a payload from the dataset of an annotated element. Returns
  * `null` when the record does not carry what the kind requires — a
@@ -350,6 +377,8 @@ export function payloadFromDataset(
       if (line !== undefined) payload.line = line;
       const endLine = lineFromRecord(record.endLine);
       if (endLine !== undefined) payload.endLine = endLine;
+      const columns = columnsFromRecord(record.columns);
+      if (columns !== undefined) payload.columns = columns;
       return payload;
     }
     case "directory": {

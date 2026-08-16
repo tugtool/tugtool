@@ -43,9 +43,13 @@
  *    *displays* search results — the query comes from the `Grep` tool
  *    call, not an in-block input. SearchResultBlock renders zero
  *    `<input>` / `<textarea>` elements.
- *  - Make match rows interactive. Results are display-only; a
- *    click-to-open affordance is a deferred follow-on (same deferral
- *    as `EditToolBlock`'s filetree link).
+ *  - Own row interaction. Click-to-open is opt-in (`openable`) and
+ *    defaulted off, so a `Grep` tool result stays display-only. When a
+ *    consumer opts in — the refs block a `/search` run renders into —
+ *    each match row stamps the annotator's `file-path` annotation and
+ *    the transcript's delegated layer supplies the click and the
+ *    context menu, exactly as `PathListBlock`'s rows do. No handler,
+ *    and no responder, is added here ([L11]).
  *
  * Laws:
  *  - [L06] collapse state is logical state (which rows exist) → React
@@ -76,6 +80,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { MiddleEllipsisPath } from "@/components/tugways/blocks/middle-ellipsis-path";
+import { ANNOTATION_CLASS } from "@/lib/annotator/types";
 import { useChromeActionsTarget } from "@/components/tugways/blocks/block-chrome";
 import {
   TugListView,
@@ -170,6 +175,36 @@ export interface SearchResultBlockProps {
 
   /** Forwarded class name for cascade-scoped customization. */
   className?: string;
+
+  /**
+   * Opt in to click-to-open on match rows. Each row whose file path is
+   * absolute stamps the annotator's `file-path` annotation carrying the
+   * match's line, and the host surface's delegated annotation layer turns
+   * a click into an `OPEN_FILE` — the same gesture a path written in
+   * assistant prose gets. A relative path is left un-annotated: the
+   * annotation's contract is a path that opens.
+   *
+   * Default off, so `GrepToolBlock`'s results stay display-only.
+   *
+   * @default false
+   */
+  openable?: boolean;
+
+  /**
+   * Opt each FILE-HEADER path into transcript Find (`data-tugx-findable`).
+   * Default off, and a deliberate opt-in: a marked unit the host does not
+   * also PROJECT into its search index desyncs the match count from the
+   * paint.
+   *
+   * Match lines are deliberately NOT marked, even here. Which match rows
+   * exist depends on this block's own per-file collapse set — React state no
+   * host index can see — so a projection of them would go stale the moment a
+   * file is folded. File headers exist in both collapse states, so they are
+   * the units a host can honestly project.
+   *
+   * @default false
+   */
+  findable?: boolean;
 
   /**
    * Opt-in key for the [A9] Component State Preservation Protocol.
@@ -376,6 +411,10 @@ class SearchResultDataSource implements TugListViewDataSource {
   constructor(
     private readonly rows: readonly SearchRow[],
     private readonly onToggleFile: (path: string) => void,
+    /** Whether match rows stamp the file-path annotation (opt-in). */
+    readonly openable: boolean,
+    /** Whether file-header paths are marked for transcript Find (opt-in). */
+    readonly findable: boolean,
   ) {}
 
   numberOfItems(): number {
@@ -442,7 +481,7 @@ const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
       <span className="tugx-search-twist" aria-hidden="true">
         {row.collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
       </span>
-      <MiddleEllipsisPath path={row.path} />
+      <MiddleEllipsisPath path={row.path} findable={dataSource.findable} />
       <span className="tugx-search-file-count" data-slot="search-result-file-count">
         {composeMatchCountLabel(row.matchCount)}
       </span>
@@ -472,9 +511,33 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
   if (row.kind !== MATCH_CELL_KIND) return null;
   const { match } = row;
   const segments = splitMatchSegments(match.text, match.spans);
+  // Born confirmed: the search that produced this row just read the file.
+  // A relative path is left un-annotated rather than guessed at — the
+  // annotation's contract is a path that opens.
+  const annotated = dataSource.openable && row.filePath.startsWith("/");
+  // The row paints its match span; the open carries the same one, so the
+  // Text card lands on the characters the reader is looking at ([P10]).
+  const firstSpan = match.spans?.[0];
 
   return (
-    <div className="tugx-search-match" data-slot="search-result-match">
+    <div
+      className={
+        annotated
+          ? `tugx-search-match ${ANNOTATION_CLASS}`
+          : "tugx-search-match"
+      }
+      data-slot="search-result-match"
+      data-tug-annotation={annotated ? "file-path" : undefined}
+      data-path={annotated ? row.filePath : undefined}
+      data-line={annotated ? String(match.line) : undefined}
+      data-columns={
+        annotated && firstSpan !== undefined
+          ? `${firstSpan[0]},${firstSpan[1]}`
+          : undefined
+      }
+      data-tug-focus={annotated ? "refuse" : undefined}
+      data-no-activate={annotated ? "" : undefined}
+    >
       {match.before?.map((line) => (
         <ContextLine key={`b${line.line}`} line={line} />
       ))}
@@ -527,6 +590,8 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
   label,
   embedded = false,
   className,
+  openable = false,
+  findable = false,
   componentStatePreservationKey,
 }) => {
   // ---- Collapse state — logical UI state, React-owned per [L06] ------
@@ -557,8 +622,8 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
     [files, collapsed],
   );
   const dataSource = React.useMemo(
-    () => new SearchResultDataSource(rows, handleToggleFile),
-    [rows, handleToggleFile],
+    () => new SearchResultDataSource(rows, handleToggleFile, openable, findable),
+    [rows, handleToggleFile, openable, findable],
   );
 
   // ---- Copy source ---------------------------------------------------

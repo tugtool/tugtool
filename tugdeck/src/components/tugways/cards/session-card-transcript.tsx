@@ -194,7 +194,10 @@ import { matchesCommitReceipt } from "./session-commit-receipt-block";
 // release each render as their own receipt rather than as raw shell output.
 import "./session-join-receipt-block";
 import { composeShellShareText } from "./shell-exchange-view";
+import { RefsResultBlock } from "./refs-result-block";
+import { composeRefsShareText, refsShareLabel } from "./refs-result-view";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
+import type { RefsSessionStore } from "@/lib/refs-session-store";
 import type { PendingContextStore } from "@/lib/pending-context-store";
 import { TugIconButton } from "@/components/tugways/tug-icon-button";
 import type { CodeSessionStore } from "@/lib/code-session-store";
@@ -214,6 +217,7 @@ import {
   transcriptCellPropsEqual,
   useSessionTranscriptDataSource,
   type SessionRowDescriptor,
+  type SessionTranscriptCellKind,
 } from "@/lib/session-transcript-data-source";
 import type { PropertyStore } from "@/components/tugways/property-store";
 
@@ -268,6 +272,10 @@ const ASSISTANT_DEFAULT_IDENTIFIER = "Code";
 /** Default identifier shown for `user` rows. */
 const USER_IDENTIFIER = "You";
 const SHELL_IDENTIFIER = "Shell";
+/** Identifier for a refs row — a `/match` or `/search` run ([P03]). Named for
+ *  what the row holds (file references), not for the command that produced it;
+ *  the command itself is right there in the block header. */
+const REFS_IDENTIFIER = "Refs";
 /** Identifier for a git-attributed row (the `/commit` receipt). The commit
  *  rides the shell ledger, but it ran no shell command the user typed — so the
  *  row is attributed to git, not to the shell that carried it. The operation
@@ -784,6 +792,126 @@ const ShellTurnCell = React.memo(function ShellTurnCell({
 }, transcriptCellPropsEqual);
 
 // ---------------------------------------------------------------------------
+// `RefsTurnCell` — the `/match` / `/search` run row ([P03]). One row per
+// `refs`-origin turn, its sole `refs_result` Message rendered as non-context
+// ink inside a `participant="refs"` transcript entry. The row is replaced in
+// place as the run streams, so this cell renders in-flight and settled alike.
+// ---------------------------------------------------------------------------
+interface RefsTurnCellProps {
+  index: number;
+  row: SessionRowDescriptor;
+  dataSource: SessionTranscriptDataSource;
+  codeSessionStore: CodeSessionStore;
+  refsSessionStore: RefsSessionStore;
+  pendingContextStore: PendingContextStore;
+  sessionMetadataStore: SessionMetadataStore;
+}
+const RefsTurnCell = React.memo(function RefsTurnCell({
+  index,
+  row,
+  dataSource,
+  codeSessionStore,
+  refsSessionStore,
+  pendingContextStore,
+  sessionMetadataStore,
+}: RefsTurnCellProps) {
+  // A refs row's rows ARE file references, so the annotation scope has to
+  // reach it — without one, a row carrying `data-tug-annotation="file-path"`
+  // renders perfectly and no click ever resolves it ([L02] — the context
+  // reads its stores through `useSyncExternalStore`).
+  const annotation = useAnnotationContext(sessionMetadataStore);
+  // Re-render on staged-queue changes so Share reflects the live staged
+  // state ([L02]).
+  const pendingSnapshot = useSyncExternalStore(
+    pendingContextStore.subscribe,
+    pendingContextStore.getSnapshot,
+  );
+  // The `#r{n}` badge is its own session-wide refs counter ([P12]) — `#r1`,
+  // `#r2`, … independent of the Claude `#u`/`#a` turn numbers and of the
+  // shell `#s` sequence it is interleaved with.
+  const refsNumber = dataSource.refsOrdinalForRow(index);
+  // ⌘C / ⌘A / the right-click text menu for this row — the same cell menu
+  // every other transcript cell mounts. Without a COPY handler on the chain,
+  // Edit ▸ Copy validates dark and ⌘C dies in the menu bar before the web
+  // view sees it. Refs ink is literal text, so the copy is the selection
+  // verbatim — no `resolveCopyMarkdown`.
+  const { ResponderScope, cellProps, bodyRef, menu } =
+    useTranscriptCellMenu({ codeSessionStore });
+  const cellRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      cellProps.ref(el);
+      bodyRef.current = el;
+    },
+    [cellProps.ref, bodyRef],
+  );
+  const turn = row.turn;
+  const message = turn?.messages[0];
+  if (message === undefined || message.kind !== "refs_result") return null;
+  // The context dedup key is the stable `runId` (not the display ordinal), so
+  // the row's Share badge and the staged item agree on the same run.
+  const refsRef = message.runId;
+  const staged = pendingSnapshot.items.some(
+    (it) => it.source === "refs" && it.ref === refsRef,
+  );
+  // One row, no within-turn ordinal — `#r{n}` never grows a `.2` suffix.
+  const address = { speaker: "refs" as const, turn: refsNumber };
+  // Timestamp is the run's start — the moment the command posted, the same
+  // reading as the shell row's exec time.
+  const timestamp = formatTranscriptTimestamp(message.startedAtMs);
+  return (
+    <ResponderScope>
+    <AnnotationScope value={annotation}>
+    <div
+      {...cellProps}
+      ref={cellRef}
+      className="session-card-transcript-refs-row"
+      data-slot="session-transcript-refs-row"
+    >
+      <TugTranscriptEntry
+        participant="refs"
+        identifier={REFS_IDENTIFIER}
+        timestamp={timestamp}
+        address={address}
+        body={
+          // The same whole-block collapse every other block wears ([P02]),
+          // keyed on the run id so the user's expand/collapse choice survives
+          // a windowed remount. Defaults expanded — the user just ran it.
+          <ToolBlockHistoryCollapse toolUseId={message.runId} defaultCollapsed={false}>
+            <RefsResultBlock
+              message={message}
+              staged={staged}
+              // Share ([P03]): stage the run's refs on the pending-context
+              // queue so they ride the next `❯` submission as attributed
+              // `#r{n}` context. The one path out of non-context ink.
+              onToggleContext={() => {
+                if (staged) {
+                  pendingContextStore.unstageRef("refs", refsRef);
+                } else {
+                  pendingContextStore.stage({
+                    source: "refs",
+                    ref: refsRef,
+                    label: refsShareLabel(refsNumber),
+                    body: composeRefsShareText(message),
+                  });
+                }
+              }}
+              onCancel={() => refsSessionStore.cancel()}
+              componentStatePreservationKey={`refs-${message.runId}`}
+            />
+          </ToolBlockHistoryCollapse>
+        }
+        // Z1B end-state row ([D111]) — the run's badge + duration, beneath the
+        // block, exactly where a shell exchange shows its exit badge.
+        controls={<SessionZ1B participant="refs" turn={turn} />}
+      />
+    </div>
+    {menu}
+    </AnnotationScope>
+    </ResponderScope>
+  );
+}, transcriptCellPropsEqual);
+
+// ---------------------------------------------------------------------------
 // `AssistantTurnCell` — single renderer for the assistant row.
 //
 // Handles both the in-flight phase (data flowing from the live
@@ -1155,11 +1283,11 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
       );
       continue;
     }
-    // shell_exchange messages never appear inside a Claude (user/assistant)
-    // turn — they are the sole content of a separate `shell`-origin turn,
-    // rendered by the data source's shell row kind ([P06]). Skip defensively
-    // so this Claude-turn loop's fall-through narrows cleanly to `tool_use`.
-    if (message.kind === "shell_exchange") continue;
+    // Ink messages never appear inside a Claude (user/assistant) turn — each
+    // is the sole content of its own ink-origin turn, rendered by the data
+    // source's `shell` / `refs` row kinds ([P06]). Skip defensively so this
+    // Claude-turn loop's fall-through narrows cleanly to `tool_use`.
+    if (message.kind === "shell_exchange" || message.kind === "refs_result") continue;
     // tool_use — render top-level calls only; subagent children are
     // resolved inside their parent's wrapper.
     if (message.parentToolUseId !== undefined) continue;
@@ -1720,6 +1848,9 @@ export interface SessionTranscriptHostProps {
   /** Per-card shell session — the shell rows' Share gesture parks its
    *  composed text here for the prompt entry to consume ([P08]). */
   shellSessionStore: ShellSessionStore;
+  /** Per-card refs session — the refs rows' Cancel stops the run in flight
+   *  ([P04]); the run's state itself arrives on the row's message. */
+  refsSessionStore: RefsSessionStore;
   /** Staged-context queue — the shell rows' Add-to-context toggle stages an
    *  exchange to ride the next `❯` submission ([P08], staged variant). */
   pendingContextStore: PendingContextStore;
@@ -1825,6 +1956,7 @@ export const SessionTranscriptHost = forwardRef<
     cardId,
     codeSessionStore,
     shellSessionStore,
+    refsSessionStore,
     pendingContextStore,
     sessionMetadataStore,
     transcriptStore,
@@ -2108,16 +2240,38 @@ export const SessionTranscriptHost = forwardRef<
     },
     [codeSessionStore, shellSessionStore, pendingContextStore, sessionMetadataStore],
   );
+  const refsRenderer = useCallback<
+    TugListViewCellRenderer<SessionTranscriptDataSource>
+  >(
+    (p) => {
+      const row = p.dataSource.rowAt(p.index);
+      return (
+        <RefsTurnCell
+          {...p}
+          row={row}
+          codeSessionStore={codeSessionStore}
+          refsSessionStore={refsSessionStore}
+          pendingContextStore={pendingContextStore}
+          sessionMetadataStore={sessionMetadataStore}
+        />
+      );
+    },
+    [codeSessionStore, refsSessionStore, pendingContextStore, sessionMetadataStore],
+  );
+  // Keyed by the data source's OWN kind union, not `string`: a kind added
+  // there without a renderer here is a row that mounts nothing, and a
+  // `Record<string, …>` would let that ship silently.
   const cellRenderers = useMemo<
-    Record<string, TugListViewCellRenderer<SessionTranscriptDataSource>>
+    Record<SessionTranscriptCellKind, TugListViewCellRenderer<SessionTranscriptDataSource>>
   >(
     () => ({
       "user": userRenderer,
       "assistant": assistantRenderer,
       "ghost": ghostRenderer,
       "shell": shellRenderer,
+      "refs": refsRenderer,
     }),
-    [userRenderer, assistantRenderer, ghostRenderer, shellRenderer],
+    [userRenderer, assistantRenderer, ghostRenderer, shellRenderer, refsRenderer],
   );
 
 

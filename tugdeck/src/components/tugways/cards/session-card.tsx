@@ -152,6 +152,10 @@ import type { SkillsInventoryStore } from "@/lib/skills-inventory-store";
 import type { HooksInventoryStore } from "@/lib/hooks-inventory-store";
 import type { SideQuestionStore } from "@/lib/side-question-store";
 import type { ShellSessionStore } from "@/lib/shell-session-store";
+import type { RefsSessionStore, RefsOpKind } from "@/lib/refs-session-store";
+import { parseRefsArgs } from "@/lib/refs-flags";
+import { REF_OPEN_CAP, resolveRefSpec } from "@/lib/ref-spec";
+import { joinRefPath } from "./refs-result-view";
 import type { PathCommandsStore } from "@/lib/path-commands-store";
 import type { ShellGrammarStore } from "@/lib/shell-grammar-store";
 import type { ShellClassifyStore } from "@/lib/shell-classify-store";
@@ -512,6 +516,9 @@ export interface SessionCardServices {
   sideQuestionStore: SideQuestionStore;
   /** Card shell session store — session state + exchange ingest ([P12]). */
   shellSessionStore: ShellSessionStore;
+  /** Card refs session store — the `/match` / `/search` run in flight and the
+   *  ref list `/ref N` resolves against ([P03]). */
+  refsSessionStore: RefsSessionStore;
   /** Login-PATH command set for the shell-line classifier ([P08]). */
   pathCommandsStore: PathCommandsStore;
   shellGrammarStore: ShellGrammarStore;
@@ -2434,7 +2441,7 @@ export function SessionCardBody({
   renderTurnTrailing,
   footerContent,
 }: SessionCardBodyProps) {
-  const { codeSessionStore, shellSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, transcriptStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
+  const { codeSessionStore, shellSessionStore, refsSessionStore, pathCommandsStore, shellGrammarStore, shellClassifyStore, sessionMetadataStore, historyStore, completionProviders, argumentHintResolver, inlineCommandMatcher, pastedCommandResolver, editorStore, transcriptStore, skillsInventoryStore, hooksInventoryStore, sideQuestionStore, changesController, pendingContextStore, entryDelegateRef } = services;
 
   // One Find session per card body — the transcript-search state for the `⌕`
   // route. Owned here so it is in scope for both the prompt entry (query +
@@ -3636,6 +3643,35 @@ export function SessionCardBody({
     slashCommandSurfaces[to](args, draft);
   };
 
+  /**
+   * Run one refs op ([P01]/[P07]). The typed line is the truth: it is parsed
+   * once here into needles + normalized flags, and the same line is echoed to
+   * the feed so the block header shows what the user typed rather than a
+   * reconstruction of what was parsed.
+   *
+   * An unknown flag is a subdued notice, not a refusal — the rest of the line
+   * still names a search worth running.
+   */
+  const runRefsCommand = (kind: RefsOpKind, args: string): void => {
+    const notify = paneBulletinRef.current;
+    const parsed = parseRefsArgs(kind, args);
+    if (parsed.unknown.length > 0) {
+      notify?.caution(`Ignoring unknown ${kind} ${
+        parsed.unknown.length === 1 ? "flag" : "flags"
+      }: ${parsed.unknown.join(" ")}`);
+    }
+    if (parsed.needles.length === 0) {
+      notify?.caution(`Usage: /${kind} <needle>…`);
+      return;
+    }
+    refsSessionStore.run({
+      kind,
+      needles: parsed.needles,
+      flags: parsed.flags,
+      command: `/${kind} ${args.trim()}`,
+    });
+  };
+
   const slashCommandSurfaces: Record<
     LocalCommandName,
     (args: string, draft?: SlashCommandDraft) => void
@@ -4204,6 +4240,61 @@ export function SessionCardBody({
     btw: (args) => {
       if (args.trim().length > 0) sideQuestionStore.ask(args);
       statusRowRef.current?.openSideQuestions();
+    },
+    // `/match` and `/search` run the refs feed and stream a numbered `#r`
+    // block into the transcript ([P01] — local commands, not a route). Both
+    // share one runner: the ops differ only in their flag table and which
+    // body kind the block renders.
+    match: (args) => runRefsCommand("match", args),
+    search: (args) => runRefsCommand("search", args),
+    // `/ref <spec>` opens refs from the latest run by number ([P09]). The
+    // payload is byte-identical to the one a click on that row sends, so both
+    // gestures reach the deck's open handler by the same route and honor the
+    // same `openTarget` preference.
+    ref: (args) => {
+      const notify = paneBulletinRef.current;
+      const spec = args.trim();
+      if (spec === "") {
+        notify?.caution("Usage: /ref 3 | 3-5 | 3 7 9");
+        return;
+      }
+      const refs = refsSessionStore.currentRefs();
+      if (refs.length === 0) {
+        notify?.caution("No refs yet — run /match or /search first");
+        return;
+      }
+      const byNumber = new Map(refs.map((r) => [r.index, r]));
+      const resolved = resolveRefSpec(spec, (n) => byNumber.has(n));
+      if (resolved.invalid.length > 0) {
+        notify?.caution(`Not a ref number: ${resolved.invalid.join(" ")}`);
+      }
+      if (resolved.outOfRange.length > 0) {
+        notify?.caution(
+          `No ref ${resolved.outOfRange.join(", ")} — this run has ${refs.length}`,
+        );
+      }
+      if (resolved.capped) {
+        notify?.caution(`Opening the first ${REF_OPEN_CAP} refs`);
+      }
+      const root = refsSessionStore.root();
+      const targets: Array<Record<string, unknown>> = [];
+      for (const n of resolved.numbers) {
+        const ref = byNumber.get(n);
+        if (ref === undefined) continue;
+        const target: Record<string, unknown> = {
+          path: joinRefPath(root, ref.path),
+        };
+        if (ref.line !== null) target.line = ref.line;
+        // A search ref knows which characters matched; the first span is the
+        // one the row's own highlight leads with ([P10]).
+        if (ref.columns.length > 0) target.columns = ref.columns[0];
+        targets.push(target);
+      }
+      if (targets.length === 0) return;
+      // One dispatch for the whole spec: each open re-seats the first
+      // responder, so a per-ref dispatch would open the first and lose the
+      // rest to a chain that has moved on.
+      dispatchCommand(TUG_ACTIONS.OPEN_FILE, { targets });
     },
   };
 
@@ -4817,6 +4908,7 @@ export function SessionCardBody({
                   cardId={cardId}
                   codeSessionStore={codeSessionStore}
                   shellSessionStore={shellSessionStore}
+                  refsSessionStore={refsSessionStore}
                   pendingContextStore={pendingContextStore}
                   sessionMetadataStore={sessionMetadataStore}
                   transcriptStore={transcriptStore}

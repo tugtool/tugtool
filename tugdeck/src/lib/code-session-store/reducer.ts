@@ -81,6 +81,7 @@ import type {
   SessionRewindActionEvent,
   ShellExchangeStartedActionEvent,
   ShellExchangeCompleteActionEvent,
+  RefsResultActionEvent,
 } from "./events";
 import type {
   ActiveTurnSnapshot,
@@ -101,6 +102,7 @@ import type {
   Message,
   PermissionDenial,
   RewindResultAck,
+  RefsResultMessage,
   RewindTurnPreview,
   ShellExchangeMessage,
   SystemNote,
@@ -113,6 +115,7 @@ import type {
   UserMessage,
   WakeTrigger,
 } from "./types";
+import { isInkOrigin } from "./types";
 import { compactionNoteText, isCompactionSubmission } from "./compaction";
 import {
   applyJobAgentStructured,
@@ -5626,29 +5629,29 @@ function insertTurnByTimestamp(
 }
 
 /**
- * Append a non-shell turn, keeping it interleaved with any shell turns that
- * were restored *ahead* of it ([P07]). Claude turns replay (and stream) in
+ * Append a Claude turn, keeping it interleaved with any ink turns that were
+ * restored *ahead* of it ([P07]). Claude turns replay (and stream) in
  * ascending-timestamp order, so relative to each other an append already is a
  * timestamp sort — this helper only slides the new turn left past a run of
- * trailing *shell* turns whose timestamp is greater. That is exactly the
- * reload race: the ledger restore (`list_shell_exchanges`) can land before the
- * JSONL replay, seating restored shell rows ahead of the Claude turns they
- * happened among; without this the replayed Claude turn would append to the
- * end instead of interleaving back to its own timestamp. It never reorders two
- * non-shell turns (the walk stops at the first non-shell tail entry), so every
- * existing Claude-path ordering is untouched.
+ * trailing *ink* turns (shell, refs) whose timestamp is greater. That is
+ * exactly the reload race: a ledger restore (`list_shell_exchanges`,
+ * `list_refs`) can land before the JSONL replay, seating restored ink rows
+ * ahead of the Claude turns they happened among; without this the replayed
+ * Claude turn would append to the end instead of interleaving back to its own
+ * timestamp. It never reorders two non-ink turns (the walk stops at the first
+ * non-ink tail entry), so every existing Claude-path ordering is untouched.
  *
  * The store wrapper owns `_transcript`, so this pure helper runs there (via the
  * `append-transcript` effect), not inside the reducer's `CodeSessionState`.
  */
-export function appendTurnInterleavingShell(
+export function appendTurnInterleavingInk(
   transcript: ReadonlyArray<TurnEntry>,
   entry: TurnEntry,
 ): TurnEntry[] {
   const ts = turnSortTs(entry);
   const next = transcript.slice();
   let i = next.length;
-  while (i > 0 && next[i - 1]!.origin === "shell" && turnSortTs(next[i - 1]!) > ts) {
+  while (i > 0 && isInkOrigin(next[i - 1]!.origin) && turnSortTs(next[i - 1]!) > ts) {
     i--;
   }
   next.splice(i, 0, entry);
@@ -5656,13 +5659,15 @@ export function appendTurnInterleavingShell(
 }
 
 /**
- * Upsert a shell turn into the committed transcript ([P12]): replace the turn
+ * Upsert an ink turn into the committed transcript ([P12]): replace the turn
  * with the same `turnKey` in place (settle preserving mount identity / row
- * position), or insert a new one at its timestamp position (mint). The store
- * wrapper owns `_transcript`, so this pure helper runs there (via the
- * `ingest-shell-turn` effect), not inside the reducer's `CodeSessionState`.
+ * position), or insert a new one at its timestamp position (mint). This is
+ * what makes a streaming run update the row it already owns instead of
+ * growing a new one per batch. The store wrapper owns `_transcript`, so this
+ * pure helper runs there (via the `ingest-ink-turn` effect), not inside the
+ * reducer's `CodeSessionState`.
  */
-export function upsertShellTurn(
+export function upsertInkTurn(
   transcript: ReadonlyArray<TurnEntry>,
   entry: TurnEntry,
 ): TurnEntry[] {
@@ -5698,9 +5703,9 @@ function shellMessage(
 /**
  * `exchange_started` → mint an in-flight shell turn; `exchange_complete` →
  * settle it in place (or mint-whole for a restore / bare complete). Both build
- * the committed `TurnEntry` (pure) and emit an `ingest-shell-turn` effect; the
+ * the committed `TurnEntry` (pure) and emit an `ingest-ink-turn` effect; the
  * store wrapper upserts it into `_transcript` (which it owns) via
- * {@link upsertShellTurn}. No `CodeSessionState` mutation — shell turns are
+ * {@link upsertInkTurn}. No `CodeSessionState` mutation — shell turns are
  * disjoint from the Claude phase / activeTurn / scratch machinery ([P12]).
  */
 function handleShellExchange(
@@ -5708,7 +5713,81 @@ function handleShellExchange(
   event: ShellExchangeStartedActionEvent | ShellExchangeCompleteActionEvent,
 ): { state: CodeSessionState; effects: Effect[] } {
   const entry = buildShellTurnEntry(shellMessage(event));
-  return { state, effects: [{ kind: "ingest-shell-turn", entry }] };
+  return { state, effects: [{ kind: "ingest-ink-turn", entry }] };
+}
+
+// ---------------------------------------------------------------------------
+// Refs runs — the second ink origin
+// ---------------------------------------------------------------------------
+
+function refsMessage(event: RefsResultActionEvent): RefsResultMessage {
+  return {
+    kind: "refs_result",
+    messageKey: `refs-${event.runId}`,
+    createdAt: event.startedAtMs,
+    runId: event.runId,
+    opKind: event.opKind,
+    command: event.command,
+    root: event.root,
+    refs: event.refs,
+    inFlight: event.inFlight,
+    cancelled: event.cancelled,
+    notice: event.notice,
+    startedAtMs: event.startedAtMs,
+    settledAtMs: event.settledAtMs,
+  };
+}
+
+/**
+ * Build a committed `refs`-origin `TurnEntry` around one run's message.
+ * Like a shell turn it bypasses the Claude turn machinery entirely — no
+ * scratch, no activeTurn, no phase — and carries zero telemetry, because a
+ * search costs no tokens.
+ */
+export function buildRefsTurnEntry(msg: RefsResultMessage): TurnEntry {
+  const end = msg.settledAtMs ?? msg.startedAtMs;
+  const wall = Math.max(0, end - msg.startedAtMs);
+  // A cancelled run really was interrupted; everything else — including a
+  // run that found nothing — ran to completion.
+  const turnEndReason: TurnEndReason = msg.cancelled ? "interrupted" : "complete";
+  return {
+    turnKey: `refs-${msg.runId}`,
+    msgId: msg.runId,
+    origin: "refs",
+    messages: [msg],
+    result: msg.cancelled ? "interrupted" : "success",
+    endedAt: end,
+    wallClockMs: wall,
+    awaitingApprovalMs: 0,
+    transportDowntimeMs: 0,
+    activeMs: wall,
+    ttftMs: null,
+    ttftcMs: null,
+    reconnectCount: 0,
+    maxStreamGapMs: 0,
+    turnEndReason,
+    cost: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationInputTokens: 0,
+      cacheReadInputTokens: 0,
+      totalCostUsd: 0,
+    },
+  };
+}
+
+/**
+ * A refs run's state changed: mint its turn, or replace the one it already
+ * owns. The event carries the run's whole state, so mint, every streaming
+ * batch, and settle are one path — the ink upsert keeps the row's mount
+ * identity and position across all of them ([L26]).
+ */
+function handleRefsResult(
+  state: CodeSessionState,
+  event: RefsResultActionEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  const entry = buildRefsTurnEntry(refsMessage(event));
+  return { state, effects: [{ kind: "ingest-ink-turn", entry }] };
 }
 
 // ---------------------------------------------------------------------------
@@ -5729,6 +5808,8 @@ export function reduce(
     case "shell_exchange_started":
     case "shell_exchange_complete":
       return handleShellExchange(state, event);
+    case "refs_result":
+      return handleRefsResult(state, event);
     case "session_init":
       return handleSessionInit(state, event);
     case "content_block_start":

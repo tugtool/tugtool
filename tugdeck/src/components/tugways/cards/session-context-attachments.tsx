@@ -2,8 +2,8 @@
  * session-context-attachments.tsx — the attached-context sub-rows that ride
  * above a user turn's prose.
  *
- * When a user submission was preceded by staged shell / `/btw` context (the
- * VISIBILITY toggle, or a row's Add-to-context action), that context travels
+ * When a user submission was preceded by staged shell / `/btw` / refs context
+ * (the VISIBILITY toggle, or a row's Add-to-context action), that context travels
  * inside the user message as `<tug-context>` sentinel blocks. The transcript's
  * user row splits those blocks off the prose ({@link splitLeadingContext}) and
  * renders them here — a subdued, attributed stack that makes visible exactly
@@ -19,7 +19,7 @@
  */
 
 import React from "react";
-import { MessageSquareDashed, Shell } from "lucide-react";
+import { ListTree, MessageSquareDashed, Shell } from "lucide-react";
 
 import { TugMarkdownBlock } from "@/components/tugways/tug-markdown-block";
 import type { ParsedContextBlock } from "@/lib/pending-context-store";
@@ -33,6 +33,12 @@ function blockHeading(block: ParsedContextBlock): { icon: React.ReactNode; label
     return {
       icon: <Shell size={13} strokeWidth={2} aria-hidden />,
       label: "shell",
+    };
+  }
+  if (block.source === "refs") {
+    return {
+      icon: <ListTree size={13} strokeWidth={2} aria-hidden />,
+      label: "refs",
     };
   }
   return {

@@ -62,6 +62,7 @@ import type { RowSegment } from "@/lib/transcript-search";
 import { TUG_ATOM_CHAR } from "@/lib/tug-atom-img";
 import { RETAINED_LINE_CAP } from "@/components/tugways/body-kinds/terminal-block";
 import { parseGitCommit } from "@/components/tugways/body-kinds/commit-block";
+import { refsFindablePaths } from "@/components/tugways/cards/refs-result-view";
 import {
   extractTextOutput,
   renderedToolBlock,
@@ -411,6 +412,39 @@ function shellSegments(
   return segments;
 }
 
+/**
+ * Project one refs run as its search units ([P03]): the command that ran it,
+ * then — while the block is expanded — the file path of each row the block
+ * renders. Both sides are marked `data-tugx-findable`: the command rides the
+ * block header, the paths are the body kinds' own path elements, opted in by
+ * the refs block's `findable`.
+ *
+ * The command projects in both collapse states because it rides the header
+ * and stays on screen; the paths are unmounted with the body, so they are
+ * gated exactly as a shell exchange's output is. Refs rows default expanded.
+ *
+ * Matched LINES are deliberately not projected. Which match rows exist
+ * depends on `SearchResultBlock`'s per-file collapse set — React state this
+ * index cannot observe — so projecting them would desync the count from the
+ * paint the first time a user folds a file.
+ */
+function refsSegments(
+  descriptor: SessionRowDescriptor,
+  expansion: ToolBlockExpansionState,
+): RowSegment[] {
+  const message = descriptor.turn?.messages[0];
+  if (message === undefined || message.kind !== "refs_result") return [];
+  const segments: RowSegment[] = [];
+  if (message.command !== "") {
+    segments.push({ kind: "dom", text: message.command });
+  }
+  if (expansion.resolve(message.runId, false)) return segments;
+  for (const path of refsFindablePaths(message)) {
+    segments.push({ kind: "dom", text: path });
+  }
+  return segments;
+}
+
 /** Wrap plain-text parts as `dom` segments. */
 function domSegments(parts: string[]): RowSegment[] {
   return parts.map((text) => ({ kind: "dom" as const, text }));
@@ -425,6 +459,9 @@ function rowSegments(
   if (descriptor.kind === "ghost") return [];
   if (descriptor.kind === "shell") {
     return shellSegments(descriptor, expansion);
+  }
+  if (descriptor.kind === "refs") {
+    return refsSegments(descriptor, expansion);
   }
   if (descriptor.kind === "user") {
     const message = descriptor.userMessage;

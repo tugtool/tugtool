@@ -40,6 +40,7 @@ import { ChangesRouteController } from "./changes-route-controller";
 import { SkillsInventoryStore } from "./skills-inventory-store";
 import { HooksInventoryStore } from "./hooks-inventory-store";
 import { SideQuestionStore } from "./side-question-store";
+import { RefsSessionStore } from "./refs-session-store";
 import { ShellSessionStore } from "./shell-session-store";
 import { PathCommandsStore } from "./path-commands-store";
 import { ShellGrammarStore } from "./shell-grammar-store";
@@ -123,6 +124,15 @@ export interface CardServices {
    */
   readonly shellSessionStore: ShellSessionStore;
   readonly shellSessionFeedStore: FeedStore;
+  /**
+   * `/match` and `/search` runs and their `REFS_OUTPUT` feed (filtered to this
+   * session). Owns the run state and the latest ref list — the one `/ref N`
+   * resolves against — and mirrors each run into
+   * `codeSessionStore.ingestRefs`; the result rows live in the transcript,
+   * not here.
+   */
+  readonly refsSessionStore: RefsSessionStore;
+  readonly refsSessionFeedStore: FeedStore;
   /**
    * What the shell-line classifier tests membership against ([P08]): the
    * login-PATH set unioned with the session shell's own aliases, functions and
@@ -519,6 +529,23 @@ class CardServicesStore {
       pendingContextStore,
     );
 
+    // `/match` and `/search`: a REFS_OUTPUT feed narrowed to this session's
+    // frames, plus the store that folds them and mirrors each run into
+    // `codeSessionStore` as a `refs` ink turn.
+    const refsSessionFeedStore = new FeedStore(
+      connection,
+      [FeedId.REFS_OUTPUT],
+      undefined,
+      shellSessionFilter,
+    );
+    const refsSessionStore = new RefsSessionStore(
+      refsSessionFeedStore,
+      FeedId.REFS_OUTPUT,
+      binding.tugSessionId,
+      binding.projectDir,
+      codeSessionStore,
+    );
+
     // What the shell-line classifier tests membership against ([P08]): the
     // login-PATH set unioned with this session shell's own words. Shares the
     // shell session's SHELL_OUTPUT feed; request it now (at bind) so the set is
@@ -661,6 +688,8 @@ class CardServicesStore {
       sideQuestionFeedStore,
       shellSessionStore,
       shellSessionFeedStore,
+      refsSessionStore,
+      refsSessionFeedStore,
       pathCommandsStore,
       shellGrammarStore,
       shellClassifyStore,
@@ -697,6 +726,8 @@ class CardServicesStore {
     services.shellGrammarStore.dispose();
     services.shellClassifyStore.dispose();
     services.shellSessionFeedStore.dispose();
+    services.refsSessionStore.dispose();
+    services.refsSessionFeedStore.dispose();
     services.changesController.dispose();
     services.pendingContextStore.dispose();
   }

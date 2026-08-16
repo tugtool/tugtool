@@ -1,10 +1,12 @@
 /**
- * PendingContextStore — the per-card queue of shell / `/btw` interactions
- * staged to ride the next `❯` (Claude) submission as attributed context.
+ * PendingContextStore — the per-card queue of shell / `/btw` / refs
+ * interactions staged to ride the next `❯` (Claude) submission as attributed
+ * context.
  *
- * A shell exchange and a `/btw` side question are, by design, invisible to
- * Claude ([P08]/[P05]): the shell block is non-context ink, and a side
- * question never enters the transcript. This store is the on-demand bridge —
+ * A shell exchange, a `/btw` side question, and a `/match` or `/search` run
+ * are all, by design, invisible to Claude ([P08]/[P05]/[P03]): the shell and
+ * refs blocks are non-context ink, and a side question never enters the
+ * transcript at all. This store is the on-demand bridge —
  * the user (or the VISIBILITY toggle) stages an interaction, and at the next
  * code-route send the staged items are prepended to the outgoing user message,
  * each wrapped in a `<tug-context>` sentinel. Because the sentinel travels
@@ -23,7 +25,16 @@ import { getTugbankClient } from "./tugbank-singleton";
 import { PENDING_CONTEXT_DOMAIN, putPendingContext } from "@/settings-api";
 
 /** Which surface an item was staged from. */
-export type ContextSource = "shell" | "btw";
+export type ContextSource = "shell" | "btw" | "refs";
+
+/**
+ * The sources that carry a VISIBILITY toggle — a route the user can put in
+ * Context mode so its interactions auto-stage. `refs` deliberately has none:
+ * a `/match` or `/search` run is shared one block at a time from its own
+ * Share affordance, so there is no route-level setting for it to read and no
+ * `setContext` call it could be the subject of.
+ */
+export type ContextVisibilitySource = "shell" | "btw";
 
 /** One staged interaction awaiting the next code-route submission. */
 export interface PendingContextItem {
@@ -40,7 +51,10 @@ export interface PendingContextItem {
   readonly at: number;
 }
 
-const OPEN_RE = /^<tug-context source="(shell|btw)" ref="([^"]*)">\n/;
+// The sentinel is a DURABLE format — it travels inside the user message into
+// the session JSONL, so this alternation must keep reading every source that
+// was ever written, not just the ones a current build can stage.
+const OPEN_RE = /^<tug-context source="(shell|btw|refs)" ref="([^"]*)">\n/;
 const CLOSE_TAG = "</tug-context>";
 
 /**
@@ -144,7 +158,7 @@ const EMPTY_ITEMS: readonly PendingContextItem[] = [];
 function parsePersistedItem(raw: unknown): PendingContextItem | null {
   if (raw === null || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (o.source !== "shell" && o.source !== "btw") return null;
+  if (o.source !== "shell" && o.source !== "btw" && o.source !== "refs") return null;
   if (
     typeof o.id !== "string" ||
     typeof o.ref !== "string" ||
@@ -302,14 +316,16 @@ export class PendingContextStore {
   // ── VISIBILITY (Context / Private) ──────────────────────────────────────────
 
   /** Read a route's VISIBILITY — `true` = Context (auto-stage), `false` =
-   *  Private (the default). The settle handlers read this synchronously. */
-  isContext(source: ContextSource): boolean {
+   *  Private (the default). The settle handlers read this synchronously.
+   *  Only the two routes that HAVE a VISIBILITY toggle are askable, so a
+   *  refs run can never be silently answered `false` here as if it had one. */
+  isContext(source: ContextVisibilitySource): boolean {
     return source === "shell" ? this._shellContext : this._btwContext;
   }
 
   /** Set a route's VISIBILITY. Toggling to Private stops auto-staging future
    *  interactions but leaves already-staged items in place. */
-  setContext(source: ContextSource, on: boolean): void {
+  setContext(source: ContextVisibilitySource, on: boolean): void {
     if (source === "shell") {
       if (this._shellContext === on) return;
       this._shellContext = on;

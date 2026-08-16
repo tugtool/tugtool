@@ -35,6 +35,7 @@ mod scribe;
 /// no dependencies, shared by `session_ledger` (write-time derivation and the
 /// backfill) and `feeds::operator` (query-time expansion).
 mod search_tokens;
+mod refs_ledger;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
@@ -399,6 +400,16 @@ async fn main() {
         LagPolicy::Warn,
     );
     let (shell_input_tx, shell_input_rx) = mpsc::channel(256);
+
+    // REFS feed — the `/match` and `/search` commands. REFS_OUTPUT streams a
+    // run's result rows to the card that asked; REFS_INPUT flows to the refs
+    // dispatcher (spawned below), which runs one search at a time per session.
+    let refs_output_feed = feeds::session_scoped::SessionScopedFeed::new(
+        FeedId::REFS_OUTPUT,
+        feeds::refs::REFS_BROADCAST_CAPACITY,
+        LagPolicy::Warn,
+    );
+    let (refs_input_tx, refs_input_rx) = mpsc::channel(256);
 
     // Create terminal feed. Its broadcast channel is created — and its
     // task spawned — by `register_stream_feed` below; only the input
@@ -1180,6 +1191,22 @@ async fn main() {
             }
         });
 
+    // Refs ledger — non-fatal on the same grounds: without it `/match` and
+    // `/search` still run, they just don't survive a reload.
+    let refs_ledger: Option<Arc<refs_ledger::RefsLedger>> = refs_ledger::RefsLedger::default_path()
+        .and_then(|path| {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match refs_ledger::RefsLedger::open(&path) {
+                Ok(l) => Some(Arc::new(l)),
+                Err(e) => {
+                    warn!(error = %e, path = %path.display(), "failed to open refs ledger (refs restore disabled)");
+                    None
+                }
+            }
+        });
+
     // Recover shell rows orphaned by the pre-F1 fresh-spawn bug: move a lost
     // zero-turn session's exchanges onto the card's current (empty) session so
     // shell-only sessions that were re-spawned under a fresh id before the fix
@@ -1301,6 +1328,10 @@ async fn main() {
     // the tail the shell dispatcher writes.
     if let Some(sl) = shell_ledger.as_ref() {
         supervisor.set_shell_ledger(Arc::clone(sl));
+    }
+    // Same for the refs ledger, which backs the `list_refs` restore read.
+    if let Some(rl) = refs_ledger.as_ref() {
+        supervisor.set_refs_ledger(Arc::clone(rl));
     }
 
     // The changeset scribe ([P11]/[P22]): the maintained-draft engine runs a
@@ -1550,6 +1581,20 @@ async fn main() {
         )
         .await;
     });
+    // Refs dispatcher: routes REFS_INPUT to the match/search ops and streams
+    // their numbered result rows back on REFS_OUTPUT.
+    let refs_dispatch_feed = refs_output_feed.clone();
+    let refs_dispatch_ledger = refs_ledger.clone();
+    let refs_dispatch_cancel = cancel.clone();
+    tokio::spawn(async move {
+        feeds::refs::refs_dispatcher_task(
+            refs_input_rx,
+            refs_dispatch_feed,
+            refs_dispatch_ledger,
+            refs_dispatch_cancel,
+        )
+        .await;
+    });
     let merger_cancel = cancel.clone();
     let merger_supervisor = Arc::clone(&supervisor);
     tokio::spawn(async move {
@@ -1708,6 +1753,9 @@ async fn main() {
     // SHELL_OUTPUT — session-scoped exchange frames; the reconnect tail comes
     // from the ledger CONTROL read, not feed replay (like PULSE).
     feed_router.register_session_feed(&shell_output_feed);
+    // REFS_OUTPUT — session-scoped result frames; like SHELL_OUTPUT, the
+    // reconnect state comes from the ledger CONTROL read, not feed replay.
+    feed_router.register_session_feed(&refs_output_feed);
     // CONTROL stays a channel-registered stream: router-internal,
     // bidirectional, and the sink for router-emitted error frames — one
     // of the two named exemptions from the feed abstraction.
@@ -1732,6 +1780,7 @@ async fn main() {
     feed_router.register_input(FeedId::TERMINAL_RESIZE, input_tx);
     feed_router.register_input(FeedId::CODE_INPUT, code_input_relay_tx);
     feed_router.register_input(FeedId::SHELL_INPUT, shell_input_tx);
+    feed_router.register_input(FeedId::REFS_INPUT, refs_input_tx);
     feed_router.register_input(FeedId::FILETREE_QUERY, ft_input_tx);
     feed_router.register_input(FeedId::GIT_DIFF_QUERY, gd_input_tx);
     feed_router.register_input(FeedId::GIT_LOG_QUERY, gl_input_tx);

@@ -43,6 +43,10 @@ const PAYLOADS: ReadonlyArray<[string, AnnotationPayload]> = [
     "file path over a range",
     { kind: "file-path", path: "/repo/lib/a.ts", line: 10, endLine: 14 },
   ],
+  [
+    "file path at a match span",
+    { kind: "file-path", path: "/repo/lib/a.ts", line: 12, columns: [4, 13] },
+  ],
 ];
 
 describe("payload ↔ dataset round trip", () => {
@@ -52,6 +56,15 @@ describe("payload ↔ dataset round trip", () => {
       expect(payloadFromDataset(payload.kind, record)).toEqual(payload);
     });
   }
+
+  test("an empty match span is no span — a bare caret is the line reveal", () => {
+    expect(
+      payloadFromDataset("file-path", { path: "/a.ts", line: "3", columns: "5,5" }),
+    ).toEqual({ kind: "file-path", path: "/a.ts", line: 3 });
+    expect(
+      payloadFromDataset("file-path", { path: "/a.ts", line: "3", columns: "5" }),
+    ).toEqual({ kind: "file-path", path: "/a.ts", line: 3 });
+  });
 
   test("the dataset carries only the keys its kind needs", () => {
     expect(datasetForPayload({ kind: "url", url: "https://x.y" })).toEqual({

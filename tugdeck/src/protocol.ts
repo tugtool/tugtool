@@ -52,6 +52,10 @@ export const FeedId = {
   // Shell (reserved for Phase T2+)
   SHELL_OUTPUT: 0x60,
   SHELL_INPUT: 0x61,
+  // Refs (the /match and /search file-reference commands: streamed result
+  // rows down, search requests up)
+  REFS_OUTPUT: 0x62,
+  REFS_INPUT: 0x63,
   // Gazette (app-wide narration channel: Reporter/Operator/user posts down,
   // the card's questions up)
   GAZETTE: 0x70,

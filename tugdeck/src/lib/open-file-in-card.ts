@@ -92,6 +92,7 @@ export function openFileInCard(
   path: string,
   line?: number,
   endLine?: number,
+  columns?: readonly [number, number],
 ): void {
   // Every real open flows through here — record it for Open Recent
   // before the card work, so drops / Open Quickly / menu all feed it.
@@ -113,7 +114,7 @@ export function openFileInCard(
       commitMutation: () => store.activateCard(existing.cardId),
     });
     if (line !== undefined) {
-      existing.entry.revealLine(line, endLine);
+      existing.entry.revealLine(line, endLine, columns);
     }
     flashCardPane(store, existing.cardId);
     return;
@@ -124,7 +125,7 @@ export function openFileInCard(
   // card binds the file.
   const seed = {
     path,
-    revealOnOpen: line === undefined ? undefined : { line, endLine },
+    revealOnOpen: line === undefined ? undefined : { line, endLine, columns },
     scrollTop: 0,
   };
 

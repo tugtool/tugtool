@@ -1,0 +1,15 @@
+/* RefsResultBlock — a `/match` / `/search` run's refs ([P03]/[P08]).
+ * Composes the shared `BlockChrome` with no bespoke chrome of its own:
+ * header layout, right-aligned actions, and the expand/collapse chevron are
+ * the standard tool-block family, so a refs run reads as one of them. The
+ * command inherits the header's mono `--tugx-toolheader-detail` treatment
+ * via the `<code>` element.
+ *
+ * [L20]: the two body kinds this block hosts own their own tokens. Any
+ * instance tuning belongs here, cascade-scoped to `.refs-result-list`, never
+ * as a global override of `--tugx-paths-*` / `--tugx-search-*`. */
+
+.refs-result-command {
+  white-space: pre-wrap;
+  word-break: break-word;
+}

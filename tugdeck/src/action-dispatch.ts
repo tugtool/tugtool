@@ -80,6 +80,7 @@ import { publishListPulseLinesOk } from "./lib/pulse-store";
 import { publishListGazettePostsOk } from "./lib/gazette-store";
 import { cardServicesStore } from "./lib/card-services-store";
 import { pendingAskStore } from "./lib/pending-ask-store";
+import { applyRestoredRefs } from "./lib/refs-session-store";
 import { applyRestoredShellExchanges } from "./lib/shell-session-store";
 import {
   publishSessionUpdated,
@@ -1358,6 +1359,26 @@ export function initActionDispatch(
     applyRestoredShellExchanges(
       services.codeSessionStore,
       exchanges as ReadonlyArray<Record<string, unknown>>,
+    );
+  });
+
+  // list_refs_ok ([P05]): the refs-restore read for one session. The ledger
+  // keeps the latest run only, so `run` is that run or `null` for a session
+  // that has never searched. Re-minting it seats the `#r` block in the
+  // transcript and restores the list `/ref N` resolves against.
+  registerAction("list_refs_ok", (payload) => {
+    const sid = payload.tug_session_id;
+    if (typeof sid !== "string") {
+      console.warn("list_refs_ok: missing session id", payload);
+      return;
+    }
+    const services = cardServicesStore.getByTugSessionId(sid);
+    if (services === null) return;
+    const run = payload.run;
+    applyRestoredRefs(
+      services.codeSessionStore,
+      services.refsSessionStore,
+      typeof run === "object" && run !== null ? (run as Record<string, unknown>) : null,
     );
   });
 

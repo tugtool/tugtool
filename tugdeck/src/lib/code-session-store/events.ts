@@ -13,7 +13,7 @@
 import type { AtomSegment } from "../tug-atom-img";
 import type { ContentBlock } from "../../protocol";
 import type { PermissionMode } from "@tugproto/inbound";
-import type { ControlRequestForward, InterruptReason } from "./types";
+import type { ControlRequestForward, InterruptReason, TextRef } from "./types";
 
 /** Internal `send` action injected by `CodeSessionStore.send`. */
 /**
@@ -48,6 +48,30 @@ export interface ShellExchangeCompleteActionEvent {
   settledAtMs: number;
   /** True when the PATH classifier auto-routed this line to the shell ([P09]). */
   autoRouted?: boolean;
+}
+
+/**
+ * A `/match` or `/search` run's current state entered the transcript. NOT a
+ * wire event — `RefsSessionStore` folds `REFS_OUTPUT` and calls
+ * `codeSessionStore.ingestRefs`, which dispatches this.
+ *
+ * The event carries the run's WHOLE state, not a delta: the refs store owns
+ * the accumulating row list (it answers `/ref N` from the same list), so the
+ * transcript replaces its message rather than appending to it. One event
+ * shape covers mint, every streaming update, and settle.
+ */
+export interface RefsResultActionEvent {
+  type: "refs_result";
+  runId: string;
+  opKind: "match" | "search";
+  command: string;
+  root: string;
+  refs: ReadonlyArray<TextRef>;
+  inFlight: boolean;
+  cancelled: boolean;
+  notice: string | null;
+  startedAtMs: number;
+  settledAtMs: number | null;
 }
 
 export interface SendActionEvent {
@@ -1372,4 +1396,5 @@ export type CodeSessionEvent =
   | RequestRewindPreviewActionEvent
   | SessionRewindActionEvent
   | ShellExchangeStartedActionEvent
-  | ShellExchangeCompleteActionEvent;
+  | ShellExchangeCompleteActionEvent
+  | RefsResultActionEvent;

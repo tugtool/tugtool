@@ -1142,6 +1142,11 @@ pub struct AgentSupervisor {
     /// that don't exercise the shell restore path — the read yields an empty
     /// array. Set via [`AgentSupervisor::set_shell_ledger`] in `main.rs`.
     pub shell_ledger: Option<Arc<crate::shell_ledger::ShellLedger>>,
+    /// The refs ledger, read by the `list_refs` CONTROL op (the refs
+    /// dispatcher writes it; the supervisor reads it). `None` in tests that
+    /// don't exercise refs restore — the read yields a null run. Set via
+    /// [`AgentSupervisor::set_refs_ledger`] in `main.rs`.
+    pub refs_ledger: Option<Arc<crate::refs_ledger::RefsLedger>>,
     /// The changeset scribe ([P11]/[P21]) — spawner + model resolver behind the
     /// maintained-draft engine. `None` (tests, or a boot without wiring) makes
     /// [`AgentSupervisor::start_draft_engine`] a no-op. Set via
@@ -2639,6 +2644,7 @@ impl AgentSupervisor {
             sessions_recorder,
             session_ledger,
             shell_ledger: None,
+            refs_ledger: None,
             scribe: None,
             spawner_factory,
             merger_register_tx,
@@ -3019,6 +3025,19 @@ impl AgentSupervisor {
                     })
                     .unwrap_or_default();
                 self.do_list_shell_exchanges(&tug_session_id).await;
+                Ok(())
+            }
+            "list_refs" => {
+                // Session-scoped read — the deck's refs-restore fetch.
+                let tug_session_id = serde_json::from_slice::<serde_json::Value>(payload)
+                    .ok()
+                    .and_then(|v| {
+                        v.get("tug_session_id")
+                            .and_then(|s| s.as_str())
+                            .map(String::from)
+                    })
+                    .unwrap_or_default();
+                self.do_list_refs(&tug_session_id).await;
                 Ok(())
             }
             // Any action not above is not owned by the supervisor.
@@ -6078,6 +6097,12 @@ impl AgentSupervisor {
         self.shell_ledger = Some(ledger);
     }
 
+    /// Attach the refs ledger (the read side of the `list_refs` CONTROL op).
+    /// Called once in `main.rs` before the supervisor is shared.
+    pub fn set_refs_ledger(&mut self, ledger: Arc<crate::refs_ledger::RefsLedger>) {
+        self.refs_ledger = Some(ledger);
+    }
+
     /// Attach the changeset scribe (the maintained-draft engine's backend).
     /// Called once in `main.rs` before the supervisor is shared.
     pub fn set_scribe(&mut self, scribe: ScribeContext) {
@@ -6121,6 +6146,31 @@ impl AgentSupervisor {
         let _ = self.control_tx.send(Frame::new(
             FeedId::CONTROL,
             serde_json::to_vec(&body).expect("list_shell_exchanges_ok serializes"),
+        ));
+    }
+
+    /// Handle a `list_refs { tug_session_id }` CONTROL request — the deck's
+    /// refs-restore read. Broadcasts `list_refs_ok { tug_session_id, run }`,
+    /// where `run` is the session's latest completed run or `null` (a missing
+    /// ledger, or a session that has never searched).
+    async fn do_list_refs(&self, tug_session_id: &str) {
+        let run = self
+            .refs_ledger
+            .as_ref()
+            .and_then(|ledger| {
+                ledger.list_refs(tug_session_id).unwrap_or_else(|err| {
+                    warn!(error = %err, %tug_session_id, "list_refs failed");
+                    None
+                })
+            });
+        let body = serde_json::json!({
+            "action": "list_refs_ok",
+            "tug_session_id": tug_session_id,
+            "run": run,
+        });
+        let _ = self.control_tx.send(Frame::new(
+            FeedId::CONTROL,
+            serde_json::to_vec(&body).expect("list_refs_ok serializes"),
         ));
     }
 
@@ -12776,6 +12826,84 @@ mod tests {
         assert_eq!(exchanges[1]["command"], "false");
         assert_eq!(exchanges[1]["exit_code"], 1);
         assert_eq!(exchanges[1]["seq"], 2);
+    }
+
+    /// `list_refs { tug_session_id }` broadcasts `list_refs_ok
+    /// { tug_session_id, run }` carrying the session's latest completed run —
+    /// the deck's refs-restore read. A session that has never searched gets a
+    /// null run rather than an error.
+    #[tokio::test]
+    async fn list_refs_returns_the_sessions_latest_run() {
+        let refs_ledger = Arc::new(crate::refs_ledger::RefsLedger::open_in_memory().unwrap());
+        refs_ledger
+            .record_run(&crate::refs_ledger::NewRefsRun {
+                tug_session_id: "s1".to_string(),
+                run_id: "run-1".to_string(),
+                op_kind: "search".to_string(),
+                command: "/search needle".to_string(),
+                refs: vec![crate::feeds::text_ref::TextRef::content(
+                    1,
+                    "src/a.ts",
+                    12,
+                    vec![(4, 10)],
+                    "    needle",
+                )],
+                settled_at_ms: 7,
+            })
+            .unwrap();
+
+        let ledger = Arc::new(SessionLedger::open_in_memory().expect("ledger open"));
+        let (state_tx, _s) = broadcast::channel(64);
+        let (meta_tx, _m) = broadcast::channel(8);
+        let (code_tx, _c) = broadcast::channel(8);
+        let (control_tx, mut rx) = broadcast::channel(128);
+        let recorder: Arc<dyn SessionsRecorder> = Arc::new(LedgerSessionsRecorder::with_broadcast(
+            Arc::clone(&ledger),
+            control_tx.clone(),
+        ));
+        let (mut sup, mut register_rx) = AgentSupervisor::new_with_ledger(
+            SessionScopedFeed::from_sender(FeedId::SESSION_STATE, state_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::SESSION_SIDEBAND, meta_tx, LagPolicy::Warn),
+            SessionScopedFeed::from_sender(FeedId::CODE_OUTPUT, code_tx, LagPolicy::Warn),
+            SessionScopedFeed::new(FeedId::ACTIVITY, 64, LagPolicy::Warn),
+            control_tx,
+            recorder,
+            Some(Arc::clone(&ledger)),
+            stall_spawner_factory(),
+            AgentSupervisorConfig::default(),
+            Arc::new(WorkspaceRegistry::new_for_test()),
+            CancellationToken::new(),
+        );
+        sup.set_refs_ledger(Arc::clone(&refs_ledger));
+        tokio::spawn(async move { while register_rx.recv().await.is_some() {} });
+
+        let ask = |session: &str| {
+            serde_json::to_vec(&serde_json::json!({
+                "action": "list_refs",
+                "tug_session_id": session,
+            }))
+            .unwrap()
+        };
+
+        sup.handle_control("list_refs", &ask("s1"), 10)
+            .await
+            .expect_handled();
+        let response = drain_until_action(&mut rx, "list_refs_ok");
+        assert_eq!(response["tug_session_id"], "s1");
+        assert_eq!(response["run"]["run_id"], "run-1");
+        assert_eq!(response["run"]["op_kind"], "search");
+        assert_eq!(response["run"]["refs"][0]["path"], "src/a.ts");
+        assert_eq!(response["run"]["refs"][0]["line"], 12);
+        assert_eq!(
+            response["run"]["refs"][0]["columns"],
+            serde_json::json!([[4, 10]]),
+        );
+
+        sup.handle_control("list_refs", &ask("s-never"), 10)
+            .await
+            .expect_handled();
+        let empty = drain_until_action(&mut rx, "list_refs_ok");
+        assert!(empty["run"].is_null());
     }
 
     /// `list_gazette_posts` broadcasts `list_gazette_posts_ok { posts: [...] }`

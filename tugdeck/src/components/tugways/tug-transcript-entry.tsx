@@ -68,7 +68,14 @@
 import "./tug-transcript-entry.css";
 
 import React from "react";
-import { Bot, GitCommitHorizontal, Newspaper, Shell, User } from "lucide-react";
+import {
+  Bot,
+  GitCommitHorizontal,
+  ListTree,
+  Newspaper,
+  Shell,
+  User,
+} from "lucide-react";
 
 import { Operator } from "@/components/tugways/tug-icons";
 import { cn } from "@/lib/utils";
@@ -87,6 +94,7 @@ export type Participant =
   | "user"
   | "assistant"
   | "shell"
+  | "refs"
   | "git"
   | "reporter"
   | "operator";
@@ -98,6 +106,7 @@ export type Participant =
  *   - `User` for `user` — the human in the session.
  *   - `Bot` for `assistant` — Claude / the AI.
  *   - `Shell` for `shell` — shell command output.
+ *   - `ListTree` for `refs` — a `/match` or `/search` run's file references.
  *   - `GitCommitHorizontal` for `git` — a git operation on the repo (the
  *     `/commit` receipt), attributed to git rather than to the shell that
  *     carried it.
@@ -123,6 +132,7 @@ const PARTICIPANT_ICONS: Record<Participant, React.ReactNode> = {
   user: <User size={ICON_PIXEL_SIZE} />,
   assistant: <Bot size={ICON_PIXEL_SIZE} />,
   shell: <Shell size={ICON_PIXEL_SIZE} />,
+  refs: <ListTree size={ICON_PIXEL_SIZE} />,
   git: <GitCommitHorizontal size={ICON_PIXEL_SIZE} />,
   // The Gazette's two voices: the Reporter narrates sessions, the Operator
   // answers questions. Both read at transcript scale, so they live in the
@@ -188,15 +198,17 @@ export interface TugTranscriptEntryProps {
 /**
  * Who an entry is attributed to. Drives the address prefix: `u` user,
  * `a` assistant (a wake/cron turn is the assistant speaking, so it is `a`
- * too), `x` other (reserved), `s` shell (reserved).
+ * too), `x` other (reserved), `s` shell, `r` refs (a `/match` or `/search`
+ * run — the number `/ref N` resolves against).
  */
-export type TurnSpeaker = "user" | "assistant" | "other" | "shell";
+export type TurnSpeaker = "user" | "assistant" | "other" | "shell" | "refs";
 
 const TURN_SPEAKER_PREFIX: Record<TurnSpeaker, string> = {
   user: "u",
   assistant: "a",
   other: "x",
   shell: "s",
+  refs: "r",
 };
 
 /** Human-readable speaker noun for the sequence badge's accessible name. */
@@ -205,6 +217,7 @@ const SPEAKER_ARIA_NOUN: Record<TurnSpeaker, string> = {
   assistant: "Assistant",
   other: "Entry",
   shell: "Shell",
+  refs: "Refs",
 };
 
 /**

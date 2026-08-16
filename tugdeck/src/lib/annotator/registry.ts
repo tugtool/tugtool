@@ -194,6 +194,7 @@ function openTargetFor(payload: AnnotationPayload): Record<string, unknown> | nu
   const target: Record<string, unknown> = { path: payload.path };
   if (payload.line !== undefined) target.line = payload.line;
   if (payload.endLine !== undefined) target.endLine = payload.endLine;
+  if (payload.columns !== undefined) target.columns = payload.columns;
   return target;
 }
 

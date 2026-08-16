@@ -40,15 +40,27 @@ export interface TextCardOpenEntry {
   /**
    * Reveal line(s) and momentarily flash them in the theme accent —
    * caret at `line` (1-based), a fading accent wash over `line`..`endLine`
-   * (or just `line`). No persistent selection.
+   * (or just `line`). No persistent selection. A `columns` pair narrows the
+   * wash to a character range within `line` — 0-based and half-open, the
+   * shape a search ref's match span arrives in.
    */
-  revealLine(line: number, endLine?: number): void;
+  revealLine(
+    line: number,
+    endLine?: number,
+    columns?: readonly [number, number],
+  ): void;
   /**
    * Rebind this card to a different file (the "reuse frontmost card"
    * open target). Flushes any pending edits to the current file first,
-   * then reads `path` and reveals `line`..`endLine` (1-based) if given.
+   * then reads `path` and reveals `line`..`endLine` (1-based) if given,
+   * narrowed to `columns` within `line` when the reference names a span.
    */
-  openFile(path: string, line?: number, endLine?: number): void;
+  openFile(
+    path: string,
+    line?: number,
+    endLine?: number,
+    columns?: readonly [number, number],
+  ): void;
 }
 
 const entries = new Map<string, TextCardOpenEntry>();

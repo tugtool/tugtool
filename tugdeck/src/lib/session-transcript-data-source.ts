@@ -101,6 +101,7 @@ import type {
   UserMessage,
 } from "@/lib/code-session-store";
 import type { TurnOrigin } from "@/lib/code-session-store/types";
+import { isInkOrigin } from "@/lib/code-session-store/types";
 import { deriveContextWindows } from "@/lib/code-session-store/end-state";
 import type { ContextWindowStep } from "@/lib/code-session-store/end-state";
 import { agentTokensForTurn } from "@/lib/code-session-store/select-jobs";
@@ -139,7 +140,12 @@ import type { TugListViewDataSource } from "@/components/tugways/tug-list-view";
  * unmounts and the in-flight pair (keyed `${turnKey}-user` / `-assistant`)
  * mounts — a real queued -> sent transition, correctly a remount.
  */
-export type SessionTranscriptCellKind = "user" | "assistant" | "ghost" | "shell";
+export type SessionTranscriptCellKind =
+  | "user"
+  | "assistant"
+  | "ghost"
+  | "shell"
+  | "refs";
 
 /**
  * Typed row descriptor returned by `rowAt(index)`. Cell renderers
@@ -232,7 +238,7 @@ export interface SessionRowDescriptor {
  * Messages, rendered inline.
  */
 export interface RowGroup {
-  kind: "user" | "assistant" | "shell";
+  kind: "user" | "assistant" | "shell" | "refs";
   /** Inclusive start index into the turn's `messages`. */
   start: number;
   /**
@@ -260,10 +266,13 @@ export function walkTurnGroups(
   ensureTrailingAssistant: boolean,
   origin?: TurnOrigin,
 ): RowGroup[] {
-  // A `shell`-origin turn is a single exchange row — never split into
-  // user/assistant runs ([P06]). Its one `shell_exchange` message is the row.
+  // An ink turn is a single row — never split into user/assistant runs
+  // ([P06]). Its one message (a shell exchange, a refs run) is the row.
   if (origin === "shell") {
     return [{ kind: "shell", start: 0, end: messages.length }];
+  }
+  if (origin === "refs") {
+    return [{ kind: "refs", start: 0, end: messages.length }];
   }
   const groups: RowGroup[] = [];
   const n = messages.length;
@@ -338,6 +347,14 @@ export interface RowSlot {
    * is always loaded and the count is complete and durable.
    */
   shellRowOrdinal: number;
+  /**
+   * 1-based ordinal of this `refs` row — the number behind its `#r{n}`
+   * badge; `0` for a non-refs row. Assigned in the same single pass as
+   * {@link shellRowOrdinal} and complete for the same reason: the refs
+   * ledger restores the session's latest run whole, so every refs row is
+   * always loaded.
+   */
+  refsRowOrdinal: number;
 }
 
 /**
@@ -399,6 +416,7 @@ function pushTurnSlots(
       // cross-turn running count, and only committed turns can be
       // shell rows); `0` until then and for non-shell rows.
       shellRowOrdinal: 0,
+      refsRowOrdinal: 0,
     });
     if (isAssistant) assistantOrdinal += 1;
     if (isUser) userOrdinal += 1;
@@ -437,11 +455,17 @@ function buildCommittedLayout(
   // `#s1`, `#s2`, … a sequence of its own, independent of the Claude turns
   // interleaved among them. Only committed turns can be shell rows, so
   // the numbering lives entirely in this walk.
+  // The refs rows carry their own `#r` sequence in the same pass, for the
+  // same reason: the refs ledger restores the session's latest run whole.
   let shellCount = 0;
+  let refsCount = 0;
   for (const slot of slots) {
     if (slot.cellKind === "shell") {
       shellCount += 1;
       slot.shellRowOrdinal = shellCount;
+    } else if (slot.cellKind === "refs") {
+      refsCount += 1;
+      slot.refsRowOrdinal = refsCount;
     }
   }
   return { slots, turnStartRow, turnRowCount };
@@ -468,20 +492,20 @@ interface PendingItem {
  * transcript's tail isn't shell or every trailing shell row predates the
  * submission.
  *
- * The walk mirrors `appendTurnInterleavingShell` in the reducer exactly:
+ * The walk mirrors `appendTurnInterleavingInk` in the reducer exactly:
  * it stops at the first non-shell turn, and it moves a shell row only when
  * that row's timestamp is strictly greater. Because it is the same rule,
  * the row lands live where the commit will later seat it — no re-order,
  * no jump, at `turn_complete`.
  */
-function trailingShellAfter(
+function trailingInkAfter(
   transcript: ReadonlyArray<TurnEntry>,
   firstSubmitAt: number,
 ): number[] {
   const moved: number[] = [];
   for (let t = transcript.length - 1; t >= 0; t--) {
     const turn = transcript[t];
-    if (turn.origin !== "shell") break;
+    if (!isInkOrigin(turn.origin)) break;
     if (turnSortTs(turn) <= firstSubmitAt) break;
     moved.push(t);
   }
@@ -539,7 +563,7 @@ function composeRowLayout(
     };
   }
 
-  const moved = trailingShellAfter(snap.transcript, pending[0].submitAt);
+  const moved = trailingInkAfter(snap.transcript, pending[0].submitAt);
   const cutRow =
     moved.length === 0
       ? committed.slots.length
@@ -553,18 +577,18 @@ function composeRowLayout(
   let activeStartRow = -1;
   let ghostStartRow = -1;
   let m = 0;
-  const emitShell = (turnIndex: number): void => {
+  const emitInk = (turnIndex: number): void => {
     movedStartRow[turnIndex] = cutRow + tail.length;
-    // A shell turn is exactly one row, so its slot is the one at its start.
+    // An ink turn is exactly one row, so its slot is the one at its start.
     tail.push(committed.slots[committed.turnStartRow[turnIndex]]);
     m += 1;
   };
   for (const item of pending) {
-    // Shell rows that started before (or exactly at) this submission belong
+    // Ink rows that started before (or exactly at) this submission belong
     // above it — the reducer slides a committing turn left only past rows
     // strictly newer than itself.
     while (m < moved.length && turnSortTs(snap.transcript[moved[m]]) <= item.submitAt) {
-      emitShell(moved[m]);
+      emitInk(moved[m]);
     }
     if (item.kind === "active") {
       activeStartRow = cutRow + tail.length;
@@ -581,10 +605,11 @@ function composeRowLayout(
       userRowOrdinal: -1,
       isLastAssistantOfTurn: false,
       shellRowOrdinal: 0,
+      refsRowOrdinal: 0,
     });
   }
   // Anything left is newer than every pending submission — it sits at the foot.
-  while (m < moved.length) emitShell(moved[m]);
+  while (m < moved.length) emitInk(moved[m]);
 
   const slots = committed.slots.slice(0, cutRow).concat(tail);
   return {
@@ -896,6 +921,16 @@ export class SessionTranscriptDataSource implements TugListViewDataSource {
   }
 
   /**
+   * 1-based session-wide refs counter for a `refs` row — the number behind
+   * its `#r{n}` badge. Its own sequence, on the same terms as
+   * {@link shellOrdinalForRow}. `0` for a non-refs / out-of-range row.
+   */
+  refsOrdinalForRow(index: number): number {
+    const slot = this.layout(this._codeSessionStore.getSnapshot()).slots[index];
+    return slot?.refsRowOrdinal ?? 0;
+  }
+
+  /**
    * Stable React-key seed per the id-stability protocol, derived from
    * the row's {@link RowSlot}:
    *
@@ -1020,6 +1055,11 @@ export class SessionTranscriptDataSource implements TugListViewDataSource {
     // single `shell_exchange` Message off `turn.messages[0]`.
     if (slot.cellKind === "shell") {
       return { kind: "shell", turn, turnKey: turn.turnKey };
+    }
+    // Refs run — one row, the whole turn; the cell reads the single
+    // `refs_result` Message off `turn.messages[0]`.
+    if (slot.cellKind === "refs") {
+      return { kind: "refs", turn, turnKey: turn.turnKey };
     }
     if (slot.cellKind === "user") {
       return {

@@ -63,8 +63,8 @@ import {
   deriveActiveTurnSnapshot,
   reduce,
   truncateTranscriptAtAnchor,
-  upsertShellTurn,
-  appendTurnInterleavingShell,
+  upsertInkTurn,
+  appendTurnInterleavingInk,
   systemNoteKey,
   type CodeSessionState,
 } from "./code-session-store/reducer";
@@ -75,7 +75,10 @@ import {
   invalidateCachedParsesByPrefix,
 } from "./markdown/parse-cache";
 import { tugDevLogStore } from "./tug-dev-log-store/tug-dev-log-store";
-import type { CodeSessionEvent } from "./code-session-store/events";
+import type {
+  CodeSessionEvent,
+  RefsResultActionEvent,
+} from "./code-session-store/events";
 import type { Effect } from "./code-session-store/effects";
 import { publishLocalSessionStateChange } from "./session-state-changes-local-events";
 import type {
@@ -988,6 +991,18 @@ export class CodeSessionStore {
         autoRouted: event.autoRouted,
       });
     }
+  }
+
+  /**
+   * Mint / update a `/match` or `/search` run as a `refs`-origin transcript
+   * turn. Called by `RefsSessionStore` — which owns the `REFS_OUTPUT` feed —
+   * on every frame of a run, carrying the run's whole current state. This is
+   * the ONLY way refs content enters the transcript; `REFS_OUTPUT` is
+   * deliberately absent from the code-session feed filter.
+   */
+  ingestRefs(event: Omit<RefsResultActionEvent, "type">): void {
+    if (this._disposed) return;
+    this.dispatch({ type: "refs_result", ...event });
   }
 
   /**
@@ -2432,18 +2447,18 @@ export class CodeSessionStore {
             // JSONL replay, so a bare append would strand the replayed Claude
             // turn behind shell rows it chronologically precedes. The helper
             // only slides past trailing shell turns; non-shell order is intact.
-            this._transcript = appendTurnInterleavingShell(
+            this._transcript = appendTurnInterleavingInk(
               this._transcript,
               effect.entry,
             );
           }
           break;
-        case "ingest-shell-turn":
+        case "ingest-ink-turn":
           // Shell exchange ([P06]/[P12]): upsert the turn — settle in place
           // (same turnKey) or insert at its timestamp position (mint /
           // restore interleave). Copy-on-write, disjoint from the Claude
           // turn lifecycle.
-          this._transcript = upsertShellTurn(this._transcript, effect.entry);
+          this._transcript = upsertInkTurn(this._transcript, effect.entry);
           break;
         case "flush-prepend":
           // Commit the staged older batch ahead of the existing

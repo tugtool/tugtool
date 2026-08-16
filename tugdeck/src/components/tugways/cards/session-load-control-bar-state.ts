@@ -20,6 +20,9 @@
  * @module components/tugways/cards/session-load-control-bar-state
  */
 
+import type { TurnOrigin } from "@/lib/code-session-store/types";
+import { isInkOrigin } from "@/lib/code-session-store/types";
+
 /** Which load is in flight (drives progress source). */
 export type ControlBarLoadKind = "restore" | "previous";
 
@@ -42,15 +45,19 @@ export function deriveControlBarState(input: ControlBarInputs): ControlBarState 
 }
 
 /**
- * Claude turns among the loaded rows. Shell exchanges ride the same
- * transcript as `#s` non-context ink ([D111]) and are not conversation
- * turns, so they must not count toward the `X of Y` metric whose `Y` is
- * the segmentation engine's Claude-turn count.
+ * Claude turns among the loaded rows. Ink turns — shell exchanges (`#s`)
+ * and refs runs (`#r`) — ride the same transcript as non-context ink
+ * ([D111]) and are not conversation turns, so they must not count toward
+ * the `X of Y` metric whose `Y` is the segmentation engine's Claude-turn
+ * count. Counting them reads a shell-heavy session as "83 of 68".
  */
 export function countClaudeTurns(
   transcript: ReadonlyArray<{ origin?: string }>,
 ): number {
-  return transcript.reduce((n, turn) => (turn.origin === "shell" ? n : n + 1), 0);
+  return transcript.reduce(
+    (n, turn) => (turn.origin !== undefined && isInkOrigin(turn.origin as TurnOrigin) ? n : n + 1),
+    0,
+  );
 }
 
 /** The metadata row's right-side status, derived from the loaded window. */

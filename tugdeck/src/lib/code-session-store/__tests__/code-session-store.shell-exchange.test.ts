@@ -16,8 +16,8 @@ import { ConnectionLifecycle } from "@/lib/connection-lifecycle";
 import { TestFrameChannel } from "@/lib/code-session-store/testing/mock-feed-store";
 import { FIXTURE_IDS } from "@/lib/code-session-store/testing/golden-catalog";
 import {
-  appendTurnInterleavingShell,
-  upsertShellTurn,
+  appendTurnInterleavingInk,
+  upsertInkTurn,
 } from "@/lib/code-session-store/reducer";
 import type {
   ShellExchangeMessage,
@@ -173,7 +173,7 @@ describe("ingestShellExchange — mint on started, settle in place on complete",
   });
 });
 
-describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
+describe("upsertInkTurn — timestamp interleave + settle-in-place", () => {
   function mkTurn(key: string, ts: number, origin: "shell" | "user" = "shell"): TurnEntry {
     return {
       turnKey: key,
@@ -219,14 +219,14 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
     const a = mkTurn("a", 100);
     const c = mkTurn("c", 300);
     const b = mkTurn("b", 200);
-    const out = upsertShellTurn([a, c], b);
+    const out = upsertInkTurn([a, c], b);
     expect(out.map((t) => t.turnKey)).toEqual(["a", "b", "c"]);
   });
 
   it("a tie inserts AFTER existing turns (live append)", () => {
     const a = mkTurn("a", 100);
     const b = mkTurn("b", 100);
-    const out = upsertShellTurn([a], b);
+    const out = upsertInkTurn([a], b);
     expect(out.map((t) => t.turnKey)).toEqual(["a", "b"]);
   });
 
@@ -236,15 +236,15 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
     const c = mkTurn("c", 300);
     const bSettled = mkTurn("b", 200);
     (bSettled.messages[0] as ShellExchangeMessage).exitCode = 0;
-    const out = upsertShellTurn([a, b, c], bSettled);
+    const out = upsertInkTurn([a, b, c], bSettled);
     expect(out.map((t) => t.turnKey)).toEqual(["a", "b", "c"]);
     expect((out[1].messages[0] as ShellExchangeMessage).exitCode).toBe(0);
   });
 
   it("is idempotent — re-upserting the same settled turn does not duplicate", () => {
     const a = mkTurn("a", 100);
-    const out1 = upsertShellTurn([], a);
-    const out2 = upsertShellTurn(out1, a);
+    const out1 = upsertInkTurn([], a);
+    const out2 = upsertInkTurn(out1, a);
     expect(out2.length).toBe(1);
   });
 
@@ -254,14 +254,14 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
   // stream (39% of real sessions are non-monotonic in timestamp), so this
   // helper never reorders two non-shell turns; it only slides the appended
   // turn past a run of trailing *shell* turns with a greater timestamp.
-  describe("appendTurnInterleavingShell — Claude append vs restored shell rows", () => {
+  describe("appendTurnInterleavingInk — Claude append vs restored shell rows", () => {
     it("the reload race: shells restored first, a Claude turn replays behind them", () => {
       // Ledger restore seated three shell rows (later ts) into an empty
       // transcript; the JSONL replay's Claude turn (earlier ts) then appends.
       const s1 = mkTurn("s1", 200);
       const s2 = mkTurn("s2", 300);
       const claude = mkTurn("claude", 100, "user");
-      const out = appendTurnInterleavingShell([s1, s2], claude);
+      const out = appendTurnInterleavingInk([s1, s2], claude);
       expect(out.map((t) => t.turnKey)).toEqual(["claude", "s1", "s2"]);
     });
 
@@ -269,7 +269,7 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
       const s1 = mkTurn("s1", 100);
       const s2 = mkTurn("s2", 300);
       const claude = mkTurn("claude", 200, "user");
-      const out = appendTurnInterleavingShell([s1, s2], claude);
+      const out = appendTurnInterleavingInk([s1, s2], claude);
       expect(out.map((t) => t.turnKey)).toEqual(["s1", "claude", "s2"]);
     });
 
@@ -279,7 +279,7 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
       const c1 = mkTurn("c1", 500, "user");
       const s1 = mkTurn("s1", 300);
       const c2 = mkTurn("c2", 100, "user");
-      const out = appendTurnInterleavingShell([c1, s1], c2);
+      const out = appendTurnInterleavingInk([c1, s1], c2);
       // c2 slides past the trailing shell (300 > 100) but stops at c1.
       expect(out.map((t) => t.turnKey)).toEqual(["c1", "c2", "s1"]);
     });
@@ -287,14 +287,14 @@ describe("upsertShellTurn — timestamp interleave + settle-in-place", () => {
     it("a live Claude turn (newest ts, no trailing shells) is a plain append", () => {
       const c1 = mkTurn("c1", 100, "user");
       const c2 = mkTurn("c2", 200, "user");
-      const out = appendTurnInterleavingShell([c1], c2);
+      const out = appendTurnInterleavingInk([c1], c2);
       expect(out.map((t) => t.turnKey)).toEqual(["c1", "c2"]);
     });
 
     it("a tie against a trailing shell stays after it (append-on-equal)", () => {
       const s1 = mkTurn("s1", 100);
       const claude = mkTurn("claude", 100, "user");
-      const out = appendTurnInterleavingShell([s1], claude);
+      const out = appendTurnInterleavingInk([s1], claude);
       expect(out.map((t) => t.turnKey)).toEqual(["s1", "claude"]);
     });
   });

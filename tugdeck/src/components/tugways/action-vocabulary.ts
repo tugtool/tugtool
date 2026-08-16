@@ -709,7 +709,9 @@ export const TUG_ACTIONS = {
   // RELOAD_FROM_DISK:       payload — none. Reload the on-disk version,
   //                         discarding edits (confirm sheet only while
   //                         dirty). File ▸ Reload from Disk.
-  // OPEN_FILE:              payload — `{ path: string, line?: number, endLine?: number }`
+  // OPEN_FILE:              payload — `{ path: string, line?: number, endLine?: number,
+  //                         columns?: [number, number] }` — or `{ targets: [...] }`
+  //                         to open several references as ONE gesture (`/ref 1-5`);
   //                         via `dispatchCommand` / Control frames, or a
   //                         chain dispatch whose `value` is the path
   //                         string (context-menu items). Open `path` in

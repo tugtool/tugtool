@@ -129,6 +129,13 @@ impl FeedId {
     /// Shell command input (tugdeck → tugcast)
     pub const SHELL_INPUT: Self = Self(0x61);
 
+    // -- Refs (the match/search file-reference commands) --
+    /// Streaming search results (tugcast → tugdeck): `refs_started`,
+    /// `refs_rows` batches, `refs_complete`, one run at a time per session.
+    pub const REFS_OUTPUT: Self = Self(0x62);
+    /// Search requests (tugdeck → tugcast): `match`, `search`, `cancel`.
+    pub const REFS_INPUT: Self = Self(0x63);
+
     // -- Gazette (app-wide narration channel) --
     /// Gazette posts (tugcast → tugdeck): one `GazettePost` per frame, from
     /// any of the channel's three authors — the Reporter's session digests,
@@ -208,6 +215,8 @@ impl FeedId {
             Self::JOTS => Some("Jots"),
             Self::SHELL_OUTPUT => Some("ShellOutput"),
             Self::SHELL_INPUT => Some("ShellInput"),
+            Self::REFS_OUTPUT => Some("RefsOutput"),
+            Self::REFS_INPUT => Some("RefsInput"),
             Self::GAZETTE => Some("Gazette"),
             Self::GAZETTE_INPUT => Some("GazetteInput"),
             Self::CONTROL => Some("Control"),
@@ -509,6 +518,10 @@ mod tests {
         assert_eq!(FeedId::SESSION_STATE.name(), Some("SessionState"));
         assert_eq!(FeedId::SHELL_OUTPUT.as_byte(), 0x60);
         assert_eq!(FeedId::SHELL_INPUT.as_byte(), 0x61);
+        assert_eq!(FeedId::REFS_OUTPUT.as_byte(), 0x62);
+        assert_eq!(FeedId::REFS_INPUT.as_byte(), 0x63);
+        assert_eq!(FeedId::REFS_OUTPUT.name(), Some("RefsOutput"));
+        assert_eq!(FeedId::REFS_INPUT.name(), Some("RefsInput"));
         assert_eq!(FeedId::USAGE.as_byte(), 0x90);
         assert_eq!(FeedId::USAGE_QUERY.as_byte(), 0x91);
         assert_eq!(FeedId::USAGE.name(), Some("Usage"));
