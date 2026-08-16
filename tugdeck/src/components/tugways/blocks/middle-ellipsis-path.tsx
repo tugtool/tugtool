@@ -8,10 +8,9 @@
  * end-truncating away the filename or growing a scrollbar.
  *
  * The truncation itself is `TugPath`'s — the same mechanism the document
- * masthead's path line wears, authored once. What this adds is the tool
- * block's own: the `<code>` slot and mono face, transcript Find, the
- * tooltip, and a FIXED tail length, because these paths stand in a column
- * where a per-filename split would ragged the tails.
+ * masthead's path line wears, authored once, splitting at the last separator
+ * so the whole filename is pinned. What this adds is the tool block's own:
+ * the `<code>` slot and mono face, transcript Find, and the tooltip.
  *
  * A hover tooltip surfaces the full path, but only when it is actually
  * clipped: `TugTooltip`'s `suppressOpen` gate runs `pathTooltipSuppressed`
@@ -44,13 +43,15 @@ import React from "react";
 import { TugTooltip } from "@/components/tugways/tug-tooltip";
 import { TugPath, pathHeadClipped } from "@/components/tugways/tug-path";
 
-/**
- * Number of trailing characters of the path kept unshrinkable so the
- * filename (and a little of its directory) always stays legible. A
- * fixed count rather than the filename, because these paths stand in a
- * COLUMN and a per-row split would ragged the tails.
+/*
+ * The tail is the FILENAME — `TugPath`'s default split, at the last
+ * separator. A fixed character count stood here once, to keep a column of
+ * paths ragged-free, and it bought that evenness by cutting filenames
+ * mid-word: a 20-char tail turns `…/tug-text-editor-selection-suppress.test.ts`
+ * into `ion-suppress.test.ts` and then clips THAT, so the row truncates twice
+ * and names nothing. A ragged right edge is a cosmetic cost; an unreadable
+ * filename defeats the list.
  */
-const PATH_TAIL_LENGTH = 20;
 
 /**
  * Tooltip-suppression predicate for the path: suppress (return `true`)
@@ -108,7 +109,7 @@ export function MiddleEllipsisPath({
         className="tool-block-path"
         data-tugx-findable={findable ? "" : undefined}
       >
-        <TugPath path={path} tailLength={PATH_TAIL_LENGTH} />
+        <TugPath path={path} />
       </code>
     </TugTooltip>
   );

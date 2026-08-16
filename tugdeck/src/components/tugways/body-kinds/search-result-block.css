@@ -77,6 +77,9 @@ body {
   --tugx-search-gutter-text:      var(--tug7-element-indicator-text-normal-plain-rest);
   --tugx-search-gutter-padding-x: var(--tug-space-sm);
   --tugx-search-gutter-min-width: 3.5em;
+  /* The gutter's own hover surface — the row's wash cannot show through an
+   * opaque column, so the column carries it too. */
+  --tugx-search-gutter-hover-bg: var(--tug7-surface-highlight-primary-normal-hover-rest);
 
   /* The producer's number for a row — the handle a user types back
    * (`/ref 5`). It wears the link tone, because that is what it is: an
@@ -218,6 +221,12 @@ body {
   background: var(--tugx-block-row-hover-bg);
 }
 
+/* Same rule as the path list: the file's NAME is what the header is for, so
+   the directory chain absorbs the whole shrink and the name never clips. */
+.tugx-search-file .tug-path-tail {
+  flex-shrink: 0;
+}
+
 /* Twist chevron — muted, fixed-width so paths align across rows. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-search-twist {
@@ -241,6 +250,26 @@ body {
 /* One match — the matched line bracketed by its context lines. */
 .tugx-search-match {
   display: block;
+}
+
+/* A match row the host opted into opening is live, and has to look it: the
+   pointer and the hover wash are the only warning a click will do something,
+   and a row that acts without saying so first reads as a misfire. Keyed on
+   the annotation the row stamps, so a display-only Grep result stays inert. */
+.tugx-search-match[data-tug-annotation="file-path"] {
+  cursor: pointer;
+}
+
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-search-match[data-tug-annotation="file-path"]:hover {
+  background: var(--tugx-block-row-hover-bg);
+}
+
+/* The gutter paints its own surface, so the row's wash cannot reach it —
+   it lifts to the same highlight itself, and the row lights as one thing. */
+/* @tug-renders-on: --tugx-search-gutter-bg */
+.tugx-search-match[data-tug-annotation="file-path"]:hover .tugx-search-lineno {
+  background: var(--tugx-search-gutter-hover-bg);
 }
 
 /* One rendered line — the ref-number column (when the producer numbered

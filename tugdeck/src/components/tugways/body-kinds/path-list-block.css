@@ -52,6 +52,8 @@
 body {
   --tugx-paths-row-padding: var(--tug-space-2xs) var(--tug-space-sm);
   --tugx-paths-row-gap:     var(--tug-space-xs);
+  /* Held clear at the end of a row whose path runs the full width. */
+  --tugx-paths-row-end-gap: var(--tug-space-md);
   --tugx-paths-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
 
   /* The producer's number for a row, when it has one (the refs block). The
@@ -178,6 +180,23 @@ body {
   color: var(--tugx-paths-ref-color);
   font-variant-numeric: tabular-nums;
   user-select: none;
+}
+
+/* The filename does not shrink in a results list. `TugPath` lets its tail
+   shrink after the head is spent, which is right in chrome — there, an
+   unshrinkable tail would slide under the pane's controls. Here the row
+   exists to NAME a file: the directory chain gives up every pixel first, and
+   the name is the last thing to go, so a row truncates once instead of
+   twice. [L20] — tuned from this consumer's scope, not in the primitive. */
+.tugx-paths-row .tug-path-tail {
+  flex-shrink: 0;
+}
+
+/* Breathing room at the end of a truncating row. It has to be MARGIN: the
+   path clips at its own padding edge, so padding there would be painted over
+   by the very text it is meant to hold off the block's border. */
+.tugx-paths-row .tug-path {
+  margin-inline-end: var(--tugx-paths-row-end-gap);
 }
 
 /* @tug-renders-on: --tugx-block-bg */
