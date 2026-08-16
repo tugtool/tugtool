@@ -266,7 +266,7 @@ No new state zones; the fields extend an existing store shape that already flows
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Fixture failures become legible | pending | — |
+| #step-1 | Fixture failures become legible | done | c9969269 |
 | #step-2 | The recipe sweeps stranded fixture dashes | pending | — |
 | #step-3 | The resolution stat tells the truth | pending | — |
 | #step-4 | The lane fixtures pin a small conflict subject | pending | — |

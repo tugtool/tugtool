@@ -1289,6 +1289,46 @@ app-test *FILES:
     # floor, not from serialization.
     tugrust/target/debug/tugutil host sweep --yes --quiet || true
 
+    # Release any fixture dash a previous run stranded.
+    #
+    # A dash fixture's `beforeAll` creates a dash before it does anything
+    # else, so a failure anywhere after that — an assertion, a timeout, a
+    # kill — leaves the branch and its worktree behind, and `afterAll`
+    # never runs. The stranded dash then breaks the NEXT invocation
+    # differently from the first, which is how one transient turned into
+    # "the dash lane files cannot run together".
+    #
+    # `at04??-*` is the fixtures' own namespace — every dash-lane test
+    # names its dash after itself — so this can never reach a dash a
+    # person made.
+    #
+    # The reset before the release is load-bearing, not tidiness.
+    # `dash release` hands a worktree's UNCOMMITTED files back to the
+    # base checkout, so that tearing down a dash can never destroy work
+    # someone typed in it. That is right for a real dash and wrong for a
+    # fixture: one stranded between its file write and its round commit
+    # would deposit a placeholder body over a real source file here, as
+    # an uncommitted modification nobody made. Resetting first leaves the
+    # hand-back nothing to copy.
+    #
+    # Best effort throughout, and it must stay that way: `release`
+    # legitimately refuses when the base checkout has its own edit to a
+    # path the dash also touched, and a refused sweep must never fail
+    # the run it is cleaning up for.
+    while read -r DASH_BRANCH; do
+        [ -n "$DASH_BRANCH" ] || continue
+        DASH_NAME="${DASH_BRANCH#tugdash/}"
+        DASH_TREE="$(git worktree list --porcelain \
+            | awk -v b="refs/heads/$DASH_BRANCH" \
+                '/^worktree /{p=substr($0,10)} $0=="branch "b{print p}')"
+        if [ -n "$DASH_TREE" ] && [ -d "$DASH_TREE" ]; then
+            git -C "$DASH_TREE" reset --hard >/dev/null 2>&1 || true
+            git -C "$DASH_TREE" clean -fd >/dev/null 2>&1 || true
+        fi
+        tugrust/target/debug/tugutil dash release "$DASH_NAME" --json >/dev/null 2>&1 || true
+        echo "swept stranded fixture dash: $DASH_NAME"
+    done < <(git branch --list 'tugdash/at04??-*' --format='%(refname:short)')
+
     TMPOUT="$(mktemp -t app-test.XXXXXX)"
     cleanup() {
         # Targeted teardown — stop only THIS WORKTREE's apptest
