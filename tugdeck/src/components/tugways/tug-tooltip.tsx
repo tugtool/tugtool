@@ -56,6 +56,7 @@ import React from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { observeTooltipDismiss } from "@/lib/tooltip-dismiss";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 
 /* ---------------------------------------------------------------------------
@@ -289,6 +290,25 @@ export function TugTooltip({
     // so we intentionally narrow deps to the gating values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveOpen, manager]);
+
+  // Input-gesture dismissal. [L06]
+  //
+  // Click, right-click, and scroll end a hover — unconditionally, wherever
+  // they land. observeDispatch above catches the deliberate act that reaches
+  // the responder chain; this catches the gestures that never get there: a
+  // right-click that only raises a menu, a press on a surface owning its own
+  // pointer handling, a wheel over the transcript. The subscription is
+  // capture-phase at the document, so the bubble is gone before the menu
+  // that gesture opens can paint beside it.
+  React.useLayoutEffect(() => {
+    if (!effectiveOpen) return;
+    return observeTooltipDismiss(() => {
+      handleOpenChange(false);
+    });
+    // Same narrowing as above: handleOpenChange is a fresh closure per
+    // render but stable in behavior, and re-subscribing every render would churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveOpen]);
 
   // Callback ref that captures the trigger DOM element for measurement.
   // Merged onto the Radix Trigger child via React.cloneElement on the asChild path.
