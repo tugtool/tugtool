@@ -267,11 +267,11 @@ No new state zones; the fields extend an existing store shape that already flows
 | Step | Title | Status | Commit |
 |---|---|---|---|
 | #step-1 | Fixture failures become legible | done | c9969269 |
-| #step-2 | The recipe sweeps stranded fixture dashes | pending | — |
-| #step-3 | The resolution stat tells the truth | pending | — |
-| #step-4 | The lane fixtures pin a small conflict subject | pending | — |
-| #step-5 | Integration checkpoint: the lane suite, three green runs | pending | — |
-| #step-6 | Refresh the release instance and close the campaign | pending | — |
+| #step-2 | The recipe sweeps stranded fixture dashes | done | 5e493d0b |
+| #step-3 | The resolution stat tells the truth | done | 5e1014d4 |
+| #step-4 | The lane fixtures pin a small conflict subject | done | ca8139a4 |
+| #step-5 | Integration checkpoint: the lane suite, three green runs | done | N/A |
+| #step-6 | Refresh the release instance and close the campaign | done | N/A |
 
 #### Step 1: Fixture failures become legible {#step-1}
 

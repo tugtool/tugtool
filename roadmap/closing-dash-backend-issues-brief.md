@@ -1,10 +1,14 @@
 # Closing the dash backend: status and what is left
 
-**Status as of 2026-08-16.** `main` at `5ba5ce400`. The eleven-step program in [`closing-dash-backend-issues.md`](closing-dash-backend-issues.md) is **landed and joined** — all eleven ledger rows `done`. What remains from the original ledger is item 5 (the Join sheet, which can only be closed live) and item 7 (the deferred lifecycle work), plus three new findings this program's own verification turned up.
+**The dash backend campaign is closed as of 2026-08-16.**
 
-This document is written to be picked up cold, after a compaction, by someone deciding what to do next. It supersedes the pre-implementation brief; the investigation narrative that is still load-bearing is preserved below, and everything settled has been folded into [What landed](#what-landed).
+Two programs landed it. The eleven-step program in [`closing-dash-backend-issues.md`](closing-dash-backend-issues.md) landed as `5ba5ce400`; the three findings its own verification turned up were closed by [`close-backend-campaign.md`](close-backend-campaign.md), landing as `c9969269`, `5e493d0b`, `5e1014d4`, `ca8139a4`. The closing gate: **the five dash-lane app-test files green in one invocation, three consecutive runs**, with no branch, worktree, `rr-cache` entry, or working-tree modification left behind by any of them.
 
-The goal has not changed and is the owner's own: **wrap up the backend and make it a solid, robust foundation**, because a long list of UI and design work builds on it and the functionality has to come first.
+Two things stay open by design, neither blocking: item 5 (the Join sheet, which can only be closed at a live occurrence — its capture protocol is [below](#join-sheet)) and item 7 (the deferred lifecycle work, pull-driven by the UI campaign).
+
+This document is written to be picked up cold, after a compaction. It supersedes the pre-implementation brief; the investigation narrative that is still load-bearing is preserved below, and everything settled has been folded into [What landed](#what-landed).
+
+The goal was the owner's own: **wrap up the backend and make it a solid, robust foundation**, because a long list of UI and design work builds on it and the functionality has to come first. That foundation is now in place.
 
 ## Where we stand {#where-we-stand}
 
@@ -14,9 +18,17 @@ The goal has not changed and is the owner's own: **wrap up the backend and make 
 | 2. Landing observability | **Done** — route-attributed dash-log notes + tugcast receipts |
 | 3. The engine/instance race | **Done** — per-dash opt-out, honored by the engine, set by every fixture |
 | 4. App-tests refuse the wrong environment | **Done** — and the root cause is now known, not hypothesised |
-| 5. The Join sheet, caught live | **Open** — still needs a live occurrence; the diagnostics it needs now exist |
+| 5. The Join sheet, caught live | **Open by design** — needs a live occurrence; the diagnostics it needs now exist |
 | 6. The tactical layer (turn gate, refusal legibility, disabled look, archaeology) | **Done**, all four |
-| 7. The deferred lifecycle items | **Open**, untouched |
+| 7. The deferred lifecycle items | **Open by design**, pull-driven |
+
+And the three findings the first program's verification turned up:
+
+| Finding | State |
+|---|---|
+| at0426 red — fixture drift | **Done** — both lane fixtures pin a small conflict subject via one shared helper |
+| The resolution stat lied (`+0 −395`) | **Done** — and it was a presentation defect, not a ladder defect |
+| The lane files could not run together | **Done** — legible failures + a leftover-dash sweep; there was no concurrency to fix |
 
 ## What landed {#what-landed}
 
@@ -42,15 +54,36 @@ Eleven rounds, squashed onto `main` as `5ba5ce400`.
 
 **A conflict names its history.** A conflicted `--preview` now carries, per conflicted path, the base commits since the merge-base that touched it — short SHA + subject, newest first, capped at five with a `+N earlier` remainder. Computed in `tugdash-core` on the preview path only; rides `JoinOutcome` as an additive field with the same absent-when-empty shape `blockers` uses. Any git failure yields no history rather than costing the caller the conflict report.
 
+## What the closing program found {#closing-findings}
+
+Its three findings were re-diagnosed before any of them was fixed, and **two of the three mechanisms this brief originally proposed were wrong.** They are corrected here rather than quietly dropped, because the wrong mechanism is the more instructive half.
+
+**There was no ladder defect. The `+0 −395` was a presentation lie.** The driver rung genuinely resolved `Justfile`; `patch_tree`, `commit_tree` and the rung report were correct throughout. `resolve.rs` caps each review diff at `DIFF_LINE_CAP = 400` lines, and git emits deletions before additions — so a 2050-line base-side file resolved to a one-line body truncates to 4 header lines, 1 hunk header, and 395 deletions, and the driver's single `+` line falls past the cap. The frontend then counted `+`/`−` over that *truncated* text. The fix is that `FileResolution` now carries `added`/`removed` from `git diff --numstat --patch` — one subprocess, so the count and the text it describes can never disagree — and the frontend's `countStat` is deleted. Pinned by a tugdash-core test that asserts both halves: the addition is genuinely absent from the capped text, and the counts still read `(Some(1), Some(2050))`.
+
+**There was no concurrency.** The `app-test` recipe's runner is a sequential `for` loop — one `bun test <file>` per iteration — and the whole invocation sits behind a machine-wide port gate. The proposed "serialization marker" would have changed nothing and was dropped. The real cross-file hazard was **stranded fixture state**: a failed `beforeAll` skips its own `afterAll`, leaving a dash whose branch breaks the *next* run differently. The recipe's clean-slate preamble now releases any leftover `tugdash/at04??-*` dash.
+
+That sweep needed a guard the brief never anticipated. `ops::release_in` runs `apply_hand_back`, which copies a dash worktree's **uncommitted** files back into the base checkout, so that tearing down a dash cannot destroy work typed in it. Correct for a real dash, wrong for a fixture: one stranded between at0426's `writeFileSync` and its `commitRound` deposits a placeholder body over a real source file. Confirmed by deliberate probe — releasing an unreset fixture worktree really does leave ` M tuglaws/dash-work-doctrine.md` in the checkout. The sweep hard-resets and cleans each fixture worktree first.
+
+**stderr was never unpiped.** `Bun.spawnSync` captures both streams by default. The blank `tugutil dash create … failed:` meant the process died *before reaching its own error path* — `tugutil`'s dash dispatcher prints `error: {e}` to stderr on every `Err` — so a signal or a pre-main failure. The wrapper had `exitCode` and `signalCode` in hand and threw away everything but stderr. Failures now carry exit code, signal, stderr, and the tail of stdout; stdout matters because the `--json` verbs put their refusals inside the JSON envelope there. The transient still has no root cause, and that is accepted: the next occurrence will describe itself.
+
+**at0426's drift was real, and pinning it armed a second flake.** Both lane fixtures now take their subject from `smallConflictSubject`, which walks up to 25 first-parent commits for one that modified a text file of ≤120 lines. But a pinned subject makes at0426's conflict recur byte for byte, and rerere is **rung 2** while the driver is **rung 4** — so an `rr-cache` entry surviving a killed run would replay ahead of the driver and fail the assertion looking for it. at0426's dash-side body therefore carries a per-run nonce; `DRIVER_BODY` is asserted verbatim and deliberately does not. at0425 adopts the same helper for determinism only: its delete/modify conflict short-circuits to unresolved before any rung runs, so no diff is produced and the cap never bit it. Nobody should go hunting a truncation bug there.
+
 ## Verification state {#verification-state}
 
-Everything below was run on `main` at `5ba5ce400`, after `just build-app`.
+The closing program's gate, on `main` at `ca8139a4`, after `just build-app`:
+
+- **The five dash-lane files, one invocation, three consecutive runs:** 5/5 files, 6/6 tests, every time. Between runs: no `tugdash/*` branch, `rr-cache` steady at 13 entries, projects dir steady at 1, and no working-tree modification the runs introduced. (The campaign's starting state was 2/5 with a blank failure message.)
+- **Rust:** `cargo nextest run` workspace-wide — 2816 passed, 6 skipped.
+- **tugdeck:** `tsc --noEmit` and `vite build` clean; `bun test` 6864 passed, 0 failed.
+- **The live release instance carries the landed code** — verified from the binary rather than from a timestamp: the running `tugcast` contains the `--numstat` literal, which did not exist in the tree before `5e1014d4`.
+
+The first program's gate, on `main` at `5ba5ce400`, after `just build-app`.
 
 - **Rust:** `cargo nextest run` workspace-wide — 2755 passed, 6 skipped.
 - **tugdeck:** `tsc --noEmit` and `vite build` clean; `bun test` 6840 passed, 0 failed. (The `layout-imposer-solutions` golden the plan expected to be red is green.)
 - **Theme:** `bun run audit:theme-contrast` — no theme exceeds the brio budget.
 - **App-test core tier:** 16/20 files, 30/30 tests green (4 screen-takers skipped on an unattended background run).
-- **The five dash-lane files, run one at a time:** `at0405` ✅ `at0417` ✅ `at0418` ✅ `at0425` ✅ `at0426` ❌ (see below). Every new assertion from this program passes live — the archaeology names the base commit, the disabled Join carries an empty `title`, and Resolve's click registers **mid-turn** with Release simultaneously disabled, which is the turn-gate narrowing read straight off the face.
+- **The five dash-lane files, run one at a time:** `at0405` ✅ `at0417` ✅ `at0418` ✅ `at0425` ✅ `at0426` ❌ (the drift, closed by the second program). Every new assertion from this program passes live — the archaeology names the base commit, the disabled Join carries an empty `title`, and Resolve's click registers **mid-turn** with Release simultaneously disabled, which is the turn-gate narrowing read straight off the face.
 - **The projects directory held at 1 entry** across all of it.
 
 ## What is still open {#still-open}
@@ -70,20 +103,6 @@ What changed in this program's favour: the ambiguity is gone. A refusing lane no
 
 Do not build speculative fixes before then; the three shapes have three different fixes and the evidence still cannot pick one.
 
-### at0426 is red, and it is fixture drift — not a regression {#at0426}
-
-`at0426-dash-resolution-review` fails deterministically on `main`, alone, on a clean slate. **Its fixture derives the conflict file from `main`'s newest first-parent commit that modified a file**, and that is now this program's own join commit, whose first modified path is `Justfile` (2050 lines). The test's premise is a *content* conflict its stub merge driver can resolve into a known string; against `Justfile` the ladder reports "1 file resolved by driver" but the candidate carries `+0 −395` — no driver body.
-
-This was proven by probe, not inferred: pinning `conflictFile` to a small file the same commit modified (`tugutil-core/src/session.rs`) makes at0426 **pass**, and the probe restored the file afterwards. At the previous tip the auto-picked file was `commit-block.css`; one commit earlier, `roadmap/archive/tug-slider.md`. So the test's outcome depends on whatever `main` last touched — a latent defect this program's landing merely exposed. Nothing in this program touched `resolve.rs` or the ladder.
-
-Two things to decide: pin at0426's (and at0425's) conflict file to something deterministic rather than reading it off history, and separately find out **why** a large file makes the driver rung claim a resolution it did not produce — that second question is a real ladder defect hiding behind the first.
-
-### The dash-lane files cannot run concurrently {#lane-concurrency}
-
-Running all five at once gives 2/5 green; run one at a time they are 4/5 (at0426 aside). They share one repository, and `dash create` collides in ways the fixture's retry does not cover — it only retries on text matching `index.lock`. Any other transient git failure breaks out immediately, and the failure is then **invisible**: `dash-fixture.ts`'s `tugutil()` wrapper reads `out.stderr` from a `Bun.spawnSync` that never asked for a stderr pipe, so the thrown message is `… failed:` with nothing after the colon. A failed `beforeAll` also skips `afterAll`, so the run leaves `tugdash/*` branches behind that make the *next* run fail differently.
-
-Three cheap fixes, in order of value: pipe stderr in the fixture so a failure says something; widen the retry to any transient git failure; and give the lane files a serialization marker so the harness does not run them concurrently.
-
 ### The deferred lifecycle items — item 7, untouched {#deferred}
 
 Queue-a-landing-for-turn-end; a lane affordance to trigger `dash replay` by click for a deferred or conflicted dash with no bound session; teaching the injected conflict turn to run the plan's own checkpoints after the rebase. Real, but none of them blocks the UI campaign.
@@ -92,18 +111,24 @@ Queue-a-landing-for-turn-end; a lane affordance to trigger `dash replay` by clic
 
 - **The plan's review stamp reads `stale`.** The final round edited the plan's prose (removing the raw NUL it carried), which is outside what ledger progress may touch. The plan is finished, so the stamp costs nothing — but do not read `stale` as "unreviewed".
 - **The join doubled its own subject prefix.** `5ba5ce400`'s message begins `tugdash(close-backend): tugdash(backend): …` — the landing prefixed the draft's subject, which already had a scope. Worth a look at whoever composes the squash message.
-- **The live release instance predates these fixes.** Its `joined` line for this very landing stamped `2025` and recorded a bare `joined` with no route — both are the old code, still running in a process started before the fix landed. Rebuild and relaunch the release instance and both correct themselves. Nothing to fix in the tree.
+- ~~**The live release instance predates these fixes.**~~ Closed. The instance now runs the campaign's code, and dash-log lines stamp `2026` with a route suffix — `at0426-review  released  via cli`, written live by the lane suite.
 
-## Suggested order {#next-steps}
+## What is left {#next-steps}
 
-1. **Rebuild and relaunch the release instance.** Everything below reads better against a binary that carries this program: the receipts exist, the refusals speak, the clock is right.
-2. **Fix at0426's fixture** (pin the conflict file) so the lane suite is green, then open the ladder question its failure exposed — a driver rung that reports a resolution it did not produce is a correctness bug, and it is the one genuinely new defect on this list.
-3. **Make the lane fixtures survive each other** — stderr, retry breadth, serialization. Three small changes that stop a real failure from arriving as a blank message.
-4. **Then item 5** — the Join sheet, at the next live occurrence, with the protocol above. The instrumentation to catch it now exists; the thing to resist is fixing it before it is caught.
-5. **Then item 7**, the deferred lifecycle work, when the UI campaign wants it.
+The backend is closed. Two items remain, and neither blocks the UI campaign:
+
+1. **Item 5 — the Join sheet**, at its next live occurrence, using the [protocol above](#join-sheet). The instrumentation to catch it now exists; the thing to resist is fixing it before it is caught. It stays a tripwire, not a task.
+2. **Item 7 — the deferred lifecycle work**, when the UI campaign pulls it.
+
+Two follow-ons were deliberately left undone, both noted rather than scheduled:
+
+- **Head+tail elision for capped review diffs**, so a huge resolution still shows its additions on screen. The stat is truthful without it, and the pinned fixture no longer depends on it.
+- **The join's doubled subject prefix** (below).
 
 ## Landmines, carried forward {#landmines}
 
 Every one of these was paid for. `tugutil dash join <name> --resolve` **lands** — `--preview` is the only safe CLI probe. Only the user commits, and never hand over a `git reset` without re-reading `HEAD` first. A Rust change needs `just build-app` before any app-test can see it; a tugdeck change needs `bunx vite build` before it is done. The app-tests build real dashes in the live repository — leave no worktrees, `tugdash/*` branches, `tugdash.mergedriver` config, or `rr-cache` entries behind, and check `git branch --list 'tugdash/*'` after a red run, because a failed `beforeAll` skips its own cleanup. Never point a foreign `sqlite3` at the live ledgers; `just db-inspect` copies first.
 
 New from this round, and now enforced rather than remembered: **the app-test corpus does not run from a dash worktree** — the recipe refuses, because every dash verb resolves the main repo root and a fixture dash would be created in the base checkout. **The base-motion engine is live in every instance watching this repo**, so any dash you create by hand is subject to replay the moment `main` moves; fixtures opt out, hand-made probe dashes do not. And **dash-log lines written before `5ba5ce400` are one year early** — do not let the `2025` era confuse an incident timeline.
+
+New from the closing round, and the sharpest of the set: **`dash release` hands a worktree's uncommitted files back to the base checkout.** That is deliberate — a teardown must not destroy work someone typed in a dash — but it means releasing a dirty fixture worktree writes fixture bytes into the developer's checkout as a modification nobody made. Reset before you release anything you did not intend to keep. And **a stat derived from a capped view is a lie exactly when it matters**: the `+0 −395` incident cost a day and the diff was never wrong, only the number printed beside it.
