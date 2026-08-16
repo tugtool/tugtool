@@ -108,6 +108,15 @@ export interface PathListData {
   paths: readonly string[];
 
   /**
+   * The producer's own number for each path, parallel to `paths`, shown in
+   * each row's leading gutter. A numbered list is one the user can act on by
+   * number — the refs block sets it so `/ref 5` names the row that reads `5`.
+   * A producer with no such handle (Glob) leaves it out and the column never
+   * appears. Numbers follow their path across a sort.
+   */
+  numbers?: readonly number[];
+
+  /**
    * When the producer truncated the result, the total count it would
    * otherwise have returned — drives the "truncated at N" indicator.
    * Undefined → the list is complete.
@@ -300,7 +309,23 @@ class PathListDataSource implements TugListViewDataSource {
     private readonly paths: readonly string[],
     /** Whether each row's path is marked for transcript Find (opt-in). */
     readonly findable: boolean,
+    /**
+     * The producer's number per path, keyed by path so a number follows its
+     * row across a sort rather than staying with the position it started in.
+     * Empty when the producer numbered nothing; the column is then absent.
+     */
+    private readonly numberByPath: ReadonlyMap<string, number>,
   ) {}
+
+  /** Whether this list is numbered at all — the column's width is shared. */
+  get numbered(): boolean {
+    return this.numberByPath.size > 0;
+  }
+
+  /** Cell-renderer accessor — the producer's number for the row at `index`. */
+  numberAt(index: number): number | undefined {
+    return this.numberByPath.get(this.paths[index]);
+  }
 
   numberOfItems(): number {
     return this.paths.length;
@@ -379,6 +404,11 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
       data-tug-focus={annotated ? "refuse" : undefined}
       data-no-activate={annotated ? "" : undefined}
     >
+      {dataSource.numbered ? (
+        <span className="tugx-paths-ref" data-slot="path-list-ref">
+          {dataSource.numberAt(index) ?? ""}
+        </span>
+      ) : null}
       <Icon size={14} aria-hidden="true" />
       <MiddleEllipsisPath path={path} findable={dataSource.findable} />
     </div>
@@ -440,9 +470,21 @@ export const PathListBlock: React.FC<PathListBlockProps> = ({
         : sortPaths(rawPaths, sortable ? sortMode : "found"),
     [rawPaths, sortMode, sortable],
   );
+  // Numbers are keyed to the path they arrived with, not to a position, so a
+  // sort re-orders the rows and their numbers together.
+  const rawNumbers = data?.numbers;
+  const numberByPath = React.useMemo(() => {
+    const map = new Map<string, number>();
+    if (rawPaths === undefined || rawNumbers === undefined) return map;
+    rawPaths.forEach((path, i) => {
+      const number = rawNumbers[i];
+      if (number !== undefined) map.set(path, number);
+    });
+    return map;
+  }, [rawPaths, rawNumbers]);
   const dataSource = React.useMemo(
-    () => new PathListDataSource(displayPaths, findable),
-    [displayPaths, findable],
+    () => new PathListDataSource(displayPaths, findable, numberByPath),
+    [displayPaths, findable, numberByPath],
   );
 
   // ---- Copy source ---------------------------------------------------

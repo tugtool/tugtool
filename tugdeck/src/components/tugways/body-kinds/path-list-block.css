@@ -53,6 +53,11 @@ body {
   --tugx-paths-row-padding: var(--tug-space-2xs) var(--tug-space-sm);
   --tugx-paths-row-gap:     var(--tug-space-xs);
   --tugx-paths-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
+
+  /* The producer's number for a row, when it has one (the refs block). The
+   * link tone, because the number is an address the user can act on. */
+  --tugx-paths-ref-color:     var(--tug7-element-global-text-normal-link-rest);
+  --tugx-paths-ref-min-width: 2.5em;
 }
 
 /* ---------- Frame ---------- */
@@ -160,7 +165,19 @@ body {
   align-items: center;
   gap: var(--tugx-paths-row-gap);
   padding: var(--tugx-paths-row-padding);
-  line-height: 1.4;
+  line-height: var(--tugx-block-code-line-height, 1.4);
+}
+
+/* The producer's row number — the handle a user types back (`/ref 5`).
+ * Accent-toned and tabular so the column reads as a set of addresses. */
+/* @tug-renders-on: --tugx-block-bg */
+.tugx-paths-ref {
+  flex: 0 0 auto;
+  min-width: var(--tugx-paths-ref-min-width);
+  text-align: right;
+  color: var(--tugx-paths-ref-color);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 /* @tug-renders-on: --tugx-block-bg */

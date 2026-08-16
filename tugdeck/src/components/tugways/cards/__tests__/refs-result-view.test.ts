@@ -75,6 +75,14 @@ describe("refsToPathListData — a match run's rows", () => {
     ]);
     expect(data.paths).toEqual(["/proj/src/b.ts", "/proj/src/a.ts"]);
   });
+
+  it("carries each ref's number alongside its path", () => {
+    const data = refsToPathListData("/proj", [
+      ref({ index: 4, path: "src/b.ts" }),
+      ref({ index: 5, path: "src/a.ts" }),
+    ]);
+    expect(data.numbers).toEqual([4, 5]);
+  });
 });
 
 describe("refsToSearchResultData — a search run's groups", () => {
@@ -104,7 +112,20 @@ describe("refsToSearchResultData — a search run's groups", () => {
 
   it("renders a ref with no line or preview without inventing either", () => {
     const data = refsToSearchResultData("/proj", [ref({ index: 1, path: "a.ts" })]);
-    expect(data.files[0].matches[0]).toEqual({ line: 0, text: "", spans: [] });
+    expect(data.files[0].matches[0]).toEqual({
+      line: 0,
+      text: "",
+      spans: [],
+      refNumber: 1,
+    });
+  });
+
+  it("carries each ref's number, so the row shows what `/ref N` opens", () => {
+    // Not the position in the group — the ref's own number. Ref 3 is the
+    // SECOND row of the first file's group, and it still reads 3.
+    const data = refsToSearchResultData("/proj", refs);
+    expect(data.files[0].matches.map((m) => m.refNumber)).toEqual([1, 3]);
+    expect(data.files[1].matches.map((m) => m.refNumber)).toEqual([2]);
   });
 });
 

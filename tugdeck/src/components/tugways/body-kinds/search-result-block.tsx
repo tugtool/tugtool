@@ -122,6 +122,13 @@ export interface SearchResultMatch {
   text: string;
   /** Char ranges within `text` to render highlighted. */
   spans: readonly SearchResultSpan[];
+  /**
+   * The producer's own number for this match, shown in the row's leading
+   * gutter. A numbered list is one the user can act on by number — the refs
+   * block sets it so `/ref 5` names the row that reads `5`. A producer with
+   * no such handle (Grep) leaves it out and the column never appears.
+   */
+  refNumber?: number;
   /** Context lines immediately before the match, in ascending order. */
   before?: readonly SearchResultContextLine[];
   /** Context lines immediately after the match, in ascending order. */
@@ -415,6 +422,12 @@ class SearchResultDataSource implements TugListViewDataSource {
     readonly openable: boolean,
     /** Whether file-header paths are marked for transcript Find (opt-in). */
     readonly findable: boolean,
+    /**
+     * Whether ANY match carries a `refNumber`. Derived once, because the
+     * number column has to hold its width on context lines too — a column
+     * that appears and disappears row by row is a ragged left edge.
+     */
+    readonly numbered: boolean,
   ) {}
 
   numberOfItems(): number {
@@ -490,8 +503,13 @@ const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
 };
 
 /** One context line — a dim line number + line text. */
-const ContextLine: React.FC<{ line: SearchResultContextLine }> = ({ line }) => (
+const ContextLine: React.FC<{
+  line: SearchResultContextLine;
+  /** Hold the ref-number column's width so the gutter edge stays straight. */
+  numbered: boolean;
+}> = ({ line, numbered }) => (
   <div className="tugx-search-line tugx-search-line--context">
+    {numbered ? <span className="tugx-search-ref" aria-hidden="true" /> : null}
     <span className="tugx-search-lineno">{line.line}</span>
     <span className="tugx-search-linetext">{line.text}</span>
   </div>
@@ -539,9 +557,14 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
       data-no-activate={annotated ? "" : undefined}
     >
       {match.before?.map((line) => (
-        <ContextLine key={`b${line.line}`} line={line} />
+        <ContextLine key={`b${line.line}`} line={line} numbered={dataSource.numbered} />
       ))}
       <div className="tugx-search-line tugx-search-line--match">
+        {dataSource.numbered ? (
+          <span className="tugx-search-ref" data-slot="search-result-ref">
+            {match.refNumber ?? ""}
+          </span>
+        ) : null}
         <span className="tugx-search-lineno">{match.line}</span>
         <span className="tugx-search-linetext">
           {segments.map((segment, segmentIndex) =>
@@ -556,7 +579,7 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
         </span>
       </div>
       {match.after?.map((line) => (
-        <ContextLine key={`a${line.line}`} line={line} />
+        <ContextLine key={`a${line.line}`} line={line} numbered={dataSource.numbered} />
       ))}
     </div>
   );
@@ -621,9 +644,24 @@ export const SearchResultBlock: React.FC<SearchResultBlockProps> = ({
     () => (files === undefined ? [] : buildSearchRows(files, collapsed)),
     [files, collapsed],
   );
+  // A numbered list is one whose producer numbered it — asked once, over the
+  // whole result, so the column's width is the same on every row.
+  const numbered = React.useMemo(
+    () =>
+      files !== undefined &&
+      files.some((file) => file.matches.some((m) => m.refNumber !== undefined)),
+    [files],
+  );
   const dataSource = React.useMemo(
-    () => new SearchResultDataSource(rows, handleToggleFile, openable, findable),
-    [rows, handleToggleFile, openable, findable],
+    () =>
+      new SearchResultDataSource(
+        rows,
+        handleToggleFile,
+        openable,
+        findable,
+        numbered,
+      ),
+    [rows, handleToggleFile, openable, findable, numbered],
   );
 
   // ---- Copy source ---------------------------------------------------

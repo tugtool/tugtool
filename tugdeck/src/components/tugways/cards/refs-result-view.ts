@@ -52,7 +52,12 @@ export function refsToPathListData(
   root: string,
   refs: ReadonlyArray<TextRef>,
 ): PathListData {
-  return { paths: refs.map((ref) => joinRefPath(root, ref.path)) };
+  // The number rides along with the path: it is the handle `/ref N` opens by,
+  // and a row the user cannot name is a row they cannot act on ([P09]/[P12]).
+  return {
+    paths: refs.map((ref) => joinRefPath(root, ref.path)),
+    numbers: refs.map((ref) => ref.index),
+  };
 }
 
 /**
@@ -80,6 +85,7 @@ export function refsToSearchResultData(
       line: ref.line ?? 0,
       text: ref.preview ?? "",
       spans: ref.columns,
+      refNumber: ref.index,
     });
   }
   const files: SearchResultFile[] = order.map((path) => ({

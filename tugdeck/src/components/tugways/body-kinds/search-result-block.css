@@ -54,13 +54,35 @@
 
 body {
   --tugx-search-file-padding:   var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-search-line-padding:   var(--tug-space-2xs) var(--tug-space-sm);
+  --tugx-search-line-padding-y: var(--tug-space-2xs);
+  --tugx-search-line-padding-x: var(--tug-space-sm);
   --tugx-search-row-gap:        var(--tug-space-xs);
   --tugx-search-twist-color:    var(--tug7-element-global-text-normal-muted-rest);
   --tugx-search-file-color:     var(--tug7-element-global-text-normal-default-rest);
   --tugx-search-count-color:    var(--tug7-element-global-text-normal-muted-rest);
-  --tugx-search-lineno-color:   var(--tug7-element-global-text-normal-subtle-rest);
   --tugx-search-context-color:  var(--tug7-element-global-text-normal-muted-rest);
+
+  /* A file group reads as a band, not as one more row in a stack: the
+   * header wears the block's own strip surface and rules above itself, so
+   * the eye finds the file boundaries before it reads any line. */
+  --tugx-search-file-bg:      var(--tugx-block-strip-bg);
+  --tugx-search-file-border:  var(--tugx-block-strip-border);
+
+  /* Line-number gutter. The same indicator surface every other
+   * line-numbered surface in the app uses (`TugCodeView`, the editor's own
+   * gutter); spelled out here rather than borrowed so the two can evolve
+   * apart [L20]. */
+  --tugx-search-gutter-bg:        var(--tug7-surface-indicator-primary-normal-plain-rest);
+  --tugx-search-gutter-border:    var(--tug7-element-indicator-border-normal-plain-rest);
+  --tugx-search-gutter-text:      var(--tug7-element-indicator-text-normal-plain-rest);
+  --tugx-search-gutter-padding-x: var(--tug-space-sm);
+  --tugx-search-gutter-min-width: 3.5em;
+
+  /* The producer's number for a row — the handle a user types back
+   * (`/ref 5`). It wears the link tone, because that is what it is: an
+   * address that takes you somewhere, not a second line number. */
+  --tugx-search-ref-color:     var(--tug7-element-global-text-normal-link-rest);
+  --tugx-search-ref-min-width: 2.5em;
 
   /* Match highlight — the universal search-hit treatment rides the
    * caution tone (amber), the same base tokens `--tugx-block-tone-
@@ -170,12 +192,23 @@ body {
 /* A collapsible file-header row — twist chevron + path + match count.
  * Click-to-toggle, so it gets a pointer cursor and a hover
  * background. Mirrors `.tugx-json-line[data-container="true"]`. */
+/* @tug-renders-on: --tugx-block-bg */
 .tugx-search-file {
   display: flex;
   align-items: center;
   gap: var(--tugx-search-row-gap);
   padding: var(--tugx-search-file-padding);
+  background: var(--tugx-search-file-bg);
+  border-top: 1px solid var(--tugx-search-file-border);
+  border-bottom: 1px solid var(--tugx-search-file-border);
+  font-weight: var(--tug-font-weight-semibold);
   cursor: pointer;
+}
+
+/* The first group opens the list, so it needs no rule above it — the block
+ * header is already its top edge. */
+.tug-list-view-cell[data-tug-list-cell-index="0"] .tugx-search-file {
+  border-top: 0;
 }
 
 /* @tug-renders-on: --tugx-block-bg */
@@ -208,20 +241,39 @@ body {
   display: block;
 }
 
-/* One rendered line — a fixed-width line number + the line text. */
+/* One rendered line — the ref-number column (when the producer numbered
+ * the list), the line-number gutter, then the line text. The row itself
+ * carries no padding: the gutter has to reach the block's left edge and run
+ * unbroken down the group, which it cannot do inside an inset. */
 .tugx-search-line {
   display: flex;
-  gap: var(--tugx-search-row-gap);
-  padding: var(--tugx-search-line-padding);
-  line-height: 1.4;
+  gap: 0;
+  padding: 0;
+  line-height: var(--tugx-block-code-line-height, 1.5);
 }
 
+/* The producer's row number — outside the gutter, so the gutter stays the
+ * line-number column it is everywhere else in the app. */
 /* @tug-renders-on: --tugx-block-bg */
+.tugx-search-ref {
+  flex: 0 0 auto;
+  min-width: var(--tugx-search-ref-min-width);
+  padding: var(--tugx-search-line-padding-y) var(--tug-space-2xs);
+  text-align: right;
+  color: var(--tugx-search-ref-color);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* @tug-renders-on: --tugx-search-gutter-bg */
 .tugx-search-lineno {
   flex: 0 0 auto;
-  min-width: 3ch;
+  min-width: var(--tugx-search-gutter-min-width);
+  padding: var(--tugx-search-line-padding-y) var(--tugx-search-gutter-padding-x);
   text-align: right;
-  color: var(--tugx-search-lineno-color);
+  background: var(--tugx-search-gutter-bg);
+  border-right: 1px solid var(--tugx-search-gutter-border);
+  color: var(--tugx-search-gutter-text);
   font-variant-numeric: tabular-nums;
   user-select: none;
 }
@@ -231,6 +283,7 @@ body {
  * source indentation of the matched line. */
 .tugx-search-linetext {
   min-width: 0;
+  padding: var(--tugx-search-line-padding-y) var(--tugx-search-line-padding-x);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

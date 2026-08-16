@@ -13,3 +13,14 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* A refs run is a LIST to scan, not prose to read: it steps down to the same
+ * `xs` scale the Changes and History surfaces use for their file lists, so a
+ * search over a whole workspace stays legible at a glance instead of running
+ * the transcript's reading size down the card. Declared on the body kinds'
+ * own tokens from this instance's scope [L20]; the block header keeps the
+ * transcript's size, because it is chrome, not content. */
+.refs-result-list {
+  --tugx-block-code-font-size: var(--tug-font-size-xs);
+  --tugx-block-code-line-height: 1.5;
+}
