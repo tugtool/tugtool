@@ -659,7 +659,11 @@ function useGazetteRefRoots(
   const dirs = useMemo(() => {
     const set = new Set<string>();
     for (const post of posts) {
-      if (post.projectDir !== null && post.refs.length > 0) {
+      // Every rooted post, refs or not: the annotator needs the root for
+      // PROSE mentions — a user question's typed path, an answer whose ref
+      // list happens to be empty — and gating on refs left those posts'
+      // paths unresolvable, rendering as dead text.
+      if (post.projectDir !== null) {
         set.add(post.projectDir);
       }
     }

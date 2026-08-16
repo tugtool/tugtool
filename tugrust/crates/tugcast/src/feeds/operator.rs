@@ -1037,26 +1037,47 @@ async fn git_show(ctx: &OperatorContext, args: &Value) -> Result<Value, String> 
     Ok(json!({ "sha": sha, "text": text, "truncated": truncated }))
 }
 
-async fn repo_grep(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
-    let dir = project_dir(ctx, args)?;
-    let pattern = req_str(args, "pattern")?;
-    plain_arg(pattern, "pattern")?;
+/// The alphanumeric pieces of a grep pattern worth searching on their own:
+/// three characters or longer, deduplicated case-insensitively, in order.
+/// "Z-zone" decomposes to `zone`; "TugTooltip.*hover" to `tugtooltip`,
+/// `hover`. Capped like the model-expansion terms, and for the same reason.
+fn grep_fragments(pattern: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for piece in pattern.split(|c: char| !c.is_alphanumeric()) {
+        if piece.chars().count() < 3 {
+            continue;
+        }
+        let lowered = piece.to_lowercase();
+        if !out.contains(&lowered) {
+            out.push(lowered);
+        }
+    }
+    out.truncate(EXPANSION_TERM_CAP);
+    out
+}
 
-    let mut argv: Vec<String> = vec![
-        "grep".into(),
-        "-n".into(),
-        "-I".into(),
-        "--no-color".into(),
-        "-e".into(),
-        pattern.to_string(),
-    ];
-    if let Some(scope) = opt_str(args, "path_scope")? {
-        path_arg(scope, "path_scope")?;
+/// One `git grep` run for the ladder below: every pattern OR-ed, scoped when a
+/// scope was given, matches parsed into rows. Returns the rows plus whether
+/// the cap cut them off.
+async fn grep_once(
+    dir: &std::path::Path,
+    patterns: &[String],
+    insensitive: bool,
+    scope: Option<&str>,
+) -> Result<(Vec<Value>, bool), String> {
+    let mut argv: Vec<String> = vec!["grep".into(), "-n".into(), "-I".into(), "--no-color".into()];
+    if insensitive {
+        argv.push("-i".into());
+    }
+    for pattern in patterns {
+        argv.push("-e".into());
+        argv.push(pattern.clone());
+    }
+    if let Some(scope) = scope {
         argv.push("--".into());
         argv.push(scope.to_string());
     }
-
-    let stdout = run_git(&dir, &argv).await?;
+    let stdout = run_git(dir, &argv).await?;
     let all: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
     let truncated = all.len() > GREP_MAX_MATCHES;
     let matches: Vec<Value> = all
@@ -1070,12 +1091,67 @@ async fn repo_grep(ctx: &OperatorContext, args: &Value) -> Result<Value, String>
             json!({ "path": path, "line": line_no, "text": truncate(text.trim_end(), 240) })
         })
         .collect();
-    Ok(json!({
+    Ok((matches, truncated))
+}
+
+/// `repo.grep`, with the search verbs' own recovery discipline ([P04]): a
+/// zero-match pattern retries case-insensitively, then decomposed into its
+/// alphanumeric pieces. A user coinage — "Z-zone" for a drawing the document
+/// labels `Z0`–`Z5` — rarely appears verbatim in the text it names, and a
+/// model round is too scarce to spend on a retry Rust can run in
+/// milliseconds. `pattern_used` reports what actually produced the rows, and
+/// a rung that fired says so in `note`, because a loose match presented as an
+/// exact one is worse than no match at all.
+async fn repo_grep(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let dir = project_dir(ctx, args)?;
+    let pattern = req_str(args, "pattern")?;
+    plain_arg(pattern, "pattern")?;
+    let scope = opt_str(args, "path_scope")?;
+    if let Some(scope) = scope {
+        path_arg(scope, "path_scope")?;
+    }
+
+    let exact = [pattern.to_string()];
+    let (mut matches, mut truncated) = grep_once(&dir, &exact, false, scope).await?;
+    let mut pattern_used = pattern.to_string();
+    let mut note: Option<String> = None;
+    if matches.is_empty() {
+        let (rows, cut) = grep_once(&dir, &exact, true, scope).await?;
+        if !rows.is_empty() {
+            (matches, truncated) = (rows, cut);
+            note = Some("no case-sensitive match; showing case-insensitive matches".to_string());
+        }
+    }
+    if matches.is_empty() {
+        let fragments = grep_fragments(pattern);
+        // A pattern that IS its own single fragment has nothing left to try:
+        // the case-insensitive rung already ran exactly this search.
+        if !fragments.is_empty()
+            && !(fragments.len() == 1 && fragments[0].eq_ignore_ascii_case(pattern))
+        {
+            let (rows, cut) = grep_once(&dir, &fragments, true, scope).await?;
+            if !rows.is_empty() {
+                (matches, truncated) = (rows, cut);
+                pattern_used = fragments.join("|");
+                note = Some(
+                    "no literal match; showing case-insensitive matches for the pattern's pieces"
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    let mut out = json!({
         "pattern": pattern,
+        "pattern_used": pattern_used,
         "matches": matches,
         "count": matches.len(),
         "truncated": truncated,
-    }))
+    });
+    if let Some(note) = note {
+        out["note"] = json!(note);
+    }
+    Ok(out)
 }
 
 // MARK: - The pipeline
@@ -1590,8 +1666,17 @@ impl OperatorPipeline {
                 refs: Vec::new(),
                 // A question costs no agent turn; it is typed, not run.
                 elapsed_ms: None,
-                // And carries no refs, so there is no root to resolve under.
-                project_dir: None,
+                // The card's annotator needs a root for PROSE mentions, refs
+                // or not — a typed `@` file atom flattens to its path on the
+                // wire, and without a root that path can never be confirmed
+                // and renders dead. The verbs' own default repo ([Q03]), the
+                // same root the answer post carries.
+                project_dir: Some(
+                    self.ctx
+                        .bootstrap_project_dir
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
                 attachments: stored,
                 request_id: request_id.clone(),
                 transient: false,
@@ -1822,6 +1907,34 @@ pub async fn run_question(
                 );
             }
             None => {
+                // A turn with no JSON in it at all is the model answering in
+                // prose — the words are the answer, in the wrong clothes.
+                // Post them rather than converting a readable answer into
+                // "did not produce a readable answer"; the refs are lost, but
+                // refs are best-effort everywhere (validate_refs drops what
+                // it cannot verify) and the body is the product. The warning
+                // stays so the slips remain countable in the log. A turn
+                // that DOES contain JSON but parses as neither envelope is a
+                // different animal — a malformed attempt at the contract —
+                // and posting it would print braces at the reader, so that
+                // one still errors.
+                let trimmed = raw.trim();
+                if !trimmed.is_empty()
+                    && crate::feeds::reporter_wake::json_object_spans(trimmed).is_empty()
+                {
+                    warn!(
+                        raw = %trimmed.chars().take(RAW_LOG_CHARS).collect::<String>(),
+                        "gazette operator: prose answer salvaged — the model skipped the envelope",
+                    );
+                    let context = format!("{scrollback}{rendered}");
+                    return Ok((
+                        AnswerPost {
+                            body: trimmed.to_string(),
+                            refs: Vec::new(),
+                        },
+                        context,
+                    ));
+                }
                 // Here the raw text IS the diagnosis: a silence cannot be
                 // read off the post that was not written.
                 warn!(
@@ -3042,6 +3155,68 @@ mod tests {
             .await
             .expect("grep ran");
         assert_eq!(out["count"], 0);
+        assert!(
+            out.get("note").is_none(),
+            "an honest empty carries no recovery note"
+        );
+    }
+
+    /// Rung 1: the pattern is in the repo, spelled differently. The rows come
+    /// back, and the note says how they were found.
+    #[tokio::test]
+    async fn repo_grep_recovers_a_case_mismatch_and_says_so() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.grep", &json!({"pattern": "GAZETTE"}))
+            .await
+            .expect("grep ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["path"], "alpha.txt");
+        assert_eq!(out["pattern_used"], "GAZETTE");
+        assert_eq!(
+            out["note"],
+            "no case-sensitive match; showing case-insensitive matches"
+        );
+    }
+
+    /// Rung 2, the "Z-zone" shape: a coinage whose pieces are in the text
+    /// even though the coinage is not. The pieces are what get searched, and
+    /// `pattern_used` reports them rather than presenting a loose match as an
+    /// exact one.
+    #[tokio::test]
+    async fn repo_grep_decomposes_a_coinage_into_its_pieces() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.grep", &json!({"pattern": "Z-gazette"}))
+            .await
+            .expect("grep ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["path"], "alpha.txt");
+        assert_eq!(out["pattern_used"], "gazette");
+        assert_eq!(
+            out["note"],
+            "no literal match; showing case-insensitive matches for the pattern's pieces"
+        );
+    }
+
+    /// An exact hit reports itself as exactly that: the pattern, no note.
+    #[tokio::test]
+    async fn repo_grep_exact_hit_carries_no_note() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.grep", &json!({"pattern": "gazette"}))
+            .await
+            .expect("grep ran");
+        assert_eq!(out["pattern_used"], "gazette");
+        assert!(out.get("note").is_none());
+    }
+
+    #[test]
+    fn grep_fragments_keeps_word_sized_pieces_in_order() {
+        assert_eq!(grep_fragments("Z-zone"), vec!["zone"]);
+        assert_eq!(
+            grep_fragments("TugTooltip.*hover"),
+            vec!["tugtooltip", "hover"]
+        );
+        assert_eq!(grep_fragments("a-b"), Vec::<String>::new());
+        assert_eq!(grep_fragments("zone Zone ZONE"), vec!["zone"]);
     }
 
     #[tokio::test]
@@ -3479,6 +3654,11 @@ mod tests {
             question.id.is_some(),
             "the question is persisted before any model call — it is history whatever happens next",
         );
+        assert_eq!(
+            question.project_dir.as_deref(),
+            Some(h._repo.path().to_string_lossy().as_ref()),
+            "the question carries the annotation root — a typed path renders dead without one",
+        );
 
         let failure = next_post(&mut h.rx);
         assert_eq!(failure.author, GazetteAuthor::Operator);
@@ -3491,8 +3671,11 @@ mod tests {
         assert_eq!(persisted[0].author, GazetteAuthor::User);
     }
 
+    /// Salvage holds after a real verb round too, not only when retrieval
+    /// asked for nothing: the model looked things up, then answered in
+    /// prose. The hedge is the answer.
     #[tokio::test]
-    async fn an_unreadable_answer_is_a_transient_post_not_a_guess() {
+    async fn a_prose_answer_after_a_verb_round_is_still_salvaged() {
         let mut h = pipeline(scripted_pool(vec![
             verbs_turn(),
             Ok("I had a look and honestly it's hard to say.".to_string()),
@@ -3502,7 +3685,8 @@ mod tests {
             .await;
         let _question = next_post(&mut h.rx);
         let post = next_post(&mut h.rx);
-        assert!(post.transient);
+        assert!(!post.transient, "the hedge is the answer, delivered");
+        assert_eq!(post.body, "I had a look and honestly it's hard to say.");
     }
 
     #[tokio::test]
@@ -3642,6 +3826,56 @@ mod tests {
         );
         assert_eq!(answer.body, "Three physics questions, all this afternoon.");
         assert_eq!(answer.request_id.as_deref(), Some("req-3"));
+    }
+
+    /// Observed against the real model, three times in two days: the
+    /// answering turn arrives as plain prose — a complete, correct answer
+    /// with no envelope around it. The words are the answer; the exchange
+    /// must deliver them rather than report "did not produce a readable
+    /// answer" about an answer it is holding.
+    #[tokio::test]
+    async fn a_prose_answer_is_salvaged_not_discarded() {
+        let mut h = pipeline(scripted_pool(vec![
+            Ok(json!({"verbs": []}).to_string()),
+            Ok("No match for \"Z-zone\" in the file — that exact term doesn't appear."
+                .to_string()),
+        ]));
+        h.pipeline
+            .handle(
+                "where is the Z-zone drawing".to_string(),
+                Some("req-11".into()),
+                Vec::new(),
+            )
+            .await;
+
+        let _question = next_post(&mut h.rx);
+        let answer = next_post(&mut h.rx);
+        assert!(!answer.transient, "a prose answer is still an answer");
+        assert_eq!(
+            answer.body,
+            "No match for \"Z-zone\" in the file — that exact term doesn't appear.",
+        );
+        assert!(answer.refs.is_empty(), "salvage carries no refs to verify");
+        assert_eq!(answer.request_id.as_deref(), Some("req-11"));
+    }
+
+    /// …but a turn that contains JSON parsing as neither envelope is a
+    /// malformed attempt at the contract, not prose — posting it would print
+    /// braces at the reader, so it stays the transient failure.
+    #[tokio::test]
+    async fn a_malformed_envelope_is_not_mistaken_for_prose() {
+        let mut h = pipeline(scripted_pool(vec![
+            Ok(json!({"verbs": []}).to_string()),
+            Ok(json!({"summary": {"body": "close but wrong key"}}).to_string()),
+        ]));
+        h.pipeline
+            .handle("anything".to_string(), Some("req-12".into()), Vec::new())
+            .await;
+
+        let _question = next_post(&mut h.rx);
+        let post = next_post(&mut h.rx);
+        assert!(post.transient, "broken JSON is a defect, not an answer");
+        assert!(post.body.starts_with("Couldn't answer that"));
     }
 
     /// The same shape the model actually chose: an empty verb list, meaning

@@ -346,6 +346,8 @@ A search query is AND-ed term by term: \"tooltip colors\" finds only records tha
 
 Names are findable by their parts: tooltip finds TugTooltip, sync finds useSyncExternalStore, 0365 finds at0365-gazette-card.test.ts. Search the plain word rather than the spelling you would type in code.
 
+A term the asker coined rarely appears verbatim in any file: \"the Z-zone drawing\" names a diagram whose own labels are Z0, Z1, Z2. grep for the piece most likely to be IN the text — zone, not Z-zone. A zero-match repo.grep retries itself case-insensitively and then by the pattern's pieces, and its note says when a rung fired — so read pattern_used before treating the rows as literal matches.
+
 \"The recent commit about X\" is git.log with grep set to X. With no grep, since, or path, git.log returns only the last 20 commits — anything older is simply not in what comes back, so a question about work from more than a day or two ago needs one of those arguments to reach it at all.
 
 Fact text looks like this — compose your queries against these words:
@@ -567,6 +569,13 @@ mod tests {
         assert!(retrieve.contains("pass the matching kind"));
         assert!(retrieve.contains("Names are findable by their parts"));
         assert!(retrieve.contains("tooltip finds TugTooltip"));
+        // The observed miss: repo.grep for "Z-zone" against a document whose
+        // own labels are Z0–Z5 returned nothing, and the question died on it.
+        // Two halves: aim the grep at a word the text would contain, and read
+        // pattern_used/note when the Rust ladder recovered the rows itself.
+        assert!(retrieve.contains("A term the asker coined"));
+        assert!(retrieve.contains("grep for the piece most likely to be IN the text"));
+        assert!(retrieve.contains("pattern_used"));
         // The wish the 2026-08-15 transcript ended on — "I'd need a search
         // scoped to tooltip in the commit history" — named a verb argument the
         // model was already holding. The horizon clause is the other half:
