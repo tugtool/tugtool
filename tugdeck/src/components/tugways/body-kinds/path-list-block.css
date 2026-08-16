@@ -27,6 +27,9 @@
  * Token sources:
  *  - Shared block-surface scaffold (frame, header strip) comes from
  *    `--tugx-block-*` in `styles/tugx-block.css`.
+ *  - Row geometry, typography, and the metadata tone come from the shared
+ *    `--tugx-filerow-*` grammar in the same file — the one this block, the
+ *    commit receipt, and `SearchResultBlock` all list files by.
  *  - Path-specific slots live in the `body{}` block below as
  *    `--tugx-paths-*`.
  *  - `.tugx-paths-list` cascade-tunes the host `--tugx-list-view-*`
@@ -50,16 +53,19 @@
 /* ---- Component-tier aliases — path-specific only [L17] ---- */
 
 body {
-  --tugx-paths-row-padding: var(--tug-space-2xs) var(--tug-space-sm);
-  --tugx-paths-row-gap:     var(--tug-space-xs);
-  /* Held clear at the end of a row whose path runs the full width. */
-  --tugx-paths-row-end-gap: var(--tug-space-md);
-  --tugx-paths-icon-color:  var(--tug7-element-global-text-normal-muted-rest);
+  --tugx-paths-row-padding: var(--tugx-filerow-padding-y) var(--tugx-filerow-inset);
+  --tugx-paths-row-gap:     var(--tugx-filerow-gap);
+  /* Held clear between a path that runs the full width and the ref number
+   * it would otherwise butt against. */
+  --tugx-paths-row-end-gap: var(--tugx-filerow-gap);
+  --tugx-paths-icon-color:  var(--tugx-filerow-meta-color);
 
-  /* The producer's number for a row, when it has one (the refs block). The
-   * link tone, because the number is an address the user can act on. */
-  --tugx-paths-ref-color:     var(--tug7-element-global-text-normal-link-rest);
-  --tugx-paths-ref-min-width: 2.5em;
+  /* The producer's number for a row, when it has one (the refs block). It
+   * is metadata about the row, not the row — so it is drained like every
+   * other trail cell in the family, and its clickability is carried by the
+   * hover wash and the pointer, which is where the row already says it. */
+  --tugx-paths-ref-color: var(--tugx-filerow-meta-color);
+  --tugx-paths-ref-width: var(--tugx-filerow-trail-width);
 }
 
 /* ---------- Frame ---------- */
@@ -74,9 +80,13 @@ body {
    * without forming a scroll container — `overflow: hidden` would,
    * and would capture sticky positioning from `.tugx-paths-header`. */
   overflow: clip;
-  color: var(--tugx-block-text-color);
-  font-family: var(--tugx-block-code-font);
-  font-size: var(--tugx-block-code-font-size);
+  color: var(--tugx-filerow-text-color);
+  /* A list of paths is a list of names. It takes the sans face at the
+   * file-row size, the same as the commit receipt's file list — not the
+   * block's code face, which this block was inheriting only for living
+   * inside a code-ish frame. */
+  font-family: var(--tugx-filerow-name-font);
+  font-size: var(--tugx-filerow-name-size);
 }
 
 /* Embedded variant — composed inside a host that already paints a
@@ -171,11 +181,14 @@ body {
 }
 
 /* The producer's row number — the handle a user types back (`/ref 5`).
- * Accent-toned and tabular so the column reads as a set of addresses. */
+ * The trail cell of the file-row grammar: right-aligned against the row's
+ * own inset, tabular so the column reads as a set of addresses, and drained
+ * so it annotates the path rather than competing with it. It hangs at the
+ * right margin the way the transcript's `#r3` does for the whole block. */
 /* @tug-renders-on: --tugx-block-bg */
 .tugx-paths-ref {
   flex: 0 0 auto;
-  min-width: var(--tugx-paths-ref-min-width);
+  min-width: var(--tugx-paths-ref-width);
   text-align: right;
   color: var(--tugx-paths-ref-color);
   font-variant-numeric: tabular-nums;

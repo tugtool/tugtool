@@ -421,17 +421,17 @@ const PathCell: TugListViewCellRenderer<PathListDataSource> = ({
       data-tug-focus={annotated ? "refuse" : undefined}
       data-no-activate={annotated ? "" : undefined}
     >
-      {dataSource.numbered ? (
-        <span className="tugx-paths-ref" data-slot="path-list-ref">
-          {dataSource.numberAt(index) ?? ""}
-        </span>
-      ) : null}
       <Icon size={14} aria-hidden="true" />
       <MiddleEllipsisPath
         path={pathRelativeTo(path, dataSource.relativeTo)}
         fullPath={path}
         findable={dataSource.findable}
       />
+      {dataSource.numbered ? (
+        <span className="tugx-paths-ref" data-slot="path-list-ref">
+          {dataSource.numberAt(index) ?? ""}
+        </span>
+      ) : null}
     </div>
   );
 };

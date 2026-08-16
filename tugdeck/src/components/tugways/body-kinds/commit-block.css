@@ -20,12 +20,13 @@
   flex-direction: column;
   gap: var(--tug-space-xs);
   /* The chrome body has no padding by design ("body-kind owns its own");
-     inset the receipt so it doesn't smash the frame edge. Horizontal
-     matches the header strip (`--tug-space-md`) so the body's left edge
-     lines up under the header's dot. */
-  padding: var(--tug-space-sm) var(--tug-space-md);
-  font-family: var(--tug-font-family-sans);
-  color: var(--tugx-block-text-color);
+     inset the receipt so it doesn't smash the frame edge. Horizontal is
+     the file-row grammar's inset, which is also the header strip's, so the
+     body's left edge lines up under the header's dot — and with the left
+     edge of a `/match` or `/search` result. */
+  padding: var(--tug-space-sm) var(--tugx-filerow-inset);
+  font-family: var(--tugx-filerow-name-font);
+  color: var(--tugx-filerow-text-color);
 }
 
 /* The message / files disclosures use the shared `BlockDisclosure`,
@@ -101,11 +102,14 @@
   gap: 2px;
 }
 
+/* The reference row of the file-row grammar: a fixed lead cell, a path that
+   takes the slack, a drained numeric trail. It reads through the shared
+   slots so the three blocks that list files cannot drift apart silently. */
 .tugx-commit-file {
   display: flex;
   align-items: center;
   gap: var(--tug-space-xs);
-  font-size: var(--tug-font-size-2xs);
+  font-size: var(--tugx-filerow-name-size);
 }
 
 .tugx-commit-file-status {
@@ -141,7 +145,7 @@
 .tugx-commit-file-path {
   flex: 1 1 auto;
   min-width: 0;
-  color: var(--tugx-block-text-color);
+  color: var(--tugx-filerow-text-color);
 }
 
 .tugx-commit-file-delta {

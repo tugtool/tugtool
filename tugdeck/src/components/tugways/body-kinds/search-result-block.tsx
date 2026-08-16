@@ -623,13 +623,13 @@ const FileHeaderCell: TugListViewCellRenderer<SearchResultDataSource> = ({
 /** One context line — a dim line number + line text. */
 const ContextLine: React.FC<{
   line: SearchResultContextLine;
-  /** Hold the ref-number column's width so the gutter edge stays straight. */
+  /** Hold the ref column's width so the row's right edge stays straight. */
   numbered: boolean;
 }> = ({ line, numbered }) => (
   <div className="tugx-search-line tugx-search-line--context">
-    {numbered ? <span className="tugx-search-ref" aria-hidden="true" /> : null}
     <span className="tugx-search-lineno">{line.line}</span>
     <span className="tugx-search-linetext">{line.text}</span>
+    {numbered ? <span className="tugx-search-ref" aria-hidden="true" /> : null}
   </div>
 );
 
@@ -679,11 +679,6 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
         <ContextLine key={`b${line.line}`} line={line} numbered={dataSource.numbered} />
       ))}
       <div className="tugx-search-line tugx-search-line--match">
-        {dataSource.numbered ? (
-          <span className="tugx-search-ref" data-slot="search-result-ref">
-            {match.refNumber ?? ""}
-          </span>
-        ) : null}
         <span className="tugx-search-lineno">{match.line}</span>
         <span className="tugx-search-linetext">
           {segments.map((segment, segmentIndex) => {
@@ -713,6 +708,11 @@ const MatchCell: TugListViewCellRenderer<SearchResultDataSource> = ({
             </span>
           ) : null}
         </span>
+        {dataSource.numbered ? (
+          <span className="tugx-search-ref" data-slot="search-result-ref">
+            {match.refNumber ?? ""}
+          </span>
+        ) : null}
       </div>
       {match.after?.map((line) => (
         <ContextLine key={`a${line.line}`} line={line} numbered={dataSource.numbered} />

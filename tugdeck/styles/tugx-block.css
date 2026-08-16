@@ -215,4 +215,33 @@ body {
   --tugx-block-tone-caution-color: var(--tug7-element-global-text-normal-caution-rest);
   --tugx-block-tone-active-bg:     var(--tug7-surface-tone-primary-normal-active-rest);
   --tugx-block-tone-active-color:  var(--tug7-element-tone-text-normal-active-rest);
+
+  /* ------------------------------------------------------------------ *
+   * File-row grammar. Three blocks list files with metadata beside      *
+   * them — the commit receipt, `PathListBlock` (`/match`), and          *
+   * `SearchResultBlock` (`/search`) — and they are read as one family.  *
+   * The shape is the same in all three:                                 *
+   *                                                                     *
+   *   [lead — fixed, tabular]  [name or code — flex]  [trail — right]   *
+   *                                                                     *
+   * lead is what locates the row (a status letter, a file icon, a line  *
+   * number); trail is what annotates it (a diffstat, a ref number, a    *
+   * match count) and hangs off the right inset the way the transcript's *
+   * own `#r3` does. Only the middle column carries normal ink; every    *
+   * metadata cell is drained, so a row reads as one thing.              *
+   * ------------------------------------------------------------------ */
+  --tugx-filerow-inset:       var(--tug-space-md);
+  --tugx-filerow-padding-y:   var(--tug-space-2xs);
+  --tugx-filerow-gap:         var(--tug-space-sm);
+  /* Wide enough for a five-digit line number; the same column whether a
+   * row fills it or holds it empty, so the text edge stays straight. */
+  --tugx-filerow-lead-width:  3.5em;
+  --tugx-filerow-trail-width: 2.5em;
+  /* A path is prose, not code — it takes the sans face and the compact
+   * size the commit receipt reads well at. Source lines stay in the
+   * block's code face; only their metadata joins this grammar. */
+  --tugx-filerow-name-font:   var(--tug-font-family-sans);
+  --tugx-filerow-name-size:   var(--tug-font-size-2xs);
+  --tugx-filerow-text-color:  var(--tugx-block-text-color);
+  --tugx-filerow-meta-color:  var(--tug7-element-global-text-normal-muted-rest);
 }
