@@ -72,7 +72,13 @@ impl RefsLedger {
         let ledger = Self::from_conn(conn)?;
         if let crate::ledger_integrity::GateOutcome::Quarantined { corrupt_path } = &gate {
             let db = ledger.db.lock().expect("refs ledger poisoned");
-            crate::ledger_integrity::salvage_into(&db, "main", corrupt_path, &["refs_runs"], "refs");
+            crate::ledger_integrity::salvage_into(
+                &db,
+                "main",
+                corrupt_path,
+                &["refs_runs"],
+                "refs",
+            );
         }
         Ok(ledger)
     }
@@ -188,14 +194,20 @@ mod tests {
     #[test]
     fn a_new_run_clobbers_the_previous_one() {
         let ledger = RefsLedger::open_in_memory().unwrap();
-        ledger.record_run(&run("s1", "run-1", &["a.ts", "b.ts"])).unwrap();
+        ledger
+            .record_run(&run("s1", "run-1", &["a.ts", "b.ts"]))
+            .unwrap();
         ledger.record_run(&run("s1", "run-2", &["c.ts"])).unwrap();
 
         let latest = ledger.list_refs("s1").unwrap().unwrap();
         assert_eq!(latest.run_id, "run-2");
         assert_eq!(latest.command, "/match run-2");
         assert_eq!(
-            latest.refs.iter().map(|r| r.path.as_str()).collect::<Vec<&str>>(),
+            latest
+                .refs
+                .iter()
+                .map(|r| r.path.as_str())
+                .collect::<Vec<&str>>(),
             vec!["c.ts"],
         );
     }

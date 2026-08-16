@@ -499,10 +499,10 @@ No new app-test file: [#step-8] extends `tests/app-test/at0365-gazette-card.test
 | #step-3 | `repo.outline` | done | `1b760ff46` |
 | #step-4 | Instruction teachings and pins | done | `bd373b452` |
 | #step-5 | Integration checkpoint: replay the incident question | done | `732a67aff` |
-| #step-6 | Question refs on the wire | pending | — |
-| #step-7 | Verified mentions and outline seeding | pending | — |
-| #step-8 | App-test: the pointing gesture | pending | — |
-| #step-9 | Integration checkpoint: the whole arc | pending | — |
+| #step-6 | Question refs on the wire | done | `f4eeceba1` |
+| #step-7 | Verified mentions and outline seeding | done | `a0dd0ddd7` |
+| #step-8 | App-test: the pointing gesture | done | `da788db8d` |
+| #step-9 | Integration checkpoint: the whole arc | done | `da788db8d` |
 
 #### Step 1: Path resolution, repair, and `repo.ls`; grep scope becomes provable {#step-1}
 

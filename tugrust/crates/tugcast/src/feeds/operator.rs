@@ -25,6 +25,7 @@
 //!   something else.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -1684,15 +1685,93 @@ fn render_attached_line(count: usize) -> String {
     }
 }
 
+/// The label the verified-mention section opens with ([S05]), pinned in the
+/// job table the way [`NOW_HEADER`] and [`SESSIONS_HEADER`] are — a section the
+/// model was never told about is a section it has to guess the meaning of.
+pub const QUESTION_FILES_HEADER: &str = "FILES NAMED BY THE QUESTION (verified to exist):";
+
+/// How many of the named files get their outline included.
+///
+/// Two, so a question that points at a directory's worth of atoms cannot
+/// displace itself ([P07]). The rest are still named — an unoutlined file is
+/// one `repo.outline` away, and the model has been told it exists.
+const SEEDED_OUTLINES: usize = 2;
+
+/// The files the asker pointed at, as the retrieval turn is shown them:
+/// verified to exist, with their line counts, and — for the first
+/// [`SEEDED_OUTLINES`] — their structure ([S05]).
+///
+/// This is where the pointing gesture converts into a head start. Without it
+/// the model's opening move on "where in this document is X" is a search for a
+/// file it has already been handed; with it, the first round can be a
+/// `repo.read` at the right line.
+///
+/// Empty when nothing verified, which is what keeps the common question's
+/// retrieve input byte-identical to what it was before any of this existed. A
+/// file that will not read contributes its name alone and a warning — the
+/// mention is still true, and losing the outline is not worth losing the
+/// statement that the file is there.
+fn render_question_files(mentions: &[VerifiedMention]) -> String {
+    if mentions.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("\n");
+    out.push_str(QUESTION_FILES_HEADER);
+    out.push('\n');
+    for (index, mention) in mentions.iter().enumerate() {
+        let contents = match std::fs::read(&mention.absolute) {
+            Ok(bytes) if !repo_files::is_binary(&bytes) => {
+                Some(String::from_utf8_lossy(&bytes).into_owned())
+            }
+            Ok(_) => None,
+            Err(err) => {
+                warn!(path = %mention.path, error = %err, "gazette operator: named file would not read; seeded by name only");
+                None
+            }
+        };
+        match &contents {
+            Some(text) => {
+                let _ = writeln!(out, "- {} ({} lines)", mention.path, text.lines().count());
+            }
+            None => {
+                let _ = writeln!(out, "- {}", mention.path);
+                continue;
+            }
+        }
+        if index >= SEEDED_OUTLINES {
+            continue;
+        }
+        let extension = std::path::Path::new(&mention.path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or_default();
+        let entries = contents
+            .as_deref()
+            .map(|text| repo_files::outline_entries(text, extension))
+            .unwrap_or_default();
+        if entries.is_empty() {
+            continue;
+        }
+        out.push_str("  OUTLINE:\n");
+        for entry in entries.iter().take(OUTLINE_MAX_ENTRIES) {
+            // The kind column is padded to its widest spelling, so a long
+            // outline reads as three columns rather than as ragged prose.
+            let _ = writeln!(out, "    {}  {:<7}  {}", entry.line, entry.kind, entry.text);
+        }
+    }
+    out
+}
+
 fn compose_retrieve_input(
     now_ms: i64,
     question: &str,
     roster: &str,
     scrollback: &str,
     attached: usize,
+    question_files: &str,
 ) -> String {
     format!(
-        "{}\n\n{roster}\nQUESTION:\n{question}\n{}\nRECENT GAZETTE POSTS:\n{scrollback}",
+        "{}\n\n{roster}\nQUESTION:\n{question}\n{}{question_files}\nRECENT GAZETTE POSTS:\n{scrollback}",
         render_now_line(now_ms),
         render_attached_line(attached),
     )
@@ -1790,6 +1869,76 @@ pub struct QuestionAttachment {
     pub data: String,
 }
 
+/// One file the asker pointed at with an `@` atom, as it arrives on
+/// `GAZETTE_INPUT` beside the flattened body.
+///
+/// `kind` is a plain string rather than a [`GazetteRefKind`] deliberately: an
+/// unrecognized spelling from a drifted deck must cost that one ref, not the
+/// deserialization of the whole question. Only `file` is acted on today, which
+/// is the only kind the composer's single completion source can produce.
+#[derive(Debug, Clone, Deserialize)]
+pub struct QuestionRef {
+    pub kind: String,
+    pub target: String,
+}
+
+/// A question ref that resolved to a real file under the project dir.
+///
+/// `path` is what the **resolver** spelled, not necessarily what the asker
+/// typed — a repaired ref names the file that exists, because that is the
+/// argument a verb can be given and the target a chip can act on.
+#[derive(Debug, Clone)]
+pub struct VerifiedMention {
+    pub path: String,
+    /// Where the file actually is — resolved and containment-checked once, so
+    /// the preamble that reads it does not resolve it a second time.
+    pub absolute: std::path::PathBuf,
+}
+
+/// Resolve each question ref against the project dir, keeping the ones that
+/// name a real file.
+///
+/// A ref that does not verify is dropped with a warning rather than published:
+/// a chip nobody can act on is worse than no chip, which is the card's existing
+/// rule for a malformed ref. The discard is safe against [L23] for one specific
+/// reason — the atom already flattened into the body, so the path stays visible
+/// in the sentence and only the structured claim is lost. Were refs ever to
+/// become the sole carrier of the path, this would have to become an error.
+///
+/// Duplicates collapse: the same file named twice is one mention, since what
+/// rides downstream is the file, not the gesture count.
+pub(crate) async fn verify_question_refs(dir: &Path, refs: &[QuestionRef]) -> Vec<VerifiedMention> {
+    let mut verified: Vec<VerifiedMention> = Vec::new();
+    for raw in refs {
+        if raw.kind != GazetteRefKind::File.as_str() {
+            warn!(kind = %raw.kind, "gazette operator: question ref of an unhandled kind; dropped");
+            continue;
+        }
+        if path_arg(&raw.target, "ref").is_err() {
+            warn!(target = %raw.target, "gazette operator: question ref is not a repo-relative path; dropped");
+            continue;
+        }
+        match repo_files::resolve_readable_path(dir, &raw.target).await {
+            Ok(resolved) if resolved.absolute.is_file() => {
+                if verified.iter().any(|m| m.path == resolved.used) {
+                    continue;
+                }
+                verified.push(VerifiedMention {
+                    path: resolved.used,
+                    absolute: resolved.absolute,
+                });
+            }
+            Ok(resolved) => {
+                warn!(target = %resolved.used, "gazette operator: question ref is not a file; dropped");
+            }
+            Err(err) => {
+                warn!(target = %raw.target, error = %err, "gazette operator: question ref did not resolve; dropped");
+            }
+        }
+    }
+    verified
+}
+
 /// Write each attachment's bytes into `dir` and describe where they landed.
 ///
 /// Every failure — an undecodable base64 payload, a directory that will not
@@ -1857,16 +2006,25 @@ impl OperatorPipeline {
     /// screenshot has to be written by something that saw the screenshot.
     /// A question with an image and no words is a question — "what is this?"
     /// is what the picture is for — so emptiness is judged on the pair.
+    ///
+    /// The `@` atoms the asker placed ride in as `refs` and are verified
+    /// against the tree before the post is written. They are **not** run
+    /// through `validate_refs`, which vets a model's recall against verb
+    /// results that do not exist yet and would therefore drop every one of
+    /// them; nor through `sole_ledger_session`, which promotes an answer's
+    /// session to the row's identity and has nothing to say about a question.
     pub async fn handle(
         &self,
         question: String,
         request_id: Option<String>,
         attachments: Vec<QuestionAttachment>,
+        refs: Vec<QuestionRef>,
     ) {
         let question = question.trim().to_string();
         if question.is_empty() && attachments.is_empty() {
             return;
         }
+        let mentions = verify_question_refs(&self.ctx.bootstrap_project_dir, &refs).await;
         // Stored before the post is published, because the post carries where
         // they landed. An image that cannot be written is dropped with a
         // warning rather than failing the question: the words still deserve
@@ -1887,7 +2045,15 @@ impl OperatorPipeline {
                 session_id: None,
                 wake_reason: None,
                 body: question.clone(),
-                refs: Vec::new(),
+                // The asker's own pointing gesture, verified — the one ref
+                // channel whose targets came from a person rather than a model.
+                refs: mentions
+                    .iter()
+                    .map(|m| GazetteRef {
+                        kind: GazetteRefKind::File,
+                        target: m.path.clone(),
+                    })
+                    .collect(),
                 // A question costs no agent turn; it is typed, not run.
                 elapsed_ms: None,
                 // The card's annotator needs a root for PROSE mentions, refs
@@ -1911,7 +2077,7 @@ impl OperatorPipeline {
         // The answer's own cost, clocked around the whole round — every verb
         // round trip the Operator needed, not just the last turn's tokens.
         let started = std::time::Instant::now();
-        match self.answer(&question, &images).await {
+        match self.answer(&question, &images, &mentions).await {
             Ok((post, context)) => {
                 let validated = crate::feeds::reporter_wake::validate_refs(post.refs, &[&context]);
                 if !validated.dropped.is_empty() {
@@ -2009,8 +2175,9 @@ impl OperatorPipeline {
         &self,
         question: &str,
         images: &[TurnImage],
+        mentions: &[VerifiedMention],
     ) -> Result<(AnswerPost, String), String> {
-        run_question(&self.ctx, &self.pool, question, images, None).await
+        run_question(&self.ctx, &self.pool, question, images, mentions, None).await
     }
 }
 
@@ -2034,6 +2201,7 @@ pub async fn run_question(
     pool: &Arc<crate::shared_agent::SharedAgentPool>,
     question: &str,
     images: &[TurnImage],
+    mentions: &[VerifiedMention],
     observer: Option<RoundObserver<'_>>,
 ) -> Result<(AnswerPost, String), String> {
     let scrollback = render_scrollback(
@@ -2058,10 +2226,22 @@ pub async fn run_question(
         }
     };
 
+    // Read once, before the turn that spends it: the outlines are the same
+    // for both, and only the retrieve turn is shown them ([P07]) — by the
+    // answering turn the model has real verb results and the seed would only
+    // compete with them.
+    let question_files = render_question_files(mentions);
     let raw = pool
         .run_seeing(
             "operator-retrieve",
-            compose_retrieve_input(now_ms(), question, &roster, &scrollback, images.len()),
+            compose_retrieve_input(
+                now_ms(),
+                question,
+                &roster,
+                &scrollback,
+                images.len(),
+                &question_files,
+            ),
             images.to_vec(),
         )
         .await?;
@@ -3512,7 +3692,10 @@ mod tests {
         assert_eq!(out["matches"][0]["path"], "docs/design-notes.md");
         assert_eq!(out["path_scope_used"], "docs/design-notes.md");
         assert!(
-            out["note"].as_str().expect("a repair note").contains("%design-notes.md"),
+            out["note"]
+                .as_str()
+                .expect("a repair note")
+                .contains("%design-notes.md"),
             "the note names what the model wrote: {}",
             out["note"]
         );
@@ -3702,7 +3885,10 @@ mod tests {
             .expect("read ran");
         assert_eq!(out["truncated"], true);
         assert_eq!(out["total_lines"], (READ_MAX_LINES + 40) as i64);
-        assert_eq!(out["lines"].as_array().expect("lines").len(), READ_MAX_LINES);
+        assert_eq!(
+            out["lines"].as_array().expect("lines").len(),
+            READ_MAX_LINES
+        );
     }
 
     #[tokio::test]
@@ -3712,7 +3898,10 @@ mod tests {
             .await
             .expect_err("a directory is not a file");
         assert!(err.contains("directory"), "{err}");
-        assert!(err.contains("repo.ls"), "the error names the way out: {err}");
+        assert!(
+            err.contains("repo.ls"),
+            "the error names the way out: {err}"
+        );
     }
 
     #[tokio::test]
@@ -4125,6 +4314,7 @@ mod tests {
                 "what is this".to_string(),
                 Some("req-img".into()),
                 vec![a_png()],
+                Vec::new(),
             )
             .await;
 
@@ -4169,7 +4359,12 @@ mod tests {
     async fn an_image_alone_is_a_question() {
         let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("A pixel.")]));
         h.pipeline
-            .handle(String::new(), Some("req-only-img".into()), vec![a_png()])
+            .handle(
+                String::new(),
+                Some("req-only-img".into()),
+                vec![a_png()],
+                Vec::new(),
+            )
             .await;
 
         let question = next_post(&mut h.rx);
@@ -4197,7 +4392,7 @@ mod tests {
         );
         let mut h = pipeline(pool);
         h.pipeline
-            .handle("what landed".to_string(), None, Vec::new())
+            .handle("what landed".to_string(), None, Vec::new(), Vec::new())
             .await;
 
         let question = next_post(&mut h.rx);
@@ -4220,6 +4415,7 @@ mod tests {
             .handle(
                 "what landed recently".to_string(),
                 Some("req-1".into()),
+                Vec::new(),
                 Vec::new(),
             )
             .await;
@@ -4252,7 +4448,12 @@ mod tests {
             answer_turn("Confirmed in the second round."),
         ]));
         h.pipeline
-            .handle("when did beta land".to_string(), None, Vec::new())
+            .handle(
+                "when did beta land".to_string(),
+                None,
+                Vec::new(),
+                Vec::new(),
+            )
             .await;
 
         let _question = next_post(&mut h.rx);
@@ -4277,6 +4478,7 @@ mod tests {
                 "an unanswerable one".to_string(),
                 Some("req-9".into()),
                 Vec::new(),
+                Vec::new(),
             )
             .await;
 
@@ -4298,6 +4500,7 @@ mod tests {
             .handle(
                 "anything at all".to_string(),
                 Some("req-2".into()),
+                Vec::new(),
                 Vec::new(),
             )
             .await;
@@ -4335,7 +4538,7 @@ mod tests {
             Ok("I had a look and honestly it's hard to say.".to_string()),
         ]));
         h.pipeline
-            .handle("what happened".to_string(), None, Vec::new())
+            .handle("what happened".to_string(), None, Vec::new(), Vec::new())
             .await;
         let _question = next_post(&mut h.rx);
         let post = next_post(&mut h.rx);
@@ -4357,7 +4560,7 @@ mod tests {
             .to_string()),
         ]));
         h.pipeline
-            .handle("where is alpha".to_string(), None, Vec::new())
+            .handle("where is alpha".to_string(), None, Vec::new(), Vec::new())
             .await;
         let _question = next_post(&mut h.rx);
         let answer = next_post(&mut h.rx);
@@ -4365,10 +4568,109 @@ mod tests {
         assert_eq!(answer.refs[0].target, "alpha.txt");
     }
 
+    // MARK: - Question refs
+
+    /// The asker's pointing gesture survives the wire: an `@` atom naming a
+    /// real file comes back on the question post as a ref, without ever
+    /// meeting `validate_refs` — which vets a model's recall against verb
+    /// results that have not run yet and would drop every one of them.
+    #[tokio::test]
+    async fn a_question_ref_naming_a_real_file_rides_the_post() {
+        let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("Read it.")]));
+        h.pipeline
+            .handle(
+                "what does docs/design-notes.md say".to_string(),
+                Some("req-ref".into()),
+                Vec::new(),
+                vec![QuestionRef {
+                    kind: "file".to_string(),
+                    target: "docs/design-notes.md".to_string(),
+                }],
+            )
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert_eq!(question.author, GazetteAuthor::User);
+        assert_eq!(question.refs.len(), 1);
+        assert_eq!(question.refs[0].kind, GazetteRefKind::File);
+        assert_eq!(question.refs[0].target, "docs/design-notes.md");
+    }
+
+    /// A ref that names nothing costs itself and nothing else — the question
+    /// is still asked and still answered, because the path is also in the
+    /// words ([L23] holds only for that reason).
+    #[tokio::test]
+    async fn a_question_ref_naming_nothing_is_dropped_and_the_question_stands() {
+        let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("No idea.")]));
+        h.pipeline
+            .handle(
+                "what does docs/invented.md say".to_string(),
+                Some("req-ghost".into()),
+                Vec::new(),
+                vec![QuestionRef {
+                    kind: "file".to_string(),
+                    target: "docs/invented.md".to_string(),
+                }],
+            )
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert!(
+            question.refs.is_empty(),
+            "unverifiable refs are not published"
+        );
+        assert_eq!(question.body, "what does docs/invented.md say");
+        let answer = next_post(&mut h.rx);
+        assert_eq!(answer.body, "No idea.");
+    }
+
+    /// The repair ladder reaches the question side too: a bare basename names
+    /// the file that exists, and the ref published is the path a verb could
+    /// be given rather than the fragment that was typed.
+    #[tokio::test]
+    async fn a_question_ref_is_repaired_to_the_path_that_exists() {
+        let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("Zones.")]));
+        h.pipeline
+            .handle(
+                "design-notes.md please".to_string(),
+                Some("req-repair".into()),
+                Vec::new(),
+                vec![QuestionRef {
+                    kind: "file".to_string(),
+                    target: "design-notes.md".to_string(),
+                }],
+            )
+            .await;
+
+        let question = next_post(&mut h.rx);
+        assert_eq!(question.refs.len(), 1);
+        assert_eq!(question.refs[0].target, "docs/design-notes.md");
+    }
+
+    /// A payload from a deck that never heard of refs — the overwhelmingly
+    /// common case — behaves exactly as it did, field absent and all.
+    #[test]
+    fn a_gazette_input_payload_without_refs_still_deserializes() {
+        #[derive(serde::Deserialize)]
+        struct Raw {
+            #[serde(default)]
+            refs: Vec<QuestionRef>,
+        }
+        let raw: Raw = serde_json::from_str(r#"{"body":"hi","requestId":"r1"}"#).expect("parses");
+        assert!(raw.refs.is_empty());
+        let with: Raw =
+            serde_json::from_str(r#"{"body":"hi","refs":[{"kind":"file","target":"a.txt"}]}"#)
+                .expect("parses");
+        assert_eq!(with.refs.len(), 1);
+        assert_eq!(with.refs[0].target, "a.txt");
+    }
+
     #[tokio::test]
     async fn an_empty_question_is_not_an_exchange() {
         let mut h = pipeline(scripted_pool(vec![verbs_turn(), answer_turn("hi")]));
-        h.pipeline.handle("   ".to_string(), None, Vec::new()).await;
+        h.pipeline
+            .handle("   ".to_string(), None, Vec::new(), Vec::new())
+            .await;
         assert!(h.rx.try_recv().is_err(), "nothing was broadcast");
     }
 
@@ -4469,6 +4771,7 @@ mod tests {
                 "how many physics questions today".to_string(),
                 Some("req-3".into()),
                 Vec::new(),
+                Vec::new(),
             )
             .await;
 
@@ -4491,13 +4794,13 @@ mod tests {
     async fn a_prose_answer_is_salvaged_not_discarded() {
         let mut h = pipeline(scripted_pool(vec![
             Ok(json!({"verbs": []}).to_string()),
-            Ok("No match for \"Z-zone\" in the file — that exact term doesn't appear."
-                .to_string()),
+            Ok("No match for \"Z-zone\" in the file — that exact term doesn't appear.".to_string()),
         ]));
         h.pipeline
             .handle(
                 "where is the Z-zone drawing".to_string(),
                 Some("req-11".into()),
+                Vec::new(),
                 Vec::new(),
             )
             .await;
@@ -4523,7 +4826,12 @@ mod tests {
             Ok(json!({"summary": {"body": "close but wrong key"}}).to_string()),
         ]));
         h.pipeline
-            .handle("anything".to_string(), Some("req-12".into()), Vec::new())
+            .handle(
+                "anything".to_string(),
+                Some("req-12".into()),
+                Vec::new(),
+                Vec::new(),
+            )
             .await;
 
         let _question = next_post(&mut h.rx);
@@ -4541,7 +4849,12 @@ mod tests {
             answer_turn("Read straight off the channel."),
         ]));
         h.pipeline
-            .handle("what have I been up to".to_string(), None, Vec::new())
+            .handle(
+                "what have I been up to".to_string(),
+                None,
+                Vec::new(),
+                Vec::new(),
+            )
             .await;
         let _question = next_post(&mut h.rx);
         let answer = next_post(&mut h.rx);
@@ -4596,6 +4909,139 @@ mod tests {
         assert!(line.ends_with(')'), "{line}");
     }
 
+    // MARK: - The verified-mention preamble
+
+    /// A mention whose file is real, written to the fixture repo so the
+    /// preamble's own read has something to read.
+    fn mention(repo: &tempfile::TempDir, relative: &str, contents: &str) -> VerifiedMention {
+        let absolute = repo.path().join(relative);
+        if let Some(parent) = absolute.parent() {
+            std::fs::create_dir_all(parent).expect("parent");
+        }
+        std::fs::write(&absolute, contents).expect("write");
+        VerifiedMention {
+            path: relative.to_string(),
+            absolute,
+        }
+    }
+
+    /// The overwhelmingly common question names no file, and its retrieve
+    /// input must not have moved by so much as a newline.
+    #[test]
+    fn a_question_naming_no_file_composes_exactly_what_it_always_did() {
+        let roster = render_session_roster(&[]);
+        let composed = compose_retrieve_input(
+            FIXED_NOW,
+            "what landed",
+            &roster,
+            "(the channel is empty)\n",
+            0,
+            &render_question_files(&[]),
+        );
+        assert_eq!(
+            composed,
+            format!(
+                "{}\n\n{roster}\nQUESTION:\nwhat landed\n\nRECENT GAZETTE POSTS:\n(the channel is empty)\n",
+                render_now_line(FIXED_NOW),
+            ),
+        );
+        assert!(!composed.contains(QUESTION_FILES_HEADER));
+    }
+
+    /// A named file arrives as a fact with a map: the header, the path, its
+    /// line count, and the structure the model would otherwise spend a round
+    /// asking for.
+    #[test]
+    fn a_named_file_arrives_with_its_line_count_and_its_outline() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let named = mention(
+            &repo,
+            "docs/zones.md",
+            "# Zones\n\nsome prose\n\n**D97.** The card is partitioned into six zones.\n",
+        );
+        let rendered = render_question_files(&[named]);
+        assert!(rendered.contains(QUESTION_FILES_HEADER));
+        assert!(rendered.contains("- docs/zones.md (5 lines)"), "{rendered}");
+        assert!(rendered.contains("  OUTLINE:"), "{rendered}");
+        assert!(rendered.contains("1  heading  # Zones"), "{rendered}");
+        assert!(rendered.contains("5  label    **D97.**"), "{rendered}");
+    }
+
+    /// Bounded at two outlines ([P07]) so a question pointing at a directory's
+    /// worth of atoms cannot displace itself. The third file is still NAMED —
+    /// losing its outline is not losing the statement that it exists.
+    #[test]
+    fn only_the_first_two_named_files_are_outlined() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let mentions: Vec<VerifiedMention> = ["one.md", "two.md", "three.md"]
+            .iter()
+            .map(|name| mention(&repo, name, "# Heading\n\nbody\n"))
+            .collect();
+        let rendered = render_question_files(&mentions);
+        assert_eq!(rendered.matches("  OUTLINE:").count(), SEEDED_OUTLINES);
+        assert!(rendered.contains("- three.md (3 lines)"), "{rendered}");
+    }
+
+    /// A file that will not read costs its outline and nothing else: the
+    /// mention is still true, and the model is still told the file is there.
+    #[test]
+    fn a_named_file_that_will_not_read_is_still_named() {
+        let repo = tempfile::tempdir().expect("tempdir");
+        let ghost = VerifiedMention {
+            path: "gone.md".to_string(),
+            absolute: repo.path().join("gone.md"),
+        };
+        let rendered = render_question_files(&[ghost]);
+        assert!(rendered.contains("- gone.md"), "{rendered}");
+        assert!(!rendered.contains("lines)"), "{rendered}");
+        assert!(!rendered.contains("OUTLINE:"), "{rendered}");
+    }
+
+    /// The whole point, through the real pipeline: the retrieve turn the model
+    /// actually receives carries the section, and the answering turn does not
+    /// — by then it has verb results, and the seed would only compete.
+    #[tokio::test]
+    async fn a_question_carrying_a_ref_seeds_the_retrieve_turn() {
+        let fake = FakeSpawner::new(vec![verbs_turn(), answer_turn("Zones, line 3.")]);
+        let pool = SharedAgentPool::new(
+            AgentSpec {
+                name: "gazette",
+                model: Arc::new(|| "sonnet".to_string()),
+                jobs: super::super::gazette_agent::GAZETTE_AGENT_JOBS,
+                max_workers: 3,
+            },
+            Arc::clone(&fake) as Arc<dyn AgentWorkerSpawner>,
+        );
+        let mut h = pipeline(pool);
+        h.pipeline
+            .handle(
+                "where are the zones described".to_string(),
+                Some("req-seed".into()),
+                Vec::new(),
+                vec![QuestionRef {
+                    kind: "file".to_string(),
+                    target: "docs/design-notes.md".to_string(),
+                }],
+            )
+            .await;
+        let _question = next_post(&mut h.rx);
+
+        let turns = fake.turns_seen();
+        assert_eq!(turns.len(), 2, "retrieve and answer");
+        assert!(turns[0].contains(QUESTION_FILES_HEADER), "{}", turns[0]);
+        assert!(
+            turns[0].contains("- docs/design-notes.md (3 lines)"),
+            "{}",
+            turns[0],
+        );
+        assert!(
+            turns[0].contains("1  heading  ## Placement"),
+            "{}",
+            turns[0]
+        );
+        assert!(!turns[1].contains(QUESTION_FILES_HEADER), "{}", turns[1]);
+    }
+
     #[test]
     fn both_composed_turns_open_with_the_clock() {
         let roster = render_session_roster(&[]);
@@ -4605,6 +5051,7 @@ mod tests {
             &roster,
             "(the channel is empty)\n",
             0,
+            "",
         );
         assert!(retrieve.starts_with(NOW_HEADER), "{retrieve}");
         assert!(retrieve.find(NOW_HEADER) < retrieve.find("QUESTION:"));
@@ -4756,7 +5203,7 @@ mod tests {
     fn the_roster_rides_both_turns_between_the_clock_and_the_question() {
         let roster = render_session_roster(&[]);
         for composed in [
-            compose_retrieve_input(FIXED_NOW, "q", &roster, "(the channel is empty)\n", 0),
+            compose_retrieve_input(FIXED_NOW, "q", &roster, "(the channel is empty)\n", 0, ""),
             compose_answer_input(
                 FIXED_NOW,
                 "q",
@@ -4809,6 +5256,7 @@ mod tests {
             &roster,
             "(the channel is empty)\n",
             0,
+            "",
         );
         let order = |text: &str, marks: &[&str]| {
             let found: Vec<usize> = marks

@@ -1147,9 +1147,7 @@ async fn dash_entries(
             // Whether an *attempt* to replay conflicted is knowledge only the
             // engine that attempted it has; the library composes everything
             // else. Empty when no engine is running, which is the truth then.
-            replay_conflict_paths: crate::feeds::base_motion::conflict_paths_for(
-                &detail.owner_key,
-            ),
+            replay_conflict_paths: crate::feeds::base_motion::conflict_paths_for(&detail.owner_key),
             owner_id: detail.owner_key,
             display_name: detail.name,
             branch: Some(detail.branch),

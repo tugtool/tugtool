@@ -48,6 +48,14 @@
  *     reached the Operator, and the Operator's reply came back and cleared the
  *     pending row. Answer *quality* is not an app-test's business (it has no
  *     model behind it); the round trip is.
+ *     Then the same round trip **with a file pointed at**: `@`-complete a real
+ *     path into the composer through the live FILETREE provider, send, and
+ *     find the path on the question post that comes back. The atom is doing
+ *     two jobs there — it flattens into the sentence, and it rides the wire as
+ *     a structured ref tugcast verifies against the tree before the first verb
+ *     runs. The wire itself is covered by tugcast's own tests and the deck's
+ *     `encodeGazetteInput` tests; what only the app can prove is that the
+ *     gesture a person makes reaches the post.
  *
  * One further claim, on its own app because it is a whole second round trip:
  *
@@ -69,6 +77,7 @@
  * @covers tugdeck/src/components/gazette/gazette-card.css
  * @covers tugdeck/src/components/gazette/gazette-card-registration.tsx
  * @covers tugdeck/src/lib/gazette-store.ts
+ * @covers tugdeck/src/protocol.ts
  * @covers tugdeck/src/lib/gazette-attachment-bytes.ts
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.tsx
  * @covers tugdeck/src/components/tugways/cards/tug-attachment-preview.css
@@ -393,11 +402,19 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
         // (`data-tugx-wrapped` + the payload dataset), so the click, the
         // menu and the hover are the same ones every annotated surface has.
         const INLINE_FILE = `${POST} .gazette-post-body [data-tugx-wrapped][data-tug-annotation="file-path"]`;
+        // Both halves in the SAME condition. The mark lands in two beats —
+        // the wrapper carries `data-path` from the resolver before the run's
+        // text is back under it — so waiting on the path alone and then
+        // reading the text in a second round trip catches an empty wrapper
+        // about half the time.
         await app.waitForCondition<boolean>(
           `(function () {
             var el = document.querySelector(${JSON.stringify(INLINE_FILE)});
-            var path = el === null ? null : el.getAttribute("data-path");
-            return path !== null && path.indexOf("gazette-ref-resolve.ts") !== -1;
+            if (el === null) return false;
+            var path = el.getAttribute("data-path");
+            return path !== null
+              && path.indexOf("gazette-ref-resolve.ts") !== -1
+              && (el.textContent || "").trim() !== "";
           })()`,
           { timeoutMs: 20_000 },
         );
@@ -808,6 +825,108 @@ describe.skipIf(!SHOULD_RUN)("at0365 — the Gazette card", () => {
           ),
           "the field is back after the answer landed",
         ).toBe(true);
+
+        // ── The pointing gesture ────────────────────────────────────────
+        //
+        // A second question, asked the way someone asks about a particular
+        // file: `@`-complete it into the composer as an atom, then send. The
+        // atom is not decoration — it flattens into the sentence AND rides
+        // the wire as a structured ref the pipeline verifies against the tree
+        // before any verb runs. What this asserts is the surface end of that:
+        // the path the asker pointed at is on the post that comes back.
+        //
+        // The `@` provider is the live FILETREE one against the bootstrap
+        // workspace, which is this checkout — so `CLAUDE.md`, a real file at
+        // the root, is something it can genuinely find.
+        //
+        // The wait is on the FILTERED popup, not merely on a populated one.
+        // The provider answers asynchronously and the menu shows the cached
+        // root listing in the meantime, so "the popup has items" is true
+        // several hundred milliseconds before the items are the query's — and
+        // accepting then takes whatever alphabetically came first (a
+        // directory, as it turned out). Waiting for the typed name to be the
+        // head of the list is waiting for the answer rather than the echo.
+        const MENU = '[data-slot="tug-completion-menu"]';
+        const ITEMS_JS = `Array.from(
+          document.querySelectorAll(${JSON.stringify(`${MENU} .tug-completion-menu-item`)}),
+        ).map(function (el) { return (el.textContent || "").trim(); })`;
+        const NAMED_FILE = "CLAUDE.md";
+        await app.nativeClickAtElement(FIELD);
+        await app.nativeType("@CLAUDE");
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var items = ${ITEMS_JS};
+            return items.length > 0 && items[0] === ${JSON.stringify(NAMED_FILE)};
+          })()`,
+          { timeoutMs: 15_000 },
+        );
+        note("@ completion items", JSON.stringify(await app.evalJS<string[]>(ITEMS_JS)));
+        // Accepted with a modifier-free Return, which the typeahead keymap
+        // claims — the keyboard gesture a person actually makes, and the one
+        // that needs nothing from the portalled popup's geometry.
+        await app.nativeKey("Return");
+
+        // The atom is in the document — a real placed atom, the same one a
+        // drop makes, not text that looks like a path.
+        await app.waitForCondition<boolean>(
+          `(function () {
+            var field = document.querySelector(${JSON.stringify(FIELD)});
+            if (field === null) return false;
+            return field.querySelectorAll(".cm-content img").length > 0;
+          })()`,
+          { timeoutMs: 8_000 },
+        );
+        note(
+          "the placed atom",
+          JSON.stringify(
+            await app.evalJS<unknown>(
+              `(function () {
+                var field = document.querySelector(${JSON.stringify(FIELD)});
+                if (field === null) return null;
+                return Array.from(field.querySelectorAll(".cm-content img")).map(
+                  function (img) { return img.getAttribute("data-atom-label"); },
+                );
+              })()`,
+            ),
+          ),
+        );
+
+        await app.nativeType(" what does this say");
+        await app.nativeKey("Return", ["shift"]);
+
+        // The question comes back carrying the path — either annotated inside
+        // the prose (the atom flattened into the sentence, and the content
+        // annotator marks it because the words name it) or as a trailing ref
+        // chip when they do not. Both are the ref arriving; which one shows is
+        // the card's existing `unmentionedRefs` rule, not this step's claim.
+        await app.waitForCondition<boolean>(
+          `Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
+            .filter(function (el) { return el.getAttribute("data-author") === "user"; })
+            .some(function (el) {
+              return (el.textContent || "").indexOf(${JSON.stringify(NAMED_FILE)}) !== -1;
+            })`,
+          { timeoutMs: 20_000 },
+        );
+        const pointed = await app.evalJS<{ body: string; atoms: string[] } | null>(
+          `(function () {
+            var rows = Array.from(document.querySelectorAll(${JSON.stringify(POST)}))
+              .filter(function (el) { return el.getAttribute("data-author") === "user"; });
+            var el = rows[rows.length - 1];
+            if (el === undefined) return null;
+            var body = el.querySelector(".gazette-post-body");
+            return {
+              body: (body === null ? "" : body.textContent || "").trim(),
+              atoms: Array.from(el.querySelectorAll("img[data-atom-label]")).map(
+                function (img) { return img.getAttribute("data-atom-label") || ""; },
+              ),
+            };
+          })()`,
+        );
+        note("the pointed-at question", JSON.stringify(pointed));
+        expect(
+          `${pointed?.body ?? ""} ${(pointed?.atoms ?? []).join(" ")}`,
+          "the file the asker pointed at is on the question post",
+        ).toContain(NAMED_FILE);
       } finally {
         await app.close();
       }

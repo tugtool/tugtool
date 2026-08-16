@@ -5280,11 +5280,10 @@ impl AgentSupervisor {
 
         let dir_owned = dir.to_path_buf();
         let dash = request.dash.clone();
-        let result =
-            tokio::task::spawn_blocking(move || {
-                tugdash_core::release_in(&dir_owned, &dash, Some("card"))
-            })
-            .await;
+        let result = tokio::task::spawn_blocking(move || {
+            tugdash_core::release_in(&dir_owned, &dash, Some("card"))
+        })
+        .await;
 
         match result {
             Ok(Ok(outcome)) => {
@@ -6200,15 +6199,12 @@ impl AgentSupervisor {
     /// where `run` is the session's latest completed run or `null` (a missing
     /// ledger, or a session that has never searched).
     async fn do_list_refs(&self, tug_session_id: &str) {
-        let run = self
-            .refs_ledger
-            .as_ref()
-            .and_then(|ledger| {
-                ledger.list_refs(tug_session_id).unwrap_or_else(|err| {
-                    warn!(error = %err, %tug_session_id, "list_refs failed");
-                    None
-                })
-            });
+        let run = self.refs_ledger.as_ref().and_then(|ledger| {
+            ledger.list_refs(tug_session_id).unwrap_or_else(|err| {
+                warn!(error = %err, %tug_session_id, "list_refs failed");
+                None
+            })
+        });
         let body = serde_json::json!({
             "action": "list_refs_ok",
             "tug_session_id": tug_session_id,

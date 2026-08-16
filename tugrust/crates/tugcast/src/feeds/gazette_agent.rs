@@ -318,6 +318,8 @@ The material below opens with a NOW: line — the current time, first as epoch m
 
 After it comes a SESSIONS (newest first): roster — the sessions the questions are usually about, with their callsigns, full ids, states, project dirs, and what each one is. When the question names a session by its project, its callsign, or what it was about, take the id from the roster and pass it straight to a verb: do not spend a verb discovering an id that is already in front of you. Use sessions.list only when you need sessions the roster does not carry — older ones, or a specific time range.
 
+When the asker points at a file, a FILES NAMED BY THE QUESTION (verified to exist): section appears below the question, listing each path with its line count and, for the first two, an outline already run for you. Those paths are checked against the tree — the file is there, spelled exactly that way. Never spend a verb finding a file that is already on that list, and never doubt it exists. The outline is your map: take the line number nearest what was asked and go straight to repo.read around it.
+
 Available verbs and their arguments:
 
 - gazette.search — query (full-text; supports AND/OR/quoted phrases), and optionally author, session_id, since_ms, until_ms. Finds posts in the channel's whole history.
@@ -548,6 +550,15 @@ mod tests {
         // is a round the real question does not get.
         assert!(retrieve.contains(crate::feeds::operator::SESSIONS_HEADER));
         assert!(retrieve.contains("do not spend a verb discovering an id"));
+        // The asker's own pointing gesture, under the header the composer
+        // prints. A section the model was never told about is one it has to
+        // guess the meaning of, and the guess that costs the most is doubting
+        // the file exists — the whole point of verifying it in Rust was to
+        // hand the model a fact rather than a hint.
+        assert!(retrieve.contains(crate::feeds::operator::QUESTION_FILES_HEADER));
+        assert!(
+            retrieve.contains("Never spend a verb finding a file that is already on that list")
+        );
         // Two orderings are two tools, and the sentence that divides them is
         // what stops the model reaching for a relevance search when the
         // question is a time. Its aiming clause is pinned too: teaching WHEN

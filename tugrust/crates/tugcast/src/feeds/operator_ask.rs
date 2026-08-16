@@ -122,7 +122,39 @@ pub async fn run(args: &OperatorAskArgs) -> i32 {
         }
     };
 
-    match operator::run_question(&ctx, &pool, &args.question, &[], Some(&observer)).await {
+    // The pointing gesture, through the same verifier the feed uses — a ref
+    // that does not resolve is dropped here exactly as it would be in the app,
+    // and saying which survived is what keeps a replay honest about whether it
+    // measured the seeded path or the bare one.
+    let mentions = operator::verify_question_refs(
+        &ctx.bootstrap_project_dir,
+        &args
+            .refs
+            .iter()
+            .map(|target| operator::QuestionRef {
+                kind: "file".to_string(),
+                target: target.clone(),
+            })
+            .collect::<Vec<_>>(),
+    )
+    .await;
+    if !args.refs.is_empty() {
+        println!(
+            "NAMED FILES: {}",
+            if mentions.is_empty() {
+                "none verified".to_string()
+            } else {
+                mentions
+                    .iter()
+                    .map(|m| m.path.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        );
+    }
+
+    match operator::run_question(&ctx, &pool, &args.question, &[], &mentions, Some(&observer)).await
+    {
         Ok((post, _context)) => {
             println!("\nANSWER:\n{}", post.body);
             if !post.refs.is_empty() {

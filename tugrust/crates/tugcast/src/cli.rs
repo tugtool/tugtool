@@ -140,6 +140,13 @@ pub struct OperatorAskArgs {
     /// Print each verb's full result JSON, not just its row count.
     #[arg(long)]
     pub show_rounds: bool,
+
+    /// A file the asker pointed at with an `@` atom, repeatable — the same
+    /// gesture the Gazette composer sends as a question ref. Without it this
+    /// instrument cannot reach the seeded half of the pipeline, and a replay
+    /// would silently measure the unseeded path.
+    #[arg(long = "ref", value_name = "PATH")]
+    pub refs: Vec<String>,
 }
 
 /// Flags for `tugcast gazette-replay`. Each one overrides a `dev.tugtool.gazette`

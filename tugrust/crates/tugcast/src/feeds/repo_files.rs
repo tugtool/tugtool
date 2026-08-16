@@ -123,9 +123,7 @@ pub async fn resolve_readable_path(dir: &Path, path: &str) -> Result<PathResolut
         [only] => Ok(PathResolution {
             used: only.clone(),
             absolute: contained_path(dir, only)?,
-            note: Some(format!(
-                "path {path:?} does not exist; read {only} instead"
-            )),
+            note: Some(format!("path {path:?} does not exist; read {only} instead")),
         }),
         several => Err(format!(
             "path {:?} does not exist, and {} files could be meant: {}. Name one of them exactly.",
@@ -615,7 +613,10 @@ mod tests {
 
     #[test]
     fn basename_takes_the_last_segment() {
-        assert_eq!(basename("tuglaws/design-decisions.md"), "design-decisions.md");
+        assert_eq!(
+            basename("tuglaws/design-decisions.md"),
+            "design-decisions.md"
+        );
         assert_eq!(basename("alpha.txt"), "alpha.txt");
         assert_eq!(basename(""), "");
     }
@@ -673,9 +674,7 @@ mod tests {
         assert!(!is_label_lead("**really important**"));
         assert!(!is_label_lead("not bold at all"));
         assert!(
-            !is_label_lead(
-                "**a bold run far too long to be any kind of label, number 7**"
-            ),
+            !is_label_lead("**a bold run far too long to be any kind of label, number 7**"),
             "a sentence is not a label however it ends"
         );
     }

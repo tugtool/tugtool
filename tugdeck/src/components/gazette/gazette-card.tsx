@@ -1479,8 +1479,16 @@ function GazetteComposer({
       sent.push(atom.id);
       attachments.push({ mediaType: bytes.mediaType, data: bytes.content });
     }
+    // The same captured atoms a third time, for their other half. The flattened
+    // text says the path in a sentence; these say it as a claim the pipeline can
+    // check against the tree before it looks anything up. `file` is the only
+    // non-image atom this composer can make — its sole completion source is the
+    // `@` file provider — so the type test and "non-image" are the same set.
+    const refs: GazetteRef[] = state.atoms
+      .filter((a) => a.type === "file" && a.value !== "")
+      .map((a) => ({ kind: "file" as const, target: a.value }));
     if (text === "" && attachments.length === 0) return;
-    if (store.submitQuestion(text, attachments) === null) return;
+    if (store.submitQuestion(text, attachments, refs) === null) return;
     // The question comes back off the wire as a post; the field's job is
     // done. `clear` fires the update listener, which resets `data-empty`.
     editorRef.current?.clear();

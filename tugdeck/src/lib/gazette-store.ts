@@ -247,17 +247,25 @@ export class GazetteStore {
    * A picture with no words is a question — "what is this?" is what the
    * screenshot is for — so an empty body is only nothing to ask when nothing
    * was attached either.
+   *
+   * `refs` are the files the asker pointed at with an `@` atom. They travel
+   * beside the body rather than instead of it: the atom already flattened into
+   * the sentence, and this is the same claim in a shape the pipeline can
+   * verify against the tree before the first verb runs. A ref that does not
+   * resolve is dropped server-side, which costs nothing, because the path is
+   * still in the words.
    */
   submitQuestion(
     body: string,
     attachments: readonly GazetteInputAttachment[] = [],
+    refs: readonly GazetteRef[] = [],
   ): string | null {
     const question = body.trim();
     if (question === "" && attachments.length === 0) return null;
     if (this.snapshot.pendingRequestId !== null) return null;
 
     const requestId = mintRequestId();
-    const frame = encodeGazetteInput(question, requestId, attachments);
+    const frame = encodeGazetteInput(question, requestId, attachments, refs);
     this.conn.send(frame.feedId, frame.payload);
 
     this.clearPendingTimer();

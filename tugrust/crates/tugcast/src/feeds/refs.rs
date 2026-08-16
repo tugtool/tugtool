@@ -303,7 +303,10 @@ fn excerpt_line(line: &str, spans: &[ColumnSpan], context: u32) -> (LinePreview,
 
     let mut windows: Vec<(u32, u32)> = Vec::new();
     for &(start, end) in spans {
-        let window = (start.saturating_sub(context), end.saturating_add(context).min(line_len));
+        let window = (
+            start.saturating_sub(context),
+            end.saturating_add(context).min(line_len),
+        );
         match windows.last_mut() {
             Some(last) if window.0 <= last.1 => last.1 = last.1.max(window.1),
             _ => windows.push(window),
@@ -645,19 +648,24 @@ pub fn execute_run(
         OpKind::Search => {
             match compile_needles(&request.needles, request.search_flags) {
                 Ok(needles) => {
-                    run_search(&request.root, &needles, request.search_flags, |path, rows| {
-                        if cancel.is_cancelled() {
-                            return;
-                        }
-                        // One lock spans numbering and emission so a ref's
-                        // number and its position in the stream cannot
-                        // disagree when two files finish at once.
-                        let mut next = next_index.lock().unwrap();
-                        let numbered = number_rows(&path, rows, &mut next);
-                        for chunk in numbered.chunks(MAX_ROWS_PER_FRAME) {
-                            send_batch(chunk.to_vec());
-                        }
-                    });
+                    run_search(
+                        &request.root,
+                        &needles,
+                        request.search_flags,
+                        |path, rows| {
+                            if cancel.is_cancelled() {
+                                return;
+                            }
+                            // One lock spans numbering and emission so a ref's
+                            // number and its position in the stream cannot
+                            // disagree when two files finish at once.
+                            let mut next = next_index.lock().unwrap();
+                            let numbered = number_rows(&path, rows, &mut next);
+                            for chunk in numbered.chunks(MAX_ROWS_PER_FRAME) {
+                                send_batch(chunk.to_vec());
+                            }
+                        },
+                    );
                 }
                 Err(error) => {
                     // A pattern the user mistyped is a result, not a fault:
@@ -1212,7 +1220,12 @@ mod tests {
     fn windows_that_touch_merge_into_one() {
         // Two hits 40 chars apart are within each other's context, so the
         // reader gets one continuous run rather than a spurious elision.
-        let line = format!("{}needle{}needle{}", "x".repeat(200), "y".repeat(40), "z".repeat(200));
+        let line = format!(
+            "{}needle{}needle{}",
+            "x".repeat(200),
+            "y".repeat(40),
+            "z".repeat(200)
+        );
         let rows = scan(&line, &["needle"], SearchFlags::default());
         assert_eq!(rows[0].preview.segments.len(), 1);
         assert!(!preview_text(&rows[0].preview).contains('…'));
@@ -1261,7 +1274,11 @@ mod tests {
         let line = line.repeat(40);
         let rows = scan(&line, &["needle"], SearchFlags::default());
         let preview = &rows[0].preview;
-        let kept: usize = preview.segments.iter().map(|s| s.text.chars().count()).sum();
+        let kept: usize = preview
+            .segments
+            .iter()
+            .map(|s| s.text.chars().count())
+            .sum();
         assert!(kept <= MAX_EXCERPT_CHARS as usize, "kept {kept} chars");
         assert!(preview.elided_matches > 0);
         // What it kept and what it counted account for every match on the line.
@@ -1419,7 +1436,11 @@ mod tests {
             ],
             &mut next,
         );
-        let second = number_rows("b.ts", vec![whole_row(9, vec![(4, 10)], "    needle")], &mut next);
+        let second = number_rows(
+            "b.ts",
+            vec![whole_row(9, vec![(4, 10)], "    needle")],
+            &mut next,
+        );
 
         assert_eq!(
             first.iter().map(|r| r.index).collect::<Vec<u32>>(),

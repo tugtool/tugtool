@@ -996,10 +996,12 @@ export interface GazettePostWire {
   /** How long the agent turn that wrote the post took; absent on a user
    *  question and on rows written before tugcast recorded it. */
   elapsed_ms?: number;
-  /** The project directory the post's refs are spelled relative to — the
-   *  narrated session's, or the Operator's default repo. Absent on a user
-   *  question and on rows written before tugcast recorded it; those refs
-   *  render inert rather than resolve against a guessed root. */
+  /** The project directory the post's refs and prose paths are spelled
+   *  relative to — the narrated session's, or the Operator's default repo. A
+   *  user question carries it too (it is the root the card's annotator
+   *  resolves a typed path against); absent only on rows written before
+   *  tugcast recorded it, whose refs render inert rather than resolve against
+   *  a guessed root. */
   project_dir?: string;
   /** Images composed with a user's question. Absent on every other post. */
   attachments?: GazetteAttachmentWire[];
@@ -1068,20 +1070,18 @@ export function encodeGazetteInput(
   body: string,
   requestId: string,
   attachments: readonly GazetteInputAttachment[] = [],
+  refs: readonly GazetteRef[] = [],
 ): Frame {
+  // Both optional arrays are omitted rather than sent empty, so the frame a
+  // question typed without a picture and without an `@` atom produces stays
+  // byte-identical to what it was before either existed.
+  const payload: Record<string, unknown> = { body, requestId };
+  if (attachments.length > 0) payload.attachments = attachments;
+  if (refs.length > 0) payload.refs = refs;
   return {
     feedId: FeedId.GAZETTE_INPUT,
     flags: FrameFlags.DATA,
-    payload: new TextEncoder().encode(
-      // Omitted rather than sent empty on the overwhelmingly common question
-      // typed without a picture — the frame stays byte-identical to what it
-      // was before attachments existed.
-      JSON.stringify(
-        attachments.length > 0
-          ? { body, requestId, attachments }
-          : { body, requestId },
-      ),
-    ),
+    payload: new TextEncoder().encode(JSON.stringify(payload)),
   };
 }
 

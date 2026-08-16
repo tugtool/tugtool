@@ -203,7 +203,10 @@ mod tests {
         assert_eq!(json["line"], 12);
         assert_eq!(json["columns"], serde_json::json!([[3, 6], [9, 12]]));
         assert_eq!(json["preview"]["line_len"], 7);
-        assert_eq!(json["preview"]["segments"], serde_json::json!([{"col": 0, "text": "let foo"}]));
+        assert_eq!(
+            json["preview"]["segments"],
+            serde_json::json!([{"col": 0, "text": "let foo"}])
+        );
     }
 
     #[test]
@@ -236,7 +239,13 @@ mod tests {
         .unwrap();
         let preview = decoded.preview.expect("preview");
         assert_eq!(preview.line_len, 12);
-        assert_eq!(preview.segments, vec![PreviewSegment { col: 0, text: "let foo = 2;".into() }]);
+        assert_eq!(
+            preview.segments,
+            vec![PreviewSegment {
+                col: 0,
+                text: "let foo = 2;".into()
+            }]
+        );
         assert_eq!(preview.elided_matches, 0);
     }
 
@@ -244,5 +253,4 @@ mod tests {
     fn an_empty_line_previews_as_no_windows_rather_than_an_empty_one() {
         assert_eq!(LinePreview::whole("").segments, Vec::new());
     }
-
 }

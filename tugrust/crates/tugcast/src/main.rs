@@ -28,6 +28,7 @@ mod ledger_integrity;
 /// storage→feeds back-reference.
 mod path_resolver;
 mod permissions;
+mod refs_ledger;
 mod resources;
 mod router;
 mod scribe;
@@ -35,7 +36,6 @@ mod scribe;
 /// no dependencies, shared by `session_ledger` (write-time derivation and the
 /// backfill) and `feeds::operator` (query-time expansion).
 mod search_tokens;
-mod refs_ledger;
 mod server;
 mod session_ledger;
 mod session_metadata_merge;
@@ -1679,6 +1679,11 @@ async fn main() {
             /// downsampled bytes. Absent on every question typed without one.
             #[serde(default)]
             attachments: Vec<feeds::operator::QuestionAttachment>,
+            /// The files the asker pointed at with an `@` atom. Absent on
+            /// every question typed without one, and on an older deck's
+            /// payload — which is what `default` keeps working.
+            #[serde(default)]
+            refs: Vec<feeds::operator::QuestionRef>,
         }
         while let Some(frame) = gz_input_rx.recv().await {
             let raw = match serde_json::from_slice::<RawGazetteInput>(&frame.payload) {
@@ -1702,7 +1707,9 @@ async fn main() {
             }
             let pipeline = Arc::clone(&operator_pipeline);
             tokio::spawn(async move {
-                pipeline.handle(body, raw.request_id, raw.attachments).await;
+                pipeline
+                    .handle(body, raw.request_id, raw.attachments, raw.refs)
+                    .await;
             });
         }
     });

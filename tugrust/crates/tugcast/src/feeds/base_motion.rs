@@ -249,7 +249,12 @@ pub fn compose_conflict_message(m: &ConflictMessage<'_>) -> String {
 /// edit could silently revert base changes it never saw. This is context, not a
 /// request — which it says, because an agent told about a change tends to
 /// assume it is being asked to do something about it.
-pub fn compose_replay_notice(dash: &str, base_branch: &str, base_head: &str, paths: &[String]) -> String {
+pub fn compose_replay_notice(
+    dash: &str,
+    base_branch: &str,
+    base_head: &str,
+    paths: &[String],
+) -> String {
     let mut out = format!(
         "[base-motion replay] Dash \"{}\" was replayed onto {} at {} while you were between turns.\n\
          Your working tree moved under you. No action is required — but re-read any of these\n\
@@ -643,7 +648,9 @@ fn spawn_replay(
             entry.in_flight = false;
 
             match outcome {
-                Ok(Ok(tugdash_core::ReplayOutcome::Replayed { base_head, mapping, .. })) => {
+                Ok(Ok(tugdash_core::ReplayOutcome::Replayed {
+                    base_head, mapping, ..
+                })) => {
                     info!(dash = %dash, base = %short(&base_head), "base-motion: replayed");
                     entry.conflict = None;
                     entry.notified_tip = None;
@@ -796,7 +803,11 @@ fn compose_for(
 /// diff from there to the base branch is the base's own delta and none of the
 /// dash's work. Without a pre-move round to anchor on there is nothing to say,
 /// and the notice says so rather than guessing.
-fn base_delta_paths(repo: &Path, base_branch: &str, oldest_round_before: Option<&str>) -> Vec<String> {
+fn base_delta_paths(
+    repo: &Path,
+    base_branch: &str,
+    oldest_round_before: Option<&str>,
+) -> Vec<String> {
     let Some(round) = oldest_round_before else {
         return Vec::new();
     };
@@ -867,9 +878,7 @@ fn rev_parse(repo: &Path, rev: &str) -> String {
         .args(["rev-parse", rev])
         .output();
     match out {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim().to_string()
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
         _ => String::new(),
     }
 }
@@ -944,9 +953,7 @@ fn read_autoreplay(repo_dir: &Path) -> bool {
         .args(["config", "--bool", "tugdash.autoreplay"])
         .output();
     match out {
-        Ok(out) if out.status.success() => {
-            String::from_utf8_lossy(&out.stdout).trim() != "false"
-        }
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim() != "false",
         _ => true,
     }
 }
@@ -1181,7 +1188,10 @@ mod tests {
             text.contains("git rebase --abort"),
             "a real design collision is an outcome the turn allows for",
         );
-        assert!(text.contains("Land the divergence marks."), "the intent rides along");
+        assert!(
+            text.contains("Land the divergence marks."),
+            "the intent rides along"
+        );
     }
 
     #[test]
@@ -1210,7 +1220,10 @@ mod tests {
         );
         assert!(text.contains("src/moved.rs"));
         assert!(text.contains("No action is required"));
-        assert!(!text.contains("rebase"), "a clean replay asks for no git work");
+        assert!(
+            !text.contains("rebase"),
+            "a clean replay asks for no git work"
+        );
     }
 
     #[test]
@@ -1226,11 +1239,8 @@ mod tests {
     /// turn's head row, so it cannot arrive under the output it introduces.
     #[tokio::test]
     async fn every_injection_is_announced_by_exactly_one_notice() {
-        let feed = SessionScopedFeed::new(
-            FeedId::CODE_OUTPUT,
-            16,
-            tugcast_core::lag::LagPolicy::Warn,
-        );
+        let feed =
+            SessionScopedFeed::new(FeedId::CODE_OUTPUT, 16, tugcast_core::lag::LagPolicy::Warn);
         let mut out_rx = feed.subscribe();
         let (in_tx, mut in_rx) = mpsc::channel::<Frame>(8);
         let handles = InjectHandles {
@@ -1353,14 +1363,17 @@ mod tests {
         git(repo, &["commit", "-q", "-m", "base"]);
         git(repo, &["branch", "tugdash/demo"]);
         git(repo, &["config", "branch.tugdash/demo.tugbase", "main"]);
-        let repo_owned = Repo {
-            _home: home,
-            dir,
-        };
+        let repo_owned = Repo { _home: home, dir };
         let wt = repo_owned.worktree();
         git(
             repo,
-            &["worktree", "add", "-q", wt.to_str().unwrap(), "tugdash/demo"],
+            &[
+                "worktree",
+                "add",
+                "-q",
+                wt.to_str().unwrap(),
+                "tugdash/demo",
+            ],
         );
         // The dash's own round, on a file the base never touches, so a replay
         // of it is clean.
@@ -1639,11 +1652,8 @@ mod tests {
         let cancel = CancellationToken::new();
         let registry = Arc::new(WorkspaceRegistry::new_for_test());
         let bump = Arc::new(Notify::new());
-        let feed = SessionScopedFeed::new(
-            FeedId::CODE_OUTPUT,
-            16,
-            tugcast_core::lag::LagPolicy::Warn,
-        );
+        let feed =
+            SessionScopedFeed::new(FeedId::CODE_OUTPUT, 16, tugcast_core::lag::LagPolicy::Warn);
         let mut out_rx = feed.subscribe();
         let (in_tx, mut in_rx) = mpsc::channel::<Frame>(8);
         let mut ctx = test_context(&registry, &bump, &cancel);
@@ -1670,8 +1680,14 @@ mod tests {
 
         let body: serde_json::Value = serde_json::from_slice(&first.payload).unwrap();
         let text = body["content"][0]["text"].as_str().unwrap().to_string();
-        assert!(text.contains("rewrite f"), "the turn names the stopping round");
-        assert!(text.contains("f.txt"), "the turn names the conflicting path");
+        assert!(
+            text.contains("rewrite f"),
+            "the turn names the stopping round"
+        );
+        assert!(
+            text.contains("f.txt"),
+            "the turn names the conflicting path"
+        );
         assert!(text.contains("tugutil dash replay demo"));
 
         // The opener rode out with it — the turn is not invisible.
