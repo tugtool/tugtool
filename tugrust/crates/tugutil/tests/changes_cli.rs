@@ -1126,3 +1126,164 @@ fn draft_set_falls_back_to_the_session_then_refuses() {
     assert!(stderr.contains("dash worktree"), "{stderr}");
     assert!(stderr.contains("TUG_SESSION_ID"), "{stderr}");
 }
+
+// --- dash replay -----------------------------------------------------------
+
+/// `dash replay` writes a dash-log line, so every test here redirects
+/// `project_state_dir` into a tempdir rather than the developer's real one.
+fn tug_dash(db_dir: &Path, state: &Path, repo: &Path) -> Command {
+    let mut cmd = tug(db_dir);
+    cmd.env("TUG_DATA_DIR", state);
+    cmd.current_dir(repo);
+    cmd
+}
+
+/// A dash on `main` with one round of its own, ready to be replayed.
+fn dash_with_a_round(root: &Path, name: &str) -> PathBuf {
+    let worktree = add_dash_worktree(root, name);
+    git(
+        root,
+        &["config", &format!("branch.tugdash/{name}.tugbase"), "main"],
+    );
+    std::fs::write(worktree.join("dash.rs"), "dash\n").unwrap();
+    git(&worktree, &["add", "-A"]);
+    git(&worktree, &["commit", "-q", "-m", "the dash's own round"]);
+    worktree
+}
+
+fn advance_main(root: &Path, content: &str) {
+    std::fs::write(root.join("base.rs"), content).unwrap();
+    git(root, &["add", "base.rs"]);
+    git(root, &["commit", "-q", "-m", "the base moves"]);
+}
+
+#[test]
+fn dash_replay_moves_a_behind_dash_onto_the_new_base_tip() {
+    let (_dir, root) = init_repo();
+    let db = seed_ledger(&root);
+    let state = tempfile::tempdir().unwrap();
+    let worktree = dash_with_a_round(&root, "demo");
+    advance_main(&root, "moved\n");
+
+    let mut cmd = tug_dash(db.path(), state.path(), &root);
+    cmd.args(["dash", "replay", "demo", "--json"]);
+    let (code, stdout, stderr) = run(cmd);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let v = parse(&stdout);
+    assert_eq!(v["data"]["outcome"], "replayed");
+    assert_eq!(
+        v["data"]["mapping"].as_array().unwrap().len(),
+        1,
+        "one pair per round"
+    );
+
+    // The dash now carries the base's commit under its own round, and the
+    // worktree came along.
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(&worktree)
+        .args(["merge-base", "--is-ancestor", "main", "HEAD"])
+        .status()
+        .unwrap();
+    assert!(out.success(), "the dash descends from the moved base");
+    assert_eq!(
+        std::fs::read_to_string(worktree.join("base.rs")).unwrap(),
+        "moved\n"
+    );
+}
+
+#[test]
+fn dash_replay_records_a_rebase_the_agent_already_made() {
+    let (_dir, root) = init_repo();
+    let db = seed_ledger(&root);
+    let state = tempfile::tempdir().unwrap();
+    let worktree = dash_with_a_round(&root, "demo");
+
+    // A plan whose ledger cell names the pre-rebase round.
+    let round = Command::new("git")
+        .arg("-C")
+        .arg(&worktree)
+        .args(["rev-parse", "--short=9", "HEAD"])
+        .output()
+        .unwrap();
+    let round = String::from_utf8_lossy(&round.stdout).trim().to_string();
+    std::fs::create_dir_all(worktree.join("roadmap")).unwrap();
+    std::fs::write(
+        worktree.join("roadmap/p.md"),
+        format!(
+            "## Fixture {{#fixture}}\n\n### Execution Steps {{#execution-steps}}\n\n\
+             #### Step Status Ledger {{#step-status-ledger}}\n\n\
+             | Step | Title | Status | Commit |\n|---|---|---|---|\n\
+             | #step-1 | The round | done | `{round}` |\n"
+        ),
+    )
+    .unwrap();
+    git(&worktree, &["add", "-A"]);
+    git(&worktree, &["commit", "-q", "-m", "record the plan"]);
+    git(
+        &root,
+        &["config", "branch.tugdash/demo.tugplan", "roadmap/p.md"],
+    );
+
+    advance_main(&root, "moved\n");
+    git(&worktree, &["rebase", "-q", "main"]);
+
+    let mut cmd = tug_dash(db.path(), state.path(), &root);
+    cmd.args(["dash", "replay", "demo", "--json"]);
+    let (code, stdout, stderr) = run(cmd);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    let v = parse(&stdout);
+    assert_eq!(v["data"]["outcome"], "recorded");
+    assert_eq!(v["data"]["remapped"][0], "step-1");
+
+    let plan = std::fs::read_to_string(worktree.join("roadmap/p.md")).unwrap();
+    assert!(
+        !plan.contains(&round),
+        "the cell no longer names the pre-rebase round: {plan}"
+    );
+}
+
+#[test]
+fn dash_replay_reports_a_conflict_and_exits_one_without_moving_anything() {
+    let (_dir, root) = init_repo();
+    let db = seed_ledger(&root);
+    let state = tempfile::tempdir().unwrap();
+    let worktree = add_dash_worktree(&root, "demo");
+    git(
+        &root,
+        &["config", "branch.tugdash/demo.tugbase", "main"],
+    );
+    // Both sides rewrite base.rs.
+    std::fs::write(worktree.join("base.rs"), "dash\n").unwrap();
+    git(&worktree, &["add", "-A"]);
+    git(&worktree, &["commit", "-q", "-m", "the dash rewrites base"]);
+    let before = Command::new("git")
+        .arg("-C")
+        .arg(&worktree)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    let before = String::from_utf8_lossy(&before.stdout).trim().to_string();
+    advance_main(&root, "base-moved\n");
+
+    let mut cmd = tug_dash(db.path(), state.path(), &root);
+    cmd.args(["dash", "replay", "demo", "--json"]);
+    let (code, stdout, stderr) = run(cmd);
+    assert_eq!(code, 1, "a conflict is not success; stderr: {stderr}");
+    let v = parse(&stdout);
+    assert_eq!(v["data"]["outcome"], "conflicted");
+    assert_eq!(v["data"]["round_subject"], "the dash rewrites base");
+    assert_eq!(v["data"]["paths"][0], "base.rs");
+
+    let after = Command::new("git")
+        .arg("-C")
+        .arg(&worktree)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&after.stdout).trim(),
+        before,
+        "nothing moved"
+    );
+}

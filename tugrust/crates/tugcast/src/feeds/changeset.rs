@@ -1144,6 +1144,12 @@ async fn dash_entries(
                 .get(&detail.owner_key)
                 .cloned()
                 .unwrap_or_default(),
+            // Whether an *attempt* to replay conflicted is knowledge only the
+            // engine that attempted it has; the library composes everything
+            // else. Empty when no engine is running, which is the truth then.
+            replay_conflict_paths: crate::feeds::base_motion::conflict_paths_for(
+                &detail.owner_key,
+            ),
             owner_id: detail.owner_key,
             display_name: detail.name,
             branch: Some(detail.branch),
@@ -1159,6 +1165,9 @@ async fn dash_entries(
             files: detail.files.into_iter().map(dash_file_row).collect(),
             round_subjects: detail.round_subjects,
             draft: None,
+            base_ahead: detail.base_ahead,
+            base_overlap: detail.base_overlap,
+            last_replay: detail.last_replay,
         })
         .collect()
 }
@@ -2483,6 +2492,10 @@ Some context.
             files: Vec::new(),
             round_subjects: Vec::new(),
             draft: None,
+            base_ahead: 0,
+            base_overlap: Vec::new(),
+            last_replay: None,
+            replay_conflict_paths: Vec::new(),
         };
         let demo = dash("tugdash/demo#1723500000000-a1b2c3", "demo");
         let demo2 = dash("tugdash/demo2#1723500000001-d4e5f6", "demo2");
@@ -2559,6 +2572,10 @@ Some context.
                     files: Vec::new(),
                     round_subjects: Vec::new(),
                     draft: None,
+                    base_ahead: 0,
+                    base_overlap: Vec::new(),
+                    last_replay: None,
+                    replay_conflict_paths: Vec::new(),
                 },
                 ChangesetEntry::Session {
                     owner_id: "sess-writer".to_owned(),

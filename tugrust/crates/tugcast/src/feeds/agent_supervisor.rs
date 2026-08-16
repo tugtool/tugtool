@@ -1186,6 +1186,14 @@ pub struct AgentSupervisor {
     /// handle; aborting kills only that draft's headless scribe child, never
     /// the interactive session's turn ([P06]).
     pub draft_tasks: crate::feeds::draft_engine::DraftTaskRegistry,
+    /// Optional "this session's turn just ended" signal, carrying the session
+    /// id. The base-motion engine listens here: its gate refuses to move a
+    /// branch under a session that is mid-turn, and "the base moved during a
+    /// turn" is the common shape of the problem — so a turn ending is the wake
+    /// that lets a parked dash catch up seconds later rather than at the next
+    /// unrelated commit. Unset in tests and in any boot without the engine,
+    /// where the send is simply skipped.
+    pub turn_complete_tx: std::sync::OnceLock<mpsc::Sender<String>>,
 }
 
 /// Registration sent through [`AgentSupervisor::merger_register_tx`] so the
@@ -2640,6 +2648,7 @@ impl AgentSupervisor {
             spawn_timestamps: Arc::new(StdMutex::new(VecDeque::new())),
             changeset_watch: std::sync::OnceLock::new(),
             draft_tasks: crate::feeds::draft_engine::DraftTaskRegistry::default(),
+            turn_complete_tx: std::sync::OnceLock::new(),
         };
         (sup, merger_register_rx)
     }
@@ -6875,6 +6884,13 @@ impl AgentSupervisor {
                                 entry.turn_active = true;
                             } else if entry.replay_brackets_open == 0 {
                                 entry.turn_active = false;
+                                drop(entry);
+                                // The session went idle: a dash parked behind it
+                                // because the gate refuses to move a branch
+                                // mid-turn can now be caught up.
+                                if let Some(tx) = self.turn_complete_tx.get() {
+                                    let _ = tx.try_send(id.to_string());
+                                }
                             }
                         }
                     }
@@ -14208,6 +14224,40 @@ mod tests {
         assert_eq!(
             queued.payload, original_payload,
             "dispatcher must forward user_message frames unchanged (Step 5.3 wire invariant)",
+        );
+    }
+
+    /// A server-injected turn is an ordinary turn on the server side: the same
+    /// dispatcher intercept journals it and opens it, with no second path into
+    /// a session to keep in step. Driven with the bytes the base-motion engine
+    /// actually sends, so the two cannot drift.
+    #[tokio::test]
+    async fn an_injected_turn_journals_and_opens_like_a_client_submission() {
+        let (sup, ledger, _rx) = make_supervisor_with_ledger();
+        let session_id_str = "sess-injected";
+        let tug_session_id = TugSessionId::new(session_id_str);
+        let entry_arc = insert_ledger_entry(&sup, &tug_session_id).await;
+        seed_session_for_journal_test(&ledger, session_id_str);
+        assert!(!entry_arc.lock().await.turn_active);
+
+        let payload = crate::feeds::base_motion::user_message_payload(
+            session_id_str,
+            "[base-motion replay] the base moved",
+        );
+        sup.dispatch_one(Frame::new(FeedId::CODE_INPUT, payload.clone()))
+            .await;
+
+        let rows = ledger
+            .list_pending_turns_for_session(session_id_str)
+            .unwrap();
+        assert_eq!(rows.len(), 1, "the injection journals a pending turn");
+        assert_eq!(rows[0].user_text, "[base-motion replay] the base moved");
+        let mut entry = entry_arc.lock().await;
+        assert!(entry.turn_active, "the injection opens a turn");
+        assert_eq!(
+            entry.queue.pop().expect("frame queued").payload,
+            payload,
+            "an injected frame forwards unchanged, exactly as a client's does",
         );
     }
 

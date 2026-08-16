@@ -475,16 +475,16 @@ No new client-held state; no new store — the notice row is transcript data red
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | The probe reports what it rebuilt | pending | — |
-| #step-2 | `replay_onto`: the gate and the move | pending | — |
-| #step-3 | Bookkeeping: the log line and the ledger reconcile | pending | — |
-| #step-4 | The CLI verb | pending | — |
-| #step-5 | Divergence fields on the snapshot | pending | — |
-| #step-6 | The engine: wake, gate, replay, bump | pending | — |
-| #step-7 | The conflicted path becomes a turn | pending | — |
-| #step-8 | The deck — the notice row and the divergence marks | pending | — |
-| #step-9 | Doctrine prose | pending | — |
-| #step-10 | Integration checkpoint | pending | — |
+| #step-1 | The probe reports what it rebuilt | done | `dbc1648ce` |
+| #step-2 | `replay_onto`: the gate and the move | done | `81296ebc5` |
+| #step-3 | Bookkeeping: the log line and the ledger reconcile | done | `84d64251a` |
+| #step-4 | The CLI verb | done | `4027eeef0` |
+| #step-5 | Divergence fields on the snapshot | done | `5d43cd83b` |
+| #step-6 | The engine: wake, gate, replay, bump | done | `1427ddf5c` |
+| #step-7 | The conflicted path becomes a turn | done | `eaea17172` |
+| #step-8 | The deck — the notice row and the divergence marks | done | `74b5bfaab` |
+| #step-9 | Doctrine prose | done | `d5c4a8fec` |
+| #step-10 | Integration checkpoint | done | `c82bf5e79` |
 
 #### Step 1: The probe reports what it rebuilt {#step-1}
 

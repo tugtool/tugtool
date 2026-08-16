@@ -970,6 +970,17 @@ pub struct DashDetail {
     /// run edits and whose ledger the step verbs rewrite. `None` when no run
     /// has recorded one.
     pub plan_path: Option<String>,
+    /// Commits the base branch has gained past this dash's merge-base — 0 when
+    /// the dash already contains the base tip.
+    pub base_ahead: u32,
+    /// Base-checkout dirty tracked paths that this dash also changes. The join
+    /// preflight computes the same intersection at landing time; this says it
+    /// the moment the overlap appears, which is usually hours earlier. A
+    /// warning, never a trigger — uncommitted work on the base is the user's.
+    pub base_overlap: Vec<String>,
+    /// The note of the dash-log's most recent `replayed` line — the settled
+    /// mark's text. `None` when this dash has never been replayed.
+    pub last_replay: Option<String>,
 }
 
 /// Parse `git diff --name-status` output. Rename and copy lines
@@ -1026,6 +1037,12 @@ pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
         return Vec::new();
     };
 
+    // One read for the whole repository, hoisted above the per-dash loop: this
+    // runs on every aggregate recompute and already spends several git
+    // invocations per dash, and the base's dirty set is the same answer for all
+    // of them.
+    let base_dirt = dirty_tracked_paths(repo_root);
+
     let mut entries = Vec::new();
     for branch in branches.lines().filter(|l| !l.trim().is_empty()) {
         let name = branch.trim_start_matches("tugdash/");
@@ -1080,6 +1097,22 @@ pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
             Vec::new()
         };
 
+        // How far the base has run ahead of this dash, and which of the base
+        // checkout's uncommitted edits land on files the dash also changed —
+        // the divergence a landing would otherwise only reveal at the join.
+        let base_ahead = git_stdout(
+            repo_root,
+            &["rev-list", "--count", &format!("{branch}..{base}")],
+        )
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+        let base_overlap: Vec<String> = base_dirt
+            .iter()
+            .filter(|p| files.iter().any(|f| &&f.path == p))
+            .cloned()
+            .collect();
+
         // One dash-log read per dash per recompute — the log is small,
         // append-only, and parsed line by line. No plan markdown is read here
         // ([P01]): the declarations are the record this path derives from.
@@ -1100,6 +1133,9 @@ pub fn dash_detail_entries_in(repo_root: &Path) -> Vec<DashDetail> {
             step_current: declarations.step.map(|(current, _)| current),
             step_total: declarations.step.map(|(_, total)| total),
             plan_path: dash_plan_path(repo_root, name),
+            base_ahead,
+            base_overlap,
+            last_replay: declarations.last_replay.clone(),
             base,
             rounds,
             worktree_rel,
@@ -1347,7 +1383,7 @@ fn resolve_plan_rel(worktree: &Path, plan: &str) -> Result<String, String> {
 
 /// Write `contents` over `path` without ever leaving a half-written plan on
 /// disk: a sibling temp file, then a rename.
-fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &Path, contents: &str) -> Result<(), String> {
     let dir = path
         .parent()
         .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
@@ -2111,6 +2147,12 @@ fn read_join_journal(repo: &Path, name: &str) -> Option<JoinJournal> {
     serde_json::from_str(&txt).ok()
 }
 
+/// Whether a join of `name` is in flight — the journal check, without exposing
+/// the journal's shape.
+pub fn join_in_flight(repo: &Path, name: &str) -> bool {
+    read_join_journal(repo, name).is_some()
+}
+
 fn clear_join_journal(repo: &Path, name: &str) {
     let _ = std::fs::remove_file(join_journal_path(repo, name));
 }
@@ -2586,7 +2628,7 @@ fn blocking_base_dirt(
 /// project is itself a worktree would read every dash as `off-base` against
 /// that worktree's own branch while `tugutil dash join` beside it reports a
 /// clean bill. Idempotent: a main root resolves to itself.
-fn main_repo_root(start: &Path) -> PathBuf {
+pub(crate) fn main_repo_root(start: &Path) -> PathBuf {
     tugutil_core::find_repo_root_from(start).unwrap_or_else(|_| start.to_path_buf())
 }
 
@@ -3548,6 +3590,62 @@ Some context.
         // Worktree-relative, which is what makes the composition
         // `projectDir` / `worktree` / `plan_path` land on the copy a run edits.
         assert!(!entry.plan_path.as_deref().unwrap().starts_with('/'));
+    }
+
+    /// The divergence a landing would only reveal at the join, said on every
+    /// recompute instead: how far the base has run ahead, and which of its
+    /// uncommitted edits land on files this dash also changed.
+    #[serial]
+    #[test]
+    fn detail_entries_carry_base_divergence() {
+        let (_temp, root) = stepped_dash("divergence-dash");
+        let worktree = worktree_path(&root, "divergence-dash");
+
+        // A round on the dash, touching `shared.txt`.
+        fs::write(worktree.join("shared.txt"), "dash\n").unwrap();
+        git_output(&worktree, &["add", "-A"]).unwrap();
+        git_output(&worktree, &["commit", "-m", "the dash's round"]).unwrap();
+
+        let quiet = dash_detail_entries_in(&root);
+        let entry = quiet.iter().find(|d| d.name == "divergence-dash").unwrap();
+        assert_eq!(entry.base_ahead, 0, "the base has not moved");
+        assert!(entry.base_overlap.is_empty());
+        assert!(entry.last_replay.is_none());
+
+        // The base gains a commit, then an uncommitted edit — one to a file the
+        // dash also changed, one to a file it does not touch.
+        fs::write(root.join("elsewhere.txt"), "base\n").unwrap();
+        git_output(&root, &["add", "elsewhere.txt"]).unwrap();
+        git_output(&root, &["commit", "-m", "the base moves"]).unwrap();
+        fs::write(root.join("shared.txt"), "base edits it too\n").unwrap();
+        git_output(&root, &["add", "shared.txt"]).unwrap();
+        fs::write(root.join("elsewhere.txt"), "and this\n").unwrap();
+
+        let moved = dash_detail_entries_in(&root);
+        let entry = moved.iter().find(|d| d.name == "divergence-dash").unwrap();
+        assert_eq!(entry.base_ahead, 1);
+        assert_eq!(
+            entry.base_overlap,
+            vec!["shared.txt".to_string()],
+            "only the intersection with the dash's own files is a warning"
+        );
+    }
+
+    /// A replay's dash-log line reaches the snapshot as the settled mark's text
+    /// without disturbing the derived stage.
+    #[serial]
+    #[test]
+    fn detail_entries_carry_the_last_replay_note() {
+        let (_temp, root) = stepped_dash("replay-note-dash");
+        append_dash_log(&root, "replay-note-dash", "replayed", "onto abc123456: d->e").unwrap();
+
+        let entries = dash_detail_entries_in(&root);
+        let entry = entries.iter().find(|d| d.name == "replay-note-dash").unwrap();
+        assert_eq!(entry.last_replay.as_deref(), Some("onto abc123456: d->e"));
+        assert_eq!(
+            entry.stage, "working",
+            "a replay records history, it does not move the stage"
+        );
     }
 
     #[serial]

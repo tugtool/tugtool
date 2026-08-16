@@ -250,6 +250,10 @@ pub struct DashDeclarations {
     /// The latest step declaration's `i`/`N`, which outlives a later `built`
     /// or `audited` so a display can still say how far the run got.
     pub step: Option<(u32, u32)>,
+    /// The latest `replayed` line's note — where this dash's rounds went when
+    /// its base last moved under it. Deliberately not a `latest` declaration: a
+    /// replay rewrites history, it does not move the dash's stage.
+    pub last_replay: Option<String>,
 }
 
 /// Split a dash-log line into its dash, marker, and note fields.
@@ -320,6 +324,7 @@ pub fn read_declarations(repo_root: &Path, dash: &str) -> DashDeclarations {
             }
             "built" => found.latest = Some(DashDeclaration::Built),
             "audited" => found.latest = Some(DashDeclaration::Audited),
+            "replayed" => found.last_replay = Some(note.to_owned()),
             _ => {}
         }
     }

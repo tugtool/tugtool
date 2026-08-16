@@ -314,6 +314,13 @@ const KNOWN_CODE_OUTPUT_TYPES: ReadonlySet<string> = new Set([
   // (`--continue` leading orphan, `/compact` continuation) with no user
   // message — the honest replacement for the deleted synth add_user_message.
   "assistant_opener",
+  // Server-originated turn opener, emitted by tugcast (not tugcode) beside
+  // every turn Tug injects into a session — today the base-motion engine's,
+  // when a dash's base moves under it. Journaling an injection makes the turn
+  // real to the server, not visible on screen: the live user row comes from the
+  // composer echoing its own submission, and an injection has no composer. This
+  // is what keeps a server-initiated turn from arriving with no visible cause.
+  "tug_notice",
   // Background-job lifecycle frames (the JOBS cell's feed — unrelated
   // to the TaskCreate/TaskUpdate tool calls behind TASKS). tugcode
   // forwards claude's `system/task_started` / `system/task_updated`
@@ -1861,6 +1868,12 @@ export class CodeSessionStore {
         // S02) — opens an assistant-only turn for orphan assistant
         // content, no user message. Same turnKey mint contract as
         // `wake_started`; the reducer seeds an empty scratch.
+        return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
+      }
+      if (ev.type === "tug_notice") {
+        // Same turnKey mint contract as `wake_started` / `assistant_opener`:
+        // tugcast does not mint it (it has no React), so the wrapper mints on
+        // receipt and the reducer stays pure.
         return { ...ev, turnKey: mintTurnKey() } as unknown as CodeSessionEvent;
       }
       if (ev.type === "api_retry") {

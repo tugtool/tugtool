@@ -94,6 +94,23 @@
   );
 }
 
+/* The divergence marks — how far this dash has drifted from its base, said
+   when it becomes true rather than at landing time. `conflicted` is the only
+   one that needs a person; `behind` is ordinary and usually transient, and
+   `settled` is a receipt, so both stay muted. Every state paints from the
+   `data-divergence` attribute ([L06]). */
+.session-changes-dash-divergence {
+  color: var(--tug7-element-global-text-normal-muted-rest);
+}
+
+.session-changes-dash-divergence[data-divergence="conflicted"] {
+  color: var(--tug7-element-tone-text-normal-danger-rest);
+}
+
+.session-changes-dash-divergence[data-divergence="overlap"] {
+  color: var(--tug7-element-tone-text-normal-caution-rest);
+}
+
 /* ---- The expanded detail ---- */
 
 .session-changes-dash-detail {

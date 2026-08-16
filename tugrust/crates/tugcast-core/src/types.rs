@@ -536,7 +536,30 @@ pub enum ChangesetEntry {
         /// ([P23], Spec S10) — when one exists.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         draft: Option<ChangesetDraft>,
+        /// Commits the base branch has gained past this dash's merge-base.
+        /// Absent (0) means the dash already contains the base tip.
+        #[serde(default, skip_serializing_if = "is_zero")]
+        base_ahead: u32,
+        /// Base-checkout uncommitted paths this dash also changes — the
+        /// landing's `base-dirt` refusal, said the moment it becomes true
+        /// rather than at the join.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        base_overlap: Vec<String>,
+        /// Where this dash's rounds went the last time its base moved under it
+        /// — the settled mark's text, from the dash-log's `replayed` line.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        last_replay: Option<String>,
+        /// Paths a replay stopped on, when the last attempt conflicted. Held by
+        /// the engine rather than derived from git, because the answer is about
+        /// an attempt rather than about a state.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        replay_conflict_paths: Vec<String>,
     },
+}
+
+/// `skip_serializing_if` for a count whose zero means "nothing to say".
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// The workspace-scoped changeset snapshot, delivered on the CHANGESET feed
@@ -1350,9 +1373,16 @@ mod tests {
                 edited: false,
                 selection: None,
             }),
+            base_ahead: 0,
+            base_overlap: vec![],
+            last_replay: None,
+            replay_conflict_paths: vec![],
         };
         let json = serde_json::to_string(&dash).unwrap();
         assert!(json.contains(r#""kind":"dash""#));
+        // A current dash spends no wire bytes on its divergence fields.
+        assert!(!json.contains("base_ahead"));
+        assert!(!json.contains("base_overlap"));
         // A present draft rides the wire.
         assert!(json.contains(r#""message":"Do the thing""#));
         // The identity is the owner key; the ref travels separately ([P09]).

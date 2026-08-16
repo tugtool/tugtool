@@ -72,6 +72,7 @@ import type {
   TurnCompleteEvent,
   WakeStartedEvent,
   AssistantOpenerEvent,
+  TugNoticeEvent,
   WireErrorEvent,
   PromptAnchorEvent,
   RewindPreviewResultEvent,
@@ -4980,6 +4981,72 @@ function handleAddUserMessage(
  * using `wake_started`. Like `handleAddUserMessage` it admits only the
  * `replaying` phase.
  */
+/**
+ * Server-originated turn opener — the reducer's response to a wire
+ * `tug_notice`.
+ *
+ * Tug injected a submission into this session (the base-motion engine does,
+ * when a dash's base moves under it), and this is what makes that turn
+ * visible: an `origin: assistant` turn seeded with one `notice` system_note
+ * carrying the injected body. Assistant-originated, not user-originated —
+ * attributing Tug's words to the user would put them in the user's mouth in
+ * their own transcript.
+ *
+ * Admitted only from `idle`, which is the only state the engine's gate ever
+ * injects into. On reload the JSONL records the injection as an ordinary user
+ * entry, so the replay translator renders the same text as a user row; the two
+ * are two renderings of one submission and never both appear.
+ */
+function handleTugNotice(
+  state: CodeSessionState,
+  event: TugNoticeEvent,
+): { state: CodeSessionState; effects: Effect[] } {
+  if (state.phase !== "idle") {
+    return { state, effects: [] };
+  }
+  const text = typeof event.text === "string" ? event.text : "";
+  if (text.length === 0) {
+    return { state, effects: [] };
+  }
+  const submitAt = event.timestamp ?? Date.now();
+  const note: SystemNote = {
+    kind: "system_note",
+    messageKey: systemNoteKey(event.turnKey, 0),
+    createdAt: submitAt,
+    text,
+    source: "notice",
+    ...(typeof event.origin === "string" && event.origin.length > 0
+      ? { noticeOrigin: event.origin }
+      : {}),
+  };
+  return {
+    state: {
+      ...state,
+      // The injected submission is about to run a real turn, so the session
+      // leaves idle the same way a wake does — assistant-originated work
+      // starting with no composer behind it.
+      phase: "waking",
+      activeMsgId: null,
+      scratch: withScratchEntry(state.scratch, event.turnKey, {
+        ...newScratchEntry(event.turnKey, [note]),
+        systemNoteSeq: 1,
+      }),
+      toolUseStartedAt: new Map(),
+      pendingApproval: null,
+      pendingQuestion: null,
+      prevPhase: null,
+      pendingTurn: {
+        turnKey: event.turnKey,
+        submitAt,
+        origin: "assistant",
+      },
+      ...resetPerTurnTelemetry(),
+      awaitingApprovalIntervals: [],
+    },
+    effects: [],
+  };
+}
+
 function handleAssistantOpener(
   state: CodeSessionState,
   event: AssistantOpenerEvent,
@@ -5801,6 +5868,8 @@ export function reduce(
       return handleWakeStarted(state, event);
     case "assistant_opener":
       return handleAssistantOpener(state, event);
+    case "tug_notice":
+      return handleTugNotice(state, event);
     case "task_started":
       return handleTaskStarted(state, event);
     case "task_updated":

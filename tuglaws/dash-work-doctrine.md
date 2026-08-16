@@ -25,6 +25,33 @@ When the work on the base *is* the work the dash is for — the "I was half-way 
 
 `dash release` is the inverse and needs no flag: it returns the worktree's uncommitted work to the base before teardown, the same way it already returns an adopted plan. If the base has since acquired its own uncommitted edit to one of those paths, release refuses and leaves the dash standing — the work stays reachable rather than being destroyed to complete a teardown. Commit or stash the base changes and release again.
 
+## When the base moves
+
+A landing problem should surface the moment it becomes true, not the moment you try to land. A dash cut on Monday and landed on Thursday spent three days quietly diverging from a base nobody was watching, and the whole cost of that divergence arrived at once, at the join, in front of whoever pressed the button. The base-motion engine exists to spend that cost as it is incurred.
+
+**The base moving is a wake, not a schedule.** Each workspace already runs one file watcher, and its git watch already broadcasts when the workspace's HEAD moves; the engine is one more subscriber. Two more wakes cover what a signal cannot: a workspace opening (a HEAD signal is an edge, and a dash that fell behind while Tug was not running would never be signalled about), and a turn ending (the gate below refuses to act mid-turn, and "the base moved during a turn" is the common shape of the problem).
+
+**A replay happens only when all of it is safe.** The gate is four conditions, and every one of them is a refusal to act over somebody's work:
+
+- The dash worktree is clean. Nothing moves a branch out from under uncommitted changes.
+- No landing is in flight for that dash.
+- No live session bound to the dash is mid-turn.
+- No replay for that dash is already running.
+
+When any fails, the dash is left behind and re-examined on the next wake. Deferral is cheap because the mark makes it visible: a dash that stays behind is a lane state, not a silent stall.
+
+The move itself is a compare-and-swap — the worktree re-verified clean, its HEAD re-verified equal to the tip the replay was computed from, then `git reset --keep` from *inside* the worktree, which updates HEAD, the index, and the working tree together and independently refuses over tracked-file dirt. A round committed between the probe and the move makes the swap fail rather than being silently dropped.
+
+**Quiet, never silent.** A clean replay interrupts nobody: no dialog, no toast, no turn. Its record is a `replayed` line in the dash-log, the plan ledger's commit cells rewritten to the rounds' new ids, and a settled mark on the dash's lane row. History moved under the dash; saying nothing at all about that would be its own hazard.
+
+**A conflicted replay becomes an ordinary turn, never a rung.** The engine never resolves file content — that is a question for whoever is working the dash. Instead it composes one message naming what moved, which round the replay stopped at, the conflicting paths, and what the dash is *for*, and injects it into the dash's most recently used idle bound session as an ordinary submission. The agent resolves by rebasing in the dash worktree, with the full working tree and the tests in hand, and finishes with `tugutil dash replay <name>`, which finds the branch already current and does the bookkeeping only. If the conflict turns out to be a real design collision rather than a mechanical one, the right answer is `git rebase --abort` and saying so — the dash simply stays behind, and the landing-time resolution ladder is still there. That ladder remains the standing fallback for every case: a dash with no bound session gets a mark and nothing else.
+
+**No server-initiated turn is ever unannounced.** This is the general rule, and it outranks convenience. Journaling an injection makes the turn real to the server and to a later reload, but it puts no row on screen — the transcript's live user row comes from the composer echoing its own submission, and an injection has no composer. So every injected turn carries a system-origin opener alongside it, rendered as a distinct row attributed to the subsystem that spoke. Attributing it to the user instead would be cheaper and would put words in their mouth in their own transcript. An agent that begins working with no visible cause is a worse ambush than the one this whole mechanism replaces.
+
+**A replay under a live plan run tells the agent its context moved.** The engine does not wait for a plan run to finish — that would leave a dash behind for hours, which is the ambush again. It replays between turns and follows a clean replay with a short notice naming the new base tip and the files the base brought in. The agent's context holds pre-replay file contents, so its next edit could silently revert base changes it never saw; the notice repairs that rather than avoiding it. It asks for nothing, and says so.
+
+The engine is on by default, because the doctrine *is* the default and an opt-in flag would make the designed behavior the exception. `git config tugdash.autoreplay false` disables automatic motion for a repository where any unattended ref motion is unwelcome; the `tugutil dash replay` verb and the marks keep working.
+
 ## Verify before every commit
 
 **Warnings are errors.** The Rust workspace enforces `-D warnings`; treat a type error, a lint finding, or a failing test the same way.

@@ -172,6 +172,16 @@ export interface DashChangesetEntry {
   round_subjects?: string[];
   /** The maintained draft — the dash's eventual join message ([P23]). */
   draft?: ChangesetDraft;
+  /** Commits the base branch has gained past this dash's merge-base. Absent
+   *  means the dash already contains the base tip. */
+  base_ahead?: number;
+  /** Base-checkout uncommitted paths this dash also changes — the landing's
+   *  `base-dirt` refusal, said the moment it becomes true. */
+  base_overlap?: string[];
+  /** Where this dash's rounds went the last time its base moved under it. */
+  last_replay?: string;
+  /** Paths the last replay attempt stopped on, when it conflicted. */
+  replay_conflict_paths?: string[];
 }
 
 export type ChangesetEntry = SessionChangesetEntry | DashChangesetEntry;
@@ -328,7 +338,11 @@ export function isChangesetEntry(value: unknown): value is ChangesetEntry {
       isOptionalStringArray(value.bound_sessions) &&
       (value.step_current === undefined || typeof value.step_current === "number") &&
       (value.step_total === undefined || typeof value.step_total === "number") &&
-      (value.plan_path === undefined || typeof value.plan_path === "string")
+      (value.plan_path === undefined || typeof value.plan_path === "string") &&
+      (value.base_ahead === undefined || typeof value.base_ahead === "number") &&
+      isOptionalStringArray(value.base_overlap) &&
+      (value.last_replay === undefined || typeof value.last_replay === "string") &&
+      isOptionalStringArray(value.replay_conflict_paths)
     );
   }
   return false;

@@ -166,7 +166,7 @@ The doubled subject prefix is understood and mechanical: `integrate_message` pre
 
 1. ~~**The draft regeneration bug**~~ — **addressed**; it was a keying defect, not regeneration. See above.
 2. ~~**Clean base at creation**~~ — **addressed**. `dash create` reports the base's uncommitted working set and warns when the checkout is off the base branch; `--carry` moves that work into the dash, and `dash release` returns uncommitted worktree work to the base rather than destroying it. The doctrine is in [`tuglaws/dash-work-doctrine.md`](../tuglaws/dash-work-doctrine.md#starting-from-a-dirty-base).
-3. **Base-motion replay** — the real program, and the one that deserves its own design brief. **Next.**
+3. ~~**Base-motion replay**~~ — **addressed**. A dash whose base moves is replayed onto the new tip the moment it is safe: quietly when clean, leaving a settled mark and a `replayed` dash-log line; as an ordinary reviewed turn in the dash's bound session when a round conflicts. The landing-time ladder is untouched and remains the fallback. Plan: [`roadmap/base-motion-replay-plan.md`](base-motion-replay-plan.md); doctrine: [`tuglaws/dash-work-doctrine.md`](../tuglaws/dash-work-doctrine.md#when-the-base-moves).
 4. **The tactical layer** — after the surfaces have settled.
 
 ## Starting again from cold
@@ -199,7 +199,7 @@ State of the world at the last update (2026-08-15): `main` is at `a36ec60f6`, wh
 
 No dashes exist and no debug instances are running; the fixtures leave no `tugdash.mergedriver` config, `rr-cache` entry, worktree, or `tugdash/*` branch behind. Green at that commit: `cargo nextest run` (2621 tests), `bunx tsc --noEmit`, `bunx vite build`, `just app-test-changed` (20 files, 32 tests). `bun test` is 6759/1, the one red being the pre-existing `layout-imposer-solutions` golden table — red on `main`, not ours. The empty probe commit `ebee1d49f` described above was reset off `main` and is gone.
 
-Next piece of work: the **base-motion replay** design brief. The first two items of the suggested order are addressed — see [The two message defects](#the-two-message-defects).
+Next piece of work: the **tactical layer** — item 4 of the suggested order, and the only one still open. The first three are addressed; the base-motion program was designed, implemented, and written down in [`roadmap/base-motion-replay-plan.md`](base-motion-replay-plan.md).
 
 ## Working on this — the landmines
 

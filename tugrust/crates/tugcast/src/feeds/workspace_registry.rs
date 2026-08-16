@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use thiserror::Error;
 use tokio::sync::{mpsc, watch};
@@ -315,6 +315,12 @@ pub struct WorkspaceRegistry {
     /// git watch, which broadcasts a `GitHeadSignal` when that workspace's HEAD
     /// moves. The router subscribes once at the process level (see `main.rs`).
     gh_response_tx: tokio::sync::broadcast::Sender<Frame>,
+    /// Optional "a workspace just opened" signal, carrying the fresh entry's
+    /// canonical key. The base-motion engine listens here because a HEAD signal
+    /// is an edge and a newly-opened project may already hold a dash whose base
+    /// moved while nothing was watching. Set once at boot; unset in tests and in
+    /// any build without the engine, where the send is simply skipped.
+    workspace_open_tx: OnceLock<mpsc::Sender<String>>,
 }
 
 impl WorkspaceRegistry {
@@ -335,7 +341,14 @@ impl WorkspaceRegistry {
             ft_response_tx,
             changeset_all_bump,
             gh_response_tx,
+            workspace_open_tx: OnceLock::new(),
         }
+    }
+
+    /// Wire the "a workspace just opened" signal. Called once at boot, beside
+    /// the base-motion engine that receives it.
+    pub fn set_workspace_open_signal(&self, tx: mpsc::Sender<String>) {
+        let _ = self.workspace_open_tx.set(tx);
     }
 
     /// The process-global aggregate-changeset recompute signal, cloned for
@@ -463,13 +476,20 @@ impl WorkspaceRegistry {
             self.gh_response_tx.clone(),
             browse_only,
         );
-        map.insert(workspace_key, Arc::clone(&entry));
+        map.insert(workspace_key.clone(), Arc::clone(&entry));
         drop(map);
         // A fresh project joined the open set — recompute the aggregate now
         // so its section shows immediately instead of after the poll. A
         // browse-only entry is not in that set, so it skips the bump.
         if !browse_only {
             self.changeset_all_bump.notify_one();
+            // Tell the base-motion engine to sweep this workspace's dashes: the
+            // git watch it just started baselined HEAD, so it will never signal
+            // about motion that happened before now. A full channel means a
+            // sweep is already queued, which covers this workspace too.
+            if let Some(tx) = self.workspace_open_tx.get() {
+                let _ = tx.try_send(workspace_key.as_ref().to_string());
+            }
         }
         Ok(entry)
     }

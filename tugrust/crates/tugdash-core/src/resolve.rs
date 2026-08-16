@@ -32,6 +32,7 @@ use crate::ops::{
     branch_exists, branch_name, commit_worktree_dirt, dash_base, git_output, git_stdout,
     integrate_message, worktree_path,
 };
+use crate::replay::{ReplayWalk, ReplayedRounds};
 
 /// Which rung resolved a file ([P31]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -139,12 +140,12 @@ pub fn resolve_conflicts(
     let base_head = git_stdout(repo, &["rev-parse", &base_branch])?;
 
     // Rung 1 — replay probe (in-memory per round; git ≥ 2.40).
-    if let Some(candidate) = replay_probe(repo, &base_head, &base_branch, &branch)? {
+    if let Some(replayed) = replay_probe(repo, &base_head, &base_branch, &branch)? {
         return Ok(ResolveOutcome {
             shape: JoinShape::Replay,
             resolved: Vec::new(),
             unresolved: Vec::new(),
-            candidate_commit: Some(candidate),
+            candidate_commit: Some(replayed.head),
             base_branch,
             warnings,
         });
@@ -338,59 +339,25 @@ fn resolution_diff(repo: &Path, base_head: &str, candidate: &str, path: &str) ->
 
 /// Replay the dash's rounds one at a time onto the current base, in memory
 /// (`merge-tree --merge-base=<round^>` + `commit-tree`). Returns the replayed
-/// head when every round is clean, else `None` (a conflicting round, no rounds,
-/// or git < 2.40). Touches nothing.
-fn replay_probe(
+/// head and the per-round mapping when every round is clean, else `None` (a
+/// conflicting round, no rounds, or git < 2.40). Touches nothing.
+///
+/// The walk itself lives in [`crate::replay`], which needs the same rebuild plus
+/// the detail of *which* round stopped it.
+pub(crate) fn replay_probe(
     repo: &Path,
     base_head: &str,
     base_branch: &str,
     branch: &str,
-) -> Result<Option<String>, String> {
-    if !git_supports_merge_base_flag(repo) {
-        return Ok(None);
+) -> Result<Option<ReplayedRounds>, String> {
+    match crate::replay::walk_rounds(repo, base_head, base_branch, branch)? {
+        ReplayWalk::Clean(replayed) => Ok(Some(replayed)),
+        ReplayWalk::Conflicted { .. } | ReplayWalk::Unavailable => Ok(None),
     }
-    let rounds_out = git_stdout(
-        repo,
-        &[
-            "rev-list",
-            "--reverse",
-            &format!("{}..{}", base_branch, branch),
-        ],
-    )?;
-    let rounds: Vec<&str> = rounds_out
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    if rounds.is_empty() {
-        return Ok(None);
-    }
-
-    let mut acc = base_head.to_string();
-    for round in rounds {
-        let parent = format!("{}^", round);
-        let out = git_output(
-            repo,
-            &[
-                "merge-tree",
-                "--write-tree",
-                &format!("--merge-base={}", parent),
-                &acc,
-                round,
-            ],
-        )?;
-        if !out.status.success() {
-            // A round conflicts against the running base — probe fails.
-            return Ok(None);
-        }
-        let tree = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let msg = git_stdout(repo, &["log", "-1", "--format=%B", round])?;
-        acc = commit_tree(repo, &tree, &acc, &msg)?;
-    }
-    Ok(Some(acc))
 }
 
 /// Whether `git` here supports `merge-tree --merge-base` (git ≥ 2.40).
-fn git_supports_merge_base_flag(repo: &Path) -> bool {
+pub(crate) fn git_supports_merge_base_flag(repo: &Path) -> bool {
     let out = git_stdout(repo, &["--version"]).unwrap_or_default();
     let ver = out.split_whitespace().nth(2).unwrap_or("");
     let mut parts = ver.split('.');
@@ -812,7 +779,7 @@ fn patch_tree(
 }
 
 /// `git commit-tree <tree> -p <parent> -m <msg>` → the new commit OID.
-fn commit_tree(repo: &Path, tree: &str, parent: &str, msg: &str) -> Result<String, String> {
+pub(crate) fn commit_tree(repo: &Path, tree: &str, parent: &str, msg: &str) -> Result<String, String> {
     let out = git_output(repo, &["commit-tree", tree, "-p", parent, "-m", msg])?;
     if !out.status.success() {
         return Err(format!(
@@ -896,9 +863,13 @@ fn write_scratch(scratch: &Path, tag: &str, ext: &str, bytes: &[u8]) -> Option<s
     Some(file)
 }
 
-/// The dash's intent for the AI rung ([P32]): its maintained draft + round
-/// subjects.
-fn resolve_intent(repo: &Path, base_branch: &str, branch: &str) -> String {
+/// The dash's intent: its maintained draft + round subjects.
+///
+/// Read by the AI rung of the resolution ladder ([P32]) and by the base-motion
+/// engine, which puts it in front of an agent being asked to resolve a replay
+/// that conflicts — in both cases the question is "what is this dash for", and
+/// the answer is the same one.
+pub fn resolve_intent(repo: &Path, base_branch: &str, branch: &str) -> String {
     let mut parts = Vec::new();
     if let Some(draft) = crate::ops::dash_draft_message(repo, branch) {
         parts.push(draft);
@@ -1037,6 +1008,33 @@ mod tests {
         // Sanity: the plain squash really does conflict.
         let (_t, stages) = merge_tree_stages(repo, "main", "tugdash/demo").unwrap();
         assert!(!stages.is_empty(), "squash conflicts");
+
+        // The probe names each round it rebuilt, oldest first.
+        let rounds = git_stdout(repo, &["rev-list", "--reverse", "main..tugdash/demo"]).unwrap();
+        let rounds: Vec<&str> = rounds.lines().filter(|l| !l.trim().is_empty()).collect();
+        let base_head = git_stdout(repo, &["rev-parse", "main"]).unwrap();
+        let replayed = replay_probe(repo, &base_head, "main", "tugdash/demo")
+            .unwrap()
+            .expect("clean replay");
+        assert_eq!(replayed.mapping.len(), rounds.len());
+        for (i, (old, new)) in replayed.mapping.iter().enumerate() {
+            assert_eq!(old, rounds[i], "pair {i} keeps the original round, in order");
+            assert_ne!(old, new, "the round was rebuilt onto the moved base");
+            // Each rebuilt commit is reachable from the replayed head.
+            let ok = Command::new("git")
+                .arg("-C")
+                .arg(repo)
+                .args(["merge-base", "--is-ancestor", new, &replayed.head])
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "rebuilt commit {new} is under the replayed head");
+        }
+        assert_eq!(
+            replayed.mapping.last().map(|(_, new)| new.as_str()),
+            Some(replayed.head.as_str()),
+            "the head is the last round's rebuilt commit"
+        );
 
         let outcome = resolve_conflicts(repo, "demo", None).unwrap();
         assert_eq!(outcome.shape, JoinShape::Replay);

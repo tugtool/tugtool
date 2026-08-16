@@ -449,6 +449,18 @@ pub enum DashCommands {
         #[arg(long)]
         resolve: bool,
     },
+    /// Move a dash's rounds onto its base branch's current tip.
+    ///
+    /// Replays each round in memory and, when every one is clean, moves the
+    /// branch under its live worktree — refusing rather than clobbering if the
+    /// worktree is dirty, a join is in flight, or a round landed meanwhile. On a
+    /// branch that already descends from the base tip it makes no motion and
+    /// only repairs the record, which is how an agent finishes a rebase it did
+    /// by hand.
+    Replay {
+        /// Dash name.
+        name: String,
+    },
     /// Release a dash: discard its worktree + branch without merging.
     Release {
         /// Dash name.

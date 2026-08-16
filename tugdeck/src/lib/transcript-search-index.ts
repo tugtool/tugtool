@@ -324,10 +324,11 @@ function messageSegments(
           ? []
           : [{ kind: "dom", text: label }];
       }
-      if (message.source === "scheduled") {
-        // The wake-trigger chip renders through `TugMarkdownBlock` in static
-        // mode; the cache identity here is index-owned (the static renderer
-        // parses via `renderIncremental`, not the cache).
+      if (message.source === "scheduled" || message.source === "notice") {
+        // The wake-trigger chip and the tug-notice row both render through
+        // `TugMarkdownBlock` in static mode; the cache identity here is
+        // index-owned (the static renderer parses via `renderIncremental`,
+        // not the cache).
         const identity = `turn.${turnKey}.message.${message.messageKey}.note`;
         const projected = markdownToText(streamingStore, identity, message.text);
         return projected === "" ? [] : [{ kind: "dom", text: projected }];

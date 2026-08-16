@@ -83,6 +83,7 @@ import React, {
 } from "react";
 import {
   AlarmClock,
+  Megaphone,
   Bell,
   CircleDashed,
   ClipboardCheck,
@@ -1070,6 +1071,36 @@ const CodeRowBody: React.FC<CodeRowBodyProps> = ({
                   key={`md-${message.text.length}`}
                   initialText={message.text}
                   className="session-card-transcript-wake-trigger-md"
+                  findable
+                />
+              }
+              tone="quiet"
+            />
+          </div>,
+        );
+        continue;
+      }
+      if (message.source === "notice") {
+        // A turn Tug started itself. It renders as a subdued, visibly
+        // non-user row labelled with the subsystem that spoke, so the work
+        // that follows has a visible cause and the words are not read as
+        // the user's. Same quiet-line substrate as the wake chip above;
+        // appearance is CSS-only ([L06]).
+        elements.push(
+          <div
+            key={message.messageKey}
+            className="session-card-transcript-notice"
+            data-slot="tug-notice"
+            data-notice-origin={message.noticeOrigin ?? "tug"}
+          >
+            <TugQuietLine
+              icon={<Megaphone size={16} aria-hidden="true" />}
+              label={message.noticeOrigin ?? "tug"}
+              subject={
+                <TugMarkdownBlock
+                  key={`md-${message.text.length}`}
+                  initialText={message.text}
+                  className="session-card-transcript-notice-md"
                   findable
                 />
               }

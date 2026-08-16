@@ -1790,6 +1790,33 @@ async fn main() {
     // it sees every recompute the router does.
     supervisor.start_draft_engine(changeset_all_rx.clone(), cancel.clone());
 
+    // The base-motion engine: replay a dash onto its base the moment the base
+    // moves and it is safe to. It subscribes to the same GIT_HEAD broadcast the
+    // router fans out, so no new watcher exists; the other two wakes are a
+    // workspace opening (the registry) and a turn ending (the supervisor),
+    // because a HEAD signal is an edge and the gate refuses to act mid-turn.
+    let (workspace_open_tx, workspace_open_rx) = mpsc::channel::<String>(16);
+    let (turn_complete_tx, turn_complete_rx) = mpsc::channel::<String>(64);
+    registry.set_workspace_open_signal(workspace_open_tx);
+    let _ = supervisor.turn_complete_tx.set(turn_complete_tx);
+    tokio::spawn(feeds::base_motion::run_base_motion_engine(
+        feeds::base_motion::BaseMotionContext {
+            registry: Arc::clone(&registry),
+            supervisor_ledger: Arc::clone(&supervisor.ledger),
+            session_ledger: Some(Arc::clone(&ledger)),
+            bump: Arc::clone(&changeset_all_bump),
+            // A conflicted replay becomes an ordinary turn: the submission goes
+            // down the same CODE_INPUT queue the router feeds, and the opener
+            // that makes it visible goes out on CODE_OUTPUT.
+            code_input_tx: Some(code_input_tx.clone()),
+            code_output: Some(supervisor.code_output.clone()),
+            cancel: cancel.clone(),
+        },
+        gh_response_tx.subscribe(),
+        workspace_open_rx,
+        turn_complete_rx,
+    ));
+
     // JOTS feed — watches the machine-global `jots.json` and pushes the whole
     // document to every client. The nudge lets `PUT /api/jots` force an
     // immediate rebuild. The migration runs first so a user arriving from a

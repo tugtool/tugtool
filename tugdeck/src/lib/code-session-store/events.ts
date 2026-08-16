@@ -1069,6 +1069,35 @@ export interface WakeStartedEvent {
  * turn carrying wake annotations (trigger, jobs fold, `waking` phase); this
  * opener is the wake-baggage-free variant.
  */
+/**
+ * Server-originated turn opener — the reducer event the store wrapper mints
+ * from tugcast's wire `tug_notice` frame.
+ *
+ * Tug can start a turn itself: the base-motion engine injects one when a dash's
+ * base moves under it. Journaling that injection makes it real to the server and
+ * to a later reload, but it puts no row on screen — the transcript's live user
+ * row comes from the composer echoing its own submission, and an injection has
+ * no composer. Without this frame the agent would begin working with no visible
+ * cause. So: **no server-initiated turn is ever unannounced.**
+ *
+ * The turn it opens is `origin: assistant` and seeds a `system_note` head rather
+ * than a `user_message` — the words are Tug's, and attributing them to the user
+ * would put them in the user's mouth in their own transcript. `origin` names
+ * which subsystem spoke and becomes the row's label.
+ */
+export interface TugNoticeEvent {
+  type: "tug_notice";
+  /** Which subsystem spoke (e.g. `"base-motion"`) — the row's attribution. */
+  origin?: string;
+  /** The notice body, the same text the injected submission carried. */
+  text?: string;
+  timestamp?: number;
+  tug_session_id?: string;
+  /** Same mint contract as {@link AssistantOpenerEvent.turnKey}. */
+  turnKey: string;
+  [key: string]: unknown;
+}
+
 export interface AssistantOpenerEvent {
   type: "assistant_opener";
   /** Original JSONL entry time (replay), so the turn's timestamp is the
@@ -1327,6 +1356,7 @@ export type CodeSessionEvent =
   | ReplayCompleteEvent
   | WakeStartedEvent
   | AssistantOpenerEvent
+  | TugNoticeEvent
   | TaskStartedEvent
   | TaskUpdatedEvent
   | TaskProgressEvent

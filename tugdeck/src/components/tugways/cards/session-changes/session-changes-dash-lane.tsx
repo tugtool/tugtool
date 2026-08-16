@@ -100,6 +100,110 @@ function roundsLabel(rounds: number): string {
   return rounds === 1 ? "1 round" : `${rounds} rounds`;
 }
 
+/** At most this many paths in a mark's tooltip; the count carries the rest. */
+const MARK_TOOLTIP_PATHS = 8;
+
+function pathList(paths: ReadonlyArray<string>): string {
+  const shown = paths.slice(0, MARK_TOOLTIP_PATHS).join("\n");
+  const rest = paths.length - MARK_TOOLTIP_PATHS;
+  return rest > 0 ? `${shown}\n…and ${rest} more` : shown;
+}
+
+/**
+ * How far this dash has drifted from its base, said the moment it becomes true
+ * rather than at landing time.
+ *
+ * Four marks over the snapshot's divergence fields, most urgent first. A
+ * conflicted replay is a state somebody has to resolve; base dirt overlapping
+ * the dash's own files is a warning about work that is not the machine's to
+ * touch; being behind is ordinary and usually transient (the engine is
+ * probably replaying it as you read); a settled replay mark is the quiet
+ * receipt that history moved under this dash and nothing asked you about it.
+ *
+ * Every state is a data attribute the CSS paints from ([L06]); the values come
+ * off the changeset entry the card already subscribes to ([L02]).
+ */
+function DashDivergenceMarks({ entry }: { entry: DashChangesetEntry }) {
+  const conflicts = entry.replay_conflict_paths ?? [];
+  const overlap = entry.base_overlap ?? [];
+  const ahead = entry.base_ahead ?? 0;
+  const settled = entry.last_replay;
+  if (
+    conflicts.length === 0 &&
+    overlap.length === 0 &&
+    ahead === 0 &&
+    (settled === undefined || settled === "")
+  ) {
+    return null;
+  }
+  return (
+    <>
+      {conflicts.length > 0 ? (
+        <>
+          <span className="session-changes-dash-sep">·</span>
+          <TugTooltip
+            content={`Replaying this dash onto ${entry.base} conflicts in:\n${pathList(conflicts)}`}
+          >
+            <span
+              className="session-changes-dash-divergence"
+              data-slot="session-changes-dash-divergence"
+              data-divergence="conflicted"
+            >
+              {`replay conflicts (${conflicts.length})`}
+            </span>
+          </TugTooltip>
+        </>
+      ) : null}
+      {overlap.length > 0 ? (
+        <>
+          <span className="session-changes-dash-sep">·</span>
+          <TugTooltip
+            content={`Uncommitted work on ${entry.base} touches files this dash also changes:\n${pathList(overlap)}`}
+          >
+            <span
+              className="session-changes-dash-divergence"
+              data-slot="session-changes-dash-divergence"
+              data-divergence="overlap"
+            >
+              {`base overlap (${overlap.length})`}
+            </span>
+          </TugTooltip>
+        </>
+      ) : null}
+      {ahead > 0 ? (
+        <>
+          <span className="session-changes-dash-sep">·</span>
+          <TugTooltip
+            content={`${entry.base} has gained ${ahead === 1 ? "1 commit" : `${ahead} commits`} this dash does not have yet.`}
+          >
+            <span
+              className="session-changes-dash-divergence"
+              data-slot="session-changes-dash-divergence"
+              data-divergence="behind"
+            >
+              {`base +${ahead}`}
+            </span>
+          </TugTooltip>
+        </>
+      ) : null}
+      {ahead === 0 && conflicts.length === 0 && settled !== undefined && settled !== "" ? (
+        <>
+          <span className="session-changes-dash-sep">·</span>
+          <TugTooltip content={`Replayed ${settled}`}>
+            <span
+              className="session-changes-dash-divergence"
+              data-slot="session-changes-dash-divergence"
+              data-divergence="settled"
+            >
+              replayed
+            </span>
+          </TugTooltip>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Everything the fronted row's landing face needs, read once by the view and
  * handed down. Absent on every other row — see the module docblock for why the
@@ -294,6 +398,7 @@ function DashRow({
               </TugTooltip>
             </>
           ) : null}
+          <DashDivergenceMarks entry={entry} />
         </span>
       </TugListRow>
       {expanded ? (

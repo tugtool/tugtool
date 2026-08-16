@@ -37,6 +37,7 @@
  *
  * Gating: `describe.skipIf(!SHOULD_RUN)`.
  *
+ * @foreground
  * @covers tugdeck/src/components/tugways/attached-filter.ts
  * @covers tugdeck/src/components/tugways/tug-filter-field.tsx
  * @covers tugdeck/src/components/tugways/tug-list-view.tsx

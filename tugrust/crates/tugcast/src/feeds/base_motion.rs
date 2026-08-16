@@ -1,0 +1,1718 @@
+//! base_motion — replay a dash onto its base the moment the base moves.
+//!
+//! The doctrine is that a landing problem should surface when it becomes true,
+//! not when someone tries to land. So this watches for the base moving and, when
+//! it is safe, moves the dash's rounds onto the new tip; the library half
+//! (`tugdash_core::replay_onto`) does the moving and this decides *whether*.
+//!
+//! ## What wakes it
+//!
+//! Nothing new watches the filesystem. Each workspace already runs exactly one
+//! `FileWatcher`, and `git_watch::run_git_workspace_watch` already broadcasts a
+//! `GitHeadSignal` on the registry's shared GIT_HEAD channel whenever that
+//! workspace's HEAD moves. This engine is one more subscriber to that channel.
+//!
+//! A signal is an *edge*, though: the git watch baselines `last_head` when its
+//! task starts and speaks only on a move past it. A dash that was already behind
+//! when tugcast started would therefore never be signalled about. So the engine
+//! also **sweeps** — at startup, and whenever the registry opens a workspace it
+//! has not seen. A sweep is a wake with no signal attached and runs the same
+//! path; behindness is read from refs either way, so the two cannot disagree.
+//!
+//! The third wake is a turn ending. The common shape of this whole problem is
+//! "the base moved while an agent was mid-turn on the dash," and the gate below
+//! refuses to act mid-turn — so the supervisor hands the engine each session id
+//! as its turn closes, and a dash parked behind it replays seconds later instead
+//! of waiting for an unrelated commit.
+//!
+//! ## The decision is separate from the wiring
+//!
+//! [`decide_for_dash`] is pure — the gate and the choice of action expressed
+//! over plain inputs, with no channels, no git, and no clock — following
+//! `reporter_wake.rs`. Every case in the gate is then a table test rather than a
+//! server that has to be stood up and driven into the right state.
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
+
+use tokio::sync::{Notify, broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, info, warn};
+
+use tugcast_core::protocol::{FeedId, Frame, TugSessionId};
+use tugcast_core::types::GitHeadSignal;
+
+use super::agent_supervisor::Ledger;
+use super::session_scoped::SessionScopedFeed;
+use super::workspace_registry::WorkspaceRegistry;
+use crate::session_ledger::SessionLedger;
+
+// MARK: - The decision
+
+/// One live session bound to a dash, as the decision sees it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundSession {
+    pub id: String,
+    /// Whether the session is mid-turn right now. The engine reads this from
+    /// the supervisor's in-memory ledger, which is the only place it is true.
+    pub turn_active: bool,
+}
+
+/// Everything [`decide_for_dash`] needs about one dash, and nothing else.
+#[derive(Debug, Clone)]
+pub struct DashInputs {
+    /// Whether automatic motion is enabled for this repository
+    /// (`git config tugdash.autoreplay`, default true).
+    pub autoreplay: bool,
+    /// Commits the base has gained past this dash's merge-base.
+    pub base_ahead: u32,
+    pub worktree_dirty: bool,
+    /// A landing is in flight for this dash.
+    pub join_journal: bool,
+    /// The dash is part-way through a plan run, so an agent's context describes
+    /// a tree a replay would move under it.
+    pub mid_plan: bool,
+    /// Live sessions bound to this dash, most recently used first.
+    pub sessions: Vec<BoundSession>,
+    /// A replay for this dash is already running.
+    pub in_flight: bool,
+    /// The last replay attempt at the current base tip stopped on a conflict.
+    pub conflicted: bool,
+    /// A turn has already been injected for this dash at the current base tip.
+    pub notified: bool,
+}
+
+/// What to do about one dash on one wake.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Decision {
+    /// Do nothing, and say why. The reason is a stable slug for the log.
+    Skip(&'static str),
+    /// Replay the rounds. Nobody needs telling.
+    Replay,
+    /// Replay, then tell this session its context moved — the dash is mid-plan,
+    /// so an agent is holding file contents the replay is about to rewrite.
+    ReplayThenNotify(String),
+    /// The replay conflicts and this session can be asked to resolve it.
+    InjectConflict(String),
+    /// Record the state for the lane marks; there is nobody to tell and nothing
+    /// safe to do.
+    MarkOnly,
+}
+
+/// The gate ([P02]) and the choice of action, with no IO.
+///
+/// Order is meaning, not convenience: the flag comes first because a repository
+/// that has opted out gets no further thought; `Current` comes before the safety
+/// checks because a dash with nothing to do is not "deferred over dirt"; and the
+/// mid-turn check comes before the conflict branch so a busy session is parked
+/// rather than interrupted, to be retried when its turn ends.
+///
+/// Worktree cleanliness and the join journal are re-checked inside
+/// `replay_onto`, which is the single source of truth for them — they appear
+/// here so a dash that cannot be acted on is skipped without paying for a
+/// blocking hop.
+pub fn decide_for_dash(inputs: &DashInputs) -> Decision {
+    if !inputs.autoreplay {
+        return Decision::Skip("autoreplay-off");
+    }
+    if inputs.in_flight {
+        return Decision::Skip("in-flight");
+    }
+    if inputs.base_ahead == 0 {
+        return Decision::Skip("current");
+    }
+    if inputs.join_journal {
+        return Decision::Skip("join-journal");
+    }
+    if inputs.worktree_dirty {
+        return Decision::Skip("dirty-worktree");
+    }
+    if inputs.sessions.iter().any(|s| s.turn_active) {
+        return Decision::Skip("turn-active");
+    }
+
+    if inputs.conflicted {
+        if inputs.notified {
+            return Decision::MarkOnly;
+        }
+        return match inputs.sessions.first() {
+            Some(session) => Decision::InjectConflict(session.id.clone()),
+            None => Decision::MarkOnly,
+        };
+    }
+
+    match (inputs.mid_plan, inputs.sessions.first()) {
+        (true, Some(session)) => Decision::ReplayThenNotify(session.id.clone()),
+        _ => Decision::Replay,
+    }
+}
+
+// MARK: - Per-dash state
+
+/// What the engine remembers about a dash between wakes.
+#[derive(Debug, Default, Clone)]
+struct DashState {
+    in_flight: bool,
+    /// The paths the last conflicted attempt stopped on, and the base tip it
+    /// stopped against. Cleared when the dash becomes current.
+    conflict: Option<ConflictRecord>,
+    /// The base tip a turn has already been injected for.
+    notified_tip: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ConflictRecord {
+    base_head: String,
+    round: String,
+    round_subject: String,
+    paths: Vec<String>,
+}
+
+/// One line saying what a replay stopped on — the round, the base it was
+/// replayed against, and the paths that collided.
+fn describe_conflict(record: &ConflictRecord) -> String {
+    format!(
+        "{} \"{}\" onto {}: {}",
+        short(&record.round),
+        record.round_subject,
+        short(&record.base_head),
+        record.paths.join(", "),
+    )
+}
+
+// MARK: - The messages
+
+/// Everything the conflict message says, so composing it needs no IO.
+pub struct ConflictMessage<'a> {
+    pub dash: &'a str,
+    pub base_branch: &'a str,
+    pub base_head: &'a str,
+    pub round: &'a str,
+    pub round_subject: &'a str,
+    pub paths: &'a [String],
+    /// `tugdash_core::resolve_intent` — the dash's maintained draft and round
+    /// subjects, so the agent knows what the work it is rescuing is for.
+    pub intent: &'a str,
+    pub worktree_abs: &'a str,
+}
+
+/// The turn a conflicted replay becomes.
+///
+/// It carries what moved, where the replay stopped, what this dash is trying to
+/// do, and the exact sequence that finishes the job — including the
+/// bookkeeping verb, without which the moved rounds go unrecorded. It also says
+/// what to do when the conflict is a real design collision rather than a
+/// mechanical one, because "resolve this" is not always the right answer.
+pub fn compose_conflict_message(m: &ConflictMessage<'_>) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "[base-motion replay] The base branch {} moved to {} under dash \"{}\",\n\
+         and replaying its rounds stopped at {} \"{}\" with conflicts in:\n",
+        m.base_branch,
+        short(m.base_head),
+        m.dash,
+        short(m.round),
+        m.round_subject,
+    ));
+    for path in m.paths {
+        out.push_str(&format!("  {}\n", path));
+    }
+    if !m.intent.trim().is_empty() {
+        out.push_str(&format!("\nThis dash's intent:\n{}\n", m.intent.trim()));
+    }
+    out.push_str(&format!(
+        "\nResolve it on the dash's own worktree:\n  \
+         git -C {} rebase {}\n\
+         Fix each conflict with both sides in view, then `git rebase --continue`. When the\n\
+         rebase is done, run `tugutil dash replay {} --json` to record the moved rounds.\n\
+         If the conflict reveals a real design collision instead, `git rebase --abort` and say so.\n",
+        m.worktree_abs, m.base_branch, m.dash,
+    ));
+    out
+}
+
+/// The notice after a clean replay under a live plan run ([P11]).
+///
+/// The agent's context holds file contents from before the move, so its next
+/// edit could silently revert base changes it never saw. This is context, not a
+/// request — which it says, because an agent told about a change tends to
+/// assume it is being asked to do something about it.
+pub fn compose_replay_notice(dash: &str, base_branch: &str, base_head: &str, paths: &[String]) -> String {
+    let mut out = format!(
+        "[base-motion replay] Dash \"{}\" was replayed onto {} at {} while you were between turns.\n\
+         Your working tree moved under you. No action is required — but re-read any of these\n\
+         files before editing them, because what you have in context predates the move:\n",
+        dash,
+        base_branch,
+        short(base_head),
+    );
+    if paths.is_empty() {
+        out.push_str("  (the base brought in no file changes)\n");
+    } else {
+        for path in paths {
+            out.push_str(&format!("  {}\n", path));
+        }
+    }
+    out
+}
+
+// MARK: - Injection
+
+/// The payload of an injected submission — the shape `parse_tug_session_id` and
+/// `InspectedPayload::from_slice` already read, so the dispatcher's existing
+/// `user_message` intercept journals it exactly as it journals a client's.
+pub(crate) fn user_message_payload(session: &str, text: &str) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "tug_session_id": session,
+        "type": "user_message",
+        "content": [{ "type": "text", "text": text }],
+    }))
+    .expect("a json object of strings serializes")
+}
+
+/// Spec S05's opener — what makes an injected turn *visible*.
+///
+/// Journaling is not rendering: the dispatcher's intercept makes the turn real
+/// to the server and to a later reload, but the transcript's live user row comes
+/// from the composer echoing its own submission, and an injection has no
+/// composer. Without this frame the agent would start working with no visible
+/// cause.
+fn notice_payload(session: &str, origin: &str, text: &str) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "tug_session_id": session,
+        "type": "tug_notice",
+        "origin": origin,
+        "text": text,
+    }))
+    .expect("a json object of strings serializes")
+}
+
+/// The origin label an injected notice is attributed to in the transcript.
+const NOTICE_ORIGIN: &str = "base-motion";
+
+/// The engine's conflict state, readable by the changeset composition.
+///
+/// `replay_conflict_paths` is the one snapshot field the library cannot derive:
+/// whether an *attempt* conflicted is knowledge only the thing that attempted
+/// has. Rather than thread a parameter through `compose_snapshot` and every
+/// caller for a field that is empty in every configuration without an engine,
+/// the running engine publishes itself here once. There is exactly one engine
+/// per tugcast process, and when there is none the reader answers empty — which
+/// is the truth in that case.
+#[derive(Default)]
+pub struct ConflictBoard {
+    by_dash: Mutex<HashMap<String, Vec<String>>>,
+}
+
+impl ConflictBoard {
+    fn set(&self, owner_key: &str, paths: Vec<String>) {
+        let mut board = self.by_dash.lock().expect("conflict board mutex");
+        if paths.is_empty() {
+            board.remove(owner_key);
+        } else {
+            board.insert(owner_key.to_string(), paths);
+        }
+    }
+}
+
+static BOARD: OnceLock<Arc<ConflictBoard>> = OnceLock::new();
+
+/// The conflicting paths of the last replay attempt on this dash, empty when
+/// the last attempt was clean or no engine is running.
+pub fn conflict_paths_for(owner_key: &str) -> Vec<String> {
+    BOARD
+        .get()
+        .and_then(|board| {
+            board
+                .by_dash
+                .lock()
+                .expect("conflict board mutex")
+                .get(owner_key)
+                .cloned()
+        })
+        .unwrap_or_default()
+}
+
+// MARK: - The engine
+
+/// Why the engine woke. Both arms run the same evaluation; the difference is
+/// only which workspaces it looks at.
+enum Wake {
+    /// A workspace's HEAD moved, or the registry just opened it.
+    Workspace(String),
+    /// A session's turn ended, so a dash parked behind it may now be actionable.
+    /// Which dash that is depends on bindings that may have changed, so this
+    /// re-evaluates every open workspace rather than guessing.
+    TurnComplete,
+    /// Startup, or a periodic level read.
+    All,
+}
+
+/// Handles the engine needs from the rest of the process.
+pub struct BaseMotionContext {
+    pub registry: Arc<WorkspaceRegistry>,
+    /// The supervisor's in-memory ledger — the only place `turn_active` lives.
+    pub supervisor_ledger: Ledger,
+    /// The persisted ledger, for the dash→sessions binding query.
+    pub session_ledger: Option<Arc<SessionLedger>>,
+    /// The aggregate recompute signal, fired after any completed motion so the
+    /// marks refresh without waiting for a file event.
+    pub bump: Arc<Notify>,
+    /// The CODE_INPUT queue the router feeds. An injected turn goes down this
+    /// same queue rather than calling the dispatcher directly, so injected and
+    /// client submissions stay in one order and there is no second path into a
+    /// session to keep in step.
+    pub code_input_tx: Option<mpsc::Sender<Frame>>,
+    /// The supervisor's CODE_OUTPUT feed, for the opener that makes an injected
+    /// turn visible.
+    pub code_output: Option<SessionScopedFeed>,
+    pub cancel: CancellationToken,
+}
+
+/// Run the engine until `cancel` fires.
+///
+/// `gh_rx` is a subscription to the registry's shared GIT_HEAD broadcast;
+/// `workspace_open_rx` carries the key of each workspace the registry newly
+/// opened; `turn_complete_rx` carries a session id each time a turn closes.
+pub async fn run_base_motion_engine(
+    ctx: BaseMotionContext,
+    mut gh_rx: broadcast::Receiver<Frame>,
+    mut workspace_open_rx: mpsc::Receiver<String>,
+    mut turn_complete_rx: mpsc::Receiver<String>,
+) {
+    let board = Arc::clone(BOARD.get_or_init(|| Arc::new(ConflictBoard::default())));
+    let state: Arc<Mutex<HashMap<String, DashState>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    // The level read the edge cannot give us ([P01]): everything already open is
+    // evaluated before the first signal can arrive.
+    evaluate(&ctx, &board, &state, Wake::All).await;
+
+    loop {
+        let wake = tokio::select! {
+            _ = ctx.cancel.cancelled() => {
+                debug!("base-motion engine shutting down");
+                return;
+            }
+            recv = gh_rx.recv() => match recv {
+                Ok(frame) => match serde_json::from_slice::<GitHeadSignal>(&frame.payload) {
+                    Ok(signal) => Wake::Workspace(signal.workspace_key),
+                    Err(e) => {
+                        warn!(error = %e, "base-motion: unreadable GIT_HEAD signal");
+                        continue;
+                    }
+                },
+                // A dropped signal means a HEAD move we did not see, so re-read
+                // the level rather than wait for the next one.
+                Err(broadcast::error::RecvError::Lagged(_)) => Wake::All,
+                Err(broadcast::error::RecvError::Closed) => return,
+            },
+            opened = workspace_open_rx.recv() => match opened {
+                Some(key) => Wake::Workspace(key),
+                None => continue,
+            },
+            done = turn_complete_rx.recv() => match done {
+                Some(_) => Wake::TurnComplete,
+                None => continue,
+            },
+        };
+        evaluate(&ctx, &board, &state, wake).await;
+    }
+}
+
+/// The repo directories this wake covers.
+fn wake_targets(registry: &WorkspaceRegistry, wake: &Wake) -> Vec<PathBuf> {
+    let open = registry.project_dirs();
+    match wake {
+        Wake::Workspace(key) => open
+            .into_iter()
+            .filter(|(_, k)| k == key)
+            .map(|(dir, _)| dir)
+            .collect(),
+        Wake::TurnComplete | Wake::All => open.into_iter().map(|(dir, _)| dir).collect(),
+    }
+}
+
+async fn evaluate(
+    ctx: &BaseMotionContext,
+    board: &Arc<ConflictBoard>,
+    state: &Arc<Mutex<HashMap<String, DashState>>>,
+    wake: Wake,
+) {
+    for repo_dir in wake_targets(&ctx.registry, &wake) {
+        evaluate_workspace(ctx, board, state, repo_dir).await;
+    }
+}
+
+async fn evaluate_workspace(
+    ctx: &BaseMotionContext,
+    board: &Arc<ConflictBoard>,
+    state: &Arc<Mutex<HashMap<String, DashState>>>,
+    repo_dir: PathBuf,
+) {
+    let bound_by_dash = ctx
+        .session_ledger
+        .as_ref()
+        .and_then(|l| l.bound_sessions_by_dash().ok())
+        .unwrap_or_default();
+
+    // The whole enumeration is synchronous git, so it goes to the blocking pool
+    // in one hop — the same discipline `dash_entries` uses.
+    let dir = repo_dir.clone();
+    let Ok((autoreplay, dashes)) = tokio::task::spawn_blocking(move || {
+        let autoreplay = read_autoreplay(&dir);
+        let dashes: Vec<DashReading> = tugdash_core::dash_detail_entries_in(&dir)
+            .into_iter()
+            .map(|detail| DashReading {
+                base_tip: rev_parse(&dir, &detail.base),
+                join_journal: tugdash_core::join_in_flight(&dir, &detail.name),
+                detail,
+            })
+            .collect();
+        (autoreplay, dashes)
+    })
+    .await
+    else {
+        return;
+    };
+
+    for reading in dashes {
+        let detail = &reading.detail;
+        let owner_key = detail.owner_key.clone();
+        let sessions = bound_sessions(&ctx.supervisor_ledger, &bound_by_dash, &owner_key).await;
+
+        let (in_flight, conflicted, notified) = {
+            let map = state.lock().expect("base-motion state mutex");
+            match map.get(&owner_key) {
+                Some(st) => (
+                    st.in_flight,
+                    st.conflict.is_some(),
+                    // The latch is keyed on the tip, not on a bare flag: a base
+                    // that moves again is a new divergence event and deserves
+                    // to be spoken about again.
+                    st.notified_tip.as_deref() == Some(reading.base_tip.as_str()),
+                ),
+                None => (false, false, false),
+            }
+        };
+
+        let inputs = DashInputs {
+            autoreplay,
+            base_ahead: detail.base_ahead,
+            worktree_dirty: detail.worktree_dirty,
+            join_journal: reading.join_journal,
+            mid_plan: detail.stage == "implementing",
+            sessions,
+            in_flight,
+            conflicted,
+            notified,
+        };
+
+        let decision = decide_for_dash(&inputs);
+        match &decision {
+            Decision::Skip(reason) => {
+                // A dash that has caught up owes nobody a conflict mark.
+                if inputs.base_ahead == 0 {
+                    clear_dash(board, state, &owner_key);
+                }
+                debug!(dash = %detail.name, reason, "base-motion: no action");
+            }
+            Decision::MarkOnly => {
+                // Nobody to tell, so the log is the only surface this has.
+                let conflict = {
+                    let map = state.lock().expect("base-motion state mutex");
+                    map.get(&owner_key)
+                        .and_then(|st| st.conflict.as_ref().map(describe_conflict))
+                };
+                debug!(
+                    dash = %detail.name,
+                    conflict = conflict.unwrap_or_default(),
+                    "base-motion: conflicted, marked only",
+                );
+            }
+            Decision::Replay | Decision::ReplayThenNotify(_) | Decision::InjectConflict(_) => {
+                // A plain `Replay` still carries the session it *would* tell,
+                // because a replay that turns out to conflict must become a
+                // turn now — the alternative is silence until the next wake,
+                // and the next wake may not come.
+                let target = match &decision {
+                    Decision::ReplayThenNotify(id) | Decision::InjectConflict(id) => {
+                        Some(id.clone())
+                    }
+                    _ => inputs.sessions.first().map(|s| s.id.clone()),
+                };
+                spawn_replay(
+                    ctx,
+                    board,
+                    state,
+                    ReplayJob {
+                        repo_dir: repo_dir.clone(),
+                        name: detail.name.clone(),
+                        owner_key,
+                        base_branch: detail.base.clone(),
+                        worktree_abs: detail.worktree_abs.clone(),
+                        branch: detail.branch.clone(),
+                        target,
+                        notify_on_clean: matches!(decision, Decision::ReplayThenNotify(_)),
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// One dash as a wake reads it: the shared composition, plus the two facts the
+/// decision needs that it does not carry.
+struct DashReading {
+    detail: tugdash_core::DashDetail,
+    base_tip: String,
+    join_journal: bool,
+}
+
+/// Everything one replay needs, gathered on the async side so the spawned work
+/// borrows nothing.
+struct ReplayJob {
+    repo_dir: PathBuf,
+    name: String,
+    owner_key: String,
+    base_branch: String,
+    worktree_abs: String,
+    branch: String,
+    /// The session an outcome would be told about, when there is one.
+    target: Option<String>,
+    /// Whether a *clean* replay should tell it ([P11]). A conflict always tells
+    /// it, whatever this says.
+    notify_on_clean: bool,
+}
+
+/// Take the in-flight lock and run one replay on the blocking pool.
+///
+/// The lock is per dash and is taken *before* the spawn, so a second signal
+/// arriving while a replay runs finds `in_flight` set and decides `Skip`.
+fn spawn_replay(
+    ctx: &BaseMotionContext,
+    board: &Arc<ConflictBoard>,
+    state: &Arc<Mutex<HashMap<String, DashState>>>,
+    job: ReplayJob,
+) {
+    {
+        let mut map = state.lock().expect("base-motion state mutex");
+        let entry = map.entry(job.owner_key.clone()).or_default();
+        if entry.in_flight {
+            return;
+        }
+        entry.in_flight = true;
+    }
+
+    let board = Arc::clone(board);
+    let state = Arc::clone(state);
+    let bump = Arc::clone(&ctx.bump);
+    let inject = InjectHandles {
+        code_input_tx: ctx.code_input_tx.clone(),
+        code_output: ctx.code_output.clone(),
+    };
+
+    tokio::spawn(async move {
+        let dash = job.name.clone();
+        let outcome = {
+            let repo = job.repo_dir.clone();
+            let name = job.name.clone();
+            tokio::task::spawn_blocking(move || tugdash_core::replay_onto(&repo, &name)).await
+        };
+
+        // What to say, decided under the lock; saying it happens after, because
+        // the channel send is async and the state mutex is not.
+        let mut speak: Option<Speak> = None;
+        let refresh = {
+            let mut map = state.lock().expect("base-motion state mutex");
+            let entry = map.entry(job.owner_key.clone()).or_default();
+            entry.in_flight = false;
+
+            match outcome {
+                Ok(Ok(tugdash_core::ReplayOutcome::Replayed { base_head, mapping, .. })) => {
+                    info!(dash = %dash, base = %short(&base_head), "base-motion: replayed");
+                    entry.conflict = None;
+                    entry.notified_tip = None;
+                    board.set(&job.owner_key, Vec::new());
+                    if job.notify_on_clean && job.target.is_some() {
+                        entry.notified_tip = Some(base_head.clone());
+                        speak = Some(Speak::Notice {
+                            base_head,
+                            // The oldest round, as it stood before the move. Its
+                            // merge-base with the base branch is the base tip
+                            // the dash used to sit on, which is what makes the
+                            // delta below exactly what the base brought in.
+                            oldest_round_before: mapping.first().map(|(old, _)| old.clone()),
+                        });
+                    }
+                    true
+                }
+                Ok(Ok(tugdash_core::ReplayOutcome::Recorded { .. })) => {
+                    entry.conflict = None;
+                    entry.notified_tip = None;
+                    board.set(&job.owner_key, Vec::new());
+                    true
+                }
+                Ok(Ok(tugdash_core::ReplayOutcome::Conflicted {
+                    base_head,
+                    round,
+                    round_subject,
+                    paths,
+                })) => {
+                    info!(
+                        dash = %dash,
+                        round = %short(&round),
+                        paths = paths.len(),
+                        "base-motion: replay conflicts",
+                    );
+                    board.set(&job.owner_key, paths.clone());
+                    // One injection per divergence event: a base tip already
+                    // spoken about is not spoken about again.
+                    let already = entry.notified_tip.as_deref() == Some(base_head.as_str());
+                    if !already && job.target.is_some() {
+                        entry.notified_tip = Some(base_head.clone());
+                        speak = Some(Speak::Conflict);
+                    }
+                    entry.conflict = Some(ConflictRecord {
+                        base_head,
+                        round,
+                        round_subject,
+                        paths,
+                    });
+                    true
+                }
+                Ok(Ok(tugdash_core::ReplayOutcome::Current)) => {
+                    entry.conflict = None;
+                    entry.notified_tip = None;
+                    board.set(&job.owner_key, Vec::new());
+                    false
+                }
+                Ok(Ok(tugdash_core::ReplayOutcome::Deferred { reason, detail })) => {
+                    debug!(dash = %dash, reason = %reason, detail = %detail, "base-motion: deferred");
+                    false
+                }
+                Ok(Err(err)) => {
+                    warn!(dash = %dash, error = %err, "base-motion: replay failed");
+                    false
+                }
+                Err(err) => {
+                    warn!(dash = %dash, error = %err, "base-motion: replay task died");
+                    false
+                }
+            }
+        };
+
+        if let (Some(speak), Some(session)) = (speak, job.target.as_deref()) {
+            let text = compose_for(&job, &speak, &state);
+            if !inject.send(session, &text).await {
+                // Nowhere to send after all — take the latch back off so a
+                // later wake can try again rather than staying silent forever.
+                let mut map = state.lock().expect("base-motion state mutex");
+                if let Some(entry) = map.get_mut(&job.owner_key) {
+                    entry.notified_tip = None;
+                }
+            }
+        }
+
+        if refresh {
+            bump.notify_one();
+        }
+    });
+}
+
+/// Which message an outcome calls for.
+enum Speak {
+    /// The replay stopped on a conflict; the record holds where.
+    Conflict,
+    /// The replay was clean and a plan run is live, so its agent is told its
+    /// working tree moved.
+    Notice {
+        base_head: String,
+        oldest_round_before: Option<String>,
+    },
+}
+
+/// Compose the message this outcome calls for.
+fn compose_for(
+    job: &ReplayJob,
+    speak: &Speak,
+    state: &Arc<Mutex<HashMap<String, DashState>>>,
+) -> String {
+    match speak {
+        Speak::Conflict => {
+            let record = {
+                let map = state.lock().expect("base-motion state mutex");
+                map.get(&job.owner_key).and_then(|st| st.conflict.clone())
+            };
+            let Some(record) = record else {
+                // Only reachable if the record were cleared between deciding to
+                // speak and composing, which the lock ordering prevents.
+                return String::new();
+            };
+            let intent = tugdash_core::resolve_intent(&job.repo_dir, &job.base_branch, &job.branch);
+            compose_conflict_message(&ConflictMessage {
+                dash: &job.name,
+                base_branch: &job.base_branch,
+                base_head: &record.base_head,
+                round: &record.round,
+                round_subject: &record.round_subject,
+                paths: &record.paths,
+                intent: &intent,
+                worktree_abs: &job.worktree_abs,
+            })
+        }
+        Speak::Notice {
+            base_head,
+            oldest_round_before,
+        } => {
+            let paths = base_delta_paths(
+                &job.repo_dir,
+                &job.base_branch,
+                oldest_round_before.as_deref(),
+            );
+            compose_replay_notice(&job.name, &job.base_branch, base_head, &paths)
+        }
+    }
+}
+
+/// The files the base brought in — what an agent's context may be stale about.
+///
+/// The dash's rounds branched off the base tip the dash used to sit on, so the
+/// merge-base of any pre-move round with the base branch *is* that old tip; the
+/// diff from there to the base branch is the base's own delta and none of the
+/// dash's work. Without a pre-move round to anchor on there is nothing to say,
+/// and the notice says so rather than guessing.
+fn base_delta_paths(repo: &Path, base_branch: &str, oldest_round_before: Option<&str>) -> Vec<String> {
+    let Some(round) = oldest_round_before else {
+        return Vec::new();
+    };
+    let old_base = merge_base(repo, round, base_branch);
+    if old_base.is_empty() {
+        return Vec::new();
+    }
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["diff", "--name-only", &old_base, base_branch])
+        .output();
+    match out {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// `git merge-base <a> <b>`, empty when there is none.
+fn merge_base(repo: &Path, a: &str, b: &str) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["merge-base", a, b])
+        .output();
+    match out {
+        Ok(out) if out.status.success() => String::from_utf8_lossy(&out.stdout).trim().to_string(),
+        _ => String::new(),
+    }
+}
+
+/// The send half of an injection, cloned out of the context so the spawned task
+/// owns it.
+struct InjectHandles {
+    code_input_tx: Option<mpsc::Sender<Frame>>,
+    code_output: Option<SessionScopedFeed>,
+}
+
+impl InjectHandles {
+    async fn send(&self, session: &str, text: &str) -> bool {
+        let Some(input_tx) = self.code_input_tx.as_ref() else {
+            return false;
+        };
+        if let Some(output) = self.code_output.as_ref() {
+            output.publish_tagged(Frame::new(
+                FeedId::CODE_OUTPUT,
+                notice_payload(session, NOTICE_ORIGIN, text),
+            ));
+        }
+        input_tx
+            .send(Frame::new(
+                FeedId::CODE_INPUT,
+                user_message_payload(session, text),
+            ))
+            .await
+            .is_ok()
+    }
+}
+
+/// `git rev-parse <rev>`, empty when it does not resolve.
+fn rev_parse(repo: &Path, rev: &str) -> String {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(["rev-parse", rev])
+        .output();
+    match out {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+fn clear_dash(
+    board: &Arc<ConflictBoard>,
+    state: &Arc<Mutex<HashMap<String, DashState>>>,
+    owner_key: &str,
+) {
+    let mut map = state.lock().expect("base-motion state mutex");
+    if let Some(entry) = map.get_mut(owner_key) {
+        entry.conflict = None;
+        entry.notified_tip = None;
+    }
+    board.set(owner_key, Vec::new());
+}
+
+/// The live bound sessions of one dash, each carrying whether it is mid-turn.
+///
+/// The binding comes from the persisted ledger (already ordered most-recently-
+/// used first); `turn_active` comes from the supervisor's in-memory ledger,
+/// where a session the supervisor is not running simply has no entry and reads
+/// as idle.
+async fn bound_sessions(
+    supervisor: &Ledger,
+    bound_by_dash: &HashMap<String, Vec<String>>,
+    owner_key: &str,
+) -> Vec<BoundSession> {
+    let Some(ids) = bound_by_dash.get(owner_key) else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        let entry = {
+            let ledger = supervisor.lock().await;
+            ledger.get(&TugSessionId::new(id.clone())).cloned()
+        };
+        let turn_active = match entry {
+            Some(entry) => entry.lock().await.turn_active,
+            None => false,
+        };
+        out.push(BoundSession {
+            id: id.clone(),
+            turn_active,
+        });
+    }
+    out
+}
+
+/// `git config --bool tugdash.autoreplay`, defaulting to on ([P08]).
+fn read_autoreplay(repo_dir: &Path) -> bool {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_dir)
+        .args(["config", "--bool", "tugdash.autoreplay"])
+        .output();
+    match out {
+        Ok(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).trim() != "false"
+        }
+        _ => true,
+    }
+}
+
+fn short(sha: &str) -> &str {
+    &sha[..sha.len().min(9)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idle(id: &str) -> BoundSession {
+        BoundSession {
+            id: id.to_string(),
+            turn_active: false,
+        }
+    }
+
+    fn busy(id: &str) -> BoundSession {
+        BoundSession {
+            id: id.to_string(),
+            turn_active: true,
+        }
+    }
+
+    fn behind() -> DashInputs {
+        DashInputs {
+            autoreplay: true,
+            base_ahead: 2,
+            worktree_dirty: false,
+            join_journal: false,
+            mid_plan: false,
+            sessions: Vec::new(),
+            in_flight: false,
+            conflicted: false,
+            notified: false,
+        }
+    }
+
+    #[test]
+    fn a_behind_clean_idle_dash_replays() {
+        assert_eq!(decide_for_dash(&behind()), Decision::Replay);
+    }
+
+    #[test]
+    fn a_mid_plan_dash_with_a_session_is_told_its_context_moved() {
+        let inputs = DashInputs {
+            mid_plan: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(
+            decide_for_dash(&inputs),
+            Decision::ReplayThenNotify("sess-1".to_string())
+        );
+    }
+
+    #[test]
+    fn a_mid_plan_dash_with_no_session_replays_quietly() {
+        let inputs = DashInputs {
+            mid_plan: true,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Replay);
+    }
+
+    #[test]
+    fn the_most_recently_used_session_is_the_one_told() {
+        let inputs = DashInputs {
+            mid_plan: true,
+            sessions: vec![idle("newest"), idle("older")],
+            ..behind()
+        };
+        assert_eq!(
+            decide_for_dash(&inputs),
+            Decision::ReplayThenNotify("newest".to_string())
+        );
+    }
+
+    #[test]
+    fn a_dirty_worktree_is_never_moved_under() {
+        let inputs = DashInputs {
+            worktree_dirty: true,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("dirty-worktree"));
+    }
+
+    #[test]
+    fn a_session_mid_turn_parks_the_whole_dash() {
+        let inputs = DashInputs {
+            sessions: vec![idle("a"), busy("b")],
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("turn-active"));
+    }
+
+    #[test]
+    fn a_landing_in_flight_defers() {
+        let inputs = DashInputs {
+            join_journal: true,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("join-journal"));
+    }
+
+    #[test]
+    fn a_conflicted_dash_with_no_session_only_marks() {
+        let inputs = DashInputs {
+            conflicted: true,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::MarkOnly);
+    }
+
+    #[test]
+    fn a_conflicted_dash_with_an_idle_session_becomes_a_turn() {
+        let inputs = DashInputs {
+            conflicted: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(
+            decide_for_dash(&inputs),
+            Decision::InjectConflict("sess-1".to_string())
+        );
+    }
+
+    #[test]
+    fn a_conflict_already_told_about_is_not_told_again() {
+        let inputs = DashInputs {
+            conflicted: true,
+            notified: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::MarkOnly);
+    }
+
+    #[test]
+    fn a_current_dash_does_nothing() {
+        let inputs = DashInputs {
+            base_ahead: 0,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("current"));
+    }
+
+    #[test]
+    fn a_replay_already_running_does_not_start_a_second() {
+        let inputs = DashInputs {
+            in_flight: true,
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("in-flight"));
+    }
+
+    #[test]
+    fn the_repo_escape_stops_everything() {
+        let inputs = DashInputs {
+            autoreplay: false,
+            conflicted: true,
+            sessions: vec![idle("sess-1")],
+            ..behind()
+        };
+        assert_eq!(decide_for_dash(&inputs), Decision::Skip("autoreplay-off"));
+    }
+
+    // MARK: - The messages
+
+    fn conflict_text() -> String {
+        compose_conflict_message(&ConflictMessage {
+            dash: "demo",
+            base_branch: "main",
+            base_head: "abcdef0123456789",
+            round: "0123456789abcdef",
+            round_subject: "teach the lane to say what moved",
+            paths: &["src/a.rs".to_string(), "src/b.rs".to_string()],
+            intent: "Land the divergence marks.\n\nRound subjects:\nadd the marks",
+            worktree_abs: "/repo/.tug/worktrees/demo",
+        })
+    }
+
+    #[test]
+    fn the_conflict_turn_says_where_it_stopped_and_how_to_finish() {
+        let text = conflict_text();
+        assert!(text.contains("teach the lane to say what moved"));
+        assert!(text.contains("src/a.rs"), "every conflicting path is named");
+        assert!(text.contains("src/b.rs"));
+        assert!(
+            text.contains("git -C /repo/.tug/worktrees/demo rebase main"),
+            "the rebase is worktree-absolute, not relative to wherever the agent stands",
+        );
+        assert!(
+            text.contains("tugutil dash replay demo"),
+            "the bookkeeping verb finishes the contract",
+        );
+        assert!(
+            text.contains("git rebase --abort"),
+            "a real design collision is an outcome the turn allows for",
+        );
+        assert!(text.contains("Land the divergence marks."), "the intent rides along");
+    }
+
+    #[test]
+    fn a_conflict_turn_without_an_intent_skips_the_section() {
+        let text = compose_conflict_message(&ConflictMessage {
+            dash: "demo",
+            base_branch: "main",
+            base_head: "abcdef0123456789",
+            round: "0123456789abcdef",
+            round_subject: "s",
+            paths: &["f.txt".to_string()],
+            intent: "   ",
+            worktree_abs: "/repo/wt",
+        });
+        assert!(!text.contains("This dash's intent"));
+        assert!(text.contains("tugutil dash replay demo"));
+    }
+
+    #[test]
+    fn the_replay_notice_names_the_base_delta_and_asks_for_nothing() {
+        let text = compose_replay_notice(
+            "demo",
+            "main",
+            "abcdef0123456789",
+            &["src/moved.rs".to_string()],
+        );
+        assert!(text.contains("src/moved.rs"));
+        assert!(text.contains("No action is required"));
+        assert!(!text.contains("rebase"), "a clean replay asks for no git work");
+    }
+
+    #[test]
+    fn a_replay_notice_with_no_delta_says_so_rather_than_listing_nothing() {
+        let text = compose_replay_notice("demo", "main", "abcdef0123456789", &[]);
+        assert!(text.contains("no file changes"));
+    }
+
+    // MARK: - Injection
+
+    /// [P10]: no injected turn reaches a client unannounced. The opener and the
+    /// submission carry the same body, and the opener goes first — it is the
+    /// turn's head row, so it cannot arrive under the output it introduces.
+    #[tokio::test]
+    async fn every_injection_is_announced_by_exactly_one_notice() {
+        let feed = SessionScopedFeed::new(
+            FeedId::CODE_OUTPUT,
+            16,
+            tugcast_core::lag::LagPolicy::Warn,
+        );
+        let mut out_rx = feed.subscribe();
+        let (in_tx, mut in_rx) = mpsc::channel::<Frame>(8);
+        let handles = InjectHandles {
+            code_input_tx: Some(in_tx),
+            code_output: Some(feed),
+        };
+
+        let text = conflict_text();
+        assert!(handles.send("sess-1", &text).await);
+
+        let opener = out_rx.try_recv().expect("an opener rode out");
+        assert_eq!(opener.feed_id, FeedId::CODE_OUTPUT);
+        let opener: serde_json::Value = serde_json::from_slice(&opener.payload).unwrap();
+        assert_eq!(opener["type"], "tug_notice");
+        assert_eq!(opener["origin"], NOTICE_ORIGIN);
+        assert_eq!(opener["tug_session_id"], "sess-1");
+        assert_eq!(opener["text"], text, "the opener carries the injected body");
+        assert!(
+            out_rx.try_recv().is_err(),
+            "exactly one opener per injection, never two",
+        );
+
+        let submitted = in_rx.try_recv().expect("the submission rode out");
+        assert_eq!(submitted.feed_id, FeedId::CODE_INPUT);
+        let body: serde_json::Value = serde_json::from_slice(&submitted.payload).unwrap();
+        assert_eq!(body["type"], "user_message");
+        assert_eq!(body["content"][0]["text"], text);
+    }
+
+    #[tokio::test]
+    async fn an_injection_with_nowhere_to_send_reports_failure() {
+        let handles = InjectHandles {
+            code_input_tx: None,
+            code_output: None,
+        };
+        assert!(!handles.send("sess-1", "anything").await);
+    }
+
+    // MARK: - The wiring, against real repositories
+    //
+    // These drive the engine over tempdir repos with real dashes and real
+    // worktrees. No app, no supervisor: the wake arrives on the channel the
+    // registry's git watch would have sent it on, and the assertion is that the
+    // branch actually moved.
+
+    use serial_test::serial;
+    use std::time::Duration;
+    use tempfile::TempDir;
+    use tokio::sync::Mutex as AsyncMutex;
+
+    struct Repo {
+        _home: TempDir,
+        dir: TempDir,
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    fn read(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    impl Repo {
+        fn path(&self) -> &Path {
+            self.dir.path()
+        }
+
+        fn worktree(&self) -> PathBuf {
+            self.path().join(".tug/worktrees/demo")
+        }
+
+        fn tip(&self, refname: &str) -> String {
+            read(self.path(), &["rev-parse", refname])
+        }
+
+        /// A commit on the base branch, so the dash falls behind.
+        fn advance_base(&self, content: &str) {
+            std::fs::write(self.path().join("f.txt"), content).unwrap();
+            git(self.path(), &["add", "f.txt"]);
+            git(self.path(), &["commit", "-q", "-m", "the base moves"]);
+        }
+    }
+
+    /// A repository holding one dash with one round, its worktree checked out.
+    /// `TUG_DATA_DIR` is redirected so the replay's dash-log lands in the
+    /// tempdir rather than in the developer's real state directory.
+    fn repo_with_a_dash() -> Repo {
+        let home = tempfile::tempdir().unwrap();
+        // SAFETY: every test that calls this is #[serial]; no other thread
+        // reads the environment while this runs.
+        unsafe {
+            std::env::set_var("TUG_DATA_DIR", home.path());
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path().to_path_buf();
+        let repo = repo.as_path();
+        git(repo, &["init", "-b", "main"]);
+        git(repo, &["config", "user.name", "t"]);
+        git(repo, &["config", "user.email", "t@t"]);
+        std::fs::write(repo.join("f.txt"), "A\n").unwrap();
+        git(repo, &["add", "-A"]);
+        git(repo, &["commit", "-q", "-m", "base"]);
+        git(repo, &["branch", "tugdash/demo"]);
+        git(repo, &["config", "branch.tugdash/demo.tugbase", "main"]);
+        let repo_owned = Repo {
+            _home: home,
+            dir,
+        };
+        let wt = repo_owned.worktree();
+        git(
+            repo,
+            &["worktree", "add", "-q", wt.to_str().unwrap(), "tugdash/demo"],
+        );
+        // The dash's own round, on a file the base never touches, so a replay
+        // of it is clean.
+        std::fs::write(wt.join("g.txt"), "dash\n").unwrap();
+        git(&wt, &["add", "-A"]);
+        git(&wt, &["commit", "-q", "-m", "add g"]);
+        repo_owned
+    }
+
+    fn test_context(
+        registry: &Arc<WorkspaceRegistry>,
+        bump: &Arc<Notify>,
+        cancel: &CancellationToken,
+    ) -> BaseMotionContext {
+        BaseMotionContext {
+            registry: Arc::clone(registry),
+            supervisor_ledger: Arc::new(AsyncMutex::new(HashMap::new())),
+            session_ledger: None,
+            bump: Arc::clone(bump),
+            code_input_tx: None,
+            code_output: None,
+            cancel: cancel.clone(),
+        }
+    }
+
+    /// Poll `check` until it holds or the deadline passes. Git subprocesses on
+    /// a blocking pool have no completion signal to await, so the assertion is
+    /// "this becomes true", not "this is true now".
+    async fn settles(mut check: impl FnMut() -> bool) -> bool {
+        for _ in 0..200 {
+            if check() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        check()
+    }
+
+    /// The same repository, but with the dash's round and the base's commit
+    /// both rewriting `f.txt` — so replaying the round onto the moved base
+    /// cannot merge.
+    fn repo_with_a_conflicting_dash() -> Repo {
+        let repo = repo_with_a_dash();
+        let wt = repo.worktree();
+        std::fs::write(wt.join("f.txt"), "dash rewrote this\n").unwrap();
+        git(&wt, &["add", "-A"]);
+        git(&wt, &["commit", "-q", "-m", "rewrite f"]);
+        repo.advance_base("base rewrote this\n");
+        repo
+    }
+
+    /// The fixture dash's replay job, with nobody to tell about the outcome.
+    fn demo_job(repo: &Repo) -> ReplayJob {
+        ReplayJob {
+            repo_dir: repo.path().to_path_buf(),
+            name: "demo".to_string(),
+            owner_key: "tugdash/demo".to_string(),
+            base_branch: "main".to_string(),
+            worktree_abs: repo.worktree().to_string_lossy().into_owned(),
+            branch: "tugdash/demo".to_string(),
+            target: None,
+            notify_on_clean: false,
+        }
+    }
+
+    /// The registry entry, plus the canonical key its git watch would stamp
+    /// into a `GitHeadSignal`.
+    fn register(registry: &WorkspaceRegistry, dir: &Path, cancel: &CancellationToken) -> String {
+        registry
+            .get_or_create(dir, cancel.clone())
+            .expect("a tempdir is a valid workspace");
+        registry
+            .project_dirs()
+            .into_iter()
+            .map(|(_, key)| key)
+            .next()
+            .expect("the workspace we just registered")
+    }
+
+    /// [P01]'s level read: a dash that fell behind before tugcast started gets
+    /// no signal, because the git watch baselines HEAD at task start. The sweep
+    /// is what finds it — nothing is ever sent on the GIT_HEAD channel here.
+    #[tokio::test]
+    #[serial]
+    async fn the_initial_sweep_replays_a_dash_that_was_already_behind() {
+        let repo = repo_with_a_dash();
+        repo.advance_base("B\n");
+        let before = repo.tip("tugdash/demo");
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        register(&registry, repo.path(), &cancel);
+        let (gh_tx, gh_rx) = broadcast::channel::<Frame>(16);
+        let (_open_tx, open_rx) = mpsc::channel::<String>(4);
+        let (_turn_tx, turn_rx) = mpsc::channel::<String>(4);
+        let bump = Arc::new(Notify::new());
+        tokio::spawn(run_base_motion_engine(
+            test_context(&registry, &bump, &cancel),
+            gh_rx,
+            open_rx,
+            turn_rx,
+        ));
+
+        assert!(
+            settles(|| repo.tip("tugdash/demo") != before).await,
+            "the sweep must replay a dash nothing will ever signal about"
+        );
+        assert_eq!(
+            read(&repo.worktree(), &["status", "--porcelain"]),
+            "",
+            "the worktree is clean after the move"
+        );
+        assert_eq!(
+            read(
+                repo.path(),
+                &["merge-base", "--is-ancestor", "main", "tugdash/demo"]
+            ),
+            "",
+        );
+        assert!(
+            read(repo.path(), &["log", "--oneline", "tugdash/demo"]).contains("add g"),
+            "the dash's round survived the move"
+        );
+        // Quiet, never silent: the motion left a record.
+        // Resolved through the same root normalization the library applies, so
+        // the test cannot read a different project slug than the code wrote.
+        let root = tugutil_core::find_repo_root_from(repo.path()).unwrap();
+        let log =
+            std::fs::read_to_string(tugutil_core::project_state_dir(&root).join("dash-log.md"))
+                .unwrap_or_default();
+        assert!(log.contains("replayed"), "the dash-log names the replay");
+
+        drop(gh_tx);
+        cancel.cancel();
+    }
+
+    /// The edge path: a base that moves while the engine is running replays off
+    /// the GIT_HEAD signal the workspace's git watch broadcasts.
+    #[tokio::test]
+    #[serial]
+    async fn a_git_head_signal_replays_a_dash_that_just_fell_behind() {
+        let repo = repo_with_a_dash();
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let key = register(&registry, repo.path(), &cancel);
+        let (gh_tx, gh_rx) = broadcast::channel::<Frame>(16);
+        let (_open_tx, open_rx) = mpsc::channel::<String>(4);
+        let (_turn_tx, turn_rx) = mpsc::channel::<String>(4);
+        let bump = Arc::new(Notify::new());
+        tokio::spawn(run_base_motion_engine(
+            test_context(&registry, &bump, &cancel),
+            gh_rx,
+            open_rx,
+            turn_rx,
+        ));
+        // Let the startup sweep find nothing to do before the base moves, so
+        // the replay under test can only have come from the signal.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let before = repo.tip("tugdash/demo");
+        repo.advance_base("B\n");
+
+        let signal = GitHeadSignal {
+            workspace_key: key,
+            head: repo.tip("main"),
+        };
+        gh_tx
+            .send(Frame::new(
+                tugcast_core::protocol::FeedId::GIT_HEAD,
+                serde_json::to_vec(&signal).unwrap(),
+            ))
+            .unwrap();
+
+        assert!(
+            settles(|| repo.tip("tugdash/demo") != before).await,
+            "the signal must drive the replay"
+        );
+        // The aggregate recompute was asked for, so the marks refresh without
+        // waiting on a file event.
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), bump.notified())
+                .await
+                .is_ok()
+                || repo.tip("tugdash/demo") != before,
+            "a completed motion bumps the aggregate"
+        );
+        cancel.cancel();
+    }
+
+    /// A signal for a workspace this engine does not hold is a cheap no-op, not
+    /// a sweep of everything.
+    #[tokio::test]
+    #[serial]
+    async fn a_signal_for_an_unknown_workspace_moves_nothing() {
+        let repo = repo_with_a_dash();
+        repo.advance_base("B\n");
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let (gh_tx, gh_rx) = broadcast::channel::<Frame>(16);
+        let (_open_tx, open_rx) = mpsc::channel::<String>(4);
+        let (_turn_tx, turn_rx) = mpsc::channel::<String>(4);
+        let bump = Arc::new(Notify::new());
+        // Deliberately unregistered: the engine knows of no workspaces at all.
+        tokio::spawn(run_base_motion_engine(
+            test_context(&registry, &bump, &cancel),
+            gh_rx,
+            open_rx,
+            turn_rx,
+        ));
+        let before = repo.tip("tugdash/demo");
+        gh_tx
+            .send(Frame::new(
+                tugcast_core::protocol::FeedId::GIT_HEAD,
+                serde_json::to_vec(&GitHeadSignal {
+                    workspace_key: "/nowhere".to_string(),
+                    head: "deadbeef".to_string(),
+                })
+                .unwrap(),
+            ))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(repo.tip("tugdash/demo"), before);
+        cancel.cancel();
+    }
+
+    /// [P08]'s escape: `tugdash.autoreplay false` stops the motion in a
+    /// repository, and the wake path still runs — it just declines.
+    #[tokio::test]
+    #[serial]
+    async fn the_repo_escape_defers_every_replay() {
+        let repo = repo_with_a_dash();
+        git(repo.path(), &["config", "tugdash.autoreplay", "false"]);
+        repo.advance_base("B\n");
+        let before = repo.tip("tugdash/demo");
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let key = register(&registry, repo.path(), &cancel);
+        let (gh_tx, gh_rx) = broadcast::channel::<Frame>(16);
+        let (_open_tx, open_rx) = mpsc::channel::<String>(4);
+        let (_turn_tx, turn_rx) = mpsc::channel::<String>(4);
+        let bump = Arc::new(Notify::new());
+        tokio::spawn(run_base_motion_engine(
+            test_context(&registry, &bump, &cancel),
+            gh_rx,
+            open_rx,
+            turn_rx,
+        ));
+        gh_tx
+            .send(Frame::new(
+                tugcast_core::protocol::FeedId::GIT_HEAD,
+                serde_json::to_vec(&GitHeadSignal {
+                    workspace_key: key,
+                    head: repo.tip("main"),
+                })
+                .unwrap(),
+            ))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(
+            repo.tip("tugdash/demo"),
+            before,
+            "an opted-out repository is never moved"
+        );
+        cancel.cancel();
+    }
+
+    /// [P05]: a replay that cannot merge becomes an ordinary turn in the dash's
+    /// bound session — and exactly one, however many wakes arrive at the same
+    /// base tip. The turn carries the round it stopped on and the paths.
+    #[tokio::test]
+    #[serial]
+    async fn a_conflicted_replay_becomes_one_turn_per_divergence_event() {
+        let repo = repo_with_a_conflicting_dash();
+        let before = repo.tip("tugdash/demo");
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let bump = Arc::new(Notify::new());
+        let feed = SessionScopedFeed::new(
+            FeedId::CODE_OUTPUT,
+            16,
+            tugcast_core::lag::LagPolicy::Warn,
+        );
+        let mut out_rx = feed.subscribe();
+        let (in_tx, mut in_rx) = mpsc::channel::<Frame>(8);
+        let mut ctx = test_context(&registry, &bump, &cancel);
+        ctx.code_input_tx = Some(in_tx);
+        ctx.code_output = Some(feed);
+
+        let board = Arc::new(ConflictBoard::default());
+        let state: Arc<Mutex<HashMap<String, DashState>>> = Arc::new(Mutex::new(HashMap::new()));
+        let job = || ReplayJob {
+            target: Some("sess-1".to_string()),
+            ..demo_job(&repo)
+        };
+
+        spawn_replay(&ctx, &board, &state, job());
+        let first = tokio::time::timeout(Duration::from_secs(5), in_rx.recv())
+            .await
+            .expect("an injection within the timeout")
+            .expect("the channel is open");
+        assert_eq!(
+            repo.tip("tugdash/demo"),
+            before,
+            "a conflicted replay moves nothing",
+        );
+
+        let body: serde_json::Value = serde_json::from_slice(&first.payload).unwrap();
+        let text = body["content"][0]["text"].as_str().unwrap().to_string();
+        assert!(text.contains("rewrite f"), "the turn names the stopping round");
+        assert!(text.contains("f.txt"), "the turn names the conflicting path");
+        assert!(text.contains("tugutil dash replay demo"));
+
+        // The opener rode out with it — the turn is not invisible.
+        let opener = out_rx.try_recv().expect("an opener");
+        let opener: serde_json::Value = serde_json::from_slice(&opener.payload).unwrap();
+        assert_eq!(opener["type"], "tug_notice");
+        assert_eq!(opener["text"], text);
+
+        // A second wake at the same base tip says nothing more.
+        spawn_replay(&ctx, &board, &state, job());
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert!(
+            in_rx.try_recv().is_err(),
+            "one injection per divergence event, not one per wake",
+        );
+
+        // The base moving is a new divergence event, and reopens the question.
+        repo.advance_base("base rewrote this again\n");
+        spawn_replay(&ctx, &board, &state, job());
+        assert!(
+            tokio::time::timeout(Duration::from_secs(5), in_rx.recv())
+                .await
+                .is_ok(),
+            "a base that moved again is spoken about again",
+        );
+        cancel.cancel();
+    }
+
+    /// [P02]'s park-and-retry, from the wake side: the engine's gate refuses to
+    /// act while a session is mid-turn, so the supervisor's turn-complete signal
+    /// is what lets the dash catch up. No GIT_HEAD signal is ever sent here.
+    #[tokio::test]
+    #[serial]
+    async fn a_turn_ending_wakes_a_dash_that_fell_behind_during_it() {
+        let repo = repo_with_a_dash();
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        register(&registry, repo.path(), &cancel);
+        let (gh_tx, gh_rx) = broadcast::channel::<Frame>(16);
+        let (_open_tx, open_rx) = mpsc::channel::<String>(4);
+        let (turn_tx, turn_rx) = mpsc::channel::<String>(4);
+        let bump = Arc::new(Notify::new());
+        tokio::spawn(run_base_motion_engine(
+            test_context(&registry, &bump, &cancel),
+            gh_rx,
+            open_rx,
+            turn_rx,
+        ));
+        // Let the startup sweep settle on a dash with nothing to do.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let before = repo.tip("tugdash/demo");
+        repo.advance_base("B\n");
+
+        turn_tx.send("sess-1".to_string()).await.unwrap();
+        assert!(
+            settles(|| repo.tip("tugdash/demo") != before).await,
+            "a turn ending is a wake",
+        );
+        drop(gh_tx);
+        cancel.cancel();
+    }
+
+    /// The in-flight lock, at the seam a second wake actually hits: a replay
+    /// already running owns the dash, and the next signal's `spawn_replay`
+    /// returns without starting a second one.
+    #[tokio::test]
+    #[serial]
+    async fn a_second_wake_mid_replay_does_not_start_a_second_replay() {
+        let repo = repo_with_a_dash();
+        repo.advance_base("B\n");
+        let before = repo.tip("tugdash/demo");
+
+        let cancel = CancellationToken::new();
+        let registry = Arc::new(WorkspaceRegistry::new_for_test());
+        let bump = Arc::new(Notify::new());
+        let ctx = test_context(&registry, &bump, &cancel);
+        let board = Arc::new(ConflictBoard::default());
+        let state: Arc<Mutex<HashMap<String, DashState>>> = Arc::new(Mutex::new(HashMap::new()));
+        state.lock().unwrap().insert(
+            "tugdash/demo".to_string(),
+            DashState {
+                in_flight: true,
+                ..DashState::default()
+            },
+        );
+
+        spawn_replay(&ctx, &board, &state, demo_job(&repo));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(
+            repo.tip("tugdash/demo"),
+            before,
+            "the held lock refused the second replay"
+        );
+
+        // Release the lock and the very same call moves the branch, so the
+        // refusal above was the lock and not a broken fixture.
+        state
+            .lock()
+            .unwrap()
+            .get_mut("tugdash/demo")
+            .unwrap()
+            .in_flight = false;
+        spawn_replay(&ctx, &board, &state, demo_job(&repo));
+        assert!(settles(|| repo.tip("tugdash/demo") != before).await);
+        cancel.cancel();
+    }
+}

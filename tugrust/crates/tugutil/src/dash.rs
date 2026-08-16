@@ -8,7 +8,9 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 
-use tugdash_core::{DashRoundMeta, JoinOptions, JoinStrategy, MarkStage, ops, resolve};
+use tugdash_core::{
+    DashRoundMeta, JoinOptions, JoinStrategy, MarkStage, ReplayOutcome, ops, replay, resolve,
+};
 
 use crate::cli::{DashCommands, StepAction};
 use crate::output::print_ok;
@@ -54,6 +56,7 @@ pub fn dispatch(cmd: DashCommands, json: bool, quiet: bool) -> ExitCode {
             json,
             quiet,
         ),
+        DashCommands::Replay { name } => return run_replay(&name, json, quiet),
         DashCommands::Release { name } => run_release(&name, json, quiet),
         DashCommands::List => run_list(json, quiet),
         DashCommands::Show { name } => run_show(&name, json, quiet),
@@ -474,6 +477,105 @@ fn run_mark(
         println!("{} is {}", data.dash, data.stage);
     }
     Ok(())
+}
+
+// --- replay ----------------------------------------------------------------
+
+/// `dash replay` owns its exit code rather than borrowing the dispatcher's.
+///
+/// A conflict and a deferral are not errors — nothing went wrong, and both
+/// print a full report — but they are also not success: the dash is still
+/// behind, and a caller (a script, an agent finishing a rebase) needs to know
+/// that without parsing prose. So they exit 1 with their report on stdout.
+fn run_replay(name: &str, json: bool, quiet: bool) -> ExitCode {
+    let outcome = match replay::replay(name) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("error: {}", e);
+            return ExitCode::from(1);
+        }
+    };
+    if json {
+        print_ok("dash replay", &outcome);
+    } else if !quiet {
+        print_replay(name, &outcome);
+    }
+    match outcome {
+        ReplayOutcome::Replayed { .. } | ReplayOutcome::Recorded { .. } | ReplayOutcome::Current => {
+            ExitCode::SUCCESS
+        }
+        ReplayOutcome::Conflicted { .. } | ReplayOutcome::Deferred { .. } => ExitCode::from(1),
+    }
+}
+
+fn short(sha: &str) -> &str {
+    &sha[..sha.len().min(9)]
+}
+
+fn print_replay(name: &str, outcome: &ReplayOutcome) {
+    match outcome {
+        ReplayOutcome::Replayed {
+            base_head,
+            mapping,
+            bookkeeping_commit,
+        } => {
+            println!(
+                "Replayed {} round{} of {} onto {}",
+                mapping.len(),
+                if mapping.len() == 1 { "" } else { "s" },
+                name,
+                short(base_head)
+            );
+            for (old, new) in mapping {
+                println!("  {} → {}", short(old), short(new));
+            }
+            if let Some(sha) = bookkeeping_commit {
+                println!("  plan ledger remapped in {}", short(sha));
+            }
+        }
+        ReplayOutcome::Recorded {
+            base_head,
+            remapped,
+            unmapped,
+        } => {
+            println!("Recorded {}'s rebase onto {}", name, short(base_head));
+            if !remapped.is_empty() {
+                println!("  remapped: {}", remapped.join(", "));
+            }
+            if !unmapped.is_empty() {
+                println!(
+                    "  unmapped (no unique match — left as they were): {}",
+                    unmapped.join(", ")
+                );
+            }
+        }
+        ReplayOutcome::Current => println!("{} is current with its base", name),
+        ReplayOutcome::Conflicted {
+            base_head,
+            round,
+            round_subject,
+            paths,
+        } => {
+            println!(
+                "{} cannot replay onto {}: round {} \"{}\" conflicts in:",
+                name,
+                short(base_head),
+                short(round),
+                round_subject
+            );
+            for path in paths {
+                println!("  {}", path);
+            }
+            println!(
+                "Rebase it in the dash worktree (`git rebase <base>`), then run \
+                 `tugutil dash replay {}` to record the moved rounds.",
+                name
+            );
+        }
+        ReplayOutcome::Deferred { reason, detail } => {
+            println!("{} was not replayed ({}): {}", name, reason, detail);
+        }
+    }
 }
 
 // --- session↔dash binding ([P04], Spec S04) --------------------------------

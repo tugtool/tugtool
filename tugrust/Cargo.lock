@@ -2523,6 +2523,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "serial_test",
  "sha2",
  "sysinfo",
  "tempfile",

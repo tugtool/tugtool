@@ -741,6 +741,33 @@
   top: -1px;
 }
 
+/* Tug-notice row — the head of a turn Tug started itself (the base-motion
+   engine's, when a dash's base moved under it). Same quiet-line substrate as
+   the wake chip, with the accent rule marking it as spoken by the system
+   rather than by the user: a turn that begins with no visible cause is worse
+   than the ambush it replaces. */
+.session-card-transcript-notice {
+  margin-block: var(--tug-space-xs) 0;
+  padding-inline-start: var(--tug-space-sm);
+  border-inline-start: 2px solid var(--tugx-accent);
+  user-select: none;
+}
+.session-card-transcript-notice + .tug-markdown-block {
+  margin-top: var(--tug-space-xs);
+}
+.session-card-transcript-notice .tug-quiet-line-subject:has(
+    > .session-card-transcript-notice-md
+  ) {
+  display: block;
+}
+.session-card-transcript-notice-md {
+  --tugx-md-block-padding-x: 0;
+  width: 100%;
+}
+.session-card-transcript-notice .tug-quiet-line-icon {
+  top: -1px;
+}
+
 
 /* Code-row body — `TugMarkdownBlock`. Width-100% so streaming text
    wraps inside the row column. The default `--tugx-md-block-padding-x`

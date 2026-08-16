@@ -174,7 +174,13 @@ export interface AssistantThinking extends MessageBase {
 export interface SystemNote extends MessageBase {
   kind: "system_note";
   text: string;
-  source: "scheduled" | "compact" | "other";
+  source: "scheduled" | "compact" | "notice" | "other";
+  /**
+   * On a `notice`, which subsystem spoke (e.g. `"base-motion"`) — the row's
+   * attribution label. Tug started this turn, and the row says so rather than
+   * letting the words read as the user's.
+   */
+  noticeOrigin?: string;
 }
 
 /**

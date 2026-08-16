@@ -1337,7 +1337,7 @@ pub fn set_ledger_status(
         });
     }
 
-    let edited = rewrite_ledger_line(source, row.line, status, commit).ok_or_else(|| {
+    let edited = rewrite_ledger_line(source, row.line, Some(status), commit).ok_or_else(|| {
         LedgerEditError::RoundTrip {
             anchor: anchor.to_string(),
         }
@@ -1367,13 +1367,67 @@ pub fn set_ledger_status(
     Ok(edited)
 }
 
-/// Rewrite one table line's status cell (and commit cell, when a sha is given),
-/// preserving the line's indentation, cell padding, and line ending. `None`
-/// when the line does not have the cells to rewrite.
+/// Point one Step Status Ledger row's commit cell at a different commit,
+/// leaving its status exactly as it stands.
+///
+/// This is the repair a rewritten history needs: after a dash's rounds are
+/// replayed onto a moved base, a `done` row's recorded sha names a commit that
+/// is no longer on the branch. Status is untouched on purpose — `done` is
+/// terminal, and the row did not become less done by having its commit moved.
+///
+/// `anchor` is spelled without the leading `#` (`"step-3"`).
+pub fn rewrite_ledger_commit_cell(
+    source: &str,
+    anchor: &str,
+    commit: &str,
+) -> Result<String, LedgerEditError> {
+    let doc = parse(source).map_err(|_| LedgerEditError::NotAPlan)?;
+    if doc.ledger_line.is_none() {
+        return Err(LedgerEditError::NoLedger);
+    }
+    let row = doc
+        .ledger_rows
+        .iter()
+        .find(|r| r.anchor == anchor)
+        .ok_or_else(|| LedgerEditError::NoRow {
+            anchor: anchor.to_string(),
+        })?;
+
+    let edited =
+        rewrite_ledger_line(source, row.line, None, Some(commit)).ok_or_else(|| {
+            LedgerEditError::RoundTrip {
+                anchor: anchor.to_string(),
+            }
+        })?;
+
+    let reparsed = parse(&edited).map_err(|_| LedgerEditError::RoundTrip {
+        anchor: anchor.to_string(),
+    })?;
+    let back = reparsed
+        .ledger_rows
+        .iter()
+        .find(|r| r.anchor == anchor)
+        .ok_or_else(|| LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        })?;
+    if back.commit.as_deref() != Some(commit)
+        || back.status != row.status
+        || back.title != row.title
+    {
+        return Err(LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        });
+    }
+    Ok(edited)
+}
+
+/// Rewrite one table line's status cell and/or commit cell, preserving the
+/// line's indentation, cell padding, and line ending. `None` when the line does
+/// not have the cells to rewrite.
 fn rewrite_ledger_line(
     source: &str,
     line_no: usize,
-    status: &str,
+    status: Option<&str>,
     commit: Option<&str>,
 ) -> Option<String> {
     let mut pieces: Vec<&str> = source.split_inclusive('\n').collect();
@@ -1390,7 +1444,11 @@ fn rewrite_ledger_line(
     // `| #step-1 | Title | pending | — |` splits into a leading empty segment,
     // then one segment per cell: anchor, title, status, commit.
     let mut cells: Vec<String> = body.split('|').map(str::to_string).collect();
-    set_cell(cells.get_mut(3)?, status);
+    if let Some(status) = status {
+        set_cell(cells.get_mut(3)?, status);
+    } else if cells.len() < 4 {
+        return None;
+    }
     if let Some(sha) = commit {
         set_cell(cells.get_mut(4)?, &format!("`{sha}`"));
     }

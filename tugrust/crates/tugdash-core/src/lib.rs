@@ -14,6 +14,10 @@ pub mod dash;
 /// `list` / `show`, each returning a typed outcome.
 pub mod ops;
 
+/// Base-motion replay — keeping a live dash current with a base that moved:
+/// the preconditions, the branch move, and the record of where rounds went.
+pub mod replay;
+
 /// The join conflict resolution ladder ([P31]): replay probe, rerere, per-file
 /// re-merge / structured-merge driver / AI seam, and the candidate builder.
 pub mod resolve;
@@ -26,10 +30,12 @@ pub use ops::{
     BaseDirtPath, CommitOutcome, CreateOutcome, DashDetail, DashDetailFile, DashDraftKey,
     DashListItem, DashStatus, JoinBlocker, JoinOptions, JoinOutcome, JoinStrategy, MarkOutcome,
     ReleaseOutcome, RoundItem, ShowOutcome, StepOutcome, commit, create, dash_detail_entries_in,
-    dash_draft_key, dash_plan_path, derive_stage, join, join_in, join_preflight_in, list, mark,
+    dash_draft_key, dash_plan_path, derive_stage, join, join_in, join_in_flight, join_preflight_in,
+    list, mark,
     release, release_in, show, status, status_in, step_done, step_start,
 };
+pub use replay::{ReplayOutcome, ReplayedRounds, replay, replay_onto};
 pub use resolve::{
     FileMergeRequest, FileMerger, FileResolution, JoinShape, ResolveOutcome, ResolvedBy,
-    resolve_conflicts, resolve_conflicts_cwd,
+    resolve_conflicts, resolve_conflicts_cwd, resolve_intent,
 };

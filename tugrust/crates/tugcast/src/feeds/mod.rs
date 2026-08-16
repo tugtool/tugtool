@@ -7,6 +7,7 @@ pub mod activity;
 pub mod agent_bridge;
 pub mod agent_supervisor;
 pub mod attribution;
+pub mod base_motion;
 pub mod changeset;
 pub mod changeset_all;
 pub mod claude_auth;
