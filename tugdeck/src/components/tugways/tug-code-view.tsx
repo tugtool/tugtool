@@ -117,6 +117,7 @@ import {
   selectMatches as cmSelectMatches,
 } from "@codemirror/search";
 import { cn } from "@/lib/utils";
+import { cm6ScrollAnchor } from "@/lib/cm6-scroll-anchor";
 import { copyTextFrom } from "@/lib/copy-text";
 import { languageForLangId, tugHighlightStyle } from "@/lib/language-registry";
 import { loadMarkdownTextStyling } from "@/components/tugways/tug-text-editor/markdown-text-styling";
@@ -713,6 +714,10 @@ export const TugCodeView = React.forwardRef<
           onScrollIntoViewRef.current?.(view, range);
           return true;
         }),
+        // Keeps the viewport-top LINE across a card width change, and
+        // publishes it for the cross-mount save path. A pixel offset means
+        // nothing after a re-wrap; a line does.
+        cm6ScrollAnchor(),
         tugCodeViewTheme,
       ],
     });

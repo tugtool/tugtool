@@ -121,6 +121,8 @@ The protocol's surface area in HTML. Authors add these attributes to opt their e
 - **`data-tug-focus-key`** — On any non-form-control focusable element (button, tab, custom focusable `tabindex=0` widget) that wants its focus restored. Captured into `FocusSnapshot` kind `dom`. Key must be unique within the card subtree.
 - **`data-tug-scroll-key`** — On an inner scrollable region (most notably `tug-markdown-view`'s virtual-list container). Captures `{ x, y }` into `bag.regionScroll[key]`. Applied on mount and re-applied for late-mounting regions via the same `MutationObserver` that restores form controls.
 - **`data-tug-scroll-state`** — Optional companion to `data-tug-scroll-key`. JSON-serialized opaque metadata captured into `bag.regionScroll[key].meta` alongside `{ x, y }` and forwarded on restore through the `tug-region-scroll-set` event's `detail.meta`. The framework treats the payload as opaque storage; the region's listener owns its semantics. Used by variable-height virtualized lists (`TugListView` driving the session-card transcript) to carry an `{ anchor: { index, offset } }` payload that survives cell-height drift between save and restore — see [`RegionScrollSnapshot` in depth](#cardstatebag-in-depth) below.
+- **`data-tug-preserve-scroll`** — Marker on a scroller that should keep its place across a card width change but carries no cross-mount region identity. See [Resize preservation](#resize-preservation).
+- **`data-tug-preserve="fraction"`** — On a scroller whose content scales rather than re-wraps (an image, a scaled page). It holds its fractional position across a width change instead of an element's top edge.
 - **`data-tug-prompt-input-root`** — Marker attribute on the outer container of an engine that owns its own focus + selection state together (e.g. `TugPromptEntry`). Causes `captureFocus` to serialize the focus as `FocusSnapshot` kind `engine`. The owning engine's `bag.content` carries the actual detail; the engine also registers `paintMirrorAsActive` / `paintMirrorAsInactive` hooks via `store.registerEngineHooks` so the framework's `applyBagFocus` dispatcher can drive the activation-time focus claim through the engine's own state-preservation order.
 
 ---
@@ -154,6 +156,8 @@ The framework has two restore mechanisms; each handles a different transition cl
 4. **HMR content-factory remount (dev-only).** When Vite hot-replaces a module that React Fast Refresh handles by remounting just the content factory (CardHost itself stays up), `useCardStatePreservation`'s cleanup-then-mount cycle drives a second `register` call on the same CardHost. CardHost's `registerStatePreservationCallbacks` counts real registrations; the second-or-later real call (carrying `restorePendingRef`) is treated as a remount. The one-shot guard `hasAppliedContentRestoreRef` resets, the `callbacksVersion` bump re-fires the existing restore effects, and `bag.content` replays onto the new tree. The framework-axes restore effect (`bag.scroll`, `bag.formControls`, `bag.regionScroll`, `bag.domSelection`, `bag.focus`) also re-fires on the same version bump. See [The HMR bridge](#the-hmr-bridge) and the corresponding `card-host-hmr-remount.test.tsx` test for end-to-end coverage of this transition.
 
 **Component-axis restore** does not run as an effect. Components read their saved value at render time via the dedicated accessor hooks — see [Restoring saved state at mount](#restoring-saved-state-at-mount) below.
+
+A width change is not on this list, and cannot be: nothing is destroyed, so there is nothing to restore. It gets its own mechanism — see [Resize preservation](#resize-preservation).
 
 Restore does **not** fire on intra-pane tab switch. Tab switches are pure visibility transitions: the inactive card's DOM stays mounted, the user's state stays alive in the live tree, and there is nothing to restore because nothing was destroyed. This is L23 in its strongest form.
 
@@ -260,6 +264,62 @@ Both ends see the same shape: a `CardStateBag`. At save time, every axis is popu
 
 ---
 
+## Resize preservation
+
+Everything above is keyed to a card being **destroyed and rebuilt** — a cold boot, a cross-pane move, a tab reopen. A width change is neither. The scroller survives it intact and carries its `scrollTop` across untouched, which is exactly the problem: the content that pixel named has re-wrapped out from under it, so a faithfully preserved number now points somewhere else in the document. WebKit implements no CSS scroll anchoring (`overflow-anchor` is unimplemented), so nothing catches this for us.
+
+**The invariant.** *A width change never moves what the reader is looking at.* Concretely:
+
+- Whatever sits at a scroller's **top edge** holds its offset from that top edge, through every intermediate frame of the change — not just at the end. The top edge is the anchor for every card, always; a visible caret does not claim it.
+- A scroller **following the bottom** stays following the bottom. It installs no anchor at all — an anchor would disengage the follow to chase a near-bottom position that lands short.
+- Content that **scales rather than re-wraps** — an image, a PDF page — holds its fraction, because a fraction is what means the same thing at two scales.
+- When there is nothing to anchor to, nothing is written. "We could not find your place" answered by scrolling to the top is worse than the drift the mechanism exists to prevent.
+
+### The episode
+
+A **resize episode** brackets a width gesture. `beginResizeEpisode(frame, durationMs)` walks the pane frame for preservable scrollers and dispatches a cancelable `tug-scroll-preserve-begin` on each; `handle.end()` dispatches `tug-scroll-preserve-end` — to every scroller, claimed ones included. The shape deliberately mirrors the `tug-region-scroll-set` protocol above: a cancelable event first, a framework fallback second.
+
+- **`preventDefault()` claims the scroller.** A surface with real anchor semantics of its own — a virtualized list keyed on cell index, a CodeMirror view keyed on document position, a PDF keyed on page — captures its own anchor and takes responsibility for re-landing it.
+- **Everything else is anchored by the module.** The generic anchor finds the deepest box meeting the scroller's top edge that is still *part* of the content, and holds its top. Three kinds of box are skipped, and each of them would otherwise fail silently by resolving to a zero correction on every frame: a wrapper as tall as the whole scroll extent (its top is `-scrollTop` by construction), a `position: sticky` header (glued to the viewport edge by definition), and an `aria-hidden` spacer (a virtualized list's stand-in for rows it is not rendering, whose height changes as those rows are measured).
+- **Re-anchored every frame, not frozen and snapped.** A `ResizeObserver` on both the scroller and its content re-lands the anchor on every delivery, so the content is visually still while the frame tweens rather than jumping once at the end.
+- **The safety net closes an episode nobody closed.** Background windows suspend `requestAnimationFrame` entirely, so an episode whose end hangs off an animation callback would stall — the wall-clock timer fires `durationMs + RESIZE_EPISODE_SLACK_MS` past the start regardless. Every observer and timer the episode takes it releases ([L27]).
+- **The gesture and the reflow do not end together.** A surface whose content settles on its own schedule — a virtualized list re-measuring rows, a document re-laying out — keeps re-landing its anchor for `RESIZE_SETTLE_TAIL_MS` past the episode's end, then lets go. Releasing at `end()` would land the anchor against half-measured geometry and walk away from the rest.
+
+### Raise sites
+
+Every path that changes a card's width opens an episode. There is no fourth path.
+
+| Site | When | Window |
+|------|------|--------|
+| `deck-canvas.tsx`'s FLIP settle (`arm()`, pre-commit) | Width chords (⌃⌘1/2/3), bullseye in and out, the deck-wide Card Width, any imposition change | The settle duration, scaled by `getTugTiming()` |
+| `tug-pane.tsx` — `handleResizeStart` | A drag on any of the eight edge handles, opened at **pointer-down** | Bounded by the user's hand; closed on pointer-up |
+| `tug-pane.tsx` — `handleSidebarResizeStart` | A rail drag, which re-widths the band every card rides | Same |
+
+The drag sites open at pointer-down rather than at the move latch because that is the last moment the pre-gesture layout is on screen. A gesture that turns out to be a click closes its episode having changed nothing.
+
+Under reduced motion (`isTugMotionEnabled()` false) no tween runs and the layout snap *is* the settle — episodes still open, and closing them is the whole of the preservation on that path.
+
+### Opting a new scroller in
+
+Two attributes, and they answer different questions:
+
+- **`data-tug-scroll-key`** already puts a scroller on the region-preservation seam for cross-mount restore. It doubles as episode discovery, so a scroller that opted into one is preserved across the other for free.
+- **`data-tug-preserve-scroll`** is for a scroller that holds a place worth keeping but owns no cross-mount identity — a CodeMirror view inside a Text card, say, whose save-bag key belongs to whoever mounted it and who may have none to give. Marker only, no value.
+- **`data-tug-preserve="fraction"`** marks content that scales rather than re-wraps. Such a scroller holds `scrollTop / maxScrollTop` instead of an element's top edge.
+
+A card that never took over its own scrolling needs no attribute at all: the pane's own content box is discovered whenever it is the thing doing the scrolling.
+
+To claim instead of falling back, listen for `tug-scroll-preserve-begin` on the scroller, `preventDefault()` it *only once you have an anchor* (declining leaves the better of the two available answers in charge), re-land on your own layout signal while it is open, and land once more on `tug-scroll-preserve-end`.
+
+### Files
+
+- [`tugdeck/src/lib/resize-episode.ts`](../tugdeck/src/lib/resize-episode.ts) — the episode, the generic anchor, the anchor arithmetic as pure functions, and `trackElementAnchor` for claimants that want the element anchor as a fallback.
+- [`tugdeck/src/lib/cm6-scroll-anchor.ts`](../tugdeck/src/lib/cm6-scroll-anchor.ts) — the CodeMirror plugin: publishes `data-tug-scroll-state` for the save path in line coordinates, and claims the episode on the document *position* under the top edge. A line is right for a reload and too coarse for a re-wrap, since soft wrapping makes a long line's block taller.
+- [`tugdeck/src/lib/pdf-layout.ts`](../tugdeck/src/lib/pdf-layout.ts) — `pageAnchorAt` / `scrollTopForPageAnchor`, the page-and-fraction anchor.
+- [`tests/app-test/at0430-resize-scroll-preservation.test.ts`](../tests/app-test/at0430-resize-scroll-preservation.test.ts) — the invariant end to end: every raise site, the follow-bottom case, the generic fallback, the document substrate, the PDF, and the `data-scroll-displacements` tripwire.
+
+---
+
 ## The HMR bridge
 
 Vite's HMR is the protocol's fifth and sixth capture moment, scoped to dev-mode only. Three pieces work together; each handles a transition the others can't observe.
@@ -356,6 +416,8 @@ For the per-axis contract these attributes participate in, see [card-state-model
 | `data-tug-focus-key="<key>"` | (not stored in bag axis) | — | Drives `FocusSnapshot` kind `dom`. Resolved on restore by keyed lookup inside the card root. |
 | `data-tug-scroll-key="<key>"` | `bag.regionScroll[key]` | `x`, `y` | Inner scrollable region. Re-applied for late mounts via the same `MutationObserver` as form controls. |
 | `data-tug-scroll-state` | `bag.regionScroll[key].meta` | opaque JSON | Optional companion to `data-tug-scroll-key`. Region-defined payload (e.g. `{anchor: {index, offset}}` for `TugListView`) forwarded through the `tug-region-scroll-set` event's `detail.meta`. Framework treats as opaque storage. |
+| `data-tug-preserve-scroll` | (not stored in bag axis) | — | Marker only. Opts a scroller into [resize preservation](#resize-preservation) without claiming a cross-mount region identity. |
+| `data-tug-preserve="fraction"` | (not stored in bag axis) | — | Marks content that scales rather than re-wraps; such a scroller holds its fractional position across a width change. |
 | `data-tug-prompt-input-root` | (engine-owned) | — | Marker attribute. `captureFocus` serializes focus on any descendant as `FocusSnapshot` kind `engine`; the owning engine's `bag.content` carries the real detail and the engine registers `paintMirrorAsActive` hooks via `store.registerEngineHooks` for dispatcher invocation. |
 
 Authors add these attributes; the framework owns capture and replay. There is no second mechanism for any of these axes; if a control wants its state preserved across cold boot, it opts in via one of these attributes (or via `useComponentStatePreservation` for non-DOM-authority state).
@@ -493,6 +555,7 @@ Each of these pins one transition or one component-roster axis of [A9]. They are
 | [`at0024-prompt-state-roundtrip`](../tests/app-test/at0024-prompt-state-roundtrip.test.ts) | The foundational round-trip matrix, reload + relaunch |
 | [`at0027-layout-state-persistence`](../tests/app-test/at0027-layout-state-persistence.test.ts) | Layout state — accordion expansion, split-pane divider |
 | [`at0037-deck-wide-restore-consistency`](../tests/app-test/at0037-deck-wide-restore-consistency.test.ts) | Multi-card restore preserves the active/inactive invariants |
+| [`at0430-resize-scroll-preservation`](../tests/app-test/at0430-resize-scroll-preservation.test.ts) | A width change never moves what the reader is looking at |
 
 The EM-flavored halves of several of these (tab switch, cross-pane move, inactive mount) were retired on 2026-08-11 — they asserted the same orchestrator contract as their FC counterparts, differing only in which component reacquired focus. [`at0032-em-cold-boot-selection`](../tests/app-test/at0032-em-cold-boot-selection.test.ts) is kept as the EM representative, on the restore path where a break would be silent.
 

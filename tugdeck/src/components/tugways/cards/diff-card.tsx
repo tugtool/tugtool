@@ -326,7 +326,10 @@ export function DiffCardContent({ cardId }: { cardId: string }): React.ReactElem
   }
 
   return (
-    <div data-slot="diff-card" className="diff-card">
+    // `data-tug-scroll-key` is the card's scroll identity: it puts this
+    // scroller on the region-preservation seam, so its position survives a
+    // cross-mount ([A9]) and a card width change alike.
+    <div data-slot="diff-card" className="diff-card" data-tug-scroll-key="diff-card">
       {body}
     </div>
   );

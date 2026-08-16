@@ -119,6 +119,7 @@ import {
 } from "@codemirror/search";
 
 import { cn } from "@/lib/utils";
+import { cm6ScrollAnchor } from "@/lib/cm6-scroll-anchor";
 import {
   clipboardOriginFor,
   stampClipboardOrigin,
@@ -902,6 +903,10 @@ export const TugTextCardEditor = React.forwardRef<
         // than on release — otherwise the whole range stays painted for as
         // long as the button is held. See `press-collapses-selection.ts`.
         pressCollapsesSelection,
+        // Keeps the viewport-top LINE across a card width change, and
+        // publishes it for the cross-mount save path. A pixel offset means
+        // nothing after a re-wrap; a line does.
+        cm6ScrollAnchor(),
         revealFlashField,
         // ⌘-click intra-document link/anchor navigation (plain click still
         // edits). Jumps via the live `revealLine` through a ref so the

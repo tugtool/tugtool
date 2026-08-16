@@ -9,6 +9,8 @@ import {
   spreadIndexOfPage,
   spreadsFor,
   steppedScale,
+  pageAnchorAt,
+  scrollTopForPageAnchor,
   visiblePages,
   type PdfPageSize,
   type PdfSpacing,
@@ -261,5 +263,58 @@ describe("visiblePages", () => {
 
   test("an empty layout has no visible pages", () => {
     expect(visiblePages({ boxes: [], width: 0, height: 0 }, 0, 800)).toEqual([]);
+  });
+});
+
+describe("holding the reader's place across a re-scale", () => {
+  // The same ten pages laid out at two scales — what a card width change
+  // produces under `fit-width`, where the scale IS the card's width.
+  const wide = layoutSpread(letters(10), spreadsFor(10, "continuous")[0], "continuous", 1, SPACING);
+  const narrow = layoutSpread(letters(10), spreadsFor(10, "continuous")[0], "continuous", 0.5, SPACING);
+
+  test("a page and a fraction survive the scale a pixel offset does not", () => {
+    // A third of the way down page 4, at the wide scale.
+    const box = wide.boxes.find((b) => b.page === 4)!;
+    const top = box.y + box.height / 3;
+    const anchor = pageAnchorAt(wide, top)!;
+    expect(anchor.page).toBe(4);
+    expect(anchor.fraction).toBeCloseTo(1 / 3, 5);
+
+    // Re-laid at half scale, the same anchor is still a third down page 4 —
+    // and lands at a `scrollTop` roughly half the old one, which is exactly
+    // the drift a preserved pixel offset would have inflicted.
+    const restored = scrollTopForPageAnchor(narrow, anchor)!;
+    const narrowBox = narrow.boxes.find((b) => b.page === 4)!;
+    expect(restored).toBeCloseTo(narrowBox.y + narrowBox.height / 3, 5);
+    expect(restored).toBeLessThan(top);
+  });
+
+  test("the top of the document is page one at zero", () => {
+    expect(pageAnchorAt(wide, 0)).toEqual({ page: 1, fraction: 0 });
+  });
+
+  test("scrolled into the gap after the last page, the anchor stays on it", () => {
+    const anchor = pageAnchorAt(wide, wide.height + 500)!;
+    expect(anchor.page).toBe(10);
+    expect(anchor.fraction).toBe(1);
+  });
+
+  test("an anchor on a page this layout does not hold resolves to nothing", () => {
+    // A page-mode change re-spreads the document; the old page may not be in
+    // the new layout at all, and guessing a position for it is worse than
+    // leaving the scroller alone.
+    const single = layoutSpread(letters(10), spreadsFor(10, "single")[0], "single", 1, SPACING);
+    expect(scrollTopForPageAnchor(single, { page: 7, fraction: 0.5 })).toBeNull();
+  });
+
+  test("an empty layout has no anchor to give", () => {
+    expect(pageAnchorAt({ boxes: [], width: 0, height: 0 }, 0)).toBeNull();
+  });
+
+  test("a resolved anchor never lands outside the content", () => {
+    const anchor = { page: 10, fraction: 1 };
+    const restored = scrollTopForPageAnchor(narrow, anchor)!;
+    expect(restored).toBeGreaterThanOrEqual(0);
+    expect(restored).toBeLessThanOrEqual(narrow.height);
   });
 });

@@ -761,44 +761,15 @@ export const FileBlock: React.FC<FileBlockProps> = ({
       }
     }
 
-    // Line-relative writer. On every scroll, serialize the
-    // current viewport-top line + intra-line pixel offset onto
-    // `data-tug-scroll-state`. `captureRegionScrolls` reads the
-    // attribute at every save trigger; the next cold-boot uses
-    // `meta.line` for line-anchored restore — robust to font-load
-    // reflow because the saved LINE is what we restore to, not a
-    // pixel position that depends on font metrics.
-    //
-    // `scrollHeight` ride-along is a validation field; documented
-    // in `layout-tree.ts`'s schema prose. Not consumed at restore.
-    //
-    // `lineBlockAtHeight` reads CM6's measured layout. If the
-    // measurement plugin has not run yet the call throws; we swallow
-    // defensively so the attribute write is optional rather than a
-    // render-blocking dependency.
-    const writeScrollState = (): void => {
-      try {
-        const top = scrollDOM.scrollTop;
-        const block = view.lineBlockAtHeight(top);
-        const lineInfo = view.state.doc.lineAt(block.from);
-        const offsetPx = Math.max(0, top - block.top);
-        const meta = {
-          line: { number: lineInfo.number, offsetPx },
-          scrollHeight: scrollDOM.scrollHeight,
-        };
-        scrollDOM.setAttribute("data-tug-scroll-state", JSON.stringify(meta));
-      } catch {
-        // CM6 layout not measured yet (typically test-env). The
-        // next real scroll event re-fires this; production paths
-        // settle quickly.
-      }
-    };
-    writeScrollState();
-    scrollDOM.addEventListener("scroll", writeScrollState, { passive: true });
+    // The line-relative WRITER lives in the substrate. `cm6ScrollAnchor`
+    // (installed by `TugCodeView`) publishes `data-tug-scroll-state` in the
+    // same `{line: {number, offsetPx}, scrollHeight}` shape this block used
+    // to write for itself, and holds that line across a card width change as
+    // well — two occasions that want the same anchor in the same unit. What
+    // stays here is what is genuinely this block's: which region key the
+    // scroller answers to, and the one-shot restore off the saved bag.
     return () => {
-      scrollDOM.removeEventListener("scroll", writeScrollState);
       scrollDOM.removeAttribute("data-tug-scroll-key");
-      scrollDOM.removeAttribute("data-tug-scroll-state");
     };
   }, [collapsed, fileScrollKey]);
 

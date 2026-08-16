@@ -81,7 +81,7 @@ export function DevToolsCardContent(): React.ReactElement {
             ref={responderRef as (el: HTMLDivElement | null) => void}
           />
         </div>
-        <div className="devtools-card-panel">
+        <div className="devtools-card-panel" data-tug-scroll-key="devtools-panel">
           {tab === "log" ? <LogInspector /> : null}
           {tab === "telemetry" ? <DevToolsTelemetryPane /> : null}
         </div>

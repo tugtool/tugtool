@@ -1166,6 +1166,7 @@ export function GazetteContent({
           <div
             className="gazette-transcript"
             data-testid="gazette-transcript"
+            data-tug-scroll-key="gazette-transcript"
             ref={scrollRef}
             onScroll={onScroll}
           >

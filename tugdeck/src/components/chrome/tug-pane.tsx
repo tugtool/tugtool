@@ -83,6 +83,7 @@ import {
 } from "@/lib/card-title-store";
 import { SessionMasthead } from "@/components/tugways/session-masthead";
 import { CardMasthead } from "@/components/tugways/card-masthead";
+import { beginResizeEpisode } from "@/lib/resize-episode";
 import { composePaneTitleBarText } from "@/lib/pane-title";
 import { paneTitleBarItemsStore } from "@/lib/pane-title-bar-items-store";
 import {
@@ -1662,6 +1663,12 @@ const RESIZE_EDGES: ResizeEdge[] = ["n", "s", "e", "w", "nw", "ne", "sw", "se"];
 // the whole viewport. The effective max width is `window.innerWidth - this`.
 const LENS_MIN_GUTTER_PX = 80;
 
+// Safety net for a resize episode opened by a pointer gesture. Pointer-up is
+// the real end and always fires; this only covers a pane torn down mid-drag,
+// so it is sized to be unreachable by any drag a person actually performs
+// rather than to approximate one.
+const GESTURE_EPISODE_WINDOW_MS = 60_000;
+
 // ---------------------------------------------------------------------------
 // TugPane
 // ---------------------------------------------------------------------------
@@ -2953,6 +2960,12 @@ export function TugPane({
       // Disable height transition during resize. [D07, chrome.css]
       frame.setAttribute("data-gesture", "true");
 
+      // Hold the reader's place across the drag. Opened at pointer-down
+      // rather than at the move latch, because this is the last moment
+      // the pre-gesture layout is on screen — a gesture that turns out to
+      // be a click closes it having changed nothing.
+      const scrollEpisode = beginResizeEpisode(frame, GESTURE_EPISODE_WINDOW_MS);
+
       const startX = event.clientX;
       const startY = event.clientY;
 
@@ -3113,6 +3126,7 @@ export function TugPane({
         // arrangement would only visibly break at the next canvas change.
         if (!latchResizeMove({ x: e.clientX, y: e.clientY })) {
           clearGuideElements(resizeGuideEls);
+          scrollEpisode.end();
           return;
         }
 
@@ -3136,6 +3150,10 @@ export function TugPane({
           { width: r.width, height: r.height },
           released !== null ? { evictSlot: true } : undefined,
         );
+
+        // After the final geometry is written, so the last anchor lands
+        // against the size the pane keeps.
+        scrollEpisode.end();
       }
 
       frame.addEventListener("pointermove", onPointerMove);
@@ -3181,6 +3199,19 @@ export function TugPane({
       const frame: HTMLDivElement = frameRef.current;
       const container = frame.parentElement;
       if (!container) return;
+
+      // A rail drag is not one pane's resize: the property it writes insets
+      // the band every content pane rides, so the whole arrangement re-widths
+      // live under the moving edge. Every frame in the container gets an
+      // episode, the rail's own included.
+      const scrollEpisodes = [
+        ...container.querySelectorAll<HTMLElement>(".tug-pane[data-pane-id]"),
+      ].map((paneFrame) =>
+        beginResizeEpisode(paneFrame, GESTURE_EPISODE_WINDOW_MS),
+      );
+      const endScrollEpisodes = (): void => {
+        for (const episode of scrollEpisodes) episode.end();
+      };
 
       const widthProperty = sidebarWidthProperty(sidebarSide);
       const zoom = getTugZoom() || 1;
@@ -3290,6 +3321,7 @@ export function TugPane({
         latestAlt = e.altKey;
         if (!latchSidebarResizeMove(latestX)) {
           clearGuideElements(resizeGuideEls);
+          endScrollEpisodes();
           return;
         }
         // Close the occlusion bracket opened at the move latch.
@@ -3302,6 +3334,7 @@ export function TugPane({
         // there is no frame where the deck reads the pre-gesture width.
         container.style.setProperty(widthProperty, `${width}px`);
         onCardMoved(id, position, { width, height: size.height });
+        endScrollEpisodes();
       };
 
       frame.addEventListener("pointermove", onPointerMove);

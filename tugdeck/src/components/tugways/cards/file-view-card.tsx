@@ -385,6 +385,12 @@ export function FileViewCardContent({ cardId }: { cardId: string }) {
         ref={cardContentResponderRef as (el: HTMLDivElement | null) => void}
         className="file-view-card"
         data-slot="file-view-card"
+        data-tug-scroll-key="file-view-card"
+        // An image does not re-wrap when the card changes width — it re-fits,
+        // and every offset in it scales with the content. So this scroller
+        // holds its fractional position rather than an element's top edge,
+        // which is the same place in the picture before and after.
+        {...(kind === "image" ? { "data-tug-preserve": "fraction" } : {})}
         data-file-view-kind={kind}
         // The image settings that the CARD's own frame answers for rather than
         // the image block: how the frame scrolls at Actual Size, and whether

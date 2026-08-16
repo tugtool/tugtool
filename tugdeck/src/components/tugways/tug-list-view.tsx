@@ -88,6 +88,12 @@ import "./tug-list-view.css";
 import React from "react";
 
 import { currentGesture, targetRefusesFocus } from "@/gesture-interpreter";
+import {
+  RESIZE_PRESERVE_BEGIN,
+  RESIZE_SETTLE_TAIL_MS,
+  trackElementAnchor,
+  RESIZE_PRESERVE_END,
+} from "@/lib/resize-episode";
 import { SmartScroll } from "@/lib/smart-scroll";
 import {
   anchorDepthFromEnd,
@@ -2000,6 +2006,10 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // call sees the live `isFollowingBottom` flag rather than a
     // closed-over snapshot.
     const smartScrollRef = React.useRef<SmartScroll | null>(null);
+    /** Pending release of a resize episode's restore target — see `onPreserveEnd`. */
+    const preserveReleaseRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+      null,
+    );
 
     // Latest `onFollowBottomChange` — read from the SmartScroll
     // callback (installed once on mount) so a consumer that passes a
@@ -2375,6 +2385,83 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       },
       [estimatedHeightForKindOnly],
     );
+
+    /**
+     * What the user is looking at right now, in the coordinates that
+     * survive a relayout: which row sits at the viewport top, and how far
+     * into it the top edge falls.
+     *
+     * Two callers, one derivation. The `data-tug-scroll-state` writer
+     * serializes it for the cross-mount bag, and the resize-episode
+     * handler feeds it straight back to `makeAnchorResolver` — the two
+     * must agree about what "the anchor" means or a width change and a
+     * reload would put the user in two different places.
+     *
+     * Returns `null` when there is nothing to anchor to: an empty source,
+     * or a hidden scroller (`display: none` reads `scrollTop` as 0, which
+     * is the absence of a position rather than a position).
+     */
+    const deriveLiveAnchor = React.useCallback((): {
+      index: number;
+      offset: number;
+      /** The same top edge measured from the ANCHOR ROW rather than from the turn it belongs to. */
+      rowOffset: number;
+      turnDepth: number | undefined;
+      rowDepth: number | undefined;
+    } | null => {
+      const el = scrollContainerRef.current;
+      if (el === null || el.clientHeight === 0) return null;
+      const total = dataSource.numberOfItems();
+      if (total <= 0) return null;
+      const scrollTop = el.scrollTop;
+      // Convert to the row coordinate space (origin = row 0's top) by
+      // discounting any leading content above row 0.
+      const leadingTop = leadingOffsetPx();
+      const rowSpaceScrollTop = Math.max(0, scrollTop - leadingTop);
+      const anchorIndex = heightIndexRef.current.indexForOffset(
+        rowSpaceScrollTop,
+        total,
+        estimatedHeightForKindOnly,
+      );
+      // Anchor depth, invariant across a reload because the loaded window is
+      // always bottom-contiguous. A turn-windowed source (the transcript)
+      // reports a **turn** depth ([P06]): one quantity sizes the resume
+      // window and re-finds the anchored turn, with no row↔turn unit to
+      // bridge. A non-turn source reports a row depth. Either is robust where
+      // the raw `index` is not: a save with older content paged in (a deep
+      // window) reloads against the default window, which `index` would
+      // over-run.
+      const turnDepth = dataSource.turnDepthFromEnd?.(anchorIndex);
+      // Offset basis: for the turn path, the anchored turn's first row, so the
+      // persisted pixel offset is measured within the anchored turn and the
+      // restore relocates to the same row via the same resolver. Otherwise the
+      // anchor row itself.
+      let basisRow = anchorIndex;
+      if (typeof turnDepth === "number") {
+        const tr = dataSource.rowIndexForTurnDepthFromEnd?.(turnDepth);
+        if (typeof tr === "number") basisRow = tr;
+      }
+      const basisTop =
+        heightIndexRef.current.offsetForIndex(
+          basisRow,
+          estimatedHeightForKindOnly,
+        ) + leadingTop;
+      const rowTop =
+        heightIndexRef.current.offsetForIndex(
+          anchorIndex,
+          estimatedHeightForKindOnly,
+        ) + leadingTop;
+      return {
+        index: anchorIndex,
+        offset: Math.max(0, scrollTop - basisTop),
+        rowOffset: Math.max(0, scrollTop - rowTop),
+        turnDepth: typeof turnDepth === "number" ? turnDepth : undefined,
+        rowDepth:
+          typeof turnDepth === "number"
+            ? undefined
+            : anchorDepthFromEnd(total, anchorIndex),
+      };
+    }, [dataSource, estimatedHeightForKindOnly, leadingOffsetPx]);
 
     // Windowing decision: when the consumer opts into `inline`,
     // render every cell — no spacers, no overscan math. This collapses
@@ -2842,6 +2929,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
     // ledger is whole again — the suspension path doing exactly the job
     // it exists for. A page-zoom or font-scale change reaches here the
     // same way, since both change the scroller's effective width.
+    //
+    // The reader's place is held across all of that by the resize
+    // episode's restore target (`onPreserveBegin`), which is a resolver
+    // rather than a pixel for exactly this reason: it re-reads the height
+    // index every heartbeat, so it waits while the wipe leaves rows
+    // unresolvable and then tracks the anchor row as fresh measurements
+    // land. The two are halves of one gesture — this effect makes the
+    // geometry right, that one keeps the user where they were while it
+    // happens.
     React.useLayoutEffect(() => {
       if (!(inline === true && (offscreenSkip || evictModeEnabled))) return;
       const scroller = scrollContainerRef.current;
@@ -3220,6 +3316,80 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
       };
       el.addEventListener("tug-region-scroll-set", onRegionScrollSet);
 
+      // Resize episodes. A card width change re-wraps every row, so the
+      // `scrollTop` the user left behind names a different place afterwards.
+      // `preventDefault()` claims the scroller and this list resolves its own
+      // anchor, in two units, tried in that order:
+      //
+      //  1. **The element under the top edge.** A row here is a whole TURN,
+      //     routinely several screens tall, so "row 4 plus 1191px" is a pixel
+      //     offset into re-wrapping content — the very quantity the reflow
+      //     invalidates. Measured against the box the reader is actually
+      //     looking at, the anchor survives the re-wrap.
+      //  2. **The row, when that element goes.** The width settle wipes the
+      //     measured-height ledger and re-renders every row, so the anchored
+      //     node can leave the document mid-gesture. Falling back to the row
+      //     keeps the reader within a turn of their place instead of losing
+      //     it entirely.
+      //
+      // The row fallback anchors on the ANCHOR ROW, not on the turn the
+      // cross-mount bag uses as its basis, and resolves by raw index: no
+      // re-windowing happens inside a resize, so the depth relocation the
+      // reload path needs would only add a way to be wrong.
+      //
+      // A list following the bottom installs nothing: the container
+      // ResizeObserver's synchronous `maybePinToBottom` already holds the
+      // bottom exactly, and a restore target would disengage
+      // follow-bottom to chase a near-bottom anchor that lands short.
+      //
+      // The target waives the drift supersede, because the reflow it
+      // exists to absorb is itself what moves `scrollTop` — see
+      // `restoreSupersede`. A real gesture still supersedes.
+      const onPreserveBegin = (event: Event): void => {
+        event.preventDefault();
+        const ss = smartScrollRef.current;
+        if (ss === null || ss.isFollowingBottom) return;
+        if (preserveReleaseRef.current !== null) {
+          clearTimeout(preserveReleaseRef.current);
+          preserveReleaseRef.current = null;
+        }
+        const byElement = trackElementAnchor(el);
+        const anchor = deriveLiveAnchor();
+        const byRow =
+          anchor === null
+            ? null
+            : makeAnchorResolver(anchor.index, anchor.rowOffset, undefined, undefined);
+        if (byElement === null && byRow === null) return;
+        ss.setRestoreTarget(
+          () => byElement?.() ?? byRow?.() ?? null,
+          { suspendDriftSupersede: true },
+        );
+      };
+      const onPreserveEnd = (): void => {
+        const ss = smartScrollRef.current;
+        if (ss === null) return;
+        ss.applyRestoreTarget();
+        // The GESTURE is over; the content settle is not. Rows keep
+        // re-measuring for several frames after the frame stops moving —
+        // markdown re-layout, per-cell observers landing — and each one moves
+        // the anchored block again. Releasing here would land the anchor
+        // against half-measured geometry and then walk away from the rest,
+        // which reads as the position drifting a few hundred pixels *after*
+        // the card visibly stopped. So the target rides a trailing window and
+        // the per-commit heartbeat keeps re-landing it. Then it lets go: a
+        // restore that never releases would fight the next thing to move the
+        // scroller.
+        if (preserveReleaseRef.current !== null) {
+          clearTimeout(preserveReleaseRef.current);
+        }
+        preserveReleaseRef.current = setTimeout(() => {
+          preserveReleaseRef.current = null;
+          smartScrollRef.current?.clearRestoreTarget();
+        }, RESIZE_SETTLE_TAIL_MS);
+      };
+      el.addEventListener(RESIZE_PRESERVE_BEGIN, onPreserveBegin);
+      el.addEventListener(RESIZE_PRESERVE_END, onPreserveEnd);
+
       // Publish the same façade `ScrollerProvider` gives descendants under
       // the scroll container itself, so a DOM-side caller that never sees the
       // React tree — the focus engine's reveal — can release follow-bottom
@@ -3231,8 +3401,14 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
           cancelAnimationFrame(atTopSeedRaf);
           atTopSeedRaf = null;
         }
+        if (preserveReleaseRef.current !== null) {
+          clearTimeout(preserveReleaseRef.current);
+          preserveReleaseRef.current = null;
+        }
         detachScroller();
         el.removeEventListener("tug-region-scroll-set", onRegionScrollSet);
+        el.removeEventListener(RESIZE_PRESERVE_BEGIN, onPreserveBegin);
+        el.removeEventListener(RESIZE_PRESERVE_END, onPreserveEnd);
         smartScroll.dispose();
         smartScrollRef.current = null;
       };
@@ -3272,6 +3448,15 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         if (!isScrollBatteryFrozen()) {
           smartScrollRef.current?.maybePinToBottom();
         }
+        // Re-land a pending anchor against the geometry this delivery
+        // reports. During a resize episode that is the whole point: the
+        // frame's width tweens over several hundred milliseconds, content
+        // re-wraps on every frame of it, and re-resolving here is what
+        // keeps the anchored row visually still instead of snapping once
+        // at the end. A no-op when no target is installed, which is the
+        // steady state — and mutually exclusive with the pin above, since
+        // a list following the bottom installs no episode target.
+        smartScrollRef.current?.applyRestoreTarget();
         // Still request the async pin + re-window so the rendered
         // window catches any cells that newly fit / no longer fit
         // at the new container width. The post-commit pin write
@@ -4031,50 +4216,18 @@ const TugListViewInner = React.forwardRef<TugListViewHandle, TugListViewProps>(
         el.removeAttribute("data-tug-scroll-state");
         return;
       }
-      const scrollTop = el.scrollTop;
-      // Convert to the row coordinate space (origin = row 0's top) by
-      // discounting any leading content above row 0.
-      const leadingTop = leadingOffsetPx();
-      const rowSpaceScrollTop = Math.max(0, scrollTop - leadingTop);
-      const anchorIndex = heightIndexRef.current.indexForOffset(
-        rowSpaceScrollTop,
-        total,
-        estimatedHeightForKindOnly,
-      );
-      // Anchor depth, invariant across a reload because the loaded window is
-      // always bottom-contiguous. A turn-windowed source (the transcript)
-      // reports a **turn** depth ([P06]): one quantity sizes the resume
-      // window and re-finds the anchored turn, with no row↔turn unit to
-      // bridge. A non-turn source reports a row depth. Either is robust where
-      // the raw `index` is not: a save with older content paged in (a deep
-      // window) reloads against the default window, which `index` would
-      // over-run.
-      const turnDepth = dataSource.turnDepthFromEnd?.(anchorIndex);
-      // Offset basis: for the turn path, the anchored turn's first row, so the
-      // persisted pixel offset is measured within the anchored turn and the
-      // restore relocates to the same row via the same resolver. Otherwise the
-      // anchor row itself.
-      let basisRow = anchorIndex;
-      if (typeof turnDepth === "number") {
-        const tr = dataSource.rowIndexForTurnDepthFromEnd?.(turnDepth);
-        if (typeof tr === "number") basisRow = tr;
-      }
-      const basisTop =
-        heightIndexRef.current.offsetForIndex(
-          basisRow,
-          estimatedHeightForKindOnly,
-        ) + leadingTop;
-      const anchorOffset = Math.max(0, scrollTop - basisTop);
+      const live = deriveLiveAnchor();
+      if (live === null) return;
       const anchor: {
         index: number;
         offset: number;
         turnDepthFromEnd?: number;
         depthFromEnd?: number;
-      } = { index: anchorIndex, offset: anchorOffset };
-      if (typeof turnDepth === "number") {
-        anchor.turnDepthFromEnd = turnDepth;
+      } = { index: live.index, offset: live.offset };
+      if (typeof live.turnDepth === "number") {
+        anchor.turnDepthFromEnd = live.turnDepth;
       } else {
-        anchor.depthFromEnd = anchorDepthFromEnd(total, anchorIndex);
+        anchor.depthFromEnd = live.rowDepth;
       }
       const meta: {
         anchor: typeof anchor;

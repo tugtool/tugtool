@@ -1349,6 +1349,11 @@ export const TugMarkdownView = React.forwardRef<TugMarkdownViewHandle, TugMarkdo
 
   return (
     <ResponderScope>
+      {/* The scroll key puts this scroller on the region-preservation seam,
+          which is also how a resize episode finds it. It claims nothing: the
+          episode's own anchor descends past the aria-hidden spacers to the
+          block under the top edge, which is the block-and-offset anchor this
+          view would otherwise compute for itself out of the height index. */}
       <div
         ref={composedScrollRef}
         data-slot="tug-markdown-view"

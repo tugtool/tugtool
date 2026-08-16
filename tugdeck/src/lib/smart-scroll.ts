@@ -181,6 +181,46 @@ const SCROLLEND_FALLBACK_MS = 150;
  */
 const RESTORE_SUPERSEDE_DRIFT_PX = 8;
 
+/** What `restoreSupersede` needs to know to decide who owns the position. */
+export interface RestoreSupersedeInput {
+  /** A gesture SmartScroll can see is in progress. */
+  readonly isUserScrolling: boolean;
+  /** `scrollTop` as the last heartbeat left it, or `null` before the first. */
+  readonly baselineTop: number | null;
+  /** `scrollTop` right now. */
+  readonly currentTop: number;
+  /** Whether the installed target waives the drift rule (a width change). */
+  readonly suspendDriftSupersede: boolean;
+}
+
+/**
+ * Decide whether a pending restore has been superseded, and by what.
+ *
+ * `'gesture'` is a scroll SmartScroll saw. `'drift'` is the scroller
+ * found away from where the last heartbeat left it with no gesture to
+ * explain it — a native scrollbar drag delivers no events, so the phase
+ * machine sits in `idle` while the user scrubs, and the displacement is
+ * the only evidence there is. `null` means the restore still owns the
+ * position.
+ *
+ * A target that suspends the drift rule owns a reflow that moves
+ * `scrollTop` on its own — content re-wrapping *above* the viewport when
+ * a card changes width. There the displacement is the restore's own
+ * work, carries no information about who caused it, and reading it as a
+ * scrollbar drag would cancel the restore on its first delivery.
+ */
+export function restoreSupersede(
+  input: RestoreSupersedeInput,
+): 'gesture' | 'drift' | null {
+  if (input.isUserScrolling) return 'gesture';
+  if (input.suspendDriftSupersede) return null;
+  if (input.baselineTop === null) return null;
+  return Math.abs(input.currentTop - input.baselineTop) >
+    RESTORE_SUPERSEDE_DRIFT_PX
+    ? 'drift'
+    : null;
+}
+
 /**
  * One delivered `scroll` event, kept for the follow-bottom flip
  * record's ring. See {@link SmartScroll._scrollRing}.
@@ -387,6 +427,16 @@ export class SmartScroll {
   // attribute — a scrollbar drag, chiefly — moved the scroller, and
   // the restore is superseded. See `applyRestoreTarget`.
   private _restoreBaselineTop: number | null = null;
+
+  // Whether the installed target waives the baseline-drift supersede
+  // above. The supersede's premise is that content changes do not move
+  // `scrollTop`, which holds for growth BELOW the viewport and fails for
+  // a re-wrap ABOVE it — exactly what a card width change produces. A
+  // restore installed to survive a width change would therefore read its
+  // own reflow as a scrollbar drag and cancel itself on the first
+  // delivery. `isUserScrolling` still supersedes, so a real gesture
+  // during the resize still takes the position.
+  private _restoreSuspendsDriftSupersede = false;
 
   // Listener function references stored for removeEventListener
   private readonly _onScroll: () => void;
@@ -874,11 +924,23 @@ export class SmartScroll {
    * A pending restore is incompatible with following the live edge,
    * so this disengages follow-bottom — the auto-pin must not fight
    * the restore write.
+   *
+   * `suspendDriftSupersede` is for a restore installed across a
+   * reflow the restore itself is meant to absorb — a card width
+   * change, where content re-wrapping above the viewport moves
+   * `scrollTop` on its own. Without it such a restore reads that
+   * motion as an unattributable actor and cancels itself; with it the
+   * only remaining supersede is a real user gesture.
    */
-  setRestoreTarget(resolver: () => number | null): void {
+  setRestoreTarget(
+    resolver: () => number | null,
+    opts?: { suspendDriftSupersede?: boolean },
+  ): void {
     if (this._disposed) return;
     this._restoreTarget = resolver;
     this._restoreBaselineTop = null;
+    this._restoreSuspendsDriftSupersede =
+      opts?.suspendDriftSupersede === true;
     this._setFollowingBottom(false, 'restore-target');
   }
 
@@ -886,6 +948,7 @@ export class SmartScroll {
   clearRestoreTarget(): void {
     this._restoreTarget = null;
     this._restoreBaselineTop = null;
+    this._restoreSuspendsDriftSupersede = false;
   }
 
   /**
@@ -908,25 +971,19 @@ export class SmartScroll {
     if (this._disposed) return;
     const resolver = this._restoreTarget;
     if (resolver === null) return;
-    // A user scroll gesture supersedes the restore — they own the
-    // position now. Clear so a later commit doesn't fight them.
-    if (this.isUserScrolling) {
-      this.clearRestoreTarget();
-      return;
-    }
-    // Externally-moved supersede. Pointer, wheel, and keyboard gestures
-    // are caught above, but a native scrollbar drag delivers no events
-    // to the container — the phase machine sits in `idle` while the
-    // user scrubs. The heartbeat's own writes record their post-write
-    // `scrollTop` as the baseline below (clamping folded in, and DOM
-    // content growth never moves `scrollTop`), so a scroller found away
-    // from that baseline was moved by someone else. That someone owns
-    // the position — writing the restore over it is the "drag toward
-    // the bottom, snap back to the anchor, repeat" trap.
+    // Who owns the position? A gesture SmartScroll saw, or a
+    // displacement it cannot attribute (a native scrollbar drag
+    // delivers no events, so the phase machine sits in `idle` while
+    // the user scrubs) means the user does — clear, so a later commit
+    // does not fight them. The whole rule, and why a width-change
+    // target waives half of it, is in `restoreSupersede`.
     if (
-      this._restoreBaselineTop !== null &&
-      Math.abs(this._container.scrollTop - this._restoreBaselineTop) >
-        RESTORE_SUPERSEDE_DRIFT_PX
+      restoreSupersede({
+        isUserScrolling: this.isUserScrolling,
+        baselineTop: this._restoreBaselineTop,
+        currentTop: this._container.scrollTop,
+        suspendDriftSupersede: this._restoreSuspendsDriftSupersede,
+      }) !== null
     ) {
       this.clearRestoreTarget();
       return;

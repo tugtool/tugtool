@@ -83,16 +83,24 @@ import {
   clampScale,
   fitScale,
   layoutSpread,
+  pageAnchorAt,
   PDF_SPACING,
+  scrollTopForPageAnchor,
   spreadIndexOfPage,
   spreadsFor,
   steppedScale,
   visiblePages,
   type PdfLayout,
+  type PdfPageAnchor,
   type PdfPageBox,
   type PdfPageMode,
   type PdfPageSize,
 } from "@/lib/pdf-layout";
+import {
+  PRESERVE_SCROLLER_ATTR,
+  RESIZE_PRESERVE_BEGIN,
+  RESIZE_PRESERVE_END,
+} from "@/lib/resize-episode";
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { Check } from "lucide-react";
 import {
@@ -455,6 +463,61 @@ export function PdfView({
     viewport.height > 0
       ? visiblePages(layout, scrollTop, viewport.height, RENDER_MARGIN_PX)
       : layout.boxes.slice(0, 1).map((box) => box.page);
+
+  // ---- Holding the reader's place across a card width change ----
+  //
+  // The generic element anchor the resize episode offers is wrong here. Every
+  // number in this layout comes from a scale, and under `fit-width` the scale
+  // is the card's width: narrowing the card renders every page smaller, so a
+  // page's top edge is not a fixed point and holding one puts the reader
+  // somewhere else on it. The page and the fraction of the way down it are
+  // what survive, so this scroller claims the episode and answers in those.
+  const layoutRef = useRef<PdfLayout>(layout);
+  const pageAnchorRef = useRef<PdfPageAnchor | null>(null);
+
+  const relandPageAnchor = useCallback(() => {
+    const anchor = pageAnchorRef.current;
+    const scroller = scrollerRef.current;
+    if (anchor === null || scroller === null) return;
+    const next = scrollTopForPageAnchor(layoutRef.current, anchor);
+    if (next === null) return;
+    if (Math.abs(scroller.scrollTop - next) > 0.5) {
+      scroller.scrollTop = next;
+      setScrollTop(next);
+    }
+  }, []);
+
+  // [L03] the listeners must exist before any gesture can raise an episode.
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    scroller.setAttribute(PRESERVE_SCROLLER_ATTR, "");
+    const onPreserveBegin = (event: Event): void => {
+      const anchor = pageAnchorAt(layoutRef.current, scroller.scrollTop);
+      if (anchor === null) return;
+      event.preventDefault();
+      pageAnchorRef.current = anchor;
+    };
+    const onPreserveEnd = (): void => {
+      relandPageAnchor();
+      pageAnchorRef.current = null;
+    };
+    scroller.addEventListener(RESIZE_PRESERVE_BEGIN, onPreserveBegin);
+    scroller.addEventListener(RESIZE_PRESERVE_END, onPreserveEnd);
+    return () => {
+      scroller.removeEventListener(RESIZE_PRESERVE_BEGIN, onPreserveBegin);
+      scroller.removeEventListener(RESIZE_PRESERVE_END, onPreserveEnd);
+      scroller.removeAttribute(PRESERVE_SCROLLER_ATTR);
+    };
+  }, [relandPageAnchor]);
+
+  // The layout is derived per render, so the ref is how the listeners above
+  // read the CURRENT one at fire time ([L07]); re-landing here is what makes
+  // the anchor track each intermediate scale rather than snapping at the end.
+  useLayoutEffect(() => {
+    layoutRef.current = layout;
+    relandPageAnchor();
+  });
 
   // ---- Mode, zoom, and navigation ----
 

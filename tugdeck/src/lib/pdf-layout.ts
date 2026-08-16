@@ -246,3 +246,52 @@ export function visiblePages(
     .filter((box) => box.y < bottom && box.y + box.height > top)
     .map((box) => box.page);
 }
+
+// ---------------------------------------------------------------------------
+// Holding the reader's place
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a reader is in a PDF, in coordinates that survive a re-layout.
+ *
+ * A page and a fraction of the way down it, rather than a pixel. Every
+ * dimension of this layout is derived from a scale, and the scale changes
+ * whenever the card does: under `fit-width` a narrower card renders every page
+ * smaller, so the same pixel offset lands on a different part of a different
+ * page. The page number and the fraction are the two quantities that do not
+ * move when the scale does.
+ */
+export interface PdfPageAnchor {
+  /** 1-based page number. */
+  page: number;
+  /** How far down that page the viewport top falls, 0…1. */
+  fraction: number;
+}
+
+/** The page under `scrollTop`, and how far into it, or `null` for an empty layout. */
+export function pageAnchorAt(
+  layout: PdfLayout,
+  scrollTop: number,
+): PdfPageAnchor | null {
+  if (layout.boxes.length === 0) return null;
+  // The first page whose bottom is still below the viewport top. Falling off
+  // the end means the reader is past the last page's bottom — the gap after
+  // it — which the last page's end represents faithfully enough.
+  const box =
+    layout.boxes.find((b) => b.y + b.height > scrollTop) ??
+    layout.boxes[layout.boxes.length - 1];
+  if (box.height <= 0) return { page: box.page, fraction: 0 };
+  const fraction = (scrollTop - box.y) / box.height;
+  return { page: box.page, fraction: Math.max(0, Math.min(1, fraction)) };
+}
+
+/** The `scrollTop` that puts `anchor` back, or `null` when its page is not in this layout. */
+export function scrollTopForPageAnchor(
+  layout: PdfLayout,
+  anchor: PdfPageAnchor,
+): number | null {
+  const box = layout.boxes.find((b) => b.page === anchor.page);
+  if (box === undefined) return null;
+  const max = Math.max(0, layout.height);
+  return Math.max(0, Math.min(max, box.y + anchor.fraction * box.height));
+}

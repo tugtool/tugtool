@@ -252,6 +252,10 @@ export const TugTabView = React.forwardRef<HTMLDivElement, TugTabViewProps>(
         <div
           ref={setListRef}
           className="tug-tab-view-list"
+          // Both regions scroll independently, so both carry their own scroll
+          // identity — keyed off the sender id so two tab views in one card
+          // cannot collide.
+          data-tug-scroll-key={`${effectiveSenderId}/tab-list`}
           role="tablist"
           aria-orientation="vertical"
           data-testid="tug-tab-view-list"
@@ -282,7 +286,10 @@ export const TugTabView = React.forwardRef<HTMLDivElement, TugTabViewProps>(
             </button>
           ))}
         </div>
-        <div className="tug-tab-view-detail">
+        <div
+          className="tug-tab-view-detail"
+          data-tug-scroll-key={`${effectiveSenderId}/tab-detail`}
+        >
           <TabViewValueContext.Provider value={value}>
             {children}
           </TabViewValueContext.Provider>

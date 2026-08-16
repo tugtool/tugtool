@@ -20,6 +20,10 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef, useSyncExternalStore, useLayoutEffect } from "react";
 import { animate, type TugAnimation } from "@/components/tugways/tug-animator";
 import {
+  beginResizeEpisode,
+  type ResizeEpisodeHandle,
+} from "@/lib/resize-episode";
+import {
   getTugTiming,
   getTugZoom,
   isTugMotionEnabled,
@@ -1685,6 +1689,17 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   const prevRailModesRef = useRef<Map<SidebarSide, RailMode> | null>(null);
   /** The raw (unscaled) settle duration read back for the current gesture. */
   const settleDurationRef = useRef(IMPOSITION_SETTLE_MS);
+  /**
+   * The open resize episode on each frame, by pane id — DOM zone, never React
+   * state.
+   *
+   * A settle that changes a frame's width re-wraps everything inside it, and
+   * the `scrollTop` a scroller was left at names different content afterwards.
+   * The episode brackets that: armed with the OLD geometry still on screen, so
+   * each scroller captures what the user is looking at before it moves, and
+   * ended once the new geometry has settled.
+   */
+  const settleEpisodesRef = useRef<Map<string, ResizeEpisodeHandle>>(new Map());
 
   // Hold every session card's notifications for the length of the
   // gesture, and release them on the same edges the tweens land on.
@@ -1779,6 +1794,19 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const motion = isTugMotionEnabled();
       const firstRects = settleFirstRectsRef.current;
       firstRects.clear();
+      // Open the episodes here, on the near side of the commit, because this
+      // is the last moment the old layout is still on screen — a scroller
+      // cannot say what the user is looking at once the content has already
+      // re-wrapped. Unconditional on `motion`: reduced motion still changes
+      // the width, it just changes it in one step, and a step the eye cannot
+      // follow is exactly the one worth anchoring.
+      const episodes = settleEpisodesRef.current;
+      for (const [, handle] of episodes) handle.end();
+      episodes.clear();
+      // The episode's own safety net is sized from the window it brackets.
+      // Read once: the custom property survives from the previous settle, and
+      // falls back to the constant before the first one has written it.
+      const episodeWindowMs = readSettleMs(el) * getTugTiming();
       for (const frame of el.querySelectorAll<HTMLElement>(
         ".tug-pane[data-pane-id]",
       )) {
@@ -1788,6 +1816,7 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const paneId = frame.getAttribute("data-pane-id");
         if (paneId === null) continue;
         if (motion) firstRects.set(paneId, frame.getBoundingClientRect());
+        episodes.set(paneId, beginResizeEpisode(frame, episodeWindowMs));
         const running = settleTweensRef.current.get(paneId);
         if (running !== undefined) {
           for (const anim of running.anims) anim.cancel("snap-to-end");
@@ -1848,6 +1877,11 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           for (const anim of entry.anims) anim.cancel("snap-to-end");
           clearFlip(paneId, entry.el, entry.anims);
         }
+        // Same sweep, for the same reason: an episode the Last pass never
+        // reached (no tween on that frame, a window with no animation clock
+        // at all) closes here rather than waiting for its own net.
+        for (const [, handle] of settleEpisodesRef.current) handle.end();
+        settleEpisodesRef.current.clear();
       }, windowMs);
     };
     const unsubscribe = store.subscribe(arm);
@@ -1863,6 +1897,8 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         for (const anim of entry.anims) anim.cancel("snap-to-end");
         clearFlip(paneId, entry.el, entry.anims);
       }
+      for (const [, handle] of settleEpisodesRef.current) handle.end();
+      settleEpisodesRef.current.clear();
       settleFirstRectsRef.current.clear();
       settleFadePlanRef.current.clear();
       containerRef.current?.removeAttribute("data-imposer-settling");
@@ -1877,16 +1913,37 @@ export function DeckCanvas(_props: DeckCanvasProps) {
   useLayoutEffect(() => {
     const el = containerRef.current;
     const firstRects = settleFirstRectsRef.current;
+    // Every episode this commit does not go on to hand a tween is finished
+    // here: the new geometry is in the DOM, so ending lands each anchor
+    // against the layout the user is about to see. The tweened ones are
+    // ended by their own completion below, after the inline residue is
+    // handed back.
+    const endEpisode = (paneId: string): void => {
+      const handle = settleEpisodesRef.current.get(paneId);
+      if (handle === undefined) return;
+      settleEpisodesRef.current.delete(paneId);
+      handle.end();
+    };
+    const endAllEpisodes = (): void => {
+      for (const [, handle] of settleEpisodesRef.current) handle.end();
+      settleEpisodesRef.current.clear();
+    };
     if (el === null || firstRects.size === 0) {
       firstRects.clear();
+      endAllEpisodes();
       return;
     }
     // Reduced motion: the layout has already snapped, and that IS the settle.
     // The check is made here rather than left to TugAnimator, which would
     // strip the spatial keyframes and substitute an opacity fade — a flash on
     // every frame, all of which already sit where they belong.
+    //
+    // The episodes still close here, and closing them is the whole of the
+    // preservation on this path: no tween ran, so there was nothing to
+    // re-anchor per frame, and the one apply at the end is exact.
     if (!isTugMotionEnabled()) {
       firstRects.clear();
+      endAllEpisodes();
       return;
     }
     const clearFlip = clearFlipRef.current;
@@ -1898,8 +1955,16 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       const paneId = frame.getAttribute("data-pane-id");
       if (paneId === null) continue;
       const firstRect = firstRects.get(paneId);
-      if (firstRect === undefined) continue;
-      if (frame.hasAttribute("data-gesture")) continue;
+      if (firstRect === undefined) {
+        endEpisode(paneId);
+        continue;
+      }
+      // A frame the pointer took over since the settle armed: the drag owns
+      // its geometry now, and its own episode owns the scroll under it.
+      if (frame.hasAttribute("data-gesture")) {
+        endEpisode(paneId);
+        continue;
+      }
       const lastRect = frame.getBoundingClientRect();
       const fade = fadePlan.get(paneId);
       const anims: TugAnimation[] = [];
@@ -1983,7 +2048,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
         const widthTweens = widthChanges && !widthSmears;
         // A frame that did not move and did not change size gets no animation
         // at all.
-        if (dx === 0 && dy === 0 && !widthChanges && !heightTweens) continue;
+        if (dx === 0 && dy === 0 && !widthChanges && !heightTweens) {
+          endEpisode(paneId);
+          continue;
+        }
         if (widthTweens) restores.push(inlineRestorer(frame, "width"));
         if (heightTweens) restores.push(inlineRestorer(frame, "height"));
         // The scale anchors the frame's top-left corner, which is the corner
@@ -2026,7 +2094,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
           ),
         );
       }
-      if (anims.length === 0) continue;
+      if (anims.length === 0) {
+        endEpisode(paneId);
+        continue;
+      }
       settleTweensRef.current.set(paneId, { el: frame, anims });
       // One completion for the whole settle, after every tween's own commit
       // has landed — TugAnimator resolves `finished` after committing, so
@@ -2037,6 +2108,10 @@ export function DeckCanvas(_props: DeckCanvasProps) {
       void Promise.allSettled(anims.map((anim) => anim.finished)).then(() => {
         for (const restore of restores) restore();
         clearFlip(paneId, frame, anims);
+        // After the restorers, so the final anchor is read against the
+        // geometry the frame actually keeps rather than the baked pixel
+        // width the tween committed on its way out.
+        endEpisode(paneId);
       });
     }
     firstRects.clear();
