@@ -31,6 +31,7 @@ pub mod operator_ask;
 pub mod payload_inspector;
 pub mod pulse;
 pub mod refs;
+pub mod repo_files;
 pub mod reporter;
 pub mod reporter_wake;
 pub mod secret_filter;

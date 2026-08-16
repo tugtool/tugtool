@@ -494,11 +494,11 @@ No new app-test file: [#step-8] extends `tests/app-test/at0365-gazette-card.test
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | Path resolution, repair, and `repo.ls`; grep scope becomes provable | pending | — |
-| #step-2 | `repo.read` | pending | — |
-| #step-3 | `repo.outline` | pending | — |
-| #step-4 | Instruction teachings and pins | pending | — |
-| #step-5 | Integration checkpoint: replay the incident question | pending | — |
+| #step-1 | Path resolution, repair, and `repo.ls`; grep scope becomes provable | done | `c5a6b028d` |
+| #step-2 | `repo.read` | done | `18afad71e` |
+| #step-3 | `repo.outline` | done | `1b760ff46` |
+| #step-4 | Instruction teachings and pins | done | `bd373b452` |
+| #step-5 | Integration checkpoint: replay the incident question | done | `732a67aff` |
 | #step-6 | Question refs on the wire | pending | — |
 | #step-7 | Verified mentions and outline seeding | pending | — |
 | #step-8 | App-test: the pointing gesture | pending | — |

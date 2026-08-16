@@ -333,6 +333,9 @@ Available verbs and their arguments:
 - git.log — optionally grep, pickaxe (content search), path, since, until, n, session_id. Commits.
 - git.show — sha, optionally path, session_id. One commit's message and diff.
 - repo.grep — pattern, optionally path_scope, session_id. The current state of the tree.
+- repo.ls — pattern (a name fragment, a basename, or a git glob), optionally session_id. Real paths matching that name. Use it when you are unsure a file is spelled the way you think it is.
+- repo.read — path, optionally start and end, or around_line with context, plus session_id. A file's actual lines, numbered. This is how you find out what a file SAYS.
+- repo.outline — path, optionally session_id. A file's structural lines with their line numbers: headings, labelled decisions, declarations. Ask this first when the question is WHERE in a document something is, then read the line it points at.
 
 Strategy that works: the channel's prose is good at locating WHEN something happened and WHICH session did it; the ledgers and git are what CONFIRM the specific fact. So narrow with gazette.search, facts.list, or changes.for_path, then confirm. Never rely on a post's wording as the final answer when a ledger can settle it.
 
@@ -345,6 +348,12 @@ facts.search answers \"find facts about X\" (best matches first); facts.list ans
 A search query is AND-ed term by term: \"tooltip colors\" finds only records that contain BOTH words, and a phrase that reads naturally to a person often matches nothing at all. Search with ONE distinctive word and let the results narrow you. When the question names a kind of thing — \"which commit\", \"what did we run\", \"which test failed\" — pass the matching kind, or the page goes to whichever kind happened to say that word the loudest.
 
 Names are findable by their parts: tooltip finds TugTooltip, sync finds useSyncExternalStore, 0365 finds at0365-gazette-card.test.ts. Search the plain word rather than the spelling you would type in code.
+
+A path argument is a real path. path and path_scope take a repo-relative path or a git glob — tuglaws/design-decisions.md, docs/, *.css — and NEVER a SQL LIKE pattern. changes.for_path is the only verb that speaks LIKE, and its % grammar must not travel: a path_scope of \"%design-decisions.md\" matches no file at all, and asking for both verbs in one round is exactly how that mistake gets made. If you are unsure how a file is spelled, spend one repo.ls on it.
+
+Grep locates; read answers. repo.grep tells you WHERE a word is, in lines clipped to 240 characters — it cannot tell you what a passage says. When the question is what a file contains, or where inside it something lives, ask repo.outline for its structure and repo.read for the lines themselves. A repo.grep hit's line number goes straight into repo.read's around_line, so locate-then-read is one round, not two.
+
+An outline gives boundaries, not content: it tells you a decision starts at line 267 and the next one at line 333, never what sits between them. So when the question is where inside a named file something is, ask for repo.outline AND a repo.grep for the question's most distinctive word IN THE SAME ROUND — the grep's line numbers land inside the outline's spans, and the two together answer without spending a second round on it.
 
 A term the asker coined rarely appears verbatim in any file: \"the Z-zone drawing\" names a diagram whose own labels are Z0, Z1, Z2. grep for the piece most likely to be IN the text — zone, not Z-zone. A zero-match repo.grep retries itself case-insensitively and then by the pattern's pieces, and its note says when a rung fired — so read pattern_used before treating the rows as literal matches.
 
@@ -393,7 +402,11 @@ Spell a commit sha exactly as the result gives it, in backticks, and let the app
 
 REFS are the clickable provenance on your answer. Include one for each file, commit, plan, brief, or session the answer genuinely rests on. Every target MUST be copied EXACTLY from the results — anything you reconstruct or abbreviate cannot be linked and will be discarded. Ref kinds are: session, file, commit, plan, brief.
 
-Before you write that something could not be looked up, read this list again — it is every verb you may ask for: gazette.search, gazette.window, facts.search, facts.list, facts.window, shell.history, sessions.list, session.prompts, changes.for_session, changes.for_path, git.log, git.show, repo.grep. git.log takes a grep argument, so \"which commit was about X\" is always reachable. If one of them could have answered it, ask for that verb rather than describing the gap — and if this is your last round, name the lookup plainly as the follow-up the reader could ask for, instead of leaving them thinking the system has no way to reach it.
+Before you write that something could not be looked up, read this list again — it is every verb you may ask for: gazette.search, gazette.window, facts.search, facts.list, facts.window, shell.history, sessions.list, session.prompts, changes.for_session, changes.for_path, git.log, git.show, repo.grep, repo.ls, repo.read, repo.outline. git.log takes a grep argument, so \"which commit was about X\" is always reachable. If one of them could have answered it, ask for that verb rather than describing the gap — and if this is your last round, name the lookup plainly as the follow-up the reader could ask for, instead of leaving them thinking the system has no way to reach it.
+
+NEVER write that something is absent from a file unless a scan of that exact file came back ok with zero rows. A verb that errored did not look, and a verb whose note says its path was repaired looked somewhere else — neither is evidence of absence, and saying \"the term does not appear in that document\" on the strength of one is the worst answer this channel can give, because it is confident and wrong. When a lookup failed, say the lookup failed.
+
+When a result carries a note, a path_used, or a path_scope_used that differs from what was asked for, say so in the answer. The system repairs a misspelled or malformed path rather than refusing it, so the file that was actually read may not be the file the question named — presenting a repaired match as an exact one hides the one fact the reader needs to judge it.
 
 If the results are not enough and one more lookup would settle it, you may ask for more verbs instead of answering — but ONLY ONCE. If you have already been given a second round of results, you must answer now with what you have, saying what remains unconfirmed.
 
@@ -581,6 +594,28 @@ mod tests {
         // model was already holding. The horizon clause is the other half:
         // without grep/since/path, git.log cannot see past 20 commits, so a
         // model that reaches for it bare concludes the commit does not exist.
+        // Incident B, 2026-08-16: the model wrote a correct pattern (`zone`)
+        // with a path_scope of `%design-decisions.md` — `changes.for_path`'s
+        // SQL LIKE grammar, carried into a git pathspec in the same round. The
+        // scope matched no file, so nothing was searched, and the answering
+        // model read `rows=0` as proof of absence. Rust now refuses an
+        // unmatched scope outright; this is the half that stops the model
+        // writing one in the first place.
+        assert!(retrieve.contains("A path argument is a real path"));
+        assert!(retrieve.contains("NEVER a SQL LIKE pattern"));
+        assert!(retrieve.contains("changes.for_path is the only verb that speaks LIKE"));
+        // The structural gap the file verbs close: thirteen verbs could locate
+        // a line and none could read one, so a question about what a file says
+        // had to be answered from 240-character clippings.
+        assert!(retrieve.contains("Grep locates; read answers"));
+        assert!(retrieve.contains("around_line"));
+        // Seen in the step-5 replay: given only an outline, the model named
+        // D97's span and then hedged, because an outline reports where a
+        // decision begins and never what is inside it. Pairing it with a grep
+        // in the same round is what turns two cheap verbs into one exact
+        // answer, and costs no extra round.
+        assert!(retrieve.contains("An outline gives boundaries, not content"));
+        assert!(retrieve.contains("IN THE SAME ROUND"));
         assert!(retrieve.contains("is git.log with grep set to X"));
         assert!(retrieve.contains("git.log returns only the last 20 commits"));
 
@@ -618,6 +653,18 @@ mod tests {
             assert!(answer.contains(verb), "verb {verb} missing from answer");
         }
         assert!(answer.contains("git.log takes a grep argument"));
+        // The absence rule. `rows=0` only became evidence of anything once an
+        // unmatched scope started erroring instead of returning empty; this is
+        // the sentence that tells the model what its one meaning is, and it is
+        // the direct counter to the false-absence answer of 2026-08-16.
+        assert!(answer.contains("NEVER write that something is absent"));
+        assert!(answer.contains("ok with zero rows"));
+        assert!(answer.contains("did not look"));
+        // A repaired path means the file read may not be the file named, which
+        // is a fact only the answer can surface — the reader cannot see the
+        // verb results.
+        assert!(answer.contains("path_used"));
+        assert!(answer.contains("path_scope_used"));
     }
 
     /// Every job answers with JSON that a strict parser reads, so an

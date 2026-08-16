@@ -36,6 +36,7 @@ use tokio::process::Command;
 use tracing::{info, warn};
 
 use crate::feeds::facts_library;
+use crate::feeds::repo_files;
 use crate::search_tokens::{expand_subwords, relax_or, sanitize_fts_query};
 use crate::session_ledger::{
     FactRow, FactSearchFilter, FactSearchHit, GazetteSearchFilter, SessionLedger, SessionRow,
@@ -63,6 +64,19 @@ const GIT_LOG_DEFAULT_N: usize = 20;
 const GIT_SHOW_MAX_LINES: usize = 400;
 const GIT_SHOW_MAX_BYTES: usize = 16 * 1024;
 const GREP_MAX_MATCHES: usize = 100;
+/// `repo.read`'s caps. Deliberately the same numbers `git.show` uses: both
+/// results land in the same answering turn, so a second cap vocabulary for the
+/// same consumer would be two ways to say one thing.
+const READ_MAX_LINES: usize = GIT_SHOW_MAX_LINES;
+const READ_MAX_BYTES: usize = GIT_SHOW_MAX_BYTES;
+/// Lines either side of `around_line` when the model names no width. Forty is
+/// a screenful of context around a grep hit — enough to read a decision and
+/// the drawing under it, well inside the line cap.
+const READ_CONTEXT_DEFAULT: i64 = 40;
+/// `repo.outline`'s entry cap. Two hundred rows is a map of the largest file
+/// in this repository; past that the map costs more context than the read it
+/// was meant to save.
+const OUTLINE_MAX_ENTRIES: usize = 200;
 const FACTS_SEARCH_LIMIT: usize = 30;
 const FACTS_LIST_LIMIT: usize = 30;
 const FACTS_WINDOW_MAX_N: usize = 20;
@@ -118,6 +132,9 @@ pub const VERB_NAMES: &[&str] = &[
     "git.log",
     "git.show",
     "repo.grep",
+    "repo.ls",
+    "repo.read",
+    "repo.outline",
 ];
 
 // MARK: - Entry point
@@ -154,6 +171,9 @@ async fn dispatch(ctx: &OperatorContext, name: &str, args: &Value) -> Result<Val
         "git.log" => git_log(ctx, args).await,
         "git.show" => git_show(ctx, args).await,
         "repo.grep" => repo_grep(ctx, args).await,
+        "repo.ls" => repo_ls(ctx, args).await,
+        "repo.read" => repo_read(ctx, args).await,
+        "repo.outline" => repo_outline(ctx, args).await,
         other => Err(format!(
             "unknown verb {other:?}; the verbs are: {}",
             VERB_NAMES.join(", ")
@@ -907,7 +927,7 @@ fn changes_for_path(ctx: &OperatorContext, args: &Value) -> Result<Value, String
 /// `kill_on_drop` matters: the caller's timeout drops this future, and without
 /// it a wedged `git grep` over a huge tree would keep running after nobody is
 /// listening.
-async fn run_git(dir: &Path, args: &[String]) -> Result<String, String> {
+pub(crate) async fn run_git(dir: &Path, args: &[String]) -> Result<String, String> {
     if !dir.is_dir() {
         return Err(format!("{} is not a directory", dir.display()));
     }
@@ -1056,14 +1076,18 @@ fn grep_fragments(pattern: &str) -> Vec<String> {
     out
 }
 
-/// One `git grep` run for the ladder below: every pattern OR-ed, scoped when a
-/// scope was given, matches parsed into rows. Returns the rows plus whether
-/// the cap cut them off.
+/// One `git grep` run for the ladder below: every pattern OR-ed, scoped to the
+/// pathspecs resolution settled on, matches parsed into rows. Returns the rows
+/// plus whether the cap cut them off.
+///
+/// `scopes` is empty for a whole-tree grep and holds one pathspec in the
+/// ordinary scoped case; it holds several only when [P03]'s repair guessed at
+/// a scope that matched nothing as written.
 async fn grep_once(
     dir: &std::path::Path,
     patterns: &[String],
     insensitive: bool,
-    scope: Option<&str>,
+    scopes: &[String],
 ) -> Result<(Vec<Value>, bool), String> {
     let mut argv: Vec<String> = vec!["grep".into(), "-n".into(), "-I".into(), "--no-color".into()];
     if insensitive {
@@ -1073,9 +1097,9 @@ async fn grep_once(
         argv.push("-e".into());
         argv.push(pattern.clone());
     }
-    if let Some(scope) = scope {
+    if !scopes.is_empty() {
         argv.push("--".into());
-        argv.push(scope.to_string());
+        argv.extend(scopes.iter().cloned());
     }
     let stdout = run_git(dir, &argv).await?;
     let all: Vec<&str> = stdout.lines().filter(|l| !l.is_empty()).collect();
@@ -1102,38 +1126,56 @@ async fn grep_once(
 /// milliseconds. `pattern_used` reports what actually produced the rows, and
 /// a rung that fired says so in `note`, because a loose match presented as an
 /// exact one is worse than no match at all.
+///
+/// The **scope** is resolved before any of that runs ([P03]). The ladder here
+/// relaxes the pattern and never the scope, so a `path_scope` matching no file
+/// used to send all three rungs against an empty scope and return `rows=0` —
+/// a scan that never happened, indistinguishable from a clean one. Resolution
+/// makes that case an error instead, which is what gives `rows=0` its single
+/// meaning: this scope was searched and the pattern is not in it.
 async fn repo_grep(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
     let dir = project_dir(ctx, args)?;
     let pattern = req_str(args, "pattern")?;
     plain_arg(pattern, "pattern")?;
-    let scope = opt_str(args, "path_scope")?;
-    if let Some(scope) = scope {
+
+    let mut scopes: Vec<String> = Vec::new();
+    let mut scope_note: Option<String> = None;
+    let mut scope_used: Option<String> = None;
+    if let Some(scope) = opt_str(args, "path_scope")? {
         path_arg(scope, "path_scope")?;
+        let resolved = repo_files::resolve_grep_scope(&dir, scope).await?;
+        scope_used = Some(resolved.used.join(", "));
+        scope_note = resolved.note;
+        scopes = resolved.used;
     }
 
     let exact = [pattern.to_string()];
-    let (mut matches, mut truncated) = grep_once(&dir, &exact, false, scope).await?;
+    let (mut matches, mut truncated) = grep_once(&dir, &exact, false, &scopes).await?;
     let mut pattern_used = pattern.to_string();
-    let mut note: Option<String> = None;
+    let mut pattern_note: Option<String> = None;
     if matches.is_empty() {
-        let (rows, cut) = grep_once(&dir, &exact, true, scope).await?;
+        let (rows, cut) = grep_once(&dir, &exact, true, &scopes).await?;
         if !rows.is_empty() {
             (matches, truncated) = (rows, cut);
-            note = Some("no case-sensitive match; showing case-insensitive matches".to_string());
+            pattern_note =
+                Some("no case-sensitive match; showing case-insensitive matches".to_string());
         }
     }
     if matches.is_empty() {
         let fragments = grep_fragments(pattern);
         // A pattern that IS its own single fragment has nothing left to try:
         // the case-insensitive rung already ran exactly this search.
-        if !fragments.is_empty()
-            && !(fragments.len() == 1 && fragments[0].eq_ignore_ascii_case(pattern))
-        {
-            let (rows, cut) = grep_once(&dir, &fragments, true, scope).await?;
+        let worth_trying = match fragments.as_slice() {
+            [] => false,
+            [only] => !only.eq_ignore_ascii_case(pattern),
+            _ => true,
+        };
+        if worth_trying {
+            let (rows, cut) = grep_once(&dir, &fragments, true, &scopes).await?;
             if !rows.is_empty() {
                 (matches, truncated) = (rows, cut);
                 pattern_used = fragments.join("|");
-                note = Some(
+                pattern_note = Some(
                     "no literal match; showing case-insensitive matches for the pattern's pieces"
                         .to_string(),
                 );
@@ -1148,10 +1190,192 @@ async fn repo_grep(ctx: &OperatorContext, args: &Value) -> Result<Value, String>
         "count": matches.len(),
         "truncated": truncated,
     });
-    if let Some(note) = note {
+    if let Some(used) = scope_used {
+        out["path_scope_used"] = json!(used);
+    }
+    let note = [scope_note, pattern_note]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<String>>();
+    if !note.is_empty() {
+        out["note"] = json!(note.join("; "));
+    }
+    Ok(out)
+}
+
+/// `repo.read` — a file's content, numbered, capped, and contained.
+///
+/// The verb the Operator did not have. Thirteen verbs could locate a line and
+/// none could read one, so a question about what a file *says* was
+/// unanswerable by construction and the model had to answer it anyway.
+///
+/// Numbering is what makes the result compose: an answer can say "the drawing
+/// starts at line 271" without counting, and `repo.grep`'s `line` field feeds
+/// `around_line` directly. `total_lines` is what makes a capped read honest —
+/// the model can tell there is more file and where it stands in it, instead of
+/// reading the cap as the end.
+async fn repo_read(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let dir = project_dir(ctx, args)?;
+    let path = req_str(args, "path")?;
+    path_arg(path, "path")?;
+    let resolved = repo_files::resolve_readable_path(&dir, path).await?;
+
+    if resolved.absolute.is_dir() {
+        return Err(format!(
+            "path {:?} is a directory, not a file; repo.ls lists what is in it",
+            resolved.used
+        ));
+    }
+    let bytes = std::fs::read(&resolved.absolute)
+        .map_err(|err| format!("path {:?} could not be read: {err}", resolved.used))?;
+    if repo_files::is_binary(&bytes) {
+        return Err(format!(
+            "path {:?} is a binary file and will not be read as text",
+            resolved.used
+        ));
+    }
+    let contents = String::from_utf8_lossy(&bytes);
+    let lines: Vec<&str> = contents.lines().collect();
+    let total = lines.len() as i64;
+
+    let (mut start, mut end) = match opt_i64(args, "around_line")? {
+        Some(around) => {
+            let context = opt_i64(args, "context")?
+                .unwrap_or(READ_CONTEXT_DEFAULT)
+                .clamp(0, READ_MAX_LINES as i64);
+            (around - context, around + context)
+        }
+        None => {
+            // No window named means "the file", which the caps then cut — so
+            // the cut is reported as `truncated` rather than hidden behind a
+            // default `end` that happens to equal the cap.
+            let start = opt_i64(args, "start")?.unwrap_or(1);
+            let end = opt_i64(args, "end")?.unwrap_or(total.max(1));
+            (start, end)
+        }
+    };
+    start = start.clamp(1, total.max(1));
+    end = end.clamp(start, total.max(1));
+
+    let mut out_lines: Vec<Value> = Vec::new();
+    let mut bytes_held = 0usize;
+    let mut truncated = false;
+    for offset in 0..(end - start + 1) {
+        let Some(text) = lines.get((start + offset - 1) as usize) else {
+            break;
+        };
+        if out_lines.len() >= READ_MAX_LINES || bytes_held + text.len() + 1 > READ_MAX_BYTES {
+            truncated = true;
+            break;
+        }
+        bytes_held += text.len() + 1;
+        out_lines.push(json!({ "line": start + offset, "text": text }));
+    }
+    let returned_end = start + out_lines.len() as i64 - 1;
+
+    let mut out = json!({
+        "path": path,
+        "path_used": resolved.used,
+        "lines": out_lines,
+        "start": start,
+        "end": returned_end.max(0),
+        "total_lines": total,
+        "truncated": truncated,
+    });
+    if let Some(note) = resolved.note {
         out["note"] = json!(note);
     }
     Ok(out)
+}
+
+/// `repo.outline` — a file's structural lines, with their line numbers.
+///
+/// "Where in this document is X" is a question about structure, not content,
+/// and answering it with a read spends four hundred lines of the answer's
+/// context to deliver one. An outline answers it in a handful of rows whose
+/// line numbers feed `repo.read`'s `around_line` directly.
+///
+/// An outline with no entries says so explicitly and points at `repo.read`,
+/// because a model that reads "no structure" as "no file" will go on to make
+/// exactly the absence claim this whole line of work exists to prevent.
+async fn repo_outline(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let dir = project_dir(ctx, args)?;
+    let path = req_str(args, "path")?;
+    path_arg(path, "path")?;
+    let resolved = repo_files::resolve_readable_path(&dir, path).await?;
+
+    if resolved.absolute.is_dir() {
+        return Err(format!(
+            "path {:?} is a directory, not a file; repo.ls lists what is in it",
+            resolved.used
+        ));
+    }
+    let bytes = std::fs::read(&resolved.absolute)
+        .map_err(|err| format!("path {:?} could not be read: {err}", resolved.used))?;
+    if repo_files::is_binary(&bytes) {
+        return Err(format!(
+            "path {:?} is a binary file and has no outline",
+            resolved.used
+        ));
+    }
+    let contents = String::from_utf8_lossy(&bytes);
+    let extension = std::path::Path::new(&resolved.used)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default();
+
+    let all = repo_files::outline_entries(&contents, extension);
+    let truncated = all.len() > OUTLINE_MAX_ENTRIES;
+    let entries: Vec<Value> = all
+        .iter()
+        .take(OUTLINE_MAX_ENTRIES)
+        .map(|entry| json!({ "line": entry.line, "kind": entry.kind, "text": entry.text }))
+        .collect();
+
+    let mut notes: Vec<String> = resolved.note.into_iter().collect();
+    if entries.is_empty() {
+        notes.push(
+            "no structural lines recognized in this file; read it with repo.read".to_string(),
+        );
+    }
+    let count = entries.len();
+    let mut out = json!({
+        "path": path,
+        "path_used": resolved.used,
+        "entries": entries,
+        "count": count,
+        "total_lines": contents.lines().count(),
+        "truncated": truncated,
+    });
+    if !notes.is_empty() {
+        out["note"] = json!(notes.join("; "));
+    }
+    Ok(out)
+}
+
+/// `repo.ls` — resolve a name fragment, basename, or git glob to real paths.
+///
+/// The repair ladder [P03] already needed, exposed to the model directly, so
+/// "which file did you mean" is a question it can settle itself in one cheap
+/// verb rather than by guessing at a path and reading an error. Its result is
+/// paths only, so it cannot crowd an answer's context.
+///
+/// An empty result is **not** an error here, unlike an unmatched scope on a
+/// scan: "no file by that name" is a real and complete answer to a naming
+/// question, and it carries no claim about any file's contents.
+async fn repo_ls(ctx: &OperatorContext, args: &Value) -> Result<Value, String> {
+    let dir = project_dir(ctx, args)?;
+    let pattern = req_str(args, "pattern")?;
+    path_arg(pattern, "pattern")?;
+
+    let candidates = repo_files::path_candidates(&dir, pattern).await?;
+    let count = candidates.paths.len();
+    Ok(json!({
+        "pattern": pattern,
+        "paths": candidates.paths,
+        "count": count,
+        "truncated": count >= repo_files::LS_MAX_PATHS,
+    }))
 }
 
 // MARK: - The pipeline
@@ -2046,7 +2270,19 @@ mod tests {
         };
         run(&["init", "-q", "-b", "main"]);
         std::fs::write(dir.path().join("alpha.txt"), "hello gazette\n").unwrap();
-        run(&["add", "alpha.txt"]);
+        // The incident's shape, reproduced: a document in a subdirectory whose
+        // text contains `zone`, so `%design-notes.md` — the LIKE-contaminated
+        // scope that made a scan silently search nothing — has a real file to
+        // be repaired to. It rides the FIRST commit deliberately: several
+        // tests read the last two commits and assert `add beta` is the newest,
+        // so a third commit would move ground they stand on.
+        std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+        std::fs::write(
+            dir.path().join("docs/design-notes.md"),
+            "## Placement\n\nThe card is partitioned into zones.\n",
+        )
+        .unwrap();
+        run(&["add", "alpha.txt", "docs/design-notes.md"]);
         run(&["commit", "-q", "-m", "add alpha"]);
         std::fs::write(dir.path().join("beta.txt"), "second file\n").unwrap();
         run(&["add", "beta.txt"]);
@@ -3206,6 +3442,424 @@ mod tests {
             .expect("grep ran");
         assert_eq!(out["pattern_used"], "gazette");
         assert!(out.get("note").is_none());
+    }
+
+    // MARK: - Path resolution ([P03])
+
+    /// The four rungs, each reached only when the one above it found nothing.
+    #[tokio::test]
+    async fn path_candidates_walks_the_ladder_rung_by_rung() {
+        let repo = git_repo();
+        let dir = repo.path();
+
+        let literal = repo_files::path_candidates(dir, "docs/design-notes.md")
+            .await
+            .expect("resolved");
+        assert_eq!(literal.rung, Some(repo_files::Rung::Literal));
+        assert_eq!(literal.paths, vec!["docs/design-notes.md".to_string()]);
+
+        // The incident's own argument: SQL LIKE grammar in a git pathspec.
+        let stripped = repo_files::path_candidates(dir, "%design-notes.md")
+            .await
+            .expect("resolved");
+        assert_eq!(stripped.rung, Some(repo_files::Rung::BasenameGlob));
+        assert_eq!(stripped.paths, vec!["docs/design-notes.md".to_string()]);
+
+        let glob = repo_files::path_candidates(dir, "design-notes.md")
+            .await
+            .expect("resolved");
+        assert_eq!(glob.rung, Some(repo_files::Rung::BasenameGlob));
+        assert_eq!(glob.paths, vec!["docs/design-notes.md".to_string()]);
+
+        let insensitive = repo_files::path_candidates(dir, "DESIGN-NOTES.MD")
+            .await
+            .expect("resolved");
+        assert_eq!(insensitive.rung, Some(repo_files::Rung::CaseInsensitive));
+        assert_eq!(insensitive.paths, vec!["docs/design-notes.md".to_string()]);
+
+        let nothing = repo_files::path_candidates(dir, "no-such-file.md")
+            .await
+            .expect("resolved");
+        assert_eq!(nothing.rung, None);
+        assert!(nothing.paths.is_empty());
+    }
+
+    /// A directory scope resolves literally however many files it names —
+    /// multiplicity is not ambiguity ([P03]).
+    #[tokio::test]
+    async fn a_directory_pathspec_resolves_literally() {
+        let repo = git_repo();
+        let resolved = repo_files::resolve_grep_scope(repo.path(), "docs/")
+            .await
+            .expect("resolved");
+        assert_eq!(resolved.used, vec!["docs/".to_string()]);
+        assert!(resolved.note.is_none(), "an exact scope carries no note");
+    }
+
+    /// Incident B, end to end: the LIKE-contaminated scope now finds the file
+    /// it meant, searches it, and says the scope was repaired.
+    #[tokio::test]
+    async fn repo_grep_repairs_a_like_contaminated_scope_and_says_so() {
+        let f = fixture();
+        let out = run_verb(
+            &f.ctx,
+            "repo.grep",
+            &json!({"pattern": "zone", "path_scope": "%design-notes.md"}),
+        )
+        .await
+        .expect("grep ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["matches"][0]["path"], "docs/design-notes.md");
+        assert_eq!(out["path_scope_used"], "docs/design-notes.md");
+        assert!(
+            out["note"].as_str().expect("a repair note").contains("%design-notes.md"),
+            "the note names what the model wrote: {}",
+            out["note"]
+        );
+    }
+
+    /// The test that would have caught incident B. A scope matching nothing is
+    /// an error — never `Ok` with `count: 0`, which the answering model reads
+    /// as proof of absence.
+    #[tokio::test]
+    async fn a_scope_that_matches_nothing_is_an_error_not_an_empty_result() {
+        let f = fixture();
+        let result = run_verb(
+            &f.ctx,
+            "repo.grep",
+            &json!({"pattern": "zone", "path_scope": "no-such-file.md"}),
+        )
+        .await;
+        let err = match result {
+            Err(err) => err,
+            Ok(out) => panic!("an unsearched scope must not come back as a result: {out}"),
+        };
+        assert!(err.contains("no-such-file.md"), "names the argument: {err}");
+        assert!(
+            err.contains("nothing was read or searched"),
+            "says the scan never ran: {err}"
+        );
+    }
+
+    /// The near-miss list is what lets the next round name a real file.
+    #[tokio::test]
+    async fn an_unmatched_scope_offers_the_names_it_did_find() {
+        let f = fixture();
+        let err = run_verb(
+            &f.ctx,
+            "repo.grep",
+            &json!({"pattern": "zone", "path_scope": "docs/design-notes.markdown"}),
+        )
+        .await
+        .expect_err("unmatched scope");
+        assert!(
+            err.contains("docs/design-notes.md"),
+            "offers the real neighbour: {err}"
+        );
+    }
+
+    /// An exact scope passes through untouched, note-free.
+    #[tokio::test]
+    async fn repo_grep_with_an_exact_scope_reports_it_unchanged() {
+        let f = fixture();
+        let out = run_verb(
+            &f.ctx,
+            "repo.grep",
+            &json!({"pattern": "zone", "path_scope": "docs/design-notes.md"}),
+        )
+        .await
+        .expect("grep ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["path_scope_used"], "docs/design-notes.md");
+        assert!(out.get("note").is_none());
+    }
+
+    /// A scope that exists and simply does not contain the pattern is the one
+    /// case that may return zero rows — and now it is the only one.
+    #[tokio::test]
+    async fn a_real_scope_with_no_match_is_still_an_honest_empty() {
+        let f = fixture();
+        let out = run_verb(
+            &f.ctx,
+            "repo.grep",
+            &json!({"pattern": "nothinghere", "path_scope": "docs/design-notes.md"}),
+        )
+        .await
+        .expect("grep ran");
+        assert_eq!(out["count"], 0);
+        assert_eq!(out["path_scope_used"], "docs/design-notes.md");
+        assert!(out.get("note").is_none());
+    }
+
+    // MARK: - repo.ls ([S03])
+
+    #[tokio::test]
+    async fn repo_ls_resolves_a_name_fragment_to_real_paths() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.ls", &json!({"pattern": "design-notes"}))
+            .await
+            .expect("ls ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["paths"][0], "docs/design-notes.md");
+    }
+
+    /// Unlike a scan, a naming question's empty answer is a real answer.
+    #[tokio::test]
+    async fn repo_ls_finding_nothing_is_a_result_not_an_error() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.ls", &json!({"pattern": "no-such-file"}))
+            .await
+            .expect("ls ran");
+        assert_eq!(out["count"], 0);
+        assert!(out["paths"].as_array().expect("paths").is_empty());
+    }
+
+    // MARK: - repo.read ([S01])
+
+    /// A file long enough to make the windows and the caps mean something.
+    fn write_long_file(repo: &tempfile::TempDir, name: &str, lines: usize) {
+        let body: String = (1..=lines).map(|n| format!("line {n}\n")).collect();
+        std::fs::write(repo.path().join(name), body).expect("wrote fixture file");
+    }
+
+    #[tokio::test]
+    async fn repo_read_returns_numbered_lines_and_the_real_total() {
+        let f = fixture();
+        write_long_file(&f.repo, "long.txt", 10);
+        let out = run_verb(&f.ctx, "repo.read", &json!({"path": "long.txt"}))
+            .await
+            .expect("read ran");
+        assert_eq!(out["total_lines"], 10);
+        assert_eq!(out["start"], 1);
+        assert_eq!(out["end"], 10);
+        assert_eq!(out["lines"][0], json!({"line": 1, "text": "line 1"}));
+        assert_eq!(out["lines"][9], json!({"line": 10, "text": "line 10"}));
+        assert_eq!(out["truncated"], false);
+        assert!(out.get("note").is_none());
+    }
+
+    #[tokio::test]
+    async fn repo_read_honors_an_explicit_range() {
+        let f = fixture();
+        write_long_file(&f.repo, "long.txt", 50);
+        let out = run_verb(
+            &f.ctx,
+            "repo.read",
+            &json!({"path": "long.txt", "start": 20, "end": 22}),
+        )
+        .await
+        .expect("read ran");
+        assert_eq!(out["start"], 20);
+        assert_eq!(out["end"], 22);
+        assert_eq!(out["lines"].as_array().expect("lines").len(), 3);
+        assert_eq!(out["lines"][0], json!({"line": 20, "text": "line 20"}));
+        assert_eq!(out["total_lines"], 50);
+    }
+
+    /// The grep-hit → read pairing: a line number becomes a window, and the
+    /// window clamps rather than running off either end of the file.
+    #[tokio::test]
+    async fn repo_read_centers_on_a_line_and_clamps_at_both_ends() {
+        let f = fixture();
+        write_long_file(&f.repo, "long.txt", 30);
+        let centered = run_verb(
+            &f.ctx,
+            "repo.read",
+            &json!({"path": "long.txt", "around_line": 15, "context": 2}),
+        )
+        .await
+        .expect("read ran");
+        assert_eq!(centered["start"], 13);
+        assert_eq!(centered["end"], 17);
+
+        let head = run_verb(
+            &f.ctx,
+            "repo.read",
+            &json!({"path": "long.txt", "around_line": 2, "context": 10}),
+        )
+        .await
+        .expect("read ran");
+        assert_eq!(head["start"], 1);
+
+        let tail = run_verb(
+            &f.ctx,
+            "repo.read",
+            &json!({"path": "long.txt", "around_line": 29, "context": 10}),
+        )
+        .await
+        .expect("read ran");
+        assert_eq!(tail["end"], 30);
+    }
+
+    /// A capped read says it was capped, and still says how long the file is —
+    /// which is what stops a model reading the cap as the end of the file.
+    #[tokio::test]
+    async fn a_read_wider_than_the_cap_is_marked_truncated() {
+        let f = fixture();
+        write_long_file(&f.repo, "huge.txt", READ_MAX_LINES + 40);
+        let out = run_verb(&f.ctx, "repo.read", &json!({"path": "huge.txt"}))
+            .await
+            .expect("read ran");
+        assert_eq!(out["truncated"], true);
+        assert_eq!(out["total_lines"], (READ_MAX_LINES + 40) as i64);
+        assert_eq!(out["lines"].as_array().expect("lines").len(), READ_MAX_LINES);
+    }
+
+    #[tokio::test]
+    async fn reading_a_directory_points_at_repo_ls() {
+        let f = fixture();
+        let err = run_verb(&f.ctx, "repo.read", &json!({"path": "docs"}))
+            .await
+            .expect_err("a directory is not a file");
+        assert!(err.contains("directory"), "{err}");
+        assert!(err.contains("repo.ls"), "the error names the way out: {err}");
+    }
+
+    #[tokio::test]
+    async fn a_binary_file_is_refused_rather_than_returned_as_mojibake() {
+        let f = fixture();
+        std::fs::write(f.repo.path().join("blob.bin"), b"PNG\x00\x01\x02rest").unwrap();
+        let err = run_verb(&f.ctx, "repo.read", &json!({"path": "blob.bin"}))
+            .await
+            .expect_err("binary refused");
+        assert!(err.contains("binary"), "{err}");
+        assert!(err.contains("blob.bin"), "the error names the file: {err}");
+    }
+
+    /// `path_arg` reads the argument's text; a symlink is a fact about the
+    /// filesystem. Containment is what catches this one ([P02]).
+    #[tokio::test]
+    async fn a_symlink_pointing_out_of_the_repo_is_refused() {
+        let f = fixture();
+        let outside = tempfile::tempdir().expect("tempdir");
+        std::fs::write(outside.path().join("secret.txt"), "not yours\n").unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            f.repo.path().join("escape.txt"),
+        )
+        .expect("symlink");
+
+        let err = run_verb(&f.ctx, "repo.read", &json!({"path": "escape.txt"}))
+            .await
+            .expect_err("containment refuses the escape");
+        assert!(err.contains("outside the project dir"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_read_may_not_address_outside_the_repo_by_text_either() {
+        let f = fixture();
+        for path in ["/etc/passwd", "../outside.txt"] {
+            let err = run_verb(&f.ctx, "repo.read", &json!({"path": path}))
+                .await
+                .expect_err("path gate refuses");
+            assert!(
+                err.contains("repo-relative") || err.contains(".."),
+                "{path}: {err}"
+            );
+        }
+    }
+
+    /// [P02]: the interesting file is often the one written minutes ago and
+    /// never committed.
+    #[tokio::test]
+    async fn an_untracked_file_reads_normally() {
+        let f = fixture();
+        std::fs::write(f.repo.path().join("scratch.txt"), "brand new\n").unwrap();
+        let out = run_verb(&f.ctx, "repo.read", &json!({"path": "scratch.txt"}))
+            .await
+            .expect("read ran");
+        assert_eq!(out["lines"][0]["text"], "brand new");
+    }
+
+    #[tokio::test]
+    async fn a_read_of_a_path_that_matches_nothing_is_an_error() {
+        let f = fixture();
+        let err = run_verb(&f.ctx, "repo.read", &json!({"path": "no-such-file.md"}))
+            .await
+            .expect_err("unmatched path");
+        assert!(err.contains("no-such-file.md"), "{err}");
+    }
+
+    /// A misspelled path with exactly one plausible owner is repaired, and the
+    /// result says which file was actually read.
+    #[tokio::test]
+    async fn a_repaired_read_names_the_file_it_actually_opened() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.read", &json!({"path": "design-notes.md"}))
+            .await
+            .expect("read ran");
+        assert_eq!(out["path"], "design-notes.md");
+        assert_eq!(out["path_used"], "docs/design-notes.md");
+        assert!(
+            out["note"]
+                .as_str()
+                .expect("a repair note")
+                .contains("docs/design-notes.md"),
+            "{}",
+            out["note"]
+        );
+    }
+
+    // MARK: - repo.outline ([S02])
+
+    #[tokio::test]
+    async fn repo_outline_maps_a_document_to_line_numbers() {
+        let f = fixture();
+        let out = run_verb(
+            &f.ctx,
+            "repo.outline",
+            &json!({"path": "docs/design-notes.md"}),
+        )
+        .await
+        .expect("outline ran");
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["entries"][0]["line"], 1);
+        assert_eq!(out["entries"][0]["kind"], "heading");
+        assert_eq!(out["entries"][0]["text"], "## Placement");
+        assert!(out.get("note").is_none());
+    }
+
+    /// An empty outline must not read as an empty file.
+    #[tokio::test]
+    async fn an_outline_with_nothing_in_it_points_at_repo_read() {
+        let f = fixture();
+        let out = run_verb(&f.ctx, "repo.outline", &json!({"path": "alpha.txt"}))
+            .await
+            .expect("outline ran");
+        assert_eq!(out["count"], 0);
+        assert!(
+            out["note"]
+                .as_str()
+                .expect("an explicit-empty note")
+                .contains("repo.read"),
+            "{}",
+            out["note"]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_outline_longer_than_the_cap_is_marked_truncated() {
+        let f = fixture();
+        let body: String = (1..=OUTLINE_MAX_ENTRIES + 10)
+            .map(|n| format!("## Section {n}\n\ntext\n\n"))
+            .collect();
+        std::fs::write(f.repo.path().join("big.md"), body).unwrap();
+        let out = run_verb(&f.ctx, "repo.outline", &json!({"path": "big.md"}))
+            .await
+            .expect("outline ran");
+        assert_eq!(out["truncated"], true);
+        assert_eq!(out["count"], OUTLINE_MAX_ENTRIES as i64);
+    }
+
+    /// Outline resolves through the same ladder a read does — one shared-path
+    /// check, not a second copy of [#step-2]'s whole matrix.
+    #[tokio::test]
+    async fn an_outline_of_a_path_that_matches_nothing_is_an_error() {
+        let f = fixture();
+        let err = run_verb(&f.ctx, "repo.outline", &json!({"path": "no-such-file.md"}))
+            .await
+            .expect_err("unmatched path");
+        assert!(err.contains("no-such-file.md"), "{err}");
     }
 
     #[test]
