@@ -53,6 +53,7 @@ import {
 import { tugDevLogStore } from "@/lib/tug-dev-log-store/tug-dev-log-store";
 import { currentGesture, targetRefusesFocus } from "@/gesture-interpreter";
 import { isSyntheticEscape } from "./internal/synthetic-escape";
+import { useOpenMenuClaim } from "./use-open-menu-claim";
 
 // ---- Fallback context menu ----
 
@@ -68,6 +69,10 @@ import "./tug-key-sink.css";
  * TugEditorContextMenu. Dismisses on click-away, Escape, or any keypress.
  */
 function FallbackContextMenu({ x, y, onClose }: { x: number; y: number; onClose: () => void }) {
+  // Mounted only while showing, so the claim is unconditional: no tooltip
+  // opens over even the empty menu. [see lib/open-menu-registry]
+  useOpenMenuClaim(true);
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Position and dismiss listeners.

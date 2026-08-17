@@ -75,6 +75,7 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import { animate } from "@/components/tugways/tug-animator";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 import { useFocusTrap } from "@/components/tugways/use-focus-trap";
+import { useOpenMenuClaim } from "@/components/tugways/use-open-menu-claim";
 import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
@@ -302,6 +303,9 @@ export function TugPopupMenu({
     deferDomFocusToTeardown: true,
     onEscapeDismiss: () => setOpen(false),
   });
+
+  // No tooltip opens while this menu stands. [see lib/open-menu-registry]
+  useOpenMenuClaim(open);
 
   // Which sub-menu is currently open, keyed by the entry's render key.
   // `null` means no sub-menu is open. Each `Sub` is controlled against

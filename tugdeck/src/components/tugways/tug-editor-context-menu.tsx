@@ -110,6 +110,7 @@ import { useControlDispatch } from "./use-control-dispatch";
 import { useFocusTrap } from "./use-focus-trap";
 import { isCancelChordEvent } from "./keymap-registry";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { useOpenMenuClaim } from "@/components/tugways/use-open-menu-claim";
 import type { TugAction } from "./action-vocabulary";
 
 // ---- Typed entry shapes ----
@@ -284,6 +285,12 @@ export function TugEditorContextMenu({
   // keyboard navigation. So it takes the same opt-out the completion popup
   // takes: stack presence without engagement.
   useFocusTrap({ active: open, onEscapeDismiss: requestClose, kbf: false });
+
+  // While this menu stands, no tooltip opens anywhere. A commit row raises
+  // this menu from a right-click and also carries a hover tip; without the
+  // claim, a pointer crossing the rows behind the menu would float a second
+  // surface over the one the user is reading.
+  useOpenMenuClaim(open);
 
   // Reset all transient state whenever the menu closes so the next
   // open starts fresh.

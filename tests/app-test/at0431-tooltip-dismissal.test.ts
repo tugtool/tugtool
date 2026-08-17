@@ -16,6 +16,14 @@
  * the menu is standing, and it reads BOTH facts in one breath: the menu is up,
  * and the trigger no longer claims a bubble.
  *
+ * Dismissal alone does not carry that. It ends the bubble that was standing
+ * when the press landed and says nothing about the NEXT hover, so a pointer
+ * wandering across the rows behind an open menu would raise a fresh bubble a
+ * half second later. The menu therefore suppresses as well as dismisses, and
+ * the test proves both directions: nothing opens while the menu is up, and the
+ * hover works again the moment it is gone — the suppression is tied to the
+ * menu's life, not a latch left behind it.
+ *
  * Why the trigger's `aria-describedby` rather than the bubble's presence: a
  * closing Radix tooltip stays mounted for its exit animation, and a background
  * app-test window runs no rAF ([L13] / the harness's animation rule), so
@@ -29,6 +37,8 @@
  * what emits the `scroll` event the dismissal listens for.
  *
  * @covers tugdeck/src/lib/tooltip-dismiss.ts
+ * @covers tugdeck/src/lib/open-menu-registry.ts
+ * @covers tugdeck/src/components/tugways/use-open-menu-claim.ts
  * @covers tugdeck/src/components/tugways/tug-tooltip.tsx
  */
 
@@ -110,6 +120,12 @@ const HAS_BUBBLE = `${ANCHOR}.getAttribute("aria-describedby") !== null`;
  * clearing the latch first, a second hover of the same control is dropped.
  */
 async function hover(app: App): Promise<void> {
+  await pointAt(app);
+  await app.waitForCondition<boolean>(HAS_BUBBLE, { timeoutMs: 8000 });
+}
+
+/** The gesture half of {@link hover}, with nothing awaited afterwards. */
+async function pointAt(app: App): Promise<void> {
   await app.evalJS<null>(
     `(function () {
       var anchor = ${ANCHOR};
@@ -128,7 +144,19 @@ async function hover(app: App): Promise<void> {
       return null;
     })()`,
   );
-  await app.waitForCondition<boolean>(HAS_BUBBLE, { timeoutMs: 8000 });
+}
+
+/**
+ * Hover, then wait out the whole open delay and report whether a bubble came.
+ *
+ * The provider's `delayDuration` is 500ms; the wait is well past it, because
+ * the interesting answer here is a NEGATIVE one and a short wait would prove
+ * only that the bubble had not arrived yet.
+ */
+async function hoverAndSee(app: App): Promise<boolean> {
+  await pointAt(app);
+  await wait(1500);
+  return app.evalJS<boolean>(HAS_BUBBLE);
 }
 
 /** Seed the deck, wait for the pane, and settle. */
@@ -178,6 +206,30 @@ describe.skipIf(!SHOULD_RUN)("at0431 — acting dismisses the hover bubble", () 
         );
         expect(both.menu > 0, "the context menu is up").toBe(true);
         expect(both.bubble, "and nothing is left claiming a tooltip beside it").toBe(false);
+
+        // The other half of the rule, and the one a dismissal alone does not
+        // give: with the menu STILL standing, a fresh hover raises nothing.
+        // Without this, a pointer wandering across the rows behind an open
+        // menu floats a second surface over the one being read.
+        expect(
+          await hoverAndSee(app),
+          "no bubble opens while the menu is up, however long the hover rests",
+        ).toBe(false);
+        expect(
+          await app.evalJS<number>(
+            `document.querySelectorAll(${JSON.stringify(MENU_ITEM)}).length`,
+          ),
+          "and the menu is still the thing on screen",
+        ).toBeGreaterThan(0);
+
+        // Dismiss it, and the hover works again — the suppression is tied to
+        // the menu's life, not a latch left standing behind it.
+        await app.nativeKey("Escape");
+        await app.waitForCondition<boolean>(
+          `document.querySelectorAll(${JSON.stringify(MENU_ITEM)}).length === 0`,
+          { timeoutMs: 8000 },
+        );
+        expect(await hoverAndSee(app), "with the menu gone, the tooltip returns").toBe(true);
       } finally {
         await app.close();
       }

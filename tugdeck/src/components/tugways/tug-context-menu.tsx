@@ -59,6 +59,7 @@ import { isSyntheticEscape, markSyntheticEscape } from "./internal/synthetic-esc
 import { TugSheetStackingContext } from "@/components/tugways/tug-sheet-stacking-context";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
+import { useOpenMenuClaim } from "@/components/tugways/use-open-menu-claim";
 import type { TugAction } from "./action-vocabulary";
 import { useControlDispatch } from "./use-control-dispatch";
 
@@ -219,6 +220,9 @@ export function TugContextMenu<V extends TugContextMenuItemPayload = never>({
   const handleOpenChange = useCallback((next: boolean): void => {
     setOpen(next);
   }, []);
+
+  // No tooltip opens while this menu stands. [see lib/open-menu-registry]
+  useOpenMenuClaim(open);
 
   // Chain manager for observeDispatch subscription. Null outside a provider.
   const manager = useResponderChain();

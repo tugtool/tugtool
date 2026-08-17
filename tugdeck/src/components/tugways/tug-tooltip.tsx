@@ -34,6 +34,15 @@
  * `useResponderChain()` returns null and the subscription is silently
  * skipped — Radix's own hover/focus dismissal keeps working unchanged.
  *
+ * ## Input gestures and open menus
+ *
+ * Two more gates sit beside that one. A click, right-click, or scroll ends a
+ * hover wherever it lands, heard at the document in the capture phase
+ * (`lib/tooltip-dismiss`) — the chain never sees a right-click that only
+ * raises a menu. And no bubble opens at all while a menu is on screen
+ * (`lib/open-menu-registry`): a menu and a tooltip float over the same region
+ * describing the same target, and the one the user did not ask for gives way.
+ *
  * To gate the subscription and close the tooltip from JS, TugTooltip
  * now always tracks a local mirror of Radix's open state via
  * `onOpenChange`. In pure uncontrolled mode this is a no-op relative
@@ -57,6 +66,7 @@ import * as Tooltip from "@radix-ui/react-tooltip";
 import { cn } from "@/lib/utils";
 import { useCanvasOverlay } from "@/lib/use-canvas-overlay";
 import { observeTooltipDismiss } from "@/lib/tooltip-dismiss";
+import { anyMenuOpen, observeOpenMenus } from "@/lib/open-menu-registry";
 import { useResponderChain } from "@/components/tugways/responder-chain-provider";
 
 /* ---------------------------------------------------------------------------
@@ -255,6 +265,11 @@ export function TugTooltip({
   function handleOpenChange(nextOpen: boolean) {
     // Never block close — only suppress open when a gate says so. [L06]
     if (nextOpen === true) {
+      // A menu is up: the user is answering a question, not asking one. No
+      // bubble opens over an open menu, whatever the hover says.
+      if (anyMenuOpen()) {
+        return;
+      }
       if (truncated && triggerElRef.current !== null && !isClipped(triggerElRef.current)) {
         return;
       }
@@ -307,6 +322,22 @@ export function TugTooltip({
     });
     // Same narrowing as above: handleOpenChange is a fresh closure per
     // render but stable in behavior, and re-subscribing every render would churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveOpen]);
+
+  // A menu appearing takes the bubble down with it.
+  //
+  // The open gate above keeps a bubble from opening while a menu stands; this
+  // handles the other order — a menu raised while a bubble is already up. Most
+  // of those arrive as a right-click, which the gesture subscription above
+  // already caught, but a menu raised by a chord or by another surface's code
+  // has no pointer press to hear. Subscribing closes that gap, so "never both
+  // at once" holds however the menu came to be.
+  React.useLayoutEffect(() => {
+    if (!effectiveOpen) return;
+    return observeOpenMenus(() => {
+      if (anyMenuOpen()) handleOpenChange(false);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveOpen]);
 
