@@ -320,9 +320,9 @@ No new state. Every read exists today; the mapping is cited for the cross-check:
 
 | Step | Title | Status | Commit |
 |---|---|---|---|
-| #step-1 | One grammar, no ceilings — the identity revision | done | — |
-| #step-2 | The Lens dash line moves inside the session row | done | — |
-| #step-3 | Integration checkpoint — every dash-identity surface in one invocation | done | — |
+| #step-1 | One grammar, no ceilings — the identity revision | done | 4d888adbf |
+| #step-2 | The Lens dash line moves inside the session row | done | 4d888adbf |
+| #step-3 | Integration checkpoint — every dash-identity surface in one invocation | done | 4d888adbf |
 
 #### Step 1: One grammar, no ceilings — the identity revision {#step-1}
 
