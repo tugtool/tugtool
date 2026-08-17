@@ -1249,10 +1249,7 @@ fn dash_replay_reports_a_conflict_and_exits_one_without_moving_anything() {
     let db = seed_ledger(&root);
     let state = tempfile::tempdir().unwrap();
     let worktree = add_dash_worktree(&root, "demo");
-    git(
-        &root,
-        &["config", "branch.tugdash/demo.tugbase", "main"],
-    );
+    git(&root, &["config", "branch.tugdash/demo.tugbase", "main"]);
     // Both sides rewrite base.rs.
     std::fs::write(worktree.join("base.rs"), "dash\n").unwrap();
     git(&worktree, &["add", "-A"]);

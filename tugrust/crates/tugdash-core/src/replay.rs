@@ -436,11 +436,7 @@ fn branch_rounds(
 }
 
 /// The one round carrying the same subject as `old`, when there is exactly one.
-fn unique_subject_match(
-    repo: &Path,
-    old: &str,
-    rounds: &[(String, String)],
-) -> Option<String> {
+fn unique_subject_match(repo: &Path, old: &str, rounds: &[(String, String)]) -> Option<String> {
     let subject = git_stdout(repo, &["log", "-1", "--format=%s", old]).ok()?;
     let subject = subject.trim();
     if subject.is_empty() {
@@ -499,15 +495,13 @@ fn log_replay(repo: &Path, name: &str, note: &str) -> Result<(), String> {
 fn replayed_note(repo: &Path, base_head: &str, mapping: &[(String, String)]) -> String {
     let pairs: Vec<String> = mapping
         .iter()
-        .map(|(old, new)| {
-            format!(
-                "{}->{}",
-                abbreviate(repo, old, 9),
-                abbreviate(repo, new, 9)
-            )
-        })
+        .map(|(old, new)| format!("{}->{}", abbreviate(repo, old, 9), abbreviate(repo, new, 9)))
         .collect();
-    format!("onto {}: {}", abbreviate(repo, base_head, 9), pairs.join(", "))
+    format!(
+        "onto {}: {}",
+        abbreviate(repo, base_head, 9),
+        pairs.join(", ")
+    )
 }
 
 /// `onto <base>: by rebase[, remapped …][, unmapped …]` — a reconciliation's.
@@ -531,7 +525,6 @@ fn is_ancestor(repo: &Path, maybe_ancestor: &str, descendant: &str) -> bool {
     .map(|o| o.status.success())
     .unwrap_or(false)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -640,7 +633,9 @@ mod tests {
     /// A plan whose ledger rows point at `cells`, committed as a round, with the
     /// dash configured to be driving it.
     fn plan_with_cells(f: &Fixture, cells: &[(&str, &str, &str)]) -> String {
-        let mut doc = String::from("## Fixture Plan {#fixture-plan}\n\n### Execution Steps {#execution-steps}\n\n#### Step Status Ledger {#step-status-ledger}\n\n| Step | Title | Status | Commit |\n|---|---|---|---|\n");
+        let mut doc = String::from(
+            "## Fixture Plan {#fixture-plan}\n\n### Execution Steps {#execution-steps}\n\n#### Step Status Ledger {#step-status-ledger}\n\n| Step | Title | Status | Commit |\n|---|---|---|---|\n",
+        );
         for (anchor, title, sha) in cells {
             doc.push_str(&format!("| #{anchor} | {title} | done | `{sha}` |\n"));
         }
@@ -685,7 +680,10 @@ mod tests {
 
         // The branch, the worktree HEAD, and the working tree all moved together.
         assert_eq!(f.tip("tugdash/demo"), mapping[0].1);
-        assert_eq!(git_stdout(&wt, &["rev-parse", "HEAD"]).unwrap(), mapping[0].1);
+        assert_eq!(
+            git_stdout(&wt, &["rev-parse", "HEAD"]).unwrap(),
+            mapping[0].1
+        );
         assert_eq!(
             git_stdout(&wt, &["status", "--porcelain"]).unwrap(),
             "",
@@ -773,14 +771,20 @@ mod tests {
     #[serial]
     fn an_unmoved_base_is_current() {
         let f = init(&[("g.txt", "dash\n", "add g")]);
-        assert_eq!(replay_onto(f.path(), "demo").unwrap(), ReplayOutcome::Current);
+        assert_eq!(
+            replay_onto(f.path(), "demo").unwrap(),
+            ReplayOutcome::Current
+        );
 
         // Still current after the dash is rebased onto a moved base by hand and
         // there is no record to repair: the branch already descends from the
         // tip, so there is nothing to move and nothing to say.
         f.advance_base("f.txt", "B\n", "base moves");
         git(&f.worktree(), &["rebase", "main"]);
-        assert_eq!(replay_onto(f.path(), "demo").unwrap(), ReplayOutcome::Current);
+        assert_eq!(
+            replay_onto(f.path(), "demo").unwrap(),
+            ReplayOutcome::Current
+        );
     }
 
     #[test]

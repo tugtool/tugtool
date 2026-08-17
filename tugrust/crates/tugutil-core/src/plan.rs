@@ -1393,12 +1393,11 @@ pub fn rewrite_ledger_commit_cell(
             anchor: anchor.to_string(),
         })?;
 
-    let edited =
-        rewrite_ledger_line(source, row.line, None, Some(commit)).ok_or_else(|| {
-            LedgerEditError::RoundTrip {
-                anchor: anchor.to_string(),
-            }
-        })?;
+    let edited = rewrite_ledger_line(source, row.line, None, Some(commit)).ok_or_else(|| {
+        LedgerEditError::RoundTrip {
+            anchor: anchor.to_string(),
+        }
+    })?;
 
     let reparsed = parse(&edited).map_err(|_| LedgerEditError::RoundTrip {
         anchor: anchor.to_string(),

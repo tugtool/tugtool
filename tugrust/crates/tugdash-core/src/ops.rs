@@ -2829,14 +2829,14 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         let journal = read_join_journal(&repo_root, name)
             .ok_or_else(|| format!("No interrupted join to continue for dash '{}'.", name))?;
         return finish_join_teardown(
-        &repo_root,
-        name,
-        &branch,
-        &worktree,
-        opts.origin.as_deref(),
-        journal,
-        warnings,
-    );
+            &repo_root,
+            name,
+            &branch,
+            &worktree,
+            opts.origin.as_deref(),
+            journal,
+            warnings,
+        );
     }
 
     // --preview: report conflicts and blockers in memory; nothing is mutated.
@@ -2952,14 +2952,14 @@ pub fn join_in(repo_root: &Path, name: &str, opts: JoinOptions) -> Result<JoinOu
         };
         write_join_journal(&repo_root, &journal)?;
         return finish_join_teardown(
-        &repo_root,
-        name,
-        &branch,
-        &worktree,
-        opts.origin.as_deref(),
-        journal,
-        warnings,
-    );
+            &repo_root,
+            name,
+            &branch,
+            &worktree,
+            opts.origin.as_deref(),
+            journal,
+            warnings,
+        );
     }
 
     let final_msg = integrate_message(&repo_root, name, &branch, opts.message.clone());
@@ -3178,8 +3178,13 @@ pub fn release_in(
     }
 
     // Record the terminal action in the dash-log ([P04]).
-    append_dash_log(&repo_root, name, "released", &origin.map_or(String::new(), |o| format!("via {o}")))
-        .map_err(|e| e.to_string())?;
+    append_dash_log(
+        &repo_root,
+        name,
+        "released",
+        &origin.map_or(String::new(), |o| format!("via {o}")),
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(ReleaseOutcome {
         name: name.to_string(),
@@ -3764,10 +3769,19 @@ Some context.
     #[test]
     fn detail_entries_carry_the_last_replay_note() {
         let (_temp, root) = stepped_dash("replay-note-dash");
-        append_dash_log(&root, "replay-note-dash", "replayed", "onto abc123456: d->e").unwrap();
+        append_dash_log(
+            &root,
+            "replay-note-dash",
+            "replayed",
+            "onto abc123456: d->e",
+        )
+        .unwrap();
 
         let entries = dash_detail_entries_in(&root);
-        let entry = entries.iter().find(|d| d.name == "replay-note-dash").unwrap();
+        let entry = entries
+            .iter()
+            .find(|d| d.name == "replay-note-dash")
+            .unwrap();
         assert_eq!(entry.last_replay.as_deref(), Some("onto abc123456: d->e"));
         assert_eq!(
             entry.stage, "working",

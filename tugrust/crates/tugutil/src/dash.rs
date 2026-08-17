@@ -503,9 +503,9 @@ fn run_replay(name: &str, json: bool, quiet: bool) -> ExitCode {
         print_replay(name, &outcome);
     }
     match outcome {
-        ReplayOutcome::Replayed { .. } | ReplayOutcome::Recorded { .. } | ReplayOutcome::Current => {
-            ExitCode::SUCCESS
-        }
+        ReplayOutcome::Replayed { .. }
+        | ReplayOutcome::Recorded { .. }
+        | ReplayOutcome::Current => ExitCode::SUCCESS,
         ReplayOutcome::Conflicted { .. } | ReplayOutcome::Deferred { .. } => ExitCode::from(1),
     }
 }

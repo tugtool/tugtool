@@ -861,7 +861,12 @@ fn patch_tree(
 }
 
 /// `git commit-tree <tree> -p <parent> -m <msg>` → the new commit OID.
-pub(crate) fn commit_tree(repo: &Path, tree: &str, parent: &str, msg: &str) -> Result<String, String> {
+pub(crate) fn commit_tree(
+    repo: &Path,
+    tree: &str,
+    parent: &str,
+    msg: &str,
+) -> Result<String, String> {
     let out = git_output(repo, &["commit-tree", tree, "-p", parent, "-m", msg])?;
     if !out.status.success() {
         return Err(format!(
@@ -1116,7 +1121,10 @@ mod tests {
             .expect("clean replay");
         assert_eq!(replayed.mapping.len(), rounds.len());
         for (i, (old, new)) in replayed.mapping.iter().enumerate() {
-            assert_eq!(old, rounds[i], "pair {i} keeps the original round, in order");
+            assert_eq!(
+                old, rounds[i],
+                "pair {i} keeps the original round, in order"
+            );
             assert_ne!(old, new, "the round was rebuilt onto the moved base");
             // Each rebuilt commit is reachable from the replayed head.
             let ok = Command::new("git")
@@ -1284,10 +1292,12 @@ mod tests {
         let partial = resolve_conflicts(repo2, "demo", None).unwrap();
         assert!(partial.candidate_commit.is_none());
         assert!(partial.resolved.iter().all(|r| r.diff.is_none()));
-        assert!(partial
-            .resolved
-            .iter()
-            .all(|r| r.added.is_none() && r.removed.is_none()));
+        assert!(
+            partial
+                .resolved
+                .iter()
+                .all(|r| r.added.is_none() && r.removed.is_none())
+        );
     }
 
     #[test]
@@ -1324,7 +1334,10 @@ mod tests {
 
         // …and the counts are still git's, over the whole diff. This is the
         // assertion the face's stat now rests on.
-        assert_eq!((resolution.added, resolution.removed), (Some(1), Some(2050)));
+        assert_eq!(
+            (resolution.added, resolution.removed),
+            (Some(1), Some(2050))
+        );
     }
 
     #[test]

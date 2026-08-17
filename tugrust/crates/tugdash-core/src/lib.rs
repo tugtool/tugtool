@@ -31,8 +31,7 @@ pub use ops::{
     DashListItem, DashStatus, JoinBlocker, JoinOptions, JoinOutcome, JoinStrategy, MarkOutcome,
     ReleaseOutcome, RoundItem, ShowOutcome, StepOutcome, commit, create, dash_detail_entries_in,
     dash_draft_key, dash_plan_path, derive_stage, join, join_in, join_in_flight, join_preflight_in,
-    list, mark,
-    release, release_in, show, status, status_in, step_done, step_start,
+    list, mark, release, release_in, show, status, status_in, step_done, step_start,
 };
 pub use replay::{ReplayOutcome, ReplayedRounds, replay, replay_onto};
 pub use resolve::{
